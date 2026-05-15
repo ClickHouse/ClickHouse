@@ -187,6 +187,11 @@ StoragePtr StorageFactory::get(
                     "PARTITION_BY, PRIMARY_KEY, ORDER_BY or SAMPLE_BY clauses",
                     [](StorageFeatures features) { return features.supports_sort_order; });
 
+            if (storage_def->unique_key)
+                check_feature(
+                    "UNIQUE KEY clause",
+                    [](StorageFeatures features) { return features.supports_unique_key; });
+
             if (storage_def->ttl_table || !columns.getColumnTTLs().empty())
                 check_feature(
                     "TTL clause",
@@ -254,7 +259,7 @@ std::optional<AccessTypeObjects::Source> StorageFactory::getSourceAccessObject(c
         return {};
     const auto it = storages.find(table_engine);
     if (it == storages.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown table engine '{}' when checking for access type", table_engine);
+        throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}", table_engine);
     return it->second.features.source_access_type;
 }
 

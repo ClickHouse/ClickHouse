@@ -24,7 +24,6 @@
 #include <Interpreters/DeltaMetadataLog.h>
 
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 
@@ -48,6 +47,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/URI.h>
 
 namespace fs = std::filesystem;
 
@@ -60,11 +60,15 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace Setting
 {
     extern const SettingsBool allow_experimental_delta_kernel_rs;
+    extern const SettingsInt64 delta_lake_snapshot_version;
+    extern const SettingsInt64 delta_lake_snapshot_start_version;
+    extern const SettingsInt64 delta_lake_snapshot_end_version;
 }
 
 
@@ -311,7 +315,8 @@ struct DeltaLakeMetadataImpl
                 if (!add_object)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `add` field");
 
-                auto path = add_object->getValue<String>("path");
+                String path;
+                Poco::URI::decode(add_object->getValue<String>("path"), path);
                 auto full_path = fs::path(table_path) / path;
                 result.insert(full_path);
 
@@ -356,7 +361,8 @@ struct DeltaLakeMetadataImpl
                 if (!remove_object)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `remove` field");
 
-                auto path = remove_object->getValue<String>("path");
+                String path;
+                Poco::URI::decode(remove_object->getValue<String>("path"), path);
                 result.erase(fs::path(table_path) / path);
             }
         }
@@ -485,9 +491,7 @@ struct DeltaLakeMetadataImpl
         /// Force nullable, because this parquet file for some reason does not have nullable
         /// in parquet file metadata while the type are in fact nullable.
         format_settings.schema_inference_make_columns_nullable = true;
-        auto columns = format_settings.parquet.use_native_reader_v3
-            ? NativeParquetSchemaReader(*buf, format_settings).readSchema()
-            : ArrowParquetSchemaReader(*buf, format_settings).readSchema();
+        auto columns = NativeParquetSchemaReader(*buf, format_settings).readSchema();
 
         /// Read only columns that we need.
         auto filter_column_names = NameSet{"add", "metaData"};
@@ -498,12 +502,10 @@ struct DeltaLakeMetadataImpl
 
         std::atomic<int> is_stopped{0};
 
-        std::unique_ptr<parquet::arrow::FileReader> reader;
-        THROW_ARROW_NOT_OK(
-            parquet::arrow::OpenFile(
-                asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES),
-                arrow::default_memory_pool(),
-                &reader));
+        auto open_file_res = parquet::arrow::OpenFile(
+            asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), ArrowMemoryPool::instance());
+        THROW_ARROW_NOT_OK(open_file_res.status());
+        auto reader = *std::move(open_file_res);
 
         ArrowColumnToCHColumn column_reader(
             header, "Parquet",
@@ -559,7 +561,8 @@ struct DeltaLakeMetadataImpl
 
         for (size_t i = 0; i < path_column.size(); ++i)
         {
-            const auto path = String(path_column.getDataAt(i));
+            String path;
+            Poco::URI::decode(String(path_column.getDataAt(i)), path);
             if (path.empty())
                 continue;
 
@@ -620,29 +623,51 @@ DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageOb
              data_files.size(), partition_columns.size(), schema.toString());
 }
 
+static bool isDeltaKernelEnabled(ContextPtr context, ObjectStorageType storage_type)
+{
+    const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Azure || storage_type == ObjectStorageType::Local;
+    return supports_delta_kernel && context->getSettingsRef()[Setting::allow_experimental_delta_kernel_rs] ;
+}
+
+bool DeltaLakeMetadata::supportsTotalRows(ContextPtr context, ObjectStorageType storage_type)
+{
+    return isDeltaKernelEnabled(context, storage_type);
+}
+
+bool DeltaLakeMetadata::supportsTotalBytes(ContextPtr context, ObjectStorageType storage_type)
+{
+    return isDeltaKernelEnabled(context, storage_type);
+}
+
 DataLakeMetadataPtr DeltaLakeMetadata::create(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationWeakPtr configuration,
     ContextPtr local_context)
 {
 #if USE_DELTA_KERNEL_RS
-    auto configuration_ptr = configuration.lock();
-
-    const auto & query_settings_ref = local_context->getSettingsRef();
-
-    const auto storage_type = configuration_ptr->getType();
-    const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Local;
-
-    bool enable_delta_kernel = query_settings_ref[Setting::allow_experimental_delta_kernel_rs];
-    if (supports_delta_kernel && enable_delta_kernel)
+    if (isDeltaKernelEnabled(local_context, configuration.lock()->getType()))
     {
-        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, local_context);
+        return DeltaLakeMetadataDeltaKernel::create(object_storage, configuration);
     }
-    else
-        return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
-#else
-    return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
 #endif
+    const auto & settings = local_context->getSettingsRef();
+    if (settings[Setting::delta_lake_snapshot_version].value != -1)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Time travel (delta_lake_snapshot_version) is not supported "
+            "without DeltaKernel. Use S3 or Local storage with "
+            "allow_experimental_delta_kernel_rs = 1");
+
+    if (settings[Setting::delta_lake_snapshot_start_version].value != -1
+        || settings[Setting::delta_lake_snapshot_end_version].value != -1)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Change data feed (delta_lake_snapshot_start_version / "
+            "delta_lake_snapshot_end_version) is not supported "
+            "without DeltaKernel. Use S3 or Local storage with "
+            "allow_experimental_delta_kernel_rs = 1");
+
+    return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
 }
 
 DataTypePtr DeltaLakeMetadata::getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable)
@@ -698,6 +723,10 @@ DataTypePtr DeltaLakeMetadata::getSimpleTypeByName(const String & type_name)
         tryReadIntText(scale, buf);
         return createDecimal<DataTypeDecimal>(precision, scale);
     }
+    /// varchar(n) and char(n) are valid Delta Lake types that map to string in Parquet.
+    /// The length constraint is a SQL-level annotation only; we ignore it and use String.
+    if ((type_name.starts_with("varchar(") || type_name.starts_with("char(")) && type_name.ends_with(')'))
+        return std::make_shared<DataTypeString>();
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type: {}", type_name);
 }

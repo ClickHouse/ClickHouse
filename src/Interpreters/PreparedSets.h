@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 #include <future>
+#include <Common/callOnce.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SetKeys.h>
@@ -105,10 +106,13 @@ public:
     ASTPtr getSourceAST() const override { return ast; }
     Columns getKeyColumns();
 private:
+    void fillSetElementsOnce();
+
     Hash hash;
     ASTPtr ast;
     SetPtr set;
     SetKeyColumns set_key_columns;
+    OnceFlag fill_set_elements_once;
 };
 
 using FutureSetFromTuplePtr = std::shared_ptr<FutureSetFromTuple>;
@@ -147,6 +151,12 @@ public:
         size_t max_size_for_index);
 
     ~FutureSetFromSubquery() override;
+
+    /// The following two methods are used to transfer ownership of `SetAndKey` from one
+    /// `DelayedCreatingSetStep` to another in automatic parallel replicas optimization.
+    /// The `hash`, `ast` and other fields should be the identical for both `FutureSetFromSubquery` objects.
+    void replaceSetAndKey(SetAndKeyPtr set);
+    SetAndKeyPtr detachSetAndKey();
 
     SetPtr get() const override;
     DataTypes getTypes() const override;

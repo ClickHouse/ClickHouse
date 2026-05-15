@@ -112,10 +112,10 @@ std::optional<AuthenticationData> getClientPasswordAuthentication(const Poco::Ut
                 if (password.length() > Coordination::PASSWORD_LENGTH)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Password cannot be longer than {} characters, specified {}", Coordination::PASSWORD_LENGTH, password.size());
 
-                data->setPassword(password, true);
+                data->setPassword(password, /* second_factor */ {}, /* validate */ true);
             }
             else
-                data->setPasswordHashHex(config.getString(config_password_name), true);
+                data->setPasswordHashHex(config.getString(config_password_name), /* second_factor */ {}, /* validate */ true);
         }
     }
 

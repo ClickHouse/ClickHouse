@@ -60,6 +60,8 @@ public:
 
     QueryKind query_kind = QueryKind::NO_QUERY;
 
+    std::shared_ptr<Poco::Net::SocketAddress> connection_address;
+
     /// Current values are not serialized, because it is passed separately.
     String current_user;
     String current_query_id;

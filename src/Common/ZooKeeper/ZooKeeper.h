@@ -23,6 +23,7 @@ namespace Poco::Net
     class SocketAddress;
 }
 
+
 namespace ProfileEvents
 {
     extern const Event CannotRemoveEphemeralNode;
@@ -189,10 +190,18 @@ class ZooKeeper
     /// ZooKeeperWithFaultInjection wants access to `impl` pointer to reimplement some async functions with faults
     friend class DB::ZooKeeperWithFaultInjection;
 
-    explicit ZooKeeper(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_ = nullptr);
+    explicit ZooKeeper(
+        ZooKeeperArgs args_,
+        std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
+        std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_ = nullptr);
 
     /// Allows to keep info about availability zones when starting a new session
-    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl);
+    ZooKeeper(
+        const ZooKeeperArgs & args_,
+        std::shared_ptr<DB::ZooKeeperLog> zk_log_,
+        std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_,
+        Strings availability_zones_,
+        std::unique_ptr<Coordination::IKeeper> existing_impl);
 
     explicit ZooKeeper(std::unique_ptr<Coordination::IKeeper> existing_impl);
 
@@ -215,7 +224,7 @@ public:
 
     /// Creates ZooKeeper from a custom IKeeper implementation using a factory.
     /// The factory is stored and used by startNewSession() for reconnection.
-    static Ptr create_from_impl(std::function<std::unique_ptr<Coordination::IKeeper>()> factory);
+    static Ptr createFromImpl(std::function<std::unique_ptr<Coordination::IKeeper>()> factory);
 
     template <typename... Args>
     static Ptr createWithoutKillingPreviousSessions(Args &&... args)
@@ -442,6 +451,8 @@ public:
 
     Int64 getClientID() const;
 
+    Coordination::IKeeper::WatchesSnapshot getWatchesSnapshot() const;
+
     /// Remove the node with the subtree.
     /// If Keeper supports RemoveRecursive operation then it will be performed atomically.
     /// Otherwise if someone concurrently adds or removes a node in the subtree, the result is undefined.
@@ -452,6 +463,11 @@ public:
     /// For instance, you can call this method twice concurrently for the same node and the end
     /// result would be the same as for the single call.
     Coordination::Error tryRemoveRecursive(const std::string & path, uint32_t remove_nodes_limit = 1000);
+
+    /// Lists all descendant paths under `path`.
+    Strings listRecursive(const std::string & path, uint32_t children_nodes_limit = 1000000);
+
+    Coordination::Error tryListRecursive(const std::string & path, Strings & res, uint32_t children_nodes_limit = 1000000);
 
     /// Similar to removeRecursive(...) and tryRemoveRecursive(...), but does not remove path itself.
     /// Node defined as RemoveException will not be deleted.
@@ -616,7 +632,6 @@ public:
     /// So we update the version of /clickhouse/sessions/server_uuid node when starting a new session.
     /// And there's an option to check this version when committing something.
     void addCheckSessionOp(Coordination::Requests & requests) const;
-
 private:
     void init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper> existing_impl);
     void updateAvailabilityZones();
@@ -643,6 +658,15 @@ private:
 
     Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallbackPtrOrEventPtr watch_callback);
     Coordination::Error syncImpl(const std::string & path, std::string & returned_path);
+
+    bool sampleForOpenTelemetryTracing() const
+    {
+        /// Avoiding using random number generation and std::bernoulli_distribution because it's too slow.
+        /// Instead, we're effectively doing:
+        /// hash(session_id, request_number++) % 1024 < probability * 1024
+        /// which is much more optimal.
+        return static_cast<int32_t>((impl->getSessionID() ^ getConnectionXid()) & 1023) < static_cast<int32_t>(opentelemetry_start_keeper_trace_probability * 1024.0f);
+    }
 
     using RequestFactory = std::function<Coordination::RequestPtr(const std::string &)>;
     template <typename TResponse>
@@ -687,12 +711,15 @@ private:
     std::unique_ptr<Coordination::IKeeper> impl;
     mutable std::unique_ptr<Coordination::IKeeper> optimal_impl;
 
-    /// Factory to create new IKeeper instances for reconnection (used by create_from_impl)
+    /// Factory to create new IKeeper instances for reconnection (used by createFromImpl)
     std::function<std::unique_ptr<Coordination::IKeeper>()> impl_factory;
 
     ZooKeeperArgs args;
 
     Strings availability_zones;
+
+    /// Probability for starting OpenTelemetry traces for Keeper operations (0.0 = no tracing, 1.0 = trace all)
+    const float opentelemetry_start_keeper_trace_probability;
 
     LoggerPtr log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;

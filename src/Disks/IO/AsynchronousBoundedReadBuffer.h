@@ -62,7 +62,7 @@ public:
 private:
     const ImplPtr impl;
     const ReadSettings read_settings;
-    const size_t buffer_size;
+    size_t buffer_size;
     const size_t min_bytes_for_seek;
     const String file_name;
     IAsynchronousReader & reader;
@@ -75,6 +75,11 @@ private:
 
     Memory<> prefetch_buffer;
     std::future<IAsynchronousReader::Result> prefetch_future;
+
+    /// When using userspace page cache, we directly use memory owned by the cache instead of
+    /// allocating our own buffers.
+    bool use_page_cache = false;
+    PageCacheCellPtr page_cache_cell;
 
     const std::string query_id;
     const std::string current_reader_id;

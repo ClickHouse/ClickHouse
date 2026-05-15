@@ -8,8 +8,6 @@ title: 'NATS table engine'
 doc_type: 'guide'
 ---
 
-# NATS table engine {#redisstreams-engine}
-
 This engine allows integrating ClickHouse with [NATS](https://nats.io/).
 
 `NATS` lets you:
@@ -78,7 +76,8 @@ Optional parameters:
 SSL connection:
 
 For secure connection use `nats_secure = 1`.
-The default behaviour of the used library is not to check if the created TLS connection is sufficiently secure. Whether the certificate is expired, self-signed, missing or invalid: the connection is simply permitted. More strict checking of certificates can possibly be implemented in the future.
+Certificate verification is controlled by the `CLICKHOUSE_NATS_TLS_SECURE` environment variable;
+If the certificate is expired, self-signed, missing, or otherwise invalid, disable verification by setting `CLICKHOUSE_NATS_TLS_SECURE=0`.
 
 Writing to NATS table:
 

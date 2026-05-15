@@ -5,6 +5,8 @@
 
 #include <base/types.h>
 
+#include <map>
+
 namespace DB
 {
 
@@ -14,6 +16,7 @@ enum class StatisticsType : UInt8
     Uniq = 1,
     CountMinSketch = 2,
     MinMax = 3,
+    NullCount = 4,
 
     Max = 63,
 };
@@ -69,5 +72,6 @@ struct ColumnStatisticsDescription
 };
 
 StatisticsType stringToStatisticsType(String type);
+String statisticsTypeToString(StatisticsType type);
 
 }

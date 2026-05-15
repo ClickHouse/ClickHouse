@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionGroupConcat.h>
+#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/castColumn.h>
 
@@ -172,6 +173,15 @@ void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, 
     UInt64 temp_size = 0;
     readVarUInt(temp_size, buf);
 
+    /// Prevent the allocator's "Too large size passed to allocator" `LOGICAL_ERROR`.
+    static constexpr UInt64 max_data_size = UInt64{1} << 48;
+    if (temp_size > max_data_size)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid groupConcat state: data size {} is too large (maximum: {})",
+            temp_size,
+            max_data_size);
+
     cur_data.checkAndUpdateSize(temp_size, arena);
 
     buf.readStrict(cur_data.data, temp_size);
@@ -331,7 +341,7 @@ John, Jane
     FunctionDocumentation::Category category_groupConcat = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_groupConcat = {description_groupConcat, syntax_groupConcat, arguments_groupConcat, parameters_groupConcat, returned_value_groupConcat, examples_groupConcat, introduced_in_groupConcat, category_groupConcat};
 
-    factory.registerFunction("groupConcat", { createAggregateFunctionGroupConcat, properties, documentation_groupConcat });
+    factory.registerFunction("groupConcat", { createAggregateFunctionGroupConcat, documentation_groupConcat, properties });
     factory.registerAlias(GroupConcatImpl<false>::getNameAndAliases().at(1), GroupConcatImpl<false>::getNameAndAliases().at(0), AggregateFunctionFactory::Case::Insensitive);
 }
 

@@ -5,6 +5,7 @@
 #include <Core/LoadBalancing.h>
 #include <Core/LogsLevel.h>
 #include <Core/MergeSelectorAlgorithm.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <Core/ParallelReplicasMode.h>
 #include <Core/QueryLogElementType.h>
 #include <Core/SchemaInferenceMode.h>
@@ -298,6 +299,7 @@ enum class Dialect : uint8_t
     kusto,
     prql,
     promql,
+    polyglot,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
@@ -404,6 +406,7 @@ DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 DECLARE_SETTING_ENUM(SchemaInferenceMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
+DECLARE_SETTING_ENUM_WITH_RENAME(InputFormatColumnMatchingCaseSensitivity, FormatSettings::InputFormatColumnMatchingCaseSensitivity)
 
 DECLARE_SETTING_ENUM(SQLSecurityType)
 
@@ -427,6 +430,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     GLUE,
     ICEBERG_HIVE,
     ICEBERG_ONELAKE,
+    ICEBERG_BIGLAKE,
     PAIMON_REST,
 };
 
@@ -436,6 +440,8 @@ enum class FileCachePolicy : uint8_t
 {
     LRU,
     SLRU,
+    SLRU_OVERCOMMIT,
+    LRU_OVERCOMMIT,
 };
 
 DECLARE_SETTING_ENUM(FileCachePolicy)
@@ -457,56 +463,16 @@ enum class GeoToH3ArgumentOrder : uint8_t
 
 DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 
-enum class MergeTreeSerializationInfoVersion : uint8_t
-{
-    BASIC = 0,
-    WITH_TYPES = 1,
-};
 
 DECLARE_SETTING_ENUM(MergeTreeSerializationInfoVersion)
-
-enum class MergeTreeStringSerializationVersion : uint8_t
-{
-    SINGLE_STREAM = 0,
-    WITH_SIZE_STREAM = 1,
-};
-
 DECLARE_SETTING_ENUM(MergeTreeStringSerializationVersion)
-
-enum class MergeTreeNullableSerializationVersion : uint8_t
-{
-    BASIC = 0,
-    ALLOW_SPARSE = 1,
-};
-
 DECLARE_SETTING_ENUM(MergeTreeNullableSerializationVersion)
-
-enum class MergeTreeObjectSerializationVersion : uint8_t
-{
-    V1,
-    V2,
-    V3,
-};
-
 DECLARE_SETTING_ENUM(MergeTreeObjectSerializationVersion)
-
-enum class MergeTreeObjectSharedDataSerializationVersion : uint8_t
-{
-    MAP,
-    MAP_WITH_BUCKETS,
-    ADVANCED,
-};
-
 DECLARE_SETTING_ENUM(MergeTreeObjectSharedDataSerializationVersion)
-
-enum class MergeTreeDynamicSerializationVersion : uint8_t
-{
-    V1,
-    V2,
-    V3,
-};
-
 DECLARE_SETTING_ENUM(MergeTreeDynamicSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreeMapSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreeMapBucketsStrategy)
+
 
 enum class SearchOrphanedPartsDisks : uint8_t
 {
@@ -570,5 +536,32 @@ enum class DeduplicateInsertMode : uint8_t
 };
 
 DECLARE_SETTING_ENUM(DeduplicateInsertMode)
+
+enum class InsertDeduplicationVersions : uint8_t
+{
+    OLD_SEPARATE_HASHES = 0,
+    COMPATIBLE_DOUBLE_HASHES,
+    NEW_UNIFIED_HASHES,
+};
+
+DECLARE_SETTING_ENUM(InsertDeduplicationVersions)
+
+enum class JemallocProfileFormat : uint8_t
+{
+    Raw = 0,
+    Symbolized,
+    Collapsed
+};
+
+DECLARE_SETTING_ENUM(JemallocProfileFormat)
+
+enum class S3UriStyle : uint8_t
+{
+    AUTO,
+    PATH,
+    VIRTUAL_HOSTED,
+};
+
+DECLARE_SETTING_ENUM(S3UriStyle)
 
 }

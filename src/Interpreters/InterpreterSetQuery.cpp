@@ -1,7 +1,10 @@
+#include <Backups/BackupSettings.h>
+#include <Backups/RestoreSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -109,6 +112,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                     String & name = it->name;
                     if ((!features.supports_settings || !features.has_builtin_setting_fn(name)) && context_settings.has(name))
                     {
+                        context_->checkSettingsConstraints(*it, SettingSource::QUERY);
                         context_->setSetting(name, it->value);
                         it = engine_settings->changes.erase(it);
                     }
@@ -119,7 +123,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                 }
 
                 if (engine_settings->changes.empty())
-                    create_query->storage->settings = nullptr;
+                    create_query->storage->reset(create_query->storage->settings);
             }
         }
     }
@@ -145,6 +149,27 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
         context_->setInsertFormat(insert_query->format);
         if (insert_query->settings_ast)
             InterpreterSetQuery(insert_query->settings_ast, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
+    }
+    else if (const auto * backup_query = ast->as<ASTBackupQuery>())
+    {
+        /// BACKUP/RESTORE queries store their settings in ASTBackupQuery::settings (not settings_ast),
+        /// so they are not handled by the settings_ast branch above.
+        /// We apply only the core query settings here, before ProcessList::insert,
+        /// so that the ProcessListElement and CancellationChecker see the correct
+        /// limits from the start. BACKUP/RESTORE-specific settings (async, password, etc.)
+        /// are filtered out by BackupSettings/RestoreSettings and are not applied to the context.
+        if (backup_query->settings)
+        {
+            SettingsChanges core_settings = (backup_query->kind == ASTBackupQuery::Kind::BACKUP)
+                ? BackupSettings::fromBackupQuery(*backup_query).core_settings
+                : RestoreSettings::fromRestoreQuery(*backup_query).core_settings;
+
+            if (!core_settings.empty())
+            {
+                context_->checkSettingsConstraints(core_settings, SettingSource::QUERY);
+                context_->applySettingsChanges(core_settings);
+            }
+        }
     }
 }
 

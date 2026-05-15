@@ -1,6 +1,7 @@
 #include <Functions/FunctionReverseBySeparator.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/StringSearcher.h>
@@ -141,14 +142,18 @@ ColumnPtr FunctionReverseBySeparator::executeImpl(const ColumnsWithTypeAndName &
 
     res_data.reserve(total_size_estimate);
 
+    /// Collect tokens in reverse order
+    std::vector<std::string_view> tokens;
+    tokens.reserve(8); /// Initial capacity
+
     /// Main processing loop - vectorized execution
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         const std::string_view haystack = col_haystack->getDataAt(i);
         // separator is already defined above as a string_view
 
-    /// Handle empty input
-    if (haystack.empty())
+        /// Handle empty input
+        if (haystack.empty())
         {
             res_offsets[i] = res_data.size();
             continue;
@@ -213,10 +218,7 @@ ColumnPtr FunctionReverseBySeparator::executeImpl(const ColumnsWithTypeAndName &
             ASCIICaseSensitiveStringSearcher searcher(reinterpret_cast<const UInt8*>(separator.data()), separator.size());
             TokenSplitter<decltype(searcher)> splitter(haystack, searcher, separator.size());
 
-            /// Collect tokens in reverse order
-            std::vector<std::string_view> tokens;
-            tokens.reserve(8); /// Initial capacity
-
+            tokens.clear();
             while (splitter.hasNext())
             {
                 tokens.emplace_back(splitter.nextToken());

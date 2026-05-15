@@ -11,10 +11,11 @@
 namespace DB
 {
 
-BackgroundJobsAssignee::BackgroundJobsAssignee(MergeTreeData & data_, BackgroundJobsAssignee::Type type_, ContextPtr global_context_)
+BackgroundJobsAssignee::BackgroundJobsAssignee(IBackgroundOperation & data_, const StorageID & storage_id_, BackgroundJobsAssignee::Type type_, ContextPtr global_context_)
     : WithContext(global_context_)
     , type(type_)
     , data(data_)
+    , storage_id(storage_id_)
     , rng(randomSeed())
     , sleep_settings(getSettings())
 {
@@ -56,7 +57,7 @@ void BackgroundJobsAssignee::postpone()
     double random_addition = std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng);
 
     size_t next_time_to_execute = static_cast<size_t>(
-        1000 * (std::min(
+        1000 * (data.getBiasBackoffSeconds() + std::min(
             sleep_settings.task_sleep_seconds_when_no_work_max,
             sleep_settings.thread_sleep_seconds_if_nothing_to_do * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_count))
         + random_addition));
@@ -112,19 +113,31 @@ void BackgroundJobsAssignee::start()
 {
     std::lock_guard lock(holder_mutex);
     if (!holder)
-        holder = getContext()->getSchedulePool().createTask(data.getStorageID(), "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
+        holder = getContext()->getSchedulePool().createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
 
     holder->activateAndSchedule();
 }
 
+void BackgroundJobsAssignee::updateStorageID(const StorageID & new_id)
+{
+    storage_id = new_id;
+}
+
 void BackgroundJobsAssignee::finish()
 {
-    /// No lock here, because scheduled tasks could call trigger method
-    if (holder)
+    /// Move the holder to a local variable under the lock, then release the lock
+    /// before calling deactivate(). We cannot hold holder_mutex during deactivate()
+    /// because it waits for the background task (threadFunc) to finish, and threadFunc
+    /// calls trigger()/postpone() which also lock holder_mutex — that would deadlock.
+    BackgroundSchedulePoolTaskHolder local_holder;
     {
-        holder->deactivate();
+        std::lock_guard lock(holder_mutex);
+        local_holder = std::move(holder);
+    }
 
-        auto storage_id = data.getStorageID();
+    if (local_holder)
+    {
+        local_holder->deactivate();
 
         getContext()->getMovesExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
