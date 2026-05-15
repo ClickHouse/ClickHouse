@@ -316,13 +316,14 @@ Usage of non-deterministic functions is disallowed.
 
 **Function compatibility with preprocessor / tokenizer / postprocessor**.
 For predicates that consult the text index, the preprocessor and postprocessor are applied to the search value before the granule-level check so that the index lookup uses the same tokens that were stored at index build.
-Row-level evaluation of the predicate (after the granule passes) is unchanged — it operates on the original column data with the original needle.
+For most functions (`=`, `IN`, `hasPhrase`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`), the text index is used only to skip irrelevant data blocks; ClickHouse still verifies each surviving row using the original predicate against the original column data.
+For token search functions (`hasToken`, `hasTokenOrNull`, `hasAllTokens`, `hasAnyTokens`), the text index is the primary evaluation path: ClickHouse normalizes the needle through the same preprocessor, tokenizer, and postprocessor that were applied at index build time, and uses this normalized form for both indexed and non-indexed table parts.
 Search tokens that the postprocessor maps to an empty string are ignored, i.e. treated as absent from the search phrase.
 
 | Function | Preprocessor | Compatible tokenizers | Postprocessor |
 |---|---|---|---|
-| `=`, `IN` | yes | any | yes |
-| [`hasToken`](/sql-reference/functions/string-search-functions.md/#hasToken), [`hasTokenOrNull`](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull) | yes | any (designed for `splitByNonAlpha`) | yes |
+| `=`, `IN` | yes | any | yes (skipped for `array`) |
+| [`hasToken`](/sql-reference/functions/string-search-functions.md/#hasToken), [`hasTokenOrNull`](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull) | yes | any (designed for `splitByNonAlpha`) | yes (skipped for `array`) |
 | [`hasAnyTokens(col, str)`](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), [`hasAllTokens(col, str)`](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | yes | any | yes (skipped for `array`) |
 | [`hasAnyTokens(col, arr)`](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), [`hasAllTokens(col, arr)`](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | no (array elements are tokens as-is) | any | yes (skipped for `array`) |
 | [`hasPhrase`](/sql-reference/functions/string-search-functions.md/#hasPhrase) | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | yes |
