@@ -1,24 +1,12 @@
 #pragma once
 
-#include <cstring>
-#include <string>
-#include <string_view>
-#include <span>
-#include <cstddef>
-
-#include <Common/StackTrace.h>
-#include <Common/formatIPv6.h>
-#include <Common/DateLUT.h>
+#include <type_traits>
 
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
 #include <Common/LocalTime.h>
-#include <Common/transformEndianness.h>
-#include <base/find_symbols.h>
-#include <base/StringRef.h>
 
 #include <Core/Types.h>
-#include <Core/DecimalFunctions.h>
 #include <base/IPv4andIPv6.h>
 
 namespace DB
