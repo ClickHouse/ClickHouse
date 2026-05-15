@@ -251,12 +251,6 @@ LARGE_FILE_WHITELIST=(
     -e string_int_list_inconsistent_offset_multiple_batches.parquet
     -e known_failures.txt
     -e keeper-java-client-test.jar
-    -e amazon_model.bin
-    -e nbagames_sample.json
-    -e 02731.arrow
-    -e aes-gcm-avx512.s
-    # TODO: these should be removed and the test should build the JAR from source at runtime
-    -e paimon-rest-catalog/chunk_
 )
 # GNU stat (Linux) uses -c, BSD stat (macOS) uses -f — detect once instead of failing per file.
 if stat -c '%s %n' /dev/null >/dev/null 2>&1; then
