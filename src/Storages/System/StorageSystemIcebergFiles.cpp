@@ -44,6 +44,7 @@ public:
         SharedHeader header_,
         ContextPtr context_,
         size_t max_block_size_,
+        ExpressionActionsPtr database_filter_,
         ExpressionActionsPtr virtual_columns_filter_)
         : ISource(header_)
         , max_block_size(max_block_size_)
@@ -58,7 +59,30 @@ public:
 
         access = context_copy->getAccess();
 
-        databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
+        auto all_databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
+
+        if (database_filter_)
+        {
+            MutableColumnPtr db_col = ColumnString::create();
+            for (const auto & [db_name, _] : all_databases)
+                db_col->insert(db_name);
+            Block check_block{{std::move(db_col), std::make_shared<DataTypeString>(), "database"}};
+            VirtualColumnUtils::filterBlockWithExpression(database_filter_, check_block);
+
+            std::unordered_set<std::string_view> allowed;
+            const auto & filtered_col = check_block.getByPosition(0).column;
+            for (size_t i = 0, n = filtered_col->size(); i < n; ++i)
+                allowed.insert(filtered_col->getDataAt(i));
+
+            for (auto & kv : all_databases)
+                if (allowed.contains(kv.first))
+                    databases.emplace(kv.first, std::move(kv.second));
+        }
+        else
+        {
+            databases = std::move(all_databases);
+        }
+
         current_database_iterator = databases.begin();
         if (current_database_iterator != databases.end())
             current_table_iterator = current_database_iterator->second->getTablesIterator(context_copy, {}, true);
@@ -380,12 +404,18 @@ public:
             auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
             if (dag)
                 virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
+
+            /// Database-only filter, used to skip whole databases before calling getTablesIterator on them.
+            Block database_block{{ColumnString::create(), std::make_shared<DataTypeString>(), "database"}};
+            auto database_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &database_block, context);
+            if (database_dag)
+                database_filter = VirtualColumnUtils::buildFilterExpression(std::move(*database_dag), context);
         }
     }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        auto source = std::make_shared<SystemIcebergFilesSource>(getOutputHeader(), context, max_block_size, virtual_columns_filter);
+        auto source = std::make_shared<SystemIcebergFilesSource>(getOutputHeader(), context, max_block_size, database_filter, virtual_columns_filter);
         source->setStorageLimits(storage_limits);
         processors.emplace_back(source);
         pipeline.init(Pipe(std::move(source)));
@@ -394,6 +424,7 @@ public:
 private:
     std::shared_ptr<const StorageLimitsList> storage_limits;
     const size_t max_block_size;
+    ExpressionActionsPtr database_filter;
     ExpressionActionsPtr virtual_columns_filter;
 };
 
