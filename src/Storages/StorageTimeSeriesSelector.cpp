@@ -322,7 +322,9 @@ namespace
         ASTs conditions;
 
         /// id IN (SELECT id FROM (select_id_query))
-        conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), select_query_from_tags_table));
+        /// Wrap the SELECT in ASTSubquery so it formats with surrounding parentheses.
+        auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
+        conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery)));
 
         /// timestamp >= min_time
         conditions.push_back(makeASTFunction(
