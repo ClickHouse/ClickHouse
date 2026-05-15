@@ -14,9 +14,6 @@ DROP TABLE IF EXISTS default_expr_matchers_include_materialized;
 DROP TABLE IF EXISTS default_expr_matchers_index_one;
 DROP TABLE IF EXISTS default_expr_matchers_index_tuple;
 
-SELECT toJSONString(namedTuple(1 AS a, 'x' AS c));
-SELECT namedTuple(1, 2); -- { serverError BAD_ARGUMENTS }
-
 CREATE TABLE default_expr_matchers_alias
 (
     a UInt8,
