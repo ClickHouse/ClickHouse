@@ -1567,6 +1567,21 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     DDLGuardPtr ddl_guard;
 
+    /// `ATTACH TABLE name <storage clauses>;` without `ENGINE` and without a columns list is ambiguous:
+    /// the parser allows `SETTINGS`, `ORDER BY`, `PARTITION BY`, etc. without an `ENGINE` (to support
+    /// `default_table_engine` on CREATE), but the short ATTACH path below reads the full table definition
+    /// from stored metadata and silently overwrites anything the user typed. Surface this as an error so
+    /// users do not assume their settings or storage clauses took effect.
+    if (create.attach && create.storage && !create.storage->engine && !create.columns_list)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ATTACH TABLE without ENGINE cannot specify storage clauses (SETTINGS, ORDER BY, PARTITION BY, etc.) — "
+            "they would be silently ignored because the table definition is read from stored metadata. "
+            "Use 'ATTACH TABLE {0};' to re-attach with stored metadata, "
+            "or 'ALTER TABLE {0} MODIFY SETTING ...' (or 'MODIFY ORDER BY ...') after ATTACH to change settings.",
+            backQuoteIfNeed(create.getTable()));
+    }
+
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list)
     {
