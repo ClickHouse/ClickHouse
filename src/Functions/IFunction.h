@@ -603,9 +603,6 @@ public:
 
     virtual void getLambdaArgumentTypes(DataTypes & /*arguments*/) const;
 
-    /// Mirrors `IFunctionOverloadResolver::isHigherOrderFunction`. See there for semantics.
-    virtual bool isHigherOrderFunction() const { return false; }
-
     virtual ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const { return {}; }
 
 
