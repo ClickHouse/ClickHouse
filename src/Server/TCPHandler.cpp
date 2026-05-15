@@ -1120,18 +1120,6 @@ bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state)
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
 
-    /// In interserver mode, only allow Query packets (which trigger authentication)
-    /// and harmless packets (Ping, Cancel) before authentication is complete.
-    if (is_interserver_mode && !is_interserver_authenticated
-        && packet_type != Protocol::Client::Query
-        && packet_type != Protocol::Client::Ping
-        && packet_type != Protocol::Client::Cancel)
-    {
-        throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-            "Packet type {} is not allowed before interserver authentication",
-            toString(packet_type));
-    }
-
     switch (packet_type)
     {
         case Protocol::Client::Hello:
