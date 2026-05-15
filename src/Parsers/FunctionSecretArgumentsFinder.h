@@ -103,16 +103,17 @@ protected:
             findMongoDBSecretArguments();
         }
         else if ((function->name() == "s3") || (function->name() == "cosn") || (function->name() == "oss") ||
-                 (function->name() == "deltaLake") || (function->name() == "hudi") || (function->name() == "iceberg") ||
-                 (function->name() == "gcs") || (function->name() == "icebergS3") || (function->name() == "paimon") ||
-                 (function->name() == "paimonS3"))
+                 (function->name() == "deltaLake") || (function->name() == "deltaLakeS3") || (function->name() == "hudi") ||
+                 (function->name() == "iceberg") || (function->name() == "gcs") || (function->name() == "icebergS3") ||
+                 (function->name() == "paimon") || (function->name() == "paimonS3"))
         {
             /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ false);
         }
         else if ((function->name() == "s3Cluster") || (function ->name() == "hudiCluster") ||
                  (function ->name() == "deltaLakeCluster") || (function ->name() == "deltaLakeS3Cluster") ||
-                 (function ->name() == "icebergS3Cluster") || (function ->name() == "icebergCluster"))
+                 (function ->name() == "icebergS3Cluster") || (function ->name() == "icebergCluster") ||
+                 (function ->name() == "paimonCluster") || (function ->name() == "paimonS3Cluster"))
         {
             /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
             findS3FunctionSecretArguments(/* is_cluster_function= */ true);
@@ -123,7 +124,8 @@ protected:
             /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ false);
         }
-        else if ((function->name() == "azureBlobStorageCluster") || (function->name() == "icebergAzureCluster") || (function->name() == "deltaLakeAzureCluster"))
+        else if ((function->name() == "azureBlobStorageCluster") || (function->name() == "icebergAzureCluster") ||
+                 (function->name() == "deltaLakeAzureCluster") || (function->name() == "paimonAzureCluster"))
         {
             /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
             findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ true);
@@ -140,6 +142,11 @@ protected:
             /// encrypt('mode', 'plaintext', 'key' [, iv, aad])
             findEncryptionFunctionSecretArguments();
         }
+        else if (boost::iequals(function->name(), "HMAC"))
+        {
+            /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
+            findHMACSecretArguments();
+        }
         else if (function->name() == "url")
         {
             findURLSecretArguments();
@@ -155,6 +162,13 @@ protected:
         else if ((function->name() == "arrowFlight") || (function->name() == "arrowflight"))
         {
             findArrowFlightSecretArguments();
+        }
+        else if ((function->name() == "jdbc") || (function->name() == "odbc"))
+        {
+            /// jdbc('DSN', schema, table) or jdbc('DSN', table)
+            /// odbc('DSN', schema, table) or odbc('DSN', table)
+            /// The DSN (connection string) may contain credentials.
+            findXDBCSecretArguments();
         }
     }
 
@@ -237,6 +251,76 @@ protected:
         {
             /// ArrowFlight('host:port', 'dataset', 'username', 'password')
             markSecretArgument(3);
+        }
+    }
+
+    void findXDBCSecretArguments()
+    {
+        if (isNamedCollectionName(0))
+        {
+            /// jdbc(named_collection, ..., datasource = 'DSN', ...)
+            /// odbc(named_collection, ..., connection_settings = 'DSN', ...)
+            /// `datasource` and `connection_settings` are mutually exclusive aliases.
+            /// If the value is a URI, mask only the password; otherwise hide the whole value.
+            /// If somehow both are present (invalid query), hide all named arguments.
+            ssize_t ds_idx = findNamedArgument(nullptr, "datasource", 1);
+            ssize_t cs_idx = findNamedArgument(nullptr, "connection_settings", 1);
+
+            if (ds_idx >= 0 && cs_idx >= 0)
+            {
+                /// Both present — hide all named arguments starting from index 1.
+                result.start = 1;
+                result.count = function->arguments->size() - 1;
+                result.are_named = true;
+            }
+            else if (ds_idx >= 0)
+                maskXDBCSecretNamedArgument("datasource", 1);
+            else if (cs_idx >= 0)
+                maskXDBCSecretNamedArgument("connection_settings", 1);
+        }
+        else
+        {
+            /// jdbc('DSN', schema, table) / jdbc('DSN', table)
+            /// odbc('DSN', schema, table) / odbc('DSN', table)
+            /// JDBC('DSN', database, table) / ODBC('DSN', database, table)
+            /// The connection string may be a URI with credentials embedded,
+            /// e.g. scheme://username:password@host:port/dbname
+            /// If so, mask only the password part; otherwise hide the whole argument.
+            String uri;
+            if (tryGetStringFromArgument(0, &uri))
+            {
+                if (maskURIPassword(&uri))
+                {
+                    chassert(result.count == 0);
+                    result.start = 0;
+                    result.count = 1;
+                    result.replacement = std::move(uri);
+                    return;
+                }
+            }
+            markSecretArgument(0, false);
+        }
+    }
+
+    /// Similar to `findSecretNamedArgument`, but if the value is a URI with credentials,
+    /// masks only the password part instead of hiding the entire value.
+    void maskXDBCSecretNamedArgument(std::string_view key, size_t start)
+    {
+        String value;
+        ssize_t arg_idx = findNamedArgument(&value, key, start);
+        if (arg_idx < 0)
+            return;
+
+        if (!value.empty() && maskURIPassword(&value))
+        {
+            result.are_named = true;
+            result.start = arg_idx;
+            result.count = 1;
+            result.replacement = std::move(value);
+        }
+        else
+        {
+            markSecretArgument(arg_idx, /* argument_is_named= */ true);
         }
     }
 
@@ -531,6 +615,18 @@ protected:
         result.count = function->arguments->size() - 1;
     }
 
+    void findHMACSecretArguments()
+    {
+        if (function->arguments->size() < 3)
+            return;
+
+        /// We hide the key argument and any following for the case of mistyping or using extra arguments by mistake:
+        /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
+        /// HMAC('sha256', toString(toFixedString('b', 3), 3), '(', 'this_should_be_secret') -> HMAC('sha256', toString(toFixedString('b', 3), 3), '[HIDDEN]', '[HIDDEN]')
+        result.start = 2;
+        result.count = function->arguments->size() - 2;
+    }
+
     void findTableEngineSecretArguments()
     {
         const String & engine_name = function->name();
@@ -578,6 +674,13 @@ protected:
         else if (engine_name == "ArrowFlight")
         {
             findArrowFlightSecretArguments();
+        }
+        else if ((engine_name == "JDBC") || (engine_name == "ODBC"))
+        {
+            /// JDBC('DSN', database, table)
+            /// ODBC('DSN', database, table)
+            /// The DSN (connection string) may contain credentials.
+            findXDBCSecretArguments();
         }
     }
 

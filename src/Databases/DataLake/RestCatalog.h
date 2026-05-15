@@ -143,11 +143,11 @@ protected:
 
     Namespaces getNamespaces(const std::string & base_namespace) const;
 
-    Namespaces parseNamespaces(DB::ReadBuffer & buf, const std::string & base_namespace) const;
+    Namespaces parseNamespaces(DB::ReadBuffer & buf, const std::string & base_namespace, String & next_page_token) const;
 
     DB::Names getTables(const std::string & base_namespace, size_t limit = 0) const;
 
-    DB::Names parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit) const;
+    DB::Names parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit, String & next_page_token) const;
 
     bool getTableMetadataImpl(
         const std::string & namespace_name,
@@ -216,6 +216,10 @@ public:
     }
 
     DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const override;
+
+    const std::string & getGoogleADCClientId() const { return google_adc_client_id; }
+    const std::string & getGoogleADCClientSecret() const { return google_adc_client_secret; }
+    const std::string & getGoogleADCRefreshToken() const { return google_adc_refresh_token; }
 
 private:
     /// Parameters for Google Cloud OAuth2 (BigLake).

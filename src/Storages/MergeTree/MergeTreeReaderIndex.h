@@ -20,7 +20,7 @@ class MergeTreeReaderIndex : public IMergeTreeReader
 public:
     using MatchingMarks = std::vector<bool>;
 
-    MergeTreeReaderIndex(const IMergeTreeReader * main_reader_, MergeTreeIndexReadResultPtr index_read_result_, const PaddedPODArray<UInt64> * lazy_materializing_rows_, bool can_read_incomplete_granules_);
+    MergeTreeReaderIndex(const IMergeTreeReader * main_reader_, MergeTreeIndexReadResultPtr index_read_result_, const PaddedPODArray<UInt64> * lazy_materializing_rows_);
 
     size_t readRows(
         size_t from_mark,
@@ -30,7 +30,7 @@ public:
         size_t offset,
         Columns & res_columns) override;
 
-    bool canReadIncompleteGranules() const override { return can_read_incomplete_granules; }
+    bool canReadIncompleteGranules() const override { return main_reader->canReadIncompleteGranules(); }
 
     bool canSkipMark(size_t mark, size_t current_task_last_mark) override;
 
@@ -45,8 +45,7 @@ private:
 
     const PaddedPODArray<UInt64> * lazy_materializing_rows = nullptr;
 
-    /// Determines if reading incomplete index granules is supported.
-    bool can_read_incomplete_granules;
+    const IMergeTreeReader * main_reader;
 
     /// Current row position used when continuing reads across multiple calls.
     size_t current_row = 0;

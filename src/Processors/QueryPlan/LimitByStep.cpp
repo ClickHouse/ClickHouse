@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/LimitByTransform.h>
@@ -50,7 +51,7 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
 void LimitByStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
 
     settings.out << prefix << "Columns: ";
 
@@ -65,7 +66,7 @@ void LimitByStep::describeActions(FormatSettings & settings) const
                 settings.out << ", ";
             first = false;
 
-            settings.out << column;
+            settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(column, settings.pretty_names) : column);
         }
         settings.out << '\n';
     }

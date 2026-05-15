@@ -1,0 +1,13 @@
+inner join legacy planner result
+a	A
+b	B
+c	C
+inner join legacy planner explain
+Algorithm: DirectKeyValueJoin
+left join legacy planner result
+a	A
+b	B
+c	C
+d	
+left join legacy planner explain
+Algorithm: DirectKeyValueJoin

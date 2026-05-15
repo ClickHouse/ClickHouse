@@ -3,7 +3,7 @@ Expression ((Project names + Projection))
   Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.t_dt64_explain)
     Indexes:
-      MinMax
+      Partition Min-Max
         Keys:
           ts
         Condition: (ts in [\'1771632000\', +Inf))
@@ -28,7 +28,7 @@ Expression ((Project names + Projection))
   Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.t_dt64_explain)
     Indexes:
-      MinMax
+      Partition Min-Max
         Keys:
           ts
         Condition: (ts in [\'-43200\', +Inf))
@@ -51,7 +51,7 @@ Expression ((Project names + Projection))
   Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.t_dt64_explain)
     Indexes:
-      MinMax
+      Partition Min-Max
         Keys:
           ts
         Condition: (ts in [\'0\', +Inf))
@@ -76,7 +76,7 @@ Expression ((Project names + Projection))
   Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.t_dt64_explain)
     Indexes:
-      MinMax
+      Partition Min-Max
         Keys:
           ts
         Condition: (ts in [\'5662310400\', +Inf))
@@ -98,7 +98,7 @@ Expression ((Project names + Projection))
   Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.t_dt64_explain)
     Indexes:
-      MinMax
+      Partition Min-Max
         Keys:
           ts
         Condition: (ts in [\'5662224000\', +Inf))
@@ -120,7 +120,7 @@ Expression ((Project names + Projection))
   Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.t_d32_explain)
     Indexes:
-      MinMax
+      Partition Min-Max
         Keys:
           d
         Condition: (d in [20505, +Inf))
@@ -142,7 +142,7 @@ Expression ((Project names + Projection))
   Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.t_d32_explain)
     Indexes:
-      MinMax
+      Partition Min-Max
         Keys:
           d
         Condition: (d in [-1, +Inf))
@@ -162,7 +162,7 @@ Expression ((Project names + Projection))
   Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.t_d32_explain)
     Indexes:
-      MinMax
+      Partition Min-Max
         Keys:
           d
         Condition: (d in [65536, +Inf))

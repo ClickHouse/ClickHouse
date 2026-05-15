@@ -1,6 +1,13 @@
 #if defined(__ELF__) && !defined(OS_FREEBSD)
+#   define HAS_SYMBOL_INDEX 1
+#elif defined(OS_DARWIN)
+#   define HAS_SYMBOL_INDEX 1
+#endif
+
+#if defined(HAS_SYMBOL_INDEX)
 
 #include <Common/SymbolIndex.h>
+
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -61,8 +68,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const SymbolIndex & symbol_index = SymbolIndex::instance();
-
         const ColumnPtr & column = arguments[0].column;
         const ColumnUInt64 * column_concrete = checkAndGetColumn<ColumnUInt64>(column.get());
 
@@ -71,6 +76,8 @@ public:
 
         const typename ColumnVector<UInt64>::Container & data = column_concrete->getData();
         auto result_column = ColumnString::create();
+
+        const SymbolIndex & symbol_index = SymbolIndex::instance();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {

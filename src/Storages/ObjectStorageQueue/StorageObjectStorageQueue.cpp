@@ -8,6 +8,7 @@
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -21,7 +22,9 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/StreamingStorageRegistry.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
@@ -34,11 +37,15 @@
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/randomSeed.h>
 
 #include <filesystem>
+#include <Poco/Event.h>
 
 #include <fmt/ranges.h>
 
@@ -72,6 +79,7 @@ namespace FailPoints
 {
     extern const char object_storage_queue_fail_commit[];
     extern const char object_storage_queue_fail_commit_once[];
+    extern const char object_storage_queue_fail_commit_after_success[];
     extern const char object_storage_queue_fail_after_insert[];
     extern const char object_storage_queue_fail_startup[];
 }
@@ -129,6 +137,7 @@ namespace ObjectStorageQueueSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ABORTED;
     extern const int BAD_ARGUMENTS;
     extern const int BAD_QUERY_PARAMETER;
     extern const int QUERY_NOT_ALLOWED;
@@ -136,6 +145,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int FAULT_INJECTED;
     extern const int KEEPER_EXCEPTION;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -355,7 +366,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setComment(comment);
     if (engine_args->settings)
         storage_metadata.settings_changes = engine_args->settings->ptr();
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
+    storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
     zk_path = chooseZooKeeperPath(
@@ -711,29 +722,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
 
 size_t StorageObjectStorageQueue::getDependencies() const
 {
-    auto table_id = getStorageID();
-
-    // Check if all dependencies are attached
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-    LOG_TEST(log, "Number of attached views {} for {}", view_ids.size(), table_id.getNameForLogs());
-
-    if (view_ids.empty())
-        return 0;
-
-    // Check the dependencies are ready?
-    for (const auto & view_id : view_ids)
-    {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
-        if (!view)
-            return 0;
-
-        // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-        if (materialized_view && !materialized_view->tryGetTargetTable())
-            return 0;
-    }
-
-    return view_ids.size();
+    return DatabaseCatalog::instance().getReadyDependentViews(getStorageID(), getContext()).size();
 }
 
 void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
@@ -834,7 +823,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = table_id;
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(getContext(), false), getContext());
     auto queue_context = Context::createCopy(getContext());
     queue_context->makeQueryContext();
 
@@ -1088,6 +1077,13 @@ void StorageObjectStorageQueue::commit(
 
         auto zk_client = getZooKeeper();
         code = zk_client->tryMulti(requests, responses);
+
+        fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
+            if (code == Coordination::Error::ZOK)
+                throw zkutil::KeeperException::fromMessage(
+                    Coordination::Error::ZCONNECTIONLOSS,
+                    "Simulated connection loss after successful commit");
+        });
     });
 
     if (!code.has_value())
@@ -1103,6 +1099,15 @@ void StorageObjectStorageQueue::commit(
     if (code.value() != Coordination::Error::ZOK)
     {
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
+        if (try_num > 1)
+        {
+            /// We had at least one hardware error retry, so the first attempt may have succeeded
+            /// ("failed after operation"): the multi-op applied in ZK but the connection was lost
+            /// before we received the response. Mark all metadata objects so their destructors
+            /// check ownership before removing the processing node instead of asserting.
+            for (auto & source : sources)
+                source->setUncertainCommit();
+        }
         throw zkutil::KeeperMultiException(code.value(), requests, responses);
     }
 
@@ -1274,7 +1279,7 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
         }
     }
 
-    StorageInMemoryMetadata old_metadata(getInMemoryMetadata());
+    StorageInMemoryMetadata old_metadata(*getInMemoryMetadataPtr(local_context, false));
     SettingsChanges * old_settings = nullptr;
     if (old_metadata.settings_changes)
     {
@@ -1347,7 +1352,7 @@ void StorageObjectStorageQueue::alter(
         auto table_id = getStorageID();
         auto alter_commands = normalizeAlterCommands(commands);
 
-        StorageInMemoryMetadata old_metadata(getInMemoryMetadata());
+        StorageInMemoryMetadata old_metadata(*getInMemoryMetadataPtr(local_context, false));
         SettingsChanges * old_settings = nullptr;
         if (old_metadata.settings_changes)
         {
@@ -1574,7 +1579,7 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         getStorageID(),
         list_objects_batch_size_copy,
         predicate,
-        getVirtualsList(),
+        getInMemoryMetadataPtr(local_context, false)->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         hive_partition_columns_to_read_from_file_path,
         local_context,
         log,
@@ -1724,6 +1729,124 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
     if (result_zookeeper_name)
         *result_zookeeper_name = zkutil::extractZooKeeperName(result_zk_path);
     return zkutil::extractZooKeeperPath(result_zk_path, true);
+}
+
+void StorageObjectStorageQueue::waitForPathToBeProcessed(
+    const std::string & path,
+    ContextPtr local_context,
+    std::optional<std::chrono::steady_clock::time_point> deadline) const
+{
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::waitForPathToBeProcessed");
+
+    /// Determine the Keeper paths we need to watch.
+    /// For unordered mode each file gets its own node under processed/ and failed/.
+    /// For ordered mode the processed pointer is a shared node whose *data* is updated,
+    /// while the failed node is still per-file.
+    const bool is_ordered = files_metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
+
+    auto file_metadata = files_metadata->getFileMetadata(path);
+    const auto & processed_node_path = file_metadata->getProcessedNodePath();
+    const auto & failed_node_path = file_metadata->getFailedNodePath();
+
+    LOG_DEBUG(log, "Waiting for path '{}' to be processed by {}", path, getStorageID().getNameForLogs());
+
+    /// Check terminal state first — if the file is already processed or permanently
+    /// failed, return or throw immediately regardless of dependency/streaming guards.
+    {
+        std::string failure_message;
+        const auto state = file_metadata->getPathState(failure_message);
+        if (state == ObjectStorageQueueIFileMetadata::PathState::Processed)
+        {
+            LOG_DEBUG(log, "Path '{}' has been processed by {}", path, getStorageID().getNameForLogs());
+            return;
+        }
+        if (state == ObjectStorageQueueIFileMetadata::PathState::Failed)
+            throw Exception(ErrorCodes::ABORTED,
+                "Path '{}' failed to be processed by {}: {}",
+                path, getStorageID().getNameForLogs(), failure_message);
+    }
+
+    auto event = std::make_shared<Poco::Event>();
+
+    while (true)
+    {
+        if (shutdown_called || table_is_being_dropped)
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                "Table {} is being dropped or server is shutting down",
+                getStorageID().getNameForLogs());
+
+        if (!startup_finished || streaming_tasks.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot wait for path to be processed: background streaming for {} "
+                "has not started yet",
+                getStorageID().getNameForLogs());
+
+        if (getDependencies() == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot wait for path to be processed: table {} has no attached "
+                "materialized views and will not consume any files",
+                getStorageID().getNameForLogs());
+
+        if (getContext()->getS3QueueDisableStreaming())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot wait for path to be processed: streaming is disabled for {}",
+                getStorageID().getNameForLogs());
+
+        if (auto query_status = local_context->getProcessListElementSafe())
+            query_status->checkTimeLimit();
+
+        if (deadline && std::chrono::steady_clock::now() >= *deadline)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                "Timeout waiting for path '{}' to be processed by {}",
+                path, getStorageID().getNameForLogs());
+
+        /// Register watches before checking state to avoid missing a transition
+        /// that occurs between the state check and watch registration.
+        ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+        {
+            auto zk = files_metadata->getZooKeeper()->getKeeper();
+
+            if (is_ordered)
+            {
+                /// The ordered processed pointer may or may not exist yet:
+                /// - Exists   → tryGetWatch registers a data-change watch.
+                /// - Missing  → fall back to existsWatch so we are notified
+                ///              when the node is first created.
+                std::string dummy_data;
+                Coordination::Stat dummy_stat{};
+                const bool node_exists = zk->tryGetWatch(processed_node_path, dummy_data, &dummy_stat, event);
+                if (!node_exists)
+                    zk->existsWatch(processed_node_path, nullptr, event);
+            }
+            else
+            {
+                /// Unordered: each file gets its own processed node; watch for its creation.
+                zk->existsWatch(processed_node_path, nullptr, event);
+            }
+
+            /// Per-file failed node: watch for creation regardless of mode.
+            zk->existsWatch(failed_node_path, nullptr, event);
+        });
+
+        std::string failure_message;
+        const auto state = file_metadata->getPathState(failure_message);
+
+        if (state == ObjectStorageQueueIFileMetadata::PathState::Processed)
+        {
+            LOG_DEBUG(log, "Path '{}' has been processed by {}", path, getStorageID().getNameForLogs());
+            return;
+        }
+        if (state == ObjectStorageQueueIFileMetadata::PathState::Failed)
+        {
+            throw Exception(ErrorCodes::ABORTED,
+                "Path '{}' failed to be processed by {}: {}",
+                path, getStorageID().getNameForLogs(), failure_message);
+        }
+
+        constexpr UInt64 watch_timeout_ms = 1000;
+        event->tryWait(watch_timeout_ms);
+        (*event).reset();
+    }
 }
 
 }

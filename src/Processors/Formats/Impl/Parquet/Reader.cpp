@@ -33,7 +33,6 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int CHECKSUM_DOESNT_MATCH;
 }
 
 namespace ProfileEvents
@@ -360,8 +359,10 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
         const auto * meta = &file_metadata.row_groups[row_group_idx];
-        if (meta->num_rows <= 0)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has <= 0 rows: {}", row_group_idx, meta->num_rows);
+        if (meta->num_rows < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has negative row count: {}", row_group_idx, meta->num_rows);
+        if (meta->num_rows == 0)
+            continue; /// Empty row groups are valid in Parquet; skip them.
         if (meta->columns.size() != total_primitive_columns_in_file)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, meta->columns.size(), total_primitive_columns_in_file);
 
@@ -410,9 +411,9 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     if (options.format.parquet.bloom_filter_push_down && format_filter_info->key_condition)
         prepareBloomFilterCondition();
 
-    if (options.format.parquet.page_filter_push_down)
+    if (options.format.parquet.page_filter_push_down && format_filter_info->key_condition)
     {
-        const auto & column_conditions = static_cast<FilterInfoExt *>(format_filter_info->opaque.get())->column_conditions;
+        format_filter_info->key_condition->extractSingleColumnConditions(column_conditions, nullptr);
         for (const auto & [idx_in_output_block, key_condition] : column_conditions)
         {
             const auto & output_idx = sample_block_to_output_columns_idx.at(idx_in_output_block);
@@ -802,7 +803,10 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
     size_t base_offset = column.meta->meta_data.bloom_filter_offset + header_size;
     for (size_t block_idx : block_idxs)
         subranges.emplace_back(base_offset + block_idx * bytes_per_block, bytes_per_block);
-    auto prefetches = prefetcher.splitRange(std::move(column.bloom_filter_data_prefetch), subranges, /*likely_to_be_used*/ false);
+
+    std::vector<PrefetchHandle> prefetches;
+    if (!subranges.empty()) // can be empty e.g. if `WHERE x IN ()`
+        prefetches = prefetcher.splitRange(std::move(column.bloom_filter_data_prefetch), subranges, /*likely_to_be_used*/ false);
 
     column.bloom_filter_blocks.reserve(block_idxs.size());
     for (size_t i = 0; i < block_idxs.size(); ++i)
@@ -1329,10 +1333,25 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
     /// Find ranges of rows that pass filter and decode them.
 
+    /// When we have per-page prefetches (offset index), some pages may have had their prefetch
+    /// handles reset by determinePagesToPrefetch because they are fully filtered out. The
+    /// use_filter_in_decoder path reads ALL pages sequentially, so it would crash trying to access
+    /// those reset handles. Only use this optimization when reading the whole column chunk
+    /// sequentially (no offset index, i.e. data_pages is empty).
+    ///
+    /// Also disabled for nullable columns (need_null_map): the filter-in-decoder path processes
+    /// ALL rows (passing + non-passing) through processDefLevelsForInnermostColumn, so the
+    /// null_map ends up with entries for all rows rather than just filtered rows. Additionally,
+    /// the decoder applies the filter at consecutive encoded-value indices, but with nulls the
+    /// encoded values don't correspond 1:1 to rows (null rows have no encoded values), causing
+    /// the filter to be applied at wrong positions. The standard row-range iteration path
+    /// correctly handles both issues by only reading rows in passing filter ranges.
     const bool use_filter_in_decoder = (column_info.levels.back().rep == 0) &&
         !row_subgroup.filter.filter.empty() &&
         column.page.initialized &&
-        !column.page.is_dictionary_encoded;
+        !column.page.is_dictionary_encoded &&
+        column.data_pages.empty() &&
+        !column.need_null_map;
     const size_t subgroup_end_row_idx = row_subgroup.start_row_idx + row_subgroup.filter.rows_total;
 
     if (use_filter_in_decoder)
@@ -1411,7 +1430,9 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     if (subchunk.null_map && !column_info.output_nullable && !options.format.null_as_default)
     {
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
-        if (memchr(null_map.data(), 0, null_map.size()) != nullptr)
+        /// null_map uses standard ClickHouse convention: 1 = NULL, 0 = NOT NULL.
+        /// Check if any values are null — those can't be inserted into a non-Nullable column.
+        if (memchr(null_map.data(), 1, null_map.size()) != nullptr)
             throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type for column {}", column_info.name);
         subchunk.null_map = nullptr;
     }
@@ -1521,7 +1542,7 @@ std::tuple<parq::PageHeader, std::span<const char>> Reader::decodeAndCheckPageHe
     {
         uint32_t crc = arrow::internal::crc32(0, page_data.data(), page_data.size());
         if (crc != uint32_t(header.crc))
-            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Page CRC checksum verification failed");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Page CRC checksum verification failed");
     }
 
     return {header, page_data};

@@ -7,6 +7,7 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
@@ -17,6 +18,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 
@@ -76,9 +78,9 @@ ASTPtr convertASTForIndexColumn(const IndexDescription & index, const ASTPtr & e
             : index.expression_list_ast->children.front();
 
         /// Pack preprocessor expression into lambda.
-        auto lambda_arg = makeASTFunction("tuple", make_intrusive<ASTIdentifier>(preprocessor_lambda_arg));
-        auto lambda_ast = makeASTFunction("lambda", lambda_arg, new_expression);
-        return makeASTFunction("arrayMap", lambda_ast, array_map_arg);
+        return makeASTFunction("arrayMap",
+            makeASTLambda({preprocessor_lambda_arg}, std::move(new_expression)),
+            array_map_arg);
     }
 
     if (replace_index_column)
@@ -132,8 +134,22 @@ ActionsDAG createActionsDAGForPreprocessor(
     if (outputs.front()->result_name == source_name)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor must have at least one expression on top of the source column. Got '{}'", outputs.front()->result_name);
 
-    if (!outputs.front()->result_type->equals(*source_type))
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression should return the same type as the source column. Got '{}', expected '{}'", outputs.front()->result_type->getName(), source_type->getName());
+    auto output_type = outputs.front()->result_type;
+    auto nested_type = MergeTreeIndexText::getNestedDataType(output_type);
+    WhichDataType which_data_type(nested_type);
+
+    if (!which_data_type.isString() && !which_data_type.isFixedString())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression should return a column of type with base type of String or FixedString, got: {}", output_type->getName());
+
+    auto get_array_dimensions = [](const DataTypePtr & type) -> size_t
+    {
+        if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+            return array_type->getNumberOfDimensions();
+        return 0;
+    };
+
+    if (get_array_dimensions(source_type) != get_array_dimensions(output_type))
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression must not change the array dimensions of the source column. Source type: '{}', preprocessor result type: '{}'", source_type->getName(), output_type->getName());
 
     if (actions_dag.hasNonDeterministic())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression must not contain non-deterministic functions");
@@ -167,6 +183,21 @@ MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression
         std::make_shared<DataTypeString>(),
         convertASTForConstant(index_description, expression_ast)))
 {
+    if (expression_ast)
+    {
+        /// Detect pure case-folding preprocessors of the exact form lower(col), lowerUTF8(col),
+        /// upper(col), or upperUTF8(col), where col is the index column itself.
+        /// Nested expressions such as lower(trim(col)) are not considered pure case folding
+        /// because the additional transformation would change the dictionary tokens in a way
+        /// that the ILIKE case-insensitive regex can no longer match them correctly.
+        const auto * func = expression_ast->as<ASTFunction>();
+        if (func && (func->name == "lower" || func->name == "lowerUTF8" || func->name == "upper" || func->name == "upperUTF8")
+            && func->arguments && func->arguments->children.size() == 1)
+        {
+            const auto * arg = func->arguments->children.front()->as<ASTIdentifier>();
+            is_lower_or_upper = arg && arg->name() == index_description.column_names.front();
+        }
+    }
 }
 
 std::pair<ColumnPtr, size_t> MergeTreeIndexTextPreprocessor::processColumn(const ColumnWithTypeAndName & column, size_t start_row, size_t n_rows) const

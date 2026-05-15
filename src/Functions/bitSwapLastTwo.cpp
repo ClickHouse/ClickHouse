@@ -53,10 +53,12 @@ struct NameBitSwapLastTwo { static constexpr auto name = "__bitSwapLastTwo"; };
 /// The result of this function is always UInt8 regardless of the argument type.
 /// Override `getReturnTypeForDefaultImplementationForDynamic` so that Dynamic arguments
 /// produce Nullable(UInt8) instead of Dynamic.
-class FunctionBitSwapLastTwo : public FunctionUnaryArithmetic<BitSwapLastTwoImpl, NameBitSwapLastTwo, true>
+class FunctionBitSwapLastTwo : public FunctionUnaryArithmetic<BitSwapLastTwoImpl, NameBitSwapLastTwo, false>
 {
 public:
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitSwapLastTwo>(); }
+    using FunctionUnaryArithmetic::FunctionUnaryArithmetic;
+
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionBitSwapLastTwo>(context_); }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
