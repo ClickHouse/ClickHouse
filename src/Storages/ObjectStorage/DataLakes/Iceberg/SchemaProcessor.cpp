@@ -71,9 +71,10 @@ void traverseComplexType(Poco::JSON::Object::Ptr type, std::unordered_map<String
     if (type_str == "list")
     {
         auto element_id = type->getValue<Int64>(Iceberg::f_element_id);
+        auto element_name = Nested::concatenateName(current_path, "element");
         if (type->isObject(Iceberg::f_element))
-            traverseComplexType(type->getObject(Iceberg::f_element), result, current_path);
-        result[current_path] = element_id;
+            traverseComplexType(type->getObject(Iceberg::f_element), result, element_name);
+        result[element_name] = element_id;
         return;
     }
     if (type_str == "struct")

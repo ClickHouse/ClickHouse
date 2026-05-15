@@ -567,6 +567,18 @@ bool SchemaConverter::processSubtreeArrayInner(TraversalNode & node)
              node.element->num_children == 1); // caller checked this
     /// (type_hint is already unwrapped to be element type, because of REPEATED)
     TraversalNode subnode = node.prepareToRecurse(SchemaContext::ListElement, node.type_hint);
+
+    if (column_mapper && schema_idx < file_metadata.schema.size())
+    {
+        const auto & elem_schema = file_metadata.schema.at(schema_idx);
+        if (elem_schema.__isset.field_id)
+        {
+            const auto & field_id_map = column_mapper->getFieldIdToClickHouseName();
+            if (auto it = field_id_map.find(elem_schema.field_id); it != field_id_map.end())
+                subnode.name = std::string(it->second);
+        }
+    }
+
     processSubtree(subnode);
 
     if (!node.requested || !subnode.output_idx.has_value())

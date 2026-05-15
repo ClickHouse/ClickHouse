@@ -526,9 +526,26 @@ void prepareColumnNullable(
     }
 }
 
+std::optional<std::unordered_map<String, Int64>> buildSubFieldIds(
+    const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    const String & prefix)
+{
+    if (!column_field_ids)
+        return std::nullopt;
+
+    std::unordered_map<String, Int64> result;
+    const String prefix_dot = prefix + ".";
+    for (const auto & [key, value] : *column_field_ids)
+    {
+        if (key.starts_with(prefix_dot))
+            result[key.substr(prefix_dot.size())] = value;
+    }
+    return result.empty() ? std::nullopt : std::make_optional(std::move(result));
+}
+
 void prepareColumnTuple(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas)
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt)
 {
     const auto * column_tuple = assert_cast<const ColumnTuple *>(column.get());
     const auto * type_tuple = assert_cast<const DataTypeTuple *>(type.get());
@@ -544,11 +561,18 @@ void prepareColumnTuple(
     tuple_schema.__set_repetition_type(parq::FieldRepetitionType::REQUIRED);
     tuple_schema.__set_name(name);
     tuple_schema.__set_num_children(static_cast<Int32>(num_elements));
+    if (column_field_ids)
+    {
+        auto it = column_field_ids->find(name);
+        if (it != column_field_ids->end())
+            tuple_schema.__set_field_id(static_cast<Int32>(it->second));
+    }
 
     size_t child_states_begin = states.size();
 
+    auto sub_field_ids = buildSubFieldIds(column_field_ids, name);
     for (size_t i = 0; i < num_elements; ++i)
-        prepareColumnRecursive(column_tuple->getColumnPtr(i), type_tuple->getElement(i), type_tuple->getNameByPosition(i + 1), options, states, schemas, std::nullopt);
+        prepareColumnRecursive(column_tuple->getColumnPtr(i), type_tuple->getElement(i), type_tuple->getNameByPosition(i + 1), options, states, schemas, sub_field_ids);
 
     for (size_t i = child_states_begin; i < states.size(); ++i)
     {
@@ -560,7 +584,7 @@ void prepareColumnTuple(
 
 void prepareColumnArray(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas)
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt)
 {
     const auto * column_array = assert_cast<const ColumnArray *>(column.get());
     ColumnPtr nested_column = column_array->getDataPtr();
@@ -586,6 +610,12 @@ void prepareColumnArray(
     list_schema.__set_converted_type(parq::ConvertedType::LIST);
     list_schema.__isset.logicalType = true;
     list_schema.logicalType.__set_LIST({});
+    if (column_field_ids)
+    {
+        auto it = column_field_ids->find(name);
+        if (it != column_field_ids->end())
+            list_schema.__set_field_id(static_cast<Int32>(it->second));
+    }
 
     item_schema.__set_repetition_type(parq::FieldRepetitionType::REPEATED);
     item_schema.__set_name("list");
@@ -595,7 +625,7 @@ void prepareColumnArray(
     size_t child_states_begin = states.size();
 
     /// Recurse.
-    prepareColumnRecursive(nested_column, nested_type, "element", options, states, schemas, std::nullopt);
+    prepareColumnRecursive(nested_column, nested_type, "element", options, states, schemas, buildSubFieldIds(column_field_ids, name));
 
     /// Update repetition+definition levels and fully-qualified column names (x -> myarray.list.x).
     for (size_t i = child_states_begin; i < states.size(); ++i)
@@ -609,7 +639,7 @@ void prepareColumnArray(
 
 void prepareColumnMap(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas)
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt)
 {
     const auto * column_map = assert_cast<const ColumnMap *>(column.get());
     const auto * column_array = &column_map->getNestedColumn();
@@ -617,7 +647,6 @@ void prepareColumnMap(
     ColumnPtr column_tuple = column_array->getDataPtr();
 
     const auto * map_type = assert_cast<const DataTypeMap *>(type.get());
-    DataTypePtr tuple_type = std::make_shared<DataTypeTuple>(map_type->getKeyValueTypes(), Strings{"key", "value"});
 
     /// Map is an array of tuples
     /// https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#maps
@@ -634,18 +663,29 @@ void prepareColumnMap(
     map_schema.__set_converted_type(parq::ConvertedType::MAP);
     map_schema.__set_logicalType({});
     map_schema.logicalType.__set_MAP({});
+    if (column_field_ids)
+    {
+        auto it = column_field_ids->find(name);
+        if (it != column_field_ids->end())
+            map_schema.__set_field_id(static_cast<Int32>(it->second));
+    }
 
-    size_t tuple_schema_idx = schemas.size();
+    auto & kv_schema = schemas.emplace_back();
+    kv_schema.__set_repetition_type(parq::FieldRepetitionType::REPEATED);
+    kv_schema.__set_name("key_value");
+    kv_schema.__set_num_children(2);
+    kv_schema.__set_converted_type(parq::ConvertedType::MAP_KEY_VALUE);
+
     size_t child_states_begin = states.size();
-
-    prepareColumnTuple(column_tuple, tuple_type, "key_value", options, states, schemas);
-
-    schemas[tuple_schema_idx].__set_repetition_type(parq::FieldRepetitionType::REPEATED);
-    schemas[tuple_schema_idx].__set_converted_type(parq::ConvertedType::MAP_KEY_VALUE);
+    auto child_field_ids = buildSubFieldIds(column_field_ids, name);
+    const auto * column_tuple_typed = assert_cast<const ColumnTuple *>(column_tuple.get());
+    prepareColumnRecursive(column_tuple_typed->getColumnPtr(0), map_type->getKeyType(), "key", options, states, schemas, child_field_ids);
+    prepareColumnRecursive(column_tuple_typed->getColumnPtr(1), map_type->getValueType(), "value", options, states, schemas, child_field_ids);
 
     for (size_t i = child_states_begin; i < states.size(); ++i)
     {
         Strings & path = states[i].column_chunk.meta_data.path_in_schema;
+        path.insert(path.begin(), "key_value");
         path.insert(path.begin(), name);
 
         updateRepDefLevelsForArray(states[i], offsets);
@@ -663,9 +703,9 @@ void prepareColumnRecursive(
     switch (type->getTypeId())
     {
         case TypeIndex::Nullable: prepareColumnNullable(column, type, name, options, states, schemas, column_field_ids); break;
-        case TypeIndex::Array: prepareColumnArray(column, type, name, options, states, schemas); break;
-        case TypeIndex::Tuple: prepareColumnTuple(column, type, name, options, states, schemas); break;
-        case TypeIndex::Map: prepareColumnMap(column, type, name, options, states, schemas); break;
+        case TypeIndex::Array: prepareColumnArray(column, type, name, options, states, schemas, column_field_ids); break;
+        case TypeIndex::Tuple: prepareColumnTuple(column, type, name, options, states, schemas, column_field_ids); break;
+        case TypeIndex::Map: prepareColumnMap(column, type, name, options, states, schemas, column_field_ids); break;
         case TypeIndex::LowCardinality:
         {
             auto nested_type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();

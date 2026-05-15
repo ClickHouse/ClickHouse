@@ -245,6 +245,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
     extern const MergeTreeSettingsAlterColumnSecondaryIndexMode alter_column_secondary_index_mode;
     extern const MergeTreeSettingsUInt64 concurrent_part_removal_threshold;
+    extern const MergeTreeSettingsUInt64 concurrent_part_removal_threshold_for_remote_disk;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsBool disable_freeze_partition_for_zero_copy_replication;
     extern const MergeTreeSettingsString disk;
@@ -3555,7 +3556,17 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
         }
     };
 
-    if (parts_to_remove.size() <= (*settings)[MergeTreeSetting::concurrent_part_removal_threshold])
+    /// On remote disks each part removal is typically one network round-trip,
+    /// so serial removal of even a moderate number of parts can take tens of seconds.
+    /// Use a lower threshold to enter the parallel path in that case.
+    const bool any_part_on_remote_disk = std::ranges::any_of(
+        parts_to_remove, [](const auto & part) { return part->isStoredOnRemoteDisk(); });
+
+    const UInt64 concurrent_threshold = any_part_on_remote_disk
+        ? (*settings)[MergeTreeSetting::concurrent_part_removal_threshold_for_remote_disk]
+        : (*settings)[MergeTreeSetting::concurrent_part_removal_threshold];
+
+    if (parts_to_remove.size() <= concurrent_threshold)
     {
         remove_single_thread();
         return;
@@ -3707,7 +3718,8 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
         /// It may happen that we have a huge part covering thousands small parts.
         /// In this case, we will get a huge range that will be process by only one thread causing really long tail latency.
         /// Let's try to exclude such parts in order to get smaller tasks for thread pool and more uniform distribution.
-        if ((*settings)[MergeTreeSetting::concurrent_part_removal_threshold] < parts_in_range.size() &&
+        /// `concurrent_threshold` is `concurrent_part_removal_threshold_for_remote_disk` when any part is on a remote disk.
+        if (concurrent_threshold < parts_in_range.size() &&
             split_times < (*settings)[MergeTreeSetting::zero_copy_concurrent_part_removal_max_split_times])
         {
             auto smaller_parts_pred = [&range](const DataPartPtr & part)

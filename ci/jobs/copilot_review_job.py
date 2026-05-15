@@ -102,7 +102,11 @@ def _pre_review_tools(pr_number, repo_name):
     return f"""\
 Tools:
 - Prefix every `gh` call with `{GH_PREFIX}`.
-- Pass the explicit PR repository to every helper or `gh` command that accepts it: `--repo {repo_name}`.
+- Pass `--repo {repo_name}` exactly as shown in each command below. For `gh` subcommands not shown
+  here, only add `--repo` if the command documents it. Do NOT add `--repo` to
+  `resolve-pr-review-thread` / `unresolve-pr-review-thread`: they take only `--thread-id` (a globally
+  unique GraphQL node id that already identifies the repo) and reject `--repo` with
+  `error: unrecognized arguments`.
 - Post a new inline review comment by writing the body to a file and running:
   `{GH_PREFIX} python3 -m ci.praktika.gh post-pr-line-comment --file <body.md> --commit <sha> --path <file> --line <N> --repo {repo_name} [--side RIGHT|LEFT]`.
   This wrapper handles `-F body=@<file>` correctly so the file content is uploaded as the body.

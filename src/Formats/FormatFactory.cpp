@@ -761,7 +761,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
         return format;
     }
 
-    return getOutputFormat(name, buf, sample, context, format_settings);
+    return getOutputFormat(name, buf, sample, context, format_settings, format_filter_info);
 }
 
 
