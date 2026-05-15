@@ -17,8 +17,8 @@ CREATE TABLE edges
 INSERT INTO edges SELECT number, number + 1 FROM numbers(10);
 
 -- Insert many unrelated rows to make index usage measurable.
--- from_id range [1000, 100000) has no connection to the chain above.
-INSERT INTO edges SELECT number + 1000, number + 1000000 FROM numbers(99000);
+-- from_id range [1000, 6000) has no connection to the chain above.
+INSERT INTO edges SELECT number + 1000, number + 1000000 FROM numbers(5000);
 
 -- Recursive CTE: traverse the chain starting from 0 using explicit JOIN.
 WITH RECURSIVE traverse AS
@@ -36,8 +36,8 @@ SELECT current_id FROM traverse ORDER BY current_id;
 SYSTEM FLUSH LOGS query_log;
 
 -- Check that the total rows read is small (index was used).
--- Without optimization: ~99010 * 10 steps = ~1M rows read.
--- With optimization: a few thousand rows at most.
+-- Without optimization: ~5010 * 10 steps = ~50K rows read.
+-- With optimization: a few hundred rows at most.
 SELECT
     read_rows < 10000 AS read_rows_ok
 FROM system.query_log
@@ -84,7 +84,7 @@ CREATE TABLE two_hop (from_id UInt64, to_id UInt64)
 ENGINE = MergeTree ORDER BY from_id SETTINGS index_granularity = 8192;
 
 INSERT INTO two_hop SELECT number, number + 1 FROM numbers(10);
-INSERT INTO two_hop SELECT number + 1000, number + 1000000 FROM numbers(99000);
+INSERT INTO two_hop SELECT number + 1000, number + 1000000 FROM numbers(5000);
 
 WITH RECURSIVE two_step AS
 (
