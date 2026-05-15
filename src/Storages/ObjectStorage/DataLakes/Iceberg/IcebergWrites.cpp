@@ -1068,15 +1068,11 @@ bool IcebergStorageSink::initializeMetadata()
             }
         }
 
-        if (persistent_table_components.metadata_cache)
-        {
-            /// If there's an active metadata cache
-            /// We can't just cache 'our' written version as latest, because it could've been overwritten by a concurrent catalog update
-            /// This is why, we are safely invalidating the cache, and the very next reader will get the most up-to-date latest version
-            persistent_table_components.metadata_cache->remove(persistent_table_components.table_path);
-            if (persistent_table_components.table_uuid)
-                persistent_table_components.metadata_cache->remove(*persistent_table_components.table_uuid);
-        }
+        /// If there's an active metadata cache, we can't just cache 'our' written version as
+        /// latest, because it could've been overwritten by a concurrent catalog update.
+        /// We safely invalidate the cache, and the very next reader gets the most up-to-date
+        /// latest version. See `PersistentTableComponents::invalidateMetadataCache`.
+        persistent_table_components.invalidateMetadataCache();
     }
     catch (...)
     {

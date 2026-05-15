@@ -1827,6 +1827,11 @@ void StorageReplicatedMergeTree::paranoidCheckForCoveredPartsInZooKeeperOnStart(
             if (disk->existsDirectory(fs::path(path) / part_name))
                 found = true;
 
+        /// It is OK if the exact covered part is absent locally when an active
+        /// local part already covers it.
+        if (!found && getActiveContainingPart(part_name))
+            found = true;
+
         if (!found)
             found = std::find(parts_to_fetch.begin(), parts_to_fetch.end(), part_name) != parts_to_fetch.end();
 
@@ -4355,7 +4360,8 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
                     /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
                     /*aggressive_=*/false,
-                    /*range_filter_=*/nullptr
+                    /*range_filter_=*/nullptr,
+                    /*storage_id_=*/getStorageID()
                 ));
 
             if (partitions_to_merge_in.empty())
@@ -4374,7 +4380,8 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
                     /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
                     /*aggressive_=*/false,
-                    /*range_filter_=*/nullptr
+                    /*range_filter_=*/nullptr,
+                    /*storage_id_=*/getStorageID()
                 ),
                 partitions_to_merge_in);
 
@@ -6412,7 +6419,8 @@ bool StorageReplicatedMergeTree::optimize(
                             /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
                             /*merge_with_ttl_allowed=*/false,
                             /*aggressive=*/true,
-                            /*range_filter_=*/nullptr
+                            /*range_filter_=*/nullptr,
+                            /*storage_id_=*/getStorageID()
                         ),
                         /*partitions_hint=*/std::nullopt);
                 }
@@ -8769,7 +8777,7 @@ void StorageReplicatedMergeTree::clearLockedBlockNumbersInPartition(
                 LOG_WARNING(log, new_version_warning, paths_to_get[i], result.data);
 
             Stopwatch time_waiting;
-            const Int64 timeout = getContext()->getSettingsRef()[Setting::lock_acquire_timeout].value.totalSeconds();
+            const Int64 timeout = getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalSeconds();
             const auto & stop_waiting
                 = [this, &time_waiting, &timeout]() { return partial_shutdown_called || (timeout < Int64(time_waiting.elapsedSeconds())); };
 

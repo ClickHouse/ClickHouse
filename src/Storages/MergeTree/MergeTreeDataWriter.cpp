@@ -23,6 +23,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/DateLUTImpl.h>
@@ -674,18 +675,29 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         const auto & index_descriptions = metadata_snapshot->getSecondaryIndices();
         auto exclude_indexes_string = global_settings[Setting::exclude_materialize_skip_indexes_on_insert].toString();
 
-        /// Check if user specified list of indexes to exclude from materialize on INSERT
+        /// Some indices were requested to not be build during insert.
+        std::unordered_set<String> exclude_index_names;
         if (!exclude_indexes_string.empty())
-        {
-            std::unordered_set<String> exclude_index_names
-                = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, global_settings);
+            exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, global_settings);
 
-            for (const auto & index : index_descriptions)
-                if (!exclude_index_names.contains(index.name))
-                    indices.emplace_back(MergeTreeIndexFactory::instance().get(index));
+        /// Indices looking into virtual columns can't be correctly build at this stage.
+        auto is_virtual_column_index = [metadata_snapshot](const IndexDescription & index)
+        {
+            for (const auto & required_column : index.column_names)
+                if (metadata_snapshot->isVirtualColumn(required_column))
+                    return true;
+
+            return false;
+        };
+
+        for (const auto & index : index_descriptions)
+        {
+            if (exclude_index_names.contains(index.name))
+                continue;
+            if (is_virtual_column_index(index))
+                continue;
+            indices.emplace_back(MergeTreeIndexFactory::instance().get(index));
         }
-        else /// All indexes will be materialized on INSERT
-            indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
     }
 
     /// If we need to calculate some columns to sort.

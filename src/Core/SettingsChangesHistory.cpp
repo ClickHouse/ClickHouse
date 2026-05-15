@@ -41,6 +41,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.5",
         {
+            {"defer_partition_pruning_after_final", true, true, "Setting newly added in 26.5 to gate the FINAL partition-pruning behavior that shipped silently in 26.3 (https://github.com/ClickHouse/ClickHouse/pull/98242). The meaningful semantic change is registered under the 26.3 block so `compatibility = '26.2'` reverts it; this entry exists so the upgrade-from-26.4 check accepts the newly-introduced name."},
+            {"optimize_trivial_group_by_limit_query", false, true, "New setting that limits aggregation to at most LIMIT distinct keys for `SELECT key_expr FROM t GROUP BY key_expr LIMIT n` queries."},
+            {"date_time_input_format", "basic", "best_effort", "Better usability"},
+            {"cast_string_to_date_time_mode", "basic", "best_effort", "Better usability"},
             {"paimon_target_snapshot_id", -1, -1, "New setting."},
             {"max_consume_snapshots", 0, 0, "New setting."},
             {"allow_experimental_paimon_storage_engine", false, false, "New setting."},
@@ -56,9 +60,16 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_parquet_version", "2.latest", "2.latest", "Obsolete setting, the custom encoder always writes Parquet V2.6+."},
             {"output_format_parquet_compliant_nested_types", true, true, "Obsolete setting, the custom encoder always uses compliant nested types."},
             {"output_format_parquet_unsupported_types_as_binary", false, false, "Obsolete setting, the native writer always throws UNKNOWN_TYPE for unsupported types."},
+            {"output_format_avro_confluent_subject", "", "", "New setting to specify the subject name for schema registration in Confluent Schema Registry when writing AvroConfluent output."},
+            {"format_avro_schema_registry_connection_timeout", 1, 1, "New setting to control the connection timeout (in seconds) for the Confluent Schema Registry HTTP client used by AvroConfluent format."},
+            {"format_avro_schema_registry_send_timeout", 1, 1, "New setting to control the send timeout (in seconds) for the Confluent Schema Registry HTTP client used by AvroConfluent format."},
+            {"format_avro_schema_registry_receive_timeout", 1, 1, "New setting to control the receive timeout (in seconds) for the Confluent Schema Registry HTTP client used by AvroConfluent format."},
             {"input_format_parquet_use_native_reader_v3", true, true, "Obsolete setting, the native reader v3 is now always used."},
             {"max_bytes_ratio_before_external_join", 0., 0.5, "New setting: ratio of available memory used as the spill threshold for hash joins. Enabled by default at `0.5`, mirroring `max_bytes_ratio_before_external_group_by` and `max_bytes_ratio_before_external_sort`. Combined with the absolute `max_bytes_before_external_join` (the smaller of the two applies)."},
             {"allow_key_condition_coalesce_rewrite", false, true, "New setting to rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into a disjunction before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are also handled."},
+            {"dynamic_disk_allow_from_env", false, false, "New setting to allow `from_env` substitutions in dynamic disk configuration (the `disk()` function). Disabled by default for security."},
+            {"dynamic_disk_allow_include", false, false, "New setting to allow `include` in dynamic disk configuration (the `disk()` function). Disabled by default."},
+            {"dynamic_disk_allow_from_zk", false, false, "New setting to allow `from_zk` substitutions in dynamic disk configuration (the `disk()` function). Disabled by default."},
             {"recursive_cte_max_steps_in_type_inference", 0, 10, "Maximum iterations for inferring column types in recursive CTEs via iterative getLeastSupertype"},
             {"use_skip_indexes_for_top_k", false, true, "Enable using data skipping indexes for TopK filtering by default"},
             {"use_top_k_dynamic_filtering", false, true, "Enable dynamic filtering optimization for TopK queries by default"},
@@ -69,7 +80,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_streams_for_union_step", 0, 0, "New setting to limit the number of simultaneously active data streams in a UNION step to reduce peak memory usage."},
             {"max_streams_for_union_step_to_max_threads_ratio", 0, 8, "New setting: the limit on simultaneously active streams in a UNION step is computed as min(max_streams_for_union_step, max_threads * max_streams_for_union_step_to_max_threads_ratio), either being 0 disables that input."},
             {"send_table_structure_on_insert_with_inline_data", true, true, "New setting to control whether server sends table structure for INSERT queries with inline data."},
+            {"query_plan_top_k_through_join", false, true, "New setting to enable a query-plan-level optimization that pushes ORDER BY ... LIMIT n through a LEFT/RIGHT join when the sort key only references the preserved side."},
             {"allow_experimental_unique_key", false, false, "New setting to gate the experimental UNIQUE KEY clause on MergeTree-family tables"},
+            {"system_metric_log_show_zero_values_in_histograms", false, false, "New setting controlling whether zero-valued histogram data is written to the histograms nested column of system.metric_log."},
             {"use_top_k_dynamic_filtering_for_variable_length_types", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."},
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
             {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
@@ -128,6 +141,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
+            {"defer_partition_pruning_after_final", false, true, "Gates the FINAL planner's unconditional skipping of partition pruning when the partition-key column is not in the sorting key. The behavior change itself shipped silently in 26.3 via https://github.com/ClickHouse/ClickHouse/pull/98242; this entry retroactively documents it so `compatibility = '26.2'` restores the pre-regression behavior (0 = prune before FINAL, fast; 1 = defer pruning, correctness-safe)."},
             {"allow_experimental_polyglot_dialect", false, false, "New setting to enable the polyglot SQL transpiler dialect."},
             {"polyglot_dialect", "", "", "New setting to specify the source SQL dialect for the polyglot transpiler."},
             {"output_format_trim_fixed_string", false, false, "New setting to trim trailing zero bytes from FixedString values in text output formats"},
@@ -1187,6 +1201,9 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
             {"part_minmax_index_columns", "partition_key_only", "partition_key_only", "New setting."},
+            {"add_minmax_index_for_block_number_column", false, false, "New setting."},
+            {"add_minmax_index_for_block_offset_column", false, false, "New setting."},
+            {"concurrent_part_removal_threshold_for_remote_disk", 100, 16, "New setting. Lower threshold to enter the concurrent part removal path when any part being removed is on a remote disk, where each removal is typically one network round-trip. The old value (100) matches the legacy `concurrent_part_removal_threshold` default, so older `compatibility` modes preserve the previous behavior."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {

@@ -1364,6 +1364,8 @@ public:
     void waitForUnexpectedPartsToBeLoaded() const;
     bool canUsePolymorphicParts() const;
 
+    void triggerBackgroundOperations();
+
     /// Returns cached metadata snapshot of a patch part that contains the following columns.
     StorageMetadataPtr getPatchPartMetadata(const ColumnsDescription & patch_part_desc, const String & patch_partition_id, ContextPtr local_context) const;
 
@@ -1428,6 +1430,8 @@ private:
 
 protected:
     void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const;
+
+    void unregisterFromMergeSelection(const MergeTreeSettingsPtr & settings);
 
     void resetColumnSizes()
     {

@@ -4,6 +4,7 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
+#include <Storages/ColumnsDescription.h>
 
 #include <memory>
 #include <fmt/format.h>
@@ -357,11 +358,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     const auto & sorting_key_expr = global_ctx->metadata_snapshot->getSortingKey().expression;
     Names sort_key_columns_vec = sorting_key_expr->getRequiredColumns();
 
-    const auto storage_columns = global_ctx->storage_columns.getNameSet();
-    const auto virtual_columns = global_ctx->virtual_columns.getNameSet();
-
     /// Collect columns used in the sorting key expressions.
     NameSet key_columns;
+    const auto storage_columns = global_ctx->storage_columns.getNameSet();
+    const auto virtual_columns = global_ctx->virtual_columns.getNameSet();
     for (const auto & name : sort_key_columns_vec)
         key_columns.insert(getColumnNameInStorage(name, storage_columns, virtual_columns));
 
@@ -458,26 +458,28 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             add_ttl_expression_columns(where_ttl);
     }
 
+    for (auto it = global_ctx->skip_indexes_by_column.begin(); it != global_ctx->skip_indexes_by_column.end();)
+    {
+        auto & [column_name, indexes] = *it;
+
+        if (!key_columns.contains(column_name))
+        {
+            ++it;
+            continue;
+        }
+
+        for (auto & index : indexes)
+            global_ctx->merging_skip_indexes.push_back(std::move(index));
+
+        it = global_ctx->skip_indexes_by_column.erase(it);
+    }
+
     for (const auto & column : global_ctx->storage_columns)
     {
         if (key_columns.contains(column.name))
-        {
             global_ctx->merging_columns.emplace_back(column);
-
-            /// If column is in horizontal stage we need to calculate its indexes on horizontal stage as well
-            auto it = global_ctx->skip_indexes_by_column.find(column.name);
-            if (it != global_ctx->skip_indexes_by_column.end())
-            {
-                for (auto & index : it->second)
-                    global_ctx->merging_skip_indexes.push_back(std::move(index));
-
-                global_ctx->skip_indexes_by_column.erase(it);
-            }
-        }
         else
-        {
             global_ctx->gathering_columns.emplace_back(column);
-        }
     }
 
     /// Track whether any projection or index needs _block_number/_block_offset in the horizontal phase.
@@ -2553,7 +2555,13 @@ private:
 
 void MergeTask::addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx)
 {
-    auto indices_expression = indices_description.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext());
+    /// Virtual columns are needed for implicit indices created for virtual columns.
+    auto columns_for_indices = global_ctx->metadata_snapshot->getColumns();
+    for (const auto & vc : global_ctx->metadata_snapshot->virtuals.toColumnsDescription(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader))
+        if (!columns_for_indices.has(vc.name))
+            columns_for_indices.add(vc);
+
+    auto indices_expression = indices_description.getSingleExpressionForIndices(columns_for_indices, global_ctx->data->getContext());
     auto indices_expression_dag = indices_expression->getActionsDAG().clone();
     auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(*plan.getCurrentHeader(), indices_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
     indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.
