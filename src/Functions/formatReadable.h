@@ -12,12 +12,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
-
 /** formatReadableSize - prints the transferred size in bytes in form `123.45 GiB`.
   * formatReadableQuantity - prints the quantity in form of 123 million.
   */

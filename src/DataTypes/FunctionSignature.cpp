@@ -51,7 +51,7 @@ struct Key
     explicit Key(std::string str) : name(std::move(str))
     {
         if (name.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error: empty variable name");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty variable name");
 
         const char * begin = name.data();
         const char * end = begin + name.size();

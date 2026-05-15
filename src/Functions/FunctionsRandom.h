@@ -10,11 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
 /** Pseudo-random number generation functions.
   * The function can be called without arguments or with one argument.
   * The argument is ignored and only serves to ensure that several calls to one function are considered different and do not stick together.
