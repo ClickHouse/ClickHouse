@@ -1,0 +1,7 @@
+count after first insert	1
+before exchange, deps of a	['mv']
+before exchange, deps of b	[]
+after exchange, deps of a	[]
+after exchange, deps of b	['mv']
+after insert into a, count in dst	1
+after insert into b, count in dst	1
