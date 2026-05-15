@@ -1,4 +1,4 @@
-baseline:	0,1
-limit kept:	0/1
-delim overridden:	0|1|2
-large limit:	0/1/2/3/4
+baseline:	42,42
+limit kept:	42/42
+delim overridden:	42|42|42
+large limit:	42/42/42/42/42
