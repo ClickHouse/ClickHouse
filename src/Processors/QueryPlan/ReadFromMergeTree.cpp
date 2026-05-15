@@ -2859,7 +2859,7 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
         && context->canUseParallelReplicasOnInitiator();
 }
 
-bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit, bool apply_pk_selectivity_check)
+bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit, bool apply_pk_selectivity_check, bool check_only)
 {
     /// if direction is not set, use current one
     if (!direction)
@@ -2934,9 +2934,27 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
             /// (`parts_with_ranges` filtered by `filterPartsByProjection`). Keep it as-is.
             return false;
         }
+
+        /// In `check_only` mode, the caller only wants to know whether the request would
+        /// succeed; do not commit any state. Roll back the temporary `input_order_info`
+        /// and the analysis result we created above. The caller is expected to call this
+        /// function again without `check_only` to actually apply, which will re-run the
+        /// analysis with consistent semantics.
+        if (check_only)
+        {
+            query_info.input_order_info.reset();
+            if (!analysis_was_cached)
+                analyzed_result_ptr.reset();
+            return true;
+        }
     }
     else
     {
+        /// Without the PK-selectivity guard the call cannot fail past this point;
+        /// in `check_only` mode just report success and leave state untouched.
+        if (check_only)
+            return true;
+
         query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
     }
 

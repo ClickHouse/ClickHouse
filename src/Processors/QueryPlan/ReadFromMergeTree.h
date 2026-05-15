@@ -327,7 +327,12 @@ public:
     /// the granule count enough. It must stay `false` for `optimizeAggregationInOrder` and
     /// `optimizeDistinctInOrder` — those paths request read-in-order for streaming algorithm
     /// reasons (memory bound), and disabling it can cause `MEMORY_LIMIT_EXCEEDED`.
-    bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0, bool apply_pk_selectivity_check = false);
+    /// `check_only` performs the PK-selectivity check without committing any state. It returns the
+    /// same boolean that a full call would, but does not switch the step to read-in-order. This is
+    /// used by `ReadFromMerge::requestReadingInOrder` to verify all children would accept before
+    /// applying, so we never end up with some children in `read_in_order` while the parent falls
+    /// back to full sort (mixing row-limit semantics across siblings).
+    bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0, bool apply_pk_selectivity_check = false, bool check_only = false);
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
