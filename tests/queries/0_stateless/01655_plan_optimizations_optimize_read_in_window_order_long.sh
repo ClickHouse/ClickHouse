@@ -6,6 +6,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --use_reader_executor=0"
+
 name=test_01655_plan_optimizations_optimize_read_in_window_order_long
 max_memory_usage=20000000
 
