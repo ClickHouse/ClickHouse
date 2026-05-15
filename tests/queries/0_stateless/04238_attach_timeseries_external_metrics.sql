@@ -1,3 +1,8 @@
+-- Tags: no-replicated-database
+-- ^^ The experimental TimeSeries table engine does not round-trip through
+-- DatabaseReplicated; DETACH/ATTACH of the metrics target hangs the cleanup
+-- query (same reason as 04131_prometheus_query_parser).
+--
 -- Regression test for the `StorageTimeSeries` constructor: when the external
 -- metrics target table is not loaded at ATTACH time (server startup ordering),
 -- the constructor used to dereference a null pointer from `tryGetTable` and
