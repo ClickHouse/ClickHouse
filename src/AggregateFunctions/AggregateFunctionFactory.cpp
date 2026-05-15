@@ -228,7 +228,10 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         /// and could fail to reattach a table because decodeDataType() would reconstruct a type different from the one
         /// recorded in the column metadata; or fail on parallel replicas under serialize_query_plan=1 because the replica's
         /// decodeDataType() would reconstruct a type different from the one the coordinator sent in the plan.)
-        /// NOTE: Check for function->getParameters().empty() is here because some aggregation functions (kolmogorovSmirnovTest, mannWhitneyUTest) drop their parameters completely.
+        ///
+        /// TODO: Some aggregation functions (at least `kolmogorovSmirnovTest`, `mannWhitneyUTest`, `groupArrayMovingSum`, `groupArrayMovingAvg`)
+        /// drop their parameters completely, so the check below has to tolerate `function->getParameters().empty()`.
+        /// They should be fixed to preserve their parameters like every other aggregation function.
         chassert(function && (function->getParameters().empty() || function->getParameters() == parameters),
             "function->getParameters() must equal the parameters passed to the factory");
 
