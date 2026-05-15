@@ -2025,7 +2025,7 @@ void ReadFromMergeTree::buildIndexes(
             indexes->minmax_idx_condition.emplace(
                 filter_dag, query_context, minmax_columns.getNames(), minmax_expression_actions,
                 /* single_point_ = */ false,
-                /* skip_analysis_ = */ skip_partition_pruning_ || !settings[Setting::use_skip_indexes]);
+                /* skip_analysis_ = */ skip_partition_pruning_ || !settings[Setting::use_partition_pruning] || !settings[Setting::use_skip_indexes]);
         }
 
         if (metadata_snapshot->hasPartitionKey())
