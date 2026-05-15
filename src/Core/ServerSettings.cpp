@@ -365,12 +365,14 @@ namespace
     - [merges_mutations_memory_usage_soft_limit](/operations/server-configuration-parameters/settings#merges_mutations_memory_usage_soft_limit)
     )", 0) \
     DECLARE(UInt64, additional_memory_tracking_per_thread, 4 * 1024 * 1024, R"(
-    The amount of memory that is speculatively added to memory tracking on behalf of every thread executing a job in a `ThreadPool`.
+    The amount of memory that is speculatively added to memory tracking on behalf of every thread spawned by a pipeline executor (`PipelineExecutor`, `PullingAsyncPipelineExecutor`, `PushingAsyncPipelineExecutor`).
 
     Each thread accumulates up to `max_untracked_memory` of allocations before reporting them to the server-wide `MemoryTracker`.
-    With many threads, this unreported memory can sum to a large amount, causing the server's tracked memory usage to under-count actual memory consumption and leading to OOM.
+    With many query threads, this unreported memory can sum to a large amount, causing the server's tracked memory usage to under-count actual memory consumption and leading to OOM.
 
-    By charging this amount to the `MemoryTracker` for each active worker, the server-wide tracked memory becomes a safe upper bound on actual memory consumption.
+    By charging this amount to the `MemoryTracker` for each active pipeline worker, the server-wide tracked memory becomes a much tighter upper bound on the actual memory consumption of in-flight queries.
+
+    Note: the reservation is currently only applied to pipeline-executor threads, not to all `ThreadPool` users (e.g. background merges and fetches), so it covers the query-execution memory but not every job that runs in a `ThreadPool`.
 
     The value should be equal to or slightly greater than `max_untracked_memory`. Setting it to `0` disables the speculative accounting.
     )", 0) \
