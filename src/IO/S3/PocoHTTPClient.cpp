@@ -102,6 +102,15 @@ namespace HistogramMetrics
 namespace DB::S3
 {
 
+bool isS3WrongSigningRegionBadRequest(int status_code, const Poco::Net::HTTPMessage & response)
+{
+    if (status_code != Poco::Net::HTTPResponse::HTTP_BAD_REQUEST)
+        return false;
+    if (!response.has("x-amz-bucket-region"))
+        return false;
+    return !response.get("x-amz-bucket-region").empty();
+}
+
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     std::function<ProxyConfiguration()> per_request_configuration_,
     const String & force_region_,
@@ -653,6 +662,15 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 /// PreconditionFailed (412) is an expected response for conditional writes
                 /// (e.g. If-None-Match: *), not a genuine error.
                 LOG_INFO(log, "Response status: {}, {}", status_code, poco_response.getReason());
+            }
+            else if (isS3WrongSigningRegionBadRequest(status_code, poco_response))
+            {
+                /// Wrong signing region: S3 returns 400 and `x-amz-bucket-region`; `getRegionForBucket` recovers.
+                LOG_INFO(
+                    log,
+                    "Response status: {}, {}. Wrong signing region.",
+                    status_code,
+                    poco_response.getReason());
             }
             else if (Poco::Net::HTTPResponse::HTTP_NOT_FOUND != status_code || !Expect404ResponseScope::is404Expected())
             {

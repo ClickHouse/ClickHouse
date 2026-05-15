@@ -1640,12 +1640,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
 /// If you add a setting which can be updated at runtime, please update 'changeable_settings' map in dumpToSystemServerSettingsColumns below
 
-DECLARE_SETTINGS_TRAITS_WITH_PATH(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS_WITHOUT_PATH, LIST_OF_SERVER_SETTINGS_WITH_PATH)
-IMPLEMENT_SETTINGS_TRAITS_WITH_PATH(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS_WITHOUT_PATH, LIST_OF_SERVER_SETTINGS_WITH_PATH)
-
-#define LIST_OF_SERVER_SETTINGS(DECLARE, ALIAS) \
-    LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, ALIAS) \
-    LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, ALIAS) \
+DECLARE_SETTINGS_TRAITS_WITH_PATH(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS_WITHOUT_PATH, LIST_OF_SERVER_SETTINGS_WITH_PATH, SERVER_SETTINGS_SUPPORTED_TYPES)
 
 struct ServerSettingsImpl : public BaseSettings<ServerSettingsTraits>
 {
@@ -1693,15 +1688,7 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
     }
 }
 
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) ServerSettings##TYPE NAME = &ServerSettingsImpl ::NAME;
-
-namespace ServerSetting
-{
-LIST_OF_SERVER_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_CUSTOM_IMPL(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS_WITHOUT_PATH, LIST_OF_SERVER_SETTINGS_WITH_PATH, ServerSettings, ServerSetting)
 
 ServerSettings::ServerSettings() : impl(std::make_unique<ServerSettingsImpl>())
 {

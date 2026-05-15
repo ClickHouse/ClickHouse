@@ -1,8 +1,10 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MultipleFileWriter.h>
 
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Interpreters/Context.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
 
 namespace DB
@@ -25,6 +27,7 @@ MultipleFileWriter::MultipleFileWriter(
     , max_data_file_num_bytes(max_data_file_num_bytes_)
     , schema(schema_)
     , stats(schema_)
+    , column_mapper(std::make_shared<ColumnMapper>())
     , filename_generator(filename_generator_)
     , path_resolver(path_resolver_)
     , object_storage(object_storage_)
@@ -33,6 +36,7 @@ MultipleFileWriter::MultipleFileWriter(
     , write_format(std::move(write_format_))
     , sample_block(sample_block_)
 {
+    column_mapper->setStorageColumnEncoding(Iceberg::IcebergSchemaProcessor::traverseSchema(schema_));
 }
 
 void MultipleFileWriter::startNewFile()
@@ -56,8 +60,9 @@ void MultipleFileWriter::startNewFile()
         format_settings->parquet.bloom_filter_push_down = true;
         format_settings->parquet.filter_push_down = true;
     }
+    FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
     output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
-        write_format, *buffer, *sample_block, context, format_settings);
+        write_format, *buffer, *sample_block, context, format_settings, format_filter_info);
 }
 
 void MultipleFileWriter::consume(const Chunk & chunk)
