@@ -29,16 +29,16 @@ namespace
 
     HistogramMetrics::MetricFamily & evictedSegmentHits = HistogramMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_segment_hits",
-        "Distribution of cache-hit counts on file segments at the moment of their eviction.",
+        "Distribution of cache-hit counts on file segments at the moment of their eviction, labelled by source priority queue.",
         kHitsBuckets,
-        {"cache_name"}
+        {"cache_name", "queue"}
     );
 
     HistogramMetrics::MetricFamily & evictedSegmentSizeBytes = HistogramMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_segment_size_bytes",
-        "Distribution of byte sizes of evicted file segments.",
+        "Distribution of byte sizes of evicted file segments, labelled by source priority queue.",
         kSizeBuckets,
-        {"cache_name"}
+        {"cache_name", "queue"}
     );
 
     DimensionalMetrics::MetricFamily & evictionsByClient = DimensionalMetrics::Factory::instance().registerMetric(
@@ -57,18 +57,18 @@ namespace
 
     HistogramMetrics::MetricFamily & evictedSegmentHitsByClient = HistogramMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_segment_hits_by_client",
-        "Distribution of cache-hit counts on evicted file segments, labelled by user id. "
+        "Distribution of cache-hit counts on evicted file segments, labelled by source priority queue and user id. "
         "Disabled by default; enable via `expose_eviction_metrics_per_client`.",
         kHitsBuckets,
-        {"cache_name", "client_id"}
+        {"cache_name", "queue", "client_id"}
     );
 
     HistogramMetrics::MetricFamily & evictedSegmentSizeBytesByClient = HistogramMetrics::Factory::instance().registerMetric(
         "filesystem_cache_evicted_segment_size_bytes_by_client",
-        "Distribution of byte sizes of evicted file segments, labelled by user id. "
+        "Distribution of byte sizes of evicted file segments, labelled by source priority queue and user id. "
         "Disabled by default; enable via `expose_eviction_metrics_per_client`.",
         kSizeBuckets,
-        {"cache_name", "client_id"}
+        {"cache_name", "queue", "client_id"}
     );
 }
 
@@ -100,8 +100,8 @@ void recordEviction(
     const char * queue = queueLabel(queue_type);
     evictionsTotal.withLabels({cache_name, queue}).increment();
     evictedBytesTotal.withLabels({cache_name, queue}).increment(static_cast<DimensionalMetrics::Value>(bytes));
-    evictedSegmentHits.withLabels({cache_name}).observe(static_cast<HistogramMetrics::Value>(hits));
-    evictedSegmentSizeBytes.withLabels({cache_name}).observe(static_cast<HistogramMetrics::Value>(bytes));
+    evictedSegmentHits.withLabels({cache_name, queue}).observe(static_cast<HistogramMetrics::Value>(hits));
+    evictedSegmentSizeBytes.withLabels({cache_name, queue}).observe(static_cast<HistogramMetrics::Value>(bytes));
 }
 
 void recordEvictionByClient(
@@ -114,8 +114,8 @@ void recordEvictionByClient(
     const char * queue = queueLabel(queue_type);
     evictionsByClient.withLabels({cache_name, queue, client_id}).increment();
     evictedBytesByClient.withLabels({cache_name, queue, client_id}).increment(static_cast<DimensionalMetrics::Value>(bytes));
-    evictedSegmentHitsByClient.withLabels({cache_name, client_id}).observe(static_cast<HistogramMetrics::Value>(hits));
-    evictedSegmentSizeBytesByClient.withLabels({cache_name, client_id}).observe(static_cast<HistogramMetrics::Value>(bytes));
+    evictedSegmentHitsByClient.withLabels({cache_name, queue, client_id}).observe(static_cast<HistogramMetrics::Value>(hits));
+    evictedSegmentSizeBytesByClient.withLabels({cache_name, queue, client_id}).observe(static_cast<HistogramMetrics::Value>(bytes));
 }
 
 }
