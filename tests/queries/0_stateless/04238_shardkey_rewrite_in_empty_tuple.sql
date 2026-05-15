@@ -21,9 +21,9 @@ SET prefer_localhost_replica = 0;
 SET optimize_skip_unused_shards = 1;
 SET optimize_skip_unused_shards_rewrite_in = 1;
 
-SELECT (2 IN tuple(-2)) FROM dist_04238
+SELECT count() FROM dist_04238
 WHERE dummy IN (0, 2)
-GROUP BY (dummy IN tuple()) AND materialize(-2147483649) AND (NULL GLOBAL IN (*))
+GROUP BY (dummy IN tuple())
 FORMAT Null;
 
 DROP TABLE dist_04238;
