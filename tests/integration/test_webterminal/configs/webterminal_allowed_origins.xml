@@ -1,0 +1,10 @@
+<clickhouse>
+    <allow_experimental_webterminal>true</allow_experimental_webterminal>
+
+    <!-- Operator-configured `Origin` allowlist. When non-empty, this
+         replaces the default same-origin check on the WebSocket upgrade.
+         This config is exercised by the integration tests that verify
+         CSWSH protection: an `Origin` from this list must succeed,
+         anything else must be rejected with `403` before `101`. -->
+    <webterminal_allowed_origins>https://example.com,https://app.example.com:8443</webterminal_allowed_origins>
+</clickhouse>

@@ -67,22 +67,8 @@ namespace ErrorCodes
     OBSOLETE_KAFKA_SETTINGS(M, ALIAS)     \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
 
-DECLARE_SETTINGS_TRAITS(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS)
-
-struct KafkaSettingsImpl : public BaseSettings<KafkaSettingsTraits>
-{
-};
-
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) KafkaSettings##TYPE NAME = &KafkaSettingsImpl ::NAME;
-
-namespace KafkaSetting
-{
-LIST_OF_KAFKA_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS, KAFKA_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(KafkaSettingsTraits, LIST_OF_KAFKA_SETTINGS, KafkaSettings, KafkaSetting)
 
 KafkaSettings::KafkaSettings() : impl(std::make_unique<KafkaSettingsImpl>())
 {
@@ -135,23 +121,23 @@ void KafkaSettings::loadFromNamedCollection(const MutableNamedCollectionPtr & na
 
 void KafkaSettings::sanityCheck(ContextPtr global_context) const
 {
-    UInt64 kafka_consumer_reschedule_ms = impl->kafka_consumer_reschedule_ms.totalMilliseconds();
+    UInt64 kafka_consumer_reschedule_ms = (*impl)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds();
 
-    if (impl->kafka_consumers_pool_ttl_ms < kafka_consumer_reschedule_ms)
+    if ((*impl)[KafkaSetting::kafka_consumers_pool_ttl_ms] < kafka_consumer_reschedule_ms)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of 'kafka_consumers_pool_ttl_ms' ({}) cannot be less than 'kafka_consumer_reschedule_ms' ({})",
-            impl->kafka_consumers_pool_ttl_ms.value,
+            (*impl)[KafkaSetting::kafka_consumers_pool_ttl_ms].value,
             kafka_consumer_reschedule_ms);
 
-    if (impl->kafka_consumers_pool_ttl_ms > KAFKA_CONSUMERS_POOL_TTL_MS_MAX)
+    if ((*impl)[KafkaSetting::kafka_consumers_pool_ttl_ms] > KAFKA_CONSUMERS_POOL_TTL_MS_MAX)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of 'kafka_consumers_pool_ttl_ms' ({}) cannot be too big (greater then {}), since this may cause live memory leaks",
-            impl->kafka_consumers_pool_ttl_ms.value,
+            (*impl)[KafkaSetting::kafka_consumers_pool_ttl_ms].value,
             KAFKA_CONSUMERS_POOL_TTL_MS_MAX);
 
-    if (impl->kafka_handle_error_mode == StreamingHandleErrorMode::DEAD_LETTER_QUEUE
+    if ((*impl)[KafkaSetting::kafka_handle_error_mode] == StreamingHandleErrorMode::DEAD_LETTER_QUEUE
         && !global_context->getDeadLetterQueue())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "The table system.dead_letter_queue is not configured on the server. You cannot create a table with this `kafka_handle_error_mode`.");

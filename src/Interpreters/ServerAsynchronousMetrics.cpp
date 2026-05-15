@@ -16,6 +16,7 @@
 #include <Common/PageCache.h>
 #include <Common/quoteString.h>
 #include <Common/HTTPConnectionPool.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/TCPSocketMemInfo.h>
 
 
@@ -32,6 +33,18 @@
 #endif
 
 #include <Coordination/KeeperAsynchronousMetrics.h>
+
+#if defined(OS_LINUX) && __has_include(<linux/sock_diag.h>)
+namespace HistogramMetrics
+{
+    extern Metric & HTTPPoolTCPBufBytesDiskRcv;
+    extern Metric & HTTPPoolTCPBufBytesDiskSnd;
+    extern Metric & HTTPPoolTCPBufBytesStorageRcv;
+    extern Metric & HTTPPoolTCPBufBytesStorageSnd;
+    extern Metric & HTTPPoolTCPBufBytesHTTPRcv;
+    extern Metric & HTTPPoolTCPBufBytesHTTPSnd;
+}
+#endif
 
 namespace DB
 {
@@ -58,62 +71,34 @@ void calculateMaxAndSum(Max & max, Sum & sum, T x)
 
 #if defined(OS_LINUX) && __has_include(<linux/sock_diag.h>)
 
-double percentile(const std::vector<uint32_t> & sorted, double p)
-{
-    size_t n = sorted.size();
-    size_t idx = static_cast<size_t>(std::ceil(p * static_cast<double>(n))) - 1;
-    idx = std::min(idx, n - 1);
-    return static_cast<double>(sorted[idx]);
-}
-
-/// Emit p50/p75/p90/p95 of kernel TCP buffer memory for one connection pool group.
-/// Looks up rmem/wmem from the netlink dump by inode.
-void emitTCPBufferPercentiles(
+/// For one connection pool group, observe each tracked socket's rmem/wmem into the
+/// corresponding histogram and emit per-group total async metrics.
+void emitTCPBufferMetrics(
     const std::vector<uint64_t> & inodes,
     const char * group_name,
+    HistogramMetrics::Metric & rcv_histogram,
+    HistogramMetrics::Metric & snd_histogram,
     const std::unordered_map<uint64_t, TCPSocketMemInfo> & meminfo_by_inode,
     AsynchronousMetricValues & new_values)
 {
-    std::vector<uint32_t> rmem_values;
-    std::vector<uint32_t> wmem_values;
-    rmem_values.reserve(inodes.size());
-    wmem_values.reserve(inodes.size());
+    bool any = false;
+    uint64_t rmem_total = 0;
+    uint64_t wmem_total = 0;
 
     for (uint64_t inode : inodes)
     {
         if (auto it = meminfo_by_inode.find(inode); it != meminfo_by_inode.end())
         {
-            rmem_values.push_back(it->second.rmem);
-            wmem_values.push_back(it->second.wmem);
+            any = true;
+            rcv_histogram.observe(static_cast<double>(it->second.rmem));
+            snd_histogram.observe(static_cast<double>(it->second.wmem));
+            rmem_total += it->second.rmem;
+            wmem_total += it->second.wmem;
         }
     }
 
-    if (rmem_values.empty())
+    if (!any)
         return;
-
-    std::sort(rmem_values.begin(), rmem_values.end());
-    std::sort(wmem_values.begin(), wmem_values.end());
-
-    static constexpr std::array<std::pair<const char *, double>, 4> quantiles = {{
-        {"p50", 0.5}, {"p75", 0.75}, {"p90", 0.9}, {"p95", 0.95}
-    }};
-
-    for (auto [suffix, p] : quantiles)
-    {
-        new_values[fmt::format("HTTPConnectionPool{}TCPRcvBufBytes_{}", group_name, suffix)]
-            = {percentile(rmem_values, p),
-               "Kernel TCP receive buffer memory (sk_rmem_alloc) for HTTP connection pool sockets."};
-        new_values[fmt::format("HTTPConnectionPool{}TCPSndBufBytes_{}", group_name, suffix)]
-            = {percentile(wmem_values, p),
-               "Kernel TCP transmit buffer memory (sk_wmem_alloc) for HTTP connection pool sockets."};
-    }
-
-    uint64_t rmem_total = 0;
-    for (uint32_t v : rmem_values)
-        rmem_total += v;
-    uint64_t wmem_total = 0;
-    for (uint32_t v : wmem_values)
-        wmem_total += v;
 
     new_values[fmt::format("HTTPConnectionPool{}TCPRcvBufTotalBytes", group_name)]
         = {static_cast<double>(rmem_total),
@@ -123,8 +108,8 @@ void emitTCPBufferPercentiles(
            "Total kernel TCP transmit buffer memory (sk_wmem_alloc) across all HTTP connection pool sockets."};
 }
 
-/// Emit p50/p75/p90/p95 metrics for kernel TCP buffer memory of HTTP connection pool sockets.
-/// Queries sock_diag netlink to get per-socket rmem/wmem, then joins with pool inodes.
+/// Observe kernel TCP buffer memory of HTTP connection pool sockets into per-group histograms,
+/// and emit per-group total async metrics. Uses sock_diag netlink to read per-socket rmem/wmem.
 void updateHTTPConnectionPoolTCPBufferMetrics(
     const HTTPConnectionPools::PoolSocketInodes & pool_inodes,
     AsynchronousMetricValues & new_values)
@@ -136,9 +121,15 @@ void updateHTTPConnectionPoolTCPBufferMetrics(
     if (meminfo_by_inode.empty())
         return;
 
-    emitTCPBufferPercentiles(pool_inodes.disk, "Disk", meminfo_by_inode, new_values);
-    emitTCPBufferPercentiles(pool_inodes.storage, "Storage", meminfo_by_inode, new_values);
-    emitTCPBufferPercentiles(pool_inodes.http, "HTTP", meminfo_by_inode, new_values);
+    emitTCPBufferMetrics(pool_inodes.disk, "Disk",
+        HistogramMetrics::HTTPPoolTCPBufBytesDiskRcv, HistogramMetrics::HTTPPoolTCPBufBytesDiskSnd,
+        meminfo_by_inode, new_values);
+    emitTCPBufferMetrics(pool_inodes.storage, "Storage",
+        HistogramMetrics::HTTPPoolTCPBufBytesStorageRcv, HistogramMetrics::HTTPPoolTCPBufBytesStorageSnd,
+        meminfo_by_inode, new_values);
+    emitTCPBufferMetrics(pool_inodes.http, "HTTP",
+        HistogramMetrics::HTTPPoolTCPBufBytesHTTPRcv, HistogramMetrics::HTTPPoolTCPBufBytesHTTPSnd,
+        meminfo_by_inode, new_values);
 }
 
 #endif

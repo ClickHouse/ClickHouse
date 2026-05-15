@@ -40,9 +40,7 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 This example looks at historical data for a specific stock and uses the `lagInFrame` function to calculate a day-to-day delta and percentage change in the closing price of the stock.
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE TABLE stock_prices
 (
     `date`   Date,
@@ -62,7 +60,7 @@ INSERT INTO stock_prices FORMAT Values
     ('2024-06-07', 119.77, 121.69, 118.02, 120.89, 412386000);
 ```
 
-```sql
+```sql title="Query"
 SELECT
     date,
     close,
@@ -75,9 +73,7 @@ FROM stock_prices
 ORDER BY date DESC
 ```
 
-Result:
-
-```response
+```response title="Response"
    ┌───────date─┬──close─┬─previous_day_close─┬─delta─┬─percent_change─┐
 1. │ 2024-06-07 │ 120.89 │                121 │ -0.11 │          -0.09 │
 2. │ 2024-06-06 │    121 │             122.44 │ -1.44 │          -1.18 │

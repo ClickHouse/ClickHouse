@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <DataTypes/DataTypesNumber.h>
+#include <chrono>
 #include <csignal>
 #include <filesystem>
+#include <limits>
 #include <utility>
 #include <unistd.h>
 #include <Access/AccessControl.h>
@@ -80,6 +82,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/ThreadPool.h>
+#include <Common/CurrentThread.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/getRandomASCIIString.h>
@@ -138,6 +141,7 @@ namespace Setting
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds receive_timeout;
+    extern const SettingsSeconds max_execution_time;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
@@ -170,6 +174,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int DELTA_KERNEL_ERROR;
     extern const int FAULT_INJECTED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace FailPoints
@@ -2104,8 +2109,14 @@ void InterpreterSystemQuery::syncMerges()
     DynamicDelay poll_delay;
     poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
 
-    while (true)
+    const auto max_execution_time_ms = getContext()->getSettingsRef()[Setting::max_execution_time].totalMilliseconds();
+    const auto timeout = max_execution_time_ms == 0 ? std::numeric_limits<int32_t>::max() : max_execution_time_ms;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout);
+    while (std::chrono::steady_clock::now() < deadline)
     {
+        if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+            throw DB::Exception(DB::ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
         merge_tree.triggerBackgroundOperations();
 
         ActiveDataPartSet active_set;
@@ -2118,6 +2129,8 @@ void InterpreterSystemQuery::syncMerges()
         std::this_thread::sleep_for(std::chrono::milliseconds(poll_delay.getCurrentDelay()));
         poll_delay.up();
     }
+
+    throw DB::Exception(DB::ErrorCodes::TIMEOUT_EXCEEDED, "SYNC MERGES {}: command timed out. See the 'max_execution_time' setting", table_id.getNameForLogs());
 }
 
 void InterpreterSystemQuery::loadPrimaryKeys()

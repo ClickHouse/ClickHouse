@@ -44,9 +44,7 @@ This table contains profiling on processors level (that you can find in [`EXPLAI
 
 ## Example {#example}
 
-Query:
-
-```sql
+```sql title="Query"
 EXPLAIN PIPELINE
 SELECT sleep(1)
 ┌─explain─────────────────────────┐
@@ -75,9 +73,7 @@ WHERE query_id = 'feb5ed16-1c24-4227-aa54-78c02b3b27d4'
 ORDER BY name ASC
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─name────────────────────┬─elapsed_us─┬─input_wait_elapsed_us─┬─output_wait_elapsed_us─┐
 │ ExpressionTransform     │    1000497 │                  2823 │                    197 │
 │ LazyOutputFormat        │         36 │               1002188 │                      0 │

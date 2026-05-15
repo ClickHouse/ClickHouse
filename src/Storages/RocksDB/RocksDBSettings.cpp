@@ -18,21 +18,8 @@ namespace ErrorCodes
     DECLARE(Bool, optimize_for_bulk_insert, true, "Table is optimized for bulk insertions (insert pipeline will create SST files and import to rocksdb database instead of writing to memtables)", 0) \
     DECLARE(UInt64, bulk_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, "Size of block for bulk insert, if it's smaller than query setting min_insert_block_size_rows then it will be overridden by min_insert_block_size_rows", 0) \
 
-DECLARE_SETTINGS_TRAITS(RocksDBSettingsTraits, LIST_OF_ROCKSDB_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(RocksDBSettingsTraits, LIST_OF_ROCKSDB_SETTINGS)
-
-struct RocksDBSettingsImpl : public BaseSettings<RocksDBSettingsTraits>
-{
-};
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) RocksDBSettings##TYPE NAME = &RocksDBSettingsImpl ::NAME;
-
-namespace RocksDBSetting
-{
-LIST_OF_ROCKSDB_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(RocksDBSettingsTraits, LIST_OF_ROCKSDB_SETTINGS, ROCKSDB_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(RocksDBSettingsTraits, LIST_OF_ROCKSDB_SETTINGS, RocksDBSettings, RocksDBSetting)
 
 
 RocksDBSettings::RocksDBSettings() : impl(std::make_unique<RocksDBSettingsImpl>())

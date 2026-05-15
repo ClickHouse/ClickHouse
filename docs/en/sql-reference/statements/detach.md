@@ -32,16 +32,12 @@ The `SYNC` modifier executes the action without delay.
 
 Creating a table:
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE TABLE test ENGINE = MergeTree ORDER BY () AS SELECT * FROM numbers(10);
 SELECT * FROM test;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─number─┐
 │      0 │
 │      1 │
@@ -58,16 +54,12 @@ Result:
 
 Detaching the table:
 
-Query:
-
-```sql
+```sql title="Query"
 DETACH TABLE test;
 SELECT * FROM test;
 ```
 
-Result:
-
-```text
+```text title="Response"
 Received exception from server (version 21.4.1):
 Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.test does not exist.
 ```

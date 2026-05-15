@@ -24,20 +24,18 @@ Also, `m[k]` scans the map, i.e. the runtime of the operation is linear in the s
 
 Create a table with a column of type map:
 
-```sql
+```sql title="Query"
 CREATE TABLE tab (m Map(String, UInt64)) ENGINE=Memory;
 INSERT INTO tab VALUES ({'key1':1, 'key2':10}), ({'key1':2,'key2':20}), ({'key1':3,'key2':30});
 ```
 
 To select `key2` values:
 
-```sql
+```sql title="Query"
 SELECT m['key2'] FROM tab;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─arrayElement(m, 'key2')─┐
 │                      10 │
 │                      20 │
@@ -48,15 +46,13 @@ Result:
 If the requested key `k` is not contained in the map, `m[k]` returns the value type's default value, e.g. `0` for integer types and `''` for string types.
 To check whether a key exists in a map, you can use function [mapContains](/sql-reference/functions/tuple-map-functions#mapContainsKey).
 
-```sql
+```sql title="Query"
 CREATE TABLE tab (m Map(String, UInt64)) ENGINE=Memory;
 INSERT INTO tab VALUES ({'key1':100}), ({});
 SELECT m['key1'] FROM tab;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─arrayElement(m, 'key1')─┐
 │                     100 │
 │                       0 │
@@ -69,15 +65,11 @@ Values of type `Tuple()` can be cast to values of type `Map()` using function [C
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT CAST(([1, 2, 3], ['Ready', 'Steady', 'Go']), 'Map(UInt8, String)') AS map;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─map───────────────────────────┐
 │ {1:'Ready',2:'Steady',3:'Go'} │
 └───────────────────────────────┘
@@ -89,9 +81,7 @@ To avoid reading the entire map, you can use subcolumns `keys` and `values` in s
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE TABLE tab (m Map(String, UInt64)) ENGINE = Memory;
 INSERT INTO tab VALUES (map('key1', 1, 'key2', 2, 'key3', 3));
 
@@ -99,9 +89,7 @@ SELECT m.keys FROM tab; --   same as mapKeys(m)
 SELECT m.values FROM tab; -- same as mapValues(m)
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─m.keys─────────────────┐
 │ ['key1','key2','key3'] │
 └────────────────────────┘

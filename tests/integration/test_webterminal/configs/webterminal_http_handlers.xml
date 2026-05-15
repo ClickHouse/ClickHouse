@@ -1,0 +1,40 @@
+<clickhouse>
+    <allow_experimental_webterminal>true</allow_experimental_webterminal>
+
+    <!-- Explicit `http_handlers` block (no `defaults`). This exercises the
+         config-mode routing for both `webterminal` and the JS asset handler,
+         which `/webterminal` depends on for xterm.js, xterm.css, and the
+         xterm addons. -->
+    <http_handlers>
+        <rule>
+            <url>/webterminal</url>
+            <handler>
+                <type>webterminal</type>
+            </handler>
+        </rule>
+        <rule>
+            <url>/js/xterm.min.js</url>
+            <handler>
+                <type>js</type>
+            </handler>
+        </rule>
+        <rule>
+            <url>/js/xterm.min.css</url>
+            <handler>
+                <type>js</type>
+            </handler>
+        </rule>
+        <rule>
+            <url>/js/addon-fit.min.js</url>
+            <handler>
+                <type>js</type>
+            </handler>
+        </rule>
+        <rule>
+            <url>/js/addon-web-links.min.js</url>
+            <handler>
+                <type>js</type>
+            </handler>
+        </rule>
+    </http_handlers>
+</clickhouse>

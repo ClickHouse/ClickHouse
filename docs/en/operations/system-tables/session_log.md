@@ -44,15 +44,11 @@ Contains information about all successful and failed login and logout events.
 
 ## Example {#example}
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT * FROM system.session_log LIMIT 1 FORMAT Vertical;
 ```
 
-Result:
-
-```text
+```text title="Response"
 Row 1:
 ──────
 hostname:                clickhouse.eu-central1.internal

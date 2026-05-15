@@ -713,9 +713,15 @@ public:
                 return false;
             }
         }
-        else if (element.isUInt64() && insert_settings.allow_type_conversion)
+        else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
         {
-            value = element.getUInt64();
+            if (element.isInt64() && (element.getInt64() < 0))
+            {
+                error = fmt::format("cannot convert negative integer value {} to DateTime", element.getInt64());
+                return false;
+            }
+
+            value = element.isInt64() ? element.getInt64() : element.getUInt64();
         }
         else
         {
@@ -778,9 +784,9 @@ public:
                 return false;
             }
         }
-        else if (element.isUInt64() && insert_settings.allow_type_conversion)
+        else if (insert_settings.allow_type_conversion && (element.isInt64() || element.isUInt64()))
         {
-            value = element.getUInt64();
+            value = element.isInt64() ? element.getInt64() : element.getUInt64();
         }
         else
         {

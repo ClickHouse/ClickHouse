@@ -63,22 +63,8 @@ namespace ErrorCodes
     DECLARE(UInt64, overcommit_eviction_evict_step, 10 * 1_MiB, "Eviction step in bytes for overcommit eviction policy. Used for keep_free_space_*_ratio settings", 0) \
     DECLARE(Double, check_cache_probability, 0.001, "Works only for debug or sanitizer build. Checks cache correctness by going through all cache and checking state of each cache element", 0) \
 
-DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS)
-
-struct FileCacheSettingsImpl : public BaseSettings<FileCacheSettingsTraits>
-{
-};
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    FileCacheSettings##TYPE NAME = &FileCacheSettingsImpl ::NAME;
-
-namespace FileCacheSetting
-{
-LIST_OF_FILE_CACHE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FILE_CACHE_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FileCacheSettings, FileCacheSetting)
 
 FileCacheSettings::FileCacheSettings() : impl(std::make_unique<FileCacheSettingsImpl>())
 {

@@ -20,7 +20,7 @@ but prints two header rows: one with column names, the other with types.
 
 ## Example usage {#example-usage}
 
-```sql
+```sql title="Query"
 CREATE TABLE example (
     name String,
     value Int32

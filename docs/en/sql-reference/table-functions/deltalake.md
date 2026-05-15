@@ -63,7 +63,7 @@ LIMIT 2
 Consider a table in S3 storage at `s3://ch-docs-s3-bucket/people_10k/`.
 To insert data into the table, first enable the experimental feature:
 
-```sql
+```sql title="Query"
 SET allow_experimental_delta_lake_writes=1
 ```
 

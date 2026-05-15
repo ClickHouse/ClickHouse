@@ -38,9 +38,7 @@ It is possible to find `NULL` values in a column by using `null` subcolumn witho
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO nullable VALUES (1) (NULL) (2) (NULL);
@@ -48,9 +46,7 @@ INSERT INTO nullable VALUES (1) (NULL) (2) (NULL);
 SELECT n.null FROM nullable;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─n.null─┐
 │      0 │
 │      1 │

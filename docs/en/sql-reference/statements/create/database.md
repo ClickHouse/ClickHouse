@@ -44,16 +44,12 @@ CREATE DATABASE db_name ENGINE = engine(...) COMMENT 'Comment'
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE DATABASE db_comment ENGINE = Memory COMMENT 'The temporary database';
 SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─name───────┬─comment────────────────┐
 │ db_comment │ The temporary database │
 └────────────┴────────────────────────┘

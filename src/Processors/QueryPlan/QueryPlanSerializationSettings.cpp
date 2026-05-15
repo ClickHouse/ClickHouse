@@ -116,22 +116,8 @@ namespace DB
 
 // clang-format on
 
-DECLARE_SETTINGS_TRAITS(QueryPlanSerializationSettingsTraits, PLAN_SERIALIZATION_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(QueryPlanSerializationSettingsTraits, PLAN_SERIALIZATION_SETTINGS)
-
-struct QueryPlanSerializationSettingsImpl : public BaseSettings<QueryPlanSerializationSettingsTraits>
-{
-};
-
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) QueryPlanSerializationSettings##TYPE NAME = &QueryPlanSerializationSettingsImpl ::NAME;
-
-namespace QueryPlanSerializationSetting
-{
-PLAN_SERIALIZATION_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(QueryPlanSerializationSettingsTraits, PLAN_SERIALIZATION_SETTINGS, QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(QueryPlanSerializationSettingsTraits, PLAN_SERIALIZATION_SETTINGS, QueryPlanSerializationSettings, QueryPlanSerializationSetting)
 
 
 QueryPlanSerializationSettings::QueryPlanSerializationSettings() : impl(std::make_unique<QueryPlanSerializationSettingsImpl>())
