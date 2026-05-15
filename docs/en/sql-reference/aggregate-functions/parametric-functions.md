@@ -7,8 +7,6 @@ title: 'Parametric Aggregate Functions'
 doc_type: 'reference'
 ---
 
-# Parametric aggregate functions
-
 Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters – constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
 
 ## histogram {#histogram}

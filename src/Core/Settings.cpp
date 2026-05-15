@@ -4214,6 +4214,18 @@ Possible values:
     DECLARE(Bool, allow_drop_detached, false, R"(
 Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
 )", 0) \
+    DECLARE(Bool, dynamic_disk_allow_from_env, false, R"(
+Allow using `from_env` substitutions in the dynamic disk configuration (i.e. in the `disk()` function arguments).
+Disabled by default to prevent users from reading arbitrary environment variables when defining table storage.
+)", 0) \
+    DECLARE(Bool, dynamic_disk_allow_include, false, R"(
+Allow using `include` in the dynamic disk configuration (i.e. in the `disk()` function arguments).
+Disabled by default.
+)", 0) \
+    DECLARE(Bool, dynamic_disk_allow_from_zk, false, R"(
+Allow using `from_zk` substitutions in the dynamic disk configuration (i.e. in the `disk()` function arguments).
+Disabled by default.
+)", 0) \
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
     \
     DECLARE(UInt64, max_table_size_to_drop, default_max_size_to_drop, R"(
@@ -4425,6 +4437,16 @@ See also:
 )", 0) \
     DECLARE(Bool, optimize_trivial_approximate_count_query, false, R"(
 Use an approximate value for trivial count optimization of storages that support such estimation, for example, EmbeddedRocksDB.
+
+Possible values:
+
+   - 0 — Optimization disabled.
+   - 1 — Optimization enabled.
+)", 0) \
+    DECLARE(Bool, optimize_trivial_group_by_limit_query, true, R"(
+Enables or disables the optimization of a trivial query `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` (with no aggregate functions in the projection, no `HAVING`/`ORDER BY`/`LIMIT BY`/window clauses, and no `GROUP BY` modifiers) by setting `max_rows_to_group_by = n + offset` with `group_by_overflow_mode = 'any'`. The aggregation stops once `n + offset` distinct keys are produced.
+
+The optimization is suppressed when the user has explicitly set `group_by_overflow_mode` to a non-`any` value (to preserve their explicit `throw`/`break` contract), and when the user has already set a tighter `max_rows_to_group_by` (the optimization would be a no-op).
 
 Possible values:
 
@@ -4706,6 +4728,9 @@ Maximum parser backtracking (how many times it tries different alternatives in t
     DECLARE(UInt64, max_recursive_cte_evaluation_depth, DBMS_RECURSIVE_CTE_MAX_EVALUATION_DEPTH, R"(
 Maximum limit on recursive CTE evaluation depth
 )", 0) \
+    DECLARE(UInt64, recursive_cte_max_steps_in_type_inference, 10, R"(
+Maximum number of iterations for inferring column types in recursive CTEs. Column types are determined by iteratively applying `getLeastSupertype` across the non-recursive and recursive sides of the UNION ALL until convergence. Set to 0 to disable type widening and use the types from the non-recursive part only.
+)", 0) \
     DECLARE(Bool, allow_settings_after_format_in_insert, false, R"(
 Control whether `SETTINGS` after `FORMAT` in `INSERT` queries is allowed or not. It is not recommended to use this, since this may interpret part of `SETTINGS` as values.
 
@@ -4953,6 +4978,16 @@ Result
 │ QueryMemoryLimitExceeded │     0 │ Number of times when memory limit exceeded for query. │
 └──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
 ```
+)", 0) \
+    DECLARE(Bool, system_metric_log_show_zero_values_in_histograms, false, R"(
+Controls whether zero-valued histogram data is written to the `histograms` nested column of `system.metric_log`.
+
+By default, histograms whose total observation `count` is zero are skipped, and within each emitted histogram, bucket entries with no observations are also omitted from the `histogram` map. Enable this to write every histogram and every bucket regardless of count — useful for monitoring systems that require every metric to appear at every checkpoint.
+
+Possible values:
+
+- 0 — Disabled. Histograms with `count = 0` are not emitted; emitted histograms include only buckets that received at least one observation.
+- 1 — Enabled. All histograms are written, and every bucket boundary appears in `histogram`.
 )", 0) \
     DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32", R"(
 Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32` or `date2String`. All modern mappings (`decimal`, `datetime64`, `date2Date32`) are enabled by default.
@@ -5912,6 +5947,15 @@ Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enabl
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
 :::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
+    DECLARE(Bool, query_plan_top_k_through_join, true, R"(
+Toggles a query-plan-level optimization which pushes `ORDER BY ... LIMIT n` down through a join when the sort key only references columns from the side preserved by the join (LEFT/RIGHT). Restricts how many rows the preserved-side input must produce before joining.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
 Possible values:
 
@@ -7026,7 +7070,7 @@ Allows using Dynamic type in JOIN keys. Added for compatibility. It's not recomm
     DECLARE(Bool, cast_string_to_variant_use_inference, true, R"(
 Use types inference during String to Variant conversion.
 )", 0) \
-    DECLARE(DateTimeInputFormat, cast_string_to_date_time_mode, "basic", R"(
+    DECLARE(DateTimeInputFormat, cast_string_to_date_time_mode, "best_effort", R"(
 Allows choosing a parser of the text representation of date and time during cast from String.
 
 Possible values:
@@ -7224,10 +7268,6 @@ Possible values:
 **Additional Info**
 
 This options will produce different results depending on the settings used.
-
-:::note
-This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](/operations/settings/settings#max_parallel_replicas) for more details.
-:::
 
 ### Parallel processing using `SAMPLE` key
 
@@ -7696,15 +7736,24 @@ Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
-    DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
-If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), automatic spilling is disabled. It prevents read in order through join optimization.
+    DECLARE(UInt64, shared_merge_tree_sequential_consistency_initial_parts_update_backoff_ms, 50, R"(
+Initial backoff in milliseconds for parts update when using `select_sequential_consistency` with `SharedMergeTree`. Only available in ClickHouse Cloud.
 )", 0) \
-    DECLARE(Double, max_bytes_ratio_before_external_join, 0., R"(
+    DECLARE(UInt64, shared_merge_tree_sequential_consistency_max_parts_update_backoff_ms, 1000, R"(
+Max backoff in milliseconds for parts update when using `select_sequential_consistency` with `SharedMergeTree`. Only available in ClickHouse Cloud.
+)", 0) \
+    DECLARE(UInt64, shared_merge_tree_sequential_consistency_parts_update_max_retries, 10, R"(
+Max retries for parts update when using `select_sequential_consistency` with `SharedMergeTree`. Only available in ClickHouse Cloud.
+)", 0) \
+    DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
+If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`); set both to `0` to fully disable automatic spilling. It prevents read in order through join optimization.
+)", 0) \
+    DECLARE(Double, max_bytes_ratio_before_external_join, 0.5, R"(
 The ratio of available memory that is allowed for `JOIN`. Once reached, the hash join will be converted to grace hash join to spill the right-side data to disk.
 
 For example, if set to `0.6`, `JOIN` will allow using `60%` of the available memory (to server/user/merges) for the right-side hash table at the beginning of the execution; after that, it starts spilling to disk.
 
-If both `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` are set, the smaller resulting threshold is used. If the ratio is `0` (default), only the absolute setting applies.
+If both `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` are set, the smaller resulting threshold is used. If the ratio is `0`, only the absolute setting applies.
 
 Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto` and a temporary data path is configured.
 )", 0) \
@@ -7733,6 +7782,9 @@ Enable experimental hash functions
 Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine. Possible values:
 - 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
 - 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_unique_key, false, R"(
+Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
@@ -8345,8 +8397,9 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     /// we should remove it from settings_changed_by_compatibility_setting,
     /// otherwise the next time we will change compatibility setting
     /// this setting will be changed too (and we don't want it).
-    else if (settings_changed_by_compatibility_setting.contains(name))
-        settings_changed_by_compatibility_setting.erase(name);
+    /// Resolve aliases so the lookup matches the canonical names stored in the set.
+    else if (auto final_name = SettingsTraits::resolveName(name); settings_changed_by_compatibility_setting.contains(final_name))
+        settings_changed_by_compatibility_setting.erase(final_name);
 
     BaseSettings::set(name, value);
 }
