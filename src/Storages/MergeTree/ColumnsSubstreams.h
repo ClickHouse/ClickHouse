@@ -49,9 +49,9 @@ public:
     /// Check that all substream names have valid prefixes matching their column names.
     /// Every substream for a column must start with escapeForFileName(column_name) (or
     /// escapeForFileName(Nested::extractTableName(column_name)) for shared Nested offsets),
-    /// followed by '.' or end-of-string.
-    /// Returns the first invalid substream name, or empty string if all are valid.
-    String findInvalidSubstreamName() const;
+    /// followed by '.', '%2E', or end-of-string.
+    /// Returns {invalid_substream, column_name} pair, or empty strings if all are valid.
+    std::pair<String, String> findInvalidSubstreamName() const;
 
     /// Merge 2 sets of columns substreams with specified columns order.
     /// If some column exists in both left and right we keep only substreams from the left.

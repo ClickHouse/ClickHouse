@@ -2081,17 +2081,21 @@ void IMergeTreeDataPart::loadColumnsSubstreams()
         /// as if it didn't exist.
         if (part_type == MergeTreeDataPartType::Wide)
         {
-            auto invalid_substream = columns_substreams.findInvalidSubstreamName();
+            auto [invalid_substream, invalid_column] = columns_substreams.findInvalidSubstreamName();
             if (!invalid_substream.empty())
             {
                 LOG_WARNING(
                     storage.log,
-                    "Ignoring corrupted {} in part {}: substream '{}' has invalid prefix for its column. "
+                    "Ignoring corrupted {} in part {}: substream '{}' has invalid prefix for column '{}' "
+                    "(expected prefix '{}' or '{}' followed by '.' or '%2E'). "
                     "The file was likely corrupted by a bug in column rename. "
                     "The part will work correctly without this file.",
                     COLUMNS_SUBSTREAMS_FILE_NAME,
                     name,
-                    invalid_substream);
+                    invalid_substream,
+                    invalid_column,
+                    escapeForFileName(invalid_column),
+                    escapeForFileName(Nested::extractTableName(invalid_column)));
 
                 columns_substreams = {};
                 return;
