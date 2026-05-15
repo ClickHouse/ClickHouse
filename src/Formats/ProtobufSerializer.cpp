@@ -2115,8 +2115,12 @@ namespace
         void readRow(size_t row_num) override
         {
             auto & column_nullable = assert_cast<ColumnNullable &>(borrowColumnRef(column));
-            auto & nested_column = column_nullable.getNestedColumn();
-            auto & null_map = column_nullable.getNullMapData();
+            /// The nested column and null-map column are stored inside `ColumnNullable` as `WrappedPtr`s,
+            /// and the leaf serializer holds its own `ColumnPtr` to the nested column, so `use_count > 1`.
+            /// Bypass the `assumeMutableRef` assertion by borrowing through the column pointers directly.
+            auto & nested_column = borrowColumnRef(column_nullable.getNestedColumnPtr());
+            auto & null_map_column = assert_cast<ColumnUInt8 &>(borrowColumnRef(column_nullable.getNullMapColumnPtr()));
+            auto & null_map = null_map_column.getData();
             size_t old_size = null_map.size();
 
             nested_serializer->readRow(row_num);
@@ -2147,7 +2151,11 @@ namespace
             auto & column_nullable = assert_cast<ColumnNullable &>(borrowColumnRef(column));
             if (row_num < column_nullable.size())
                 return;
-            column_nullable.insertDefault();
+            /// `ColumnNullable::insertDefault` goes through `getNestedColumn()` non-const, which dereferences
+            /// the nested `WrappedPtr` and triggers the `use_count == 1` assertion; the nested serializer
+            /// holds an additional `ColumnPtr` to the same column, so we borrow through pointers instead.
+            borrowColumnRef(column_nullable.getNestedColumnPtr()).insertDefault();
+            assert_cast<ColumnUInt8 &>(borrowColumnRef(column_nullable.getNullMapColumnPtr())).getData().push_back(true);
         }
 
         void insertNestedDefaults(size_t row_num)
@@ -2155,8 +2163,8 @@ namespace
             auto & column_nullable = assert_cast<ColumnNullable &>(borrowColumnRef(column));
             if (row_num < column_nullable.size())
                 return;
-            column_nullable.getNestedColumn().insertDefault();
-            column_nullable.getNullMapData().push_back(false);
+            borrowColumnRef(column_nullable.getNestedColumnPtr()).insertDefault();
+            assert_cast<ColumnUInt8 &>(borrowColumnRef(column_nullable.getNullMapColumnPtr())).getData().push_back(false);
         }
 
         void describeTree(WriteBuffer & out, size_t indent) const override
