@@ -11,7 +11,10 @@ namespace Setting
 
 FunctionPtr FunctionTuple::create(DB::ContextPtr context)
 {
-    return std::make_shared<FunctionTuple>(context->getSettingsRef()[Setting::enable_named_columns_in_function_tuple]);
+    return std::make_shared<FunctionTuple>(
+        FunctionTuple::name,
+        context->getSettingsRef()[Setting::enable_named_columns_in_function_tuple],
+        false);
 }
 
 REGISTER_FUNCTION(Tuple)
@@ -28,6 +31,20 @@ The function implements the operator `(x, y, ...)`.
         .syntax = "tuple([t1[, t2[ ...]])",
         .examples{{"typical", "SELECT tuple(1, 2)", "(1,2)"}},
         .introduced_in = {1, 1},
+        .category = FunctionDocumentation::Category::Tuple});
+
+    factory.registerFunction(
+        "namedTuple",
+        [](ContextPtr) { return std::make_shared<FunctionTuple>("namedTuple", true, true); },
+        FunctionDocumentation{
+        .description = R"(
+Returns a named `Tuple` by grouping input arguments.
+
+The argument names are used as tuple element names. The function throws an exception if any name is duplicated or cannot be used as an unquoted identifier. Unlike `tuple`, this function does not depend on `enable_named_columns_in_function_tuple`.
+)",
+        .syntax = "namedTuple([t1[, t2[ ...]]])",
+        .examples{{"typical", "SELECT toJSONString(namedTuple(1 AS a, 'x' AS b))", R"({"a":1,"b":"x"})"}},
+        .introduced_in = {26, 6},
         .category = FunctionDocumentation::Category::Tuple});
 }
 

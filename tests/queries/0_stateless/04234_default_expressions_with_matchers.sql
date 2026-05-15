@@ -5,7 +5,8 @@ DROP TABLE IF EXISTS default_expr_matchers_default_except;
 DROP TABLE IF EXISTS default_expr_matchers_index_one;
 DROP TABLE IF EXISTS default_expr_matchers_index_tuple;
 
-SET enable_named_columns_in_function_tuple = 1;
+SELECT toJSONString(namedTuple(1 AS a, 'x' AS c));
+SELECT namedTuple(1, 2); -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE default_expr_matchers_alias
 (
@@ -21,7 +22,7 @@ CREATE TABLE default_expr_matchers_alias_tuple
 (
     a UInt8,
     c String,
-    b String ALIAS toJSONString(tuple(*))
+    b String ALIAS toJSONString(namedTuple(*))
 )
 ENGINE = Memory;
 
@@ -33,7 +34,7 @@ CREATE TABLE default_expr_matchers_alias_columns
     a UInt8,
     c String,
     d UInt8,
-    b String ALIAS toJSONString(tuple(COLUMNS('^(a|c)$')))
+    b String ALIAS toJSONString(namedTuple(COLUMNS('^(a|c)$')))
 )
 ENGINE = Memory;
 
@@ -51,14 +52,14 @@ ENGINE = Memory; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 CREATE TABLE default_expr_matchers_self
 (
     a UInt8,
-    b String DEFAULT toJSONString(tuple(*))
+    b String DEFAULT toJSONString(namedTuple(*))
 )
 ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
 
 CREATE TABLE default_expr_matchers_default_except
 (
     a UInt8,
-    b String DEFAULT toJSONString(tuple(* EXCEPT b))
+    b String DEFAULT toJSONString(namedTuple(* EXCEPT b))
 )
 ENGINE = Memory;
 
@@ -86,7 +87,7 @@ CREATE TABLE default_expr_matchers_index_tuple
 (
     a UInt8,
     b UInt8,
-    INDEX idx(toJSONString(tuple(*))) TYPE set(0) GRANULARITY 1
+    INDEX idx(toJSONString(namedTuple(*))) TYPE set(0) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY tuple();
