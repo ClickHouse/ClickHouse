@@ -37,7 +37,9 @@
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Node.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <boost/algorithm/string/case_conv.hpp>
 #include <filesystem>
+#include <unordered_set>
 
 namespace fs = std::filesystem;
 
@@ -2098,25 +2100,131 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         }
     }
 
-    /// (c) Top-level keys originating from the `include_from` source file.
+    /// (c) Top-level keys that act as substitution sources for `<elem incl="X"/>` references.
     /// `ConfigProcessor` merges every `config.d/*` file into the main config, so when a user
     /// keeps their substitution source under `config.d/`, its top-level tags (referenced
     /// later by `<elem incl="name"/>`) leak into the merged config as unrecognized keys.
     /// These are substitution sources, not real config sections, so exempt them.
-    if (config.has("include_from"))
+    ///
+    /// The `<include_from>` directive may live in either the main config or the users config
+    /// (or any `*.d/*.xml` fragment merged into them). Scan all standard config files for two
+    /// independent signals and treat both as references:
+    ///   1. `<elem incl="X"/>` attributes anywhere — `X` is the substitution source key.
+    ///   2. `<include_from>` element at the root — its target file's top-level keys are all
+    ///      potential substitution sources, even if not yet referenced.
     {
-        String include_from_path = config.getString("include_from");
-        if (!include_from_path.empty() && fs::exists(include_from_path) && fs::is_regular_file(include_from_path))
+        Poco::XML::DOMParser dom_parser;
+        std::unordered_set<std::string> include_from_paths;
+
+        auto walk_xml = [&](Poco::XML::Node * node, auto & self) -> void
         {
-            Poco::XML::DOMParser dom_parser;
-            Poco::AutoPtr<Poco::XML::Document> include_from_doc = ConfigProcessor::parseConfig(include_from_path, dom_parser);
-            if (auto * root = include_from_doc->documentElement())
+            if (!node)
+                return;
+            if (node->nodeType() == Poco::XML::Node::ELEMENT_NODE)
             {
-                for (auto * child = root->firstChild(); child; child = child->nextSibling())
+                auto * elem = static_cast<Poco::XML::Element *>(node);
+                if (elem->hasAttribute("incl"))
                 {
-                    if (child->nodeType() == Poco::XML::Node::ELEMENT_NODE)
-                        referenced_keys.insert(child->nodeName());
+                    String value = elem->getAttribute("incl");
+                    if (!value.empty())
+                        referenced_keys.insert(value);
                 }
+            }
+            for (auto * child = node->firstChild(); child; child = child->nextSibling())
+                self(child, self);
+        };
+
+        auto scan_file = [&](const fs::path & p)
+        {
+            if (!fs::exists(p) || !fs::is_regular_file(p))
+                return;
+            try
+            {
+                Poco::AutoPtr<Poco::XML::Document> doc = ConfigProcessor::parseConfig(p.string(), dom_parser);
+                if (!doc)
+                    return;
+                walk_xml(doc.get(), walk_xml);
+                /// Pick up a top-level `<include_from>` so we can later parse the source.
+                if (auto * root = doc->documentElement())
+                {
+                    for (auto * child = root->firstChild(); child; child = child->nextSibling())
+                    {
+                        if (child->nodeType() == Poco::XML::Node::ELEMENT_NODE
+                            && child->nodeName() == "include_from")
+                        {
+                            String src = child->innerText();
+                            if (!src.empty())
+                                include_from_paths.insert(std::move(src));
+                        }
+                    }
+                }
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+                /// Best-effort scan: ignore parse failures (broken or non-config XML in the dir).
+            }
+        };
+
+        auto scan_dir = [&](const fs::path & dir)
+        {
+            if (!fs::exists(dir) || !fs::is_directory(dir))
+                return;
+            for (const auto & entry : fs::directory_iterator(dir))
+            {
+                if (!entry.is_regular_file())
+                    continue;
+                String ext = entry.path().extension().string();
+                boost::algorithm::to_lower(ext);
+                if (ext == ".xml" || ext == ".yaml" || ext == ".yml")
+                    scan_file(entry.path());
+            }
+        };
+
+        fs::path config_dir = fs::path(config_path).remove_filename();
+        scan_file(config_path);
+        scan_dir(config_dir / "config.d");
+        scan_dir(config_dir / "users.d");
+
+        /// Resolve the users config path (mirrors AccessControl::addUsersConfigStorage).
+        String users_config_value = config.getString("users_config", "");
+        fs::path users_path;
+        if (users_config_value.empty())
+        {
+            users_path = config_dir / "users.xml";
+        }
+        else
+        {
+            users_path = users_config_value;
+            if (users_path.is_relative() && fs::exists(config_dir / users_path))
+                users_path = config_dir / users_path;
+        }
+        if (users_path != fs::path(config_path))
+        {
+            scan_file(users_path);
+            fs::path users_parent = users_path.parent_path();
+            if (users_parent != config_dir)
+                scan_dir(users_parent / "users.d");
+        }
+
+        for (const auto & include_from_path : include_from_paths)
+        {
+            if (!fs::exists(include_from_path) || !fs::is_regular_file(include_from_path))
+                continue;
+            try
+            {
+                Poco::AutoPtr<Poco::XML::Document> include_from_doc = ConfigProcessor::parseConfig(include_from_path, dom_parser);
+                if (auto * root = include_from_doc->documentElement())
+                {
+                    for (auto * child = root->firstChild(); child; child = child->nextSibling())
+                    {
+                        if (child->nodeType() == Poco::XML::Node::ELEMENT_NODE)
+                            referenced_keys.insert(child->nodeName());
+                    }
+                }
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+                /// Best-effort: tolerate a missing or malformed include source.
             }
         }
     }
