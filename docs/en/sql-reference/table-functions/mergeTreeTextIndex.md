@@ -8,6 +8,8 @@ title: 'mergeTreeTextIndex'
 doc_type: 'reference'
 ---
 
+# mergeTreeTextIndex Table Function
+
 Represents the dictionary of a text index in MergeTree tables.
 Returns tokens with their posting list metadata.
 It can be used for introspection.

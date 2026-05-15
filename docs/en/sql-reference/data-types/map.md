@@ -7,6 +7,8 @@ title: 'Map(K, V)'
 doc_type: 'reference'
 ---
 
+# Map(K, V)
+
 Data type `Map(K, V)` stores key-value pairs.
 
 Unlike other databases, maps are not unique in ClickHouse, i.e. a map can contain two elements with the same key.
