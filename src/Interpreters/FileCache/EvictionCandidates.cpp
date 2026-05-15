@@ -2,6 +2,7 @@
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheMetrics.h>
 #include <Interpreters/FileCache/Metadata.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
@@ -331,37 +332,54 @@ void EvictionCandidates::evict()
                 ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
                 ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
 
-                if (emit_aggregate_metrics)
-                {
-                    FileCacheQueueEntryType queue_type = FileCacheQueueEntryType::None;
-                    if (iterator)
-                    {
-                        /// Use the nested iterator so SLRU reports protected/probationary,
-                        /// not the wrapping SplitCache type.
-                        queue_type = iterator->getNestedOrThis()->getType();
-                    }
-                    else
-                    {
-                        /// Dynamic-resize path: queue entries were already removed before evict().
-                        /// We saved the original type in removeQueueEntries.
-                        auto type_it = original_queue_types.find(candidate.get());
-                        if (type_it != original_queue_types.end())
-                            queue_type = type_it->second;
-                    }
-
-                    const size_t bytes = segment->range().size();
-                    const size_t hits = segment->getHitsCount();
-                    FileCacheMetrics::recordEviction(cache_name, queue_type, bytes, hits);
-
-                    if (emit_per_client_metrics)
-                    {
-                        FileCacheMetrics::recordEvictionByClient(
-                            cache_name, queue_type, key_candidates.key_metadata->origin.user_id, bytes, hits);
-                    }
-                }
-
+                /// Queue the iterator for invalidation BEFORE running the metric
+                /// emission below: removeFileSegment above has already removed the
+                /// segment from metadata + filesystem, so the corresponding queue
+                /// entry MUST be invalidated regardless of what happens next.
+                /// Otherwise a throw from the metrics path (e.g. allocation inside
+                /// withLabels) would leave a stale queue entry and desync cache
+                /// accounting.
                 if (iterator)
                     queue_entries_to_invalidate.push_back(iterator);
+
+                /// Metrics are best-effort: any failure (allocation, contention)
+                /// must not break the eviction invariants above. Swallow exceptions
+                /// here so the eviction is reported as successful.
+                if (emit_aggregate_metrics)
+                {
+                    try
+                    {
+                        FileCacheQueueEntryType queue_type = FileCacheQueueEntryType::None;
+                        if (iterator)
+                        {
+                            /// Use the nested iterator so SLRU reports protected/probationary,
+                            /// not the wrapping SplitCache type.
+                            queue_type = iterator->getNestedOrThis()->getType();
+                        }
+                        else
+                        {
+                            /// Dynamic-resize path: queue entries were already removed before evict().
+                            /// We saved the original type in removeQueueEntries.
+                            auto type_it = original_queue_types.find(candidate.get());
+                            if (type_it != original_queue_types.end())
+                                queue_type = type_it->second;
+                        }
+
+                        const size_t bytes = segment->range().size();
+                        const size_t hits = segment->getHitsCount();
+                        FileCacheMetrics::recordEviction(cache_name, queue_type, bytes, hits);
+
+                        if (emit_per_client_metrics)
+                        {
+                            FileCacheMetrics::recordEvictionByClient(
+                                cache_name, queue_type, key_candidates.key_metadata->origin.user_id, bytes, hits);
+                        }
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, "Failed to record filesystem cache eviction metrics; ignored");
+                    }
+                }
             }
             catch (...)
             {
