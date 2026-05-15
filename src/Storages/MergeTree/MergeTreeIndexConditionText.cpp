@@ -874,7 +874,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         }
         else
         {
-            tokens = postprocessor->processTokens(std::move(tokens));
+            if (!is_array_tokenizer)
+                tokens = postprocessor->processTokens(std::move(tokens));
             /// The postprocessor may map the token to nothing (e.g. a stop-word filter).
             /// Use a sentinel that is never stored in the index so the condition evaluates to false.
             if (tokens.empty())
@@ -1306,7 +1307,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// Apply preprocessor + tokenizer + postprocessor so set elements use the same
         /// tokens that were stored in the index. Skipping the postprocessor here would
         /// produce false negatives for postprocessors like lower(), stem(), etc.
-        auto tokens = stringToTokens(Field(String(ref)), true, true);
+        auto tokens = stringToTokens(Field(String(ref)), true, !tokenizer->isArrayTokenizer());
 
         /// An element that tokenizes to nothing cannot be proven present by the index.
         /// Bail out to keep the original predicate.

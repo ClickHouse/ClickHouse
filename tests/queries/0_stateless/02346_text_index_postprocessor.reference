@@ -159,6 +159,10 @@ started	1
 0
 1
 0
+1
+0
+2
+0
 27. hasTokenOrNull: stop-word postprocessor is honored consistently across index and row-scan paths.
 0
 1

@@ -684,8 +684,12 @@ SELECT count() FROM tab WHERE val = 'BAR';                        -- 1
 SELECT count() FROM tab WHERE val = 'baz';                        -- 1
 -- Lower-cased needle does not match: postprocessor bypassed → stored value is 'Foo'.
 SELECT count() FROM tab WHERE val = 'foo';                        -- 0
+SELECT count() FROM tab WHERE hasToken(val, 'Foo');               -- 1
+SELECT count() FROM tab WHERE hasToken(val, 'foo');               -- 0
 SELECT count() FROM tab WHERE hasAllTokens(val, 'Foo');           -- 1
 SELECT count() FROM tab WHERE hasAllTokens(val, 'foo');           -- 0
+SELECT count() FROM tab WHERE val IN ('Foo', 'BAR');              -- 2
+SELECT count() FROM tab WHERE val IN ('foo', 'bar');              -- 0
 
 DROP TABLE tab;
 
