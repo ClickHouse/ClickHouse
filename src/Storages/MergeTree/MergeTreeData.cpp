@@ -2741,6 +2741,11 @@ try
 catch (...)
 {
     tryLogCurrentException(log, "Failed to refresh parts");
+    /// Re-schedule on the failure path as well: a transient object-storage error must
+    /// degrade to a delayed retry, not permanently disable follower visibility under
+    /// `leader_election`. The leadership transition callback deactivates the task if
+    /// this replica becomes the leader before the next tick.
+    refresh_parts_task->scheduleAfter(interval_milliseconds);
 }
 
 void MergeTreeData::refreshStatistics(UInt64 interval_seconds)
