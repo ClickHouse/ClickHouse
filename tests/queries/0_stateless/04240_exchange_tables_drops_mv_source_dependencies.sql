@@ -1,13 +1,13 @@
--- Reproducer for https://github.com/ClickHouse/ClickHouse/issues/105021
+-- Regression test for https://github.com/ClickHouse/ClickHouse/issues/105021
 --
 -- After `EXCHANGE TABLES a, b` where a materialized view `mv` reads from `a`,
--- inserts into both `a` and `b` silently stop feeding the MV target table.
--- Regression introduced by https://github.com/ClickHouse/ClickHouse/pull/98779
--- (correct on v26.4.2.10, broken on master).
+-- inserts into `a` must continue to feed the `MV` target table. `INSERT INTO b`
+-- must not fire the `MV` (b is now an unrelated table at that name).
 --
--- This test pins the current buggy behavior so the regression is locked down.
--- When the bug is fixed, the reference must be updated: at least one of the
--- post-exchange `count() FROM dst` assertions should change.
+-- Was broken by https://github.com/ClickHouse/ClickHouse/pull/98779 — both
+-- inserts silently dropped because the source-view edge had been cross-swapped
+-- to follow the data instead of the name. Restored by keying source-view edges
+-- by name on exchange.
 
 DROP TABLE IF EXISTS mv;
 DROP TABLE IF EXISTS dst;
