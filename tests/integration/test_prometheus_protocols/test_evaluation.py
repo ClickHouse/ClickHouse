@@ -23,8 +23,8 @@ node = cluster.add_instance(
 def send_data(time_series):
     protobuf = convert_time_series_to_protobuf(time_series)
     send_protobuf_to_remote_write(
-        cluster.prometheus_receiver_ip,
-        cluster.prometheus_receiver_port,
+        cluster.prometheus_ip["receiver"],
+        cluster.prometheus_port["receiver"],
         "api/v1/write",
         protobuf,
     )
@@ -34,8 +34,8 @@ def send_data(time_series):
 # Executes a query in the "prometheus_reader" service. This service uses the RemoteRead protocol to get data from ClickHouse.
 def execute_query_in_prometheus_reader(query, timestamp=None, expect_error=False):
     return execute_query_via_http_api(
-        cluster.prometheus_reader_ip,
-        cluster.prometheus_reader_port,
+        cluster.prometheus_ip["reader"],
+        cluster.prometheus_port["reader"],
         "/api/v1/query",
         query,
         timestamp=timestamp,
@@ -46,8 +46,8 @@ def execute_query_in_prometheus_reader(query, timestamp=None, expect_error=False
 # Executes a query in the "prometheus_receiver" service. We sent data to this service earlier via the RemoteWrite protocol.
 def execute_query_in_prometheus_receiver(query, timestamp, expect_error=False):
     return execute_query_via_http_api(
-        cluster.prometheus_receiver_ip,
-        cluster.prometheus_receiver_port,
+        cluster.prometheus_ip["receiver"],
+        cluster.prometheus_port["receiver"],
         "/api/v1/query",
         query,
         timestamp=timestamp,
@@ -91,8 +91,8 @@ def execute_query_in_clickhouse_sql(query, timestamp, expect_error=False):
 # Executes a range query in both prometheus services.
 def execute_range_query_in_prometheus(query, start_time, end_time, step):
     r1 = execute_range_query_via_http_api(
-        cluster.prometheus_reader_ip,
-        cluster.prometheus_reader_port,
+        cluster.prometheus_ip["reader"],
+        cluster.prometheus_port["reader"],
         "/api/v1/query_range",
         query,
         start_time,
@@ -100,8 +100,8 @@ def execute_range_query_in_prometheus(query, start_time, end_time, step):
         step,
     )
     r2 = execute_range_query_via_http_api(
-        cluster.prometheus_receiver_ip,
-        cluster.prometheus_receiver_port,
+        cluster.prometheus_ip["receiver"],
+        cluster.prometheus_port["receiver"],
         "/api/v1/query_range",
         query,
         start_time,
