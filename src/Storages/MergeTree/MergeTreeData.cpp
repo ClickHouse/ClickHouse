@@ -2,6 +2,7 @@
 #include <Disks/DiskType.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
@@ -241,6 +242,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool async_insert;
     extern const MergeTreeSettingsBool check_sample_column_is_correct;
     extern const MergeTreeSettingsBool compatibility_allow_sampling_expression_not_in_primary_key;
+    extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
     extern const MergeTreeSettingsAlterColumnSecondaryIndexMode alter_column_secondary_index_mode;
     extern const MergeTreeSettingsUInt64 concurrent_part_removal_threshold;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
@@ -2939,6 +2941,11 @@ void MergeTreeData::waitForOutdatedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_
     LOG_TRACE(log, "Finished waiting for outdated data parts to be loaded");
 }
 
+void MergeTreeData::triggerBackgroundOperations()
+{
+    background_operations_assignee.trigger();
+}
+
 void MergeTreeData::waitForUnexpectedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     /// Background tasks are not run if storage is static.
@@ -4007,6 +4014,7 @@ void MergeTreeData::dropAllData()
     clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
 
     resetColumnSizes();
+    unregisterFromMergeSelection(settings_ptr);
 
     auto detached_parts = getDetachedParts();
     for (const auto & part : detached_parts)
@@ -6293,6 +6301,12 @@ void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
     part->removeDeleteOnDestroyMarker();
     part->removeVersionMetadata();
+}
+
+void MergeTreeData::unregisterFromMergeSelection(const MergeTreeSettingsPtr & settings)
+{
+    if ((*settings)[MergeTreeSetting::merge_selector_algorithm].value == MergeSelectorAlgorithm::MANUAL)
+        ManualMergeSelector::erase(getStorageID());
 }
 
 void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl(DataPartsLock & /*parts_lock*/) const
