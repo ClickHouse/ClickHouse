@@ -218,8 +218,7 @@ private:
         /// If false, this is a vacant slot in the in_flight_batches array, not between head_idx and tail_idx.
         std::atomic<bool> active {};
 
-        alignas(CH_CACHE_LINE_SIZE) size_t bytes = 0;
-        std::chrono::steady_clock::time_point start_time;
+        alignas(CH_CACHE_LINE_SIZE) std::chrono::steady_clock::time_point start_time {};
         KeeperRequestsForSessions requests;
         size_t committed_requests = 0;
         /// Read requests to do after some prefix of `requests` is committed.

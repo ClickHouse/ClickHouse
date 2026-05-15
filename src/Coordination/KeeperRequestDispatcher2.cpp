@@ -199,8 +199,14 @@ void KeeperRequestDispatcher2::shutdown(bool closed_all_connections)
     }
 
     /// Send to leader Close requests for active sessions.
-    /// Maybe we should instead do this when client connection is closed for any reason
+    /// Maybe we should go further and do this when client connection is closed for any reason
     /// (KeeperTCPHandler::runImpl return).
+    ///
+    /// Removing ephemeral znodes without waiting for session timeout is a little strange and
+    /// different from vanilla zookeeper. Ephemeral znode may disappear before the client notices
+    /// connection loss. But it is important for clickhouse in practice. Otherwise keeper server
+    /// restart would cause INSERT queries to stall for 30 seconds (session timeout) while the
+    /// leftover ephemeral znode prevents retries.
     KeeperRequestsForSessions close_requests;
     if (server->isLeaderAlive())
     {
@@ -464,7 +470,23 @@ void KeeperRequestDispatcher2::recreateStreamWithBackoff()
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
+    /// Currently we drop all in-flight appends (that weren't committed within
+    /// stream_in_flight_drain_timeout_ms).
+    ///
+    /// We could do better: if some batches were cleanly rejected by the leader (e.g. because of
+    /// term mismatch), we can re-send them into the new stream. I imagine it would looke like this:
+    ///  * client_req_stream::append would accept a callback and just call it in `handler`.
+    ///  * We'd pass a callback that stores the result status in InFlightBatch. (Probably by adding
+    ///    a shared_ptr field in InFlightBatch.)
+    ///  * This new InFlightBatch status can be one of: waiting, rejected by leader (can retry this
+    ///    and all later batches), accepted by leader (can't retry), network error (can't retry).
+    ///  * During the stream_in_flight_drain_timeout_ms wait, we'd stop early if the first in-flight
+    ///    batch was rejected by leader.
+    ///  * Here we wouldn't drop requests if first in-flight batch was rejected by leader.
+    ///    We'd re-send them through the new stream.
+    /// Then a graceful leader migration wouldn't cause any client requests to fail.
     dropInFlightRequests();
+
     stream.reset();
 
     if (!shutting_down.load())
@@ -473,6 +495,11 @@ void KeeperRequestDispatcher2::recreateStreamWithBackoff()
         /// May return nullptr.
         stream = server->raft_instance->open_client_req_stream(
             keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds());
+
+        if (stream)
+            LOG_INFO(log, "Created append stream");
+        else
+            LOG_DEBUG(log, "Failed to create append stream");
     }
 }
 
@@ -491,6 +518,9 @@ void KeeperRequestDispatcher2::dispatchThread()
 
             if (!stream || stream->is_abandoned())
             {
+                if (stream)
+                    LOG_INFO(log, "Append stream is abandoned, will create a new one");
+
                 /// If stream is broken, report errors for in-flight requests and create a new stream.
                 recreateStreamWithBackoff();
                 continue;
@@ -606,6 +636,7 @@ void KeeperRequestDispatcher2::dispatchThread()
             size_t batch_bytes = 0;
             size_t batch_subrequests = 0;
             size_t reads_bytes = 0;
+            size_t reads_requests = 0;
             size_t reads_subrequests = 0;
 
             {
@@ -732,6 +763,7 @@ void KeeperRequestDispatcher2::dispatchThread()
                         ///  late_reads can grow unboundedly big? No, it can't get bigger than
                         ///  max_in_flight_request_batches * max_read_batch_size. Think of it as the
                         ///  limit being "amortized" across multiple batches.)
+                        reads_requests += 1;
                         reads_subrequests += getSubrequestCount(*request.request);
                         reads_bytes += getRequestBytesCost(*request.request);
 
@@ -787,7 +819,10 @@ void KeeperRequestDispatcher2::dispatchThread()
             }
 
             if (!early_reads.empty())
+            {
+                LOG_TEST(log, "Processing {} reads in dispatch thread. First one: {}", early_reads.size(), early_reads[0].request->toString());
                 executeReads(std::move(early_reads));
+            }
 
             if (requests.empty())
                 chassert(intermediate_reads.empty() && late_reads.empty());
@@ -799,30 +834,34 @@ void KeeperRequestDispatcher2::dispatchThread()
                 ProfileEvents::increment(ProfileEvents::KeeperWriteBatchCount);
                 ProfileEvents::increment(ProfileEvents::KeeperWriteBatchTotalRequests, requests.size());
 
+                LOG_TEST(log, "Starting batch {}, {} bytes, {} writes, {} reads ({} of them are at the end of batch). First request: {}", batch_idx, batch_bytes, requests.size(), reads_requests, late_reads.size(), requests[0].request->toString());
+
                 /// Add information about the batch to the queue of in-flight requests.
 
                 auto & batch = in_flight_batches[batch_idx % in_flight_batches.size()];
-                batch.bytes = batch_bytes;
                 batch.start_time = std::chrono::steady_clock::now();
                 batch.requests = std::move(requests);
                 batch.intermediate_reads = std::move(intermediate_reads);
                 batch.activate(std::move(late_reads));
-
-                tail_idx.store(batch_idx + 1);
-
-                /// Finally send the requests to leader.
 
                 std::vector<nuraft::ptr<nuraft::buffer>> entries;
                 entries.reserve(batch.requests.size());
                 for (const auto & r : batch.requests)
                     entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(r));
 
+                tail_idx.store(batch_idx + 1);
+
+                /// Finally send the requests to leader.
+
                 stream->append(std::move(entries));
             }
 
             /// Ordering between Reconfig requests and other requests is not very important.
             for (const auto & reconfig_request : reconfig_requests)
+            {
+                LOG_INFO(log, "Processing reconfig request: {}", reconfig_request.request->toString());
                 server->getKeeperStateMachine()->reconfigure(reconfig_request);
+            }
         }
     }
     catch (...)
@@ -842,19 +881,27 @@ void KeeperRequestDispatcher2::popBatch(size_t batch_idx)
 void KeeperRequestDispatcher2::dropInFlightRequests()
 {
     std::lock_guard stream_lock(request_completion_mutex);
+    size_t batches_dropped = 0;
+    size_t requests_dropped = 0;
+    size_t reads_dropped = 0;
     while (head_idx.load() < tail_idx.load())
     {
+        batches_dropped += 1;
         size_t batch_idx = head_idx.load();
         auto & batch = in_flight_batches[batch_idx % in_flight_batches.size()];
         while (batch.committed_requests < batch.requests.size())
         {
+            requests_dropped += 1;
             addErrorResponse(batch.requests[batch.committed_requests], Coordination::Error::ZCONNECTIONLOSS);
             batch.committed_requests += 1;
             if (batch.intermediate_reads_idx < batch.intermediate_reads.size() &&
                 batch.intermediate_reads[batch.intermediate_reads_idx].first == batch.committed_requests)
             {
                 for (const auto & read_request : batch.intermediate_reads[batch.intermediate_reads_idx].second)
+                {
+                    reads_dropped += 1;
                     addErrorResponse(read_request, Coordination::Error::ZCONNECTIONLOSS);
+                }
                 batch.intermediate_reads_idx += 1;
             }
         }
@@ -865,10 +912,15 @@ void KeeperRequestDispatcher2::dropInFlightRequests()
             if (reads.empty())
                 break;
             for (const auto & read_request : reads)
+            {
+                reads_dropped += 1;
                 addErrorResponse(read_request, Coordination::Error::ZCONNECTIONLOSS);
+            }
         }
         popBatch(batch_idx);
     }
+    if (batches_dropped != 0)
+        LOG_INFO(log, "Dropped {} batches with {} writes and {} reads", batches_dropped, requests_dropped, reads_dropped);
 }
 
 void KeeperRequestDispatcher2::addErrorResponse(const KeeperRequestForSession & request_for_session, Coordination::Error error)
