@@ -8,15 +8,10 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
-
 #include <IO/WriteBufferFromString.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/printPipeline.h>
-
-#include <Planner/PlannerContext.h>
 
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -33,7 +28,6 @@
 
 #include <Common/logger_useful.h>
 
-#include <algorithm>
 #include <memory>
 
 namespace DB
@@ -51,15 +45,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-Names extendWithAuxiliaryColumns(Names requested_columns)
-{
-    for (const auto & aux_name : {String("_partition_id"), String(BlockNumberColumn::name), String(BlockOffsetColumn::name)})
-        if (!std::ranges::contains(requested_columns, aux_name))
-            requested_columns.push_back(aux_name);
-
-    return requested_columns;
-}
 
 std::vector<std::string> getPartitionsCanBeRead(const std::map<String, Int64> & safe_block_numbers, const MergeTreeCursor & last_emitted_positions)
 {
@@ -97,7 +82,7 @@ std::optional<PipeWithResources> buildPartitionReadingPipeline(
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
     const SelectQueryInfo & query_info,
-    const ContextMutablePtr & context,
+    const ContextPtr & context,
     const Names & inner_columns,
     size_t requested_num_streams,
     UInt64 max_block_size,
@@ -107,7 +92,6 @@ std::optional<PipeWithResources> buildPartitionReadingPipeline(
     /// Clone query_info; the inner read is bounded, not streaming.
     SelectQueryInfo inner_info = query_info;
     inner_info.table_expression_modifiers = std::nullopt;
-    inner_info.planner_context = std::make_shared<PlannerContext>(context, std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}), SelectQueryOptions{});
 
     auto sub = MergeTreeDataSelectExecutor(storage).read(
         inner_columns,
@@ -155,9 +139,16 @@ std::optional<PipeWithResources> buildPartitionReadingPipeline(
         context);
     plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(convert)));
 
-    /// Run optimizations
-    QueryPlanOptimizationSettings opt_settings(context);
+    if (log->test())
+    {
+        WriteBufferFromOwnString plan_buffer;
+        ExplainPlanOptions explain_options{.header = true, .actions = true, .indexes = true, .compact = true, .pretty = true};
+        plan.explainPlan(plan_buffer, explain_options);
+        LOG_TEST(log, "Unoptimized snapshot subplan for partition '{}' (safe_block_number={}):\n{}", partition_id, safe_block_number, plan_buffer.str());
+    }
+
     /// TODO(michicosun): somehow force projection usage here
+    QueryPlanOptimizationSettings opt_settings(context);
     plan.optimize(opt_settings);
 
     if (log->test())
@@ -203,7 +194,6 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
     /// Fresh storage snapshot reused by every per-partition subplan in this iteration.
     const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
     const auto storage_snapshot = storage.getStorageSnapshot(metadata, context);
-    const auto mutable_context = Context::createCopy(context);
 
     /// We need all columns user requested + columns needed to recalculate cursors.
     const auto columns_to_read = extendWithAuxiliaryColumns(user_requested_columns);
@@ -223,7 +213,7 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
             storage,
             storage_snapshot,
             query_info,
-            mutable_context,
+            context,
             columns_to_read,
             requested_num_streams,
             max_block_size,
@@ -249,6 +239,14 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
     return snapshot;
 }
 
+ContextPtr makeStreamingContext(ContextPtr context_)
+{
+    auto copy = Context::createCopy(context_);
+    copy->makeQueryContext();
+    copy->setQueryMetadataCache(nullptr);
+    return copy;
+}
+
 }
 
 MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
@@ -265,7 +263,7 @@ MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
     , header(std::move(header_))
     , storage(storage_)
     , query_info(query_info_)
-    , context(std::move(context_))
+    , context(makeStreamingContext(std::move(context_)))
     , user_requested_columns(std::move(user_requested_columns_))
     , requested_num_streams(requested_num_streams_)
     , max_block_size(max_block_size_)

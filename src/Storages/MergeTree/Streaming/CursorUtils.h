@@ -22,6 +22,9 @@ using MergeTreeCursor = std::map<String, PartitionCursor>;
 /// produced by the parser into a flat per-partition map.
 MergeTreeCursor buildMergeTreeCursor(const CursorTreeNodePtr & cursor_tree);
 
+/// Adds columns needed for streaming cursors recalculation.
+Names extendWithAuxiliaryColumns(Names columns);
+
 /// Build an ActionsDAG filter for a single partition's snapshot slice.
 FilterDAGInfo buildPartitionFilter(
     const String & partition_id,

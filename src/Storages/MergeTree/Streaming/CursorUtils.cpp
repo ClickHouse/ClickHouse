@@ -1,13 +1,18 @@
 #include <Storages/MergeTree/Streaming/CursorUtils.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
-#include <Common/escapeString.h>
-#include <Core/Settings.h>
-#include <Core/Streaming/CursorTree.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+
+#include <Interpreters/Context.h>
+
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
+
+#include <Core/Settings.h>
+#include <Core/Streaming/CursorTree.h>
+
+#include <Common/escapeString.h>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -38,6 +43,15 @@ MergeTreeCursor buildMergeTreeCursor(const CursorTreeNodePtr & cursor_tree)
     }
 
     return cursor;
+}
+
+Names extendWithAuxiliaryColumns(Names columns)
+{
+    for (const auto & aux_name : {String("_partition_id"), String(BlockNumberColumn::name), String(BlockOffsetColumn::name)})
+        if (!std::ranges::contains(columns, aux_name))
+            columns.push_back(aux_name);
+
+    return columns;
 }
 
 FilterDAGInfo buildPartitionFilter(
@@ -74,7 +88,11 @@ FilterDAGInfo buildPartitionFilter(
         settings[Setting::max_parser_backtracks]);
 
     chassert(filter_ast);
-    return buildFilterInfo(filter_ast, query_info.table_expression, planner_context);
+
+    /// Preserve streaming aux columns through DAG. They can be used by other steps above.
+    NameSet required_outputs;
+    required_outputs.insert_range(extendWithAuxiliaryColumns(planner_context->getTableExpressionDataOrThrow(query_info.table_expression).getColumnNames()));
+    return buildFilterInfo(filter_ast, query_info.table_expression, planner_context, std::move(required_outputs));
 }
 
 }
