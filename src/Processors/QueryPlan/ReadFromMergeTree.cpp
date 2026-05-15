@@ -2890,6 +2890,13 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     {
         const double max_ratio = context->getSettingsRef()[Setting::read_in_order_max_primary_key_ratio];
 
+        /// Track whether the analysis result was already computed before we touched it.
+        /// If it was (e.g. `optimizeUseNormalProjections` ran first and stored a result with
+        /// `parts_with_ranges` already filtered by `filterPartsByProjection`), we must not
+        /// reset it on rollback — discarding that state would let the main step re-read parts
+        /// already covered by the projection step, producing duplicated rows.
+        const bool analysis_was_cached = analyzed_result_ptr != nullptr;
+
         /// Set `input_order_info` before running index analysis, so that row-limit checks
         /// (`max_rows_to_read` / `max_rows_to_read_leaf`) inside `MergeTreeDataSelectExecutor::getRowLimits`
         /// are correctly skipped, and `read_type` is computed as `InOrder` / `InReverseOrder`.
@@ -2913,13 +2920,18 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
                 analysis_result.selected_marks_pk, analysis_result.total_marks_pk,
                 static_cast<double>(analysis_result.selected_marks_pk) / static_cast<double>(analysis_result.total_marks_pk),
                 max_ratio);
-            /// Roll back: clear the temporary `input_order_info` and invalidate the cached
-            /// analysis result, since it was computed assuming read-in-order (no row limits,
-            /// `read_type = InOrder`). The next `getAnalysisResult` call will recompute it
-            /// with `input_order_info == nullptr`, restoring the row-limit semantics that
-            /// apply when read-in-order is disabled.
             query_info.input_order_info.reset();
-            analyzed_result_ptr.reset();
+            if (!analysis_was_cached)
+            {
+                /// We created the analysis result ourselves above with `input_order_info` set,
+                /// which skipped the row-limit check. Drop it so the next `getAnalysisResult`
+                /// call recomputes it with `input_order_info == nullptr`, restoring the
+                /// row-limit semantics that apply when read-in-order is disabled.
+                analyzed_result_ptr.reset();
+            }
+            /// If the analysis was cached before we ran, it was computed with
+            /// `input_order_info == nullptr` and may carry projection-aware state
+            /// (`parts_with_ranges` filtered by `filterPartsByProjection`). Keep it as-is.
             return false;
         }
     }
