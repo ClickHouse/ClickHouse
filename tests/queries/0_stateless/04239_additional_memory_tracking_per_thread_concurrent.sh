@@ -31,17 +31,18 @@ done
 
 # Wait for every background client; record any that did not exit
 # (i.e. the timeout fired -- which would indicate a hang).
-# Redirect stderr on `wait` to suppress bash job-control messages ("Killed",
-# "Terminated") that would otherwise contaminate the test's stderr.
+# Capture the real exit status from `wait` (we need the child's actual code,
+# not the result of a negated check). Redirect stderr to suppress bash
+# job-control messages ("Killed", "Terminated") that would otherwise
+# contaminate the test's stderr.
 hung=0
 for pid in $(jobs -p); do
-    if ! wait "$pid" 2>/dev/null; then
-        rc=$?
-        # 124 = exit code from `timeout` when the timeout actually fires.
-        # Any other non-zero is fine (likely 241 / MEMORY_LIMIT_EXCEEDED).
-        if [ "$rc" -eq 124 ]; then
-            hung=$((hung + 1))
-        fi
+    rc=0
+    wait "$pid" 2>/dev/null || rc=$?
+    # 124 = exit code from `timeout` when the timeout actually fires.
+    # Any other non-zero is fine (likely 241 / MEMORY_LIMIT_EXCEEDED).
+    if [ "$rc" -eq 124 ]; then
+        hung=$((hung + 1))
     fi
 done
 

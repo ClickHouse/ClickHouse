@@ -2258,9 +2258,17 @@ try
             new_server_settings.loadSettingsFromConfig(config());
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
-            additional_memory_tracking_per_thread.store(
-                static_cast<int64_t>(new_server_settings[ServerSetting::additional_memory_tracking_per_thread]),
-                std::memory_order_relaxed);
+            {
+                /// The setting is `UInt64` but the atomic is `int64_t` (it is consumed as a
+                /// signed delta into the memory tracker). Clamp the value at `INT64_MAX` so a
+                /// misconfigured huge value does not silently wrap negative and disable the
+                /// feature via the `> 0` check.
+                const UInt64 raw = new_server_settings[ServerSetting::additional_memory_tracking_per_thread];
+                const auto int64_max = static_cast<UInt64>(std::numeric_limits<int64_t>::max());
+                additional_memory_tracking_per_thread.store(
+                    static_cast<int64_t>(std::min(raw, int64_max)),
+                    std::memory_order_relaxed);
+            }
 
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
             const double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
