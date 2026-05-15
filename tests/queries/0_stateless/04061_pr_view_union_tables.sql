@@ -1,5 +1,7 @@
 -- Test that parallel replicas work with a view containing UNION ALL of two MergeTree tables
 
+SET query_plan_pretty_default = 0;
+
 DROP TABLE IF EXISTS t_rtb_hourly_1;
 DROP TABLE IF EXISTS t_rtb_hourly_2;
 DROP VIEW IF EXISTS v_rtb_union;

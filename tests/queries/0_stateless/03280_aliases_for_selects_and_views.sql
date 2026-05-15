@@ -1,8 +1,8 @@
-SET query_plan_pretty_default = 0;
 EXPLAIN AST CREATE VIEW test_view_1_03280 (a, b] AS SELECT 1, 2; -- { clientError SYNTAX_ERROR }
 
 EXPLAIN AST CREATE VIEW test_view_1_03280 ((a, b)) AS SELECT 1, 2; -- { clientError SYNTAX_ERROR }
 
+SET query_plan_pretty_default = 0;
 SET enable_analyzer = 1;
 
 SELECT b FROM
