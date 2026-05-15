@@ -63,19 +63,4 @@ bool enrichSubscription(
     return enriched;
 }
 
-CursorPromotersMap constructPromoters(
-    std::map<String, std::set<Int64>> committing_block_numbers,
-    std::map<String, PartBlockNumberRanges> partition_ranges)
-{
-    CursorPromotersMap promoters;
-
-    for (auto && [partition_id, ranges] : partition_ranges)
-        promoters.emplace(
-            std::piecewise_construct,
-            std::forward_as_tuple(partition_id),
-            std::forward_as_tuple(std::move(committing_block_numbers[partition_id]), std::move(ranges)));
-
-    return promoters;
-}
-
 }

@@ -7,7 +7,6 @@
 #include <base/types.h>
 
 #include <map>
-#include <set>
 #include <vector>
 
 namespace DB
@@ -21,10 +20,5 @@ bool enrichSubscription(
     MergeTreeBoundsSubscription & subscription,
     const LocalPartsByPartition & local_parts,
     const CursorPromotersMap & promoters);
-
-/// Build the per-partition cursor promoter map for streaming reads.
-CursorPromotersMap constructPromoters(
-    std::map<String, std::set<Int64>> committing_block_numbers,
-    std::map<String, PartBlockNumberRanges> partition_ranges);
 
 }

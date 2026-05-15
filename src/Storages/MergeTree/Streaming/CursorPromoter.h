@@ -49,4 +49,9 @@ private:
 /// partition id -> partition promoter
 using CursorPromotersMap = std::map<String, MergeTreeCursorPromoter>;
 
+/// Build the per-partition cursor promoter map for streaming reads.
+CursorPromotersMap constructPromoters(
+    std::map<String, std::set<Int64>> committing_block_numbers,
+    std::map<String, PartBlockNumberRanges> partition_ranges);
+
 }
