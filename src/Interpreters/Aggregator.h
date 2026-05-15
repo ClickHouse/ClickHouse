@@ -421,9 +421,6 @@ private:
         AggregateDataPtr overflow_row) const;
 
     /// Specialization for a particular value no_more_keys.
-    /// When top_k is true, the top-N GROUP BY limit pushdown heap logic is compiled in.
-    /// Using a template bool keeps the common path (top_k=false) free of heap code,
-    /// avoiding instruction cache pressure, while eliminating source duplication.
     template <bool prefetch, bool top_k = false, typename Method, typename State>
     void executeImplBatch(
         Method & method,
@@ -439,10 +436,8 @@ private:
 
     /// Trim the bounded heap back to capacity by batch-popping excess entries,
     /// erasing evicted keys from the hash table and destroying their aggregate states.
-    /// Kept in a separate NO_INLINE method to avoid code bloat in executeImplBatch
-    /// when top_k_keys == 0 (the common case).
     template <typename Method>
-    void NO_INLINE trimHeapAndPruneHashTable(Method & method, bool destroy_states, std::vector<AggregateDataPtr> * destroyed_states = nullptr) const;
+    void trimHeapAndPruneHashTable(Method & method, bool destroy_states, std::vector<AggregateDataPtr> * destroyed_states = nullptr) const;
 
     void executeAggregateInstructions(
         Arena * aggregates_pool,
