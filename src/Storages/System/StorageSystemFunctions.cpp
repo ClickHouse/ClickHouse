@@ -136,7 +136,7 @@ namespace
                 return info;
 
             info.is_deterministic = resolver->isDeterministic() ? UInt8{1} : UInt8{0};
-            info.higher_order = resolver->isHigherOrder() ? UInt8{1} : UInt8{0};
+            info.higher_order = resolver->isHigherOrderFunction() ? UInt8{1} : UInt8{0};
         }
         catch (...)
         {
