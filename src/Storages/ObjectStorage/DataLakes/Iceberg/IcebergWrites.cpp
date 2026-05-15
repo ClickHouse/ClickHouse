@@ -130,6 +130,8 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
         case TypeIndex::Int64:
         case TypeIndex::DateTime64:
         case TypeIndex::String:
+        case TypeIndex::Float32:
+        case TypeIndex::Float64:
             return true;
         default:
             return false;
