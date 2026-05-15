@@ -3291,40 +3291,49 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     {
         for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
         {
-            auto it = scope_ptr->nullable_group_by_keys.find(node);
-            if (it != scope_ptr->nullable_group_by_keys.end())
+            /// `nullable_group_by_keys` is keyed by query-tree structure
+            /// (`ColumnNode::isEqualImpl` compares column name and type only,
+            /// ignoring source identity), so a same-shaped key in an
+            /// intermediate ancestor scope can match a correlated column whose
+            /// real source lives further out. For correlated columns we
+            /// therefore consult `nullable_group_by_keys` only at the scope
+            /// that owns the column source: that is the only scope whose
+            /// `group_by_use_nulls` actually applied to this column.
+            const bool at_source_scope = is_correlated_column_node && correlated_column_source
+                && (scope_ptr->registered_table_expression_nodes.contains(correlated_column_source)
+                    || scope_ptr->table_expressions_in_resolve_process.contains(correlated_column_source.get()));
+
+            if (!is_correlated_column_node || at_source_scope)
             {
-                if (is_correlated_column_node)
+                auto it = scope_ptr->nullable_group_by_keys.find(node);
+                if (it != scope_ptr->nullable_group_by_keys.end())
                 {
-                    /// Modify the correlated column in place so the same pointer
-                    /// stored in the outer `QueryNode::correlated_columns_list`
-                    /// (added by `checkCorrelatedColumn`) and the planner's
-                    /// `correlated_columns_set` (which hashes by column type)
-                    /// remains consistent with the inner expression's reference.
-                    /// Cloning here would yield a distinct ColumnNode that the
-                    /// planner would no longer recognize as correlated.
-                    node->convertToNullable();
+                    if (is_correlated_column_node)
+                    {
+                        /// Modify the correlated column in place so the same pointer
+                        /// stored in the outer `QueryNode::correlated_columns_list`
+                        /// (added by `checkCorrelatedColumn`) and the planner's
+                        /// `correlated_columns_set` (which hashes by column type)
+                        /// remains consistent with the inner expression's reference.
+                        /// Cloning here would yield a distinct ColumnNode that the
+                        /// planner would no longer recognize as correlated.
+                        node->convertToNullable();
+                    }
+                    else
+                    {
+                        node = it->node->clone();
+                        node->convertToNullable();
+                    }
+                    break;
                 }
-                else
-                {
-                    node = it->node->clone();
-                    node->convertToNullable();
-                }
-                break;
             }
 
             /// For local references stop at the first surrounding QUERY scope.
             if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY && !is_correlated_column_node)
                 break;
 
-            /// For correlated references stop once we have reached the scope that
-            /// owns the column source. `nullable_group_by_keys` is keyed by query-tree
-            /// structure, not pointer identity, so continuing past the source scope
-            /// could match an unrelated ancestor key whose table/column shape happens
-            /// to coincide with this column.
-            if (is_correlated_column_node && correlated_column_source
-                && (scope_ptr->registered_table_expression_nodes.contains(correlated_column_source)
-                    || scope_ptr->table_expressions_in_resolve_process.contains(correlated_column_source.get())))
+            /// For correlated references stop once we reach the source-owning scope.
+            if (at_source_scope)
                 break;
         }
     }
