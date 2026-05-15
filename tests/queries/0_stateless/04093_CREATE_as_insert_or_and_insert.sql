@@ -52,3 +52,4 @@ CREATE TABLE t9 ENGINE = MergeTree ORDER BY a
 DROP TABLE IF EXISTS t10;
 CREATE TABLE t10 (a UInt32, b String) ENGINE = MergeTree ORDER BY a
     AS INSERT FORMAT Values (100, 'fmt_test');
+
