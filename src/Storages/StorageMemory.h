@@ -6,7 +6,6 @@
 
 #include <Core/Block_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/MaterializedCTE.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 
@@ -65,7 +64,8 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
-    bool supportsColumnsWithDynamicStructure() const override { return true; }
+    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
 
     /// Smaller blocks (e.g. 64K rows) are better for CPU cache.
     bool prefersLargeBlocks() const override { return false; }
@@ -127,12 +127,9 @@ public:
       */
     void delayReadForGlobalSubqueries() { delay_read_for_global_subqueries = true; }
 
-    void setMaterializedCTE(MaterializedCTEPtr materialized_cte_) { materialized_cte = std::move(materialized_cte_); }
-    const MaterializedCTEPtr & getMaterializedCTE() const { return materialized_cte; }
-
 private:
     /// Restores the data of this table from backup.
-    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
+    void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, const DiskPtr & temporary_disk);
 
     /// MultiVersion data storage, so that we can copy the vector of blocks to readers.
 
@@ -141,7 +138,6 @@ private:
     mutable std::mutex mutex;
 
     bool delay_read_for_global_subqueries = false;
-    MaterializedCTEPtr materialized_cte;
 
     std::atomic<size_t> total_size_bytes = 0;
     std::atomic<size_t> total_size_rows = 0;

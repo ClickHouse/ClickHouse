@@ -1,9 +1,9 @@
 #pragma once
 
+#include <base/StringRef.h>
 #include <Common/Logger.h>
 
 #include <functional>
-
 
 namespace Coordination
 {
@@ -20,9 +20,6 @@ namespace DB
 
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
-
-bool isLocalDisk(const IDisk & disk);
-
 class KeeperContext;
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
 
