@@ -2,6 +2,8 @@ DROP TABLE IF EXISTS default_expr_matchers_alias;
 DROP TABLE IF EXISTS default_expr_matchers_alias_columns;
 DROP TABLE IF EXISTS default_expr_matchers_alias_tuple;
 DROP TABLE IF EXISTS default_expr_matchers_default_except;
+DROP TABLE IF EXISTS default_expr_matchers_include_alias;
+DROP TABLE IF EXISTS default_expr_matchers_include_materialized;
 DROP TABLE IF EXISTS default_expr_matchers_index_one;
 DROP TABLE IF EXISTS default_expr_matchers_index_tuple;
 
@@ -66,6 +68,32 @@ ENGINE = Memory;
 INSERT INTO default_expr_matchers_default_except (a) VALUES (1);
 SELECT b FROM default_expr_matchers_default_except;
 
+CREATE TABLE default_expr_matchers_include_materialized
+(
+    a UInt8,
+    m UInt8 MATERIALIZED a + 1,
+    b String DEFAULT toJSONString(namedTuple(* EXCEPT b))
+)
+ENGINE = Memory;
+
+SET asterisk_include_materialized_columns = 1;
+INSERT INTO default_expr_matchers_include_materialized (a) VALUES (1);
+SET asterisk_include_materialized_columns = 0;
+SELECT b FROM default_expr_matchers_include_materialized;
+
+CREATE TABLE default_expr_matchers_include_alias
+(
+    a UInt8,
+    x UInt8 ALIAS a + 1,
+    b String DEFAULT toJSONString(namedTuple(* EXCEPT b))
+)
+ENGINE = Memory;
+
+SET asterisk_include_alias_columns = 1;
+INSERT INTO default_expr_matchers_include_alias (a) VALUES (1);
+SET asterisk_include_alias_columns = 0;
+SELECT b FROM default_expr_matchers_include_alias;
+
 CREATE TABLE default_expr_matchers_index_one
 (
     a UInt8,
@@ -94,6 +122,8 @@ ORDER BY tuple();
 
 DROP TABLE default_expr_matchers_index_tuple;
 DROP TABLE default_expr_matchers_index_one;
+DROP TABLE default_expr_matchers_include_alias;
+DROP TABLE default_expr_matchers_include_materialized;
 DROP TABLE default_expr_matchers_default_except;
 DROP TABLE default_expr_matchers_alias_columns;
 DROP TABLE default_expr_matchers_alias_tuple;
