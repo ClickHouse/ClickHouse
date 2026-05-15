@@ -131,6 +131,7 @@ namespace ErrorCodes
     extern const int BAD_TTL_FILE;
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
 namespace FailPoints
@@ -282,7 +283,7 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const NamesAnd
         else
         {
             if (hyperrectangle.size() != columns_to_update.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
                     "Part-level min-max index size ({}) does not match the number of columns to update ({})",
                     hyperrectangle.size(), columns_to_update.size());
 
