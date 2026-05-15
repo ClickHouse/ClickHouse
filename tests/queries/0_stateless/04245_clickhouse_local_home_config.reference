@@ -1,0 +1,8 @@
+-- HOME/.clickhouse-local/config.xml — must apply user config (regression for #104932)
+42
+-- ./clickhouse-local.xml — must apply user config
+42
+-- --config-file pointing at HOME config — regression check, must still apply user config
+42
+-- no config anywhere — must fall back to default
+1

@@ -252,6 +252,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
         ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
         getClientConfiguration().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
+        loaded_config_path = config_path;
     }
 
     server_settings.loadSettingsFromConfig(config());
@@ -592,11 +593,13 @@ void LocalServer::setupUsers()
     access_control.setEnableUserNameAccessType(config.getBool("access_control_improvements.enable_user_name_access_type", true));
     access_control.setThrowOnInvalidReplicatedAccessEntities(config.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", true));
 
-    if (getClientConfiguration().has("config-file") || fs::exists("config.xml"))
+    /// Apply user-level configuration if any config file was loaded in `initialize` — including
+    /// configs auto-discovered via `getLocalConfigPath` (`~/.clickhouse-local/config.xml` etc.),
+    /// not just those passed via `--config-file` or located at `./config.xml`.
+    if (!loaded_config_path.empty())
     {
-        String config_path = getClientConfiguration().getString("config-file", "");
+        const auto config_dir = fs::path{loaded_config_path}.remove_filename().string();
         bool has_user_directories = getClientConfiguration().has("user_directories");
-        const auto config_dir = fs::path{config_path}.remove_filename().string();
         String users_config_path = getClientConfiguration().getString("users_config", "");
 
         if (users_config_path.empty() && has_user_directories)
