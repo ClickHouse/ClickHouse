@@ -99,7 +99,8 @@ void ReaderExecutor::maybeTriggerPrefetch()
     if (position >= logical_size)
         return;
 
-    size_t next_size = std::min(window_size, logical_size - position);
+    size_t effective_window = live_buffer ? ROPE_BLOCK_SIZE : window_size;
+    size_t next_size = std::min(effective_window, logical_size - position);
     ByteRange next_physical_window{position + data_start_offset, next_size};
 
     LOG_TRACE(log, "Prefetch: submitting physical [{}, {})", next_physical_window.offset, next_physical_window.end());
@@ -234,7 +235,11 @@ Rope ReaderExecutor::readNextWindow()
     }
     else
     {
-        size_t win_size = std::min(window_size, logical_size - position);
+        /// Use small window when a live connection is active — data streams
+        /// continuously, no first-byte latency per window. Large window only
+        /// for stateless remote reads where each window = one HTTP request.
+        size_t effective_window = live_buffer ? ROPE_BLOCK_SIZE : window_size;
+        size_t win_size = std::min(effective_window, logical_size - position);
         ByteRange physical_window{position + data_start_offset, win_size};
         LOG_TRACE(log, "readNextWindow: synchronous read physical [{}, {}), logical [{}, {})",
             physical_window.offset, physical_window.end(), position, position + win_size);
@@ -273,31 +278,72 @@ void ReaderExecutor::seek(size_t new_position)
     position = new_position;
 }
 
-size_t ReaderExecutor::readFromLiveBuffer(char * buffer, size_t size)
+Rope ReaderExecutor::allocateRope(size_t total_size, size_t logical_offset)
 {
-    chassert(live_buffer);
-    auto & buf = *live_buffer->buffer;
-
-    /// Point the buffer's internal memory at our target.
-    /// On next(), the underlying reader (S3, HTTP, etc.) writes directly
-    /// into our Rope buffer — no intermediate copy.
-    size_t total_read = 0;
-    while (total_read < size)
+    Rope rope;
+    size_t allocated = 0;
+    while (allocated < total_size)
     {
-        size_t remaining = size - total_read;
-        buf.set(buffer + total_read, remaining);
-
-        if (!buf.next())
-            break;
-
-        total_read += buf.available();
-        buf.position() = buf.buffer().end();
+        size_t chunk = std::min(ROPE_BLOCK_SIZE, total_size - allocated);
+        auto buf = std::make_shared<OwnedRopeBuffer>(chunk);
+        rope.append(RopeNode{std::move(buf), 0, chunk, logical_offset + allocated});
+        allocated += chunk;
     }
+    return rope;
+}
 
+/// Fill pre-allocated Rope nodes from a stream (live buffer or freshly opened).
+/// Returns actual bytes read. Nodes may be partially filled at EOF.
+static size_t fillRopeFromStream(ReadBufferFromFileBase & stream, Rope & rope, bool use_external_buffer)
+{
+    size_t total_read = 0;
+    for (auto & node : rope.getNodes())
+    {
+        size_t node_read = 0;
+        if (use_external_buffer)
+        {
+            /// Zero-copy: point the stream at our Rope block memory.
+            stream.set(node.data(), node.size);
+            if (!stream.next())
+                break;
+            node_read = stream.available();
+            stream.position() = stream.buffer().end();
+        }
+        else
+        {
+            /// Copy path: read from stream's internal buffer into our block.
+            while (node_read < node.size)
+            {
+                size_t bytes = stream.read(node.data() + node_read, node.size - node_read);
+                if (bytes == 0)
+                    break;
+                node_read += bytes;
+            }
+            if (node_read == 0)
+                break;
+        }
+        node.size = node_read;
+        total_read += node_read;
+    }
     return total_read;
 }
 
-size_t ReaderExecutor::readFromSource(const StoredObject & object, size_t offset, size_t size, char * buffer)
+/// Fill pre-allocated Rope nodes from stateless source->read calls.
+static size_t fillRopeFromStateless(ISourceReader & source, const StoredObject & object, size_t offset, Rope & rope)
+{
+    size_t total_read = 0;
+    for (auto & node : rope.getNodes())
+    {
+        size_t got = source.read(object, offset + total_read, node.size, node.data());
+        if (got == 0)
+            break;
+        node.size = got;
+        total_read += got;
+    }
+    return total_read;
+}
+
+size_t ReaderExecutor::readFromSource(const StoredObject & object, size_t offset, Rope & rope)
 {
     /// Try live buffer: reuse open connection for sequential reads.
     if (live_buffer
@@ -307,7 +353,7 @@ size_t ReaderExecutor::readFromSource(const StoredObject & object, size_t offset
         LOG_TRACE(log, "readFromSource: live buffer hit for {}, position={}", object.remote_path, offset);
         ProfileEvents::increment(ProfileEvents::LiveSourceBufferHits);
 
-        size_t total_read = readFromLiveBuffer(buffer, size);
+        size_t total_read = fillRopeFromStream(*live_buffer->buffer, rope, live_buffer->use_external_buffer);
 
         ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, total_read);
         live_buffer->current_position += total_read;
@@ -329,7 +375,7 @@ size_t ReaderExecutor::readFromSource(const StoredObject & object, size_t offset
         auto slot = buffer_limit->tryAcquire(buffer_limit, object.remote_path, String(CurrentThread::getQueryId()));
         if (slot)
         {
-            auto opened = source->open(object, /*use_external_buffer=*/true);
+            auto opened = source->open(object, /*use_external_buffer=*/false);
 
             if (opened)
             {
@@ -339,11 +385,12 @@ size_t ReaderExecutor::readFromSource(const StoredObject & object, size_t offset
                 live_buffer.emplace(LiveBuffer{
                     .object_path = object.remote_path,
                     .current_position = offset,
+                    .use_external_buffer = false,
                     .buffer = std::move(opened),
                     .slot = std::move(*slot),
                 });
 
-                size_t total_read = readFromLiveBuffer(buffer, size);
+                size_t total_read = fillRopeFromStream(*live_buffer->buffer, rope, true);
 
                 live_buffer->current_position += total_read;
                 live_buffer->slot.updatePosition(live_buffer->current_position);
@@ -357,9 +404,9 @@ size_t ReaderExecutor::readFromSource(const StoredObject & object, size_t offset
         }
     }
 
-    /// Fallback: stateless read (open, range-read, close).
+    /// Fallback: stateless read, fill blocks one by one.
     ProfileEvents::increment(ProfileEvents::LiveSourceBufferFallbacks);
-    return source->read(object, offset, size, buffer);
+    return fillRopeFromStateless(*source, object, offset, rope);
 }
 
 Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
@@ -422,11 +469,13 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
         {
             LOG_TRACE(log, "readPhysicalWindow: source read object={}, offset={}, size={}",
                 pr.object.remote_path, pr.object_offset, pr.size);
-            auto rope_buf = std::make_shared<OwnedRopeBuffer>(pr.size);
-            size_t bytes_read = readFromSource(pr.object, pr.object_offset, pr.size, rope_buf->data());
 
-            result.append(RopeNode{std::move(rope_buf), 0, bytes_read, logical_pos});
-            logical_pos += bytes_read;
+            Rope source_rope = allocateRope(pr.size, logical_pos);
+            readFromSource(pr.object, pr.object_offset, source_rope);
+
+            for (const auto & node : source_rope.getNodes())
+                logical_pos += node.size;
+            result.append(std::move(source_rope));
         }
     }
 
