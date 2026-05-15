@@ -8,95 +8,86 @@
 # `!is_full_wide_part`, which made Compact parts force-recalculate every
 # pre-existing skip index on every mutation. The follow-up
 # `splitAndModifyMutationCommands` only added columns of the
-# *explicitly-materialized* index to the read set, so a pre-existing index
-# over a column that is in the table metadata but absent from the part on
-# disk (typical state of a part created in 25.8) raised
-# `NOT_FOUND_COLUMN_IN_BLOCK` for the next mutation on the part.
+# *explicitly-materialized* index to the read set. As a result a pre-existing
+# index over a column that is in the table metadata but absent from the part
+# on disk crashed the next mutation on that part with
+# `NOT_FOUND_COLUMN_IN_BLOCK`.
 #
-# This test exercises the scenario in two complementary ways:
+# The broken on-disk shape was produced by 25.8: in 25.8 `MATERIALIZE INDEX`
+# wrote `skp_idx_<NAME>.idx` for the new index but did *not* add the indexed
+# column to the new part's `columns.txt`. After an upgrade to 25.10+ /
+# 26.3+ / master, any subsequent mutation on the part hit the bug.
 #
-# 1. The user's exact reproducer from the issue, executed against current
-#    master. With the fix in place every mutation always reads every
-#    pre-existing index's required columns, so the sequence succeeds.
+# We cannot reproduce the bug by creating a fresh table on a modern build —
+# the modern `MATERIALIZE INDEX` correctly writes the index's columns to the
+# new part, so the broken shape never appears. Therefore this test attaches a
+# pre-captured 25.8-era Compact part (`data_104872/part_25.8.tar.gz`, 1.2 KiB)
+# that has the broken shape on disk:
 #
-# 2. An adversarial scenario: a Compact part holds two skip indices over
-#    two different columns, and we run a third mutation (`DELETE`,
-#    `MATERIALIZE INDEX`, `MODIFY TTL`) on it. Force-recalculation now
-#    touches both pre-existing indices; the read set must include every
-#    column those indices reference, otherwise we would regress to the
-#    same `NOT_FOUND_COLUMN_IN_BLOCK` shape.
+#   columns.txt: 2 columns: `timestamp`, `requestID`   (no `vid`)
+#   skp_idx_vid_ix.idx, skp_idx_vid_ix.cmrk4           (present)
+#
+# After attaching, we replay the user's reproducer (`ADD INDEX requestID_ix`
+# + `MATERIALIZE INDEX requestID_ix`). On master without the fix this
+# mutation force-recalculates `vid_ix` while the read set is missing `vid`
+# and we get `NOT_FOUND_COLUMN_IN_BLOCK`. With the fix the read set covers
+# every pre-existing index's columns and the mutation succeeds.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+PART_NAME="all_1_1_0_2"
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS issue_104872 SYNC"
 
-# ---- Part 1: user reproducer ----------------------------------------------
+# The schema matches the table state after `ADD COLUMN vid` + `ADD INDEX vid_ix`
+# in the user's 25.8 session. The captured part was created in that exact
+# session — its on-disk `columns.txt` is from before `ADD COLUMN vid` because
+# 25.8's `MATERIALIZE INDEX vid_ix` did not yet add the column to the new
+# part. That is the broken shape this test exercises.
 ${CLICKHOUSE_CLIENT} -q "
-CREATE TABLE issue_104872 (timestamp DateTime, requestID String)
+CREATE TABLE issue_104872
+(
+    timestamp DateTime,
+    requestID String,
+    vid Int64,
+    INDEX vid_ix vid TYPE bloom_filter GRANULARITY 100
+)
 ENGINE = MergeTree() ORDER BY timestamp
-SETTINGS index_granularity = 8192, min_bytes_for_wide_part = '10G'
-AS SELECT now(), 'aaa' UNION ALL SELECT now(), 'bbb'"
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = '10G'"
 
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE issue_104872 ADD COLUMN vid Int64"
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE issue_104872 ADD INDEX vid_ix vid TYPE bloom_filter GRANULARITY 100"
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE issue_104872 MATERIALIZE INDEX vid_ix SETTINGS mutations_sync = 2"
+# Locate the table's data directory and extract the captured 25.8 part into
+# the `detached/` subdirectory, then attach it.
+DATA_PATH=$(${CLICKHOUSE_CLIENT} -q "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND table = 'issue_104872'")
 
-# The second MATERIALIZE INDEX is the one that fails on 25.8 -> 26.3 upgrades
-# because the Compact part force-recalculates `vid_ix` whose required column
-# `vid` is not in the read set. With the fix, all pre-existing index columns
-# are added.
+mkdir -p "${DATA_PATH}detached/${PART_NAME}"
+tar -xzf "${CUR_DIR}/data_104872/part_25.8.tar.gz" -C "${DATA_PATH}detached/${PART_NAME}"
+
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE issue_104872 ATTACH PART '${PART_NAME}'"
+
+# Sanity check: the part is Compact, has the broken shape (column `vid`
+# missing on disk), and the table reads correctly with `vid` defaulted to 0.
+${CLICKHOUSE_CLIENT} -q "
+SELECT part_type, name FROM system.parts
+WHERE database = currentDatabase() AND table = 'issue_104872' AND active
+ORDER BY name"
+${CLICKHOUSE_CLIENT} -q "SELECT requestID, vid FROM issue_104872 ORDER BY requestID"
+
+# The bug: adding a second skip index and materializing it force-recalculates
+# the pre-existing `vid_ix` whose required column `vid` is not in the part on
+# disk. Without the fix, the mutation fails with NOT_FOUND_COLUMN_IN_BLOCK.
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE issue_104872 ADD INDEX requestID_ix requestID TYPE bloom_filter GRANULARITY 100"
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE issue_104872 MATERIALIZE INDEX requestID_ix SETTINGS mutations_sync = 2"
 
-${CLICKHOUSE_CLIENT} -q "SELECT count() AS rows_after_user_repro FROM issue_104872"
+# Verify the mutation succeeded and the data is intact.
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM issue_104872"
+${CLICKHOUSE_CLIENT} -q "SELECT requestID, vid FROM issue_104872 ORDER BY requestID"
 
-# ---- Part 2: adversarial Compact part with multiple indices ---------------
-${CLICKHOUSE_CLIENT} -q "DROP TABLE issue_104872 SYNC"
-
-${CLICKHOUSE_CLIENT} -q "
-CREATE TABLE issue_104872 (a UInt64, b UInt64, c UInt64, d UInt64)
-ENGINE = MergeTree() ORDER BY a
-SETTINGS index_granularity = 4, min_bytes_for_wide_part = '10G', auto_statistics_types = ''"
-
-${CLICKHOUSE_CLIENT} -q "INSERT INTO issue_104872 SELECT number, number, number, number FROM numbers(32)"
-
-# Two skip indices over different columns. Both materialized on the same
-# Compact part — every subsequent mutation will force-recalculate both.
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE issue_104872 ADD INDEX b_ix b TYPE minmax GRANULARITY 1"
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE issue_104872 MATERIALIZE INDEX b_ix SETTINGS mutations_sync = 2"
-
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE issue_104872 ADD INDEX c_ix c TYPE bloom_filter GRANULARITY 1"
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE issue_104872 MATERIALIZE INDEX c_ix SETTINGS mutations_sync = 2"
-
-# Source part is Compact and now carries skp_idx_b_ix and skp_idx_c_ix.
-${CLICKHOUSE_CLIENT} -q "
-SELECT part_type, name FROM system.parts WHERE table = 'issue_104872' AND active"
-
-# Run a DELETE — it neither references `b` nor `c`, yet both pre-existing
-# indices must be force-recalculated by prepare(). The read set must include
-# `b` and `c` thanks to the fix.
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE issue_104872 DELETE WHERE a < 4 SETTINGS mutations_sync = 2"
-${CLICKHOUSE_CLIENT} -q "SELECT count() AS rows_after_delete FROM issue_104872"
-
-# Run another MATERIALIZE INDEX over an unrelated column. Again forces
-# recalculation of b_ix and c_ix.
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE issue_104872 ADD INDEX d_ix d TYPE minmax GRANULARITY 1"
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE issue_104872 MATERIALIZE INDEX d_ix SETTINGS mutations_sync = 2"
-${CLICKHOUSE_CLIENT} -q "SELECT count() AS rows_after_third_index FROM issue_104872"
-
-# Run MODIFY TTL — exercises the third mutation type touched by the same
-# `splitAndModifyMutationCommands` path.
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE issue_104872 MODIFY TTL toDateTime(a) + toIntervalYear(100) SETTINGS mutations_sync = 2"
-${CLICKHOUSE_CLIENT} -q "SELECT count() AS rows_after_ttl FROM issue_104872"
-
-# Verify all three indices still produce the expected pruning behaviour.
-${CLICKHOUSE_CLIENT} -q "
-SELECT count() AS rows_match_b FROM issue_104872 WHERE b = 5"
-${CLICKHOUSE_CLIENT} -q "
-SELECT count() AS rows_match_c FROM issue_104872 WHERE c = 6"
-${CLICKHOUSE_CLIENT} -q "
-SELECT count() AS rows_match_d FROM issue_104872 WHERE d = 7"
+# A subsequent DELETE also force-recalculates the pre-existing indices on the
+# Compact part — covers the non-`MATERIALIZE INDEX` mutation entry points.
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE issue_104872 DELETE WHERE requestID = 'aaa' SETTINGS mutations_sync = 2"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM issue_104872"
+${CLICKHOUSE_CLIENT} -q "SELECT requestID, vid FROM issue_104872 ORDER BY requestID"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE issue_104872 SYNC"
