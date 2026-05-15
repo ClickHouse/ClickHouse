@@ -58,6 +58,7 @@ public:
         context_copy->setSettings(settings_copy);
 
         access = context_copy->getAccess();
+        check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
 
         auto all_databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
 
@@ -93,9 +94,6 @@ public:
 protected:
     Chunk generate() override
     {
-        if (!access->isGranted(AccessType::SHOW_TABLES))
-            return {};
-
         MutableColumnPtr col_database = ColumnString::create();
         MutableColumnPtr col_table = ColumnString::create();
         MutableColumnPtr col_snapshot_id = ColumnInt64::create();
@@ -213,7 +211,7 @@ protected:
 
         auto try_open_current_table = [&] -> bool
         {
-            if (!access->isGranted(AccessType::SHOW_TABLES, current_table_iterator->databaseName(), current_table_iterator->name()))
+            if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, current_table_iterator->databaseName(), current_table_iterator->name()))
                 return false;
 
             StoragePtr storage = current_table_iterator->table();
@@ -345,6 +343,7 @@ private:
     DB::Databases databases;
     DB::Databases::const_iterator current_database_iterator;
     DB::DatabaseTablesIteratorPtr current_table_iterator;
+    bool check_access_for_tables = true;
 
 #if USE_AVRO
     /// Per-table iteration state. Lives across `generate()` calls so we can stream a table's
