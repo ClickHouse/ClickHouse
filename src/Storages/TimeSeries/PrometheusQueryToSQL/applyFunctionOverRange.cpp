@@ -430,6 +430,7 @@ SQLQueryPiece applyFunctionOverRange(
                 grid_parameter = addGridPredictOffsetShift(
                     makePredictOffsetArray(std::move(extra_parameter), start_time, end_time, step),
                     std::move(timestamp_shift.grid_values));
+                extra_parameter = nullptr;
             }
         }
     }
