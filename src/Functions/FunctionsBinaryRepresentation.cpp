@@ -228,8 +228,16 @@ public:
 
     String getSignatureString() const override
     {
-        /// Accepts a broad set of representable types; the executor handles each.
-        return "(Any) -> String";
+        /// Keep this aligned with the set of types handled by `executeImpl` —
+        /// otherwise unsupported types pass analyzer-time validation and fail
+        /// only at runtime with `ILLEGAL_COLUMN`, which violates the
+        /// `getReturnTypeImpl` contract (early rejection of invalid arguments).
+        return "(Number) -> String"
+               " OR (StringOrFixedString) -> String"
+               " OR (UUID) -> String"
+               " OR (IPv4) -> String"
+               " OR (IPv6) -> String"
+               " OR (AggregateFunction) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
