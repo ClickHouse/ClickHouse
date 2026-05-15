@@ -189,5 +189,5 @@ class SparkAndClickHouseCheck:
         except Exception as e:
             # If an error happens, ignore it, but log it
             traceback.print_exc()
-            self.logger.exception(e)
+            self.logger.error(str(e))
         return True

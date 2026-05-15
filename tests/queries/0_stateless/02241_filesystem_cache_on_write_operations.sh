@@ -122,8 +122,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
     FROM
         system.query_log
     WHERE
-        event_date >= yesterday() AND event_time >= now() - 600
-        AND query LIKE '%SELECT number, toString(number) FROM numbers(5000000)%'
+        query LIKE '%SELECT number, toString(number) FROM numbers(5000000)%'
         AND type = 'QueryFinish'
         AND current_database = currentDatabase()
     ORDER BY

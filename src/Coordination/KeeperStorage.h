@@ -13,7 +13,7 @@
 
 #include <base/defines.h>
 
-#include <Coordination/CompactChildrenSet.h>
+#include <absl/container/flat_hash_set.h>
 
 #include "config.h"
 #if USE_ROCKSDB
@@ -27,6 +27,8 @@ class KeeperContext;
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
 
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
+using ChildrenSet = absl::flat_hash_set<std::string_view, StringViewHash>;
+
 struct NodeStats
 {
     int64_t czxid{0};
@@ -51,7 +53,7 @@ struct NodeStats
     int64_t ephemeralOwner() const
     {
         if (isEphemeral())
-            return ephemeral_or_seq_num.ephemeral_owner;
+            return ephemeral_or_children_data.ephemeral_owner;
 
         return 0;
     }
@@ -59,26 +61,52 @@ struct NodeStats
     void setEphemeralOwner(int64_t ephemeral_owner)
     {
         is_ephemeral_and_ctime.is_ephemeral = true;
-        ephemeral_or_seq_num.ephemeral_owner = ephemeral_owner;
+        ephemeral_or_children_data.ephemeral_owner = ephemeral_owner;
     }
 
-    int64_t seqNum() const
+    int32_t numChildren() const
     {
         if (isEphemeral())
             return 0;
 
-        return ephemeral_or_seq_num.seq_num;
+        return ephemeral_or_children_data.children_info.num_children;
     }
 
-    void setSeqNum(int64_t seq_num)
+    void setNumChildren(int32_t num_children)
     {
-        ephemeral_or_seq_num.seq_num = seq_num;
+        is_ephemeral_and_ctime.is_ephemeral = false;
+        ephemeral_or_children_data.children_info.num_children = num_children;
+    }
+
+    void increaseNumChildren()
+    {
+        chassert(!isEphemeral());
+        ++ephemeral_or_children_data.children_info.num_children;
+    }
+
+    void decreaseNumChildren()
+    {
+        chassert(!isEphemeral());
+        --ephemeral_or_children_data.children_info.num_children;
+    }
+
+    int32_t seqNum() const
+    {
+        if (isEphemeral())
+            return 0;
+
+        return ephemeral_or_children_data.children_info.seq_num;
+    }
+
+    void setSeqNum(int32_t seq_num)
+    {
+        ephemeral_or_children_data.children_info.seq_num = seq_num;
     }
 
     void increaseSeqNum()
     {
         chassert(!isEphemeral());
-        ++ephemeral_or_seq_num.seq_num;
+        ++ephemeral_or_children_data.children_info.seq_num;
     }
 
     int64_t ctime() const
@@ -100,14 +128,17 @@ private:
         int64_t ctime : 63;
     } is_ephemeral_and_ctime{false, 0};
 
-    /// ephemeral nodes cannot have children, so a node either stores
-    /// ephemeral_owner (the owning session) OR seq_num (the counter
-    /// for generating sequential children names under this node)
+    /// ephemeral notes cannot have children so a node can set either
+    /// ephemeral_owner OR seq_num + num_children
     union
     {
         int64_t ephemeral_owner;
-        int64_t seq_num;
-    } ephemeral_or_seq_num{0};
+        struct
+        {
+            int32_t seq_num;
+            int32_t num_children;
+        } children_info;
+    } ephemeral_or_children_data{0};
 };
 
 /// KeeperRocksNodeInfo is used in RocksDB keeper.
@@ -115,25 +146,13 @@ private:
 struct KeeperRocksNodeInfo
 {
     NodeStats stats;
-    ACLId acl_id = 0; /// 0 -- no ACL by default
-    int32_t num_children = 0;
-
-    int32_t numChildren() const
-    {
-        if (stats.isEphemeral())
-            return 0;
-        return num_children;
-    }
-
-    void setNumChildren(int32_t value) { num_children = value; }
-    void increaseNumChildren() { ++num_children; }
-    void decreaseNumChildren() { --num_children; }
+    uint64_t acl_id = 0; /// 0 -- no ACL by default
 
     /// dummy interface for test
     void addChild(std::string_view) {}
     auto getChildren() const
     {
-        return std::vector<int>(numChildren());
+        return std::vector<int>(stats.numChildren());
     }
 
     void copyStats(const Coordination::Stat & stat);
@@ -165,7 +184,6 @@ struct KeeperRocksNode : public KeeperRocksNodeInfo
     {
         stats = other.stats;
         acl_id = other.acl_id;
-        num_children = other.num_children;
         if (stats.data_size != 0)
         {
             data = std::unique_ptr<char[]>(new char[stats.data_size]);
@@ -206,19 +224,7 @@ struct KeeperMemNode
     std::unique_ptr<char[]> data{nullptr};
     mutable uint64_t cached_digest = 0;
 
-    ACLId acl_id = 0; /// 0 -- no ACL by default
-    int32_t num_children = 0;
-
-    int32_t numChildren() const
-    {
-        if (stats.isEphemeral())
-            return 0;
-        return num_children;
-    }
-
-    void setNumChildren(int32_t value) { num_children = value; }
-    void increaseNumChildren() { ++num_children; }
-    void decreaseNumChildren() { --num_children; }
+    uint64_t acl_id = 0; /// 0 -- no ACL by default
 
     KeeperMemNode() = default;
 
@@ -267,13 +273,8 @@ struct KeeperMemNode
     // move it to the new copy of node
     KeeperMemNode copyFromSnapshotNode();
 private:
-    CompactChildrenSet children{};
+    ChildrenSet children{};
 };
-
-/// Going to >160 bytes pushes to jemalloc bin #10 (192 bytes).
-#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
-static_assert(sizeof(KeeperMemNode) <= 160);
-#endif
 
 struct KeeperStorageStats
 {
@@ -489,14 +490,10 @@ public:
     using Node = Container::Node;
 
 #if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
-    static_assert(sizeof(CompactChildrenSet) == 16);
-    static_assert(sizeof(KeeperMemNode) == 104);
     static_assert(
-        sizeof(ListNode<Node>) <= 128,
-        "std::list node containing ListNode<Node> is > 144 bytes (sizeof(ListNode<Node>) + 16 bytes for pointers) which will increase "
+        sizeof(ListNode<Node>) <= 144,
+        "std::list node containing ListNode<Node> is > 160 bytes (sizeof(ListNode<Node>) + 16 bytes for pointers) which will increase "
         "memory consumption");
-    static_assert(std::is_nothrow_move_assignable_v<CompactChildrenSet>);
-    static_assert(std::is_nothrow_move_constructible_v<CompactChildrenSet>);
 #endif
 
 
@@ -545,12 +542,7 @@ public:
         {
             std::shared_ptr<Node> node{nullptr};
             std::optional<Coordination::ACLs> acls{};
-            /// Tracks which zxids have been applied to this uncommitted node.
-            /// Typically 1-3 entries; vector is faster than unordered_set at this size.
-            /// May contain duplicates when a Multi operation applies multiple deltas
-            /// with the same zxid to the same node — this is harmless because erasure
-            /// uses std::erase (removes all matches) and only emptiness is checked.
-            std::vector<uint64_t> applied_zxids{};
+            std::unordered_set<uint64_t> applied_zxids{};
 
             void materializeACL(const ACLMap & current_acl_map);
         };

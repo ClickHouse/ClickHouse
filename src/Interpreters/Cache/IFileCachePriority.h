@@ -30,9 +30,6 @@ public:
 
     struct Entry
     {
-        Entry(const Key & key_, size_t offset_, size_t size_, KeyMetadataPtr key_metadata_);
-        Entry(const Entry & other);
-
         const Key key;
         const size_t offset;
         const KeyMetadataPtr key_metadata;
@@ -45,6 +42,15 @@ public:
         enum class State
         {
             Active,
+            /// Temporary state used only in SLRU during queue transitions (downgrade from
+            /// protected to probationary, or upgrade from probationary to protected).
+            /// The new entry is added to the destination queue with this state and transitions
+            /// to Active atomically together with the SLRUIterator's inner pointer update in
+            /// `SLRUIterator::setIterator`. This ensures that `iterateImpl`, which checks entry
+            /// state before evicting, never sees the entry as evictable until the SLRUIterator
+            /// already points to it: a concurrent iteration that observes Active state will
+            /// always find this entry (not the previous queue entry) when it calls getEntry().
+            PreActive,
             /// Entry is collected for eviction via IFileCachePriority::collectEvictionCandidates
             /// and is being or soon will be removed from filesystem.
             Evicting,
@@ -57,13 +63,24 @@ public:
             Removed,
         };
 
-        /// Be aware that by default this method has relaxed guarantees.
-        /// See which locks are used in setter methods below if stronger guarantees are needed.
-        State getState() const { return state.load(std::memory_order_relaxed); }
+        Entry(const Key & key_, size_t offset_, size_t size_, KeyMetadataPtr key_metadata_, State initial_state = State::Active);
+        Entry(const Entry & other);
+
+        State getState() const { return state.load(); }
+
+        /// Transitions PreActive → Active. Must be called inside `SLRUIterator::entry_mutex`
+        /// together with the pointer update so that `getEntry()` and state visibility are atomic.
+        void setActiveFlag(const CacheStateGuard::Lock &)
+        {
+            [[maybe_unused]] auto prev = state.exchange(State::Active);
+            chassert(
+                prev == State::PreActive,
+                printUnexpectedState(prev, "PreActive", "Active"));
+        }
 
         void setEvictingFlag(const LockedKey &)
         {
-            [[maybe_unused]] auto prev = state.exchange(State::Evicting, std::memory_order_relaxed);
+            [[maybe_unused]] auto prev = state.exchange(State::Evicting);
             chassert(
                 prev == State::Active,
                 printUnexpectedState(prev, "Active", "Evicting"));
@@ -71,7 +88,7 @@ public:
 
         void setMovingFlag(const LockedKey &)
         {
-            [[maybe_unused]] auto prev = state.exchange(State::Moving, std::memory_order_relaxed);
+            [[maybe_unused]] auto prev = state.exchange(State::Moving);
             chassert(
                 prev == State::Active,
                 printUnexpectedState(prev, "Active", "Moving"));
@@ -79,7 +96,7 @@ public:
 
         void setRemoved(const CachePriorityGuard::WriteLock &)
         {
-            [[maybe_unused]] auto prev = state.exchange(State::Removed, std::memory_order_relaxed);
+            [[maybe_unused]] auto prev = state.exchange(State::Removed);
             chassert(
                 prev == State::Active || prev == State::Evicting || prev == State::Invalidated,
                 printUnexpectedState(prev, "Active or Evicting or Invalidated", "Removed"));
@@ -91,14 +108,15 @@ public:
             /// Active in case of FileCache::remove
             /// Evicting in case of FileCache::tryReserve
             /// Moving in case of SLRU queue moves
+            /// PreActive in case of exception during SLRU queue transition
             chassert(
-                prev == State::Active || prev == State::Evicting || prev == State::Moving,
-                printUnexpectedState(prev, "Active or Moving or Evicting", "Invalidated"));
+                prev == State::Active || prev == State::Evicting || prev == State::Moving || prev == State::PreActive,
+                printUnexpectedState(prev, "Active or Moving or Evicting or PreActive", "Invalidated"));
         }
 
         void resetFlag(State from_state, State to_state = State::Active)
         {
-            [[maybe_unused]] auto prev = state.exchange(to_state, std::memory_order_relaxed);
+            [[maybe_unused]] auto prev = state.exchange(to_state);
             chassert(
                 prev == from_state,
                 printUnexpectedState(prev, magic_enum::enum_name(from_state), fmt::format("{}", magic_enum::enum_name(to_state))));

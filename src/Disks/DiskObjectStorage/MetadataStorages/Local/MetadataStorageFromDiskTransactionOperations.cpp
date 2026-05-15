@@ -8,7 +8,6 @@
 #include <IO/ReadHelpers.h>
 
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/logger_useful.h>
 #include <Common/getRandomASCIIString.h>
@@ -31,12 +30,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int TOO_DEEP_RECURSION;
-    extern const int FAULT_INJECTED;
-}
-
-namespace FailPoints
-{
-    extern const char write_file_operation_fail_on_read[];
 }
 
 namespace
@@ -106,13 +99,8 @@ WriteFileOperation::WriteFileOperation(std::string path_, std::string data_, IDi
 
 void WriteFileOperation::execute()
 {
-    if (auto buf = disk.readFileIfExists(path, getReadSettings()))
+    if (auto buf = disk.readFileIfExists(path, ReadSettings{}))
     {
-        file_existed = true;
-        fiu_do_on(FailPoints::write_file_operation_fail_on_read,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault in WriteFileOperation read");
-        });
         std::string file_data;
         readStringUntilEOF(file_data, *buf);
         prev_data = file_data;
@@ -125,18 +113,16 @@ void WriteFileOperation::execute()
 
 void WriteFileOperation::undo()
 {
-    if (prev_data.has_value())
+    if (!prev_data.has_value())
     {
-        chassert(file_existed);
+        disk.removeFileIfExists(path);
+    }
+    else
+    {
         auto buf = disk.writeFile(path);
         writeString(prev_data.value(), *buf);
         buf->finalize();
     }
-    else if (!file_existed)
-    {
-        disk.removeFileIfExists(path);
-    }
-    // else: file existed but the file content is unchanged, leave it alone.
 }
 
 UnlinkFileOperation::UnlinkFileOperation(std::string path_, bool if_exists_, bool should_remove_objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)

@@ -38,6 +38,8 @@ namespace ErrorCodes
     extern const int TABLE_IS_BEING_RESTARTED;
 }
 
+const VirtualColumnsDescription IStorage::common_virtuals = IStorage::createCommonVirtuals();
+
 IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_)
     : storage_id(std::move(storage_id_))
     , virtuals(std::make_unique<VirtualColumnsDescription>())
@@ -51,16 +53,14 @@ IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadat
 bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
 {
     /// Virtual column maybe overridden by real column
-    const auto virtual_columns = virtuals.get();
-    return !metadata_snapshot->getColumns().has(column_name) && (virtual_columns->has(column_name) || getCommonVirtuals(virtual_columns)->has(column_name));
+    return !metadata_snapshot->getColumns().has(column_name) && (virtuals.get()->has(column_name) || common_virtuals.has(column_name));
 }
 
-VirtualColumnsDescription IStorage::createCommonVirtuals(const VirtualColumnsDescription & storage_virtuals)
+VirtualColumnsDescription IStorage::createCommonVirtuals()
 {
     VirtualColumnsDescription desc;
 
-    if (!storage_virtuals.has("_table"))
-        desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The name of table which the row comes from");
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The name of table which the row comes from");
 
     return desc;
 }
@@ -302,11 +302,6 @@ void IStorage::mutate(const MutationCommands &, ContextPtr)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
 }
 
-Pipe IStorage::executeCommand(const String & command_name, const ASTPtr & /*args*/, ContextPtr /*context*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by storage {}", command_name, getName());
-}
-
 CancellationCode IStorage::killMutation(const String & /*mutation_id*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
@@ -356,7 +351,8 @@ Names IStorage::getAllRegisteredNames() const
 NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
 {
     NameDependencies name_deps;
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(storage_id);
+    auto current_storage_id = getStorageID();
+    auto view_ids = DatabaseCatalog::instance().getDependentViews(current_storage_id);
     for (const auto & view_id : view_ids)
     {
         auto view = DatabaseCatalog::instance().getTable(view_id, context);
@@ -368,7 +364,7 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
             {
                 auto interpreter = InterpreterSelectQueryAnalyzer(select_query, context, SelectQueryOptions{}.noModify());
                 auto query_tree = interpreter.getQueryTree();
-                required_columns = collectSelectedColumnsFromTable(query_tree, storage_id, context);
+                required_columns = collectSelectedColumnsFromTable(query_tree, current_storage_id, context);
             }
             else
             {

@@ -173,18 +173,9 @@ NameSet injectRequiredColumns(
         if (!storage_snapshot->tryGetColumn(options, columns[i]))
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column or subcolumn {} in table", columns[i]);
 
-        /// Copy columns[i] to avoid a dangling reference: injectRequiredColumnsRecursively may call
-        /// columns.emplace_back, which can reallocate the vector and invalidate any reference into it.
-        String column_name = columns[i];
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
-            column_name,
-            storage_snapshot,
-            alter_conversions,
-            data_part_info_for_reader,
-            options,
-            columns,
-            required_columns,
-            injected_columns);
+            columns[i], storage_snapshot, alter_conversions,
+            data_part_info_for_reader, options, columns, required_columns, injected_columns);
     }
 
     /** Add a column of the minimum size.
@@ -218,8 +209,8 @@ NameSet injectRequiredColumns(
 }
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
-    const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation_)
-    : data_part(data_part_), allow_subcolumns_sizes_calculation(allow_subcolumns_sizes_calculation_)
+    const DataPartPtr & data_part_, const Names & columns, const Block & sample_block)
+    : data_part(data_part_)
 {
     number_of_rows_in_part = data_part->rows_count;
     /// Initialize with sample block until update won't called.
@@ -249,8 +240,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         if (typeid_cast<const ColumnConst *>(column_data.get()))
             continue;
 
-        auto column_from_part = data_part->tryGetColumn(column_name);
-        if ((!column_from_part || !column_from_part->isSubcolumn()) && column_data->valuesHaveFixedSize())
+        if (column_data->valuesHaveFixedSize())
         {
             size_t size_of_value = column_data->sizeOfValueIfFixed();
             fixed_columns_bytes_per_row += column_data->sizeOfValueIfFixed();
@@ -260,13 +250,8 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         {
             ColumnInfo info;
             info.name = column_name;
-            info.is_subcolumn = column_from_part && column_from_part->isSubcolumn();
             /// If column isn't fixed and doesn't have checksum, than take first
-            ColumnSize column_size;
-            if (info.is_subcolumn && allow_subcolumns_sizes_calculation)
-                column_size = data_part->getSubcolumnSize(column_name);
-            else
-                column_size = data_part->getColumnSize(column_from_part ? column_from_part->getNameInStorage() : column_name);
+            ColumnSize column_size = data_part->getColumnSize(column_name);
 
             info.bytes_per_row_global = column_size.data_uncompressed
                 ? static_cast<double>(column_size.data_uncompressed) / static_cast<double>(number_of_rows_in_part)
@@ -334,13 +319,6 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
 
         double local_bytes_per_row = static_cast<double>(diff_size) / static_cast<double>(diff_rows);
         info.bytes_per_row = alpha * info.bytes_per_row + (1. - alpha) * local_bytes_per_row;
-
-        /// For subcolumns, the output column size can be much smaller than what was
-        /// actually read from disk (e.g. a Map subcolumn reads the entire Map but
-        /// only extracts one key's values). Prevent the estimate from dropping below
-        /// the global average so that chunk sizes stay appropriate for the real I/O cost.
-        if (info.is_subcolumn)
-            info.bytes_per_row = std::max(info.bytes_per_row, info.bytes_per_row_global);
 
         info.size_bytes = new_size;
         block_size_bytes += new_size;

@@ -99,9 +99,8 @@ ORDER BY key
 
 Text indexes can be defined on columns of these types:
 - [String](/sql-reference/data-types/string.md) and [FixedString](/sql-reference/data-types/fixedstring.md),
-- [Array(String)](/sql-reference/data-types/array.md) and [Array(FixedString)](/sql-reference/data-types/array.md),
-- [Map](/sql-reference/data-types/map.md) (via [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapKeys) and [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapValues) functions), and
-- [JSON](/sql-reference/data-types/newjson.md) (via [JSONAllPaths](/sql-reference/functions/json-functions.md/#JSONAllPaths) function).
+- [Array(String)](/sql-reference/data-types/array.md) and [Array(FixedString)](/sql-reference/data-types/array.md), and
+- [Map](/sql-reference/data-types/map.md) (via [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapKeys) and [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapValues) functions).
 
 Columns of type [Nullable(T)](/sql-reference/data-types/nullable.md) and [LowCardinality()](/sql-reference/data-types/lowcardinality.md) are also supported, including `Array(Nullable(String or FixedString))`.
 
@@ -155,7 +154,6 @@ ALTER TABLE table DROP INDEX text_idx;
   Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text.
   For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
 - `array` performs no tokenization, i.e. every row value is a token (see function [array](/sql-reference/functions/array-functions.md/#array)).
-- `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). ASCII alphanumeric characters and underscores form tokens with connectors (ASCII `:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters, including [CJK](https://en.wikipedia.org/wiki/CJK_characters) characters, become single-character tokens.
 
 All available tokenizers are listed in [system.tokenizers](../../../operations/system-tables/tokenizers.md).
 
@@ -168,7 +166,7 @@ This can generally be done by passing the separator strings in order of descendi
 If the separator strings happen to form a [prefix code](https://en.wikipedia.org/wiki/Prefix_code), they can be passed in arbitrary order.
 :::
 
-To understand how a tokenizer split the input string, you can use the [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) and [tokensForLikePattern](/sql-reference/functions/splitting-merging-functions.md/#tokensForLikePattern) functions:
+To understand how a tokenizer split the input string, you can use the [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function:
 
 Example:
 
@@ -183,16 +181,17 @@ Result:
 ```
 
 *Working with non-ASCII inputs.*
-Text indexes can be built on top of text data in any language and character set.
-For non-ASCII text, the `asciiCJK` tokenizer is recommended as it correctly handles Unicode word boundaries including CJK characters.
+While text indexes can in principle be build on top of text data in any language and character set, we recommend doing so at the moment only for input in an extended ASCII character sets, i.e. Western languages.
+In particular, Chinese, Japanese, and Korean currently lack comprehensive indexing support, leading to potentially huge index sizes and large query times.
+We plan to add specialized language-specific tokenizers to handle these cases better in future.
 :::
 
 **Preprocessor argument (optional)**. The preprocessor refers to an expression which is applied to the input string before tokenization.
 
 Typical use cases for the preprocessor argument include
-1. Lower/upper-casing, or case folding to enable case-insensitive matching, e.g., [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8), [caseFoldUTF8](/sql-reference/functions/string-functions.md/#caseFoldUTF8).
-2. UTF-8 normalization, e.g. [normalizeUTF8NFC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFC), [normalizeUTF8NFD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFD), [normalizeUTF8NFKC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKC), [normalizeUTF8NFKD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKD), [normalizeUTF8NFKCCasefold](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKCCasefold), [toValidUTF8](/sql-reference/functions/string-functions.md/#toValidUTF8).
-3. Removing or transforming unwanted characters or substrings, such as accents e.g. [extractTextFromHTML](/sql-reference/functions/string-functions.md/#extractTextFromHTML), [substring](/sql-reference/functions/string-functions.md/#substring), [idnaEncode](/sql-reference/functions/string-functions.md/#idnaEncode), [translate](/sql-reference/functions/string-replace-functions.md/#translate), [removeDiacriticsUTF8](/sql-reference/functions/string-functions.md/#removeDiacriticsUTF8).
+1. Lower- or upper-casing to enable case-insensitive matching, e.g., [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8) (see the first example below).
+2. UTF-8 normalization, e.g. [normalizeUTF8NFC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFC), [normalizeUTF8NFD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFD), [normalizeUTF8NFKC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKC), [normalizeUTF8NFKD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKD), [toValidUTF8](/sql-reference/functions/string-functions.md/#toValidUTF8).
+3. Removing or transforming unwanted characters or substrings, e.g. [extractTextFromHTML](/sql-reference/functions/string-functions.md/#extractTextFromHTML), [substring](/sql-reference/functions/string-functions.md/#substring), [idnaEncode](/sql-reference/functions/string-functions.md/#idnaEncode), [translate](./sql-reference/functions/string-replace-functions.md/#translate).
 
 The preprocessor expression must transform an input value of type [String](/sql-reference/data-types/string.md) or [FixedString](/sql-reference/data-types/fixedstring.md) to a value of the same type.
 If the text index was build on a column of type `Nullable(T)` or `LowCardinality(T)` column, then the preprocessor expression should accept nullable or low-cardinality values (i.e. not throw an exception).
@@ -201,8 +200,7 @@ Examples:
 
 - `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))`
 - `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = substringIndex(col, '\n', 1))`
-- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(extractTextFromHTML(col)))`
-- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = removeDiacriticsUTF8(caseFoldUTF8(col)))`
+- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(extractTextFromHTML(col))`
 
 Also, the preprocessor expression must only reference the column or expression on top of which the text index is defined.
 
@@ -411,10 +409,6 @@ SELECT count() FROM table WHERE comment LIKE ' support %'; -- or `% support %`
 ```
 
 The spaces left and right of `support` make sure that the term can be extracted as a token.
-
-Fortunately, there is a special case where ClickHouse can leverage the inverted index to speed up LIKE queries significantly.
-
-See the [LIKE/ILIKE performance tuning section](#like-ilike-queries-perf) for details.
 
 #### `startsWith` and `endsWith` {#functions-example-startswith-endswith}
 
@@ -632,140 +626,6 @@ SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- fast
 SELECT * FROM logs WHERE mapContainsValueLike(attributes, '% error %'); -- fast
 ```
 
-#### Indexing JSON columns {#text-index-example-json}
-
-Data skipping indexes can be used with `JSON` columns in two ways:
-
-1. **Indexes on specific subcolumns** — create a standard skip index on a known JSON path, just like on a regular column. This indexes the *values* at that path.
-2. **Path-based indexes with `JSONAllPaths`** — index the *set of paths* present in each granule to skip granules that cannot contain the queried path. Similar to `Map` columns.
-
-##### Indexes on specific subcolumns {#json-indexes-on-subcolumns}
-
-You can create a skip index on any JSON subcolumn using the same syntax as for regular columns.
-
-There are two ways to reference a JSON subcolumn in an index expression:
-
-- **Typed path** declared in the JSON type hint — access by name directly: `json.a`.
-- **Dynamic path** with explicit cast — use the `::` cast syntax: `json.b::String`.
-
-Example queries:
-
-```sql
-CREATE TABLE sensor_data
-(
-    data JSON(sensor_id String),
-    INDEX idx_sensor data.sensor_id TYPE text(tokenizer = splitByNonAlpha),
-    INDEX idx_location data.location::String TYPE text(tokenizer = splitByNonAlpha)
-)
-ENGINE = MergeTree
-ORDER BY tuple()
-SETTINGS index_granularity = 1;
-
-INSERT INTO sensor_data SELECT toJSONString(map('sensor_id', 'id_' || number , 'location', 'room_' || toString(number))) FROM numbers(4);
-INSERT INTO sensor_data SELECT toJSONString(map('sensor_id', 'id_' || number, 'location', 'room_' || toString(number))) FROM numbers(4, 4);
-```
-
-```sql title="Query"
-EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.sensor_id = 'id_5';
-```
-
-```text title="Response"
-...
-    Indexes:
-      Skip
-        Name: idx_sensor
-        Description: text
-        Condition: (mode: All; tokens: ["5", "id"])
-        Parts: 1/2
-        Granules: 1/8
-```
-
-```sql title="Query"
-EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.location::String = 'room_5';
-```
-
-```text title="Response"
-...
-    Indexes:
-      Skip
-        Name: idx_location
-        Description: text
-        Condition: (mode: All; tokens: ["5", "room"])
-        Parts: 1/2
-        Granules: 1/8
-```
-
-##### Path-based indexes with JSONAllPaths {#json-indexes-jsonallpaths}
-
-Similar to `Map` columns, text indexes can be created on [JSON](/sql-reference/data-types/newjson.md) columns using [`JSONAllPaths`](/sql-reference/functions/json-functions.md/#JSONAllPaths).
-The index stores the set of JSON paths present in each granule and uses them to skip granules where a queried path is absent.
-
-Example queries:
-
-```sql
-CREATE TABLE events
-(
-    data JSON,
-    INDEX idx JSONAllPaths(data) TYPE text(tokenizer = array)
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-
-INSERT INTO events VALUES ('{"user": {"name": "Alice"}, "action": "login"}');
-INSERT INTO events VALUES ('{"metric": {"cpu": 0.95}, "host": "srv1"}');
-```
-
-You can use `EXPLAIN indexes = 1` to verify that the skip index is being used. When a path exists only in one part, the index skips the other part:
-
-```sql title="Query"
-EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name = 'Alice';
-```
-
-```text title="Response"
-...
-    Indexes:
-      Skip
-        Name: idx
-        Description: text
-        Condition: (mode: All; tokens: ["user.name"])
-        Parts: 1/2
-        Granules: 1/2
-```
-
-When a path does not exist in any part, all parts and granules are skipped:
-
-```sql title="Query"
-EXPLAIN indexes = 1 SELECT * FROM events WHERE data.nonexistent = 1;
-```
-
-```text title="Response"
-...
-    Indexes:
-      Skip
-        Name: idx
-        Description: text
-        Condition: (mode: All; tokens: ["nonexistent"])
-        Parts: 0/2
-        Granules: 0/2
-```
-
-`IS NOT NULL` also uses the index — it skips granules where the path is absent (since the value would be `NULL`):
-
-```sql title="Query"
-EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
-```
-
-```text title="Response"
-...
-    Indexes:
-      Skip
-        Name: idx
-        Description: text
-        Condition: (mode: All; tokens: ["user.name"])
-        Parts: 1/2
-        Granules: 1/2
-```
-
 ## Performance Tuning {#performance-tuning}
 
 ### Direct read {#direct-read}
@@ -900,40 +760,24 @@ Thanks to the [PREWHERE](/sql-reference/statements/select/prewhere) optimization
 For this query, the application order is `__text_index_...`, then `greaterOrEquals(...)`, and finally `like(...)`.
 This ordering enables skipping even more data granules than the granules skipped by the text index and the original filter, before reading the heavy columns used in the query after `WHERE` clause further reducing the amount of data to read.
 
-### LIKE/ILIKE queries {#like-ilike-queries-perf}
-
-When a LIKE/ILIKE query pattern is `%<alpha-numeric-characters-without-spaces>%` and the text index tokenizer is `splitByNonAlpha`, ClickHouse leverages the inverted index to speed up LIKE/ILIKE queries significantly. To achieve that, ClickHouse scans the inverted index dictionary instead of a full-table scan to find the matching pattern.
-
-When the optimization is enabled, LIKE/ILIKE queries should be significantly faster than a full-table scan. However, when the pattern matches most dictionary tokens, the performance can be worse compared to a full-table scan. Luckily, there is a fallback mechanism to prevent that.
-
-The optimization is controlled by a setting:
-- [use_text_index_like_evaluation_by_dictionary_scan](../../../operations/settings/settings#use_text_index_like_evaluation_by_dictionary_scan)
-
-The fallback mechanism is controlled by two settings:
-- [text_index_like_min_pattern_length](../../../operations/settings/settings#text_index_like_min_pattern_length)
-- [text_index_like_max_postings_to_read](../../../operations/settings/settings#text_index_like_max_postings_to_read)
-
-This optimization supports only functions `like` and `ilike`.
-
 ### Caching {#caching}
 
 Different caches are available to buffer parts of the text index in memory (see section [Implementation Details](#implementation)):
-Currently, there are caches for the deserialized headers, tokens, and posting lists of the text index to reduce I/O.
-They can be enabled via settings [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache), [use_text_index_tokens_cache](/operations/settings/settings#use_text_index_tokens_cache), and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache).
-
+Currently, there are caches for the deserialized dictionary blocks, headers and posting lists of the text index to reduce I/O.
+They can be enabled via settings [use_text_index_dictionary_cache](/operations/settings/settings#use_text_index_dictionary_cache), [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache), and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache).
 By default, all caches are disabled.
 To clear the caches, use statement [SYSTEM CLEAR TEXT INDEX CACHES](../../../sql-reference/statements/system#drop-text-index-caches)
 
 Please refer the following server settings to configure the caches.
 
-#### Tokens cache settings {#caching-tokens}
+#### Dictionary blocks cache settings {#caching-dictionary}
 
 | Setting                                                                                                                                                  | Description                                                                                                    |
 |----------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
-| [text_index_tokens_cache_policy](/operations/server-configuration-parameters/settings#text_index_tokens_cache_policy)                | Text index tokens cache policy name.                                                                 |
-| [text_index_tokens_cache_size](/operations/server-configuration-parameters/settings#text_index_tokens_cache_size)                    | Maximum cache size in bytes.                                                                                   |
-| [text_index_tokens_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_tokens_cache_max_entries)      | Maximum number of deserialized tokens in cache.                                                     |
-| [text_index_tokens_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_tokens_cache_size_ratio)        | The size of the protected queue in the text index tokens cache relative to the cache\'s total size.  |
+| [text_index_dictionary_block_cache_policy](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_policy)                | Text index dictionary block cache policy name.                                                                 |
+| [text_index_dictionary_block_cache_size](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size)                    | Maximum cache size in bytes.                                                                                   |
+| [text_index_dictionary_block_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_max_entries)      | Maximum number of deserialized dictionary blocks in cache.                                                     |
+| [text_index_dictionary_block_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size_ratio)        | The size of the protected queue in the text index dictionary block cache relative to the cache\'s total size.  |
 
 #### Header cache settings {#caching-header}
 
@@ -1024,12 +868,8 @@ If the posting list is larger than `posting_list_block_size`, it is split into m
 When data parts are merged, the text index does not need to be rebuilt from scratch; instead, it can be merged efficiently in a separate step of the merge process.
 During this step, the sorted dictionaries of the text indexes of each input part are read and combined into a new unified dictionary.
 The row numbers in the postings lists are also recalculated to reflect their new positions in the merged data part, using a mapping of old to new row numbers that is created during the initial merge phase.
-This method of merging text indexes is similar to how [projections](/docs/sql-reference/statements/alter/projection#projection-indexes) with `_part_offset` column are merged.
+This method of merging text indexes is similar to how [projections](/docs/sql-reference/statements/alter/projection#normal-projection-with-part-offset-field) with `_part_offset` column are merged.
 If index is not materialized in the source part, it is built, written into a temporary file and then merged together with indexes from the other parts and from other temporary index files.
-
-**Debugging**
-
-Table function [mergeTreeTextIndex](../../../sql-reference/table-functions/mergeTreeTextIndex.md) can be used to introspect text indexes.
 
 ## Example: Hackernews dataset {#hacker-news-dataset}
 

@@ -15,14 +15,6 @@
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
-#include <Storages/MergeTree/TextIndexCache.h>
-#include <Interpreters/Cache/QueryResultCache.h>
-#if USE_AVRO
-#    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
-#endif
-#if USE_PARQUET
-#    include <Processors/Formats/Impl/ParquetMetadataCache.h>
-#endif
 #include <Storages/System/ServerSettingColumnsParams.h>
 #include <base/types.h>
 #include <Common/Config/ConfigReloader.h>
@@ -150,8 +142,6 @@ namespace
     )", 0) \
     DECLARE(UInt64, max_fetch_partition_thread_pool_size, 64, R"(The number of threads for ALTER TABLE FETCH PARTITION.)", 0) \
     DECLARE(UInt64, max_active_parts_loading_thread_pool_size, 64, R"(The number of threads to load active set of data parts (Active ones) at startup.)", 0) \
-    DECLARE(UInt64, max_snapshot_commit_thread_pool_size, 64, R"(The number of threads to commit snapshot.)", 0) \
-    DECLARE(UInt64, max_snapshot_commit_thread_pool_free_size, 0, R"(If the number of idle threads in the snapshot commit thread pool exceeds `max_snapshot_commit_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.)", 0) \
     DECLARE(UInt64, max_outdated_parts_loading_thread_pool_size, 32, R"(The number of threads to load inactive set of data parts (Outdated ones) at startup.)", 0) \
     DECLARE(UInt64, max_unexpected_parts_loading_thread_pool_size, 8, R"(The number of threads to load inactive set of data parts (Unexpected ones) at startup.)", 0) \
     DECLARE(UInt64, max_parts_cleaning_thread_pool_size, 128, R"(The number of threads for concurrent removal of inactive data parts.)", 0) \
@@ -202,7 +192,6 @@ namespace
     DECLARE(UInt64, max_backup_bandwidth_for_server, 0, R"(The maximum read speed in bytes per second for all backups on server. Zero means unlimited.)", 0) \
     DECLARE(NonZeroUInt64, restore_threads, 16, R"(The maximum number of threads to execute RESTORE requests.)", 0) \
     DECLARE(Bool, shutdown_wait_backups_and_restores, true, R"(If set to true ClickHouse will wait for running backups and restores to finish before shutdown.)", 0) \
-    DECLARE(UInt64, max_held_snapshots, 0, R"(Maximum number of lightweight snapshots that can be held at the same time. Zero means unlimited. If the number of snapshots reaches this limit, an exception is thrown when trying to create a new snapshot.)", 0) \
     DECLARE(Double, cannot_allocate_thread_fault_injection_probability, 0, R"(For testing purposes.)", 0) \
     DECLARE(Int32, max_connections, 4096, R"(Max server connections.)", 0) \
     DECLARE(UInt32, asynchronous_metrics_update_period_s, 1, R"(Period in seconds for updating asynchronous metrics.)", 0) \
@@ -364,10 +353,6 @@ namespace
     - [merges_mutations_memory_usage_soft_limit](/operations/server-configuration-parameters/settings#merges_mutations_memory_usage_soft_limit)
     )", 0) \
     DECLARE(Bool, allow_use_jemalloc_memory, true, R"(Allows to use jemalloc memory.)", 0) \
-    DECLARE(Bool, use_separate_cache_arena, true, R"(
-    Enable a dedicated jemalloc arena for cache allocations (mark cache, uncompressed cache, page cache).
-    Isolates cache data from query-processing allocations, reducing memory fragmentation.
-    )", 0) \
     DECLARE(UInt64, cgroups_memory_usage_observer_wait_time, 15, R"(
     Interval in seconds during which the server's maximum allowed memory consumption is adjusted by the corresponding threshold in cgroups.
 
@@ -524,10 +509,6 @@ namespace
     DECLARE(UInt64, iceberg_metadata_files_cache_size, DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE, "Maximum size of iceberg metadata cache in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, iceberg_metadata_files_cache_max_entries, DEFAULT_ICEBERG_METADATA_CACHE_MAX_ENTRIES, "Maximum size of iceberg metadata files cache in entries. Zero means disabled.", 0) \
     DECLARE(Double, iceberg_metadata_files_cache_size_ratio, DEFAULT_ICEBERG_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the iceberg metadata cache relative to the cache's total size.", 0) \
-    DECLARE(String, parquet_metadata_cache_policy, DEFAULT_PARQUET_METADATA_CACHE_POLICY, "Parquet metadata cache policy name.", 0) \
-    DECLARE(UInt64, parquet_metadata_cache_size, DEFAULT_PARQUET_METADATA_CACHE_MAX_SIZE, "Maximum size of parquet metadata cache in bytes. Zero means disabled.", 0) \
-    DECLARE(UInt64, parquet_metadata_cache_max_entries, DEFAULT_PARQUET_METADATA_CACHE_MAX_ENTRIES, "Maximum size of parquet metadata files cache in entries. Zero means disabled.", 0) \
-    DECLARE(Double, parquet_metadata_cache_size_ratio, DEFAULT_PARQUET_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the parquet metadata cache relative to the cache's total size.", 0) \
     DECLARE(String, allowed_disks_for_table_engines, "", "List of disks allowed for use with Iceberg", 0) \
     DECLARE(String, vector_similarity_index_cache_policy, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_POLICY, "Vector similarity index cache policy name.", 0) \
     DECLARE(UInt64, vector_similarity_index_cache_size, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_SIZE, R"(Size of cache for vector similarity indexes. Zero means disabled.
@@ -537,14 +518,14 @@ namespace
     :::)", 0) \
     DECLARE(UInt64, vector_similarity_index_cache_max_entries, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_ENTRIES, "Size of cache for vector similarity index in entries. Zero means disabled.", 0) \
     DECLARE(Double, vector_similarity_index_cache_size_ratio, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the vector similarity index cache relative to the cache's total size.", 0) \
-    DECLARE(String, text_index_tokens_cache_policy, DEFAULT_TEXT_INDEX_TOKENS_CACHE_POLICY, "Text index tokens cache policy name.", 0) \
-    DECLARE(UInt64, text_index_tokens_cache_size, DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_SIZE, R"(Size of cache for text index tokens. Zero means disabled.
+    DECLARE(String, text_index_dictionary_block_cache_policy, DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_POLICY, "Text index dictionary block cache policy name.", 0) \
+    DECLARE(UInt64, text_index_dictionary_block_cache_size, DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_MAX_SIZE, R"(Size of cache for text index dictionary blocks. Zero means disabled.
 
     :::note
     This setting can be modified at runtime and will take effect immediately.
     :::)", 0) \
-    DECLARE(UInt64, text_index_tokens_cache_max_entries, DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_ENTRIES, "Size of cache for text index tokens in entries. Zero means disabled.", 0) \
-    DECLARE(Double, text_index_tokens_cache_size_ratio, DEFAULT_TEXT_INDEX_TOKENS_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index tokens cache relative to the cache's total size.", 0) \
+    DECLARE(UInt64, text_index_dictionary_block_cache_max_entries, DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_MAX_ENTRIES, "Size of cache for text index dictionary block in entries. Zero means disabled.", 0) \
+    DECLARE(Double, text_index_dictionary_block_cache_size_ratio, DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index dictionary block cache relative to the cache's total size.", 0) \
     DECLARE(String, text_index_header_cache_policy, DEFAULT_TEXT_INDEX_HEADER_CACHE_POLICY, "Text index header cache policy name.", 0) \
     DECLARE(UInt64, text_index_header_cache_size, DEFAULT_TEXT_INDEX_HEADER_CACHE_MAX_SIZE, R"(Size of cache for text index headers. Zero means disabled.
 
@@ -1126,25 +1107,6 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Bool, prepare_system_log_tables_on_startup, false, R"(
     If true, ClickHouse creates all configured `system.*_log` tables before the startup. It can be helpful if some startup scripts depend on these tables.
     )", 0) \
-    DECLARE(Bool, use_shared_merge_tree_log_pipeline, false, R"(
-    Only available on ClickHouse Cloud. When enabled, `system.*_log` tables are backed by `SharedMergeTree` via an S3-based pipeline.
-    For each log `<log>`, the following objects are created automatically on startup:
-
-    - `system.<log>_s3` — an `S3`-backed table that is the direct flush target; each
-      `SYSTEM FLUSH LOGS` call writes a new partitioned file here.
-    - `system.<log>_s3queue` — an `S3Queue` table (ordered mode) that picks up files from
-      `<log>_s3` and streams rows downstream. Each node processes only its own files via
-      `partition_regex`-based partitioning.
-    - `system.<log>_mv` — a `MATERIALIZED VIEW` that routes rows from `<log>_s3queue` into
-      the final `SharedMergeTree` table.
-    - `system.<log>` — the final `SharedMergeTree` table where rows accumulate and are queried.
-
-    On schema or settings change, the affected table is renamed to `<log>_0`, `<log>_1`, etc.
-    and recreated, consistent with the existing `SystemLog` rotation behavior.
-
-    Requires `<shared_log_pipeline><endpoint>` to be set in the server configuration.
-    See also: `shared_log_pipeline.enable_polling`, `shared_log_pipeline.flush_timeout_seconds`.
-    )", EXPERIMENTAL) \
     DECLARE(UInt64, config_reload_interval_ms, 2000, R"(
     How often clickhouse will reload config and check for new changes
     )", 0) \
@@ -1195,7 +1157,6 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, threadpool_writer_queue_size, 10000, R"(Number of tasks which is possible to push into background pool for write requests to object storages)", 0) \
     DECLARE(UInt64, iceberg_catalog_threadpool_pool_size, 50, R"(Size of background pool for iceberg catalog)", 0) \
     DECLARE(UInt64, iceberg_catalog_threadpool_queue_size, 10000, R"(Number of tasks which is possible to push into iceberg catalog pool)", 0) \
-    DECLARE(UInt64, iceberg_background_schedule_pool_size, 10, "Size of thread pool to asynchronously fetch the latest metadata from a remote iceberg catalog; the pool is shared by all the active tables.", 0) \
     DECLARE(UInt64, drop_distributed_cache_pool_size, 8, R"(The size of the threadpool used for dropping distributed cache.)", 0) \
     DECLARE(UInt64, drop_distributed_cache_queue_size, 1000, R"(The queue size of the threadpool used for dropping distributed cache.)", 0) \
     DECLARE(Bool, distributed_cache_apply_throttling_settings_from_client, true, R"(Whether cache server should apply throttling settings received from client.)", 0) \
@@ -1273,11 +1234,11 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Float, distributed_cache_keep_up_free_connections_ratio, 0.1f, "Soft limit for number of active connection distributed cache will try to keep free. After the number of free connections goes below distributed_cache_keep_up_free_connections_ratio * max_connections, connections with oldest activity will be closed until the number goes above the limit.", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_num, 0, R"(Maximum number of queries allowed per TCP connection before the connection is closed. Set to 0 for unlimited queries.)", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_seconds, 0, R"(Maximum lifetime of a TCP connection in seconds before it is closed. Set to 0 for unlimited connection lifetime.)", 0) \
+    DECLARE(UInt64, handshake_timeout_milliseconds, 30000, R"(Wall-clock timeout in milliseconds for the entire TCP handshake phase (Hello + Addendum). Limits how long an unauthenticated connection can hold a thread. Set to 0 to disable.)", 0) \
     DECLARE(Bool, skip_binary_checksum_checks, false, R"(Skips ClickHouse binary checksum integrity checks)", 0) \
     DECLARE(Bool, abort_on_logical_error, false, R"(Crash the server on LOGICAL_ERROR exceptions. Only for experts.)", 0) \
     DECLARE(UInt64, jemalloc_flush_profile_interval_bytes, 0, R"(Flushing jemalloc profile will be done after global peak memory usage increased by jemalloc_flush_profile_interval_bytes)", 0) \
     DECLARE(Bool, jemalloc_flush_profile_on_memory_exceeded, 0, R"(Flushing jemalloc profile will be done on total memory exceeded errors)", 0) \
-    DECLARE(UInt64, jemalloc_flush_profile_on_memory_exceeded_interval, 0, R"(If non-zero, sets the minimum interval in seconds between flushing jemalloc profiles on total memory exceeded errors. For example, 5 means at most one profile flush every 5 seconds. Takes priority over `jemalloc_flush_profile_on_memory_exceeded`.)", 0) \
     DECLARE(Bool, jemalloc_enable_global_profiler, Jemalloc::default_enable_global_profiler, R"(Enable jemalloc's allocation profiler for all threads. Jemalloc will sample allocations and all deallocations for sampled allocations.
     Profiles can be flushed using SYSTEM JEMALLOC FLUSH PROFILE which can be used for allocation analysis.
     Samples can also be stored in system.trace_log using config jemalloc_collect_global_profile_samples_in_trace_log or with query setting jemalloc_collect_profile_samples_in_trace_log.
@@ -1311,11 +1272,6 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
     Possible values: -20 to 19.
     )", 0) \
-    DECLARE(UInt64, max_zookeeper_pooled_connections, 0, R"(
-    Maximum number of lazily initialized ZooKeeper sessions per ZooKeeper cluster in the shared pool.
-
-    A value of `0` disables pooled connections and keeps using a single session.
-    )", 0) \
     DECLARE(Int32, os_threads_nice_value_distributed_cache_tcp_handler, 0, R"(
     Linux nice value for the threads of distributed cache TCP handler. Lower values mean higher CPU priority.
 
@@ -1327,8 +1283,6 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     If enabled, every ZooKeeper request must have a component name set via `Coordination::setCurrentComponent`. Throws a `LOGICAL_ERROR` exception if the component is missing.
     )", 0) \
     DECLARE(String, keeper_hosts, "", R"(Dynamic setting. Contains a set of [Zoo]Keeper hosts ClickHouse can potentially connect to. Doesn't expose information from `<auxiliary_zookeepers>`)", 0) \
-    DECLARE(Bool, allow_experimental_webassembly_udf, false, R"(Enable experimental support for WebAssembly UDFs)", EXPERIMENTAL) \
-    DECLARE(String, webassembly_udf_engine, "wasmtime", "The engine used to execute WebAssembly UDFs. Supported values are 'wasmtime' and 'wasmedge'.", EXPERIMENTAL) \
     DECLARE(Bool, allow_impersonate_user, false, R"(Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). The setting is deprecated.)", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, s3_credentials_provider_max_cache_size, 100, R"(The maximum number of S3 credentials providers that can be cached)", 0) \
     DECLARE(UInt64, max_open_files, 0, R"(
@@ -1771,19 +1725,14 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"mark_cache_size", {std::to_string(context->getMarkCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"uncompressed_cache_size", {std::to_string(context->getUncompressedCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"index_mark_cache_size", {std::to_string(context->getIndexMarkCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
-            {"index_uncompressed_cache_size", {std::to_string(context->getIndexUncompressedCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"index_uncompressed_cache_size", {std::to_string(context->getIndexUncompressedCache(/*only_if_enabled=*/ false)->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"mmap_cache_size", {std::to_string(context->getMMappedFileCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"query_condition_cache_size", {std::to_string(context->getQueryConditionCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"primary_index_cache_size", {std::to_string(context->getPrimaryIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"vector_similarity_index_cache_size", {std::to_string(context->getVectorSimilarityIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
-            {"text_index_tokens_cache_size", {std::to_string(context->getTextIndexTokensCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
-            {"text_index_header_cache_size", {std::to_string(context->getTextIndexHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
-            {"text_index_postings_cache_size", {std::to_string(context->getTextIndexPostingsCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
-            {"query_cache_max_size_in_bytes", {std::to_string(context->getQueryResultCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
 
             {"merge_workload", {context->getMergeWorkload(), ChangeableWithoutRestart::Yes}},
             {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}},
-            {"license_file", {context->getLicenseFile(), ChangeableWithoutRestart::Yes}},
             {"throw_on_unknown_workload", {std::to_string(context->getThrowOnUnknownWorkload()), ChangeableWithoutRestart::Yes}},
             {"cpu_slot_preemption", {std::to_string(context->getCPUSlotPreemption()), ChangeableWithoutRestart::Yes}},
             {"cpu_slot_quantum_ns", {std::to_string(context->getCPUSlotQuantum()), ChangeableWithoutRestart::Yes}},
@@ -1822,10 +1771,6 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
              {getFetchPartitionThreadPool().isInitialized() ? std::to_string(getFetchPartitionThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_active_parts_loading_thread_pool_size",
              {getActivePartsLoadingThreadPool().isInitialized() ? std::to_string(getActivePartsLoadingThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
-            {"max_snapshot_commit_thread_pool_size",
-             {getSnapshotCommitThreadPool().isInitialized() ? std::to_string(getSnapshotCommitThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
-            {"max_snapshot_commit_thread_pool_free_size",
-             {getSnapshotCommitThreadPool().isInitialized() ? std::to_string(getSnapshotCommitThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_outdated_parts_loading_thread_pool_size",
              {getOutdatedPartsLoadingThreadPool().isInitialized() ? std::to_string(getOutdatedPartsLoadingThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_parts_cleaning_thread_pool_size",
@@ -1865,18 +1810,6 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
              {std::to_string(context->getCommonExecutor()->getMaxThreads()), ChangeableWithoutRestart::IncreaseOnly}});
     }
 
-#if USE_AVRO
-    if (context->getIcebergMetadataFilesCache())
-        changeable_settings.insert(
-            {"iceberg_metadata_files_cache_size",
-             {std::to_string(context->getIcebergMetadataFilesCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
-#endif
-#if USE_PARQUET
-    if (context->getParquetMetadataCache())
-        changeable_settings.insert(
-            {"parquet_metadata_cache_size",
-             {std::to_string(context->getParquetMetadataCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
-#endif
     for (const auto & setting : impl->all())
     {
         const auto & setting_name = setting.getName();
