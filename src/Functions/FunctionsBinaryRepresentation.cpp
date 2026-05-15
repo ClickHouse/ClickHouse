@@ -228,12 +228,14 @@ public:
 
     String getSignatureString() const override
     {
-        /// Keep this aligned with the set of types handled by `executeImpl` —
-        /// otherwise unsupported types pass analyzer-time validation and fail
-        /// only at runtime with `ILLEGAL_COLUMN`, which violates the
-        /// `getReturnTypeImpl` contract (early rejection of invalid arguments).
+        /// Mirrors the set of types the legacy `getReturnTypeImpl` accepted on
+        /// master. Date / DateTime / DateTime64 are not handled explicitly in
+        /// `executeImpl`, but their columns are dispatched through
+        /// `tryExecuteUIntOrInt` (Date = `ColumnVector<UInt16>`, DateTime =
+        /// `ColumnVector<UInt32>`) and `tryExecuteDecimal` (DateTime64).
         return "(Number) -> String"
                " OR (StringOrFixedString) -> String"
+               " OR (DateOrDateTime) -> String"
                " OR (UUID) -> String"
                " OR (IPv4) -> String"
                " OR (IPv6) -> String"
