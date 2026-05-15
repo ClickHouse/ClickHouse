@@ -1588,6 +1588,27 @@ and you want FINAL to select the winning row before filtering. When disabled, PR
 Note: If apply_row_level_security_after_final is enabled and row policy uses non-sorting-key columns, PREWHERE will also
 be deferred to maintain correct execution order (row policy must be applied before PREWHERE).
 )", 0) \
+    DECLARE(Bool, defer_partition_pruning_after_final, true, R"(
+When enabled (default), partition pruning is skipped for `FINAL` queries on tables whose
+partition-key columns are not part of the sorting key. This is the correctness-safe behavior
+introduced in 26.3: `FINAL` may need to deduplicate rows that share a primary key but live
+in different partitions, and partition pruning would silently exclude such rows from the
+deduplication input.
+
+When disabled, partition pruning is applied even with `FINAL`, restoring the pre-26.3
+behavior. This can be substantially faster for queries with `WHERE` predicates on the
+partition column, but is only correct when rows with the same primary key cannot exist
+in different partitions — e.g. event-log tables whose partition column is set at insert
+time and never changes.
+
+This setting only affects partitioned tables whose partition-key columns are not contained
+in the sorting key; for other tables partition pruning is always applied.
+
+Possible values:
+
+- 0 — Apply partition pruning before `FINAL` (pre-26.3 behavior, faster but unsafe in the general case).
+- 1 — Defer partition pruning to after `FINAL` (default, correctness-safe).
+)", 0) \
     \
     DECLARE(UInt64, mysql_max_rows_to_insert, 65536, R"(
 The maximum number of rows in MySQL batch insertion of the MySQL storage engine
@@ -8229,6 +8250,7 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 
+
 #define LIST_OF_SETTINGS(M, ALIAS)     \
     COMMON_SETTINGS(M, ALIAS)          \
     OBSOLETE_SETTINGS(M, ALIAS)        \
@@ -8237,8 +8259,7 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
 
 // clang-format on
 
-DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(SettingsTraits, LIST_OF_SETTINGS)
+DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS, COMMON_SETTINGS_SUPPORTED_TYPES)
 
 /** Settings of query execution.
   * These settings go to users.xml.
@@ -8444,15 +8465,7 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
     }
 }
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    Settings ## TYPE NAME = & SettingsImpl :: NAME;
-
-namespace Setting
-{
-    LIST_OF_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)  /// NOLINT (misc-use-internal-linkage)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(SettingsTraits, LIST_OF_SETTINGS, Settings, Setting)
 
 Settings::Settings()
     : impl(std::make_unique<SettingsImpl>())
