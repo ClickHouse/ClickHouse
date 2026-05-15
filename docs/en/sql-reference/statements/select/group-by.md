@@ -6,8 +6,6 @@ title: 'GROUP BY Clause'
 doc_type: 'reference'
 ---
 
-# GROUP BY Clause
-
 `GROUP BY` clause switches the `SELECT` query into an aggregation mode, which works as follows:
 
 - `GROUP BY` clause contains a list of expressions (or a single expression, which is considered to be the list of length one). This list acts as a "grouping key", while each individual expression will be referred to as a "key expression".

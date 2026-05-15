@@ -7,8 +7,6 @@ title: 'Operators'
 doc_type: 'reference'
 ---
 
-# Operators
-
 ClickHouse transforms operators to their corresponding functions at the query parsing stage according to their priority, precedence, and associativity.
 
 ## Access Operators {#access-operators}

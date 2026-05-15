@@ -6,8 +6,6 @@ title: 'median'
 doc_type: 'reference'
 ---
 
-# median
-
 The `median*` functions are the aliases for the corresponding `quantile*` functions. They calculate median of a numeric data sample.
 
 Functions:
