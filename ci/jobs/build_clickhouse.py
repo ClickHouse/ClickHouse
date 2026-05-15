@@ -254,6 +254,7 @@ def main():
         if not Shell.check("sccache --start-server", retries=3):
             print("WARNING: sccache server failed to start, build will proceed without it")
         run_shell("sccache stats", "sccache --show-stats")
+        cmake_result_index = len(results)
         results.append(
             Result.from_commands_run(
                 name="Cmake configuration",
@@ -265,20 +266,28 @@ def main():
 
         # PGO is best-effort: if cmake failed with a profile (e.g. it is stale
         # or incompatible with the current sources/toolchain), retry once
-        # without `-DCLICKHOUSE_PGO_PROFILE_PATH`.
+        # without `-DCLICKHOUSE_PGO_PROFILE_PATH`. If the retry succeeds the
+        # fallback must not block the job, so replace the failed first attempt
+        # with the successful retry — otherwise `Result.create_from` aggregates
+        # the job status as FAIL because of the stranded failed child result.
         if not res and use_pgo:
             print("WARNING: cmake with PGO failed, retrying without profile-guided optimization")
             Shell.check(f"rm -f {build_dir}/CMakeCache.txt")
-            results.append(
-                Result.from_commands_run(
-                    name="Cmake configuration (retry without PGO)",
-                    command=cmake_cmd_no_pgo,
-                    workdir=build_dir_normalized,
-                )
+            retry_result = Result.from_commands_run(
+                name="Cmake configuration (retry without PGO)",
+                command=cmake_cmd_no_pgo,
+                workdir=build_dir_normalized,
             )
-            res = results[-1].is_ok()
-            if res:
+            if retry_result.is_ok():
+                retry_result.set_info(
+                    "PGO profile was stale or incompatible; reconfigured without it (best-effort fallback)"
+                )
+                results[cmake_result_index] = retry_result
                 use_pgo = False
+                res = True
+            else:
+                results.append(retry_result)
+                res = False
 
         # Pre-seed .ninja_log from toolchain for timing-based scheduling
         if res:
@@ -304,6 +313,7 @@ def main():
             targets = "-k0 all"
         else:
             targets = "clickhouse-bundle"
+        build_result_index = len(results)
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
@@ -314,25 +324,34 @@ def main():
 
         # PGO is best-effort: if linking with a stale/incompatible profile fails,
         # reconfigure without `-DCLICKHOUSE_PGO_PROFILE_PATH` and rebuild once.
+        # As with the cmake fallback above, on a successful retry we replace
+        # the failed first-attempt build result so the job is not blocked by
+        # a stranded FAIL child.
         if not results[-1].is_ok() and use_pgo:
             print("WARNING: build with PGO failed, retrying without profile-guided optimization")
             Shell.check(f"rm -f {build_dir}/CMakeCache.txt")
-            results.append(
-                Result.from_commands_run(
-                    name="Cmake configuration (retry without PGO)",
-                    command=cmake_cmd_no_pgo,
+            retry_cmake = Result.from_commands_run(
+                name="Cmake configuration (retry without PGO)",
+                command=cmake_cmd_no_pgo,
+                workdir=build_dir_normalized,
+            )
+            if retry_cmake.is_ok():
+                retry_build = Result.from_commands_run(
+                    name="Build ClickHouse (retry without PGO)",
+                    command=f"command time -v ninja {targets}",
                     workdir=build_dir_normalized,
                 )
-            )
-            if results[-1].is_ok():
-                use_pgo = False
-                results.append(
-                    Result.from_commands_run(
-                        name="Build ClickHouse (retry without PGO)",
-                        command=f"command time -v ninja {targets}",
-                        workdir=build_dir_normalized,
+                if retry_build.is_ok():
+                    retry_build.set_info(
+                        "PGO profile was stale or incompatible; rebuilt without it (best-effort fallback)"
                     )
-                )
+                    results[build_result_index] = retry_build
+                    use_pgo = False
+                else:
+                    results.append(retry_cmake)
+                    results.append(retry_build)
+            else:
+                results.append(retry_cmake)
 
         run_shell("sccache stats", "sccache --show-stats")
         if build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
@@ -391,7 +410,7 @@ def main():
                 print("WARNING: BOLT optimization failed, continuing with unoptimized binary")
                 results[-1] = Result(
                     name="BOLT optimization (skipped)",
-                    status=Result.Status.SUCCESS,
+                    status=Result.Status.OK,
                     info="BOLT post-processing failed (best-effort), using PGO-only binary",
                 )
 
