@@ -19,6 +19,11 @@
 -- routing is broken (`getArenaIndex()` returning 0, or scope guards no-op'd), the arena
 -- collapses to ~0 and this assertion catches it.
 
+-- Suppress server-side Error log messages forwarded to the client (e.g. "Cannot get replica
+-- delay for table: ... Table is in readonly mode" from other tests' leftover replicated tables
+-- being scanned by ServerAsynchronousMetrics during SYSTEM RELOAD ASYNCHRONOUS METRICS).
+SET send_logs_level = 'fatal';
+
 DROP TABLE IF EXISTS t_mergetree_arena_smoke SYNC;
 
 CREATE TABLE t_mergetree_arena_smoke (a UInt64, b String, c LowCardinality(String))
