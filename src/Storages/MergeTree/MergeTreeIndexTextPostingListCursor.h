@@ -21,37 +21,6 @@ class MergeTreeReaderStream;
 /// Inline capacity for the embedded posting list buffer.
 constexpr size_t MAX_EMBEDDED_POSTING_LIST_ROWS = 6;
 
-/// Immutable description of a posting list.
-/// It owns or references the on-disk metadata and can be cached safely across reads.
-class PostingListCursorHandle
-{
-public:
-    PostingListCursorHandle(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_);
-    explicit PostingListCursorHandle(const TokenPostingsInfo & info_);
-
-    double density() const { return density_val; }
-    UInt32 cardinality() const;
-
-private:
-    friend class PostingListCursor;
-
-    MergeTreeReaderStream * stream = nullptr;
-    std::shared_ptr<TokenPostingsInfo> owned_info;
-    const TokenPostingsInfo * info = nullptr;
-
-    size_t total_segments = 0;
-    bool is_embedded = false;
-
-    /// Pre-decoded embedded postings reused by ephemeral cursors.
-    /// Inline buffer for small embedded posting lists; spills to the heap when the
-    /// materialized list (e.g. a rare-token roaring bitmap) exceeds the inline capacity.
-    absl::InlinedVector<uint32_t, MAX_EMBEDDED_POSTING_LIST_ROWS> embedded_values;
-
-    double density_val = 0;
-};
-
-using PostingListCursorHandlePtr = std::shared_ptr<PostingListCursorHandle>;
-
 /// Lazy cursor over a compressed posting list (sorted row IDs for a token).
 ///
 /// Storage layout (two-level hierarchy):
@@ -75,8 +44,12 @@ using PostingListCursorHandlePtr = std::shared_ptr<PostingListCursorHandle>;
 class PostingListCursor
 {
 public:
-    /// Construct a cursor from an immutable handle.
-    explicit PostingListCursor(PostingListCursorHandlePtr handle_);
+    /// Compressed posting list: state lives in `.pst` and is decoded lazily.
+    PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_);
+
+    /// Embedded posting list (small inline postings, or a materialized rare-token bitmap).
+    /// The cursor owns a copy of `info_` and pre-decodes the postings into `embedded_values`.
+    explicit PostingListCursor(const TokenPostingsInfo & info_);
 
     /// Set bits in `data` for all doc_ids in [row_offset, row_offset + num_rows).
     void linearOr(UInt8 * data, size_t row_offset, size_t num_rows);
@@ -98,19 +71,17 @@ public:
 
     /// Posting list density: cardinality / (max_doc_id - min_doc_id + 1).
     /// Used to choose between leapfrog and brute-force algorithms.
-    double density() const;
+    double density() const { return density_val; }
 
     /// Total number of doc_ids in the posting list.
     /// Used to sort cursors by selectivity for leapfrog intersection.
     UInt32 cardinality() const;
 
 private:
-    void initializeFromHandle();
-
     /// Load metadata for `segment_idx`-th segment.
     /// For compressed postings: reads the Index Section from .pst (packed block index),
     /// but does NOT decode any packed block data yet.
-    /// For embedded postings: decodes the entire array into `decoded_values`.
+    /// For embedded postings: no-op — `embedded_values` already holds the decoded array.
     void prepareSegment(size_t segment_idx);
 
     /// Advance to the first doc_id >= target within the current segment.
@@ -121,13 +92,28 @@ private:
     /// Decode the packed block at `block_idx` into `decoded_values`.
     void decodeBlock(size_t block_idx);
 
-    PostingListCursorHandlePtr handle;
+    /// On-disk description of the posting list. For compressed postings this is a
+    /// non-owning pointer into the granule's token map (which outlives the cursor);
+    /// for embedded/rare postings the info is owned via `owned_info` to keep the
+    /// materialized bitmap alive.
+    MergeTreeReaderStream * stream = nullptr;
+    std::shared_ptr<TokenPostingsInfo> owned_info;
+    const TokenPostingsInfo * info = nullptr;
+
+    size_t total_segments = 0;
+    bool is_embedded = false;
+    double density_val = 0;
+
+    /// Pre-decoded embedded postings.
+    /// Inline buffer for small embedded posting lists; spills to the heap when the
+    /// materialized list (e.g. a rare-token roaring bitmap) exceeds the inline capacity.
+    absl::InlinedVector<uint32_t, MAX_EMBEDDED_POSTING_LIST_ROWS> embedded_values;
 
     /// Decoded doc_ids of the current packed block. Used as a scratch buffer when
     /// iterating compressed posting lists; `decoded_values_ptr` is then redirected to
     /// point at this buffer. For embedded posting lists, `decoded_values_ptr` instead
-    /// points directly at the handle's pre-decoded storage, avoiding a copy and
-    /// supporting embedded lists larger than BLOCK_SIZE.
+    /// points directly at `embedded_values`, avoiding a copy and supporting embedded
+    /// lists larger than BLOCK_SIZE.
     alignas(16) uint32_t decoded_values[BLOCK_SIZE]{};
     const uint32_t * decoded_values_ptr = decoded_values;
     size_t decoded_count = 0;    /// Number of valid entries reachable via `decoded_values_ptr`.

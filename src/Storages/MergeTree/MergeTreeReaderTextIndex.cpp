@@ -226,7 +226,7 @@ void MergeTreeReaderTextIndex::readGranule()
     small_postings_stream = makeTextIndexStream(substreams[2]);
 
     sparse_index_stream->seekToStart();
-    lazy_cursor_handles.clear();
+    lazy_cursors.clear();
 
     MergeTreeIndexInputStreams streams;
     streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index_stream.get();
@@ -321,35 +321,32 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
     }
 }
 
-PostingListCursorHandlePtr MergeTreeReaderTextIndex::makeLazyCursorHandle(std::string_view token, const TokenPostingsInfo & token_info)
+PostingListCursorPtr MergeTreeReaderTextIndex::makeLazyCursor(std::string_view token, const TokenPostingsInfo & token_info)
 {
     if (token_info.embedded_postings)
     {
-        return std::make_shared<PostingListCursorHandle>(token_info);
+        return std::make_shared<PostingListCursor>(token_info);
     }
 
     if (auto rare_postings = granule->getPostingsForRareToken(token))
     {
-        if (rare_postings->cardinality() == 0)
-            return {};
-
         TokenPostingsInfo materialized_info = token_info;
         materialized_info.offsets = {0};
         materialized_info.ranges = {{rare_postings->minimum(), rare_postings->maximum()}};
         materialized_info.embedded_postings = std::move(rare_postings);
-        return std::make_shared<PostingListCursorHandle>(materialized_info);
+        return std::make_shared<PostingListCursor>(materialized_info);
     }
 
     if (token_info.header & PostingsSerialization::Flags::IsCompressed)
     {
         auto stream_it = large_postings_streams.find(token);
         if (stream_it != large_postings_streams.end())
-            return std::make_shared<PostingListCursorHandle>(*stream_it->second, token_info);
+            return std::make_shared<PostingListCursor>(*stream_it->second, token_info);
 
         if (!small_postings_stream)
             small_postings_stream = makeTextIndexStream(index.index->getSubstreams()[2]);
 
-        return std::make_shared<PostingListCursorHandle>(*small_postings_stream, token_info);
+        return std::make_shared<PostingListCursor>(*small_postings_stream, token_info);
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected token for lazy mode: {}. Token postings should be embedded or compressed", token);
@@ -375,6 +372,12 @@ size_t MergeTreeReaderTextIndex::readRows(
     }
     else
     {
+        /// Backward jump invalidates the per-token cursor cache: cached cursors are
+        /// forward-only (their `linearOr` / `linearAnd` / `advance` walk segments from
+        /// `current_segment_idx` onward), so they cannot serve an earlier `row_offset`.
+        if (from_mark < current_mark)
+            lazy_cursors.clear();
+
         from_row = index_granularity.getMarkStartingRow(from_mark) + rows_offset;
     }
 
@@ -779,29 +782,25 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
     {
         const auto & remaining_tokens = granule->getRemainingTokens();
 
-        /// Build `PostingListCursorMap` for query tokens from immutable handles.
-        /// Handles are cached, while per-call cursors own only ephemeral iteration state.
+        /// Build `PostingListCursorMap` for query tokens. Cursors are cached across `fillColumn` calls.
+        /// Backward `readRows` jumps drop the cursor cache at the reader level (see the `from_mark < current_mark` branch).
         PostingListCursorMap cursor_map;
         for (const auto & token : search_query->tokens)
         {
-            PostingListCursorHandlePtr handle;
-
-            auto cache_it = lazy_cursor_handles.find(token);
-            if (cache_it != lazy_cursor_handles.end())
+            auto cursor_it = lazy_cursors.find(token);
+            if (cursor_it != lazy_cursors.end())
             {
-                handle = cache_it->second;
-            }
-            else
-            {
-                auto info_it = remaining_tokens.find(token);
-                if (info_it == remaining_tokens.end())
-                    continue;
-
-                handle = makeLazyCursorHandle(token, *info_it->second);
-                lazy_cursor_handles.emplace(token, handle);
+                cursor_map[token] = cursor_it->second;
+                continue;
             }
 
-            cursor_map[token] = std::make_shared<PostingListCursor>(handle);
+            auto info_it = remaining_tokens.find(token);
+            if (info_it == remaining_tokens.end())
+                continue;
+
+            auto cursor = makeLazyCursor(token, *info_it->second);
+            lazy_cursors.emplace(token, cursor);
+            cursor_map[token] = std::move(cursor);
         }
 
         /// ALL mode: if any query token is missing from the granule, the intersection

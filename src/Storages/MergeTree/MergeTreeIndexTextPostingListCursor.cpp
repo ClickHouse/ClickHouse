@@ -50,7 +50,7 @@ double computeDensity(const TokenPostingsInfo & info)
 
 }
 
-PostingListCursorHandle::PostingListCursorHandle(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_)
+PostingListCursor::PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_)
     : stream(&stream_)
     , info(&info_)
     , total_segments(info_.offsets.size())
@@ -58,7 +58,7 @@ PostingListCursorHandle::PostingListCursorHandle(MergeTreeReaderStream & stream_
 {
 }
 
-PostingListCursorHandle::PostingListCursorHandle(const TokenPostingsInfo & info_)
+PostingListCursor::PostingListCursor(const TokenPostingsInfo & info_)
     : owned_info(std::make_shared<TokenPostingsInfo>(info_))
     , info(owned_info.get())
     , total_segments(info_.offsets.size())
@@ -66,58 +66,23 @@ PostingListCursorHandle::PostingListCursorHandle(const TokenPostingsInfo & info_
     , density_val(computeDensity(info_))
 {
     if (!info->embedded_postings || info->cardinality == 0)
+    {
+        is_valid = false;
         return;
+    }
 
     embedded_values.resize(info->cardinality);
     info->embedded_postings->toUint32Array(embedded_values.data());
-}
 
-UInt32 PostingListCursorHandle::cardinality() const
-{
-    return info->cardinality;
-}
-
-PostingListCursor::PostingListCursor(PostingListCursorHandlePtr handle_)
-    : handle(std::move(handle_))
-{
-    initializeFromHandle();
-}
-
-void PostingListCursor::initializeFromHandle()
-{
-    chassert(handle);
-
-    block_count = 0;
-    current_block = 0;
-    tail_size = 0;
-    segment_doc_count = 0;
-    last_decoded_doc_id = 0;
-    segment_first_row_id = 0;
-    current_segment_idx = 0;
-    has_prepared_first_segment = false;
-    decoded_count = 0;
-    decoded_values_ptr = decoded_values;
-    index = 0;
-    is_valid = !handle->is_embedded || !handle->embedded_values.empty();
-
-    if (handle->is_embedded)
-    {
-        /// Zero-copy: read directly from the handle's pre-decoded array.
-        /// Multiple ephemeral cursors over the same handle share this storage
-        /// safely because the handle is immutable after construction.
-        decoded_count = handle->embedded_values.size();
-        decoded_values_ptr = handle->embedded_values.data();
-    }
+    /// Zero-copy: iteration reads directly from `embedded_values`. Works for embedded
+    /// lists larger than BLOCK_SIZE because the array lives in the cursor itself.
+    decoded_count = embedded_values.size();
+    decoded_values_ptr = embedded_values.data();
 }
 
 UInt32 PostingListCursor::cardinality() const
 {
-    return handle->cardinality();
-}
-
-double PostingListCursor::density() const
-{
-    return handle->density();
+    return info->cardinality;
 }
 
 void PostingListCursor::prepareSegment(size_t segment_idx)
@@ -127,15 +92,15 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
     current_segment_idx = segment_idx;
     has_prepared_first_segment = true;
 
-    if (handle->is_embedded)
+    if (is_embedded)
         return;
 
-    chassert(segment_idx < handle->total_segments);
-    UInt64 segment_file_offset = handle->info->offsets[segment_idx];
+    chassert(segment_idx < total_segments);
+    UInt64 segment_file_offset = info->offsets[segment_idx];
 
     /// Seek to segment start and read the header.
-    handle->stream->seekToMark({segment_file_offset, 0});
-    auto * data_buffer = handle->stream->getDataBuffer();
+    stream->seekToMark({segment_file_offset, 0});
+    auto * data_buffer = stream->getDataBuffer();
 
     /// Read the segment header.
     UInt64 codec_type;
@@ -160,7 +125,7 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
     payload_buffer.resize(payload_bytes);
     data_buffer->readStrict(reinterpret_cast<char *>(payload_buffer.data()), payload_bytes);
 
-    if (!(handle->info->header & PostingsSerialization::Flags::HasBlockIndex))
+    if (!(info->header & PostingsSerialization::Flags::HasBlockIndex))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Lazy posting list cursor requires the per-segment block index (HasBlockIndex flag); "
@@ -269,7 +234,7 @@ void PostingListCursor::advance(uint32_t target)
     if (!is_valid)
         return;
 
-    if (handle->is_embedded)
+    if (is_embedded)
     {
         const auto * it = std::lower_bound(decoded_values_ptr, decoded_values_ptr + decoded_count, target);
         if (it != decoded_values_ptr + decoded_count)
@@ -286,7 +251,7 @@ void PostingListCursor::advance(uint32_t target)
     /// Try current segment first.
     if (has_prepared_first_segment)
     {
-        if (target <= static_cast<uint32_t>(handle->info->ranges[current_segment_idx].end))
+        if (target <= static_cast<uint32_t>(info->ranges[current_segment_idx].end))
         {
             if (advanceImpl(target))
                 return;
@@ -296,10 +261,10 @@ void PostingListCursor::advance(uint32_t target)
     /// Binary search across segments.
     size_t start = has_prepared_first_segment ? current_segment_idx + 1 : 0;
     const auto * it = std::lower_bound(
-        handle->info->ranges.begin() + start, handle->info->ranges.end(), static_cast<size_t>(target),
+        info->ranges.begin() + start, info->ranges.end(), static_cast<size_t>(target),
         [](const RowsRange & range, size_t t) { return range.end < t; });
 
-    for (size_t i = static_cast<size_t>(it - handle->info->ranges.begin()); i < handle->total_segments; ++i)
+    for (size_t i = static_cast<size_t>(it - info->ranges.begin()); i < total_segments; ++i)
     {
         prepareSegment(i);
         if (advanceImpl(target))
@@ -350,7 +315,7 @@ void PostingListCursor::next()
 
     ++index;
 
-    if (handle->is_embedded)
+    if (is_embedded)
     {
         if (index >= decoded_count)
             is_valid = false;
@@ -368,7 +333,7 @@ void PostingListCursor::next()
 
         /// Current segment exhausted — advance to next one.
         size_t next_segment = current_segment_idx + 1;
-        if (next_segment >= handle->total_segments)
+        if (next_segment >= total_segments)
         {
             is_valid = false;
             return;
@@ -458,19 +423,19 @@ bool hasNoZeros(const UInt8 * data, size_t count)
 
 void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_rows)
 {
-    if (handle->is_embedded)
+    if (is_embedded)
     {
         if (decoded_count == 0)
             return;
 
         /// Level 1 (dense memset): if every row in the range is in the posting list, just memset.
-        if (!handle->info->ranges.empty())
+        if (!info->ranges.empty())
         {
-            size_t range_begin = handle->info->ranges.front().begin;
-            size_t range_end = handle->info->ranges.back().end;
+            size_t range_begin = info->ranges.front().begin;
+            size_t range_end = info->ranges.back().end;
             size_t range_span = range_end - range_begin + 1;
 
-            if (handle->info->cardinality == range_span)
+            if (info->cardinality == range_span)
             {
                 size_t clip_begin = std::max(range_begin, row_offset);
                 size_t clip_end = std::min(range_end + 1, row_offset + num_rows);
@@ -492,13 +457,13 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
         return;
     }
 
-    if (handle->info->ranges.empty() || handle->total_segments == 0)
+    if (info->ranges.empty() || total_segments == 0)
         return;
 
-    for (size_t i = current_segment_idx; i < handle->total_segments; ++i)
+    for (size_t i = current_segment_idx; i < total_segments; ++i)
     {
-        size_t seg_begin = handle->info->ranges[i].begin;
-        size_t seg_end = handle->info->ranges[i].end;
+        size_t seg_begin = info->ranges[i].begin;
+        size_t seg_end = info->ranges[i].end;
 
         if (row_offset > seg_end)
             continue;
@@ -593,20 +558,21 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
 
 void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_rows)
 {
-    if (handle->is_embedded)
+    if (is_embedded)
     {
         /// Dense shortcut: if every row in the range is in the posting list,
         /// just increment the entire clipped region without binary search.
-        if (!handle->info->ranges.empty())
+        if (!info->ranges.empty())
         {
-            size_t range_begin = handle->info->ranges.front().begin;
-            size_t range_end = handle->info->ranges.back().end;
+            size_t range_begin = info->ranges.front().begin;
+            size_t range_end = info->ranges.back().end;
             size_t range_span = range_end - range_begin + 1;
 
-            if (handle->info->cardinality == range_span)
+            if (info->cardinality == range_span)
             {
                 size_t clip_begin = std::max(range_begin, row_offset);
                 size_t clip_end = std::min(range_end + 1, row_offset + num_rows);
+
                 if (clip_begin < clip_end)
                 {
                     ProfileEvents::increment(ProfileEvents::TextIndexLazyAndSegmentsSkippedDense);
@@ -627,13 +593,14 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
         return;
     }
 
-    for (size_t i = current_segment_idx; i < handle->total_segments; ++i)
+    for (size_t i = current_segment_idx; i < total_segments; ++i)
     {
-        size_t seg_begin = handle->info->ranges[i].begin;
-        size_t seg_end = handle->info->ranges[i].end;
+        size_t seg_begin = info->ranges[i].begin;
+        size_t seg_end = info->ranges[i].end;
 
         if (row_offset > seg_end)
             continue;
+
         if (row_offset + num_rows <= seg_begin)
             break;
 
@@ -643,10 +610,12 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
         {
             size_t clip_begin = std::max(seg_begin, row_offset);
             size_t clip_end = std::min(seg_end + 1, row_offset + num_rows);
+
             if (clip_begin < clip_end)
             {
                 size_t clip_off = clip_begin - row_offset;
                 size_t clip_count = clip_end - clip_begin;
+
                 if (memoryIsZero(data + clip_off, 0, clip_count))
                 {
                     ProfileEvents::increment(ProfileEvents::TextIndexLazyAndSegmentsSkippedZero);
@@ -667,6 +636,7 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
             {
                 size_t clip_begin = std::max(seg_begin, row_offset);
                 size_t clip_end = std::min(seg_end + 1, row_offset + num_rows);
+
                 if (clip_begin < clip_end)
                 {
                     ProfileEvents::increment(ProfileEvents::TextIndexLazyAndSegmentsSkippedDense);
@@ -688,6 +658,7 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
 
             if (block_last < row_offset)
                 continue;
+
             if (block_first >= row_offset + num_rows)
                 break;
 
@@ -695,10 +666,12 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
             {
                 size_t blk_clip_begin = std::max(static_cast<size_t>(block_first), row_offset);
                 size_t blk_clip_end = std::min(static_cast<size_t>(block_last) + 1, row_offset + num_rows);
+
                 if (blk_clip_begin < blk_clip_end)
                 {
                     size_t blk_off = blk_clip_begin - row_offset;
                     size_t blk_cnt = blk_clip_end - blk_clip_begin;
+
                     if (memoryIsZero(data + blk_off, 0, blk_cnt))
                     {
                         ProfileEvents::increment(ProfileEvents::TextIndexLazyAndBlocksSkippedZero);
@@ -824,8 +797,10 @@ void intersectLeapfrogLinear(UInt8 * out, const std::vector<PostingListCursorPtr
 
         for (size_t i = 1; i < n; ++i)
         {
-            if (vals[i] < min_val) min_val = vals[i];
-            else if (vals[i] > max_val) max_val = vals[i];
+            if (vals[i] < min_val)
+                min_val = vals[i];
+            else if (vals[i] > max_val)
+                max_val = vals[i];
         }
 
         if (max_val >= effective_end)
@@ -839,6 +814,7 @@ void intersectLeapfrogLinear(UInt8 * out, const std::vector<PostingListCursorPtr
                 cursors[i]->next();
                 if (!cursors[i]->valid())
                     return;
+
                 vals[i] = cursors[i]->value();
             }
         }
@@ -851,6 +827,7 @@ void intersectLeapfrogLinear(UInt8 * out, const std::vector<PostingListCursorPtr
                     cursors[i]->advance(max_val);
                     if (!cursors[i]->valid())
                         return;
+
                     vals[i] = cursors[i]->value();
                 }
             }
@@ -1067,6 +1044,7 @@ void lazyIntersectPostingLists(
         if (it != postings.end())
             cursors.emplace_back(it->second);
     }
+
     const size_t n = cursors.size();
     const size_t end = row_offset + num_rows;
 

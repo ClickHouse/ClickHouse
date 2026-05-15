@@ -64,15 +64,10 @@ TokenPostingsInfo makeMaterializedSingleBlockInfo(const std::vector<uint32_t> & 
     return info;
 }
 
-PostingListCursorHandlePtr makeEmbeddedHandle(const TokenPostingsInfo & info)
-{
-    return std::make_shared<PostingListCursorHandle>(info);
-}
-
 /// Helper: create a PostingListCursor for an embedded posting list.
 PostingListCursorPtr makeEmbeddedCursor(const TokenPostingsInfo & info)
 {
-    return std::make_shared<PostingListCursor>(makeEmbeddedHandle(info));
+    return std::make_shared<PostingListCursor>(info);
 }
 
 /// Helper: generate a sequence of doc IDs: {start, start+step, start+2*step, ...}
@@ -253,13 +248,7 @@ PostingListCursorPtr makeMultiBlockCursor(const MultiBlockTestData & data)
     /// before the cursor calls advanceToMark.
     data.stream->getDataBuffer();
 
-    return std::make_shared<PostingListCursor>(std::make_shared<PostingListCursorHandle>(*data.stream, data.info));
-}
-
-PostingListCursorHandlePtr makeMultiBlockHandle(const MultiBlockTestData & data)
-{
-    makeMultiBlockCursor(data);
-    return std::make_shared<PostingListCursorHandle>(*data.stream, data.info);
+    return std::make_shared<PostingListCursor>(*data.stream, data.info);
 }
 
 } // anonymous namespace
@@ -312,7 +301,7 @@ TEST(PostingListCursorTest, LargeEmbeddedCursor)
 }
 
 /// Embedded posting lists used to be capped at MAX_EMBEDDED_POSTING_LIST_ROWS (6).
-/// Rare-token roaring bitmaps materialized through `makeLazyCursorHandle` can hold
+/// Rare-token roaring bitmaps materialized through `makeLazyCursor` can hold
 /// arbitrary cardinalities; the cursor must handle lists larger than the legacy
 /// inline buffer (and larger than BLOCK_SIZE) without truncation.
 TEST(PostingListCursorTest, OversizedEmbeddedCursorExceedsBlockSize)
@@ -371,12 +360,11 @@ TEST(PostingListCursorTest, NextAfterInvalidIsNoop)
     EXPECT_FALSE(cursor->valid());
 }
 
-TEST(PostingListCursorTest, EmbeddedHandleCreatesIndependentCursors)
+TEST(PostingListCursorTest, EmbeddedCursorsOverSameInfoAreIndependent)
 {
     auto info = makeEmbeddedInfo({10, 20, 30, 40});
-    auto handle = makeEmbeddedHandle(info);
 
-    auto cursor1 = std::make_shared<PostingListCursor>(handle);
+    auto cursor1 = std::make_shared<PostingListCursor>(info);
     cursor1->advance(30);
     ASSERT_TRUE(cursor1->valid());
     EXPECT_EQ(cursor1->value(), 30U);
@@ -384,7 +372,7 @@ TEST(PostingListCursorTest, EmbeddedHandleCreatesIndependentCursors)
     ASSERT_TRUE(cursor1->valid());
     EXPECT_EQ(cursor1->value(), 40U);
 
-    auto cursor2 = std::make_shared<PostingListCursor>(handle);
+    auto cursor2 = std::make_shared<PostingListCursor>(info);
     cursor2->advance(10);
     ASSERT_TRUE(cursor2->valid());
     EXPECT_EQ(cursor2->value(), 10U);
@@ -438,15 +426,18 @@ TEST(PostingListCursorTest, SeekToFirstDoc)
     EXPECT_EQ(cursor->value(), 10u);
 }
 
-TEST(PostingListCursorTest, MultiBlockHandleCreatesIndependentCursors)
+TEST(PostingListCursorTest, MultiBlockCursorsOverSameStreamAreIndependent)
 {
     auto data = makeMultiBlockData({
         generateRange(100, 64, 2),
         generateRange(400, 64, 2),
     });
-    auto handle = makeMultiBlockHandle(data);
 
-    auto cursor1 = std::make_shared<PostingListCursor>(handle);
+    /// `makeMultiBlockCursor` lazily writes the `.pst` file and builds `data.stream`
+    /// as a side effect — use it for `cursor1` so the stream is initialised, then
+    /// construct `cursor2` directly to verify that two cursors over the same stream
+    /// hold independent iteration state.
+    auto cursor1 = makeMultiBlockCursor(data);
     cursor1->advance(420);
     ASSERT_TRUE(cursor1->valid());
     EXPECT_EQ(cursor1->value(), 420u);
@@ -454,7 +445,7 @@ TEST(PostingListCursorTest, MultiBlockHandleCreatesIndependentCursors)
     ASSERT_TRUE(cursor1->valid());
     EXPECT_EQ(cursor1->value(), 422u);
 
-    auto cursor2 = std::make_shared<PostingListCursor>(handle);
+    auto cursor2 = std::make_shared<PostingListCursor>(*data.stream, data.info);
     cursor2->advance(100);
     ASSERT_TRUE(cursor2->valid());
     EXPECT_EQ(cursor2->value(), 100u);

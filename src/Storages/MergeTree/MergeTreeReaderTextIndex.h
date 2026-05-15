@@ -76,7 +76,7 @@ private:
     void readGranule();
     void analyzeTokensCardinality();
     void initializePostingStreams();
-    PostingListCursorHandlePtr makeLazyCursorHandle(std::string_view token, const TokenPostingsInfo & token_info);
+    PostingListCursorPtr makeLazyCursor(std::string_view token, const TokenPostingsInfo & token_info);
     void fillColumn(IColumn & column, const String & column_name, PostingsMap & postings, size_t row_offset, size_t num_rows);
     double estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const;
 
@@ -97,7 +97,8 @@ private:
     /// Per-virtual-column flag: true if this column's query was abandoned during the scan
     /// and the predicate must be evaluated directly via fallback_expressions.
     std::vector<bool> use_fallback;
-    /// Small postings stream — kept as a class member for lazy cursor handles.
+    /// Small postings stream — kept as a class member because cached lazy cursors
+    /// hold a reference to it for on-demand segment reads.
     std::unique_ptr<MergeTreeReaderStream> small_postings_stream;
     /// A separate stream is created for each token to read
     /// postings blocks continuously without additional seeks.
@@ -121,9 +122,14 @@ private:
     bool use_lazy_mode = false;
     float lazy_density_threshold = 0.5f;
 
-    /// Immutable lazy posting-list handles are safe to reuse across reads because they do not
-    /// contain any iterator state. `PostingListCursor` objects are created from these handles per call.
-    absl::flat_hash_map<String, PostingListCursorHandlePtr> lazy_cursor_handles;
+    /// Cached per-token lazy cursors. Reused across `fillColumn` calls so the decoded
+    /// segment payload, parsed block index, and (when adjacent marks fall in the same
+    /// block) the decoded packed block are amortized over many marks. Pre-decoded
+    /// embedded postings and the materialized rare-token bitmap live inside the cursor
+    /// and are likewise produced once.
+    /// Forward-only: `readRows` clears this map when it detects a backward jump
+    /// (`from_mark < current_mark`); also cleared on granule reload.
+    absl::flat_hash_map<String, PostingListCursorPtr> lazy_cursors;
 };
 
 }
