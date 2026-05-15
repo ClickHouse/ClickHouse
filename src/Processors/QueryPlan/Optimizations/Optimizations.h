@@ -51,6 +51,14 @@ struct Optimization
         size_t max_limit_for_top_k_optimization;
         bool use_skip_indexes_on_data_read;
         bool read_in_order;
+        bool read_in_order_through_join;
+
+        /// Mirrors `QueryPlanOptimizationSettings::join_swap_table`. `std::nullopt` means
+        /// "auto" (swap decided by `optimizeJoinLegacy` from per-side row estimations);
+        /// `true`/`false` are explicit. `topKThroughJoin` consults it because deferring to
+        /// the second-pass read-in-order would silently disable both optimizations if the
+        /// join is swapped from `LEFT` to `RIGHT` after we returned.
+        std::optional<bool> join_swap_table;
 
         bool group_by_limit_pushdown;
 
@@ -147,9 +155,14 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 /// Push LIMIT into GROUP BY via bounded heap when ORDER BY matches GROUP BY keys
 size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// Push ORDER BY ... LIMIT n down through a Join when the sort key only references
+/// columns from the side preserved by the join (LEFT/RIGHT). Restricts how many rows
+/// the preserved-side input must produce before joining.
+size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 19> optimizations = {{
+    static const std::array<Optimization, 20> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
@@ -169,6 +182,7 @@ inline const auto & getOptimizations()
         {tryRemoveUnusedColumns, "removeUnusedColumns", &QueryPlanOptimizationSettings::remove_unused_columns},
         {tryOptimizeTopK, "tryOptimizeTopK", &QueryPlanOptimizationSettings::try_use_top_k_optimization},
         {tryOptimizeGroupByLimitPushdown, "tryOptimizeGroupByLimitPushdown", &QueryPlanOptimizationSettings::group_by_limit_pushdown},
+        {tryTopKThroughJoin, "topKThroughJoin", &QueryPlanOptimizationSettings::top_k_through_join},
     }};
 
     return optimizations;
