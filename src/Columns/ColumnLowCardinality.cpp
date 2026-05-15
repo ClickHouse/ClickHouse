@@ -680,13 +680,21 @@ void ColumnLowCardinality::Dictionary::setShared(const ColumnPtr & column_unique
 
 void ColumnLowCardinality::Dictionary::compact(MutableColumnPtr & indexes)
 {
-    column_unique = compact(getColumnUnique(), indexes);
+    /// `column_unique` is by definition shared here (we only compact in place when `shared` is true),
+    /// so the non-const `getColumnUnique()` would trip the `use_count() == 1` assertion in `assumeMutableRef`.
+    /// Borrow it as `const`: the compact helper only reads from it and we replace `column_unique` with a
+    /// freshly-built compact dictionary below.
+    const auto & const_unique_ptr = column_unique;
+    const auto & const_unique = static_cast<const IColumnUnique &>(*const_unique_ptr);
+    column_unique = compact(const_unique, indexes);
     shared = false;
 }
 
 void ColumnLowCardinality::Dictionary::compactToNullable(MutableColumnPtr & indexes)
 {
-    column_unique = compactToNullable(getColumnUnique(), indexes);
+    const auto & const_unique_ptr = column_unique;
+    const auto & const_unique = static_cast<const IColumnUnique &>(*const_unique_ptr);
+    column_unique = compactToNullable(const_unique, indexes);
     shared = false;
 }
 
