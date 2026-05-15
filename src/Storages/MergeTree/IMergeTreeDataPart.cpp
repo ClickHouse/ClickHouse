@@ -2094,8 +2094,11 @@ void IMergeTreeDataPart::loadColumnsSubstreams()
                     invalid_substream);
 
                 columns_substreams = {};
+                return;
             }
         }
+
+        columns_substreams.validateColumns(getColumns().getNames());
     }
     /// In Compact part with marks for substreams we must have substreams file. For other cases it's not mandatory.
     else if (part_type == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)
