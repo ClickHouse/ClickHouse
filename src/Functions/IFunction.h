@@ -373,6 +373,12 @@ public:
     virtual bool isServerConstant() const { return false; }
     virtual bool isShortCircuit(IFunctionBase::ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
 
+    /// Returns true for higher-order functions that accept a lambda expression as an argument
+    /// (e.g. `arrayMap`, `arrayFilter`, `arrayFold`, `mapApply`). Used as a non-throwing
+    /// capability check so callers can avoid invoking `getLambdaArgumentTypes`, which throws
+    /// on non-higher-order functions.
+    virtual bool isHigherOrderFunction() const { return false; }
+
     /// Override and return true if function needs to depend on the state of the data.
     virtual bool isStateful() const { return false; }
 
@@ -594,6 +600,9 @@ public:
     virtual bool isVariadic() const { return false; }
 
     virtual void getLambdaArgumentTypes(DataTypes & /*arguments*/) const;
+
+    /// Mirrors `IFunctionOverloadResolver::isHigherOrderFunction`. See there for semantics.
+    virtual bool isHigherOrderFunction() const { return false; }
 
     virtual ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const { return {}; }
 

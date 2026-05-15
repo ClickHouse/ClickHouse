@@ -31,6 +31,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isHigherOrderFunction() const override { return true; }
 
     /// Avoid the default adaptors since they modify the inputs and that makes knowing the lambda argument types
     /// (getLambdaArgumentTypes) more complex, as it requires knowing what the adaptors will do

@@ -1829,6 +1829,7 @@ argMax
 argMin
 argmax
 argmin
+arity
 arrayAUC
 arrayAUCPR
 arrayAll
@@ -2295,6 +2296,8 @@ deserializing
 dest
 destructor
 destructors
+destructure
+destructuring
 detectCharset
 detectLanguage
 detectLanguageMixed
