@@ -24,7 +24,6 @@
 #include <Interpreters/DeltaMetadataLog.h>
 
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 
@@ -48,6 +47,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/URI.h>
 
 namespace fs = std::filesystem;
 
@@ -315,7 +315,8 @@ struct DeltaLakeMetadataImpl
                 if (!add_object)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `add` field");
 
-                auto path = add_object->getValue<String>("path");
+                String path;
+                Poco::URI::decode(add_object->getValue<String>("path"), path);
                 auto full_path = fs::path(table_path) / path;
                 result.insert(full_path);
 
@@ -360,7 +361,8 @@ struct DeltaLakeMetadataImpl
                 if (!remove_object)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `remove` field");
 
-                auto path = remove_object->getValue<String>("path");
+                String path;
+                Poco::URI::decode(remove_object->getValue<String>("path"), path);
                 result.erase(fs::path(table_path) / path);
             }
         }
@@ -489,9 +491,7 @@ struct DeltaLakeMetadataImpl
         /// Force nullable, because this parquet file for some reason does not have nullable
         /// in parquet file metadata while the type are in fact nullable.
         format_settings.schema_inference_make_columns_nullable = true;
-        auto columns = format_settings.parquet.use_native_reader_v3
-            ? NativeParquetSchemaReader(*buf, format_settings).readSchema()
-            : ArrowParquetSchemaReader(*buf, format_settings).readSchema();
+        auto columns = NativeParquetSchemaReader(*buf, format_settings).readSchema();
 
         /// Read only columns that we need.
         auto filter_column_names = NameSet{"add", "metaData"};
@@ -561,7 +561,8 @@ struct DeltaLakeMetadataImpl
 
         for (size_t i = 0; i < path_column.size(); ++i)
         {
-            const auto path = String(path_column.getDataAt(i));
+            String path;
+            Poco::URI::decode(String(path_column.getDataAt(i)), path);
             if (path.empty())
                 continue;
 
@@ -722,6 +723,10 @@ DataTypePtr DeltaLakeMetadata::getSimpleTypeByName(const String & type_name)
         tryReadIntText(scale, buf);
         return createDecimal<DataTypeDecimal>(precision, scale);
     }
+    /// varchar(n) and char(n) are valid Delta Lake types that map to string in Parquet.
+    /// The length constraint is a SQL-level annotation only; we ignore it and use String.
+    if ((type_name.starts_with("varchar(") || type_name.starts_with("char(")) && type_name.ends_with(')'))
+        return std::make_shared<DataTypeString>();
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type: {}", type_name);
 }
