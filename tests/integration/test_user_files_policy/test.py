@@ -92,6 +92,30 @@ def test_local_absolute_path_outside_disks_rejected():
         )
 
 
+def test_local_absolute_path_equal_to_disk_root():
+    """An absolute path equal to the disk root (with or without trailing slash)
+    must resolve to the disk root itself, not be rejected as an outside path."""
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo 'root_match' > /test_user_files_disk1/root_match.csv",
+        ]
+    )
+
+    # With trailing slash: directory listing should expand to the file inside.
+    result = node_local.query(
+        "SELECT * FROM file('/test_user_files_disk1/', 'CSV', 'x String') WHERE x = 'root_match'"
+    )
+    assert result.strip() == "root_match"
+
+    # Without trailing slash: same behavior expected.
+    result = node_local.query(
+        "SELECT * FROM file('/test_user_files_disk1', 'CSV', 'x String') WHERE x = 'root_match'"
+    )
+    assert result.strip() == "root_match"
+
+
 @pytest.mark.parametrize(
     "path",
     [

@@ -456,18 +456,37 @@ std::pair<DiskPtr, String> splitUserFilesAbsolutePath(const String & absolute_pa
 {
     DiskPtr best_disk;
     size_t best_prefix_size = 0;
+    String best_relative;
     for (const auto & disk : disks)
     {
         const String disk_prefix = getDiskPathWithSlash(disk);
-        if (absolute_path.starts_with(disk_prefix) && disk_prefix.size() > best_prefix_size)
+        /// `disk_prefix` always ends with '/'. Accept either the strict prefix form
+        /// (path is under the disk root) or an exact match with the root path
+        /// without the trailing slash, mapping the latter to an empty relative.
+        String relative;
+        if (absolute_path.starts_with(disk_prefix))
+        {
+            relative = absolute_path.substr(disk_prefix.size());
+        }
+        else if (absolute_path.size() + 1 == disk_prefix.size()
+                 && disk_prefix.starts_with(absolute_path))
+        {
+            relative.clear();
+        }
+        else
+        {
+            continue;
+        }
+        if (disk_prefix.size() > best_prefix_size)
         {
             best_disk = disk;
             best_prefix_size = disk_prefix.size();
+            best_relative = std::move(relative);
         }
     }
     if (!best_disk)
         return {nullptr, {}};
-    return {best_disk, absolute_path.substr(best_prefix_size)};
+    return {best_disk, best_relative};
 }
 
 /// Returns true if the given absolute user-files path points to an existing file
