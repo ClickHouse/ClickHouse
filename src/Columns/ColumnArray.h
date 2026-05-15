@@ -215,7 +215,15 @@ public:
         return false;
     }
 
-    void finalize() override { data->finalize(); }
+    void finalize() override
+    {
+        /// `data` can be shared by a row-input format serializer that retains a `ColumnPtr` to it
+        /// between rows of the same chunk; the format then calls `finalize()` on the owning column
+        /// while the borrowed reference is still alive. Go through the const dereference so that
+        /// `WrappedPtr` does not trigger its `use_count() == 1` assertion in this safe case.
+        const auto & data_ref = data;
+        const_cast<IColumn &>(*data_ref).finalize();
+    }
     bool isFinalized() const override { return data->isFinalized(); }
 
     bool isCollationSupported() const override { return getData().isCollationSupported(); }
