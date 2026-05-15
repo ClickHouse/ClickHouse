@@ -608,6 +608,8 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     if (select)
     {
+        /// Emit CLONE for `CLONE AS SELECT`; the other CLONE shapes are handled in the branches above.
+        add_clone_if_needed();
         ostr << settings.nl_or_ws;
         ostr << "AS ";
 

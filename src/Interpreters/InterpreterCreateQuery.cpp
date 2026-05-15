@@ -735,6 +735,12 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
     ASTCreateQuery & create, LoadingStrictnessLevel mode)
 {
+    /// CLONE AS only makes sense with a source table. Reject CLONE AS SELECT / CLONE AS <table_function>
+    /// on fresh CREATE; leave ATTACH permissive so legacy metadata that persisted these forms still loads.
+    if (mode <= LoadingStrictnessLevel::CREATE && create.is_clone_as && create.as_table.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "CLONE AS requires a source table name, not a SELECT query or table function");
+
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);
 
