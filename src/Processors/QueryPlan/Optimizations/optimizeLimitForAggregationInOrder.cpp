@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
@@ -9,11 +10,18 @@ namespace DB::QueryPlanOptimizations
 {
 
 /// Returns true if the step is transparent for this optimization:
-/// it must preserve both sorting and the number of rows.
-/// Steps like FilterStep, LimitByStep, OffsetStep drop rows and must not
-/// be crossed — applying the limit before them would under-read groups.
+/// it must preserve the number of rows (to avoid applying the limit
+/// before row-dropping operators like FilterStep, LimitByStep, OffsetStep).
+/// ExpressionStep is allowed explicitly: it preserves row count and doesn't
+/// reorder rows, even though its generic preserves_sorting trait is false
+/// (because it cannot prove sort preservation for arbitrary expressions).
+/// The sort column identifiers are the same between SortingStep and
+/// AggregatingStep, so ExpressionStep doesn't interfere with prefix matching.
 static bool isTransparentStep(IQueryPlanStep * step)
 {
+    if (typeid_cast<ExpressionStep *>(step))
+        return true;
+
     auto * transforming = dynamic_cast<ITransformingStep *>(step);
     if (!transforming)
         return false;
