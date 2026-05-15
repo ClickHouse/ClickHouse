@@ -244,6 +244,7 @@ private:
     void fuzzProjectionDeclaration(ASTProjectionDeclaration & projection);
     void fuzzProjectionWithSettings(ASTProjectionDeclaration & projection);
     void fuzzTableName(ASTTableExpression & table);
+    void fuzzTableFunctionName(ASTPtr & table_function);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
     void fuzzExpressionList(ASTExpressionList & expr_list);

@@ -1170,6 +1170,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         {
             if (child.get() == create.as_table_function)
             {
+                fuzzTableFunctionName(child);
                 fuzz(child);
                 break;
             }
@@ -1980,6 +1981,70 @@ void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
         std::advance(new_table_name, fuzz_rand() % it->second.size());
         StorageID new_table_id(table_id.database_name, *new_table_name);
         table.database_and_table_name = make_intrusive<ASTTableIdentifier>(new_table_id);
+    }
+}
+
+void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
+{
+    if (!table_function || fuzz_rand() % 20 != 0)
+        return;
+
+    auto * fn = typeid_cast<ASTFunction *>(table_function.get());
+    if (!fn)
+        return;
+
+    static const std::vector<std::unordered_set<String>> swapTableFuncs = {
+        /// Sequence generators (count → rows)
+        {"numbers", "numbers_mt", "zeros", "zeros_mt", "generateSeries", "generate_series", "primes"},
+        /// File-like sources (path/url, format, structure)
+        {"file", "url"},
+        /// Cluster variants of file-like sources
+        {"fileCluster", "urlCluster"},
+        /// Object storage (url, access_key, secret_key, format, structure)
+        {"s3", "gcs", "cosn", "oss"},
+        /// Object storage cluster variants
+        {"s3Cluster", "azureBlobStorageCluster"},
+        /// Data lake table functions
+        {"iceberg", "icebergS3", "deltaLake", "deltaLakeS3", "hudi", "paimon", "paimonS3"},
+        /// Data lake Azure variants
+        {"icebergAzure", "deltaLakeAzure", "paimonAzure"},
+        /// Data lake HDFS variants
+        {"icebergHDFS", "paimonHDFS"},
+        /// Data lake local variants
+        {"icebergLocal", "deltaLakeLocal", "paimonLocal"},
+        /// Data lake cluster variants
+        {"icebergCluster", "icebergS3Cluster", "deltaLakeCluster", "deltaLakeS3Cluster", "hudiCluster", "paimonCluster", "paimonS3Cluster"},
+        /// Data lake Azure cluster variants
+        {"icebergAzureCluster", "deltaLakeAzureCluster", "paimonAzureCluster"},
+        /// Data lake HDFS cluster variants
+        {"icebergHDFSCluster", "paimonHDFSCluster"},
+        /// MergeTree introspection
+        {"mergeTreeIndex", "mergeTreeAnalyzeIndexes", "mergeTreeProjection", "mergeTreeTextIndex"},
+        /// External relational databases (host, port, db, table, user, password)
+        {"mysql", "postgresql"},
+        /// External databases with connection-style args
+        {"sqlite", "mongodb", "redis"},
+        /// Remote ClickHouse clusters
+        {"remote", "remoteSecure"},
+        /// Named cluster table functions
+        {"cluster", "clusterAllReplicas"},
+        /// XDBC connectors
+        {"jdbc", "odbc"},
+        /// Fuzzer generators
+        {"fuzzQuery", "fuzzJSON"},
+        /// Prometheus query variants
+        {"prometheusQuery", "prometheusQueryRange"},
+        /// View variants
+        {"view", "viewIfPermitted"},
+    };
+
+    for (const auto & group : swapTableFuncs)
+    {
+        if (group.contains(fn->name))
+        {
+            fn->name = pickRandomly(fuzz_rand, group);
+            return;
+        }
     }
 }
 
@@ -3489,6 +3554,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             table_expr->final = !table_expr->final;
         }
         fuzzTableName(*table_expr);
+        fuzzTableFunctionName(table_expr->table_function);
 
         /// Fuzz SAMPLE clause
         if (table_expr->sample_size)
