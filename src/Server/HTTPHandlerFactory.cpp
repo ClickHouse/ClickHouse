@@ -9,9 +9,6 @@
 #include <Server/ReplicasStatusHandler.h>
 #include <Server/StaticRequestHandler.h>
 #include <Server/WebUIRequestHandler.h>
-#if CLICKHOUSE_CLOUD
-#include <Server/CloudReadinessHandler.h>
-#endif
 
 #if USE_SSL
 #include <Server/ACME/RequestHandler.h>
@@ -253,12 +250,6 @@ static inline auto createHandlersFactoryFromConfig(
                 main_handler_factory->addHandler(std::move(handler));
             }
 #endif
-#if CLICKHOUSE_CLOUD
-            else if (handler_type == "cloud")
-            {
-                main_handler_factory->addHandler(createCloudHandlerFactory(server, config, prefix + "." + key));
-            }
-#endif
             else
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Unknown handler type '{}' in config here: {}.{}.handler.type",
                     handler_type, prefix, key);
@@ -272,11 +263,11 @@ static inline auto createHandlersFactoryFromConfig(
 }
 
 static inline HTTPRequestHandlerFactoryPtr
-createHTTPHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const std::string & name, AsynchronousMetrics & async_metrics, const std::string & http_handlers_key = "http_handlers")
+createHTTPHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const std::string & name, AsynchronousMetrics & async_metrics)
 {
-    if (config.has(http_handlers_key))
+    if (config.has("http_handlers"))
     {
-        return createHandlersFactoryFromConfig(server, config, name, http_handlers_key, async_metrics);
+        return createHandlersFactoryFromConfig(server, config, name, "http_handlers", async_metrics);
     }
 
     auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
@@ -296,20 +287,16 @@ static inline HTTPRequestHandlerFactoryPtr createInterserverHTTPHandlerFactory(I
     return factory;
 }
 
-HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, AsynchronousMetrics & async_metrics, const std::string & name, const std::string & http_handlers_key)
+HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, AsynchronousMetrics & async_metrics, const std::string & name)
 {
     if (name == "HTTPHandler-factory" || name == "HTTPSHandler-factory")
-        return createHTTPHandlerFactory(server, config, name, async_metrics, http_handlers_key.empty() ? "http_handlers" : http_handlers_key);
+        return createHTTPHandlerFactory(server, config, name, async_metrics);
     if (name == "InterserverIOHTTPHandler-factory" || name == "InterserverIOHTTPSHandler-factory")
         return createInterserverHTTPHandlerFactory(server, name, config);
     if (name == "PrometheusHandler-factory")
         return createPrometheusHandlerFactory(server, config, async_metrics, name);
     if (name == "KeeperPrometheusHandler-factory")
         return createKeeperPrometheusHandlerFactory(server, config, async_metrics, name);
-#if CLICKHOUSE_CLOUD
-    if (name == "CloudHandler-factory")
-        return createCloudMainHandlerFactory(server, config, name);
-#endif
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown HTTP handler factory name.");
 }

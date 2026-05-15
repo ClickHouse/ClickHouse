@@ -20,8 +20,6 @@ enum class JoinTableSide : uint8_t;
 class MergeJoin : public IJoin
 {
 public:
-    static constexpr Int32 nulls_direction = -1;
-
     MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block);
 
     struct NotProcessed

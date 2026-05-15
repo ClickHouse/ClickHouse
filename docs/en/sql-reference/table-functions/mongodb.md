@@ -8,6 +8,8 @@ title: 'mongodb'
 doc_type: 'reference'
 ---
 
+# mongodb Table Function
+
 Allows `SELECT` queries to be performed on data that is stored on a remote MongoDB server.
 
 ## Syntax {#syntax}
@@ -124,4 +126,4 @@ SELECT * FROM mongodb(
 ## Related {#related}
 
 - [The `MongoDB` table engine](engines/table-engines/integrations/mongodb.md)
-- [Using MongoDB as a dictionary source](../statements/create/dictionary/sources/mongodb.md)
+- [Using MongoDB as a dictionary source](../statements/create/dictionary/sources.md#mongodb)

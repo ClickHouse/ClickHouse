@@ -7,6 +7,8 @@ title: 'row_number'
 doc_type: 'reference'
 ---
 
+# row_number
+
 Numbers the current row within its partition starting from 1.
 
 **Syntax**
