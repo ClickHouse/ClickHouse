@@ -1929,10 +1929,10 @@ TEST_F(FileCacheTest, LoadMetadataParallelism)
 
 namespace
 {
-    DimensionalMetrics::MetricFamily * findDimensionalFamily(const std::string & name)
+    ::DimensionalMetrics::MetricFamily * findDimensionalFamily(const std::string & name)
     {
-        DimensionalMetrics::MetricFamily * result = nullptr;
-        DimensionalMetrics::Factory::instance().forEachFamily([&](DimensionalMetrics::MetricFamily & f)
+        ::DimensionalMetrics::MetricFamily * result = nullptr;
+        ::DimensionalMetrics::Factory::instance().forEachFamily([&](::DimensionalMetrics::MetricFamily & f)
         {
             if (f.getName() == name)
                 result = &f;
@@ -1940,10 +1940,10 @@ namespace
         return result;
     }
 
-    HistogramMetrics::MetricFamily * findHistogramFamily(const std::string & name)
+    ::HistogramMetrics::MetricFamily * findHistogramFamily(const std::string & name)
     {
-        HistogramMetrics::MetricFamily * result = nullptr;
-        HistogramMetrics::Factory::instance().forEachFamily([&](HistogramMetrics::MetricFamily & f)
+        ::HistogramMetrics::MetricFamily * result = nullptr;
+        ::HistogramMetrics::Factory::instance().forEachFamily([&](::HistogramMetrics::MetricFamily & f)
         {
             if (f.getName() == name)
                 result = &f;
@@ -1955,11 +1955,11 @@ namespace
     /// Each observation increments exactly one bucket (the bucket it falls into,
     /// or the +Inf overflow at index buckets.size()), so summing all bucket
     /// counters gives the total observation count.
-    uint64_t totalHistogramObservations(HistogramMetrics::MetricFamily & family)
+    uint64_t totalHistogramObservations(::HistogramMetrics::MetricFamily & family)
     {
         uint64_t total = 0;
         const auto & buckets = family.getBuckets();
-        family.forEachMetric([&](const HistogramMetrics::LabelValues &, const HistogramMetrics::Metric & m)
+        family.forEachMetric([&](const ::HistogramMetrics::LabelValues &, const ::HistogramMetrics::Metric & m)
         {
             for (size_t i = 0; i <= buckets.size(); ++i)
                 total += m.getCounter(i);
@@ -1967,10 +1967,10 @@ namespace
         return total;
     }
 
-    double totalDimensionalValue(DimensionalMetrics::MetricFamily & family)
+    double totalDimensionalValue(::DimensionalMetrics::MetricFamily & family)
     {
         double total = 0;
-        family.forEachMetric([&](const DimensionalMetrics::LabelValues &, const DimensionalMetrics::Metric & m)
+        family.forEachMetric([&](const ::DimensionalMetrics::LabelValues &, const ::DimensionalMetrics::Metric & m)
         {
             total += m.get();
         });
