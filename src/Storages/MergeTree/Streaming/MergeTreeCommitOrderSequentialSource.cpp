@@ -276,14 +276,16 @@ MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
 IProcessor::Status MergeTreeCommitOrderSequentialSource::handleRunningPipeline()
 {
     auto & output = outputs.front();
+    auto & input = inputs.front();
 
     if (output.isFinished())
+    {
+        input.close();
         return Status::Finished;
+    }
 
     if (!output.canPush())
         return Status::PortFull;
-
-    auto & input = inputs.front();
 
     if (!input.hasData())
     {
@@ -308,6 +310,9 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleRunningPipeline()
 IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
 {
     auto & output = outputs.front();
+
+    if (output.isFinished())
+        return Status::Finished;
 
     if (pending_snapshot.has_value())
         return Status::UpdatePipeline;
