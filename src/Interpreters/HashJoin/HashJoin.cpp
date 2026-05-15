@@ -535,7 +535,9 @@ size_t HashJoin::getTotalByteCount() const
 
 bool HashJoin::isUsedByAnotherAlgorithm(const TableJoin & table_join)
 {
-    return table_join.isEnabledAlgorithm(JoinAlgorithm::AUTO) || table_join.isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH);
+    return table_join.isEnabledAlgorithm(JoinAlgorithm::AUTO)
+        || table_join.isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH)
+        || table_join.maxBytesBeforeExternalJoin() > 0;
 }
 bool HashJoin::canRemoveColumnsFromLeftBlock(const TableJoin & table_join)
 {
@@ -1789,7 +1791,15 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     {
         BlocksList result;
         for (auto & columns : columns_list)
-            result.emplace_back(sample_block.cloneWithColumns(columns.columns_info.columns));
+        {
+            Block block = sample_block.cloneWithColumns(columns.columns_info.columns);
+            /// When used with ConcurrentHashJoin, each slot stores full original block columns
+            /// with a selector indicating which rows belong to that slot. Apply the selector
+            /// to materialize only the selected rows, avoiding duplication across slots.
+            ScatteredBlock scattered(std::move(block), std::move(columns.selector));
+            scattered.filterBySelector();
+            result.emplace_back(std::move(scattered.getSourceBlock()));
+        }
         return result;
     };
 
@@ -2070,10 +2080,10 @@ void HashJoin::tryConvertToFixedHashMapImpl(MapsTemplate & maps)
         Key k = it->getKey();
         if constexpr (is_signed)
         {
-            SignedKey sk = static_cast<SignedKey>(k);
-            if (sk < static_cast<SignedKey>(min_key))
+            SignedKey signed_key = static_cast<SignedKey>(k);
+            if (signed_key < static_cast<SignedKey>(min_key))
                 min_key = k;
-            if (sk > static_cast<SignedKey>(max_key))
+            if (signed_key > static_cast<SignedKey>(max_key))
                 max_key = k;
         }
         else

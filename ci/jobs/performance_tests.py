@@ -5,6 +5,7 @@ import re
 import subprocess
 import time
 import traceback
+import urllib.parse
 from datetime import datetime
 from pathlib import Path
 
@@ -94,6 +95,256 @@ FROM input(
 ) FORMAT TSV"""
 
 RAW_QUERY_METRICS_TABLE = "query_metric_runs_v1"
+
+# --- Aggregate report tables on the play cluster --------------------------
+# These capture everything that used to only live in the static HTML report
+# (Test Times, Test Performance Changes, Backward-incompatible queries,
+# Skipped tests, Run errors, async Metric Changes, Tested commits) plus the
+# collapsed flamegraph stacks. See ci/jobs/scripts/perf/README-db.md for DDL.
+
+TEST_TIMES_TABLE = "perf_test_times_v1"
+TEST_PERF_CHANGES_TABLE = "perf_test_perf_changes_v1"
+PARTIAL_QUERIES_TABLE = "perf_partial_queries_v1"
+SKIPPED_TESTS_TABLE = "perf_skipped_tests_v1"
+RUN_ERRORS_TABLE = "perf_run_errors_v1"
+METRIC_CHANGES_TABLE = "perf_metric_changes_v1"
+FLAMEGRAPH_STACKS_TABLE = "perf_flamegraph_stacks_v1"
+
+ch_uploads_dir = f"{perf_wd}/analyze/ch-uploads"
+flamegraph_upload_path = f"{ch_uploads_dir}/flamegraph-stacks.tsv"
+
+# Common per-row metadata columns and their SELECT expressions. Placeholders
+# are filled by get_insert_metadata() + job/PR info via .format() below.
+COMMON_META_COLUMNS = [
+    "event_date",
+    "check_start_time",
+    "pr_number",
+    "old_sha",
+    "new_sha",
+    "arch",
+    "baseline_kind",
+    "workflow_name",
+    "base_branch",
+    "report_url",
+    "instance_type",
+    "instance_id",
+]
+
+COMMON_META_SELECT = """\
+    '{EVENT_DATE}' AS event_date,
+    '{CHECK_START_TIME}' AS check_start_time,
+    {PR_NUMBER} AS pr_number,
+    '{REF_SHA}' AS old_sha,
+    '{CUR_SHA}' AS new_sha,
+    '{ARCH}' AS arch,
+    '{BASELINE_KIND}' AS baseline_kind,
+    '{WORKFLOW_NAME}' AS workflow_name,
+    '{BASE_BRANCH}' AS base_branch,
+    '{REPORT_URL}' AS report_url,
+    '{INSTANCE_TYPE}' AS instance_type,
+    '{INSTANCE_ID}' AS instance_id"""
+
+
+def _make_insert_query(table, table_columns, input_schema, select_exprs, where=None):
+    """Build INSERT INTO {table} ... SELECT ... FROM input('...') [WHERE ...] FORMAT TSV.
+
+    `table_columns` is the list of non-metadata column names written to in the
+    target table; `select_exprs` is the parallel list of SELECT expressions
+    (can be bare column names or arbitrary expressions referring to columns
+    produced by input()).
+    """
+    all_cols = COMMON_META_COLUMNS + list(table_columns)
+    select_all = COMMON_META_SELECT + ",\n    " + ",\n    ".join(select_exprs)
+    where_clause = f"WHERE {where}" if where else ""
+    return (
+        f"INSERT INTO {table}\n"
+        f"(\n    " + ",\n    ".join(all_cols) + "\n)\n"
+        f"SELECT\n" + select_all + "\n"
+        f"FROM input('" + input_schema + "')\n"
+        + where_clause + "\n"
+        "FORMAT TSV"
+    )
+
+
+# --- Per-table configs for aggregate report uploads -----------------------
+# Each entry describes how to ingest one TSV produced by compare.sh::report()
+# into one table on the play cluster.
+
+REPORT_UPLOADS = [
+    {
+        "table": TEST_TIMES_TABLE,
+        "source": f"{perf_wd}/report/test-times.tsv",
+        "table_columns": [
+            "test",
+            "wall_clock_sec",
+            "total_client_sec",
+            "queries",
+            "longest_query_sec",
+            "avg_query_sec",
+            "shortest_query_sec",
+            "runs",
+        ],
+        "input_schema": (
+            "test String, wall_clock_sec Float64, total_client_sec Float64, "
+            "queries UInt32, longest_query_sec Float64, avg_query_sec Float64, "
+            "shortest_query_sec Float64, runs UInt32"
+        ),
+        "select_exprs": [
+            "test",
+            "wall_clock_sec",
+            "total_client_sec",
+            "queries",
+            "longest_query_sec",
+            "avg_query_sec",
+            "shortest_query_sec",
+            "runs",
+        ],
+        # Skip the aggregate 'Total' row that compare.sh appends - UI can sum.
+        "where": "test != 'Total'",
+    },
+    {
+        "table": TEST_PERF_CHANGES_TABLE,
+        "source": f"{perf_wd}/report/test-perf-changes.tsv",
+        "table_columns": [
+            "test",
+            "times_speedup",
+            "queries",
+            "bad",
+            "changed",
+            "unstable",
+        ],
+        "input_schema": (
+            "test String, times_speedup_str String, queries UInt32, "
+            "bad UInt32, changed UInt32, unstable UInt32"
+        ),
+        # compare.sh emits times_speedup as a display string:
+        #   "-N.NNNx" => speedup, the magnitude is the times_speedup factor
+        #   "+N.NNNx" => slowdown, the magnitude is 1 / times_speedup
+        # Recover a signed Float64 so the UI can sort numerically.
+        "select_exprs": [
+            "test",
+            (
+                "multiIf("
+                "startsWith(times_speedup_str, '-'), "
+                "toFloat64OrZero(substring(times_speedup_str, 2, length(times_speedup_str) - 2)), "
+                "startsWith(times_speedup_str, '+'), "
+                "1.0 / nullIf(toFloat64OrZero(substring(times_speedup_str, 2, length(times_speedup_str) - 2)), 0), "
+                "1.0) AS times_speedup"
+            ),
+            "queries",
+            "bad",
+            "changed",
+            "unstable",
+        ],
+        "where": "test != 'Total'",
+    },
+    {
+        "table": PARTIAL_QUERIES_TABLE,
+        "source": f"{perf_wd}/report/partial-queries-report.tsv",
+        "table_columns": [
+            "test",
+            "query_index",
+            "query_display_name",
+            "median_sec",
+            "relative_time_stddev",
+        ],
+        # compare.sh column order is: time (median), rel_stddev, test, query_index, display
+        "input_schema": (
+            "median_sec Float64, relative_time_stddev Float64, "
+            "test String, query_index Int32, query_display_name String"
+        ),
+        "select_exprs": [
+            "test",
+            "query_index",
+            "query_display_name",
+            "median_sec",
+            "relative_time_stddev",
+        ],
+    },
+    {
+        "table": SKIPPED_TESTS_TABLE,
+        "source": f"{perf_wd}/analyze/skipped-tests.tsv",
+        "table_columns": ["test", "reason"],
+        "input_schema": "test String, reason String",
+        "select_exprs": ["test", "reason"],
+    },
+    {
+        "table": RUN_ERRORS_TABLE,
+        "source": f"{perf_wd}/run-errors.tsv",
+        "table_columns": ["test", "error"],
+        "input_schema": "test String, error String",
+        "select_exprs": ["test", "error"],
+    },
+    {
+        "table": METRIC_CHANGES_TABLE,
+        "source": f"{perf_wd}/metrics/changes.tsv",
+        "table_columns": [
+            "metric",
+            "old_median",
+            "new_median",
+            "diff",
+            "times_diff",
+        ],
+        "input_schema": (
+            "metric String, old_median Float64, new_median Float64, "
+            "diff Float64, times_diff Float64"
+        ),
+        "select_exprs": [
+            "metric",
+            "old_median",
+            "new_median",
+            "diff",
+            "times_diff",
+        ],
+    },
+]
+
+INSERT_FLAMEGRAPH_STACKS = """\
+INSERT INTO {FLAMEGRAPH_STACKS_TABLE}
+(
+""" + ",\n".join("    " + c for c in COMMON_META_COLUMNS) + """,
+    test,
+    query_index,
+    query_display_name,
+    side,
+    trace_type,
+    stack,
+    samples
+)
+SELECT
+""" + COMMON_META_SELECT + """,
+    test,
+    query_index,
+    query_display_name,
+    side,
+    trace_type,
+    stack,
+    samples
+FROM input(
+    'test String, query_index Int32, query_display_name String,
+     side String, trace_type String, stack String, samples UInt64'
+) FORMAT TSV"""
+
+# clickhouse-local query that merges report/stacks.left.tsv and
+# report/stacks.right.tsv into a single upload-ready TSV with an explicit
+# `side` column.
+BUILD_FLAMEGRAPH_UPLOAD_QUERY = """
+create table flamegraph_stacks_upload engine File(TSV, 'analyze/ch-uploads/flamegraph-stacks.tsv') as
+select test, query_index, query_display_name, side, trace_type, stack, samples
+from (
+    select test, query_index, query_display_name,
+        'baseline' as side, trace_type,
+        readable_trace as stack, c as samples
+    from file('report/stacks.left.tsv', TSV,
+        'test String, query_index Int32, trace_type String, query_display_name String, readable_trace String, c UInt64')
+    union all
+    select test, query_index, query_display_name,
+        'candidate' as side, trace_type,
+        readable_trace as stack, c as samples
+    from file('report/stacks.right.tsv', TSV,
+        'test String, query_index Int32, trace_type String, query_display_name String, readable_trace String, c UInt64')
+)
+"""
 
 INSERT_RAW_QUERY_METRICS_DATA = """\
 INSERT INTO {RAW_QUERY_METRICS_TABLE}
@@ -221,6 +472,33 @@ def get_perf_arch():
     Utils.raise_with_error("Unknown processor architecture")
 
 
+def build_perf_query_history_link(test_name, check_name):
+    """Build a ClickHouse Play link showing performance history for a query on master."""
+    table = Settings.CI_DB_TABLE_NAME or "checks"
+    tn = (test_name or "").replace("'", "''")
+    cn = (check_name or "").replace("'", "''")
+    query = f"""\
+SELECT
+    check_start_time,
+    commit_sha AS commit,
+    test_name AS test,
+    test_duration_ms AS ms,
+    report_url
+FROM {table}
+WHERE pull_request_number = 0
+    AND check_name LIKE '{cn}'
+    AND check_start_time >= now() - INTERVAL 14 DAY
+    AND test_name = '{tn}'
+ORDER BY test, check_start_time
+"""
+    base = Settings.CI_DB_READ_URL or ""
+    user = Settings.CI_DB_READ_USER or ""
+    if user:
+        sep = "&" if "?" in base else "?"
+        base = f"{base}/play{sep}user={urllib.parse.quote(user, safe='')}&run=1"
+    return f"{base}#{Utils.to_base64(query)}"
+
+
 def get_insert_metadata(info, compare_against_release):
     return {
         "ARCH": escape_sql_string(get_perf_arch()),
@@ -255,6 +533,150 @@ def build_raw_query_metrics_tsv():
         print(f"WARNING: Raw query metrics TSV [{raw_query_metrics_path}] was not created")
         return False
     return True
+
+
+def build_flamegraph_upload_tsv():
+    """Merge report/stacks.{left,right}.tsv into analyze/ch-uploads/flamegraph-stacks.tsv.
+
+    Returns False (and logs a warning) if either input file is missing or
+    clickhouse-local fails, so the caller can skip the upload.
+    """
+    left_stacks = Path(perf_wd) / "report/stacks.left.tsv"
+    right_stacks = Path(perf_wd) / "report/stacks.right.tsv"
+    if not left_stacks.is_file() or not right_stacks.is_file():
+        print(
+            f"WARNING: flamegraph stacks inputs missing "
+            f"(left={left_stacks.is_file()}, right={right_stacks.is_file()}), "
+            f"skipping flamegraph upload"
+        )
+        return False
+
+    Path(ch_uploads_dir).mkdir(parents=True, exist_ok=True)
+    Path(flamegraph_upload_path).unlink(missing_ok=True)
+    result = subprocess.run(
+        ["clickhouse-local", "--query", BUILD_FLAMEGRAPH_UPLOAD_QUERY],
+        cwd=perf_wd,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.stdout:
+        print(result.stdout)
+    if result.stderr:
+        print(result.stderr)
+    if result.returncode != 0:
+        print(
+            f"WARNING: Failed to build flamegraph stacks TSV with exit code [{result.returncode}]"
+        )
+        return False
+    if not Path(flamegraph_upload_path).is_file():
+        print(
+            f"WARNING: Flamegraph stacks TSV [{flamegraph_upload_path}] was not created"
+        )
+        return False
+    return True
+
+
+def get_check_start_time():
+    """Return the perf check start time (ISO, no microseconds).
+
+    Uses the CHPC_CHECK_START_TIMESTAMP env var when available so that every
+    batch of the same job lines up on the same timestamp (same "data point"
+    in history charts). Falls back to now() for manual runs.
+    """
+    check_start_timestamp = os.environ.get("CHPC_CHECK_START_TIMESTAMP", "")
+    if check_start_timestamp:
+        return (
+            datetime.fromtimestamp(int(check_start_timestamp))
+            .isoformat(sep=" ")
+            .split(".")[0]
+        )
+    return datetime.now().isoformat(sep=" ").split(".")[0]
+
+
+def run_report_upload(cfg, cidb, info, reference_sha, compare_against_release):
+    """Upload one entry from REPORT_UPLOADS to the play cluster.
+
+    Silently skips if the source TSV is missing or empty (e.g. because the
+    test stage produced no unstable queries or no skipped tests). Returns
+    True on success or skip, False on upload failure.
+    """
+    source_path = Path(cfg["source"])
+    if not source_path.is_file():
+        print(f"Skipping upload to [{cfg['table']}]: [{source_path}] not found")
+        return True
+
+    with open(source_path, "r", encoding="utf-8") as f:
+        data = f.read()
+    if not data.strip():
+        print(f"Skipping upload to [{cfg['table']}]: [{source_path}] is empty")
+        return True
+
+    query_template = _make_insert_query(
+        table=cfg["table"],
+        table_columns=cfg["table_columns"],
+        input_schema=cfg["input_schema"],
+        select_exprs=cfg["select_exprs"],
+        where=cfg.get("where"),
+    )
+    insert_metadata = get_insert_metadata(info, compare_against_release)
+    query = query_template.format(
+        EVENT_DATE=datetime.now().date().isoformat(),
+        CHECK_START_TIME=get_check_start_time(),
+        PR_NUMBER=info.pr_number,
+        REF_SHA=escape_sql_string(reference_sha),
+        CUR_SHA=escape_sql_string(info.sha),
+        **insert_metadata,
+    )
+    line_count = data.count("\n")
+    print(f"Do insert into [{cfg['table']}]: >>>\n{query}\n<<<")
+    insert_ok = cidb.do_insert_query(
+        query=query,
+        data=data,
+        timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+        retries=3,
+    )
+    if insert_ok:
+        print(f"Inserted [{line_count}] rows into [{cfg['table']}]")
+    else:
+        print(f"Inserted [{line_count}] rows into [{cfg['table']}] - failed")
+    return insert_ok
+
+
+def insert_flamegraph_stacks(cidb, info, reference_sha, compare_against_release):
+    """Build and upload the merged flamegraph stacks TSV."""
+    if not build_flamegraph_upload_tsv():
+        return True
+
+    with open(flamegraph_upload_path, "r", encoding="utf-8") as f:
+        data = f.read()
+    if not data.strip():
+        print(f"Skipping flamegraph upload: [{flamegraph_upload_path}] is empty")
+        return True
+
+    insert_metadata = get_insert_metadata(info, compare_against_release)
+    query = INSERT_FLAMEGRAPH_STACKS.format(
+        FLAMEGRAPH_STACKS_TABLE=FLAMEGRAPH_STACKS_TABLE,
+        EVENT_DATE=datetime.now().date().isoformat(),
+        CHECK_START_TIME=get_check_start_time(),
+        PR_NUMBER=info.pr_number,
+        REF_SHA=escape_sql_string(reference_sha),
+        CUR_SHA=escape_sql_string(info.sha),
+        **insert_metadata,
+    )
+    line_count = data.count("\n")
+    print(f"Do insert flamegraph stacks query: >>>\n{query}\n<<<")
+    insert_ok = cidb.do_insert_query(
+        query=query,
+        data=data,
+        timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+        retries=3,
+    )
+    if insert_ok:
+        print(f"Inserted [{line_count}] flamegraph stack rows")
+    else:
+        print(f"Inserted [{line_count}] flamegraph stack rows - failed")
+    return insert_ok
 
 
 class CHServer:
@@ -308,6 +730,7 @@ class CHServer:
             stderr=subprocess.STDOUT,
             stdout=self.log_fd,
             shell=True,
+            start_new_session=True,
         )
         time.sleep(2)
         retcode = self.proc.poll()
@@ -334,7 +757,11 @@ class CHServer:
         print("Command: ", self.start_cmd)
         self.log_fd = open(self.log_file, "w")
         self.proc = subprocess.Popen(
-            self.start_cmd, stderr=subprocess.STDOUT, stdout=self.log_fd, shell=True
+            self.start_cmd,
+            stderr=subprocess.STDOUT,
+            stdout=self.log_fd,
+            shell=True,
+            start_new_session=True,
         )
         time.sleep(2)
         retcode = self.proc.poll()
@@ -955,6 +1382,54 @@ def main():
             )
         )
 
+    if res and not info.is_local_run and JobStages.REPORT in stages:
+
+        def insert_report_aggregates():
+            """Upload all aggregate report TSVs and the tested-commits summary.
+
+            Each upload is attempted independently; a failure or missing
+            input for one table does not block the others. A single upload
+            error does not fail the job either - these tables are purely
+            informational for the UI, the source TSVs are still shipped in
+            logs.tar.zst.
+            """
+            cidb = CIDBCluster()
+            if not cidb.is_ready():
+                print("WARNING: CIDB not ready - skipping report aggregate uploads")
+                return True
+
+            for cfg in REPORT_UPLOADS:
+                try:
+                    run_report_upload(
+                        cfg=cfg,
+                        cidb=cidb,
+                        info=info,
+                        reference_sha=reference_sha,
+                        compare_against_release=compare_against_release,
+                    )
+                except Exception:
+                    traceback.print_exc()
+
+            try:
+                insert_flamegraph_stacks(
+                    cidb=cidb,
+                    info=info,
+                    reference_sha=reference_sha,
+                    compare_against_release=compare_against_release,
+                )
+            except Exception:
+                traceback.print_exc()
+
+            return True
+
+        results.append(
+            Result.from_commands_run(
+                name="Insert report aggregates",
+                command=insert_report_aggregates,
+                with_info=True,
+            )
+        )
+
     # TODO: code to fetch status was taken from old script as is - status is to be correctly set in Test stage and this stage is to be removed!
     message = ""
     if res and JobStages.CHECK_RESULTS in stages:
@@ -992,9 +1467,45 @@ def main():
         elif not message:
             status = Result.Status.FAIL
             message = "No message in report."
+        # Copy slower/unstable queries into Check Results so that Praktika
+        # attaches per-query CIDB history links in the report.
+        check_sub_results = []
+        # Find the "Tests" sub-result that holds per-query results
+        tests_result = None
+        for r in results:
+            if r.name == "Tests" and r.results:
+                tests_result = r
+                break
+        if tests_result:
+            # Always use master_head runs for the history query — they are
+            # the stable baseline.  The CIDB check_name looks like
+            # "Performance Comparison (arm_release, master_head, 1/6)".
+            arch = get_perf_arch()
+            check_name_pattern = f"%Performance%{arch}%master_head%"
+            for tr in tests_result.results:
+                if tr.status in ("slower", "unstable"):
+                    sub = Result(
+                        name=tr.name,
+                        status=Result.Status.FAIL,
+                        info=tr.status,
+                        duration=tr.duration,
+                    )
+                    sub.set_label(
+                        "query history",
+                        link=build_perf_query_history_link(
+                            tr.name, check_name_pattern
+                        ),
+                        hint="Performance history for this query on master",
+                    )
+                    check_sub_results.append(sub)
+
         results.append(
             Result(
-                name="Check Results", status=status, info=message, duration=sw.duration
+                name="Check Results",
+                status=status,
+                info=message,
+                duration=sw.duration,
+                results=check_sub_results,
             )
         )
 
