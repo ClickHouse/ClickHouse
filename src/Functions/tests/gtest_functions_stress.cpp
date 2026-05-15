@@ -234,6 +234,11 @@ struct Options
         po::store(po::parse_command_line(argc, argv, desc), vm);
         po::notify(vm);
 
+        if (iteration_too_slow_seconds <= iteration_timeout_seconds)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "--iteration-too-slow ({}) must be greater than --iteration-timeout ({}); the slow threshold needs slack above the timeout for the function to notice cancellation",
+                iteration_too_slow_seconds, iteration_timeout_seconds);
+
         for (int pi = 0; pi < P_COUNT; ++pi)
         {
             Problem p = static_cast<Problem>(pi);
