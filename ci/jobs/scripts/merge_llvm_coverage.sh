@@ -103,14 +103,37 @@ echo "Using workspace path: $WORKSPACE_PATH"
         > llvm_coverage.info
 
 sed -i "s|^SF:ci/tmp/build/|SF:$WORKSPACE_PATH/|" "llvm_coverage.info"
+
+echo "Deduplicating template instantiations..."
+python3 "$WORKSPACE_PATH/ci/jobs/scripts/dedup_lcov_instantiations.py" llvm_coverage.info
+
 rm -rf ./coverage_html/*
 
 echo "Generating HTML report..."
 genhtml --version
+
+html_escape() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g'; }
+export -f html_escape
+
+HEADER_TITLE="ClickHouse coverage report"
+if [ -n "${PR_NUMBER}" ] && [ "${PR_NUMBER}" -gt 0 ]; then
+  PR_URL="https://github.com/ClickHouse/ClickHouse/pull/${PR_NUMBER}"
+  HEADER_TITLE="${HEADER_TITLE} &middot; <a href=\"${PR_URL}\">#${PR_NUMBER}</a>"
+elif [ -n "${CURRENT_COMMIT}" ]; then
+  COMMIT_URL="https://github.com/ClickHouse/ClickHouse/commit/${CURRENT_COMMIT}"
+  COMMIT_SHORT="${CURRENT_COMMIT:0:12}"
+  COMMIT_MSG=$(html_escape "$(git -C "$WORKSPACE_PATH" log -1 --format="%s" "${CURRENT_COMMIT}" 2>/dev/null | cut -c1-120 || true)")
+  COMMIT_DATE=$(html_escape "$(git -C "$WORKSPACE_PATH" log -1 --format="%cs" "${CURRENT_COMMIT}" 2>/dev/null || true)")
+  HEADER_TITLE="${HEADER_TITLE} &middot; <a href=\"${COMMIT_URL}\"><code>${COMMIT_SHORT}</code></a>"
+  [ -n "${COMMIT_DATE}" ] && HEADER_TITLE="${HEADER_TITLE} &middot; ${COMMIT_DATE}"
+  [ -n "${COMMIT_MSG}" ] && HEADER_TITLE="${HEADER_TITLE} &middot; ${COMMIT_MSG}"
+fi
+
 genhtml "llvm_coverage.info" \
+    --header-title "${HEADER_TITLE}" \
+    --title "branch=${BRANCH}, current_commit=${CURRENT_COMMIT}" \
+    --baseline-title "base_branch=${BASE_BRANCH}, baseline_commit=${BASE_COMMIT}" \
     --output-directory "llvm_coverage_html_report" \
-    --verbose \
-    --title "ClickHouse Coverage Report" \
     --legend \
     --demangle-cpp \
     --branch-coverage \
@@ -119,7 +142,6 @@ genhtml "llvm_coverage.info" \
     --sort-tables \
     --hierarchical \
     --css-file $WORKSPACE_PATH/ci/jobs/scripts/css.css \
-    --no-function-coverage \
     --prefix $WORKSPACE_PATH \
     --ignore-errors inconsistent \
     --ignore-errors category \
@@ -127,5 +149,6 @@ genhtml "llvm_coverage.info" \
     --ignore-errors unsupported \
     --ignore-errors source \
     --ignore-errors branch \
-    --ignore-errors range
-
+    --ignore-errors range \
+    --filter missing \
+    --quiet 

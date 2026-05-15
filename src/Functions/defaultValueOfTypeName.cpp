@@ -66,15 +66,15 @@ public:
 
 REGISTER_FUNCTION(DefaultValueOfTypeName)
 {
-    FunctionDocumentation::Description description_defaultValueOfTypeName = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the default value for the given type name.
     )";
-    FunctionDocumentation::Syntax syntax_defaultValueOfTypeName = "defaultValueOfTypeName(type)";
-    FunctionDocumentation::Arguments arguments_defaultValueOfTypeName = {
+    FunctionDocumentation::Syntax syntax = "defaultValueOfTypeName(type)";
+    FunctionDocumentation::Arguments arguments = {
         {"type", "A string representing a type name.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_defaultValueOfTypeName = {"Returns the default value for the given type name: `0` for numbers, an empty string for strings, or `NULL` for Nullable", {"UInt8", "String", "NULL"}};
-    FunctionDocumentation::Examples examples_defaultValueOfTypeName = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the default value for the given type name: `0` for numbers, an empty string for strings, or `NULL` for Nullable", {"UInt8", "String", "NULL"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -98,11 +98,11 @@ SELECT defaultValueOfTypeName('Nullable(Int8)');
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_defaultValueOfTypeName = {1, 1};
-    FunctionDocumentation::Category category_defaultValueOfTypeName = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_defaultValueOfTypeName = {description_defaultValueOfTypeName, syntax_defaultValueOfTypeName, arguments_defaultValueOfTypeName, {}, returned_value_defaultValueOfTypeName, examples_defaultValueOfTypeName, introduced_in_defaultValueOfTypeName, category_defaultValueOfTypeName};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionDefaultValueOfTypeName>(documentation_defaultValueOfTypeName);
+    factory.registerFunction<FunctionDefaultValueOfTypeName>(documentation);
 }
 
 }

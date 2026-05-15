@@ -10,8 +10,6 @@ show_related_blogs: true
 doc_type: 'reference'
 ---
 
-# CoalescingMergeTree table engine
-
 :::note Available from version 25.6
 This table engine is available from version 25.6 and higher in both OSS and Cloud.
 :::

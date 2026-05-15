@@ -8,8 +8,6 @@ title: 'mysql'
 doc_type: 'reference'
 ---
 
-# mysql Table Function
-
 Allows `SELECT` and `INSERT` queries to be performed on data that are stored on a remote MySQL server.
 
 ## Syntax {#syntax}
@@ -146,7 +144,7 @@ WHERE id > (SELECT max(id) FROM mysql_copy);
 ## Related {#related}
 
 - [The 'MySQL' table engine](../../engines/table-engines/integrations/mysql.md)
-- [Using MySQL as a dictionary source](/sql-reference/statements/create/dictionary/sources#mysql)
+- [Using MySQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/mysql)
 - [mysql_datatypes_support_level](operations/settings/settings.md#mysql_datatypes_support_level)
 - [mysql_map_fixed_string_to_text_in_show_columns](operations/settings/settings.md#mysql_map_fixed_string_to_text_in_show_columns)
 - [mysql_map_string_to_text_in_show_columns](operations/settings/settings.md#mysql_map_string_to_text_in_show_columns)

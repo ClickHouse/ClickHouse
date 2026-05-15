@@ -7,8 +7,6 @@ title: 'EXCHANGE Statement'
 doc_type: 'reference'
 ---
 
-# EXCHANGE Statement
-
 Exchanges the names of two tables or dictionaries atomically.
 This task can also be accomplished with a [`RENAME`](./rename.md) query using a temporary name, but the operation is not atomic in that case.
 
@@ -104,4 +102,4 @@ EXCHANGE DICTIONARIES [db0.]dict_A AND [db1.]dict_B [ON CLUSTER cluster]
 
 **See Also**
 
-- [Dictionaries](./create/dictionary/index.md)
+- [Dictionaries](./create/dictionary/overview.md)

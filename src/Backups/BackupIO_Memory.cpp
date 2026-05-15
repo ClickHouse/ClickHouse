@@ -96,18 +96,16 @@ void registerBackupEngineMemory(BackupFactory & factory)
 
         if (params.open_mode == IBackup::OpenMode::READ)
         {
-            const auto & backups_in_memory = params.context->getSessionContext()->getBackupsInMemory();
-            auto backup_in_memory = backups_in_memory.getBackup(backup_name);
+            auto backups_in_memory = params.context->getSessionContext()->getBackupsInMemory();
+            auto backup_in_memory = backups_in_memory->getBackup(backup_name);
             auto reader = std::make_shared<BackupReaderMemory>(backup_in_memory, params.read_settings, params.write_settings);
-
             return std::make_unique<BackupImpl>(params, BackupImpl::ArchiveParams{}, reader);
         }
         else
         {
-            auto & backups_in_memory = params.context->getSessionContext()->getBackupsInMemory();
-            auto backup_in_memory = backups_in_memory.createBackup(backup_name);
+            auto backups_in_memory = params.context->getSessionContext()->getBackupsInMemory();
+            auto backup_in_memory = backups_in_memory->createBackup(backup_name);
             auto writer = std::make_shared<BackupWriterMemory>(backup_in_memory, params.read_settings, params.write_settings);
-
             return std::make_unique<BackupImpl>(params, BackupImpl::ArchiveParams{}, writer);
         }
     };

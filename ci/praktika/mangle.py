@@ -210,17 +210,19 @@ def _update_workflow_with_native_jobs(workflow):
 
         assert docker_job_names, "Docker job names are empty, BUG?"
         for job in workflow.jobs[len(docker_job_names) :]:
-            job.requires.extend(docker_job_names)
+            job.run_after.extend(docker_job_names)
 
     if workflow._enabled_workflow_config():
         from .native_jobs import _workflow_config_job
 
         if not _is_local_run():
-            print(f"Enable native job [{_workflow_config_job.name}] for [{workflow.name}]")
+            print(
+                f"Enable native job [{_workflow_config_job.name}] for [{workflow.name}]"
+            )
         aux_job = copy.deepcopy(_workflow_config_job)
         workflow.jobs.insert(0, aux_job)
         for job in workflow.jobs[1:]:
-            job.requires.append(aux_job.name)
+            job.run_after.append(aux_job.name)
 
     if (
         workflow.enable_merge_ready_status
@@ -234,33 +236,6 @@ def _update_workflow_with_native_jobs(workflow):
             print(f"Enable native job [{_final_job.name}] for [{workflow.name}]")
         aux_job = copy.deepcopy(_final_job)
         for job in workflow.jobs:
-            aux_job.requires.append(job.name)
+            aux_job.run_after.append(job.name)
         workflow.jobs.append(aux_job)
 
-    # Propagate transitive dependencies: if B depends on A and C depends on B, then C should also depend on A
-    # To enable complex scenarios in GH Actions: do not block pipeline on failed job/action
-    job_map = {job.name: job for job in workflow.jobs}
-    artifact_map = _get_artifact_to_providing_job_map(workflow)
-    workflow.jobs = copy.deepcopy(
-        workflow.jobs
-    )  # same Job.Config objects may be used in other workflows, thus deep copy
-    for job in workflow.jobs:
-        all_deps = set(
-            job.requires
-        )  # init with original content to preserve artifacts (vs job names) set in .requires
-        to_visit = list(job.requires)
-        visited = set()
-        while to_visit:
-            dep_name = to_visit.pop()
-            if dep_name in visited:
-                continue
-            visited.add(dep_name)
-            if dep_name in job_map:
-                to_visit.extend(job_map[dep_name].requires)
-                all_deps.add(dep_name)
-            elif dep_name in artifact_map:
-                to_visit.extend(job_map[artifact_map[dep_name]].requires)
-                all_deps.add(artifact_map[dep_name])
-            else:
-                assert False, f"dependency [{dep_name}] not found, [{job.name}]"
-        job.requires = sorted(list(all_deps))

@@ -98,6 +98,7 @@ public:
     std::string getEngineName() const override { return engine_name; }
 
     Path getRawPath() const override { return blob_path; }
+    void setRawPath(const Path & path) override { blob_path = path; }
     const String & getRawURI() const override { return blob_path.path; }
 
     const Paths & getPaths() const override { return blobs_paths; }
@@ -106,6 +107,11 @@ public:
     String getNamespace() const override { return connection_params.getContainer(); }
     String getDataSourceDescription() const override { return std::filesystem::path(connection_params.getConnectionURL()) / connection_params.getContainer(); }
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
+
+    String getContainer() const { return connection_params.getContainer(); }
+    String getAccountName() const { return connection_params.endpoint.account_name; }
+    String getAccountKey() const { return connection_params.endpoint.account_key; }
+    String getSasKey() const { return connection_params.endpoint.sas_auth; }
 
     void check(ContextPtr context) override;
 

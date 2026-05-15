@@ -13,6 +13,7 @@
 #include <DataTypes/Native.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Context_fwd.h>
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
 
@@ -186,8 +187,11 @@ class FunctionUnaryArithmetic : public IFunction
     }
 
     static FunctionOverloadResolverPtr
-    getFunctionForTupleArithmetic(const DataTypePtr & type, ContextPtr context)
+    getFunctionForTupleArithmetic(const DataTypePtr & type, ContextPtr context_)
     {
+        if (!context_)
+            return {};
+
         if (!isTuple(type))
             return {};
 
@@ -197,14 +201,12 @@ class FunctionUnaryArithmetic : public IFunction
         if constexpr (!IsUnaryOperation<Op>::negate)
             return {};
 
-        return FunctionFactory::instance().get("tupleNegate", context);
+        return FunctionFactory::instance().get("tupleNegate", context_);
     }
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUnaryArithmetic>(); }
-
-    FunctionUnaryArithmetic() = default;
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionUnaryArithmetic>(context_); }
 
     explicit FunctionUnaryArithmetic(ContextPtr context_) : context(context_) {}
 
@@ -227,10 +229,10 @@ public:
         return getReturnTypeImplStatic(arguments, context);
     }
 
-    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context)
+    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context_)
     {
         /// Special case when the function is negate, argument is tuple.
-        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], context))
+        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], context_))
         {
             ColumnsWithTypeAndName new_arguments(1);
 
@@ -486,9 +488,9 @@ public:
                 if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                    if constexpr (std::is_same_v<Op<T0>, AbsImpl<T0>> || std::is_same_v<Op<T0>, BitCountImpl<T0>>)
+                    if constexpr (std::is_same_v<Op<T0>, AbsImpl<T0>> || std::is_same_v<Op<T0>, BitCountImpl<T0>> || std::is_same_v<Op<T0>, SignImpl<T0>>)
                     {
-                        /// We don't need to cast the argument to the result type if it's abs/bitcount function.
+                        /// We don't need to cast the argument to the result type if it's abs/bitcount/sign function.
                         result = Op<T0>::compile(b, arguments[0].value, is_signed_v<T0>);
                     }
                     else
@@ -523,8 +525,12 @@ public:
 struct PositiveMonotonicity
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
+        if (!type.isValueRepresentedByNumber())
+            return {};
+        if (isNaNField(left) || isNaNField(right))
+            return {};
         return { .is_monotonic = true };
     }
 };

@@ -7,8 +7,6 @@ title: 'redis'
 doc_type: 'reference'
 ---
 
-# redis Table Function
-
 This table function allows integrating ClickHouse with [Redis](https://redis.io/).
 
 ## Syntax {#syntax}
@@ -62,4 +60,4 @@ INSERT INTO TABLE FUNCTION redis(
 ## Related {#related}
 
 - [The `Redis` table engine](/engines/table-engines/integrations/redis.md)
-- [Using redis as a dictionary source](/sql-reference/statements/create/dictionary/sources#redis)
+- [Using redis as a dictionary source](/sql-reference/statements/create/dictionary/sources/redis)

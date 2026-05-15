@@ -49,7 +49,7 @@ function wait_for_queries_start()
 }
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS session_log"
-${CLICKHOUSE_CLIENT} -q "DELETE FROM system.session_log WHERE user = '${TEST_USER}' SETTINGS lightweight_deletes_sync = 0"
+${CLICKHOUSE_CLIENT} -q "DELETE FROM system.session_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND user = '${TEST_USER}' SETTINGS lightweight_deletes_sync = 0"
 
 # DROP USE CASE
 ${CLICKHOUSE_CLIENT} -q "CREATE USER IF NOT EXISTS ${TEST_USER}"
@@ -106,9 +106,9 @@ wait
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS session_log"
 
 echo "port_0_sessions:"
-${CLICKHOUSE_CLIENT} -q "SELECT count(*) FROM system.session_log WHERE user = '${TEST_USER}' AND client_port = 0"
+${CLICKHOUSE_CLIENT} -q "SELECT count(*) FROM system.session_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND user = '${TEST_USER}' AND client_port = 0"
 echo "address_0_sessions:"
-${CLICKHOUSE_CLIENT} -q "SELECT count(*) FROM system.session_log WHERE user = '${TEST_USER}' AND client_address = toIPv6('::')"
+${CLICKHOUSE_CLIENT} -q "SELECT count(*) FROM system.session_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND user = '${TEST_USER}' AND client_address = toIPv6('::')"
 echo "Corresponding LoginSuccess/Logout"
 
 # The client can exit sooner than the server records its disconnection and closes the session.
@@ -120,12 +120,12 @@ while true
 do
     [[ 9 -eq $(${CLICKHOUSE_CLIENT} -q "
         SELECT COUNT(*) FROM (
-            SELECT ${SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE user = '${TEST_USER}' AND type = 'LoginSuccess'
+            SELECT ${SESSION_LOG_MATCHING_FIELDS} FROM system.session_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND user = '${TEST_USER}' AND type = 'LoginSuccess'
             INTERSECT
-            SELECT ${SESSION_LOG_MATCHING_FIELDS}, FROM system.session_log WHERE user = '${TEST_USER}' AND type = 'Logout'
+            SELECT ${SESSION_LOG_MATCHING_FIELDS}, FROM system.session_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND user = '${TEST_USER}' AND type = 'Logout'
         )") ]] && echo 9 && break;
     sleep 0.1
 done
 
 echo "LoginFailure"
-${CLICKHOUSE_CLIENT} -q "SELECT COUNT(*) FROM system.session_log WHERE user = '${TEST_USER}' AND type = 'LoginFailure'"
+${CLICKHOUSE_CLIENT} -q "SELECT COUNT(*) FROM system.session_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND user = '${TEST_USER}' AND type = 'LoginFailure'"
