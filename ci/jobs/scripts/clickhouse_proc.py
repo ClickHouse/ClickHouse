@@ -322,19 +322,6 @@ profiles:
         file_path = f"{temp_dir}/users.d/allow_introspection_functions.yaml"
         with open(file_path, "w") as file:
             file.write(content)
-
-        # The ClickBench `create.sql` attaches the `hits` table on a cached disk
-        # rooted at `/dev/shm/clickhouse/`. The server validates that any
-        # filesystem cache path lies inside `filesystem_caches_path` /
-        # `custom_cached_disks_base_directory`, so point both at the same root.
-        fs_caches_path_xml = """<clickhouse>
-    <filesystem_caches_path replace="replace">/dev/shm/clickhouse/</filesystem_caches_path>
-    <custom_cached_disks_base_directory replace="replace">/dev/shm/clickhouse/</custom_cached_disks_base_directory>
-</clickhouse>
-"""
-        file_path = f"{temp_dir}/config.d/filesystem_caches_path.xml"
-        with open(file_path, "w") as file:
-            file.write(fs_caches_path_xml)
         return True
 
     def install_fuzzer_config(self):
