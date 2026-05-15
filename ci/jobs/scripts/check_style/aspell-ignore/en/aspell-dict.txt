@@ -1,4 +1,4 @@
-personal_ws-1.1 en 4071 
+personal_ws-1.1 en 4078
 AArch
 ABIs
 ACLs
@@ -162,6 +162,7 @@ CCTOOLS
 CDATA
 CDFs
 CDMA
+CDNs
 CESU
 CHouse
 CIDR
@@ -1175,6 +1176,7 @@ Postgres
 PostgresSQL
 Postprocessor
 Postprocessed
+POSIX
 Prebase
 Precompiled
 Prefetcher
@@ -1677,6 +1679,7 @@ Warang
 WasmEdge
 WasmTime
 WebAssembly
+WebSocket
 Welch
 Welch's
 Werror
@@ -2334,6 +2337,7 @@ distro
 divideDecimal
 divideOrNull
 dmesg
+dockable
 doesnt
 domainRFC
 domainWithoutWWW
