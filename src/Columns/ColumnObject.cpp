@@ -2328,7 +2328,7 @@ void ColumnObject::validateDynamicPathsSizes() const
     {
         if (column->size() != expected_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
-    }
+ l   }
 }
 
 bool ColumnObject::isEmptyAt(size_t n) const
@@ -2338,17 +2338,14 @@ bool ColumnObject::isEmptyAt(size_t n) const
         return false;
 
     /// Check if all dynamic paths have NULL at this row
-    for (const auto & [path, column] : dynamic_paths)
+    for (const auto & [path, column] : dynamic_paths_ptrs)
     {
         if (!column->isNullAt(n))
             return false;
     }
 
     /// Check if there is no paths in shared data.
-    if (!shared_data->isDefaultAt(n))
-        return false;
-
-    return true;
+    return shared_data->isDefaultAt(n);
 }
 
 bool ColumnObject::hasNonEmptyRows() const

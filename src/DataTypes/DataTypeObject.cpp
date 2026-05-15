@@ -414,7 +414,7 @@ ColumnPtr extractCombinedColumn(
     auto literal_column = extractLiteralColumn(object_column, path, max_dynamic_types);
     auto sub_object_column = extractSubObjectColumn(object_column, prefix, sub_object_type);
 
-    /// If sub-object is all defaults, just use literal.
+    /// If sub-object contain all empty, just use literal.
     const auto * sub_object_typed_column = assert_cast<const ColumnObject *>(sub_object_column.get());
     if (!sub_object_typed_column->hasNonEmptyRows())
         return literal_column;
