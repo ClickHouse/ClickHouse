@@ -355,10 +355,21 @@ ASTPtr tryParseQuery(
         && this_query_end_pos->type != TokenType::Semicolon)
         ++this_query_end_pos;
 
+    /// `last_token` is the rightmost token the parser ever touched (across backtracks),
+    /// while `this_query_end_pos->end` is the end of the last token before the first
+    /// semicolon / end / error reached by walking forward from the current iterator.
+    /// During backtracking the parser may have looked past that boundary, in which case
+    /// `last_token.begin > this_query_end_pos->end`. The downstream error-formatting code
+    /// (writeQueryAroundTheError) then computes `total_bytes = end - last_token.begin`,
+    /// underflows `size_t`, and reads far past the buffer in UTF8::computeBytesBeforeWidth.
+    /// Extending the displayed range to cover `last_token` restores the invariant
+    /// `last_token.begin <= end` without touching the symptom site.
+    const char * error_message_end = std::max(this_query_end_pos->end, last_token.end);
+
     if (!parse_res)
     {
         /// Generic parse error.
-        out_error_message = getSyntaxErrorMessage(query_begin, this_query_end_pos->end,
+        out_error_message = getSyntaxErrorMessage(query_begin, error_message_end,
             last_token, expected, hilite, query_description);
         return nullptr;
     }
@@ -368,7 +379,7 @@ ASTPtr tryParseQuery(
         && token_iterator->type != TokenType::Semicolon)
     {
         expected.add(last_token.begin, "end of query");
-        out_error_message = getSyntaxErrorMessage(query_begin, this_query_end_pos->end,
+        out_error_message = getSyntaxErrorMessage(query_begin, error_message_end,
             last_token, expected, hilite, query_description);
         return nullptr;
     }
