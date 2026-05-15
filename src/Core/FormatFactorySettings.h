@@ -1519,7 +1519,16 @@ Set the quoting rule for identifiers in SHOW CREATE query
 Set the quoting style for identifiers in SHOW CREATE query
 )", 0) \
     DECLARE(String, output_format_png_pixel_output_format, "RGB", R"(
-Set pixel format for output png image
+Set the pixel format for output PNG image
+
+Possible values:
+
+- `RGBA` — four channels per pixel (`r`, `g`, `b`, `a`)
+- `RGB` — three channels per pixel (`r`, `g`, `b`)
+- `Grayscale` — single intensity channel per pixel (`v`)
+- `Binary` — single intensity channel per pixel (`v`), interpreted as binary
+
+Default value: `RGB`
 )", 0) \
     DECLARE(String, output_format_png_coordinates_format, "IMPLICIT", R"(
 Defines the input format for pixel coordinates when generating PNG images
