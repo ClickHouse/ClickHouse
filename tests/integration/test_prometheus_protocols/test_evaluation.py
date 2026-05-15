@@ -1874,6 +1874,14 @@ def test_set_binary_operators():
         ],
     )
 
+    # Behavior: if both sides of `or` produce the same full output labelset, Prometheus merges per-step presence and keeps RHS-only steps.
+    do_query_test(
+        '(last_over_time(foo{shape="square"}[1s]) or last_over_time(foo{shape="square"}[30s]))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[110, "4"], [120, "4"], [130, "40"], [140, "40"], [150, "40"]]}]}',
+        [["[('__name__','foo'),('shape','square'),('size','s')]", "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:00.000',4),('1970-01-01 00:02:10.000',40),('1970-01-01 00:02:20.000',40),('1970-01-01 00:02:30.000',40)]"]],
+    )
+
 
 def test_math_binary_operators():
     do_query_test(
