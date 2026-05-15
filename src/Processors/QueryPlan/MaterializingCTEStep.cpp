@@ -125,9 +125,7 @@ void DelayedMaterializingCTEsStep::optimizePlans(const QueryPlanOptimizationSett
     }
 }
 
-std::vector<std::unique_ptr<QueryPlan>> DelayedMaterializingCTEsStep::makePlansForCTEs(
-    DelayedMaterializingCTEsStep && step,
-    const QueryPlanOptimizationSettings & /*optimization_settings*/)
+std::vector<std::unique_ptr<QueryPlan>> DelayedMaterializingCTEsStep::makePlansForCTEs(DelayedMaterializingCTEsStep && step)
 {
     std::vector<std::unique_ptr<QueryPlan>> plans;
     for (auto & materialized_cte : step.ctes)

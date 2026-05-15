@@ -68,9 +68,9 @@ public:
 
     /// Returns the subset of pre-built CTE plans that still need to be executed,
     /// atomically marking each as materialized. CTEs already marked are skipped.
-    static std::vector<std::unique_ptr<QueryPlan>> makePlansForCTEs(
-        DelayedMaterializingCTEsStep && step,
-        const QueryPlanOptimizationSettings & optimization_settings);
+    /// The plans must have already been optimized via `optimizePlans` in the
+    /// first traversal of `resolveMaterializingCTEs`.
+    static std::vector<std::unique_ptr<QueryPlan>> makePlansForCTEs(DelayedMaterializingCTEsStep && step);
 
     /// Optimize each owned CTE's pre-built plan. Called by
     /// `resolveMaterializingCTEs`'s first traversal; the matching second

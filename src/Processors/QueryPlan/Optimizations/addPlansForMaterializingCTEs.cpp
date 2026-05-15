@@ -10,7 +10,6 @@ namespace
 {
 
 void addPlansForMaterializingCTEs(
-    const QueryPlanOptimizationSettings & optimization_settings,
     QueryPlan & root_plan,
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes)
@@ -19,7 +18,7 @@ void addPlansForMaterializingCTEs(
     if (!delayed)
         return;
 
-    auto plans = DelayedMaterializingCTEsStep::makePlansForCTEs(std::move(*delayed), optimization_settings);
+    auto plans = DelayedMaterializingCTEsStep::makePlansForCTEs(std::move(*delayed));
 
     SharedHeaders input_headers;
     input_headers.reserve(1 + plans.size());
@@ -116,7 +115,7 @@ void resolveMaterializingCTEs(const QueryPlanOptimizationSettings & optimization
     {
         auto & frame = stack.back();
 
-        addPlansForMaterializingCTEs(optimization_settings, root_plan, *frame.node, nodes);
+        addPlansForMaterializingCTEs(root_plan, *frame.node, nodes);
 
         if (frame.next_child < frame.node->children.size())
         {
