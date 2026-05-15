@@ -2545,12 +2545,12 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
                 (*this)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock].value);
     }
 
-    if (part_minmax_index_columns >= MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET)
+    if ((*this)[MergeTreeSetting::part_minmax_index_columns] >= MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET)
     {
-        if (!enable_block_number_column)
+        if (!(*this)[MergeTreeSetting::enable_block_number_column])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_number_column' to be enabled");
 
-        if (!enable_block_offset_column)
+        if (!(*this)[MergeTreeSetting::enable_block_offset_column])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_offset_column' to be enabled");
     }
 }
