@@ -3,6 +3,8 @@
 #if USE_SQLITE
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 #include <Interpreters/Context.h>
 #include <filesystem>
 
@@ -103,6 +105,28 @@ SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_er
 {
     // If run in Local mode, no need for path checking.
     bool need_check = context->getApplicationType() != Context::ApplicationType::LOCAL;
+
+    /// `sqlite3_open` works only on the local filesystem. With `user_files_policy`
+    /// configured on a non-local disk (for example `s3_plain`), the configured
+    /// user-files root resolves to a local metadata directory, not the disk's
+    /// actual backing store. Reject up front instead of silently creating or
+    /// reading an unrelated local file, mirroring the explicit guards added in
+    /// `InputFormatErrorsLogger`, `EmbeddedRocksDB`, and the `file` dictionary
+    /// source.
+    if (auto user_files_volume = context->getUserFilesVolume())
+    {
+        for (const auto & disk : user_files_volume->getDisks())
+        {
+            if (disk->isRemote())
+            {
+                processSQLiteError(fmt::format("SQLite is not supported "
+                                               "with non-local `user_files_policy` disks (disk `{}` is remote)",
+                                               disk->getName()),
+                                   throw_on_error);
+                return nullptr;
+            }
+        }
+    }
 
     const auto user_files_paths = context->getUserFilesPaths();
     auto database_path = validateSQLiteDatabasePath(path, user_files_paths, need_check, throw_on_error);
