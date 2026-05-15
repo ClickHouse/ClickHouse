@@ -123,6 +123,33 @@ If both a data type and a default value expression are specified, an implicit ty
 
 A default value expression `expr` may reference arbitrary table columns and constants. ClickHouse checks that changes of the table structure do not introduce loops in the expression calculation. For INSERT, it checks that expressions are resolvable – that all columns they can be calculated from have been passed.
 
+### Column matchers in default expressions {#column-matchers-in-default-expressions}
+
+Column `DEFAULT`, `MATERIALIZED`, `EPHEMERAL`, and `ALIAS` expressions can use column matchers such as `*`, `COLUMNS('regexp')`, and `COLUMNS(column_name, ...)`, and the column transformer modifiers `EXCEPT`, `APPLY`, and `REPLACE`.
+
+Matchers are expanded before expression validation and execution. By default, `*` does not include `MATERIALIZED` or `ALIAS` columns; this can be changed with the `asterisk_include_materialized_columns` and `asterisk_include_alias_columns` settings. `EPHEMERAL` columns are not included in matcher expansion.
+
+ClickHouse detects and rejects cyclic default-expression dependencies. For example, `b String DEFAULT toJSONString(namedTuple(*))` is rejected because `*` includes `b` itself. Use `EXCEPT` to exclude the column when needed:
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    a UInt8,
+    b String DEFAULT toJSONString(namedTuple(* EXCEPT b))
+)
+ENGINE = Memory;
+
+INSERT INTO test (a) VALUES (1);
+
+SELECT b FROM test;
+```
+
+```text
+┌─b───────┐
+│ {"a":1} │
+└─────────┘
+```
+
 ### DEFAULT {#default}
 
 `DEFAULT expr`

@@ -70,6 +70,7 @@ Dynamic column selection (also known as a COLUMNS expression) allows you to matc
 
 ```sql
 COLUMNS('regexp')
+COLUMNS(column_name[, ...])
 ```
 
 For example, consider the table:
@@ -122,6 +123,18 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 In this example, `COLUMNS('a')` returns two columns: `aa` and `ab`. `COLUMNS('c')` returns the `bc` column. The `+` operator can't apply to 3 arguments, so ClickHouse throws an exception with the relevant message.
 
 Columns that matched the `COLUMNS` expression can have different data types. If `COLUMNS` does not match any columns and is the only expression in `SELECT`, ClickHouse throws an exception.
+
+You can also match an explicit list of column names:
+
+```sql
+SELECT COLUMNS(aa, bc) FROM col_names
+```
+
+```text
+┌─aa─┬─bc─┐
+│  1 │  1 │
+└────┴────┘
+```
 
 ### Asterisk {#asterisk}
 
