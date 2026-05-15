@@ -1171,8 +1171,6 @@ void expandColumnMatchersImpl(ASTPtr & node, const ColumnsDescription & columns,
             if (isColumnMatcher(child))
             {
                 auto expanded_columns = expandColumnMatcher(child, columns, context);
-                if (auto alias = child->tryGetAlias(); !alias.empty() && expanded_columns.size() == 1)
-                    expanded_columns.front()->setAlias(alias);
 
                 for (auto & expanded_column : expanded_columns)
                 {

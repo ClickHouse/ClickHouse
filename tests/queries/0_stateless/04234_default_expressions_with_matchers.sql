@@ -1,7 +1,14 @@
 DROP TABLE IF EXISTS default_expr_matchers_alias;
+DROP TABLE IF EXISTS default_expr_matchers_alias_apply;
 DROP TABLE IF EXISTS default_expr_matchers_alias_columns;
+DROP TABLE IF EXISTS default_expr_matchers_alias_columns_list;
+DROP TABLE IF EXISTS default_expr_matchers_alias_nested_matcher;
+DROP TABLE IF EXISTS default_expr_matchers_alias_replace;
 DROP TABLE IF EXISTS default_expr_matchers_alias_tuple;
 DROP TABLE IF EXISTS default_expr_matchers_default_except;
+DROP TABLE IF EXISTS default_expr_matchers_ephemeral_asterisk;
+DROP TABLE IF EXISTS default_expr_matchers_ephemeral_columns;
+DROP TABLE IF EXISTS default_expr_matchers_ephemeral_not_matched;
 DROP TABLE IF EXISTS default_expr_matchers_include_alias;
 DROP TABLE IF EXISTS default_expr_matchers_include_materialized;
 DROP TABLE IF EXISTS default_expr_matchers_index_one;
@@ -42,6 +49,51 @@ ENGINE = Memory;
 
 INSERT INTO default_expr_matchers_alias_columns (a, c, d) VALUES (1, 'x', 2);
 SELECT b FROM default_expr_matchers_alias_columns;
+
+CREATE TABLE default_expr_matchers_alias_columns_list
+(
+    a UInt8,
+    c String,
+    d UInt8,
+    b String ALIAS toJSONString(namedTuple(COLUMNS(a, c)))
+)
+ENGINE = Memory;
+
+INSERT INTO default_expr_matchers_alias_columns_list (a, c, d) VALUES (1, 'x', 2);
+SELECT b FROM default_expr_matchers_alias_columns_list;
+
+CREATE TABLE default_expr_matchers_alias_apply
+(
+    a UInt8,
+    c String,
+    b String ALIAS toJSONString(tuple(* APPLY toString))
+)
+ENGINE = Memory;
+
+INSERT INTO default_expr_matchers_alias_apply (a, c) VALUES (1, 'x');
+SELECT b FROM default_expr_matchers_alias_apply;
+
+CREATE TABLE default_expr_matchers_alias_replace
+(
+    a UInt8,
+    c String,
+    b String ALIAS toJSONString(namedTuple(* REPLACE (2 AS a)))
+)
+ENGINE = Memory;
+
+INSERT INTO default_expr_matchers_alias_replace (a, c) VALUES (1, 'x');
+SELECT b FROM default_expr_matchers_alias_replace;
+
+CREATE TABLE default_expr_matchers_alias_nested_matcher
+(
+    a UInt8,
+    c String,
+    b String ALIAS toJSONString(namedTuple(* REPLACE (tuple(COLUMNS(a, c)) AS a)))
+)
+ENGINE = Memory;
+
+INSERT INTO default_expr_matchers_alias_nested_matcher (a, c) VALUES (1, 'x');
+SELECT b FROM default_expr_matchers_alias_nested_matcher;
 
 CREATE TABLE default_expr_matchers_error
 (
@@ -120,6 +172,62 @@ INSERT INTO default_expr_matchers_include_alias (a) VALUES (1);
 SET asterisk_include_alias_columns = 0;
 SELECT b FROM default_expr_matchers_include_alias;
 
+CREATE TABLE default_expr_matchers_qualified_asterisk_error
+(
+    a UInt8,
+    b String DEFAULT toJSONString(namedTuple(t.*))
+)
+ENGINE = Memory; -- { serverError UNKNOWN_IDENTIFIER }
+
+CREATE TABLE default_expr_matchers_qualified_columns_error
+(
+    a UInt8,
+    b String DEFAULT toJSONString(namedTuple(t.COLUMNS('^a$')))
+)
+ENGINE = Memory; -- { serverError UNKNOWN_IDENTIFIER }
+
+CREATE TABLE default_expr_matchers_qualified_columns_list_error
+(
+    a UInt8,
+    b String DEFAULT toJSONString(namedTuple(t.COLUMNS(a)))
+)
+ENGINE = Memory; -- { serverError UNKNOWN_IDENTIFIER }
+
+CREATE TABLE default_expr_matchers_ephemeral_asterisk
+(
+    a UInt8,
+    b String EPHEMERAL toJSONString(namedTuple(*)),
+    c String MATERIALIZED b
+)
+ENGINE = Memory;
+
+INSERT INTO default_expr_matchers_ephemeral_asterisk (a) VALUES (1);
+SELECT c FROM default_expr_matchers_ephemeral_asterisk;
+
+CREATE TABLE default_expr_matchers_ephemeral_columns
+(
+    a UInt8,
+    c String,
+    d UInt8,
+    b String EPHEMERAL toJSONString(namedTuple(COLUMNS('^(a|c)$'))),
+    e String MATERIALIZED b
+)
+ENGINE = Memory;
+
+INSERT INTO default_expr_matchers_ephemeral_columns (a, c, d) VALUES (1, 'x', 2);
+SELECT e FROM default_expr_matchers_ephemeral_columns;
+
+CREATE TABLE default_expr_matchers_ephemeral_not_matched
+(
+    a UInt8,
+    b UInt8 EPHEMERAL a + 1,
+    c String DEFAULT toJSONString(namedTuple(COLUMNS('^(a|b)$')))
+)
+ENGINE = Memory;
+
+INSERT INTO default_expr_matchers_ephemeral_not_matched (a) VALUES (1);
+SELECT c FROM default_expr_matchers_ephemeral_not_matched;
+
 CREATE TABLE default_expr_matchers_index_one
 (
     a UInt8,
@@ -148,9 +256,16 @@ ORDER BY tuple();
 
 DROP TABLE default_expr_matchers_index_tuple;
 DROP TABLE default_expr_matchers_index_one;
+DROP TABLE default_expr_matchers_ephemeral_not_matched;
+DROP TABLE default_expr_matchers_ephemeral_columns;
+DROP TABLE default_expr_matchers_ephemeral_asterisk;
 DROP TABLE default_expr_matchers_include_alias;
 DROP TABLE default_expr_matchers_include_materialized;
 DROP TABLE default_expr_matchers_default_except;
+DROP TABLE default_expr_matchers_alias_nested_matcher;
+DROP TABLE default_expr_matchers_alias_replace;
+DROP TABLE default_expr_matchers_alias_apply;
+DROP TABLE default_expr_matchers_alias_columns_list;
 DROP TABLE default_expr_matchers_alias_columns;
 DROP TABLE default_expr_matchers_alias_tuple;
 DROP TABLE default_expr_matchers_alias;
