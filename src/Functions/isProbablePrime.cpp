@@ -23,6 +23,11 @@ namespace
 
 constexpr unsigned default_rounds = 25;
 
+/// `4^-max_rounds` is below `10^-150` — well past the point of diminishing returns. The cap also
+/// keeps the worst case bounded under the AST fuzzer (which can rewrite the `rounds` literal to
+/// `std::numeric_limits<unsigned>::max()` and hang the stress test for half an hour, see #101354).
+constexpr unsigned max_rounds = 256;
+
 class FunctionIsProbablePrime : public IFunction
 {
 public:
@@ -62,6 +67,14 @@ public:
             const UInt64 r = arguments[1].column->getUInt(0);
             if (r == 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must be a positive integer constant", getName());
+            if (r > max_rounds)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Second argument of function {} must not exceed {} (got {}); larger values offer no meaningful "
+                    "improvement in confidence and can take too long to compute",
+                    getName(),
+                    max_rounds,
+                    r);
             rounds = static_cast<unsigned>(std::min<UInt64>(r, std::numeric_limits<unsigned>::max()));
         }
 
@@ -100,16 +113,20 @@ For `UInt8`, `UInt16`, `UInt32`, and `UInt64`, the result is exact and matches
 
 For `UInt128` and `UInt256`, a return value of `1` is probabilistic. The optional `rounds` argument controls
 how many [Miller-Rabin](https://en.wikipedia.org/wiki/Miller-Rabin_primality_test) rounds are used:
-more rounds reduce the chance of a false positive and increase the running time. For any composite,
-the false-positive rate is bounded by `4^(-rounds)`; the default of `25` keeps it below `10^-15`.
+more rounds reduce the chance of a false positive and increase the running time. With uniformly random
+witnesses, the false-positive rate for a fixed composite is bounded by `4^(-rounds)`; the default of `25`
+keeps this bound below `10^-15`, and the maximum of `256` keeps it below `10^-154`.
 
-The function is deterministic: the same input and `rounds` value always produce the same result.
+The function is deterministic: witnesses are seeded from `n`, so the same `(n, rounds)` pair always produces
+the same result. The `4^(-rounds)` bound is the per-input probability under uniformly random witnesses;
+with our deterministic seeding it instead describes a fraction over inputs — a composite that fools its
+witness sequence will reproducibly return `1`.
     )";
     FunctionDocumentation::Syntax syntax = "isProbablePrime(n[, rounds])";
     FunctionDocumentation::Arguments arguments
         = {{"n", "Unsigned integer to test for primality.", {"UInt8", "UInt16", "UInt32", "UInt64", "UInt128", "UInt256"}},
            {"rounds",
-            "Optional positive integer constant. Number of Miller-Rabin rounds for `UInt128`/`UInt256` (ignored for narrower types). "
+            "Optional positive integer constant in `[1, 256]`. Number of Miller-Rabin rounds for `UInt128`/`UInt256` (ignored for narrower types). "
             "Default `25`.",
             {"UInt8", "UInt16", "UInt32", "UInt64"}}};
     FunctionDocumentation::ReturnedValue returned_value
