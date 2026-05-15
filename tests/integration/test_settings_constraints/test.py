@@ -3,7 +3,11 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("instance", user_configs=["configs/users.xml"])
+instance = cluster.add_instance(
+    "instance",
+    main_configs=["configs/no_default_constraints.xml"],
+    user_configs=["configs/users.xml"],
+)
 
 
 @pytest.fixture(scope="module")
@@ -260,6 +264,55 @@ def test_merge_tree_setting_constraint_via_alias(started_cluster):
         )
 
     instance.query("DROP TABLE IF EXISTS test_alias_constraint")
+
+
+def test_merge_tree_setting_constraint_via_granted_role(started_cluster):
+    """A constraint declared on a granted role's settings profile (not the
+    user's own base profile) must still be enforced, including through
+    MergeTreeSettings alias resolution. The system-wide default_profile is
+    overridden to an empty profile (see configs/no_default_constraints.xml),
+    so an SQL-created user without an explicit profile inherits no merge_tree
+    constraints; the constraint reaches the user only via the granted role."""
+
+    instance.query("DROP TABLE IF EXISTS test_role_constraint")
+    instance.query("DROP USER IF EXISTS role_constraint_user")
+    instance.query("DROP ROLE IF EXISTS role_with_block_number_constraint")
+    instance.query("DROP SETTINGS PROFILE IF EXISTS role_block_number_profile")
+
+    instance.query("CREATE USER role_constraint_user")
+    instance.query(
+        "CREATE SETTINGS PROFILE role_block_number_profile "
+        "SETTINGS merge_tree_enable_block_number_column CONST"
+    )
+    instance.query(
+        "CREATE ROLE role_with_block_number_constraint "
+        "SETTINGS PROFILE role_block_number_profile"
+    )
+    instance.query(
+        "GRANT role_with_block_number_constraint TO role_constraint_user"
+    )
+
+    instance.query(
+        "CREATE TABLE test_role_constraint (x Int) ENGINE=MergeTree ORDER BY x"
+    )
+    instance.query(
+        "GRANT ALTER ON test_role_constraint TO role_with_block_number_constraint"
+    )
+
+    try:
+        for setting in (
+            "enable_block_number_column",
+            "allow_experimental_block_number_column",
+        ):
+            assert "should not be changed" in instance.query_and_get_error(
+                f"ALTER TABLE test_role_constraint MODIFY SETTING {setting}=1",
+                user="role_constraint_user",
+            )
+    finally:
+        instance.query("DROP TABLE IF EXISTS test_role_constraint")
+        instance.query("DROP USER IF EXISTS role_constraint_user")
+        instance.query("DROP ROLE IF EXISTS role_with_block_number_constraint")
+        instance.query("DROP SETTINGS PROFILE IF EXISTS role_block_number_profile")
 
 
 def test_disallowed_value_is_clamped_not_thrown(started_cluster):

@@ -46,6 +46,13 @@
                 </merge_tree_allow_experimental_block_number_column>
             </constraints>
         </alias_constraint_profile>
+
+        <!-- Empty profile used as the system-wide default_profile (see configs/no_default_constraints.xml).
+             SQL-created users without an explicit profile fall back to this one, so the role test below
+             starts from a base profile with no merge_tree constraints and the constraint reaches the
+             user only via the granted role. -->
+        <empty_profile>
+        </empty_profile>
     </profiles>
 
     <users>
