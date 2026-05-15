@@ -349,6 +349,29 @@ static void doDescribeRepeatedProcessorChains(
 
 void IQueryPlanStep::describePipeline(const Processors & processors, FormatSettings & settings)
 {
+    if (!settings.compact_repeated_processor_chains)
+    {
+        const IProcessor * prev = nullptr;
+        size_t count = 0;
+
+        for (auto it = processors.rbegin(); it != processors.rend(); ++it)
+        {
+            if (prev && prev->getName() != (*it)->getName())
+            {
+                doDescribeProcessor(*prev, count, settings);
+                count = 0;
+            }
+
+            ++count;
+            prev = it->get();
+        }
+
+        if (prev)
+            doDescribeProcessor(*prev, count, settings);
+
+        return;
+    }
+
     std::vector<const IProcessor *> ordered_processors;
     ordered_processors.reserve(processors.size());
     for (auto it = processors.rbegin(); it != processors.rend(); ++it)
