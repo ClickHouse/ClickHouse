@@ -56,11 +56,11 @@ Engines from the `*Log` family do not provide automatic data recovery on failure
 
 By default `CHECK TABLE` query shows the general table check status:
 
-```sql
+```sql title="Query"
 CHECK TABLE test_table;
 ```
 
-```text
+```text title="Response"
 ┌─result─┐
 │      1 │
 └────────┘
@@ -70,12 +70,11 @@ If you want to see the check status for every individual data part you may use `
 
 Also, to check a specific partition of the table, you can use the `PARTITION` keyword.
 
-```sql
+```sql title="Query"
 CHECK TABLE t0 PARTITION ID '201003'
 FORMAT PrettyCompactMonoBlock
 SETTINGS check_query_single_value_result = 0
 ```
-
 
 ```text title="Response"
 ┌─part_path────┬─is_passed─┬─message─┐
@@ -86,12 +85,11 @@ SETTINGS check_query_single_value_result = 0
 
 Similarly, you can check a specific part of the table by using the `PART` keyword.
 
-```sql
+```sql title="Query"
 CHECK TABLE t0 PART '201003_7_7_0'
 FORMAT PrettyCompactMonoBlock
 SETTINGS check_query_single_value_result = 0
 ```
-
 
 ```text title="Response"
 ┌─part_path────┬─is_passed─┬─message─┐
@@ -101,11 +99,11 @@ SETTINGS check_query_single_value_result = 0
 
 Note that when part does not exist, the query returns an error:
 
-```sql
+```sql title="Query"
 CHECK TABLE t0 PART '201003_111_222_0'
 ```
 
-```text
+```text title="Response"
 DB::Exception: No such data part '201003_111_222_0' to check in table 'default.t0'. (NO_SUCH_DATA_PART)
 ```
 
@@ -125,8 +123,6 @@ rm /var/lib/clickhouse-server/data/default/t0/201003_3_3_0/checksums.txt
 CHECK TABLE t0 PARTITION ID '201003'
 FORMAT PrettyCompactMonoBlock
 SETTINGS check_query_single_value_result = 0
-
-
 
 ```text title="Response"
 ┌─part_path────┬─is_passed─┬─message──────────────────────────────────┐

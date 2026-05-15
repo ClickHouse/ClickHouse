@@ -364,7 +364,6 @@ Input table:
 
 Find out how far the user `user_id` could get through the chain in a period in January-February of 2019.
 
-
 ```sql title="Query"
 SELECT
     level,
@@ -382,9 +381,7 @@ GROUP BY level
 ORDER BY level ASC;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─level─┬─c─┐
 │     4 │ 1 │
 └───────┴───┘
@@ -453,7 +450,7 @@ Let's consider an example of calculating the `retention` function to determine s
 
 **1.** Create a table to illustrate an example.
 
-```sql
+```sql title="Query"
 CREATE TABLE retention_test(date Date, uid Int32) ENGINE = Memory;
 
 INSERT INTO retention_test SELECT '2020-01-01', number FROM numbers(5);
@@ -463,14 +460,11 @@ INSERT INTO retention_test SELECT '2020-01-03', number FROM numbers(15);
 
 Input table:
 
-
 ```sql title="Query"
 SELECT * FROM retention_test
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌───────date─┬─uid─┐
 │ 2020-01-01 │   0 │
 │ 2020-01-01 │   1 │
@@ -511,7 +505,6 @@ Result:
 
 **2.** Group users by unique ID `uid` using the `retention` function.
 
-
 ```sql title="Query"
 SELECT
     uid,
@@ -522,9 +515,7 @@ GROUP BY uid
 ORDER BY uid ASC
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─uid─┬─r───────┐
 │   0 │ [1,1,1] │
 │   1 │ [1,1,1] │
@@ -546,7 +537,6 @@ Result:
 
 **3.** Calculate the total number of site visits per day.
 
-
 ```sql title="Query"
 SELECT
     sum(r[1]) AS r1,
@@ -563,9 +553,7 @@ FROM
 )
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─r1─┬─r2─┬─r3─┐
 │  5 │  5 │  5 │
 └────┴────┴────┘
@@ -617,7 +605,6 @@ This function behaves the same as [sumMap](/sql-reference/aggregate-functions/re
 
 **Example**
 
-
 ```sql title="Query"
 CREATE TABLE sum_map
 (
@@ -634,13 +621,11 @@ INSERT INTO sum_map VALUES
     ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
 ```
 
-```sql
+```sql title="Query"
 SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) FROM sum_map;
 ```
 
-Result:
-
-```response
+```response title="Response"
    ┌─sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests)─┐
 1. │ ([1,4,8],[10,20,10])                                            │
    └─────────────────────────────────────────────────────────────────┘
@@ -668,7 +653,6 @@ This function behaves the same as [sumMap](/sql-reference/aggregate-functions/re
 
 In this example we create a table `sum_map`, insert some data into it and then use both `sumMapFilteredWithOverflow` and `sumMapFiltered` and the `toTypeName` function for comparison of the result. Where `requests` was of type `UInt8` in the created table, `sumMapFiltered` has promoted the type of the summed values to `UInt64` to avoid overflow whereas `sumMapFilteredWithOverflow` has kept the type as `UInt8` which is not large enough to store the result - i.e. overflow has occurred.
 
-
 ```sql title="Query"
 CREATE TABLE sum_map
 (
@@ -685,23 +669,21 @@ INSERT INTO sum_map VALUES
     ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
 ```
 
-```sql
+```sql title="Query"
 SELECT sumMapFilteredWithOverflow([1, 4, 8])(statusMap.status, statusMap.requests) as summap_overflow, toTypeName(summap_overflow) FROM sum_map;
 ```
 
-```sql
+```sql title="Query"
 SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) as summap, toTypeName(summap) FROM sum_map;
 ```
 
-Result:
-
-```response
+```response title="Response"
    ┌─sum──────────────────┬─toTypeName(sum)───────────────────┐
 1. │ ([1,4,8],[10,20,10]) │ Tuple(Array(UInt8), Array(UInt8)) │
    └──────────────────────┴───────────────────────────────────┘
 ```
 
-```response
+```response title="Response"
    ┌─summap───────────────┬─toTypeName(summap)─────────────────┐
 1. │ ([1,4,8],[10,20,10]) │ Tuple(Array(UInt8), Array(UInt64)) │
    └──────────────────────┴────────────────────────────────────┘
@@ -751,7 +733,7 @@ It can be used when events are A->B->C->D->E and you want to know the event foll
 
 The query statement searching the event following A->B:
 
-```sql
+```sql title="Query"
 CREATE TABLE test_flow (
     dt DateTime,
     id int,
@@ -765,9 +747,7 @@ INSERT INTO test_flow VALUES (1, 1, 'A') (2, 1, 'B') (3, 1, 'C') (4, 1, 'D') (5,
 SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'A', page = 'A', page = 'B') as next_flow FROM test_flow GROUP BY id;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─id─┬─next_flow─┐
 │  1 │ C         │
 └────┴───────────┘

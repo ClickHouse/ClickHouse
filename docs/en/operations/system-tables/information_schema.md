@@ -76,7 +76,6 @@ Columns:
 
 **Example**
 
-
 ```sql title="Query"
 SELECT table_catalog,
        table_schema,
@@ -110,9 +109,7 @@ LIMIT 1
 FORMAT Vertical;
 ```
 
-Result:
-
-```text
+```text title="Response"
 Row 1:
 ──────
 table_catalog:            default
@@ -156,7 +153,6 @@ Columns:
 
 **Example**
 
-
 ```sql title="Query"
 SELECT catalog_name,
        schema_name,
@@ -171,9 +167,7 @@ LIMIT 1
 FORMAT Vertical;
 ```
 
-Result:
-
-```text
+```text title="Response"
 Row 1:
 ──────
 catalog_name:                  INFORMATION_SCHEMA
@@ -208,7 +202,6 @@ Columns:
 
 **Example**
 
-
 ```sql title="Query"
 SELECT table_catalog, 
        table_schema, 
@@ -223,9 +216,7 @@ LIMIT 1
 FORMAT Vertical;
 ```
 
-Result:
-
-```text
+```text title="Response"
 Row 1:
 ──────
 table_catalog:   default
@@ -259,7 +250,6 @@ Columns:
 
 **Example**
 
-
 ```sql title="Query"
 CREATE VIEW v (n Nullable(Int32), f Float64) AS SELECT n, f FROM t;
 CREATE MATERIALIZED VIEW mv ENGINE = Null AS SELECT * FROM system.one;
@@ -279,9 +269,7 @@ LIMIT 1
 FORMAT Vertical;
 ```
 
-Result:
-
-```text
+```text title="Response"
 Row 1:
 ──────
 table_catalog:              default
@@ -317,7 +305,7 @@ Columns:
 
 **Example**
 
-```sql
+```sql title="Query"
 CREATE TABLE test (i UInt32, s String) ENGINE MergeTree ORDER BY i;
 SELECT constraint_catalog,
        constraint_schema,
@@ -336,9 +324,7 @@ WHERE table_name = 'test'
 FORMAT Vertical;
 ```
 
-Result:
-
-```response
+```response title="Response"
 Row 1:
 ──────
 constraint_catalog:            def

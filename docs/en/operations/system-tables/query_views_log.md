@@ -59,14 +59,11 @@ You can use the [log_queries_probability](/operations/settings/settings#log_quer
 
 ## Example {#example}
 
-
 ```sql title="Query"
 SELECT * FROM system.query_views_log LIMIT 1 \G;
 ```
 
-Result:
-
-```text
+```text title="Response"
 Row 1:
 ──────
 hostname:                clickhouse.eu-central1.internal

@@ -39,9 +39,8 @@ Aliases: `SVG`, `svg`
 SELECT SVG((0., 0.))
 ```
 
-Result:
 
-```response
+```response title="Response"
 <circle cx="0" cy="0" r="5" style=""/>
 ```
 
@@ -52,9 +51,8 @@ Result:
 SELECT SVG([(0., 0.), (10, 0), (10, 10), (0, 10)])
 ```
 
-Result:
 
-```response
+```response title="Response"
 <polygon points="0,0 0,10 10,10 10,0 0,0" style=""/>
 ```
 
@@ -65,9 +63,8 @@ Result:
 SELECT SVG([[(0., 0.), (10, 0), (10, 10), (0, 10)], [(4., 4.), (5, 4), (5, 5), (4, 5)]])
 ```
 
-Result:
 
-```response
+```response title="Response"
 <g fill-rule="evenodd"><path d="M 0,0 L 0,10 L 10,10 L 10,0 L 0,0M 4,4 L 5,4 L 5,5 L 4,5 L 4,4 z " style=""/></g>
 ```
 

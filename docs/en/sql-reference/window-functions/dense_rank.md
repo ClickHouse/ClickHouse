@@ -35,7 +35,6 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 The following example is based on the example provided in the video instructional [Ranking window functions in ClickHouse](https://youtu.be/Yku9mmBYm_4?si=XIMu1jpYucCQEoXA).
 
-
 ```sql title="Query"
 CREATE TABLE salaries
 (
@@ -56,15 +55,13 @@ INSERT INTO salaries FORMAT Values
     ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
 ```
 
-```sql
+```sql title="Query"
 SELECT player, salary,
        dense_rank() OVER (ORDER BY salary DESC) AS dense_rank
 FROM salaries;
 ```
 
-Result:
-
-```response
+```response title="Response"
    ┌─player──────────┬─salary─┬─dense_rank─┐
 1. │ Gary Chen       │ 195000 │          1 │
 2. │ Robert George   │ 195000 │          1 │

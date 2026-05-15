@@ -42,14 +42,13 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 This example looks at [historical data](https://www.kaggle.com/datasets/sazidthe1/nobel-prize-data) for Nobel Prize winners and uses the `leadInFrame` function to return a list of successive winners in the physics category.
 
-
 ```sql title="Query"
 CREATE OR REPLACE VIEW nobel_prize_laureates
 AS SELECT *
 FROM file('nobel_laureates_data.csv');
 ```
 
-```sql
+```sql title="Query"
 SELECT
     fullName,
     leadInFrame(year, 1, year) OVER (PARTITION BY category ORDER BY year ASC
@@ -63,9 +62,7 @@ ORDER BY year DESC
 LIMIT 9
 ```
 
-Result:
-
-```response
+```response title="Response"
    ┌─fullName─────────┬─year─┬─category─┬─motivation─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 1. │ Anne L Huillier  │ 2023 │ physics  │ for experimental methods that generate attosecond pulses of light for the study of electron dynamics in matter                     │
 2. │ Pierre Agostini  │ 2023 │ physics  │ for experimental methods that generate attosecond pulses of light for the study of electron dynamics in matter                     │

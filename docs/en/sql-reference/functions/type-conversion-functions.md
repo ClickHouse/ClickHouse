@@ -90,9 +90,8 @@ WHERE time_zone LIKE 'Europe%'
 LIMIT 10
 ```
 
-Result:
 
-```response
+```response title="Response"
 ┌──────────────────ts─┬─time_zone─────────┬─str_tz_datetime─────┐
 │ 2023-09-08 19:14:59 │ Europe/Amsterdam  │ 2023-09-08 21:14:59 │
 │ 2023-09-08 19:14:59 │ Europe/Andorra    │ 2023-09-08 21:14:59 │
