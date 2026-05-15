@@ -374,9 +374,12 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                         throttler = settings.local_throttler
                     ]() mutable -> std::unique_ptr<ReadBufferFromFileBase>
                     {
+                        /// Copy, not move: impl_creator may be called multiple times
+                        /// (tryGetFileSize, read, re-read after seek/reset).
+                        auto prev_copy = prev_creator;
                         return std::make_unique<CachedOnDiskReadBufferFromFile>(
                             path, cache_key, cache, origin,
-                            std::move(prev_creator),
+                            std::move(prev_copy),
                             fs_cache_settings,
                             remote_buf_size, local_buf_size,
                             std::string(CurrentThread::getQueryId()),
