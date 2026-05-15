@@ -2547,9 +2547,11 @@ struct ConvertImpl
             auto res_col = IColumn::mutate(ColumnInt64::create(calc_num_rows));
             auto & res_data = assert_cast<ColumnInt64 &>(*res_col).getData();
 
+            /// interval_conversions[i] holds the factor between kind i and kind i-1,
+            /// so every boundary crossing between kinds i-1 and i uses interval_conversions[i]
             if (from_position < to_position)
             {
-                for (int i = from_position; i < to_position; ++i)
+                for (int i = from_position + 1; i <= to_position; ++i)
                     conversion_factor *= interval_conversions[i];
                 for (size_t row = 0; row < calc_num_rows; ++row)
                     res_data[row] = arguments[0].column->getInt(row) / conversion_factor;
