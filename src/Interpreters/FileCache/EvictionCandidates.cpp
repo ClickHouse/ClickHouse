@@ -328,9 +328,7 @@ void EvictionCandidates::evict()
             }
             catch (...)
             {
-                /// Account by reserved (cache-accounted) bytes -- same as candidate
-                /// collection (`LRUFileCachePriority`) and same as what the restore
-                /// path re-installs as the queue entry size.
+                /// Sum up reserved size, which is the queue entry size.
                 failed_candidates.total_cache_size += candidate->size();
                 failed_candidates.total_cache_elements += 1;
                 failed_key_candidates.candidates.push_back(candidate);

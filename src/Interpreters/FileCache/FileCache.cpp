@@ -2532,6 +2532,7 @@ bool FileCache::doDynamicResizeImpl(
         for (const auto & candidate : key_candidates)
         {
             const auto & file_segment = candidate->file_segment;
+            /// Restore the original queue entry size. For partial segments it is reserved size.
             const auto restored_size = candidate->size();
 
             LOG_DEBUG(
@@ -2540,13 +2541,6 @@ bool FileCache::doDynamicResizeImpl(
 
             auto original_queue_type = eviction_candidates.getOriginalQueueType(candidate.get());
 
-            /// Restore the queue entry with the exact size that was removed in
-            /// `removeQueueEntries`. `FileSegmentMetadata::size` returns
-            /// `getReservedSize`, which is what `LRUFileCachePriority::collectCandidatesForEviction`
-            /// accounted for and what `FileSegment::assertCorrectnessUnlocked`
-            /// expects on the priority entry (`entry.size == reserved_size`).
-            /// Passing `getDownloadedSize` here is wrong for `PARTIALLY_DOWNLOADED`
-            /// segments with `reserved_size > downloaded_size`.
             auto main_priority_iterator = main_priority->addForRestore(
                 key_metadata,
                 file_segment->offset(),
@@ -2556,10 +2550,7 @@ bool FileCache::doDynamicResizeImpl(
                 &state_lock);
 
             candidate->setRemovedFlag(*locked_key, /* value */false);
-            {
-                auto seg_lock = file_segment->lock();
-                file_segment->restoreQueueIteratorAfterDelayedRemoval(main_priority_iterator, seg_lock);
-            }
+            file_segment->restoreQueueIteratorAfterDelayedRemoval(main_priority_iterator);
         }
     }
 

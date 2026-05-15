@@ -1925,33 +1925,9 @@ TEST_F(FileCacheTest, LoadMetadataParallelism)
 
 TEST_F(FileCacheTest, PartiallyDownloadedDynamicResizeAssertion)
 {
-    /// Regression test for the asymmetric invariant in
-    /// `FileSegment::assertCorrectnessUnlocked`.
-    ///
-    /// `FileCache::doDynamicResizeImpl` does:
-    ///   1. `EvictionCandidates::removeQueueEntries`
-    ///        -> `FileSegment::markDelayedRemovalAndResetQueueIterator`
-    ///            (sets `on_delayed_removal = true`, `queue_iterator = {}`)
-    ///   2. `EvictionCandidates::evict`
-    ///        -> `LockedKey::removeFileSegment`
-    ///            -> `FileSegment::assertCorrectnessUnlocked`
-    ///
-    /// Before the fix, the `PARTIALLY_DOWNLOADED` branch chasserts `queue_iterator`
-    /// unconditionally, even when `on_delayed_removal == true`. That state is
-    /// intentional and the chassert is wrong.
-    ///
-    /// Test setup preserves `PARTIALLY_DOWNLOADED` with
-    /// `reserved_size > downloaded_size` in two phases:
-    ///   (a) The explicit `FileSegment::complete` inside the block runs while
-    ///       `holder`, `seg`, the temporary, and `FileSegmentMetadata` all hold
-    ///       refs -- `use_count >= 4` -- so `isLastOwnerOfFileSegment` returns
-    ///       false and the `is_last_holder` shrink branch is skipped.
-    ///   (b) After the block exits, `~FileSegmentsHolder` calls `complete`
-    ///       again; now `use_count == 2` so the shrink branch IS entered. But
-    ///       with `boundary_alignment == max_file_segment_size == range().size() == 8`,
-    ///       `shrinkFileSegmentToDownloadedSize` early-returns at
-    ///       `result_size == range().size()` and preserves both state and
-    ///       `reserved_size > downloaded_size`.
+    /// Regression: dynamic resize temporarily clears the queue iterator before
+    /// evicting a `PARTIALLY_DOWNLOADED` segment. The invariant must allow that
+    /// delayed-removal state.
 
     ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
@@ -1984,8 +1960,7 @@ TEST_F(FileCacheTest, PartiallyDownloadedDynamicResizeAssertion)
     const auto & user = FileCache::getCommonOrigin();
     auto key = DB::FileCacheKey::fromPath("partial_dl_resize_key");
 
-    /// Segment 1: stable `PARTIALLY_DOWNLOADED` with `reserved_size=8`,
-    /// `downloaded_size=3`.
+    /// Segment 1: `PARTIALLY_DOWNLOADED` with reserved size 8 and downloaded size 3.
     {
         auto holder = cache->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
         ASSERT_EQ(holder->size(), 1u);
@@ -1998,10 +1973,7 @@ TEST_F(FileCacheTest, PartiallyDownloadedDynamicResizeAssertion)
         std::string failure_reason;
         ASSERT_TRUE(seg->reserve(/*size_to_reserve=*/8, /*lock_wait_timeout_milliseconds=*/1000, failure_reason));
 
-        /// Mirror the existing `download` helper at the top of this file --
-        /// `seg->write` opens `getPath` so the directory must exist. The
-        /// reservation already calls `createBaseDirectory`, but this is
-        /// defensive and matches the existing test convention.
+        /// `seg->write` expects the key directory to exist, as in `download`.
         auto key_str = key.toString();
         auto subdir = fs::path(cache_base_path) / key_str.substr(0, 3) / key_str;
         if (!fs::exists(subdir))
@@ -2021,8 +1993,7 @@ TEST_F(FileCacheTest, PartiallyDownloadedDynamicResizeAssertion)
         ASSERT_EQ(seg->getDownloadedSize(), 3u);
     }
 
-    /// Segment 2: a regular `DOWNLOADED` 8-byte segment to occupy cache space
-    /// and ensure the resize requires actual eviction.
+    /// Segment 2: a `DOWNLOADED` segment to make resize evict real entries.
     {
         auto holder = cache->getOrSet(key, 8, 8, /*file_size=*/16, {}, 0, user);
         ASSERT_EQ(holder->size(), 1u);
@@ -2049,11 +2020,7 @@ TEST_F(FileCacheTest, PartiallyDownloadedDynamicResizeAssertion)
         ASSERT_TRUE(found_partial);
     }
 
-    /// Trigger dynamic resize. The `PARTIALLY_DOWNLOADED` candidate goes
-    /// through `removeQueueEntries -> markDelayedRemovalAndResetQueueIterator
-    /// -> evict -> LockedKey::removeFileSegment -> assertCorrectnessUnlocked`.
-    /// Without the fix, the `chassert(queue_iterator)` at `FileSegment.cpp:1074`
-    /// fires.
+    /// Trigger resize while the partial segment is in delayed-removal state.
     DB::FileCacheSettings new_settings = settings;
     new_settings[FileCacheSetting::max_size] = 4;
     DB::FileCacheSettings actual_settings = settings;
@@ -2065,26 +2032,8 @@ TEST_F(FileCacheTest, PartiallyDownloadedDynamicResizeAssertion)
 
 TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
 {
-    /// Regression test for two coupled bugs in the failed-eviction restore
-    /// path of `FileCache::doDynamicResizeImpl`:
-    ///   (a) `addForRestore` was called with `getDownloadedSize` instead of
-    ///       the reserved (cache-accounted) size. For `PARTIALLY_DOWNLOADED`
-    ///       segments with `reserved_size > downloaded_size`, the restored
-    ///       priority entry was undersized. `FileCache::getUsedCacheSize` (an
-    ///       unconditional atomic load) would report the wrong total in all
-    ///       build configurations.
-    ///   (b) `setQueueIterator` installed the iterator but did not clear
-    ///       `on_delayed_removal`, leaving the segment in the inconsistent
-    ///       state `(queue_iterator != nullptr) && (on_delayed_removal == true)`.
-    ///       The new cross-state invariant
-    ///       `if (queue_iterator) chassert(!on_delayed_removal);` in
-    ///       `assertCorrectnessUnlocked` catches this at the post-resize
-    ///       `assertCacheCorrectness` (debug/sanitizer-only).
-    ///
-    /// Setup mirrors `PartiallyDownloadedDynamicResizeAssertion` so the partial
-    /// segment has `reserved_size (8) > downloaded_size (3)` -- the precondition
-    /// for (a). The `file_cache_dynamic_resize_fail_to_evict` failpoint then
-    /// forces the restore loop to run.
+    /// Regression: failed eviction must restore queue entries with reserved size
+    /// and clear delayed-removal state on the segment.
 
     ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
@@ -2117,7 +2066,7 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
     const auto & user = FileCache::getCommonOrigin();
     auto key = DB::FileCacheKey::fromPath("failed_eviction_restore_key");
 
-    /// Stable `PARTIALLY_DOWNLOADED` segment, `reserved_size=8`, `downloaded_size=3`.
+    /// `PARTIALLY_DOWNLOADED` segment, reserved size 8 and downloaded size 3.
     {
         auto holder = cache->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
         auto seg = *holder->begin();
@@ -2146,24 +2095,18 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
         ASSERT_EQ(seg->state(), State::DOWNLOADED);
     }
 
-    /// Snapshot -- both segments are now in the priority queue with reserved
-    /// sizes summing to 16. `getUsedCacheSize` reads `main_priority->getSizeApprox`,
-    /// an unconditional atomic -- exact after the synchronous setup.
+    /// Both priority entries account for reserved size.
     ASSERT_EQ(cache->getUsedCacheSize(), 16u);
     ASSERT_EQ(cache->getFileSegmentsNum(), 2u);
 
-    /// Activate the failpoint so every eviction candidate fails -- the restore
-    /// loop runs.
+    /// Force the failed-eviction restore loop to run.
     {
         DB::FailPointInjection::enableFailPoint("file_cache_dynamic_resize_fail_to_evict");
         SCOPE_EXIT({
             DB::FailPointInjection::disableFailPoint("file_cache_dynamic_resize_fail_to_evict");
         });
 
-        /// Trigger resize. With bug (a) unfixed, the priority size after restore
-        /// would be `3 + 8 = 11` instead of `8 + 8 = 16`. With bug (b) unfixed,
-        /// the post-resize `assertCacheCorrectness` (debug/sanitizer-only) would
-        /// fire on the cross-state invariant.
+        /// Trigger resize. The restore path must keep total queue size at 16.
         DB::FileCacheSettings new_settings = settings;
         new_settings[FileCacheSetting::max_size] = 4;
         DB::FileCacheSettings actual_settings = settings;
@@ -2173,13 +2116,11 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
         /// Failed eviction reverts limits to the previous value.
         ASSERT_EQ(actual_settings[FileCacheSetting::max_size].value, 16u);
 
-        /// Strongest release-build check: the restored priority queue must have
-        /// the same total reserved size as before. Without the `candidate->size`
-        /// fix, this is `3 + 8 = 11`. With the fix, this is `8 + 8 = 16`.
+        /// Release-visible check for restored reserved-size accounting.
         ASSERT_EQ(cache->getUsedCacheSize(), 16u);
         ASSERT_EQ(cache->getFileSegmentsNum(), 2u);
 
-        /// All segments must still be reachable and reattached to a priority queue.
+        /// All segments must still be reachable from the priority queue.
         {
             auto infos = cache->getFileSegmentInfos(key, user.user_id);
             ASSERT_EQ(infos.size(), 2u);
@@ -2188,9 +2129,7 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
         }
     }
 
-    /// With `on_delayed_removal` correctly cleared by
-    /// `restoreQueueIteratorAfterDelayedRemoval`, this second resize must make
-    /// progress and pass `assertCacheCorrectness` again.
+    /// A second resize verifies delayed-removal state was cleared.
     {
         DB::FileCacheSettings second_new_settings = settings;
         second_new_settings[FileCacheSetting::max_size] = 4;

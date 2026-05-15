@@ -187,9 +187,9 @@ void FileSegment::markDelayedRemovalAndResetQueueIterator()
 }
 
 void FileSegment::restoreQueueIteratorAfterDelayedRemoval(
-    Priority::IteratorPtr iterator,
-    const FileSegmentGuard::Lock &)
+    Priority::IteratorPtr iterator)
 {
+    auto lk = lock();
     chassert(iterator);
     chassert(on_delayed_removal);
     chassert(!queue_iterator);
@@ -1029,12 +1029,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
         }
     }
 
-    /// Cross-state invariant: while a queue iterator is installed, the segment
-    /// must NOT be flagged for delayed removal. The two flags are mutually
-    /// exclusive -- `markDelayedRemovalAndResetQueueIterator` clears the
-    /// iterator and sets the flag; `restoreQueueIteratorAfterDelayedRemoval`
-    /// does the inverse. The invariant catches stale `on_delayed_removal == true`
-    /// after failed-eviction restore.
+    /// A restored queue iterator must clear the delayed-removal state.
     if (queue_iterator)
         chassert(!on_delayed_removal);
 

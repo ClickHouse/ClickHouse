@@ -182,16 +182,9 @@ public:
 
     void markDelayedRemovalAndResetQueueIterator();
 
-    /// Re-attach a queue iterator on a segment that was previously marked for
-    /// delayed removal (via `markDelayedRemovalAndResetQueueIterator`) but whose
-    /// eviction failed during dynamic cache resize. Restores the segment to a
-    /// consistent state in a single atomic step:
-    ///   - asserts `on_delayed_removal == true` and `!queue_iterator`
-    ///   - installs the iterator
-    ///   - clears `on_delayed_removal = false`
-    /// Must only be called after a prior `markDelayedRemovalAndResetQueueIterator`
-    /// on the same segment.
-    void restoreQueueIteratorAfterDelayedRemoval(Priority::IteratorPtr iterator, const FileSegmentGuard::Lock &);
+    /// Restore a queue iterator after dynamic-resize eviction failed.
+    /// The segment must have been marked by `markDelayedRemovalAndResetQueueIterator`.
+    void restoreQueueIteratorAfterDelayedRemoval(Priority::IteratorPtr iterator);
 
     KeyMetadataPtr tryGetKeyMetadata() const;
 
@@ -309,8 +302,7 @@ private:
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
-    /// Guarded by `segment_guard`. Set after `markDelayedRemovalAndResetQueueIterator`
-    /// removes this segment's priority entry while eviction is still pending.
+    /// Guarded by `segment_guard`. Set while dynamic-resize eviction is pending.
     bool on_delayed_removal = false;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
