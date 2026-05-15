@@ -28,11 +28,13 @@ def sum_dim(metric):
 
 
 def sum_hist(metric):
-    """Each observation increments exactly one bucket counter, so the family
-    sum (across all label sets) equals the observation count."""
+    """`system.histogram_metrics` exposes Prometheus-cumulative bucket rows
+    keyed by `le`; the `+Inf` row carries the total observation count for
+    each label-set. Sum across label-sets to get the family total."""
     return int(node.query(
         f"SELECT toUInt64(coalesce(sum(value), 0)) "
-        f"FROM system.histogram_metrics WHERE metric = '{metric}'"
+        f"FROM system.histogram_metrics "
+        f"WHERE metric = '{metric}' AND labels['le'] = '+Inf'"
     ).strip())
 
 
