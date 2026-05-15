@@ -7,6 +7,8 @@ title: 'Map(K, V)'
 doc_type: 'reference'
 ---
 
+# Map(K, V)
+
 Data type `Map(K, V)` stores key-value pairs.
 
 Unlike other databases, maps are not unique in ClickHouse, i.e. a map can contain two elements with the same key.
@@ -157,10 +159,6 @@ When a query reads a specific key (`m['key']`), the optimizer rewrites the expre
 The serialization layer computes which bucket the requested key belongs to and reads only that single bucket from disk.
 
 When the full map is read (e.g., `SELECT m`), all buckets are read and reassembled into the original map. This is slower than `basic` serialization due to the overhead of reading and merging multiple substreams.
-
-:::note
-The order of keys within a map value may differ from the original insertion order when using `with_buckets` serialization. Keys are distributed across buckets by hash and are reassembled in bucket order, not insertion order. With `basic` serialization, the key order from inserted maps is preserved.
-:::
 
 The bucket count can vary between parts. When parts with different bucket counts are merged, the new part's bucket count is recalculated from the merged statistics. Parts with `basic` and `with_buckets` serialization can coexist in the same table and are merged transparently.
 
