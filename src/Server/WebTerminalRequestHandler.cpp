@@ -628,6 +628,13 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     auto pty_descriptors = std::make_unique<PtyClientDescriptorSet>("xterm-256color", DEFAULT_COLS, DEFAULT_ROWS, 0, 0);
     auto client_runner = std::make_unique<ClientEmbeddedRunner>(std::move(pty_descriptors), std::move(session));
 
+    /// `ClientEmbedded::run` interprets each entry of this map as a
+    /// `--key value` pair appended to the embedded `clickhouse-client`
+    /// command line (see `ClientEmbedded.cpp`). The map must therefore stay
+    /// empty here: the web terminal does not have a safe path for the
+    /// user-facing browser to set arbitrary CLI flags on the embedded
+    /// client, and reusing the SSH protocol's `SetEnv` carrier here would
+    /// turn any future user-controlled key into a CLI-flag injection.
     NameToNameMap envs;
     client_runner->run(envs);
 
