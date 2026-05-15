@@ -49,6 +49,10 @@ private:
     const String & prefix;
 
     String provider_name;
+    /// Explicit mapping from incoming group (e.g. Entra group object ID) to a ClickHouse role name.
+    /// Applied BEFORE `roles_filter` and `roles_transform`. Groups absent from this map pass through
+    /// unchanged, so the filter stage can be used to drop unmapped entries.
+    std::map<String, String> roles_mapping;
     std::optional<re2::RE2> roles_filter = std::nullopt;
     /// `roles_transform` regex compiled once at construction. Storing the
     /// compiled `re2::RE2` (instead of the pattern string) avoids per-call

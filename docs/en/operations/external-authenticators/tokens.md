@@ -29,7 +29,7 @@ To use token-based authentication, add `token_processors` section to `config.xml
 Its contents are different for different token processor types.
 
 **Common parameters**
-- `type` -- type of token processor. Supported values: "jwt_static_key", "jwt_static_jwks", "jwt_dynamic_jwks", "azure", "openid". Mandatory. Case-insensitive.
+- `type` -- type of token processor. Supported values: `jwt_static_key`, `jwt_static_jwks`, `jwt_dynamic_jwks`, `entra` (`azure` is accepted as a back-compat alias and resolves to the same `entra` processor — see the [Entra](#entra) section), `openid`. Mandatory. Case-insensitive.
 - `token_cache_lifetime` -- maximum lifetime of cached token (in seconds). Optional, default: 3600.
 - `username_claim` -- name of claim (field) that will be treated as ClickHouse username. Optional, default: "sub".
 - `groups_claim` -- name of claim (field) that contains list of groups user belongs to. This claim will be looked up in the token itself (in case token is a valid JWT, e.g. in Keycloak) or in response from `/userinfo`. Optional, default: "groups".
@@ -129,22 +129,61 @@ For JWKS-based validators (`jwt_static_jwks` and `jwt_dynamic_jwks`), RS* and ES
 - `allow_no_expiration` - If `true`, tokens without the `exp` (expiration) claim are accepted. Otherwise they are rejected. Optional, default: `false`.
 
 
-## Processors with external providers
+## IdP-specific presets and generic external providers
 
-Some tokens cannot be decoded and validated locally. External service is needed in this case. "Azure" and "OpenID" (a generic type) are supported now.
+This section covers two related kinds of processor: per-IdP convenience presets built on top of the generic JWT processors (currently `entra`), and the generic `openid` processor that talks to an arbitrary OIDC-compliant identity provider.
 
-### Azure
+### Entra (Microsoft Entra ID, pure OIDC) {#entra}
+
+`<type>entra</type>` is a preset for Microsoft Entra ID built on top of `jwt_dynamic_jwks`. Tokens are validated **locally** against Entra's per-tenant JWKS — no Microsoft Graph call, no userinfo round trip, no OIDC discovery fetch. `username_claim` and `groups_claim` are read directly from the JWT payload. Use this when the access token's `aud` is your own app (registered via Entra's *Expose an API* blade), not `https://graph.microsoft.com`.
+
+:::note Migrating from the legacy `azure` processor
+`<type>azure</type>` is now an **alias** for `<type>entra</type>` — at config-parse time the type string is rewritten and the rest of the pipeline is identical. The previous `azure` implementation (which round-tripped every token through Microsoft Graph's `/oidc/userinfo` and `/v1.0/me/memberOf` endpoints) has been removed entirely.
+
+For operators upgrading: an `<type>azure</type>` block that previously had no other parameters will now fail to load with `'tenant_id' must be specified for 'entra' processor`. To migrate, add `<tenant_id>` (and ideally `<expected_audience>`) and make sure your application is configured to mint tokens whose `aud` is your own app, not Microsoft Graph. The setup recipe lives in `docs/entra-setup-draft.md`.
+:::
+
+Minimum configuration — only `tenant_id` is required; all other parameters have sensible defaults:
+
 ```xml
 <clickhouse>
     <token_processors>
-        <azure_processor>
-          <type>azure</type>
-        </azure_processor>
+        <entra_prod>
+          <type>entra</type>
+          <tenant_id>aaaabbbb-0000-cccc-1111-dddd2222eeee</tenant_id>
+        </entra_prod>
     </token_processors>
 </clickhouse>
 ```
 
-No additional parameters are required.
+Example with common overrides (audience binding to a specific app, Entra-flavored username/groups claims):
+
+```xml
+<entra_prod>
+    <type>entra</type>
+    <tenant_id>aaaabbbb-0000-cccc-1111-dddd2222eeee</tenant_id>
+    <expected_audience>api://clickhouse</expected_audience>
+    <username_claim>preferred_username</username_claim>
+    <groups_claim>roles</groups_claim>
+</entra_prod>
+```
+
+**Parameters:**
+
+- `tenant_id` — Microsoft Entra tenant identifier (a GUID, or an `*.onmicrosoft.com` domain). **Mandatory.** Multi-tenant aliases (`common`, `organizations`, `consumers`) are rejected because `JwksJwtProcessor` does exact-match issuer validation.
+
+All remaining parameters are optional:
+
+- `jwks_uri` — Override for the JWKS endpoint. Default: `https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys`. Override only for sovereign clouds (`login.microsoftonline.us`, `login.partner.microsoftonline.cn`).
+- `expected_issuer` — Expected value of the `iss` claim. Default: `https://login.microsoftonline.com/{tenant_id}/v2.0` (derived from `tenant_id`). Override for v1.0 tokens (`https://sts.windows.net/{tenant_id}/`) or sovereign clouds.
+- `expected_audience` — Expected value of the `aud` claim, normally your app's Application ID URI (e.g. `api://clickhouse`) or client ID. If unset, no audience check is performed (any signature-valid token from the tenant will authenticate); a warning is logged at startup so the gap is visible.
+- `username_claim` — JWT claim to use as the ClickHouse username. Default: `sub`. Common Entra alternatives: `preferred_username`, `upn`, `oid`.
+- `groups_claim` — JWT claim that carries the array of group identifiers. Default: `groups`. Set to `roles` if you use App Roles in Entra instead of security-group claims.
+- `expected_typ`, `verifier_leeway`, `jwks_cache_lifetime`, `claims`, `allow_no_expiration`, `token_cache_lifetime` — Same as for `jwt_dynamic_jwks`.
+
+:::note
+The `groups` claim must be enabled in the app registration's manifest (`"groupMembershipClaims": "ApplicationGroup"` is recommended) and exposed in access tokens via `optionalClaims.accessToken`. Group identifiers in the token are object IDs (GUIDs) by default; map them to ClickHouse roles via the user-directory's `roles_mapping` block (see [Identity Provider as an External User Directory](#idp-external-user-directory)).
+:::
 
 ### OpenID
 ```xml
@@ -212,7 +251,7 @@ Example (goes into `users.xml`):
 Here, the JWT payload must contain `["view-profile"]` on path `resource_access.account.roles`, otherwise authentication will not succeed even with a valid JWT.
 
 :::note
-Per-user `claims` are enforced only when the token is a JWT (validated by a JWT processor such as `jwt_static_key` or `jwt_dynamic_jwks`). When the user authenticates with an opaque (access) token (e.g. via Azure, OpenID, or Google token processors), claims are not checked and authentication succeeds if the token is otherwise valid.
+Per-user `claims` are enforced only when the token is a JWT (validated by a JWT processor such as `jwt_static_key`, `jwt_dynamic_jwks`, or `entra`). When the user authenticates with an opaque (access) token (e.g. via OpenID or Google token processors), claims are not checked and authentication succeeds if the token is otherwise valid.
 :::
 
 ```
@@ -256,6 +295,16 @@ All this implies that the SQL-driven [Access Control and Account Management](/do
                 <token_test_role_1 />
             </common_roles>
             <default_profile>my_profile</default_profile>
+            <roles_mapping>
+                <map>
+                    <from>8a1b2c3d-4e5f-6789-abcd-ef0123456789</from>
+                    <to>ch_admin</to>
+                </map>
+                <map>
+                    <from>9f8e7d6c-5b4a-3210-fedc-ba0987654321</from>
+                    <to>ch_analyst</to>
+                </map>
+            </roles_mapping>
             <roles_filter>
                 \bclickhouse-[a-zA-Z0-9]+\b
             </roles_filter>
@@ -274,5 +323,8 @@ For now, no more than one `token` section can be defined inside `user_directorie
 - `processor` — Name of one of processors defined in `token_processors` config section described above. This parameter is mandatory and cannot be empty.
 - `common_roles` — Section with a list of locally defined roles that will be assigned to each user retrieved from the IdP. Optional.
 - `default_profile` — Name of a locally defined settings profile that will be assigned to each user retrieved from the IdP. If the profile does not exist, a warning will be logged and the user will be created without a profile. Optional.
-- `roles_filter` — Regex string for groups filtering. Only groups matching this regex will be mapped to roles. Optional.
-- `roles_transform` — Sed-style transform pattern to apply to group names before mapping to roles. Format: `s/pattern/replacement/flags`. The `g` flag applies the replacement globally (all occurrences). Example: `s/-/_/g` converts `clickhouse-grp-dba` to `clickhouse_grp_dba`. Optional.
+- `roles_mapping` — Explicit map from incoming group identifier (e.g. an Entra security-group object ID) to a ClickHouse role name. Each entry is a `<map>` element with `<from>` and `<to>` children. Applied **before** `roles_filter` and `roles_transform`; groups absent from the map pass through unchanged, so the filter stage can be used to drop unmapped entries. Optional.
+- `roles_filter` — Regex string for groups filtering. Only groups (after `roles_mapping` is applied) that match this regex will be considered. Optional.
+- `roles_transform` — Sed-style transform pattern applied to group names (after `roles_mapping` and `roles_filter`) before mapping to roles. Format: `s/pattern/replacement/flags`. The `g` flag applies the replacement globally (all occurrences). Example: `s/-/_/g` converts `clickhouse-grp-dba` to `clickhouse_grp_dba`. Optional.
+
+The three stages run in this order: `roles_mapping` → `roles_filter` → `roles_transform`. Stages are independent and any of them may be omitted.

@@ -180,6 +180,38 @@ TokenAccessStorage::TokenAccessStorage(const String & storage_name_, AccessContr
         roles_transform_global = parsed.global;
     }
 
+    /// Explicit `roles_mapping` entries are read as a list of <map><from>X</from><to>Y</to></map>
+    /// children. The mapping rewrites incoming group names BEFORE `roles_filter` / `roles_transform`,
+    /// so each subsequent stage operates on the mapped value. Groups not listed here pass through
+    /// to filter/transform unchanged.
+    if (config.has(prefix_str + "roles_mapping"))
+    {
+        Poco::Util::AbstractConfiguration::Keys map_keys;
+        config.keys(prefix_str + "roles_mapping", map_keys);
+
+        for (const auto & key : map_keys)
+        {
+            const String entry_prefix = prefix_str + "roles_mapping." + key;
+            if (!config.has(entry_prefix + ".from") || !config.has(entry_prefix + ".to"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "roles_mapping entry '{}' must contain both 'from' and 'to' subelements", key);
+
+            const String from = config.getString(entry_prefix + ".from");
+            const String to = config.getString(entry_prefix + ".to");
+
+            if (from.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "roles_mapping entry '{}': 'from' must not be empty", key);
+            if (to.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "roles_mapping entry '{}': 'to' must not be empty", key);
+
+            auto [it, inserted] = roles_mapping.emplace(from, to);
+            if (!inserted)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "roles_mapping has duplicate 'from' value '{}' (already mapped to '{}', cannot remap to '{}')",
+                                from, it->second, to);
+        }
+    }
+
     provider_name = config.getString(prefix_str + "processor");
     if (provider_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'processor' must be specified for Token user directory");
@@ -593,51 +625,59 @@ std::optional<AuthResult> TokenAccessStorage::authenticateImpl(
     if (!isAddressAllowed(*user, address))
         throwAddressNotAllowed(address);
 
+    /// Pipeline: incoming group --(roles_mapping)--> mapped name --(roles_filter)--> kept/dropped --(roles_transform)--> CH role name.
+    /// Each stage is independent and optional; groups absent from `roles_mapping` pass through unchanged.
     std::set<String> external_roles;
-    if (roles_filter.has_value())
+
+    /// Defensive: a broken filter regex must NEVER fall through to the permissive
+    /// "grant everything that survives the rest of the pipeline" branch. Parse-time
+    /// validation in the constructor already rejects invalid patterns; this guard
+    /// preserves the invariant in case any future code path constructs the filter
+    /// without the parse-time check (e.g. config reload).
+    if (roles_filter.has_value() && !roles_filter->ok())
     {
-        /// Defensive: a broken regex must NEVER cause a fall-through to the
-        /// permissive "grant all groups" branch. Parse-time validation in the
-        /// constructor already rejects invalid patterns; this guard ensures the
-        /// invariant still holds if any future code path constructs the filter
-        /// without the parse-time check (e.g. config reload).
-        if (!roles_filter->ok())
-        {
-            LOG_ERROR(getLogger(),
-                      "{}: Configured 'roles_filter' is invalid ('{}'); refusing to map any "
-                      "external roles for user '{}' to avoid granting all token groups.",
-                      getStorageName(), roles_filter->error(), credentials.getUserName());
-        }
-        else
-        {
-            LOG_TRACE(getLogger(), "{}: External role filter found, applying only matching groups", getStorageName());
-            for (const auto & group: token_credentials.getGroups()) {
-                if (RE2::FullMatch(group, roles_filter.value()))
-                {
-                    String transformed_group = group;
-                    if (roles_transform_pattern.has_value() && roles_transform_replacement.has_value())
-                    {
-                        transformed_group = applyTransform(group, roles_transform_pattern.value(), roles_transform_replacement.value(), roles_transform_global);
-                        LOG_TRACE(getLogger(), "{}: Transformed group '{}' to '{}'", getStorageName(), group, transformed_group);
-                    }
-                    external_roles.insert(transformed_group);
-                    LOG_TRACE(getLogger(), "{}: Granted role (group) {} to user", getStorageName(), transformed_group);
-                }
-            }
-        }
+        LOG_ERROR(getLogger(),
+                  "{}: Configured 'roles_filter' is invalid ('{}'); refusing to map any "
+                  "external roles for user '{}' to avoid granting all token groups.",
+                  getStorageName(), roles_filter->error(), credentials.getUserName());
     }
     else
     {
-        LOG_TRACE(getLogger(), "{}: No external role filtering set, applying all available groups", getStorageName());
-        for (const auto & group: token_credentials.getGroups())
+        const bool has_filter = roles_filter.has_value();
+        const bool has_transform = roles_transform_pattern.has_value() && roles_transform_replacement.has_value();
+
+        for (const auto & group : token_credentials.getGroups())
         {
-            String transformed_group = group;
-            if (roles_transform_pattern.has_value() && roles_transform_replacement.has_value())
+            String name = group;
+
+            if (!roles_mapping.empty())
             {
-                transformed_group = applyTransform(group, roles_transform_pattern.value(), roles_transform_replacement.value(), roles_transform_global);
-                LOG_TRACE(getLogger(), "{}: Transformed group '{}' to '{}'", getStorageName(), group, transformed_group);
+                const auto it = roles_mapping.find(group);
+                if (it != roles_mapping.end())
+                {
+                    name = it->second;
+                    LOG_TRACE(getLogger(), "{}: Mapped group '{}' to '{}'", getStorageName(), group, name);
+                }
             }
-            external_roles.insert(transformed_group);
+
+            if (has_filter && !RE2::FullMatch(name, roles_filter.value()))
+            {
+                LOG_TRACE(getLogger(), "{}: Group '{}' (after mapping) did not match roles_filter, skipping", getStorageName(), name);
+                continue;
+            }
+
+            if (has_transform)
+            {
+                String transformed = applyTransform(name, roles_transform_pattern.value(), roles_transform_replacement.value(), roles_transform_global);
+                if (transformed != name)
+                {
+                    LOG_TRACE(getLogger(), "{}: Transformed '{}' to '{}'", getStorageName(), name, transformed);
+                    name = std::move(transformed);
+                }
+            }
+
+            external_roles.insert(name);
+            LOG_TRACE(getLogger(), "{}: Granted role (group) {} to user", getStorageName(), name);
         }
     }
 
