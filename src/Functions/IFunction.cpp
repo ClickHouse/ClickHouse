@@ -874,10 +874,19 @@ namespace
             const bool mentions_type_mismatch =
                 reason.find(" has type ") != std::string::npos
                 || reason.find("must be of type ") != std::string::npos;
+            /// `ArgumentDescription::match` produces "must be ..., but it is not constant"
+            /// when the only problem is that a `const` matcher position received a
+            /// non-constant column. Map that to the legacy `ILLEGAL_COLUMN` so existing
+            /// `serverError ILLEGAL_COLUMN` test annotations keep working.
+            const bool mentions_non_const = reason.find("but it is not constant") != std::string::npos;
 
-            throw Exception(mentions_arity && !mentions_type_mismatch
-                    ? ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-                    : ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            int code = ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT;
+            if (mentions_arity && !mentions_type_mismatch && !mentions_non_const)
+                code = ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+            else if (mentions_non_const && !mentions_type_mismatch)
+                code = ErrorCodes::ILLEGAL_COLUMN;
+
+            throw Exception(code,
                 "Arguments of function {} do not match its signature ({}): {}",
                 function_name, signature_str, reason);
         }
