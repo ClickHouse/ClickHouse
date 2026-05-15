@@ -605,7 +605,12 @@ void LocalServer::setupUsers()
         if (users_config_path.empty() && has_user_directories)
         {
             users_config_path = getClientConfiguration().getString("user_directories.users_xml.path");
-            if (fs::path(users_config_path).is_relative() && fs::exists(fs::path(config_dir) / users_config_path))
+            /// Always anchor a relative `user_directories.users_xml.path` to the loaded
+            /// config's directory. Falling back to the current working directory when the
+            /// configured file is missing can silently load an unrelated `users.xml`
+            /// (e.g. one that grants `access_management` to the default user) instead of
+            /// failing with a clear error pointing at the configured path.
+            if (fs::path(users_config_path).is_relative())
                 users_config_path = fs::path(config_dir) / users_config_path;
         }
 

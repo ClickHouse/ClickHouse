@@ -74,3 +74,46 @@ mkdir -p "$TESTDIR/empty_home"
     OUT=$(HOME="$TESTDIR/empty_home" "$CLICKHOUSE_LOCAL" --query "SELECT getSetting('max_threads') > 0")
     echo "$OUT"
 )
+
+# A relative `user_directories.users_xml.path` is always anchored to the loaded
+# config's directory. If the configured file is missing, ClickHouse fails fast
+# rather than silently picking up a `users.xml` from the current working
+# directory.
+echo "-- missing users.xml next to config does not silently load cwd users.xml"
+mkdir -p "$TESTDIR/orphan_home/.clickhouse-local"
+cat > "$TESTDIR/orphan_home/.clickhouse-local/config.xml" <<EOF
+<clickhouse>
+    <user_directories>
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+    </user_directories>
+</clickhouse>
+EOF
+cat > "$TESTDIR/cwd/users.xml" <<EOF
+<clickhouse>
+    <profiles>
+        <default>
+            <max_threads>99</max_threads>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <password></password>
+            <networks><ip>::/0</ip></networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </default>
+    </users>
+    <quotas>
+        <default></default>
+    </quotas>
+</clickhouse>
+EOF
+(
+    cd "$TESTDIR/cwd" || exit 1
+    HOME="$TESTDIR/orphan_home" "$CLICKHOUSE_LOCAL" --query "SELECT getSetting('max_threads')" 2>&1 \
+        | grep -oE 'FILE_DOESNT_EXIST|max_threads' \
+        | head -n 1
+)
+rm -f "$TESTDIR/cwd/users.xml"
