@@ -127,12 +127,12 @@ private:
     /// The lazily-opened buffer is owned by `updateResidentMemoryThread`, which is the only caller.
     uint64_t readSystemFreePlusCachedMemory();
     std::unique_ptr<ReadBufferFromFile> meminfo_buf;
-    bool meminfo_warnings_printed = false;
+    [[maybe_unused]] bool meminfo_warnings_printed = false;
 
     /// Open file for the cgroup's memory limit (`memory.max` on v2, `memory.limit_in_bytes` on v1).
     /// Set in the constructor when `cgroups_reader` is set. Empty otherwise.
     std::unique_ptr<ReadBufferFromFile> cgroup_memory_max_buf;
-    bool cgroup_memory_max_warnings_printed = false;
+    [[maybe_unused]] bool cgroup_memory_max_warnings_printed = false;
 
     MemoryUsageSource source{MemoryUsageSource::None};
 
