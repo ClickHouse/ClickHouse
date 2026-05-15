@@ -1,0 +1,37 @@
+-- greater
+0
+0
+0
+0
+-- less
+0
+0
+0
+0
+-- equals
+1
+1
+1
+1
+-- notEquals
+0
+0
+0
+0
+-- greaterOrEquals (padding should be equal)
+1
+1
+1
+1
+-- lessOrEquals (padding should be equal)
+1
+1
+1
+1
+-- Nullable wrapper (original bug report)
+0
+0
+-- Real differences still detected
+1
+1
+1
