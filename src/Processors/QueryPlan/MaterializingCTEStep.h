@@ -72,6 +72,15 @@ public:
         DelayedMaterializingCTEsStep && step,
         const QueryPlanOptimizationSettings & optimization_settings);
 
+    /// Optimize each owned CTE's pre-built plan. Called by
+    /// `resolveMaterializingCTEs`'s first traversal; the matching second
+    /// traversal then calls `makePlansForCTEs` to claim and attach.
+    /// Safe to call even after `makePlansForCTEs` has moved a CTE's plan
+    /// out — the per-CTE check `if (cte->plan)` makes the call a no-op
+    /// for CTEs whose plan has already been claimed (which happens when a
+    /// recursive `buildSetInplace` claims the same CTE first).
+    void optimizePlans(const QueryPlanOptimizationSettings & optimization_settings);
+
 private:
     void updateOutputHeader() override { output_header = getInputHeaders().front(); }
 

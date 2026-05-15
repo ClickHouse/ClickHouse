@@ -112,6 +112,19 @@ QueryPipelineBuilderPtr DelayedMaterializingCTEsStep::updatePipeline(QueryPipeli
         "Cannot build pipeline in DelayedMaterializingCTEs. This step should be optimized out.");
 }
 
+void DelayedMaterializingCTEsStep::optimizePlans(const QueryPlanOptimizationSettings & optimization_settings)
+{
+    for (const auto & cte : ctes)
+    {
+        /// The same MaterializedCTE pointer can be referenced by both the
+        /// outer step (in the main plan) and a safety-net step (inside an
+        /// IN-subquery plan). The recursive `buildSetInplace` path might
+        /// have already moved a CTE's plan out via `makePlansForCTEs`.
+        if (cte->plan)
+            cte->plan->optimize(optimization_settings);
+    }
+}
+
 std::vector<std::unique_ptr<QueryPlan>> DelayedMaterializingCTEsStep::makePlansForCTEs(
     DelayedMaterializingCTEsStep && step,
     const QueryPlanOptimizationSettings & /*optimization_settings*/)
