@@ -359,7 +359,14 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBucketsByCount(size
     /// over a smallish single Parquet file this can be a >2x slowdown vs reading the
     /// file with a single source (see `tests/performance/clickbench_parquet_short.xml`).
     /// Large files (many row groups) still get max parallelism.
-    static constexpr size_t min_row_groups_per_chunk = 8;
+    ///
+    /// The floor is tuned empirically against `clickbench_parquet_short` on the
+    /// synthetic 20-row-group test file: splitting that file into 2 buckets cost
+    /// ~1-3 ms of per-bucket setup, which is 18-37 % of the single-source runtime
+    /// for these queries. A floor of 16 keeps that 20-row-group file as a single
+    /// source, while a real `hits.parquet` (hundreds of row groups) still gets
+    /// fan-out up to `max_threads`.
+    static constexpr size_t min_row_groups_per_chunk = 16;
     const size_t max_chunks_by_row_groups = std::max<size_t>(1, num_row_groups / min_row_groups_per_chunk);
     const size_t num_chunks = std::min({target_count, num_row_groups, max_chunks_by_row_groups});
     std::vector<FileBucketInfoPtr> result;

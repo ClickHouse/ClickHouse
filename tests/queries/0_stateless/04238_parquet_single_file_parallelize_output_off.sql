@@ -12,8 +12,8 @@
 INSERT INTO FUNCTION file('04238.parquet') SELECT * FROM numbers(2000)
     SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_row_group_size = 50;
 
--- The file has 40 row groups, well above the 8-row-groups-per-chunk floor in the
--- splitter, so the bucketed path can be taken when permitted.
+-- The file has 40 row groups, above the per-chunk floor in the splitter, so the
+-- bucketed path can be taken when permitted.
 
 -- With parallelize_output_from_storages = 0 and max_threads = 8 the pipeline must
 -- contain a single (non-multiplied) `File 0 -> 1` source and no `Resize 1 -> N`.
