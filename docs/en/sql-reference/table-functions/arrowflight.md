@@ -7,8 +7,6 @@ title: 'arrowFlight'
 doc_type: 'reference'
 ---
 
-# arrowFlight Table Function
-
 Allows to perform queries on data exposed via an [Apache Arrow Flight](/interfaces/arrowflight) server.
 
 **Syntax**
