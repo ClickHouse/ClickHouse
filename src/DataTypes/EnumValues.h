@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <unordered_set>
 #include <string>
 #include <string_view>
@@ -28,18 +29,21 @@ private:
     /// Index into values, sorted by name (for binary search on names)
     std::vector<uint16_t> name_sorted_index;
 
-    /// Value-to-name lookup strategy
-    /// For Enum8: always direct (max 512 bytes)
-    /// For Enum16: direct if range <= 1024, else binary search
+    /// Value-to-name lookup strategy.
+    /// For Enum8: always direct (max 256 entries of `uint16_t` = 512 bytes).
+    /// For Enum16: direct if range <= `DIRECT_LOOKUP_THRESHOLD`, otherwise binary search.
     bool use_direct_value_lookup = true;
 
-    /// Direct lookup array: value_to_index[value - min_value] = index into values
-    /// Only used when use_direct_value_lookup = true
-    /// Min/max values accessed via values.front()/back().second since values is sorted
+    /// Direct lookup array: `value_to_index[value - min_value]` = index into `values`.
+    /// Only used when `use_direct_value_lookup` is true.
+    /// Min/max values accessed via `values.front()`/`values.back()` since `values` is sorted.
     std::vector<uint16_t> value_to_index;
 
-    static constexpr uint16_t INVALID_INDEX = 65535;
+    static constexpr uint16_t INVALID_INDEX = std::numeric_limits<uint16_t>::max();
     static constexpr size_t DIRECT_LOOKUP_THRESHOLD = 1024;
+    /// `value_to_index` stores indices into `values`, whose size is bounded by the lookup range.
+    /// The `INVALID_INDEX` sentinel must not collide with a real index.
+    static_assert(DIRECT_LOOKUP_THRESHOLD < INVALID_INDEX);
 
     void buildLookupStructures();
 

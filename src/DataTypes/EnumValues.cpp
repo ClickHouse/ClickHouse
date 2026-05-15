@@ -108,26 +108,8 @@ void EnumValues<T>::buildLookupStructures()
 template <typename T>
 bool EnumValues<T>::hasValue(T value) const
 {
-    if (use_direct_value_lookup)
-    {
-        T min_val = values.front().second;
-        T max_val = values.back().second;
-        if (value < min_val || value > max_val)
-            return false;
-        /// Cast to Int32 first to avoid signed overflow
-        size_t idx = static_cast<size_t>(static_cast<Int32>(value) - static_cast<Int32>(min_val));
-        return value_to_index[idx] != INVALID_INDEX;
-    }
-    else
-    {
-        /// Early bounds check
-        if (value < values.front().second || value > values.back().second)
-            return false;
-        /// Binary search on values (already sorted by value)
-        auto it = std::lower_bound(values.begin(), values.end(), value,
-            [](const Value & v, T val) { return v.second < val; });
-        return it != values.end() && it->second == value;
-    }
+    std::string_view ignored;
+    return getNameForValue(value, ignored);
 }
 
 template <typename T>
