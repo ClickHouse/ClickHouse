@@ -1,6 +1,3 @@
--- Tags: no-parallel
--- no-parallel: SQL UDFs are global state and race with concurrent test workers (matches 02101_sql_user_defined_functions_create_or_replace.sql).
-
 -- New columns on system.functions: deterministic, higher_order.
 
 SELECT '-- columns exist with the expected types';
