@@ -1435,7 +1435,7 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
     ReadInfo current_info(
         info.cache_key, info.source_file_path, info.implementation_buffer_creator,
         info.use_external_buffer, info.cache_settings, info.local_fs_buffer_size,
-        /* read_until_position */range_begin + n);
+        /* read_until_position */range_begin + n, info.local_throttler);
 
     if (info.cache_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
