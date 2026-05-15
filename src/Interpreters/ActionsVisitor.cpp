@@ -223,6 +223,82 @@ ColumnsWithTypeAndName createBlockForSet(
     /// Reuse the analyzer logic
     return getSetElementsForConstantValue(left_arg_type, right_arg_value, right_arg_type, params);
 }
+
+bool hasIdentifiers(const ASTPtr & ast)
+{
+    IdentifierNameSet identifiers;
+    ast->collectIdentifierNames(identifiers);
+    return !identifiers.empty();
+}
+
+bool isNegativeInFunctionName(const String & name)
+{
+    return name == "notIn" || name == "globalNotIn" || name == "notNullIn" || name == "globalNotNullIn";
+}
+
+bool inFunctionComparesNulls(const String & name)
+{
+    return name == "nullIn" || name == "globalNullIn" || name == "notNullIn" || name == "globalNotNullIn";
+}
+
+ASTPtr makeArrayForNonConstantInRightOperand(const ASTPtr & right_operand, bool right_operand_is_array)
+{
+    if (const auto * function = right_operand->as<ASTFunction>())
+    {
+        if (function->name == "array")
+            return right_operand->clone();
+
+        if (function->name == "tuple")
+        {
+            auto array_function = makeASTFunction("array");
+            auto & array_arguments = array_function->arguments->children;
+            array_arguments.reserve(function->arguments->children.size());
+            for (const auto & child : function->arguments->children)
+                array_arguments.push_back(child->clone());
+            return array_function;
+        }
+    }
+
+    if (right_operand_is_array)
+        return right_operand->clone();
+
+    return makeASTFunction("array", right_operand->clone());
+}
+
+ASTPtr makeFunctionCall(const String & function_name, ASTs arguments)
+{
+    auto function = makeASTFunction(function_name);
+    function->arguments->children = std::move(arguments);
+    return function;
+}
+
+ASTPtr makeNonConstantInReplacement(const ASTFunction & node, bool right_operand_is_array)
+{
+    const auto & arguments = node.arguments->children;
+    const auto & left_operand = arguments.at(0);
+    const auto & right_operand = arguments.at(1);
+
+    auto has_function = makeASTFunction(
+        "has",
+        makeArrayForNonConstantInRightOperand(right_operand, right_operand_is_array),
+        left_operand->clone());
+
+    ASTPtr result = has_function;
+    if (!inFunctionComparesNulls(node.name))
+    {
+        result = makeFunctionCall("if",
+            {
+                makeASTFunction("isNull", left_operand->clone()),
+                make_intrusive<ASTLiteral>(Field{}),
+                std::move(result),
+            });
+    }
+
+    if (isNegativeInFunctionName(node.name))
+        result = makeASTFunction("not", std::move(result));
+
+    return result;
+}
 }
 
 FutureSetPtr makeExplicitSet(
@@ -780,6 +856,30 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         checkFunctionHasEmptyNullsAction(node);
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
         visit(node.arguments->children.at(0), data);
+
+        const auto & right_argument = node.arguments->children.at(1);
+        if (!right_argument->as<ASTSubquery>() && !right_argument->as<ASTTableIdentifier>() && hasIdentifiers(right_argument))
+        {
+            if (!data.only_consts)
+            {
+                bool right_argument_is_array = false;
+                const auto * right_argument_function = right_argument->as<ASTFunction>();
+                if (!right_argument_function || (right_argument_function->name != "array" && right_argument_function->name != "tuple"))
+                {
+                    visit(right_argument, data);
+                    if (auto name_and_type = getNameAndTypeFromAST(right_argument, data))
+                        right_argument_is_array = typeid_cast<const DataTypeArray *>(name_and_type->type.get()) != nullptr;
+                }
+
+                auto replacement = makeNonConstantInReplacement(node, right_argument_is_array);
+                visit(replacement, data);
+
+                auto replacement_name = replacement->getColumnName();
+                if (replacement_name != column_name)
+                    data.addAlias(replacement_name, column_name);
+            }
+            return;
+        }
 
         if (!data.no_makeset && !(data.is_create_parameterized_view && !analyzeReceiveQueryParams(ast).empty()))
             prepared_set = makeSet(node, data, data.no_subqueries);

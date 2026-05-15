@@ -237,7 +237,7 @@ QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
 
     /// Use the supertype of the LHS and all tuple elements, to support cases like
     /// `toUInt8(232) IN (1000, number)`. If no supertype exists, keep the old
-    /// behaviour and let per-element CAST handle (or reject) the mismatch
+    /// behaviour and let per-element `CAST` handle or reject the mismatch.
     DataTypes arg_types;
     arg_types.reserve(tuple_args.size() + 1);
     arg_types.push_back(in_first_argument->getResultType());
@@ -249,9 +249,11 @@ QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
         common_type = in_first_argument->getResultType();
 
     bool has_null = std::any_of(tuple_args.begin(), tuple_args.end(),
-        [](const auto & arg) { return isNullConstant(arg); });
+        [](const auto & arg) { return isNullConstant(arg); }) || isNullConstant(in_first_argument);
 
-    if ((has_null || !scope.context->getSettingsRef()[Setting::transform_null_in]) && !isNullableOrLowCardinalityNullable(common_type))
+    if ((has_null || !scope.context->getSettingsRef()[Setting::transform_null_in])
+        && !isTuple(common_type)
+        && !isNullableOrLowCardinalityNullable(common_type))
         common_type = makeNullableOrLowCardinalityNullable(common_type);
 
     for (const auto & arg : tuple_args)
