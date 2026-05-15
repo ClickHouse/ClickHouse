@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/PNGSerializer.h>
 #include <Processors/Chunk.h>
@@ -19,7 +20,7 @@ class PNGWriter;
 class PNGOutputFormat final : public IOutputFormat
 {
 public:
-    PNGOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
+    PNGOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_);
 
     String getName() const override { return "PNGOutputFormat"; }
 

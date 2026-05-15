@@ -18,13 +18,13 @@ namespace
 constexpr auto FORMAT_NAME = "PNG";
 }
 
-PNGOutputFormat::PNGOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
+PNGOutputFormat::PNGOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IOutputFormat(header_, out_)
 {
     writer = std::make_unique<PNGWriter>(out_, settings_);
-    serializer = std::make_unique<PNGSerializer>(header_, settings_, *writer);
+    serializer = std::make_unique<PNGSerializer>(*header_, settings_, *writer);
 
-    log = getLogger("PngOutputFormat");
+    log = getLogger("PNGOutputFormat");
 }
 
 void PNGOutputFormat::writePrefix()
@@ -87,8 +87,8 @@ void registerOutputFormatPNG(FormatFactory & factory)
 {
     factory.registerOutputFormat(
         FORMAT_NAME,
-        [](WriteBuffer & buf, const Block & sample, const FormatSettings & settings)
-        { return std::make_shared<PNGOutputFormat>(buf, sample, settings); });
+        [](WriteBuffer & buf, const Block & sample, const FormatSettings & settings, FormatFilterInfoPtr)
+        { return std::make_shared<PNGOutputFormat>(buf, std::make_shared<const Block>(sample), settings); });
 }
 
 }

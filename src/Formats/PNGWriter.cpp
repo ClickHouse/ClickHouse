@@ -64,7 +64,7 @@ PNGWriter::PNGWriter(WriteBuffer & out_, const FormatSettings & settings_)
     , log(::getLogger("PngWriter"))
 {
     bit_depth = settings.png_image.bit_depth;
-    compression_level = settings.png_image.compression_level;
+    compression_level = static_cast<int>(settings.png_image.compression_level);
     color_type = color_type_mapping[settings.png_image.pixel_output_format];
 
     width = settings.png_image.max_width;
