@@ -16,6 +16,8 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsBool implicit_select;
 }
 
 namespace ErrorCodes
@@ -42,6 +44,8 @@ public:
         max_query_size = settings[Setting::max_query_size];
         max_parser_depth = settings[Setting::max_parser_depth];
         max_parser_backtracks = settings[Setting::max_parser_backtracks];
+        allow_settings_after_format_in_insert = settings[Setting::allow_settings_after_format_in_insert];
+        implicit_select = settings[Setting::implicit_select];
     }
 
     String getName() const override { return name; }
@@ -68,7 +72,7 @@ public:
         {
             auto sql = col->getDataAt(i);
 
-            ParserQuery parser(sql.data() + sql.size());
+            ParserQuery parser(sql.data() + sql.size(), allow_settings_after_format_in_insert, implicit_select);
             auto ast = parseQuery(parser, sql.data(), sql.data() + sql.size(), "",
                 max_query_size, max_parser_depth, max_parser_backtracks);
 
@@ -82,6 +86,8 @@ private:
     size_t max_query_size;
     size_t max_parser_depth;
     size_t max_parser_backtracks;
+    bool allow_settings_after_format_in_insert;
+    bool implicit_select;
 };
 
 }
