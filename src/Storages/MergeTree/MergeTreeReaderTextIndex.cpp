@@ -104,7 +104,14 @@ void MergeTreeReaderTextIndex::setIndexGranule(MergeTreeIndexGranulePtr index_gr
     chassert(index_granule);
     granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(index_granule);
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType());
-    use_lazy_mode = lazy_mode_requested && postings_codec->getType() != IPostingListCodec::Type::None;
+
+    /// Lazy mode requires the per-segment block-index section emitted starting with the
+    /// WithCodec header version. Older Initial-format granules fall back to eager apply.
+    auto required_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec);
+    use_lazy_mode = lazy_mode_requested
+        && postings_codec->getType() != IPostingListCodec::Type::None
+        && granule->getSerializationVersion() >= required_version;
+
     postings_serialization = PostingsSerialization(std::move(postings_codec));
 }
 

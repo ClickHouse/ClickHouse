@@ -334,6 +334,7 @@ public:
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
     const String & getIndexIdForCaches() const { return index_id_for_caches; }
     IPostingListCodec::Type getPostingsCodecType() const { return postings_codec_type; }
+    MergeTreeIndexVersion getSerializationVersion() const { return serialization_version; }
 
     static PostingListPtr readPostingsBlock(
         MergeTreeIndexReaderStream & stream,
@@ -374,6 +375,8 @@ private:
     String index_id_for_caches;
     /// Codec type used to serialize postings in this granule.
     IPostingListCodec::Type postings_codec_type;
+    /// On-disk serialization version of the text index header.
+    MergeTreeIndexVersion serialization_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::Initial);
 };
 
 /// Text index granule created on writing of the index.

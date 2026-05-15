@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Common/ProfileEvents.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/ReadHelpers.h>
 #include <Common/TargetSpecific.h>
@@ -32,6 +33,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -75,29 +77,8 @@ UInt32 PostingListCursorHandle::cardinality() const
     return info->cardinality;
 }
 
-PostingListCursor::PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_)
-    : owned_handle(std::make_shared<PostingListCursorHandle>(stream_, info_))
-    , handle(owned_handle.get())
-{
-    initializeFromHandle();
-}
-
-PostingListCursor::PostingListCursor(const TokenPostingsInfo & info_)
-    : owned_handle(std::make_shared<PostingListCursorHandle>(info_))
-    , handle(owned_handle.get())
-{
-    initializeFromHandle();
-}
-
-PostingListCursor::PostingListCursor(const PostingListCursorHandle & handle_)
-    : handle(&handle_)
-{
-    initializeFromHandle();
-}
-
 PostingListCursor::PostingListCursor(PostingListCursorHandlePtr handle_)
-    : owned_handle(std::move(handle_))
-    , handle(owned_handle.get())
+    : handle(std::move(handle_))
 {
     initializeFromHandle();
 }
@@ -121,10 +102,9 @@ void PostingListCursor::initializeFromHandle()
 
     if (handle->is_embedded)
     {
-        /// Zero-copy: read directly from the handle's pre-decoded array. Multiple
-        /// ephemeral cursors over the same handle share this storage safely because the
-        /// handle is immutable after construction. This also lifts the previous
-        /// BLOCK_SIZE ceiling on embedded posting list cardinality.
+        /// Zero-copy: read directly from the handle's pre-decoded array.
+        /// Multiple ephemeral cursors over the same handle share this storage
+        /// safely because the handle is immutable after construction.
         decoded_count = handle->embedded_values.size();
         decoded_values_ptr = handle->embedded_values.data();
     }
@@ -151,7 +131,6 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
         return;
 
     chassert(segment_idx < handle->total_segments);
-
     UInt64 segment_file_offset = handle->info->offsets[segment_idx];
 
     /// Seek to segment start and read the header.
@@ -181,87 +160,44 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
     payload_buffer.resize(payload_bytes);
     data_buffer->readStrict(reinterpret_cast<char *>(payload_buffer.data()), payload_bytes);
 
-    if (handle->info->header & PostingsSerialization::Flags::HasBlockIndex)
+    if (!(handle->info->header & PostingsSerialization::Flags::HasBlockIndex))
     {
-        /// V2 Index Section follows immediately after the payload in the .pst stream.
-        /// No additional seek needed — just continue reading.
-        UInt64 num_blocks;
-        readVarUInt(num_blocks, *data_buffer);
-
-        UInt64 max_blocks = (segment_doc_count + BLOCK_SIZE - 1) / BLOCK_SIZE;
-        if (num_blocks > max_blocks)
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Posting list num_blocks {} exceeds maximum {} for segment with {} documents",
-                num_blocks, max_blocks, segment_doc_count);
-
-        block_last_row_ids.resize(num_blocks);
-        block_offsets.resize(num_blocks);
-
-        for (size_t i = 0; i < num_blocks; ++i)
-        {
-            UInt64 v;
-            readVarUInt(v, *data_buffer);
-            block_last_row_ids[i] = static_cast<UInt32>(v);
-        }
-
-        for (size_t i = 0; i < num_blocks; ++i)
-        {
-            UInt64 v;
-            readVarUInt(v, *data_buffer);
-            block_offsets[i] = v;
-        }
-
-        block_count = num_blocks;
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Lazy posting list cursor requires the per-segment block index (HasBlockIndex flag); "
+            "the reader must have disabled lazy mode for indexes without it");
     }
-    else
+
+    /// Index Section follows immediately after the payload in the .pst stream.
+    /// No additional seek needed — just continue reading.
+    UInt64 num_blocks;
+    readVarUInt(num_blocks, *data_buffer);
+
+    UInt64 max_blocks = (segment_doc_count + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    if (num_blocks > max_blocks)
     {
-        /// V1 format: no Index Section. Rebuild block metadata by scanning
-        /// the payload buffer to determine each block's offset and last_row_id.
-        block_count = (segment_doc_count + BLOCK_SIZE - 1) / BLOCK_SIZE;
-        block_offsets.resize(block_count);
-        block_last_row_ids.resize(block_count);
-
-        size_t offset = 0;
-        uint32_t running_row_id = segment_first_row_id;
-        for (size_t b = 0; b < block_count; ++b)
-        {
-            block_offsets[b] = offset;
-
-            size_t count = BLOCK_SIZE;
-            if (b == block_count - 1 && segment_doc_count % BLOCK_SIZE != 0)
-                count = segment_doc_count % BLOCK_SIZE;
-
-            if (offset >= payload_buffer.size())
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Corrupted V1 posting list: block offset {} out of payload bounds {}", offset, payload_buffer.size());
-
-            uint8_t bits = static_cast<uint8_t>(payload_buffer[offset]);
-            size_t packed_bytes = BitpackingBlockCodec::bitpackingCompressedBytes(count, bits);
-            offset += 1 + packed_bytes;
-
-            /// Decode block to determine its last_row_id.
-            size_t data_start = block_offsets[b] + 1;
-            if (data_start > payload_buffer.size() || packed_bytes > payload_buffer.size() - data_start)
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Posting list block data out of bounds: offset {}, packed_bytes {}, buffer size {}",
-                    data_start, packed_bytes, payload_buffer.size());
-
-            std::span<const std::byte> block_data(
-                reinterpret_cast<const std::byte *>(payload_buffer.data() + block_offsets[b] + 1),
-                packed_bytes);
-            uint32_t temp[BLOCK_SIZE];
-            std::span<uint32_t> out_span(temp, count);
-            BitpackingBlockCodec::decode(block_data, count, bits, out_span);
-
-            /// Convert deltas to absolute row ids.
-            for (size_t i = 0; i < count; ++i)
-            {
-                running_row_id += temp[i];
-                temp[i] = running_row_id;
-            }
-            block_last_row_ids[b] = temp[count - 1];
-        }
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Posting list num_blocks {} exceeds maximum {} for segment with {} documents",
+            num_blocks, max_blocks, segment_doc_count);
     }
+
+    block_last_row_ids.resize(num_blocks);
+    block_offsets.resize(num_blocks);
+
+    for (size_t i = 0; i < num_blocks; ++i)
+    {
+        UInt64 v;
+        readVarUInt(v, *data_buffer);
+        block_last_row_ids[i] = static_cast<UInt32>(v);
+    }
+
+    for (size_t i = 0; i < num_blocks; ++i)
+    {
+        UInt64 v;
+        readVarUInt(v, *data_buffer);
+        block_offsets[i] = v;
+    }
+
+    block_count = num_blocks;
     tail_size = segment_doc_count % BLOCK_SIZE;
     current_block = 0;
     decoded_count = 0;
@@ -460,9 +396,9 @@ inline uint32_t clampRowEnd(size_t row_offset, size_t num_rows)
 enum class PadOp { Or, And };
 
 template <PadOp op>
-inline void padColumn(UInt8 * __restrict out, const uint32_t * values, size_t row_begin, size_t begin, size_t length)
+inline void padColumn(UInt8 * __restrict out, const uint32_t * values, size_t row_begin, size_t begin, size_t end)
 {
-    for (size_t i = begin; i < length; ++i)
+    for (size_t i = begin; i < end; ++i)
     {
         size_t relative = values[i] - row_begin;
         if constexpr (op == PadOp::Or)
@@ -518,60 +454,6 @@ bool hasNoZeros(const UInt8 * data, size_t count)
     return memchr(data, 0, count) == nullptr;
 }
 
-#if USE_MULTITARGET_CODE
-DECLARE_X86_64_V3_SPECIFIC_CODE(
-/// Check whether a byte range contains only zero bytes (i.e., no position is set).
-/// Uses 256-bit (AVX2) loads with 4x loop unrolling for the hot path (128 bytes/iter).
-bool hasAllZeros(const UInt8 * data, size_t count)
-{
-    const __m256i * ptr = reinterpret_cast<const __m256i *>(data);
-
-    /// Process 128 bytes (4 x 32-byte vectors) per iteration.
-    size_t i = 0;
-    for (; i + 128 <= count; i += 128, ptr += 4)
-    {
-        __m256i v0 = _mm256_loadu_si256(ptr);
-        __m256i v1 = _mm256_loadu_si256(ptr + 1);
-        __m256i v2 = _mm256_loadu_si256(ptr + 2);
-        __m256i v3 = _mm256_loadu_si256(ptr + 3);
-
-        __m256i combined = _mm256_or_si256(_mm256_or_si256(v0, v1), _mm256_or_si256(v2, v3));
-        if (!_mm256_testz_si256(combined, combined))
-            return false;
-    }
-
-    /// Scalar tail.
-    const UInt8 * tail = data + i;
-    size_t remaining = count - i;
-    for (size_t j = 0; j < remaining; ++j)
-    {
-        if (tail[j] != 0)
-            return false;
-    }
-    return true;
-}
-) /// DECLARE_X86_64_V3_SPECIFIC_CODE
-#endif
-
-/// Runtime-dispatched `hasAllZeros`: returns true if all bytes in [data, data + count) are zero.
-bool hasAllZeros(const UInt8 * data, size_t count)
-{
-    if (count == 0)
-        return true;
-
-#if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::x86_64_v3))
-        return TargetSpecific::x86_64_v3::hasAllZeros(data, count);
-#endif
-
-    for (size_t i = 0; i < count; ++i)
-    {
-        if (data[i] != 0)
-            return false;
-    }
-    return true;
-}
-
 } // anonymous namespace
 
 void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_rows)
@@ -620,6 +502,7 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
 
         if (row_offset > seg_end)
             continue;
+
         if (row_offset + num_rows <= seg_begin)
             break;
 
@@ -629,10 +512,12 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
         {
             size_t clip_begin = std::max(seg_begin, row_offset);
             size_t clip_end = std::min(seg_end + 1, row_offset + num_rows);
+
             if (clip_begin < clip_end)
             {
                 size_t clip_off = clip_begin - row_offset;
                 size_t clip_count = clip_end - clip_begin;
+
                 if (hasNoZeros(data + clip_off, clip_count))
                 {
                     ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedCovered);
@@ -653,6 +538,7 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
             {
                 size_t clip_begin = std::max(seg_begin, row_offset);
                 size_t clip_end = std::min(seg_end + 1, row_offset + num_rows);
+
                 if (clip_begin < clip_end)
                 {
                     ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedDense);
@@ -663,15 +549,16 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
         }
 
         /// Decode all blocks in this segment that overlap with [row_offset, row_offset + num_rows).
-        for (size_t b = 0; b < block_count; ++b)
+        for (size_t block_idx = 0; block_idx < block_count; ++block_idx)
         {
-            uint32_t block_last = block_last_row_ids[b];
-            uint32_t block_first = (b == 0)
+            uint32_t block_last = block_last_row_ids[block_idx];
+            uint32_t block_first = (block_idx == 0)
                 ? static_cast<uint32_t>(seg_begin)
-                : (block_last_row_ids[b - 1] + 1);
+                : (block_last_row_ids[block_idx - 1] + 1);
 
             if (block_last < row_offset)
                 continue;
+
             if (block_first >= row_offset + num_rows)
                 break;
 
@@ -679,10 +566,12 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
             {
                 size_t blk_clip_begin = std::max(static_cast<size_t>(block_first), row_offset);
                 size_t blk_clip_end = std::min(static_cast<size_t>(block_last) + 1, row_offset + num_rows);
+
                 if (blk_clip_begin < blk_clip_end)
                 {
                     size_t blk_off = blk_clip_begin - row_offset;
                     size_t blk_cnt = blk_clip_end - blk_clip_begin;
+
                     if (hasNoZeros(data + blk_off, blk_cnt))
                     {
                         ProfileEvents::increment(ProfileEvents::TextIndexLazyBlocksSkippedCovered);
@@ -691,7 +580,7 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
                 }
             }
 
-            decodeBlock(b);
+            decodeBlock(block_idx);
 
             const auto * begin_it = std::lower_bound(decoded_values_ptr, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
             const auto * end_it = std::lower_bound(begin_it, decoded_values_ptr + decoded_count, clampRowEnd(row_offset, num_rows));
@@ -758,7 +647,7 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
             {
                 size_t clip_off = clip_begin - row_offset;
                 size_t clip_count = clip_end - clip_begin;
-                if (hasAllZeros(data + clip_off, clip_count))
+                if (memoryIsZero(data + clip_off, 0, clip_count))
                 {
                     ProfileEvents::increment(ProfileEvents::TextIndexLazyAndSegmentsSkippedZero);
                     continue;
@@ -810,7 +699,7 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
                 {
                     size_t blk_off = blk_clip_begin - row_offset;
                     size_t blk_cnt = blk_clip_end - blk_clip_begin;
-                    if (hasAllZeros(data + blk_off, blk_cnt))
+                    if (memoryIsZero(data + blk_off, 0, blk_cnt))
                     {
                         ProfileEvents::increment(ProfileEvents::TextIndexLazyAndBlocksSkippedZero);
                         continue;

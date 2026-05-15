@@ -362,6 +362,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(text_index_header->codec_type);
     auto postings_serialization = PostingsSerialization(std::move(postings_codec));
     postings_codec_type = text_index_header->codec_type;
+    serialization_version = text_index_header->version;
 
     analyzeDictionaryForTokens(text_index_header->sparse_index, postings_serialization, *dictionary_stream, state);
     analyzeDictionaryForPatterns(text_index_header->sparse_index, postings_serialization, *dictionary_stream, state);

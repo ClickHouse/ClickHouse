@@ -64,15 +64,15 @@ TokenPostingsInfo makeMaterializedSingleBlockInfo(const std::vector<uint32_t> & 
     return info;
 }
 
-/// Helper: create a PostingListCursor for an embedded posting list.
-PostingListCursorPtr makeEmbeddedCursor(const TokenPostingsInfo & info)
-{
-    return std::make_shared<PostingListCursor>(info);
-}
-
 PostingListCursorHandlePtr makeEmbeddedHandle(const TokenPostingsInfo & info)
 {
     return std::make_shared<PostingListCursorHandle>(info);
+}
+
+/// Helper: create a PostingListCursor for an embedded posting list.
+PostingListCursorPtr makeEmbeddedCursor(const TokenPostingsInfo & info)
+{
+    return std::make_shared<PostingListCursor>(makeEmbeddedHandle(info));
 }
 
 /// Helper: generate a sequence of doc IDs: {start, start+step, start+2*step, ...}
@@ -253,7 +253,7 @@ PostingListCursorPtr makeMultiBlockCursor(const MultiBlockTestData & data)
     /// before the cursor calls advanceToMark.
     data.stream->getDataBuffer();
 
-    return std::make_shared<PostingListCursor>(*data.stream, data.info);
+    return std::make_shared<PostingListCursor>(std::make_shared<PostingListCursorHandle>(*data.stream, data.info));
 }
 
 PostingListCursorHandlePtr makeMultiBlockHandle(const MultiBlockTestData & data)

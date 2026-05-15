@@ -75,14 +75,7 @@ using PostingListCursorHandlePtr = std::shared_ptr<PostingListCursorHandle>;
 class PostingListCursor
 {
 public:
-    /// Construct a cursor with a .pst reader stream (compressed posting lists).
-    PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_);
-
-    /// Construct a cursor without a stream (embedded posting lists only).
-    explicit PostingListCursor(const TokenPostingsInfo & info_);
-
     /// Construct a cursor from an immutable handle.
-    explicit PostingListCursor(const PostingListCursorHandle & handle_);
     explicit PostingListCursor(PostingListCursorHandlePtr handle_);
 
     /// Set bits in `data` for all doc_ids in [row_offset, row_offset + num_rows).
@@ -128,8 +121,7 @@ private:
     /// Decode the packed block at `block_idx` into `decoded_values`.
     void decodeBlock(size_t block_idx);
 
-    PostingListCursorHandlePtr owned_handle;
-    const PostingListCursorHandle * handle = nullptr;
+    PostingListCursorHandlePtr handle;
 
     /// Decoded doc_ids of the current packed block. Used as a scratch buffer when
     /// iterating compressed posting lists; `decoded_values_ptr` is then redirected to
@@ -162,7 +154,6 @@ private:
     /// Segment iteration state.
     size_t current_segment_idx = 0;
     bool has_prepared_first_segment = false;
-
     bool is_valid = true;
 };
 
