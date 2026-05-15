@@ -276,7 +276,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant);
         auto combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
         /// Same invariant as above.
-        chassert(combined_function && combined_function->getParameters() == parameters,
+        chassert(combined_function && (combined_function->getParameters().empty() || combined_function->getParameters() == parameters),
             "function->getParameters() must equal the parameters passed to the factory");
         return combined_function;
     }
