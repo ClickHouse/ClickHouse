@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel-replicas
 -- no-fasttest: 'countmin' sketches need a 3rd party library
 
 SET allow_statistics = 1;
