@@ -33,10 +33,8 @@ public:
         AsciiCJK,
     };
 
-    ITokenizer() = default;
     explicit ITokenizer(Type type_) : type(type_) {}
     ITokenizer(const ITokenizer &) = default;
-    ITokenizer & operator=(const ITokenizer &) = default;
 
     Type getType() const { return type; }
 
@@ -94,8 +92,10 @@ public:
     virtual void stringLikeToTokens(const char * data, size_t length, std::vector<String> & tokens) const = 0;
     virtual bool supportsStringLike() const = 0;
 
+    constexpr bool isArrayTokenizer() const { return type == Type::Array; }
+
 private:
-    Type type;
+    const Type type;
 };
 
 using TokenizerPtr = const ITokenizer *;

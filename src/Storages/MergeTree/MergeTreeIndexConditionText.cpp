@@ -226,14 +226,13 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         || function_name == "hasAllTokens")
         return TextIndexDirectReadMode::Exact;
 
-    bool is_array_tokenizer = typeid_cast<const ArrayTokenizer *>(tokenizer);
     bool has_preprocessor = preprocessor && preprocessor->hasActions();
 
     /// Exact mode is possible when the array tokenizer is used without a preprocessor.
     /// has/hasAll/hasAny operate on array elements directly and bypass the postprocessor
     /// (just as they bypass the tokenizer and preprocessor), so a postprocessor does not
     /// affect the mode selection for these functions.
-    const bool read_mode_can_be_exact = is_array_tokenizer && !has_preprocessor;
+    const bool read_mode_can_be_exact = tokenizer->isArrayTokenizer() && !has_preprocessor;
 
     if (function_name == "equals"
         || function_name == "has"
@@ -690,6 +689,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     const auto & settings = getContext()->getSettingsRef();
 
+    const bool is_array_tokenizer = tokenizer->isArrayTokenizer();
+    const bool has_preprocessor = preprocessor && preprocessor->hasActions();
+    const bool has_postprocessor = postprocessor && postprocessor->hasActions();
+
     /// like/ilike optimization is only supported for splitByNonAlpha and array tokenizers.
     static const std::unordered_set<ITokenizer::Type> like_optimization_supported_tokenizers = {
         ITokenizer::Type::SplitByNonAlpha,
@@ -708,33 +711,29 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return true;
         };
 
-        /// The array tokenizer stores raw elements (the index build skips the postprocessor for it,
-        /// matching has/hasAll/hasAny semantics), so the lookup must also skip it to avoid false-negative pruning.
-        const bool apply_postprocessor = typeid_cast<const ArrayTokenizer *>(tokenizer) == nullptr;
-
         /// mapContainsKey* can be used only with an index defined as `mapKeys(Map(String, ...))`
         if (has_map_keys_column)
         {
             if (function_name == "mapContainsKey" || function_name == "has")
-                return make_map_function(stringToTokens(value_field, true, apply_postprocessor));
+                return make_map_function(stringToTokens(value_field, true, !is_array_tokenizer));
             if (function_name == "mapContainsKeyLike" && tokenizer->supportsStringLike())
-                return make_map_function(stringLikeToTokens(value_field, true, apply_postprocessor));
+                return make_map_function(stringLikeToTokens(value_field, true, !is_array_tokenizer));
         }
 
         /// mapContainsValue* can be used only with an index defined as `mapValues(Map(String, ...))`
         if (has_map_values_column)
         {
             if (function_name == "mapContainsValue")
-                return make_map_function(stringToTokens(value_field, true, apply_postprocessor));
+                return make_map_function(stringToTokens(value_field, true, !is_array_tokenizer));
             if (function_name == "mapContainsValueLike" && tokenizer->supportsStringLike())
-                return make_map_function(stringLikeToTokens(value_field, true, apply_postprocessor));
+                return make_map_function(stringLikeToTokens(value_field, true, !is_array_tokenizer));
         }
 
         return false;
     }
     if (function_name == "equals")
     {
-        auto tokens = stringToTokens(value_field, true, true);
+        auto tokens = stringToTokens(value_field, true, !is_array_tokenizer);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
@@ -746,7 +745,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         // hasAny/AllTokens funcs accept either string which will be tokenized or array of strings to be used as-is
         if (value_data_type.isString())
         {
-            search_tokens = stringToTokens(value_field, true, true);
+            search_tokens = stringToTokens(value_field, true, !is_array_tokenizer);
         }
         else
         {
@@ -789,9 +788,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             out.function = function_name == "hasAny" ? RPNElement::ALWAYS_FALSE : RPNElement::ALWAYS_TRUE;
             return true;
         }
-
-        const bool is_array_tokenizer = typeid_cast<const ArrayTokenizer *>(tokenizer) != nullptr;
-        const bool has_preprocessor = preprocessor && preprocessor->hasActions();
 
         if ((is_array_tokenizer && !has_preprocessor) || function_name == "hasAll")
         {
@@ -925,8 +921,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     /// Currently, not all token extractors support LIKE-style matching.
     if (function_name == "like")
     {
-        const bool has_preprocessor = preprocessor && preprocessor->hasActions();
-        const bool has_postprocessor = postprocessor && postprocessor->hasActions();
         /// Requires explicit opt-in via use_text_index_like_evaluation_by_dictionary_scan because scanning
         /// the index dictionary for pattern-matching tokens has non-trivial overhead.
         if (like_optimization_supported_tokenizers.contains(tokenizer->getType()) && !has_preprocessor && !has_postprocessor
@@ -964,8 +958,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "ilike" && like_optimization_supported_tokenizers.contains(tokenizer->getType())
         && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
     {
-        const bool has_preprocessor = preprocessor && preprocessor->hasActions();
-        const bool has_postprocessor = postprocessor && postprocessor->hasActions();
         if (has_preprocessor && !preprocessor->isLowerOrUpper())
             return false;
         if (has_postprocessor)
@@ -1126,7 +1118,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     if (result_column->getBool(0))
         return false;
 
-    auto tokens = stringToTokens(*key_const_value, true, true);
+    auto tokens = stringToTokens(*key_const_value, true, !tokenizer->isArrayTokenizer());
     out.function = RPNElement::FUNCTION_EQUALS;
     out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>("mapContainsKey", TextSearchMode::All, getHintOrNoneMode(), std::move(tokens)));
     return true;
