@@ -167,6 +167,7 @@ def _format_block_preview(rel: str, lines_in_block: list[int], context: int = 2)
 
 if __name__ == "__main__":
     BASE = f"{temp_dir}/base_llvm_coverage.info"
+    BASE2 = f"{temp_dir}/base_llvm_coverage_2.info"
     CURR = f"{temp_dir}/llvm_coverage.info"
 
     if not (os.path.exists(BASE) and os.path.exists(CURR)):
@@ -183,6 +184,40 @@ if __name__ == "__main__":
     print(f"Parsing current coverage from {CURR} ...")
     curr_data = _parse_info(CURR)
     print(f"  {len(curr_data)} files in current")
+
+    # Cross-validation against a second, older master baseline. Without it,
+    # the coverage build's run-to-run variance (typically ~1000 lines flicker
+    # between two adjacent master runs) shows up as false-positive newly-
+    # covered lines. With it, we keep only lines that are uncovered in BOTH
+    # masters — i.e. genuinely cold code, not "sometimes-cold" code that
+    # happens to be hit this run by chance. Store baseline-2's zero set as
+    # a (rel, key) pair-set rather than a full dict to keep peak memory low.
+    have_base2 = os.path.exists(BASE2) and os.path.getsize(BASE2) > 0
+    base2_zero_lines: set[tuple[str, int]] = set()
+    base2_zero_fns: set[tuple[str, str]] = set()
+    if have_base2:
+        print(f"Parsing second baseline coverage from {BASE2} ...")
+        _b2 = _parse_info(BASE2)
+        print(f"  {len(_b2)} files in second baseline")
+        for _rel, _v in _b2.items():
+            for _ln, _cnt in _v["lines"].items():
+                if _cnt == 0:
+                    base2_zero_lines.add((_rel, _ln))
+            for _fn, _cnt in _v["fns"].items():
+                if _cnt == 0:
+                    base2_zero_fns.add((_rel, _fn))
+        del _b2
+        print(
+            f"  cross-validation enabled: requiring uncovered in both master baselines "
+            f"({len(base2_zero_lines):,} candidate lines / {len(base2_zero_fns):,} functions in B2)"
+        )
+    else:
+        print(
+            "Note: second master baseline not available — falling back to "
+            "single-baseline mode. The count below may include run-to-run "
+            "coverage variance (~1000 lines is typical noise between two "
+            "adjacent master runs)."
+        )
 
     # Overall coverage delta vs master baseline, computed from the parsed
     # tracefiles directly. These numbers may diverge from `lcov --summary` by a
@@ -229,11 +264,22 @@ if __name__ == "__main__":
             # to "test newly covers code that existed before". Skip.
             continue
         for ln, cnt in c["lines"].items():
-            if cnt > 0 and b["lines"].get(ln) == 0 and not _is_noise(rel, ln):
-                nc_lines[rel].append(ln)
+            if cnt <= 0 or b["lines"].get(ln) != 0:
+                continue
+            # If a second master baseline was downloaded, require that the line
+            # is also uncovered there. If the line is absent or non-zero in B2,
+            # treat it as flutter and drop it.
+            if have_base2 and (rel, ln) not in base2_zero_lines:
+                continue
+            if _is_noise(rel, ln):
+                continue
+            nc_lines[rel].append(ln)
         for fn, cnt in c["fns"].items():
-            if cnt > 0 and b["fns"].get(fn) == 0:
-                nc_fns[rel].append(fn)
+            if cnt <= 0 or b["fns"].get(fn) != 0:
+                continue
+            if have_base2 and (rel, fn) not in base2_zero_fns:
+                continue
+            nc_fns[rel].append(fn)
 
     total_lines = sum(len(v) for v in nc_lines.values())
     total_fns = sum(len(v) for v in nc_fns.values())
