@@ -128,10 +128,39 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         std::vector<IConnectionPool::Entry> connection_entries;
         if (!result.entry.isNull() && result.is_usable)
         {
-            if (extension_ && extension_->parallel_reading_coordinator)
-                ProfileEvents::increment(ProfileEvents::ParallelReplicasAvailableCount);
+            chassert(result.entry->isConnected());
 
-            connection_entries.emplace_back(std::move(result.entry));
+            const auto protocol_version = result.entry->getServerRevision(ConnectionTimeouts{});
+            const auto parallel_replicas_version = result.entry->getParallelReplicasProtocolVersion();
+
+            if (extension_ && extension_->parallel_reading_coordinator)
+            {
+                // consider only replicas with support of stream id, otherwise we can get incorrect result
+                // replicas with older version considered as unavailable
+                if (protocol_version >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS
+                    && parallel_replicas_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID)
+                {
+                    ProfileEvents::increment(ProfileEvents::ParallelReplicasAvailableCount);
+
+                    connection_entries.emplace_back(std::move(result.entry));
+                }
+                else
+                {
+                    LOG_DEBUG(
+                        log ? log : getLogger("RemoteQueryExecutor"),
+                        "Disconnecting replica {} (protocol_version={}, parallel_replicas_version={}): "
+                        "no stream_id support (requires parallel_replicas_version >= {})",
+                        result.entry->getDescription(),
+                        protocol_version,
+                        parallel_replicas_version,
+                        DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID);
+                    result.entry->disconnect();
+                }
+            }
+            else
+            {
+                connection_entries.emplace_back(std::move(result.entry));
+            }
         }
         else
         {
@@ -185,10 +214,15 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const Tables & external_tables_,
     QueryProcessingStage::Enum stage_,
     std::shared_ptr<const QueryPlan> query_plan_,
-    std::optional<Extension> extension_)
+    std::optional<Extension> extension_,
+    ConnectionPoolWithFailoverPtr pool)
     : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, std::move(query_plan_), extension_)
 {
-    create_connections = [this, connections_, throttler, extension_](AsyncCallback) mutable
+    /// Capture `pool` in the lambda to prevent the connection pool from being destroyed
+    /// while entries are still in use. The Entry objects hold raw references (via PoolEntryHelper)
+    /// back to the pool's internal PooledObject and PoolBase structures, so the pool must
+    /// outlive all Entry objects.
+    create_connections = [this, connections_, throttler, extension_, pool](AsyncCallback) mutable
     {
         auto res = std::make_unique<MultiplexedConnections>(std::move(connections_), context, throttler);
         if (extension_ && extension_->replica_info)
@@ -927,7 +961,7 @@ void RemoteQueryExecutor::sendExternalTables()
                 data->creating_pipe_callback = [cur, limits, my_context = this->context]()
                 {
                     SelectQueryInfo query_info;
-                    auto metadata_snapshot = cur->getInMemoryMetadataPtr();
+                    auto metadata_snapshot = cur->getInMemoryMetadataPtr(my_context, false);
                     auto storage_snapshot = cur->getStorageSnapshot(metadata_snapshot, my_context);
                     QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(
                         my_context, QueryProcessingStage::Complete, storage_snapshot, query_info);

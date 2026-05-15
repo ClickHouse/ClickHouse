@@ -113,15 +113,15 @@ private:
     FormatSettings format_settings;
 };
 
-class FormatRowOverloadResolver : public IFunctionOverloadResolver
+class FormatRowOverloadResolver : public IFunctionOverloadResolver, private WithContext
 {
 public:
     FormatRowOverloadResolver(const char * name_, bool no_newline_, ContextPtr context_)
-        : function_name(name_), no_newline(no_newline_), context(context_) {}
+        : WithContext(context_), function_name(name_), no_newline(no_newline_) {}
 
-    static FunctionOverloadResolverPtr create(const char * name, bool no_newline, ContextPtr context)
+    static FunctionOverloadResolverPtr create(const char * name, bool no_newline, ContextPtr context_)
     {
-        return std::make_unique<FormatRowOverloadResolver>(name, no_newline, std::move(context));
+        return std::make_unique<FormatRowOverloadResolver>(name, no_newline, std::move(context_));
     }
 
     String getName() const override { return function_name; }
@@ -143,7 +143,7 @@ public:
 
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments.at(0).column.get()))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
-                std::make_shared<FunctionFormatRow>(function_name, no_newline, name_col->getValue<String>(), std::move(arguments_column_names), context),
+                std::make_shared<FunctionFormatRow>(function_name, no_newline, name_col->getValue<String>(), std::move(arguments_column_names), getContext()),
                 DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
                 return_type);
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument to {} must be a format name", getName());
@@ -154,7 +154,6 @@ public:
 private:
     const char * function_name;
     bool no_newline;
-    ContextPtr context;
 };
 
 }
