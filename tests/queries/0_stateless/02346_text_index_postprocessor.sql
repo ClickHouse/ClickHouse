@@ -664,7 +664,32 @@ SELECT count() FROM tab WHERE mapContainsValue(val, 'foo');   -- 0
 
 DROP TABLE tab;
 
-SELECT '26. hasTokenOrNull: stop-word postprocessor is honored consistently across index and row-scan paths.';
+SELECT '26. String column + array tokenizer + postprocessor: equals / hasAllTokens bypass postprocessor (raw match).';
+-- With tokenizer=array the index build skips the postprocessor (stores raw values).
+-- equals and hasAllTokens must also skip it on the lookup side; otherwise the postprocessed
+-- needle would never match the raw stored value and matching granules would be falsely pruned.
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'array', postprocessor = lower(val))
+) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'Foo'), (2, 'BAR'), (3, 'baz');
+
+-- Raw needle matches the literal stored value (postprocessor bypassed on both sides).
+SELECT count() FROM tab WHERE val = 'Foo';                        -- 1
+SELECT count() FROM tab WHERE val = 'BAR';                        -- 1
+SELECT count() FROM tab WHERE val = 'baz';                        -- 1
+-- Lower-cased needle does not match: postprocessor bypassed → stored value is 'Foo'.
+SELECT count() FROM tab WHERE val = 'foo';                        -- 0
+SELECT count() FROM tab WHERE hasAllTokens(val, 'Foo');           -- 1
+SELECT count() FROM tab WHERE hasAllTokens(val, 'foo');           -- 0
+
+DROP TABLE tab;
+
+SELECT '27. hasTokenOrNull: stop-word postprocessor is honored consistently across index and row-scan paths.';
 -- Mirrors test 10 for hasTokenOrNull. hasTokenOrNull is treated like hasToken in the optimization
 -- (Exact direct-read mode + needApplyPostprocessor), so the rewrite applies on both materialized
 -- and non-materialized parts. Without the fix, granule pruning would diverge from row-level
@@ -697,7 +722,7 @@ SELECT countIf(hasTokenOrNull(val, 'missing') IS NULL) FROM tab;   -- 0
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
-SELECT '27. Negative tests.';
+SELECT '28. Negative tests.';
 
 SELECT '- The postprocessor expression must reference the index column';
 CREATE TABLE tab

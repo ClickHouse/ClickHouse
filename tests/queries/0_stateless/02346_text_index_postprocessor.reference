@@ -152,7 +152,14 @@ started	1
 1
 1
 0
-26. hasTokenOrNull: stop-word postprocessor is honored consistently across index and row-scan paths.
+26. String column + array tokenizer + postprocessor: equals / hasAllTokens bypass postprocessor (raw match).
+1
+1
+1
+0
+1
+0
+27. hasTokenOrNull: stop-word postprocessor is honored consistently across index and row-scan paths.
 0
 1
 1
@@ -160,7 +167,7 @@ started	1
 4
 4
 0
-27. Negative tests.
+28. Negative tests.
 - The postprocessor expression must reference the index column
 - The postprocessor expression must be a function, not an identifier
 - The postprocessor expression must return String
