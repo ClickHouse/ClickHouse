@@ -161,7 +161,7 @@ def partition_table_complex(started_cluster):
     q("DROP TABLE IF EXISTS test.partition_complex")
     q(
         "CREATE TABLE test.partition_complex (p Date, k Int8, v1 Int8 MATERIALIZED k + 1) "
-        "ENGINE = MergeTree PARTITION BY p ORDER BY k SETTINGS index_granularity=1, index_granularity_bytes=0, compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1, serialization_info_version='basic', replace_long_file_name_to_hash=false"
+        "ENGINE = MergeTree PARTITION BY p ORDER BY k SETTINGS index_granularity=1, index_granularity_bytes=0, compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1, serialization_info_version='basic', replace_long_file_name_to_hash=false, add_minmax_index_for_numeric_columns=0"
     )
     q("INSERT INTO test.partition_complex (p, k) VALUES(toDate(31), 1)")
     q("INSERT INTO test.partition_complex (p, k) VALUES(toDate(1), 2)")

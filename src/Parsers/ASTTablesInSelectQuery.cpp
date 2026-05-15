@@ -47,6 +47,7 @@ void ASTTableJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases)
     hash_state.update(locality);
     hash_state.update(strictness);
     hash_state.update(kind);
+    hash_state.update(is_natural);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -204,6 +205,9 @@ void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSetting
         }
     }
 
+    if (is_natural)
+        ostr << "NATURAL ";
+
     switch (kind)
     {
         case JoinKind::Inner:
@@ -233,7 +237,6 @@ void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSetting
 
 void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
     frame.expression_list_prepend_whitespace = false;
 
     if (using_expression_list)
@@ -250,7 +253,7 @@ void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings
        /** If there is an alias for the whole expression we wrap the ON clause in parens in two cases:
          *  1. collapse_identical_nodes_to_aliases is true (meaning old analyzer is being used) AND the alias was
          *     defined earlier in the query
-         *  2. collapse_identical_nodes_to_aliases is false (new analyzer) - because we will not make any substitutions
+         *  2. collapse_identical_nodes_to_aliases is false (the analyzer) - because we will not make any substitutions
          */
         bool on_need_parens = false;
         auto on_alias = on_expression->tryGetAlias();
@@ -263,10 +266,19 @@ void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings
 
 
         if (on_need_parens)
+        {
             ostr << "(";
-        on_expression->format(ostr, settings, state, frame);
-        if (on_need_parens)
+            /// We have just emitted `(` around the ON expression, so suppress the
+            /// child's own `parenthesized` parens (which would otherwise duplicate ours).
+            FormatStateStacked inner_frame = frame;
+            inner_frame.wrapped_in_parens = true;
+            on_expression->format(ostr, settings, state, inner_frame);
             ostr << ")";
+        }
+        else
+        {
+            on_expression->format(ostr, settings, state, frame);
+        }
     }
 }
 

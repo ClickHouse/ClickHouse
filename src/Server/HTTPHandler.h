@@ -8,7 +8,7 @@
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <IO/CascadeWriteBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Common/re2.h>
@@ -149,7 +149,7 @@ private:
         HTMLForm & params,
         HTTPServerResponse & response,
         Output & used_output,
-        CurrentThread::QueryScope & query_scope,
+        QueryScope & query_scope,
         const ProfileEvents::Event & write_event);
 
     bool trySendExceptionToClient(

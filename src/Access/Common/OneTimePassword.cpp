@@ -90,14 +90,14 @@ static OneTimePasswordParams::Algorithm hashingAlgorithmFromString(const String 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown algorithm for one-time password: '{}'", algorithm_name);
 }
 
-OneTimePasswordParams::OneTimePasswordParams(Int32 num_digits_, Int32 period_, const String & algorithm_name_)
+OneTimePasswordParams::OneTimePasswordParams(std::optional<Int32> num_digits_, std::optional<Int32> period_, std::optional<String> algorithm_name_)
 {
-    if (num_digits_)
-        num_digits = num_digits_;
-    if (period_)
-        period = period_;
-    if (!algorithm_name_.empty())
-        algorithm = hashingAlgorithmFromString(algorithm_name_);
+    if (num_digits_.has_value())
+        num_digits = num_digits_.value();
+    if (period_.has_value())
+        period = period_.value();
+    if (algorithm_name_.has_value())
+        algorithm = hashingAlgorithmFromString(algorithm_name_.value());
 
     if (num_digits < 4 || 10 < num_digits)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid number of digits for one-time password: {}", num_digits);

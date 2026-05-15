@@ -3,13 +3,21 @@
 #include <base/MemorySanitizer.h>
 #include <base/hex.h>
 #include <base/sort.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
+#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/SymbolIndex.h>
 
 #include <algorithm>
 #include <optional>
 
 #include <filesystem>
+
+#if defined(OS_DARWIN)
+#include <Common/MachO.h>
+#include <mach-o/loader.h>
+#include <mach-o/nlist.h>
+#include <mach-o/dyld.h>
+#include <cstring>
+#endif
 
 /**
 
@@ -52,7 +60,14 @@ If you have debug info (you build ClickHouse by yourself or install clickhouse-c
 Otherwise you will get only symbol names. If your binary contains symbol table in section headers (the default, unless stripped), you will get all symbol names.
 Otherwise you will get only exported symbols from program headers.
 
+On macOS (Mach-O format), the symbol table is accessed via LC_SYMTAB load command.
+The __LINKEDIT segment contains both the symbol table (nlist_64 entries) and the string table.
+Images are enumerated via _dyld_image_count / _dyld_get_image_header / _dyld_get_image_vmaddr_slide.
+Build ID equivalent is LC_UUID (16-byte UUID).
+
 */
+
+#if defined(__ELF__)
 
 extern "C" struct dl_phdr_info
 {
@@ -70,12 +85,16 @@ using DynamicLinkingProgramHeaderInfo = dl_phdr_info;
 
 extern "C" int dl_iterate_phdr(int (*)(DynamicLinkingProgramHeaderInfo *, size_t, void *), void *);
 
+#endif
+
 
 namespace DB
 {
 
 namespace
 {
+
+#if defined(__ELF__)
 
 /// Notes: "PHDR" is "Program Headers".
 /// To look at program headers, run:
@@ -465,6 +484,186 @@ int collectSymbols(DynamicLinkingProgramHeaderInfo * info, size_t, void * data_p
     return 0;
 }
 
+#elif defined(OS_DARWIN)
+
+/// Collect symbols from a single Mach-O image loaded in the current process.
+/// Uses the in-memory __LINKEDIT segment to access the symbol table (LC_SYMTAB)
+/// without opening any files.
+void collectSymbolsFromMachOImage(
+    uint32_t image_index,
+    std::vector<SymbolIndex::Symbol> & all_symbols,
+    std::vector<SymbolIndex::Object> & objects,
+    String & self_build_id)
+{
+    const struct mach_header_64 * header
+        = reinterpret_cast<const struct mach_header_64 *>(_dyld_get_image_header(image_index));
+    if (!header || header->magic != MH_MAGIC_64)
+        return;
+
+    intptr_t slide = _dyld_get_image_vmaddr_slide(image_index);
+    const char * image_name = _dyld_get_image_name(image_index);
+
+    const uint8_t * cmd_ptr = reinterpret_cast<const uint8_t *>(header + 1);
+
+    const struct symtab_command * symtab_cmd = nullptr;
+    const struct segment_command_64 * linkedit_segment = nullptr;
+
+    bool found_text = false;
+    uintptr_t min_addr = UINTPTR_MAX;
+    uintptr_t max_addr = 0;
+
+    for (uint32_t i = 0; i < header->ncmds; ++i)
+    {
+        const struct load_command * cmd = reinterpret_cast<const struct load_command *>(cmd_ptr);
+
+        if (cmd->cmd == LC_SEGMENT_64)
+        {
+            const struct segment_command_64 * seg = reinterpret_cast<const struct segment_command_64 *>(cmd);
+
+            /// Track address range, skip __PAGEZERO (which has filesize == 0)
+            if (seg->filesize > 0 && seg->vmsize > 0)
+            {
+                uintptr_t seg_start = seg->vmaddr + slide;
+                uintptr_t seg_end = seg_start + seg->vmsize;
+                min_addr = std::min(min_addr, seg_start);
+                max_addr = std::max(max_addr, seg_end);
+            }
+
+            if (strcmp(seg->segname, "__LINKEDIT") == 0)
+                linkedit_segment = seg;
+            else if (strcmp(seg->segname, "__TEXT") == 0)
+                found_text = true;
+        }
+        else if (cmd->cmd == LC_SYMTAB)
+        {
+            symtab_cmd = reinterpret_cast<const struct symtab_command *>(cmd);
+        }
+        else if (cmd->cmd == LC_UUID)
+        {
+            /// Extract build ID (LC_UUID) for the main executable (image_index == 0)
+            if (image_index == 0 && self_build_id.empty())
+            {
+                /// uuid_command layout: { uint32_t cmd, uint32_t cmdsize, uint8_t uuid[16] }
+                const uint8_t * uuid_bytes = cmd_ptr + 8;
+                self_build_id.assign(reinterpret_cast<const char *>(uuid_bytes), 16);
+            }
+        }
+
+        cmd_ptr += cmd->cmdsize;
+    }
+
+    if (!symtab_cmd || !linkedit_segment || !found_text)
+        return;
+
+    /// The __LINKEDIT segment is mapped into memory.
+    /// Convert file offsets from LC_SYMTAB to in-memory addresses:
+    ///   memory_addr = linkedit_vmaddr + slide - linkedit_fileoff + file_offset
+    uintptr_t linkedit_base = linkedit_segment->vmaddr + slide - linkedit_segment->fileoff;
+
+    const struct nlist_64 * sym_table
+        = reinterpret_cast<const struct nlist_64 *>(linkedit_base + symtab_cmd->symoff);
+    const char * str_table
+        = reinterpret_cast<const char *>(linkedit_base + symtab_cmd->stroff);
+
+    std::vector<SymbolIndex::Symbol> local_symbols;
+    local_symbols.reserve(symtab_cmd->nsyms / 4);
+
+    for (uint32_t j = 0; j < symtab_cmd->nsyms; ++j)
+    {
+        const struct nlist_64 & sym = sym_table[j];
+
+        /// Skip debug symbols (STABS entries)
+        if (sym.n_type & N_STAB)
+            continue;
+        /// Skip undefined symbols
+        if ((sym.n_type & N_TYPE) == N_UNDF)
+            continue;
+        /// Skip symbols with no address
+        if (sym.n_value == 0)
+            continue;
+
+        uint32_t str_index = sym.n_un.n_strx;
+        if (str_index == 0 || str_index >= symtab_cmd->strsize)
+            continue;
+
+        const char * sym_name = str_table + str_index;
+        if (!sym_name || sym_name[0] == '\0')
+            continue;
+
+        /// Mach-O prepends an underscore to C/C++ symbol names
+        if (sym_name[0] == '_')
+            sym_name++;
+
+        if (sym_name[0] == '\0')
+            continue;
+
+        SymbolIndex::Symbol symbol;
+        /// On macOS, store absolute virtual addresses (n_value + slide) to avoid
+        /// overlap between symbols from different objects that would have the same
+        /// relative offsets. findSymbol skips the address-to-offset conversion on macOS.
+        symbol.offset_begin = reinterpret_cast<const void *>(sym.n_value + slide);
+        symbol.offset_end = symbol.offset_begin; /// Size will be computed below
+        symbol.name = sym_name;
+
+        local_symbols.push_back(symbol);
+    }
+
+    /// Sort by address and compute sizes from gaps between consecutive symbols
+    ::sort(local_symbols.begin(), local_symbols.end(),
+        [](const SymbolIndex::Symbol & a, const SymbolIndex::Symbol & b)
+        { return a.offset_begin < b.offset_begin; });
+
+    /// Deduplicate symbols at the same address
+    local_symbols.erase(std::unique(local_symbols.begin(), local_symbols.end(),
+        [](const SymbolIndex::Symbol & a, const SymbolIndex::Symbol & b)
+        { return a.offset_begin == b.offset_begin; }),
+        local_symbols.end());
+
+    /// Mach-O nlist_64 entries don't have a size field.
+    /// Estimate each symbol's size as the distance to the next symbol.
+    for (size_t i = 0; i + 1 < local_symbols.size(); ++i)
+        local_symbols[i].offset_end = local_symbols[i + 1].offset_begin;
+
+    /// Last symbol extends to the end of the image
+    if (!local_symbols.empty() && max_addr > min_addr)
+        local_symbols.back().offset_end = reinterpret_cast<const void *>(max_addr);
+
+    all_symbols.insert(all_symbols.end(), local_symbols.begin(), local_symbols.end());
+
+    if (min_addr < max_addr)
+    {
+        SymbolIndex::Object object;
+        object.address_begin = reinterpret_cast<const void *>(min_addr);
+        object.address_end = reinterpret_cast<const void *>(max_addr);
+        object.name = image_name ? image_name : "";
+        /// object.elf is null on macOS (no ELF binary)
+        object.slide = static_cast<uintptr_t>(slide);
+
+        /// Look for a dSYM bundle next to the binary.
+        /// Convention: <binary>.dSYM/Contents/Resources/DWARF/<basename>
+        if (!object.name.empty())
+        {
+            try
+            {
+                std::filesystem::path binary_path(object.name);
+                std::string basename = binary_path.filename().string();
+                std::filesystem::path dsym_path = std::filesystem::path(object.name + ".dSYM")
+                    / "Contents" / "Resources" / "DWARF" / basename;
+
+                if (std::filesystem::exists(dsym_path))
+                    object.dsym = std::make_shared<MachO>(dsym_path.string());
+            }
+            catch (...) // Ok: dSYM lookup is best-effort, not critical
+            {
+            }
+        }
+
+        objects.push_back(std::move(object));
+    }
+}
+
+#endif
+
 
 const SymbolIndex::Symbol * find(const void * offset, const std::vector<SymbolIndex::Symbol> & vec)
 {
@@ -503,7 +702,13 @@ const SymbolIndex::Object * find(const void * address, const std::vector<SymbolI
 
 void SymbolIndex::load()
 {
+#if defined(__ELF__)
     dl_iterate_phdr(collectSymbols, &data);
+#elif defined(OS_DARWIN)
+    uint32_t image_count = _dyld_image_count();
+    for (uint32_t i = 0; i < image_count; ++i)
+        collectSymbolsFromMachOImage(i, data.symbols, data.objects, data.self_build_id);
+#endif
 
     ::sort(data.objects.begin(), data.objects.end(), [](const Object & a, const Object & b) { return a.address_begin < b.address_begin; });
     ::sort(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b) { return a.offset_begin < b.offset_begin; });
@@ -517,16 +722,21 @@ void SymbolIndex::load()
 
 const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * address) const
 {
-    /// Symbols are stored as file offsets.
+    /// On ELF: Symbols are stored as file offsets (relative to object base).
     /// Callers may pass either absolute runtime addresses OR file offsets.
-    /// - Coverage  pass absolute addresses
+    /// - Coverage passes absolute addresses
     /// - system.stack_trace (after PR #82809) already stores file offsets
     ///
     /// Strategy: Try to find containing object. If found, input is absolute address → convert.
     /// If not found, assume input is already a file offset → use directly.
+    ///
+    /// On macOS: Symbols are stored as absolute virtual addresses to avoid
+    /// overlap between different objects. No conversion is needed.
 
-    const Object * object = findObject(address);
     const void * offset = address;
+
+#if defined(__ELF__)
+    const Object * object = findObject(address);
 
     if (object)
     {
@@ -535,6 +745,8 @@ const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * address) const
             reinterpret_cast<uintptr_t>(address) - reinterpret_cast<uintptr_t>(object->address_begin));
     }
     /// else: input is likely already a file offset, use it directly
+#endif
+    /// On macOS, symbols use absolute virtual addresses, so search directly.
 
     return find(offset, data.symbols);
 }
@@ -580,7 +792,7 @@ const SymbolIndex & SymbolIndex::instance()
     ///
     ///   __cxa_guard_acquire detected recursive initialization: do you have a function-local static variable whose initialization depends on that function
     ///
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
     static SymbolIndex instance;
     return instance;
 }

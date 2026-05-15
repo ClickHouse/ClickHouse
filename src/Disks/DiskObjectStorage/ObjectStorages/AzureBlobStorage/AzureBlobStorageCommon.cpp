@@ -18,7 +18,6 @@
 #include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
-#include <filesystem>
 #include <Common/logger_useful.h>
 #include <Common/Throttler.h>
 
@@ -43,8 +42,6 @@ namespace ProfileEvents
     extern const Event DiskAzurePutRequestThrottlerBlocked;
     extern const Event DiskAzurePutRequestThrottlerSleepMicroseconds;
 }
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -142,16 +139,18 @@ static std::shared_ptr<Azure::Identity::ManagedIdentityCredential> getManagedIde
 ContainerClientWrapper::ContainerClientWrapper(RawContainerClient client_, String blob_prefix_)
     : client(std::move(client_)), blob_prefix(std::move(blob_prefix_))
 {
+    if (!blob_prefix.empty() && !blob_prefix.ends_with('/'))
+        blob_prefix += '/';
 }
 
 BlobClient ContainerClientWrapper::GetBlobClient(const String & blob_name) const
 {
-    return client.GetBlobClient(blob_prefix / blob_name);
+    return client.GetBlobClient(blob_prefix + blob_name);
 }
 
 BlockBlobClient ContainerClientWrapper::GetBlockBlobClient(const String & blob_name) const
 {
-    return client.GetBlockBlobClient(blob_prefix / blob_name);
+    return client.GetBlockBlobClient(blob_prefix + blob_name);
 }
 
 BlobContainerPropertiesRespones ContainerClientWrapper::GetProperties() const
@@ -162,17 +161,16 @@ BlobContainerPropertiesRespones ContainerClientWrapper::GetProperties() const
 ListBlobsPagedResponse ContainerClientWrapper::ListBlobs(const ListBlobsOptions & options) const
 {
     auto new_options = options;
-    new_options.Prefix = blob_prefix / options.Prefix.ValueOr("");
+    new_options.Prefix = blob_prefix + options.Prefix.ValueOr("");
 
     auto response = client.ListBlobs(new_options);
-    String blob_prefix_str = blob_prefix / "";
 
     for (auto & blob : response.Blobs)
     {
-        if (!blob.Name.starts_with(blob_prefix_str))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected prefix '{}' in blob name '{}'", blob_prefix_str, blob.Name);
+        if (!blob.Name.starts_with(blob_prefix))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected prefix '{}' in blob name '{}'", blob_prefix, blob.Name);
 
-        blob.Name = blob.Name.substr(blob_prefix_str.size());
+        blob.Name = blob.Name.substr(blob_prefix.size());
     }
 
     return response;
@@ -183,12 +181,47 @@ bool ContainerClientWrapper::IsClientForDisk() const
     return client.GetClickhouseOptions().IsClientForDisk;
 }
 
+BlobContainerBatch ContainerClientWrapper::CreateBatch() const
+{
+    return client.CreateBatch();
+}
+
+BlobBatchResultResponse ContainerClientWrapper::SubmitBatch(const BlobContainerBatch & batch) const
+{
+    return client.SubmitBatch(batch);
+}
+
+String ContainerClientWrapper::GetBlobPath(const String & blob_name) const
+{
+    return blob_prefix + blob_name;
+}
+
+/// The Azure SDK throws std::logic_error subtypes (std::invalid_argument from
+/// std::stoi for malformed ports, std::out_of_range for port overflow) when a
+/// connection string or blob URL has malformed components. These are user-input
+/// errors but must be translated to DB::Exception, otherwise they propagate to
+/// getCurrentExceptionMessageAndPattern, which catches std::logic_error and calls
+/// abortOnFailedAssertion in debug/sanitizer builds — turning a user typo into a
+/// "Logical error" abort.
+[[noreturn]] static void translateAzureSdkParseError(const std::logic_error & e)
+{
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Failed to parse Azure connection string or blob URL: {}", e.what());
+}
+
 String ConnectionParams::getConnectionURL() const
 {
     if (std::holds_alternative<ConnectionString>(auth_method))
     {
-        auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(endpoint.storage_account_url);
-        return parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl();
+        try
+        {
+            auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(endpoint.storage_account_url);
+            return parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl();
+        }
+        catch (const std::logic_error & e)
+        {
+            translateAzureSdkParseError(e);
+        }
     }
 
     return endpoint.storage_account_url;
@@ -196,36 +229,50 @@ String ConnectionParams::getConnectionURL() const
 
 std::unique_ptr<ServiceClient> ConnectionParams::createForService() const
 {
-    return std::visit([this]<typename T>(const T & auth)
+    try
     {
-        if constexpr (std::is_same_v<T, ConnectionString>)
-            return std::make_unique<ServiceClient>(ServiceClient::CreateFromConnectionString(auth.toUnderType(), client_options));
-        else
-            return std::make_unique<ServiceClient>(endpoint.getServiceEndpoint(), auth, client_options);
-    }, auth_method);
+        return std::visit([this]<typename T>(const T & auth)
+        {
+            if constexpr (std::is_same_v<T, ConnectionString>)
+                return std::make_unique<ServiceClient>(ServiceClient::CreateFromConnectionString(auth.toUnderType(), client_options));
+            else
+                return std::make_unique<ServiceClient>(endpoint.getServiceEndpoint(), auth, client_options);
+        }, auth_method);
+    }
+    catch (const std::logic_error & e)
+    {
+        translateAzureSdkParseError(e);
+    }
 }
 
 std::unique_ptr<ContainerClient> ConnectionParams::createForContainer() const
 {
-    if (!endpoint.sas_auth.empty())
+    try
     {
-        RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
-        return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-    }
+        if (!endpoint.sas_auth.empty())
+        {
+            RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
+            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+        }
 
-    return std::visit([this]<typename T>(const T & auth)
+        return std::visit([this]<typename T>(const T & auth)
+        {
+            if constexpr (std::is_same_v<T, ConnectionString>)
+            {
+                auto raw_client = RawContainerClient::CreateFromConnectionString(auth.toUnderType(), endpoint.container_name, client_options);
+                return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+            }
+            else
+            {
+                RawContainerClient raw_client{endpoint.getContainerEndpoint(), auth, client_options};
+                return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+            }
+        }, auth_method);
+    }
+    catch (const std::logic_error & e)
     {
-        if constexpr (std::is_same_v<T, ConnectionString>)
-        {
-            auto raw_client = RawContainerClient::CreateFromConnectionString(auth.toUnderType(), endpoint.container_name, client_options);
-            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-        }
-        else
-        {
-            RawContainerClient raw_client{endpoint.getContainerEndpoint(), auth, client_options};
-            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-        }
-    }, auth_method);
+        translateAzureSdkParseError(e);
+    }
 }
 
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method)
@@ -270,6 +317,19 @@ static bool containerExists(const ContainerClient & client)
     {
         if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
             return false;
+
+        /// Our HTTP client wraps transport-level failures (DNS, connection refused, etc.)
+        /// as InternalServerError. A transient network error should not prevent the server
+        /// from starting — assume the container exists and let actual I/O operations fail
+        /// with a clear error later if it doesn't.
+        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::InternalServerError)
+        {
+            LOG_WARNING(getLogger("AzureBlobStorageCommon"),
+                "Failed to check container existence: {}. Assuming the container exists.",
+                e.Message);
+            return true;
+        }
+
         throw;
     }
 }
@@ -414,8 +474,10 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
 {
     String storage_url;
     String account_name;
+    String account_key;
     String container_name;
     String prefix;
+    bool endpoint_contains_account_name = false;
 
     auto get_container_name = [&]
     {
@@ -435,7 +497,7 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
 
         /// For some authentication methods account name is not present in the endpoint
         /// 'endpoint_contains_account_name' bool is used to understand how to split the endpoint (default : true)
-        bool endpoint_contains_account_name = config.getBool(config_prefix + ".endpoint_contains_account_name", true);
+        endpoint_contains_account_name = config.getBool(config_prefix + ".endpoint_contains_account_name", true);
 
         size_t pos = endpoint.find("//");
         if (pos == std::string::npos)
@@ -486,11 +548,22 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
             {
                 container_name = endpoint.substr(cont_pos_begin + 1);
             }
+
+            /// When the account name is not embedded in the endpoint path, read it
+            /// from the explicit `account_name` config key if provided.
+            /// It will not be appended to service/container URLs (add_account_name_to_url = false),
+            /// but is stored for use by external systems such as delta-kernel-rs.
+            if (config.has(config_prefix + ".account_name"))
+                account_name = config.getString(config_prefix + ".account_name");
         }
+        if (config.has(config_prefix + ".account_key"))
+                account_key = config.getString(config_prefix + ".account_key");
         if (config.has(config_prefix + ".endpoint_subpath"))
         {
             String endpoint_subpath = config.getString(config_prefix + ".endpoint_subpath");
-            prefix = fs::path(prefix) / endpoint_subpath;
+            if (!prefix.empty() && !prefix.ends_with('/'))
+                prefix += '/';
+            prefix += endpoint_subpath;
         }
     }
     else if (config.has(config_prefix + ".connection_string"))
@@ -507,6 +580,14 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
         storage_url = config.getString(config_prefix + ".storage_account_url");
         validateStorageAccountUrl(storage_url);
         container_name = get_container_name();
+
+        /// The account name is not part of the URL here; read it from config if provided.
+        /// It will not be appended to service/container URLs (add_account_name_to_url defaults
+        /// to false for this path), but is stored for use by external systems such as delta-kernel-rs.
+        if (config.has(config_prefix + ".account_name"))
+            account_name = config.getString(config_prefix + ".account_name");
+        if (config.has(config_prefix + ".account_key"))
+            account_key = config.getString(config_prefix + ".account_key");
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected either `storage_account_url` or `connection_string` or `endpoint` in config");
@@ -518,7 +599,7 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     if (config.has(config_prefix + ".container_already_exists"))
         container_already_exists = {config.getBool(config_prefix + ".container_already_exists")};
 
-    return {storage_url, account_name, container_name, prefix, "", "", container_already_exists};
+    return {storage_url, account_name, account_key, container_name, prefix, /* sas_auth */"", /* additional_params */"", container_already_exists, endpoint_contains_account_name};
 }
 
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings)

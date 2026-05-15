@@ -1,6 +1,5 @@
 #include <Analyzer/Passes/FuseFunctionsPass.h>
 
-#include <Common/iota.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -16,15 +15,17 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/TableNode.h>
 
-#include <numeric>
-
+#include <Storages/IStorage.h>
+#include <Storages/ProjectionsDescription.h>
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool optimize_syntax_fuse_functions;
+    extern const SettingsBool optimize_use_projections;
 }
 
 namespace ErrorCodes
@@ -35,6 +36,30 @@ namespace ErrorCodes
 
 namespace
 {
+
+bool canFuseToSumCount(const DataTypePtr & type)
+{
+    WhichDataType t(type);
+    return t.isInt() || t.isUInt() || t.isFloat() || t.isDecimal();
+}
+
+bool sourceHasAggregateProjections(const QueryTreeNodePtr & source, const ContextPtr & context)
+{
+    auto * table_node = source->as<TableNode>();
+    if (!table_node)
+        return false;
+
+    if (!context->getSettingsRef()[Setting::optimize_use_projections])
+        return false;
+
+    auto metadata = table_node->getStorage()->getInMemoryMetadataPtr(context, false);
+    for (const auto & projection : metadata->projections)
+    {
+        if (projection.type == ProjectionDescription::Type::Aggregate)
+            return true;
+    }
+    return false;
+}
 
 class CollectColumnSourcesVisitor : public InDepthQueryTreeVisitor<CollectColumnSourcesVisitor, true>
 {
@@ -172,6 +197,10 @@ void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_co
 
     String function_name = node->as<const FunctionNode &>().getFunctionName();
 
+    /// Preserve the original column name so that consumers that match columns by name
+    /// (e.g. StorageBuffer union, Distributed queries) see the same names regardless of fusion.
+    auto original_column_name = node->formatConvertedASTForErrorMessage();
+
     if (function_name == "sum")
     {
         assert(node->getResultType()->equals(*sum_count_result_type->getElement(0)));
@@ -194,14 +223,64 @@ void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_co
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported function '{}'", function_name);
     }
+
+    node->setAlias(original_column_name);
 }
 
-/// Reorder nodes according to the value of the quantile level parameter.
-/// Levels are sorted in ascending order to make pass result deterministic.
-FunctionNodePtr createFusedQuantilesNode(std::vector<QueryTreeNodePtr *> & nodes, const QueryTreeNodePtr & argument)
+void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
 {
-    Array parameters;
-    parameters.reserve(nodes.size());
+    FuseFunctionsVisitor visitor({"sum", "count", "avg"}, context);
+    visitor.visit(query_tree_node);
+
+    for (auto & [argument, nodes] : visitor.argument_to_functions_mapping)
+    {
+        if (nodes.size() < 2)
+            continue;
+
+        /// Require at least 2 distinct function names (e.g. sum + count, sum + avg).
+        /// ORDER BY ALL can duplicate a single aggregate function node, making nodes.size() >= 2
+        /// even though there is only one unique function — fusing in that case is wrong.
+        {
+            std::unordered_set<String> distinct_names;
+            for (auto * node : nodes)
+                distinct_names.insert((*node)->as<const FunctionNode &>().getFunctionName());
+            if (distinct_names.size() < 2)
+                continue;
+        }
+
+        if (isNullableOrLowCardinalityNullable(argument.first.node->getResultType()))
+            /// Do not apply to functions with Nullable/LowCardinality(Nullable) arguments, because `sumCount` handles it different from `sum` and `avg`.
+            continue;
+
+        if (!canFuseToSumCount(argument.first.node->getResultType()))
+            /// Only allow types supported by the `sumCount` aggregate function: Int, UInt, Float, Decimal.
+            continue;
+
+        if (sourceHasAggregateProjections(argument.second, context))
+            /// Fusion breaks projection matching because the optimizer cannot match `sumCount` to projections defined with `sum`, `count`, or `avg`.
+            continue;
+
+        auto sum_count_node = createResolvedAggregateFunction("sumCount", argument.first.node);
+        for (auto * node : nodes)
+        {
+            assert(node);
+            replaceWithSumCount(*node, sum_count_node, context);
+        }
+    }
+}
+
+/// Collect the distinct quantile levels requested across `nodes`, sorted ascending for determinism.
+/// Returns the list of levels plus a parallel vector mapping each input node to its level's index.
+struct QuantileLevelMapping
+{
+    Array unique_levels;
+    std::vector<size_t> level_index_per_node;
+};
+
+QuantileLevelMapping collectUniqueQuantileLevels(const std::vector<QueryTreeNodePtr *> & nodes)
+{
+    std::vector<Float64> levels_per_node;
+    levels_per_node.reserve(nodes.size());
 
     for (const auto * node : nodes)
     {
@@ -211,7 +290,7 @@ FunctionNodePtr createFusedQuantilesNode(std::vector<QueryTreeNodePtr *> & nodes
         const auto & parameter_nodes = function_node.getParameters().getNodes();
         if (parameter_nodes.empty())
         {
-            parameters.push_back(Float64(0.5)); /// default value
+            levels_per_node.push_back(0.5); /// default value
             continue;
         }
 
@@ -228,55 +307,27 @@ FunctionNodePtr createFusedQuantilesNode(std::vector<QueryTreeNodePtr *> & nodes
                 "Function '{}' should have parameter of type Float64, got '{}'",
                 function_name, value.getTypeName());
 
-        parameters.push_back(value);
+        levels_per_node.push_back(value.safeGet<Float64>());
     }
 
+    /// Build the unique, sorted list of levels.
+    std::vector<Float64> sorted_unique_levels = levels_per_node;
+    std::sort(sorted_unique_levels.begin(), sorted_unique_levels.end());
+    sorted_unique_levels.erase(std::unique(sorted_unique_levels.begin(), sorted_unique_levels.end()), sorted_unique_levels.end());
+
+    QuantileLevelMapping result;
+    result.unique_levels.reserve(sorted_unique_levels.size());
+    for (Float64 level : sorted_unique_levels)
+        result.unique_levels.push_back(level);
+
+    result.level_index_per_node.reserve(nodes.size());
+    for (Float64 level : levels_per_node)
     {
-        /// Sort nodes and parameters in ascending order of quantile level
-        std::vector<size_t> permutation(nodes.size());
-        iota(permutation.data(), permutation.size(), size_t(0));
-        std::sort(permutation.begin(), permutation.end(), [&](size_t i, size_t j) { return parameters[i].safeGet<Float64>() < parameters[j].safeGet<Float64>(); });
-
-        std::vector<QueryTreeNodePtr *> new_nodes;
-        new_nodes.reserve(permutation.size());
-
-        Array new_parameters;
-        new_parameters.reserve(permutation.size());
-
-        for (size_t i : permutation)
-        {
-            new_nodes.emplace_back(nodes[i]);
-            new_parameters.emplace_back(std::move(parameters[i]));
-        }
-        nodes = std::move(new_nodes);
-        parameters = std::move(new_parameters);
+        auto it = std::lower_bound(sorted_unique_levels.begin(), sorted_unique_levels.end(), level);
+        result.level_index_per_node.push_back(static_cast<size_t>(it - sorted_unique_levels.begin()));
     }
 
-    return createResolvedAggregateFunction("quantiles", argument, parameters);
-}
-
-
-void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
-{
-    FuseFunctionsVisitor visitor({"sum", "count", "avg"}, context);
-    visitor.visit(query_tree_node);
-
-    for (auto & [argument, nodes] : visitor.argument_to_functions_mapping)
-    {
-        if (nodes.size() < 2)
-            continue;
-
-        if (isNullableOrLowCardinalityNullable(argument.first.node->getResultType()))
-            /// Do not apply to functions with Nullable/LowCardinality(Nullable) arguments, because `sumCount` handles it different from `sum` and `avg`.
-            continue;
-
-        auto sum_count_node = createResolvedAggregateFunction("sumCount", argument.first.node);
-        for (auto * node : nodes)
-        {
-            assert(node);
-            replaceWithSumCount(*node, sum_count_node, context);
-        }
-    }
+    return result;
 }
 
 void tryFuseQuantiles(QueryTreeNodePtr query_tree_node, ContextPtr context)
@@ -286,23 +337,37 @@ void tryFuseQuantiles(QueryTreeNodePtr query_tree_node, ContextPtr context)
 
     for (auto & [argument, nodes_set] : visitor_quantile.argument_to_functions_mapping)
     {
-        size_t nodes_size = nodes_set.size();
-        if (nodes_size < 2)
+        if (nodes_set.size() < 2)
             continue;
 
         std::vector<QueryTreeNodePtr *> nodes(nodes_set.begin(), nodes_set.end());
 
-        auto quantiles_node = createFusedQuantilesNode(nodes, argument.first.node);
+        /// Group references by the requested quantile level. Multiple references to the same
+        /// level share the same `arrayElement` extraction from the fused `quantiles` call — this
+        /// keeps all copies structurally identical so they can co-exist under the same alias
+        /// (AST serialization for distributed dispatch checks `MULTIPLE_EXPRESSIONS_FOR_ALIAS`
+        /// by tree hash, which only trips when two nodes with the same alias differ).
+        auto mapping = collectUniqueQuantileLevels(nodes);
+
+        /// Nothing to fuse if there is only one distinct level (e.g. the user wrote the same
+        /// `quantile(0.99)(x)` in SELECT, HAVING, and ORDER BY). Rewriting to
+        /// `arrayElement(quantiles(0.99)(x), 1)` is strictly worse than the original call.
+        if (mapping.unique_levels.size() < 2)
+            continue;
+
+        auto quantiles_node = createResolvedAggregateFunction("quantiles", argument.first.node, mapping.unique_levels);
         auto result_array_type = std::dynamic_pointer_cast<const DataTypeArray>(quantiles_node->getResultType());
         if (!result_array_type)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Unexpected return type '{}' of function '{}', should be array",
                 quantiles_node->getResultType(), quantiles_node->getFunctionName());
 
-        for (size_t i = 0; i < nodes_set.size(); ++i)
+        for (size_t i = 0; i < nodes.size(); ++i)
         {
-            size_t array_index = i + 1;
+            auto original_column_name = (*nodes[i])->formatConvertedASTForErrorMessage();
+            size_t array_index = mapping.level_index_per_node[i] + 1;
             *nodes[i] = createArrayElementFunction(context, quantiles_node, array_index);
+            (*nodes[i])->setAlias(original_column_name);
         }
     }
 }

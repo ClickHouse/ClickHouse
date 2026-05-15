@@ -80,7 +80,7 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
         && !query.limitBy()
         && !query_info.has_order_by
         && !query_info.need_aggregate
-        /// For new analyzer, window will be deleted from AST, so we should not use query.window()
+        /// For the analyzer, window will be deleted from AST, so we should not use query.window()
         && !query_info.has_window
         && !query_info.additional_filter_ast
         && !query.limit_with_ties;

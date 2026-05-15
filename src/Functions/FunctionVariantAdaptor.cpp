@@ -1,3 +1,7 @@
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -6,10 +10,15 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
 
+namespace Setting
+{
+extern const SettingsBool variant_throw_on_type_mismatch;
+}
 
 namespace ErrorCodes
 {
@@ -18,6 +27,34 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TYPE_MISMATCH;
 extern const int CANNOT_CONVERT_TYPE;
 extern const int NO_COMMON_TYPE;
+}
+
+ExecutableFunctionVariantAdaptor::ExecutableFunctionVariantAdaptor(
+    std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
+    size_t variant_argument_index_)
+    : function_overload_resolver(std::move(function_overload_resolver_))
+    , variant_argument_index(variant_argument_index_)
+{
+    if (CurrentThread::isInitialized())
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            throw_on_type_mismatch = query_context->getSettingsRef()[Setting::variant_throw_on_type_mismatch];
+    }
+}
+
+/// Strip LowCardinality wrapper from nested function result if present.
+/// This is needed because the FunctionBaseVariantAdaptor constructor computes result types
+/// using nullptr columns (treated as non-const by getReturnType), while executeImpl uses
+/// actual ColumnConst (from scatter/filter of constant arguments). The difference in const-ness
+/// changes the LowCardinality heuristic in getReturnType, potentially wrapping the result
+/// in LowCardinality during execution but not during type computation.
+static void removeLowCardinalityFromResult(DataTypePtr & result_type, ColumnPtr & result_column)
+{
+    if (typeid_cast<const DataTypeLowCardinality *>(result_type.get()))
+    {
+        result_type = removeLowCardinality(result_type);
+        result_column = result_column->convertToFullColumnIfLowCardinality();
+    }
 }
 
 ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
@@ -30,6 +67,26 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
 
     const auto & variant_type = assert_cast<const DataTypeVariant &>(*arguments[variant_argument_index].type);
     const auto & variant_types = variant_type.getVariants();
+
+    /// Helper: build function base for the given arguments, respecting throw_on_type_mismatch.
+    /// Returns nullptr if the type is incompatible and throwing is disabled; otherwise throws.
+    auto try_build = [&](const ColumnsWithTypeAndName & args) -> FunctionBasePtr
+    {
+        if (throw_on_type_mismatch)
+            return function_overload_resolver->build(args);
+
+        try
+        {
+            return function_overload_resolver->build(args);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+            return nullptr;
+        }
+    };
 
     /// We use default implementation for Variant type only when default implementation for NULLs is used.
     /// If current column contains only NULLs, result column will also contain only NULLs.
@@ -67,12 +124,21 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
 
         /// Execute function on new arguments.
-        auto func_base = function_overload_resolver->build(new_arguments);
+        auto func_base = try_build(new_arguments);
+        if (!func_base)
+        {
+            /// Type is incompatible and throw_on_type_mismatch is false — return NULLs for all rows.
+            auto res = result_type->createColumn();
+            res->insertManyDefaults(variant_column.size());
+            return res;
+        }
         DataTypePtr nested_result_type = func_base->getResultType();
         ColumnPtr nested_result = func_base->execute(new_arguments, nested_result_type, variant_column.size(), dry_run);
+        removeLowCardinalityFromResult(nested_result_type, nested_result);
 
-        /// If result is Nullable(Nothing), just return column filled with NULLs.
-        if (nested_result_type->onlyNull())
+        /// If result is Nullable(Nothing) or Nothing, just return column filled with NULLs/defaults.
+        /// Nothing can appear when the function is executed on an empty type (e.g. arrayElement on Array(Nothing)).
+        if (nested_result_type->onlyNull() || isNothing(nested_result_type))
         {
             auto res = result_type->createColumn();
             res->insertManyDefaults(variant_column.size());
@@ -94,6 +160,12 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                 }
                 catch (const Exception & e)
                 {
+                    /// Only wrap type-conversion errors as LOGICAL_ERROR.
+                    /// Other exceptions (e.g. MEMORY_LIMIT_EXCEEDED) should propagate as-is.
+                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                        throw;
+
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -116,6 +188,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         catch (const Exception & e)
         {
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -166,13 +242,21 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
 
         /// Execute function on new arguments.
-        auto func_base = function_overload_resolver->build(new_arguments);
+        auto func_base = try_build(new_arguments);
+        if (!func_base)
+        {
+            /// Type is incompatible and throw_on_type_mismatch is false — return NULLs for all rows.
+            auto res = result_type->createColumn();
+            res->insertManyDefaults(variant_column.size());
+            return res;
+        }
         DataTypePtr nested_result_type = func_base->getResultType();
         ColumnPtr nested_result = func_base->execute(new_arguments, nested_result_type, new_arguments[0].column->size(), dry_run)
                             ->convertToFullColumnIfConst();
+        removeLowCardinalityFromResult(nested_result_type, nested_result);
 
-        /// If result is Nullable(Nothing), just return column filled with NULLs.
-        if (nested_result_type->onlyNull())
+        /// If result is Nullable(Nothing) or Nothing, just return column filled with NULLs/defaults.
+        if (nested_result_type->onlyNull() || isNothing(nested_result_type))
         {
             auto res = result_type->createColumn();
             res->insertManyDefaults(variant_column.size());
@@ -206,6 +290,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                 }
                 catch (const Exception & e)
                 {
+                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                        throw;
+
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -231,6 +319,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
             }
             catch (const Exception & e)
             {
+                if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                    && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                    throw;
+
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -250,6 +342,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         catch (const Exception & e)
         {
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -275,7 +371,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// We use an array where index is the global discriminator.
     /// Variants that don't appear in the data will have null column pointers.
     /// Index num_variants is reserved for NULL values.
-    std::vector<ColumnWithTypeAndName> variants;
+    ColumnsWithTypeAndName variants;
     variants.resize(num_variants + 1);
 
     /// Create selector using global discriminators as indexes.
@@ -340,16 +436,23 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         if (!variants[i].column)
             continue;
 
-        auto func_base = function_overload_resolver->build(variants_arguments[i]);
+        auto func_base = try_build(variants_arguments[i]);
+        if (!func_base)
+        {
+            /// Type is incompatible and throw_on_type_mismatch is false — treat as NULL result.
+            variants_results[i] = nullptr;
+            continue;
+        }
         auto nested_result_type = func_base->getResultType();
         auto nested_result
             = func_base->execute(variants_arguments[i], nested_result_type, variants_arguments[i][0].column->size(), dry_run)
                   ->convertToFullColumnIfConst();
+        removeLowCardinalityFromResult(nested_result_type, nested_result);
 
         variants_result_types[i] = nested_result_type;
 
-        /// Set nullptr in case of only NULL values, we will insert NULL for rows of this selector.
-        if (nested_result_type->onlyNull())
+        /// Set nullptr in case of only NULL or Nothing values, we will insert NULL for rows of this selector.
+        if (nested_result_type->onlyNull() || isNothing(nested_result_type))
         {
             variants_results[i] = nullptr;
         }
@@ -368,6 +471,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                 }
                 catch (const Exception & e)
                 {
+                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                        throw;
+
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -524,6 +631,10 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         catch (const Exception & e)
         {
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -562,10 +673,14 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeDryRunImpl(
 }
 
 FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
-    std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_, DataTypes arguments_)
-    : function_overload_resolver(function_overload_resolver_)
-    , arguments(arguments_)
+    std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
+    ColumnsWithTypeAndName arguments_with_type_)
+    : function_overload_resolver(std::move(function_overload_resolver_))
 {
+    arguments.reserve(arguments_with_type_.size());
+    for (const auto & arg : arguments_with_type_)
+        arguments.push_back(arg.type);
+
     std::optional<size_t> first_variant_index;
     for (size_t i = 0; i != arguments.size(); ++i)
     {
@@ -595,14 +710,11 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     for (const auto & alternative : variant_alternatives)
     {
         /// Create arguments with this alternative instead of the Variant.
-        DataTypes alt_arguments = arguments;
-        alt_arguments[variant_argument_index] = alternative;
-
-        /// Build the function for this alternative.
-        ColumnsWithTypeAndName alt_columns_with_type;
-        alt_columns_with_type.reserve(alt_arguments.size());
-        for (const auto & arg : alt_arguments)
-            alt_columns_with_type.push_back({nullptr, arg, ""});
+        /// Preserve original columns (especially ColumnConst) for non-Variant arguments.
+        ColumnsWithTypeAndName alt_columns_with_type = arguments_with_type_;
+        alt_columns_with_type[variant_argument_index].type = alternative;
+        /// Important: don't pass the original ColumnVariant with a non-Variant type
+        alt_columns_with_type[variant_argument_index].column = nullptr;
 
         /// Get the return type for this alternative.
         /// Wrap in try-catch to handle incompatible type combinations gracefully.
@@ -610,7 +722,9 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
         try
         {
             const auto func_base = function_overload_resolver->build(alt_columns_with_type);
-            result_types.push_back(func_base->getResultType());
+            /// Strip LowCardinality from result type for consistency with executeImpl,
+            /// where we also strip LC from nested function results.
+            result_types.push_back(removeLowCardinality(func_base->getResultType()));
         }
         catch (const Exception & e)
         {

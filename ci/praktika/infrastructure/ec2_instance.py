@@ -1,4 +1,3 @@
-import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -225,6 +224,7 @@ class EC2Instance:
                 )
 
             existing_instances = self._find_existing_instances()
+            ec2 = boto3.client("ec2", region_name=self.region)
             if existing_instances:
                 instance_ids = [inst.get("InstanceId") for inst in existing_instances]
                 states = [
@@ -241,7 +241,6 @@ class EC2Instance:
 
                 # Update tags on all existing instances
                 merged_tags = self._merged_tags()
-                ec2 = boto3.client("ec2", region_name=self.region)
                 if instance_ids:
                     ec2.create_tags(
                         Resources=instance_ids,
@@ -251,33 +250,39 @@ class EC2Instance:
                         f"EC2Instance '{self.name}': ensured {len(merged_tags)} tag(s) on {len(instance_ids)} existing instance(s)"
                     )
 
+                missing = self.quantity - len(existing_instances)
+                if missing <= 0:
+                    print(
+                        f"EC2Instance '{self.name}': found {len(existing_instances)} existing instance(s) - skip create"
+                    )
+
+                    # Start stopped instances if needed
+                    if self.start_on_deploy:
+                        stopped_ids = [
+                            inst.get("InstanceId")
+                            for inst in existing_instances
+                            if (inst.get("State") or {}).get("Name") == "stopped"
+                        ]
+                        if stopped_ids:
+                            print(
+                                f"EC2Instance '{self.name}': starting {len(stopped_ids)} stopped instance(s)"
+                            )
+                            ec2.start_instances(InstanceIds=stopped_ids)
+
+                    return self
+
                 print(
-                    f"EC2Instance '{self.name}': found {len(existing_instances)} existing instance(s) - skip create"
+                    f"EC2Instance '{self.name}': found {len(existing_instances)} existing instance(s),"
+                    f" need {self.quantity} - creating {missing} more"
                 )
-
-                # Start stopped instances if needed
-                if self.start_on_deploy:
-                    stopped_ids = [
-                        inst.get("InstanceId")
-                        for inst in existing_instances
-                        if (inst.get("State") or {}).get("Name") == "stopped"
-                    ]
-                    if stopped_ids:
-                        ec2 = boto3.client("ec2", region_name=self.region)
-                        print(
-                            f"EC2Instance '{self.name}': starting {len(stopped_ids)} stopped instance(s)"
-                        )
-                        ec2.start_instances(InstanceIds=stopped_ids)
-
-                return self
-
-            ec2 = boto3.client("ec2", region_name=self.region)
+            else:
+                missing = self.quantity
 
             req: Dict[str, Any] = {
                 "ImageId": self.image_id,
                 "InstanceType": self.instance_type,
-                "MinCount": self.quantity,
-                "MaxCount": self.quantity,
+                "MinCount": missing,
+                "MaxCount": missing,
             }
 
             if self.subnet_id:
@@ -333,9 +338,6 @@ class EC2Instance:
                 }
             ]
 
-            print(
-                f"EC2Instance '{self.name}': RunInstances request: {json.dumps(req, default=str)}"
-            )
             resp = ec2.run_instances(**req)
             instances = resp.get("Instances", []) or []
 

@@ -34,6 +34,7 @@ namespace Setting
 {
     extern const SettingsBool enable_scalar_subquery_optimization;
     extern const SettingsBool extremes;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsString implicit_table_at_top_level;
@@ -72,7 +73,7 @@ bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
         /// and assign an alias for 02367_optimize_trivial_count_with_array_join to pass. Otherwise it will fail in
         /// ArrayJoinedColumnsVisitor (`No alias for non-trivial value in ARRAY JOIN: _a`)
         /// This looks 100% as a incomplete code working on top of a bug, but this code has already been made obsolete
-        /// by the new analyzer, so it's an inconvenience we can live with until we deprecate it.
+        /// by the analyzer, so it's an inconvenience we can live with until we deprecate it.
         if (child == tables->array_join)
             return true;
         return false;
@@ -213,6 +214,9 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             PullingAsyncPipelineExecutor executor(io.pipeline);
             io.pipeline.setProgressCallback(data.getContext()->getProgressCallback());
             io.pipeline.setConcurrencyControl(data.getContext()->getSettingsRef()[Setting::use_concurrency_control]);
+            if (auto cancel_cb = data.getContext()->hasQueryContext() ? data.getContext()->getQueryContext()->getInteractiveCancelCallback() : nullptr)
+                executor.setCancelCallback(std::move(cancel_cb), std::max(UInt64(100), data.getContext()->getSettingsRef()[Setting::interactive_delay] / 1000));
+
             while (block.rows() == 0 && executor.pull(block))
             {
             }
@@ -337,6 +341,23 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & as
             else
                 for (size_t i = 0, size = func.arguments->children.size(); i < size; ++i)
                     if (i != 1 || !func.arguments->children[i]->as<ASTSubquery>())
+                        out.push_back(&func.arguments->children[i]);
+        }
+    }
+    else if (func.name == "exists")
+    {
+        /// Since exists does not use parameters, and the only
+        /// argument to exists function is a subquery, out
+        /// should not have arguments. Thus, the following lines could
+        /// probably be changed with just `return`. However, we follow
+        /// the style that is provided in the first if.
+        for (auto & child : ast->children)
+        {
+            if (child != func.arguments)
+                out.push_back(&child);
+            else
+                for (size_t i = 0, size = func.arguments->children.size(); i < size; ++i)
+                    if (i != 0 || !func.arguments->children[i]->as<ASTSubquery>())
                         out.push_back(&func.arguments->children[i]);
         }
     }
