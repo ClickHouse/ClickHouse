@@ -40,6 +40,8 @@
 #include <Storages/Statistics/Statistics.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/FailPoint.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
 
@@ -2897,6 +2899,10 @@ bool MutateTask::prepare()
             }
         }
     }
+
+    /// Same rationale as `MergeTreeData::loadDataPart`: the per-part `SingleDiskVolume` and the
+    /// resulting `IMergeTreeDataPart` constructed below live for the mutated part's lifetime.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
     ctx->disk = single_disk_volume->getDisk();

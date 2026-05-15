@@ -709,9 +709,10 @@ int Server::run()
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter help_formatter(Server::options());
+        std::string app_name = (commandName() == "clickhouse-server") ? "clickhouse-server" : "clickhouse server";
         auto header_str = fmt::format("{} [OPTION] [-- [ARG]...]\n"
                                       "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010",
-                                      commandName());
+                                      app_name);
         help_formatter.setHeader(header_str);
         help_formatter.format(std::cout);
         return 0;
@@ -2705,7 +2706,7 @@ try
             [&](UInt16 port) -> ProtocolServerAdapter
             {
                 auto http_context = httpContext();
-                Poco::Timespan keep_alive_timeout(server_settings[ServerSetting::keep_alive_timeout].value.seconds(), 0);
+                Poco::Timespan keep_alive_timeout(server_settings[ServerSetting::keep_alive_timeout].totalSeconds(), 0);
                 Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
                 http_params->setTimeout(http_context->getReceiveTimeout());
                 http_params->setKeepAliveTimeout(keep_alive_timeout);

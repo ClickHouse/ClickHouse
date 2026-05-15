@@ -19,7 +19,7 @@ ln -s /repo/tests/ci/get_previous_release_tag.py /usr/bin/get_previous_release_t
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
-azurite-rs --host 0.0.0.0 --blob-port 10000 --debug > /azurite_log 2>&1 &
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
 
 echo "Get previous release tag"
@@ -349,10 +349,15 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       `<renamed><original>.bin` instead of `<renamed>.bin`). The fix is in PR #102689; until it lands, the
 #       upgraded server detaches the renamed-column parts of `02538_alter_rename_sequence`'s `wrong_metadata_wide`
 #       table. Matched via the exact corrupted filename + column name, which is unique to that test and that bug.
-# `wrong_metadata_wide` + `Detaching broken part` + `backward incompatibility` is the follow-up cleanup line for
-#       the same issue: a "Detaching broken part" notice that does not contain the corrupted filename. Filtered
-#       via regex in the secondary pipe below to require all three substrings together, so unrelated broken-part
-#       detach messages are not masked.
+# `No stream (ba1.bin) file checksum for column b` is the same bug observed on
+#       `02555_davengers_rename_chain`'s `wrong_metadata` table. The test chains `a -> a1` and then
+#       `a1 -> b`, so the corrupted file name is `<new=b><old=a1>.bin = ba1.bin` for column `b`. The
+#       `<column><stream>` combination is unique to this chained-rename test.
+# `wrong_metadata` + `Detaching broken part` + `backward incompatibility` is the follow-up cleanup line for
+#       the same issue: a "Detaching broken part" notice that does not contain the corrupted filename.
+#       Filtered via regex in the secondary pipe below to require all three substrings together, so unrelated
+#       broken-part detach messages are not masked. The regex matches both `wrong_metadata` (from
+#       `02555_davengers_rename_chain`) and `wrong_metadata_wide` (from `02538_alter_rename_sequence`).
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -423,6 +428,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "e.what() = failed to parse response body" \
            -e "Tuple element name 'null' is reserved" \
            -e "No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed" \
+           -e "No stream (ba1.bin) file checksum for column b" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
@@ -430,7 +436,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
     | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \
     | grep -av -e "rdk:FAIL.*Connect to.*failed: Connection refused" \
-    | grep -av -e "wrong_metadata_wide.*Detaching broken part.*backward incompatibility" \
+    | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then

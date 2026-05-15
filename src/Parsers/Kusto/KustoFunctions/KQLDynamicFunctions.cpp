@@ -54,7 +54,17 @@ bool ArrayIndexOf::convertImpl(String & out, IParser::Pos & pos)
 
 bool ArrayLength::convertImpl(String & out, IParser::Pos & pos)
 {
-    return directMapping(out, pos, "length");
+    const auto fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+    const auto arg = getArgument(fn_name, pos);
+    /// For string inputs that look like JSON arrays, parse and count elements
+    /// For actual arrays, use length() directly
+    out = "if(toTypeName(" + arg + ") LIKE '%Array%', length(" + arg + "), "
+        "if(toTypeName(" + arg + ") LIKE '%String%' AND startsWith(trimBoth(ifNull(toString(" + arg + "), '')), '['), "
+        "JSONArrayLength(ifNull(toString(" + arg + "), '[]')), "
+        "NULL))";
+    return true;
 }
 
 bool ArrayReverse::convertImpl(String & out, IParser::Pos & pos)
@@ -94,7 +104,7 @@ bool ArrayRotateRight::convertImpl(String & out, IParser::Pos & pos)
 
     const auto array = getArgument(function_name, pos, ArgumentState::Raw);
     const auto count = getArgument(function_name, pos, ArgumentState::Raw);
-    out = kqlCallToExpression("array_rotate_left", {array, "-1 * " + count}, pos.max_depth, pos.max_backtracks);
+    out = kqlCallToExpression("array_rotate_left", {array, "-1 * " + count}, pos);
 
     return true;
 }
@@ -135,7 +145,7 @@ bool ArrayShiftRight::convertImpl(String & out, IParser::Pos & pos)
         "array_shift_left",
         fill ? std::initializer_list<std::string_view>{array, negated_count, *fill}
              : std::initializer_list<std::string_view>{array, negated_count},
-        pos.max_depth, pos.max_backtracks);
+        pos);
 
     return true;
 }
@@ -228,8 +238,8 @@ bool JaccardIndex::convertImpl(String & out, IParser::Pos & pos)
     const auto rhs = getArgument(function_name, pos, ArgumentState::Raw);
     out = fmt::format(
         "divide(length({0}), length({1}))",
-        kqlCallToExpression("set_intersect", {lhs, rhs}, pos.max_depth, pos.max_backtracks),
-        kqlCallToExpression("set_union", {lhs, rhs}, pos.max_depth, pos.max_backtracks));
+        kqlCallToExpression("set_intersect", {lhs, rhs}, pos),
+        kqlCallToExpression("set_union", {lhs, rhs}, pos));
 
     return true;
 }
@@ -286,7 +296,7 @@ bool SetDifference::convertImpl(String & out, IParser::Pos & pos)
             while (auto next_array = getOptionalArgument(function_name, pos, ArgumentState::Raw))
                 arrays.push_back(*next_array);
 
-            return kqlCallToExpression("set_union", std::vector<std::string_view>(arrays.cbegin(), arrays.cend()), pos.max_depth, pos.max_backtracks);
+            return kqlCallToExpression("set_union", std::vector<std::string_view>(arrays.cbegin(), arrays.cend()), pos);
         });
 
     out = fmt::format("arrayFilter(x -> not has({1}, x), arrayDistinct({0}))", lhs, rhs);
