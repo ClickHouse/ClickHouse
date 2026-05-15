@@ -321,6 +321,59 @@ def test_disallowed_origin_rejected_with_allowlist():
     assert response.startswith(b"HTTP/1.1 403"), response
 
 
+def test_oversized_preauth_frame_rejected_with_1009():
+    """A pre-auth frame larger than the auth-stage cap (4 KiB) must trigger a `1009` close.
+
+    Pre-auth, the server applies a tighter per-frame cap than the
+    post-auth 16 MiB. The auth payload is tiny
+    (`{"type":"auth","user":...,"password":...}`), so 4 KiB is enough
+    for legitimate clients but rejects an unauthenticated peer that
+    advertises a large payload to force an allocation.
+    """
+    sock = socket.create_connection((instance.ip_address, 8123), timeout=10)
+    try:
+        response = _ws_handshake(
+            sock, f"{instance.ip_address}:8123", origin=f"http://{instance.ip_address}:8123"
+        )
+        assert response.startswith(b"HTTP/1.1 101"), response
+
+        # Advertise a 5 KiB frame in the header without actually sending the body.
+        oversize = 5 * 1024
+        mask = secrets.token_bytes(4)
+        header = bytearray()
+        header.append(0x81)  # FIN | text opcode
+        header.append(0x80 | 126)  # masked, extended 16-bit length follows
+        header += struct.pack(">H", oversize)
+        header += mask
+        sock.sendall(bytes(header))
+
+        frame = _ws_read_frame(sock, timeout=10.0)
+        assert frame is not None, "Server did not send a close frame for oversized auth message"
+        opcode, payload = frame
+        assert opcode == 0x08, f"Expected close frame, got opcode={opcode:#x}"
+        assert len(payload) >= 2, f"Close frame missing 2-byte status code, payload={payload!r}"
+        code = struct.unpack(">H", payload[:2])[0]
+        assert code == 1009, f"Expected close code 1009, got {code}"
+    finally:
+        sock.close()
+
+
+def test_html_page_sets_clickjacking_headers():
+    """The HTML page must be served with anti-clickjacking response headers.
+
+    The terminal asks the user to type ClickHouse credentials and forwards
+    keystrokes to a PTY, so an embedding page could trick a logged-in
+    user into typing into an invisible terminal. `Content-Security-Policy:
+    frame-ancestors 'none'` (modern browsers) and `X-Frame-Options: DENY`
+    (legacy fallback) together ensure the page cannot be framed.
+    """
+    response = instance.http_request("webterminal", method="GET")
+    assert response.status_code == 200
+    csp = response.headers.get("content-security-policy", "")
+    assert "frame-ancestors 'none'" in csp, f"unexpected CSP: {csp!r}"
+    assert response.headers.get("x-frame-options", "").upper() == "DENY"
+
+
 def test_oversized_frame_rejected_with_1009():
     """A frame whose advertised payload length exceeds the server's per-frame
     cap (`MAX_FRAME_SIZE`, 16 MiB) must trigger an explicit `1009` close.

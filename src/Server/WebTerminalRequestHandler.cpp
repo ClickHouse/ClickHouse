@@ -163,7 +163,11 @@ struct WebSocketFrame
 
 /// Read a single WebSocket frame from the socket.
 /// If deadline_ns is non-zero, abort when the monotonic clock exceeds it.
-WebSocketFrame readWebSocketFrame(Poco::Net::StreamSocket & socket, UInt64 deadline_ns = 0)
+/// `max_payload_size` caps the advertised payload length and is set tighter
+/// for pre-auth frames to prevent a single unauthenticated client from
+/// forcing the server to allocate up to 16 MiB before any credentials have
+/// been checked.
+WebSocketFrame readWebSocketFrame(Poco::Net::StreamSocket & socket, UInt64 deadline_ns = 0, uint64_t max_payload_size = 16 * 1024 * 1024)
 {
     WebSocketFrame frame;
     uint8_t header[2];
@@ -229,8 +233,7 @@ WebSocketFrame readWebSocketFrame(Poco::Net::StreamSocket & socket, UInt64 deadl
     /// `message_too_big` state so the caller can close with `1009` rather
     /// than silently terminating the session (which would look like a
     /// normal `1000` close to the client).
-    static constexpr uint64_t MAX_FRAME_SIZE = 16 * 1024 * 1024;
-    if (payload_len > MAX_FRAME_SIZE)
+    if (payload_len > max_payload_size)
     {
         frame.message_too_big = true;
         return frame;
@@ -515,10 +518,18 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     /// would unwind without a close frame, so the browser would observe an abnormal
     /// close (`1006`) indistinguishable from a network drop. Catch read errors
     /// here and send an explicit policy close (`1008`) instead.
+    ///
+    /// Apply a tight pre-auth payload cap. The auth JSON is small
+    /// (`{"type":"auth","user":...,"password":...}`), and the field-level
+    /// limits below restrict `user` to 256 bytes and `password` to 1024 bytes,
+    /// so 4 KiB is comfortably above any legitimate first frame. Without this
+    /// cap, an unauthenticated client could force the server to allocate up
+    /// to the general 16 MiB frame budget on every connection.
+    static constexpr uint64_t MAX_AUTH_FRAME_SIZE = 4 * 1024;
     WebSocketFrame auth_frame;
     try
     {
-        auth_frame = readWebSocketFrame(socket, auth_deadline);
+        auth_frame = readWebSocketFrame(socket, auth_deadline, MAX_AUTH_FRAME_SIZE);
     }
     catch (...)
     {
@@ -914,14 +925,37 @@ void WebTerminalRequestHandler::handleRequest(HTTPServerRequest & request, HTTPS
         return;
     }
 
-    /// Check if this is a WebSocket upgrade request
+    /// Check if this is a WebSocket upgrade request.
+    /// Per RFC 7230 the `Connection` header is a comma-separated list of
+    /// tokens. A bare substring match for `upgrade` would also accept
+    /// unrelated values that happen to contain those letters (e.g. a future
+    /// `Connection: keep-alive, upgrade-something`), so split the header on
+    /// commas, trim whitespace, and look for the exact token `upgrade`.
     String connection = request.get("Connection", "");
     std::transform(connection.begin(), connection.end(), connection.begin(), ::tolower);
 
     String upgrade = request.get("Upgrade", "");
     std::transform(upgrade.begin(), upgrade.end(), upgrade.begin(), ::tolower);
 
-    if (connection.find("upgrade") != String::npos && upgrade == "websocket")
+    bool has_upgrade_token = false;
+    size_t pos = 0;
+    while (pos <= connection.size() && !has_upgrade_token)
+    {
+        size_t comma = connection.find(',', pos);
+        size_t end_pos = (comma == String::npos) ? connection.size() : comma;
+        size_t start = connection.find_first_not_of(" \t", pos);
+        if (start != String::npos && start < end_pos)
+        {
+            size_t last = connection.find_last_not_of(" \t", end_pos - 1);
+            if (connection.substr(start, last - start + 1) == "upgrade")
+                has_upgrade_token = true;
+        }
+        if (comma == String::npos)
+            break;
+        pos = comma + 1;
+    }
+
+    if (has_upgrade_token && upgrade == "websocket")
     {
         handleWebSocket(request, response);
     }
