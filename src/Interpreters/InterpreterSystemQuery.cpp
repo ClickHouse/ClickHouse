@@ -3,6 +3,7 @@
 #include <chrono>
 #include <csignal>
 #include <filesystem>
+#include <limits>
 #include <utility>
 #include <unistd.h>
 #include <Access/AccessControl.h>
@@ -140,6 +141,7 @@ namespace Setting
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds receive_timeout;
+    extern const SettingsSeconds max_execution_time;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
@@ -2107,8 +2109,9 @@ void InterpreterSystemQuery::syncMerges()
     DynamicDelay poll_delay;
     poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
 
-    const auto timeout = getContext()->getSettingsRef()[Setting::receive_timeout];
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout.totalMilliseconds());
+    const auto max_execution_time_sec = getContext()->getSettingsRef()[Setting::max_execution_time].totalSeconds();
+    const auto timeout = max_execution_time_sec == 0 ? std::numeric_limits<int32_t>::max() : max_execution_time_sec;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout);
     while (std::chrono::steady_clock::now() < deadline)
     {
         if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
@@ -2127,7 +2130,7 @@ void InterpreterSystemQuery::syncMerges()
         poll_delay.up();
     }
 
-    throw DB::Exception(DB::ErrorCodes::TIMEOUT_EXCEEDED, "SYNC MERGES {}: command timed out. See the 'receive_timeout' setting", table_id.getNameForLogs());
+    throw DB::Exception(DB::ErrorCodes::TIMEOUT_EXCEEDED, "SYNC MERGES {}: command timed out. See the 'max_execution_time' setting", table_id.getNameForLogs());
 }
 
 void InterpreterSystemQuery::loadPrimaryKeys()
