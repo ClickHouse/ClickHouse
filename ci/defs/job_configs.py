@@ -173,24 +173,11 @@ class JobConfigs:
         run_in_docker="clickhouse/style-test",
         enable_commit_status=True,
     )
-    pr_body = Job.Config(
-        name=JobNames.PR_BODY,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
-        command="python3 ./ci/jobs/pr_formatter_job.py",
-        allow_failure=True,
-        enable_gh_auth=True,
-    )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
-        command="python3 ./ci/jobs/copilot_review_job.py --pre",
-    )
-    ci_results_review = Job.Config(
-        name=JobNames.CI_RESULTS_REVIEW,
-        runs_on=RunnerLabels.STYLE_CHECK_ARM,
-        command="python3 ./ci/jobs/copilot_review_job.py --post",
+        command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
-        enable_gh_auth=True,
     )
     ci_tests = Job.Config(
         name=JobNames.CI_TESTS,
@@ -1480,6 +1467,9 @@ class JobConfigs:
         runs_on=RunnerLabels.ARM_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
+        ),
     )
     toolchain_build_jobs = Job.Config(
         name=JobNames.BUILD_TOOLCHAIN,
