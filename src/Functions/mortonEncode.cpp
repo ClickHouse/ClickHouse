@@ -29,7 +29,7 @@ namespace ErrorCodes
 #define EXECUTE() \
     size_t nd = arguments.size(); \
     size_t vectorStartIndex = 0; \
-    const ColumnTuple * mask = extractConstantRangeMask(arguments, getName(), input_rows_count); \
+    const ColumnTuple * mask = extractConstantRangeMask(arguments); \
     if (mask) \
     { \
         nd = mask->tupleSize(); \

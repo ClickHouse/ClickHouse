@@ -36,28 +36,48 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
     /// Extracts the optional range-mask Tuple from the first argument of `mortonEncode`/`hilbertEncode`.
-    /// Returns nullptr if the first argument is not a Tuple (i.e. the simple-mode call, e.g. `hilbertEncode(n1, n2)`).
-    /// Throws `ILLEGAL_COLUMN` if the first argument is a multi-row non-constant Tuple column:
-    /// the mask is a scaling/range specification, the implementation reads its values once
-    /// to drive bit shifts for every row, and a per-row varying Tuple is not supported.
-    /// (When all arguments are constants, `useDefaultImplementationForConstants` strips the
-    /// `ColumnConst` wrapper and passes a single-row `ColumnTuple` here — that case is safe.)
-    /// Mirrors the constant-only contract of `FunctionSpaceFillingCurveDecode::getReturnTypeImpl`.
-    static const ColumnTuple * extractConstantRangeMask(
-        const ColumnsWithTypeAndName & arguments, const String & function_name, size_t input_rows_count)
+    /// Returns nullptr when the first argument is not a Tuple (i.e. the simple-mode call,
+    /// e.g. `hilbertEncode(n1, n2)`).
+    ///
+    /// Pre-condition: when `arguments[0]` has Tuple type, `getReturnTypeImpl` has already
+    /// validated that its column is a `ColumnConst`. Therefore at execute time
+    /// `arguments[0].column` is either:
+    ///   - a `ColumnConst` wrapping a `ColumnTuple` (the typical case when other arguments
+    ///     are non-constant), or
+    ///   - a stripped single-row `ColumnTuple` (when ALL arguments are constant and
+    ///     `useDefaultImplementationForConstants` has unwrapped the `ColumnConst`).
+    /// Reading the mask values from row 0 of the tuple is correct in both cases.
+    static const ColumnTuple * extractConstantRangeMask(const ColumnsWithTypeAndName & arguments)
     {
         const auto * const_col = typeid_cast<const ColumnConst *>(arguments[0].column.get());
         if (const_col)
             return typeid_cast<const ColumnTuple *>(const_col->getDataColumnPtr().get());
-        if (const auto * tuple_col = typeid_cast<const ColumnTuple *>(arguments[0].column.get()))
+        return typeid_cast<const ColumnTuple *>(arguments[0].column.get());
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        /// Enforce the constant-only contract on the range-mask Tuple argument BEFORE
+        /// `useDefaultImplementationForConstants` strips any `ColumnConst` wrapper at
+        /// execute time. Without this check, a non-constant Tuple (e.g. produced by
+        /// `materialize` or `ARRAY JOIN`) would have its row-0 mask values used to drive
+        /// the bit-shift for every row, producing silently wrong results. The check is
+        /// performed at type-resolution time, so it is independent of `max_block_size`
+        /// and pipeline chunking. Mirrors the constant-only contract of
+        /// `FunctionSpaceFillingCurveDecode::getReturnTypeImpl`.
+        if (!arguments.empty() && WhichDataType(arguments[0].type).isTuple())
         {
-            if (input_rows_count > 1)
+            if (!arguments[0].column || !isColumnConst(*arguments[0].column))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                                 "Illegal column type {} for function {}, the range mask (Tuple) argument must be constant",
-                                arguments[0].column->getName(), function_name);
-            return tuple_col;
+                                arguments[0].type->getName(), getName());
         }
-        return nullptr;
+
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & arg : arguments)
+            types.push_back(arg.type);
+        return getReturnTypeImpl(types);
     }
 
     DataTypePtr getReturnTypeImpl(const DB::DataTypes & arguments) const override

@@ -32,7 +32,7 @@ public:
 
         size_t num_dimensions = arguments.size();
         size_t vector_start_index = 0;
-        const ColumnTuple * mask = extractConstantRangeMask(arguments, getName(), input_rows_count);
+        const ColumnTuple * mask = extractConstantRangeMask(arguments);
         if (mask)
         {
             num_dimensions = mask->tupleSize();

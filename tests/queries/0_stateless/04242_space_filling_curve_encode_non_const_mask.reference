@@ -12,3 +12,8 @@
 32768
 ----- hilbertEncode: multi-row non-constant Tuple mask is rejected -----
 ----- mortonEncode: multi-row non-constant Tuple mask is rejected -----
+----- block-size independence: rejection holds with max_block_size = 1 -----
+31
+512
+53
+32768
