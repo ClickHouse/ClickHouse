@@ -1,34 +1,32 @@
-#include <Columns/IColumn.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
-#include <Functions/IFunction.h>
+#include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 
 #include <stack>
 
@@ -39,7 +37,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool optimize_read_in_order;
-    extern const SettingsBool optimize_read_in_window_order;
+    extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
 }
 }
 
@@ -77,7 +75,8 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
         for (const auto & table : tables)
         {
             auto storage = std::get<StoragePtr>(table);
-            const auto & sorting_key = storage->getInMemoryMetadataPtr()->getSortingKey();
+            const auto storage_metadata = storage->getInMemoryMetadataPtr(merge->getContext(), false);
+            const auto & sorting_key = storage_metadata->getSortingKey();
             if (sorting_key.column_names.empty())
                 return nullptr;
         }
@@ -85,25 +84,79 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
         return merge;
     }
 
+    if (auto * reading = typeid_cast<ReadFromObjectStorageStep *>(step))
+    {
+        /// Already read-in-order, skip.
+        if (!allow_existing_order && reading->getQueryInfo().input_order_info)
+        {
+            return nullptr;
+        }
+
+        const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
+        if (sorting_key.column_names.empty())
+        {
+            return nullptr;
+        }
+        return reading;
+    }
+
     return nullptr;
 }
 
 using StepStack = std::vector<IQueryPlanStep*>;
 
-QueryPlan::Node * findReadingStep(QueryPlan::Node & node, bool allow_existing_order)
+
+struct FindReadingStepContext
+{
+    bool allow_existing_order;
+    bool read_in_order_through_join;
+
+    std::list<JoinStep *> joins_to_keep_in_order = {};
+};
+
+QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext & data)
 {
     IQueryPlanStep * step = node.step.get();
-    if (auto * /*reading*/ _ = checkSupportedReadingStep(step, allow_existing_order))
+    if (checkSupportedReadingStep(step, data.allow_existing_order) != nullptr)
         return &node;
 
-    if (node.children.size() != 1)
+    if (node.children.empty())
         return nullptr;
 
     if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
-        return findReadingStep(*node.children.front(), allow_existing_order);
+        return findReadingStep(*node.children.front(), data);
 
     if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())
-        return findReadingStep(*node.children.front(), allow_existing_order);
+        return findReadingStep(*node.children.front(), data);
+
+    if (typeid_cast<CreatingSetsStep *>(step) || typeid_cast<DelayedCreatingSetsStep *>(step))
+        return findReadingStep(*node.children.front(), data);
+
+    if (data.read_in_order_through_join)
+    {
+        const IJoin * join_ptr = nullptr;
+        if (const auto * join_step = typeid_cast<const JoinStep *>(step))
+            join_ptr = join_step->getJoin().get();
+        if (const auto * join_step = typeid_cast<const FilledJoinStep *>(step))
+            join_ptr = join_step->getJoin().get();
+
+        if (join_ptr)
+        {
+            const auto & table_join = join_ptr->getTableJoin();
+            auto kind = table_join.kind();
+            auto strictness = table_join.strictness();
+            /// Grace hash join scatters rows into buckets by hash, destroying the input order.
+            /// We must not propagate read-in-order through joins that reorder rows.
+            if ((strictness == JoinStrictness::Any || strictness == JoinStrictness::All) && isInnerOrLeft(kind)
+                && !join_ptr->hasDelayedBlocks())
+            {
+                auto * reading_step = findReadingStep(*node.children.front(), data);
+                if (auto * join_step = typeid_cast<JoinStep *>(step); reading_step && join_step)
+                    data.joins_to_keep_in_order.push_back(join_step);
+                return reading_step;
+            }
+        }
+    }
 
     return nullptr;
 }
@@ -174,36 +227,50 @@ void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG & expres
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, build a set of fixed columns.
-void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit)
+void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit)
 {
     IQueryPlanStep * step = node.step.get();
-    if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
+    if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
         if (const auto prewhere_info = reading->getPrewhereInfo())
         {
             /// Should ignore limit if there is filtering.
             limit = 0;
 
-            //std::cerr << "====== Adding prewhere " << std::endl;
             appendExpression(dag, prewhere_info->prewhere_actions);
             if (const auto * filter_expression = dag->tryFindInOutputs(prewhere_info->prewhere_column_name))
+                appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
+
+        }
+        if (const auto row_level_filter = reading->getRowLevelFilter())
+        {
+            /// Should ignore limit if there is filtering.
+            limit = 0;
+
+            appendExpression(dag, row_level_filter->actions);
+            if (const auto * filter_expression = dag->tryFindInOutputs(row_level_filter->column_name))
                 appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
 
         }
         return;
     }
 
-    if (node.children.size() != 1)
-        return;
-
-    buildSortingDAG(*node.children.front(), dag, fixed_columns, limit);
-
-    if (typeid_cast<DistinctStep *>(step))
+    if (typeid_cast<const JoinStep *>(step) || typeid_cast<const FilledJoinStep *>(step))
     {
         limit = 0;
     }
 
-    if (auto * expression = typeid_cast<ExpressionStep *>(step))
+    if (node.children.empty())
+        return;
+
+    buildSortingDAG(*node.children.front(), dag, fixed_columns, limit);
+
+    if (typeid_cast<const DistinctStep *>(step))
+    {
+        limit = 0;
+    }
+
+    if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
     {
         const auto & actions = expression->getExpression();
 
@@ -214,7 +281,7 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
         appendExpression(dag, actions);
     }
 
-    if (auto * filter = typeid_cast<FilterStep *>(step))
+    if (const auto * filter = typeid_cast<const FilterStep *>(step))
     {
         /// Should ignore limit if there is filtering.
         limit = 0;
@@ -224,7 +291,7 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
             appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
     }
 
-    if (auto * array_join = typeid_cast<ArrayJoinStep *>(step))
+    if (const auto * array_join = typeid_cast<const ArrayJoinStep *>(step))
     {
         /// Should ignore limit because ARRAY JOIN can reduce the number of rows in case of empty array.
         /// But in case of LEFT ARRAY JOIN the result number of rows is always bigger.
@@ -257,6 +324,24 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
 /// Functions result is fixed if all arguments are fixed or constants.
 void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
 {
+    /// First, collect names of all fixed INPUT nodes.
+    /// This is needed because after DAG merging, there can be multiple INPUT nodes
+    /// with the same column name (e.g., one from filter expression and one from SELECT).
+    /// If any INPUT node with a given name is fixed, all INPUT nodes with that name should be fixed.
+    std::unordered_set<std::string_view> fixed_input_names;
+    for (const auto * node : fixed_columns)
+    {
+        if (node->type == ActionsDAG::ActionType::INPUT)
+            fixed_input_names.insert(node->result_name);
+    }
+
+    /// Add all INPUT nodes with matching names to fixed_columns.
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::INPUT && fixed_input_names.contains(node.result_name))
+            fixed_columns.insert(&node);
+    }
+
     struct Frame
     {
         const ActionsDAG::Node * node;
@@ -344,7 +429,7 @@ const ActionsDAG::Node * addMonotonicChain(ActionsDAG & dag, const ActionsDAG::N
             args.push_back(&dag.addColumn({child->column, child->result_type, child->result_name}));
     }
 
-    return &dag.addFunction(node->function_base, std::move(args), {});
+    return &dag.addFunction(node->function_base, std::move(args), node->result_name);
 }
 
 struct SortingInputOrder
@@ -429,7 +514,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
         // ASC NULLS LAST ("in order") or DESC NULLS FIRST ("reverse")
         /// supported only this direction, other cases are represented as nulls_direction==-1
         /// Also actual for floating point values NaN.
-        const auto column_is_nullable = sorting_key.data_types[next_sort_key]->isNullable() || isFloat(*sorting_key.data_types[next_sort_key]);
+        const auto column_is_nullable = isNullableOrLowCardinalityNullable(sorting_key.data_types[next_sort_key])|| isFloat(*sorting_key.data_types[next_sort_key]);
         if (column_is_nullable && sort_column_description.nulls_direction == -1)
             break;
 
@@ -475,6 +560,24 @@ SortingInputOrder buildInputOrderFromSortDescription(
             if (match.node && match.node == sort_column_node)
             {
                 //std::cerr << "====== Found direct match" << std::endl;
+
+                /// If the ORDER BY column is fixed (constant due to WHERE clause),
+                /// don't let it determine read direction - skip to next columns.
+                /// Example: ORDER BY tenant, event_time DESC with WHERE tenant='42'
+                /// tenant is constant, so read direction should come from event_time DESC.
+                if (fixed_columns.contains(sort_node))
+                {
+                    /// Virtual row for fixed column from order by is not supported now.
+                    can_optimize_virtual_row = false;
+
+                    /// Still add the fixed column to the sort description (required for sort matching)
+                    /// but don't set current_direction so it won't influence read_direction.
+                    match_infos.push_back({.source = sort_node, .fixed_column = sort_node});
+                    order_key_prefix_descr.push_back(sort_column_description);
+                    ++next_description_column;
+                    ++next_sort_key;
+                    continue;
+                }
 
                 /// We try to find the match first even if column is fixed. In this case, potentially more keys will match.
                 /// Example: 'table (x Int32, y Int32) ORDER BY x + 1, y + 1'
@@ -546,8 +649,20 @@ SortingInputOrder buildInputOrderFromSortDescription(
             break;
     }
 
-    if (read_direction == 0 || order_key_prefix_descr.empty())
+    if (order_key_prefix_descr.empty())
         return {};
+
+    /// If all ORDER BY columns were fixed (constant), read_direction is still 0.
+    /// Default to ascending (1) since the data is trivially sorted when all columns are constant.
+    /// But only if we actually matched some key columns (next_sort_key > 0).
+    /// If next_sort_key == 0, the ORDER BY doesn't match the key prefix at all.
+    if (read_direction == 0)
+    {
+        if (next_sort_key > 0)
+            read_direction = 1;
+        else
+            return {};
+    }
 
     /// If the prefix description is used, we can't restore the full description from PK value.
     /// TODO: partial sort description can be used as well. Implement support later.
@@ -624,6 +739,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
     /// For every column in PK find any match from GROUP BY key.
     using ReverseMatches = std::unordered_map<const ActionsDAG::Node *, MatchedTrees::Matches::const_iterator>;
     ReverseMatches reverse_matches;
+    std::unordered_set<std::string_view> not_matched_keys(unordered_keys.begin(), unordered_keys.end());
 
     if (dag)
     {
@@ -646,6 +762,12 @@ InputOrder buildInputOrderFromUnorderedKeys(
             const MatchedTrees::Match * match = &it->second;
             if (match->node)
             {
+                // ensure that output is in aggregation keys (not_matched_keys at this point just a set of aggregation keys)
+                // the output can be removed for filters, so it'll not be present in corresponding header,
+                // and parent aggregation step will have no such column/expr in keys
+                if (!not_matched_keys.contains(output->result_name))
+                    continue;
+
                 auto [jt, inserted] = reverse_matches.emplace(match->node, it);
                 if (!inserted)
                 {
@@ -674,7 +796,6 @@ InputOrder buildInputOrderFromUnorderedKeys(
     /// So far, 0 means any direction is possible. It is ok for constant prefix.
     int read_direction = 0;
     size_t next_sort_key = 0;
-    std::unordered_set<std::string_view> not_matched_keys(unordered_keys.begin(), unordered_keys.end());
 
     SortDescription sort_description;
     sort_description.reserve(unordered_keys.size());
@@ -815,6 +936,25 @@ SortingInputOrder buildInputOrderFromSortDescription(
 }
 
 SortingInputOrder buildInputOrderFromSortDescription(
+    const ReadFromObjectStorageStep * reading,
+    const FixedColumns & fixed_columns,
+    const std::optional<ActionsDAG> & dag,
+    const SortDescription & description,
+    size_t limit)
+{
+    const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
+    const auto & pk_column_names = sorting_key.column_names;
+
+    return buildInputOrderFromSortDescription(
+        fixed_columns,
+        dag, description,
+        sorting_key,
+        pk_column_names,
+        limit);
+}
+
+
+SortingInputOrder buildInputOrderFromSortDescription(
     ReadFromMerge * merge,
     const FixedColumns & fixed_columns,
     const std::optional<ActionsDAG> & dag,
@@ -827,7 +967,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
     for (const auto & table : tables)
     {
         auto storage = std::get<StoragePtr>(table);
-        auto metadata = storage->getInMemoryMetadataPtr();
+        auto metadata = storage->getInMemoryMetadataPtr(merge->getContext(), false);
         const auto & sorting_key = metadata->getSortingKey();
         // const auto & pk_column_names = metadata->getPrimaryKey().column_names;
 
@@ -869,6 +1009,21 @@ InputOrder buildInputOrderFromUnorderedKeys(
 }
 
 InputOrder buildInputOrderFromUnorderedKeys(
+    ReadFromObjectStorageStep * reading,
+    const FixedColumns & fixed_columns,
+    const std::optional<ActionsDAG> & dag,
+    const Names & unordered_keys)
+{
+    const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
+    const auto & sorting_key_columns = sorting_key.column_names;
+
+    return buildInputOrderFromUnorderedKeys(
+        fixed_columns,
+        dag, unordered_keys,
+        sorting_key.expression->getActionsDAG(), sorting_key_columns);
+}
+
+InputOrder buildInputOrderFromUnorderedKeys(
     ReadFromMerge * merge,
     const FixedColumns & fixed_columns,
     const std::optional<ActionsDAG> & dag,
@@ -880,7 +1035,8 @@ InputOrder buildInputOrderFromUnorderedKeys(
     for (const auto & table : tables)
     {
         auto storage = std::get<StoragePtr>(table);
-        const auto & sorting_key = storage->getInMemoryMetadataPtr()->getSortingKey();
+        const auto storage_metadata = storage->getInMemoryMetadataPtr(merge->getContext(), false);
+        const auto & sorting_key = storage_metadata->getSortingKey();
         const auto & sorting_key_columns = sorting_key.column_names;
 
         if (sorting_key_columns.empty())
@@ -903,14 +1059,19 @@ InputOrder buildInputOrderFromUnorderedKeys(
     return order_info;
 }
 
-InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtual_row, QueryPlan::Node & node)
+InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtual_row, QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    QueryPlan::Node * reading_node = findReadingStep(node, /*allow_existing_order=*/ false);
+    FindReadingStepContext find_reading_ctx{
+        .allow_existing_order = false,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+    };
+    QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
         return nullptr;
 
     const auto & description = sorting.getSortDescription();
     size_t limit = sorting.getLimit();
+    const size_t query_limit = limit;
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
@@ -921,6 +1082,15 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
+        /// With parallel replicas, the read-in-order-through-join optimization can produce
+        /// different results on the initiator and remote replicas (due to differences in plan
+        /// construction such as AST optimizations), leading to coordination mode mismatch
+        /// ("Replica decided to read in Default mode, not in WithOrder").
+        /// Skip this optimization for parallel replicas when it goes through a JOIN,
+        /// similar to the existing check for parallel replicas in the Union case.
+        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
+            return nullptr;
+
         auto order_info = buildInputOrderFromSortDescription(
             reading,
             fixed_columns,
@@ -931,14 +1101,39 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
         {
             apply_virtual_row = order_info.virtual_row_conversion != std::nullopt;
 
+            bool uses_virtual_row = false;
+            if (order_info.virtual_row_conversion)
+                uses_virtual_row = reading->setVirtualRowConversions(std::move(*order_info.virtual_row_conversion));
+
+            if (!uses_virtual_row)
+            {
+                /// Virtual row is required for INNER JOIN to maintain read-in-order optimization.
+                /// Without it, the sorting step after join cannot correctly determine
+                /// which input stream to read from when most rows are filtered out,
+                /// potentially reading excessive amount of data.
+                for (const auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+                {
+                    const auto & table_join = join_step->getJoin()->getTableJoin();
+                    auto strictness = table_join.strictness();
+                    if (table_join.kind() != JoinKind::Left || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any))
+                    {
+                        LOG_DEBUG(getLogger("optimizeReadInOrder"), "Skip using read in order for inner join without virtual row optimization");
+                        return nullptr;
+                    }
+                }
+            }
+
             bool can_read = reading->requestReadingInOrder(
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
                 order_info.input_order->limit,
-                std::move(order_info.virtual_row_conversion));
+                query_limit);
 
             if (!can_read)
                 return nullptr;
+
+            for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+                join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         }
 
         return order_info.input_order;
@@ -953,9 +1148,31 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
         if (order_info.input_order)
         {
-            bool can_read = merge->requestReadingInOrder(order_info.input_order);
+            bool can_read = merge->requestReadingInOrder(order_info.input_order, query_limit);
             if (!can_read)
                 return nullptr;
+
+            for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+                join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
+        }
+
+        return order_info.input_order;
+    }
+    if (auto * object_storage_step = typeid_cast<ReadFromObjectStorageStep *>(reading_node->step.get()))
+    {
+        auto order_info = buildInputOrderFromSortDescription(
+            object_storage_step,
+            fixed_columns,
+            dag, description,
+            limit);
+
+        if (order_info.input_order)
+        {
+            bool can_read = object_storage_step->requestReadingInOrder();
+            if (!can_read)
+                return nullptr;
+            for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+                join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         }
 
         return order_info.input_order;
@@ -964,9 +1181,13 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
     return nullptr;
 }
 
-InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & node)
+InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    QueryPlan::Node * reading_node = findReadingStep(node, /*allow_existing_order=*/ false);
+    FindReadingStepContext find_reading_ctx {
+        .allow_existing_order = false,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+    };
+    QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
         return {};
 
@@ -982,6 +1203,11 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
+        /// Same as above: skip aggregation-in-order through JOIN for parallel replicas
+        /// to avoid coordination mode mismatch.
+        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
+            return {};
+
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
             fixed_columns,
@@ -992,12 +1218,13 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
             bool can_read = reading->requestReadingInOrder(
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
-                order_info.input_order->limit,
-                {});
+                order_info.input_order->limit);
             if (!can_read)
                 return {};
         }
 
+        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;
     }
     if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
@@ -1014,6 +1241,27 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
                 return {};
         }
 
+        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
+        return order_info;
+    }
+
+    if (auto * object_storage_step = typeid_cast<ReadFromObjectStorageStep *>(reading_node->step.get()))
+    {
+        auto order_info = buildInputOrderFromUnorderedKeys(
+            object_storage_step,
+            fixed_columns,
+            dag, keys);
+
+        if (order_info.input_order)
+        {
+            bool can_read = object_storage_step->requestReadingInOrder();
+            if (!can_read)
+                return {};
+        }
+
+        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;
     }
 
@@ -1049,13 +1297,18 @@ bool canImproveOrderForDistinct(InputOrder & required_order, const InputOrderInf
     return true;
 }
 
-InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node)
+InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Here we allow improving existing in-order optimization.
     /// Example: SELECT DISTINCT a, b FROM t ORDER BY a; -- sorting key: a, b
     /// If read in order for ORDER BY is already applied, then output sort description will contain only column `a`,
     /// but we need columns `a, b`, applying read in order for distinct will still benefit `order by`
-    QueryPlan::Node * reading_node = findReadingStep(node, /*allow_existing_order=*/ true);
+
+    FindReadingStepContext find_reading_ctx {
+        .allow_existing_order = true,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+    };
+    QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
         return {};
 
@@ -1071,6 +1324,11 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node)
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
+        /// Same as above: skip distinct-in-order through JOIN for parallel replicas
+        /// to avoid coordination mode mismatch.
+        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
+            return {};
+
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
             fixed_columns,
@@ -1082,9 +1340,11 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node)
         if (!reading->requestReadingInOrder(
             order_info.input_order->used_prefix_of_sorting_key_size,
             order_info.input_order->direction,
-            order_info.input_order->limit, {}))
+            order_info.input_order->limit))
             return {};
 
+        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;
     }
     if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
@@ -1100,6 +1360,26 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node)
         if (!merge->requestReadingInOrder(order_info.input_order))
             return {};
 
+        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
+        return order_info;
+    }
+
+    if (auto * object_storage_step = typeid_cast<ReadFromObjectStorageStep *>(reading_node->step.get()))
+    {
+        auto order_info = buildInputOrderFromUnorderedKeys(
+            object_storage_step,
+            fixed_columns,
+            dag, keys);
+
+        if (!canImproveOrderForDistinct(order_info, object_storage_step->getDataOrder()))
+            return {};
+
+        if (!object_storage_step->requestReadingInOrder())
+            return {};
+
+        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         return order_info;
     }
 
@@ -1120,7 +1400,36 @@ bool readingFromParallelReplicas(const QueryPlan::Node * node)
 
 }
 
-void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
+bool wouldReadInOrderBeUseful(
+    const SortingStep & sorting,
+    const KeyDescription & sorting_key,
+    const QueryPlan::Node & subtree_above_reading)
+{
+    if (sorting.getType() != SortingStep::Type::Full)
+        return false;
+    if (sorting_key.column_names.empty())
+        return false;
+
+    std::optional<ActionsDAG> dag;
+    FixedColumns fixed_columns;
+    size_t limit = sorting.getLimit();
+    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit);
+
+    if (dag && !fixed_columns.empty())
+        enrichFixedColumns(*dag, fixed_columns);
+
+    auto order_info = buildInputOrderFromSortDescription(
+        fixed_columns,
+        dag,
+        sorting.getSortDescription(),
+        sorting_key,
+        sorting_key.column_names,
+        limit);
+
+    return order_info.input_order != nullptr;
+}
+
+void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (node.children.size() != 1)
         return;
@@ -1132,6 +1441,9 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     //std::cerr << "---- optimizeReadInOrder found sorting" << std::endl;
 
     if (sorting->getType() != SortingStep::Type::Full)
+        return;
+
+    if (sorting->hasPartitions() && !optimization_settings.reuse_storage_ordering_for_window_functions)
         return;
 
     bool apply_virtual_row = false;
@@ -1158,7 +1470,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
         for (auto * child : union_node->children)
         {
-            infos.push_back(buildInputOrderInfo(*sorting, apply_virtual_row, *child));
+            infos.push_back(buildInputOrderInfo(*sorting, apply_virtual_row, *child, optimization_settings));
 
             if (infos.back())
             {
@@ -1212,7 +1524,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
         sorting->convertToFinishSorting(*max_sort_descr, use_buffering, false);
     }
-    else if (auto order_info = buildInputOrderInfo(*sorting, apply_virtual_row, *node.children.front()))
+    else if (auto order_info = buildInputOrderInfo(*sorting, apply_virtual_row, *node.children.front(), optimization_settings))
     {
         /// Use buffering only if have filter or don't have limit.
         bool use_buffering = order_info->limit == 0;
@@ -1220,7 +1532,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     }
 }
 
-void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
+void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (node.children.size() != 1)
         return;
@@ -1237,7 +1549,7 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
         return;
 
     /// TODO: maybe add support for UNION later.
-    auto order_info = buildInputOrderInfo(*aggregating, *node.children.front());
+    auto order_info = buildInputOrderInfo(*aggregating, *node.children.front(), optimization_settings);
     if (order_info.input_order)
     {
         std::unordered_set<std::string_view> used_keys;
@@ -1254,7 +1566,7 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
     }
 }
 
-void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
+void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (node.children.size() != 1)
         return;
@@ -1269,7 +1581,7 @@ void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
     if (!distinct->getSortDescription().empty())
         return;
 
-    auto order_info = buildInputOrderInfo(*distinct, *node.children.front());
+    auto order_info = buildInputOrderInfo(*distinct, *node.children.front(), optimization_settings);
     if (order_info.input_order)
         distinct->applyOrder(std::move(order_info.sort_description));
 }
@@ -1314,7 +1626,8 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 
     auto context = read_from_merge_tree->getContext();
     const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::optimize_read_in_window_order] || (settings[Setting::optimize_read_in_order] && settings[Setting::query_plan_read_in_order])
+    if (!settings[Setting::query_plan_reuse_storage_ordering_for_window_functions]
+        || (settings[Setting::optimize_read_in_order] && settings[Setting::query_plan_read_in_order])
         || context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         return 0;
@@ -1355,7 +1668,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 
     if (order_info)
     {
-        bool can_read = read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit, {});
+        bool can_read = read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
         if (!can_read)
             return 0;
         sorting->convertToFinishSorting(order_info->sort_description_for_merging, false, false);

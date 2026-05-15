@@ -16,4 +16,17 @@
             </system_tables>
         </policies>
     </storage_configuration>
+    <query_thread_log>
+        <database>system</database>
+        <table>query_thread_log</table>
+    </query_thread_log>
+    <query_metric_log>
+        <database>system</database>
+        <table>query_metric_log</table>
+    </query_metric_log>
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+    </metric_log>
+
 </clickhouse>

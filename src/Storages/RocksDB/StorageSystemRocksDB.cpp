@@ -22,10 +22,6 @@ namespace Setting
     extern const SettingsBool system_events_show_zero_values;
 }
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 ColumnsDescription StorageSystemRocksDB::getColumnsDescription()
 {
@@ -54,8 +50,11 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
 
     using RocksDBStoragePtr = std::shared_ptr<StorageEmbeddedRocksDB>;
     std::map<String, std::map<String, RocksDBStoragePtr>> tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases())
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
+        if (db.second->isExternal())
+            continue;
+
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
@@ -111,8 +110,9 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
         String table = (*col_table_to_filter)[i].safeGet<String>();
 
         auto statistics = tables[database][table]->getRocksDBStatistics();
+        /// The table can be concurrently dropped, and the RocksDB instance may no longer be available.
         if (!statistics)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "RocksDB statistics are not available");
+            continue;
 
         for (auto [tick, name] : rocksdb::TickersNameMap)
         {

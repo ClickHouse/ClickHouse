@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 
+#include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -152,12 +153,15 @@ Field DataTypeAggregateFunction::getDefault() const
     return field;
 }
 
-bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type)
+bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type, bool ignore_variant)
 {
     const auto * lhs_state = typeid_cast<const DataTypeAggregateFunction *>(lhs_state_type.get());
     const auto * rhs_state = typeid_cast<const DataTypeAggregateFunction *>(rhs_state_type.get());
 
     if (!lhs_state || !rhs_state)
+        return false;
+
+    if (!ignore_variant && lhs_state->function->getStateVariant() != rhs_state->function->getStateVariant())
         return false;
 
     if (lhs_state->function->getName() != rhs_state->function->getName())
@@ -180,6 +184,31 @@ bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type,
     return true;
 }
 
+void DataTypeAggregateFunction::updateHashImpl(SipHash & hash) const
+{
+    hash.update(getFunctionName());
+    hash.update(parameters.size());
+    for (const auto & param : parameters)
+        hash.update(param.getType());
+    hash.update(argument_types.size());
+    for (const auto & arg_type : argument_types)
+        arg_type->updateHash(hash);
+    if (version)
+        hash.update(*version);
+    hash.update(static_cast<UInt8>(function->getStateVariant()));
+}
+
+bool DataTypeAggregateFunction::equalsIgnoringVariant(const IDataType & rhs) const
+{
+    if (typeid(rhs) != typeid(*this))
+        return false;
+
+    auto lhs_state_type = function->getNormalizedStateType();
+    auto rhs_state_type = typeid_cast<const DataTypeAggregateFunction &>(rhs).function->getNormalizedStateType();
+
+    return strictEquals(lhs_state_type, rhs_state_type, /*ignore_variant=*/ true);
+}
+
 bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 {
     if (typeid(rhs) != typeid(*this))
@@ -192,9 +221,9 @@ bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 }
 
 
-SerializationPtr DataTypeAggregateFunction::doGetDefaultSerialization() const
+SerializationPtr DataTypeAggregateFunction::doGetSerialization(const SerializationInfoSettings &) const
 {
-    return std::make_shared<SerializationAggregateFunction>(function, getName(), getVersion());
+    return SerializationAggregateFunction::create(function, getName(), getVersion());
 }
 
 
@@ -234,7 +263,7 @@ static DataTypePtr create(const ASTPtr & arguments)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected level of parameters to aggregate function");
 
         function_name = parametric->name;
-        action = parametric->nulls_action;
+        action = parametric->getNullsAction();
 
         if (parametric->arguments)
         {

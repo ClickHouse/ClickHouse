@@ -1,25 +1,34 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedWebAssembly.h>
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Storages/System/StorageSystemFunctions.h>
+#include <Common/Exception.h>
+#include <Common/Logger.h>
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_FUNCTION;
+}
+
 enum class FunctionOrigin : int8_t
 {
     SYSTEM = 0,
     SQL_USER_DEFINED = 1,
-    EXECUTABLE_USER_DEFINED = 2
+    EXECUTABLE_USER_DEFINED = 2,
+    WASM_USER_DEFINED = 3,
 };
 
 namespace
@@ -53,7 +62,7 @@ namespace
         res_columns[4]->insert(create_query);
         res_columns[5]->insert(static_cast<Int8>(function_origin));
 
-        if constexpr (std::is_same_v<Factory, FunctionFactory>)
+        if constexpr (std::is_same_v<Factory, FunctionFactory> || std::is_same_v<Factory, AggregateFunctionFactory>)
         {
             if (factory.isAlias(name))
             {
@@ -64,17 +73,19 @@ namespace
                 res_columns[10]->insertDefault();
                 res_columns[11]->insertDefault();
                 res_columns[12]->insertDefault();
+                res_columns[13]->insertDefault();
             }
             else
             {
                 auto documentation = factory.getDocumentation(name);
                 res_columns[6]->insert(documentation.description);
-                res_columns[7]->insert(documentation.syntax);
+                res_columns[7]->insert(documentation.syntaxAsString());
                 res_columns[8]->insert(documentation.argumentsAsString());
-                res_columns[9]->insert(documentation.returnedValueAsString());
-                res_columns[10]->insert(documentation.examplesAsString());
-                res_columns[11]->insert(documentation.introducedInAsString());
-                res_columns[12]->insert(documentation.categoryAsString());
+                res_columns[9]->insert(documentation.parametersAsString());
+                res_columns[10]->insert(documentation.returnedValueAsString());
+                res_columns[11]->insert(documentation.examplesAsString());
+                res_columns[12]->insert(documentation.introducedInAsString());
+                res_columns[13]->insert(documentation.categoryAsString());
             }
         }
         else
@@ -86,6 +97,7 @@ namespace
             res_columns[10]->insertDefault();
             res_columns[11]->insertDefault();
             res_columns[12]->insertDefault();
+            res_columns[13]->insertDefault();
         }
     }
 }
@@ -96,7 +108,8 @@ std::vector<std::pair<String, Int8>> getOriginEnumsValues()
     return std::vector<std::pair<String, Int8>>{
         {"System", static_cast<Int8>(FunctionOrigin::SYSTEM)},
         {"SQLUserDefined", static_cast<Int8>(FunctionOrigin::SQL_USER_DEFINED)},
-        {"ExecutableUserDefined", static_cast<Int8>(FunctionOrigin::EXECUTABLE_USER_DEFINED)}
+        {"ExecutableUserDefined", static_cast<Int8>(FunctionOrigin::EXECUTABLE_USER_DEFINED)},
+        {"WasmUserDefined", static_cast<Int8>(FunctionOrigin::WASM_USER_DEFINED)},
     };
 }
 
@@ -112,7 +125,8 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
         {"origin", std::make_shared<DataTypeEnum8>(getOriginEnumsValues()), "Obsolete."},
         {"description", std::make_shared<DataTypeString>(), "A high-level description what the function does."},
         {"syntax", std::make_shared<DataTypeString>(), "Signature of the function."},
-        {"arguments", std::make_shared<DataTypeString>(), "What arguments does the function take."},
+        {"arguments", std::make_shared<DataTypeString>(), "The function arguments."},
+        {"parameters", std::make_shared<DataTypeString>(), "The function parameters (only for aggregate function)."},
         {"returned_value", std::make_shared<DataTypeString>(), "What does the function return."},
         {"examples", std::make_shared<DataTypeString>(), "Usage example."},
         {"introduced_in", std::make_shared<DataTypeString>(), "ClickHouse version in which the function was first introduced."},
@@ -140,7 +154,26 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & user_defined_sql_functions_names = user_defined_sql_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : user_defined_sql_functions_names)
     {
-        auto create_query = user_defined_sql_functions_factory.get(function_name)->formatWithSecretsOneLine();
+        ASTPtr ast;
+        try
+        {
+            ast = user_defined_sql_functions_factory.get(function_name);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::UNKNOWN_FUNCTION)
+                tryLogCurrentException(getLogger("system.functions"), fmt::format("Function {} does not exist", function_name), LogsLevel::debug);
+            else
+                throw;
+        }
+        /// WASM functions are stored in the same SQL objects storage but have their own origin.
+        /// They are emitted separately below; skip them here to avoid duplicates.
+        if (ast && ast->as<ASTCreateWasmFunctionQuery>())
+            continue;
+
+        String create_query;
+        if (ast)
+            create_query = format({context, *ast});
         fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory);
     }
 
@@ -149,6 +182,54 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     for (const auto & function_name : user_defined_executable_functions_names)
     {
         fillRow(res_columns, function_name, 0, "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory);
+    }
+
+    const auto & wasm_functions_factory = UserDefinedWebAssemblyFunctionFactory::instance();
+    for (const auto & registered : wasm_functions_factory.getAllFunctions())
+    {
+        const auto & func = *registered.function;
+        const auto & arg_names = func.getArgumentNames();
+        const auto & arg_types = func.getArguments();
+        const auto & result_type = func.getResultType();
+
+        String create_query;
+        if (registered.create_query)
+            create_query = format({context, *registered.create_query});
+
+        String syntax = registered.sql_name + "(";
+        String arguments_str;
+        for (size_t i = 0; i < arg_types.size(); ++i)
+        {
+            if (i > 0)
+                syntax += ", ";
+            const String & arg_name = i < arg_names.size() ? arg_names[i] : ("arg" + std::to_string(i + 1));
+            const String type_name = arg_types[i]->getName();
+            syntax += arg_name + " " + type_name;
+            arguments_str += "- `" + arg_name + "` — " + type_name + "\n";
+        }
+        syntax += ")";
+
+        String returned_value_str;
+        if (result_type)
+        {
+            syntax += " -> " + result_type->getName();
+            returned_value_str = result_type->getName();
+        }
+
+        res_columns[0]->insert(registered.sql_name);
+        res_columns[1]->insert(UInt64(0)); // is_aggregate
+        res_columns[2]->insert(false); // case_insensitive
+        res_columns[3]->insertDefault(); // alias_to
+        res_columns[4]->insert(create_query);
+        res_columns[5]->insert(static_cast<Int8>(FunctionOrigin::WASM_USER_DEFINED));
+        res_columns[6]->insertDefault(); // description
+        res_columns[7]->insert(syntax);
+        res_columns[8]->insert(arguments_str);
+        res_columns[9]->insertDefault(); // parameters
+        res_columns[10]->insert(returned_value_str);
+        res_columns[11]->insertDefault(); // examples
+        res_columns[12]->insertDefault(); // introduced_in
+        res_columns[13]->insertDefault(); // categories
     }
 }
 

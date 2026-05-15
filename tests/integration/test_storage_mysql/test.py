@@ -917,6 +917,44 @@ def test_mysql_ssl_auth(started_cluster):
         )
 
 
+def test_mysql_reading_clone(started_cluster):
+    table_name = "test_mysql_reading_clone"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    node1.query(
+        f"""
+        CREATE TABLE {table_name}
+        (
+            id UInt32,
+            name String,
+            age UInt32,
+            money UInt32
+        )
+        ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}')
+        """
+    )
+
+    node1.query(
+        "INSERT INTO {} (id, name) SELECT number, concat('name_', toString(number)) from numbers(10) ".format(
+            table_name
+        )
+    )
+
+    assert node1.query(f"SELECT count() FROM {table_name}").rstrip() == "10"
+
+    result = node1.query(f"SELECT count() FROM (SELECT (SELECT tx.id) = 1 as x FROM {table_name} AS tx) WHERE x SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0")
+
+    assert result.rstrip() == "1"
+
+    drop_mysql_table(conn, table_name)
+    conn.close()
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+
 if __name__ == "__main__":
     with contextmanager(started_cluster)() as cluster:
         for name, instance in list(cluster.instances.items()):

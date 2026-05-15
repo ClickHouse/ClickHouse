@@ -1,11 +1,13 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/StringUtils.h>
+#include <base/arithmeticOverflow.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 
+#include <cstring>
 #include <limits>
 
 namespace DB
@@ -13,8 +15,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int CANNOT_PARSE_DATETIME;
+extern const int LOGICAL_ERROR;
+extern const int CANNOT_PARSE_DATETIME;
 }
 
 
@@ -62,7 +64,14 @@ inline void readDecimalNumber(T & res, const char * src)
 template <typename T>
 inline void readDecimalNumber(T & res, size_t num_digits, const char * src)
 {
-#define READ_DECIMAL_NUMBER(N) do { res *= common::exp10_i32(N); readDecimalNumber<N>(res, src); src += (N); num_digits -= (N); } while (false)
+#define READ_DECIMAL_NUMBER(N) \
+    do \
+    { \
+        res *= common::exp10_i32(N); \
+        readDecimalNumber<N>(res, src); \
+        src += (N); \
+        num_digits -= (N); \
+    } while (false)
     while (num_digits)
     {
         switch (num_digits)
@@ -91,9 +100,10 @@ ReturnType parseDateTimeBestEffortImpl(
     DateTimeSubsecondPart * fractional,
     const char * allowed_date_delimiters = nullptr)
 {
-    auto on_error = [&]<typename... FmtArgs>(int error_code [[maybe_unused]],
-                                             FormatStringHelper<FmtArgs...> fmt_string [[maybe_unused]],
-                                             FmtArgs && ...fmt_args [[maybe_unused]])
+    auto on_error = [&]<typename... FmtArgs>(
+                        int error_code [[maybe_unused]],
+                        FormatStringHelper<FmtArgs...> fmt_string [[maybe_unused]],
+                        FmtArgs &&... fmt_args [[maybe_unused]])
     {
         if constexpr (std::is_same_v<ReturnType, void>)
             throw Exception(error_code, std::move(fmt_string), std::forward<FmtArgs>(fmt_args)...);
@@ -110,6 +120,7 @@ ReturnType parseDateTimeBestEffortImpl(
     UInt8 second = 0;
 
     bool has_time = false;
+    bool has_fractional = false;
 
     bool has_time_zone_offset = false;
     bool time_zone_offset_negative = false;
@@ -138,6 +149,30 @@ ReturnType parseDateTimeBestEffortImpl(
         else
             return false;
         return true;
+    };
+
+    /// Validate that a word is a known full month or weekday name (not just a prefix match).
+    /// For example, "March" is valid but "Married" is not, even though both start with "Mar".
+    auto is_valid_month_or_weekday_name = [] (const char * word, size_t len)
+    {
+        return (len == 7 && 0 == strncasecmp(word, "January", 7))
+            || (len == 8 && 0 == strncasecmp(word, "February", 8))
+            || (len == 5 && 0 == strncasecmp(word, "March", 5))
+            || (len == 5 && 0 == strncasecmp(word, "April", 5))
+            || (len == 4 && 0 == strncasecmp(word, "June", 4))
+            || (len == 4 && 0 == strncasecmp(word, "July", 4))
+            || (len == 6 && 0 == strncasecmp(word, "August", 6))
+            || (len == 9 && 0 == strncasecmp(word, "September", 9))
+            || (len == 7 && 0 == strncasecmp(word, "October", 7))
+            || (len == 8 && 0 == strncasecmp(word, "November", 8))
+            || (len == 8 && 0 == strncasecmp(word, "December", 8))
+            || (len == 6 && 0 == strncasecmp(word, "Monday", 6))
+            || (len == 7 && 0 == strncasecmp(word, "Tuesday", 7))
+            || (len == 9 && 0 == strncasecmp(word, "Wednesday", 9))
+            || (len == 8 && 0 == strncasecmp(word, "Thursday", 8))
+            || (len == 6 && 0 == strncasecmp(word, "Friday", 6))
+            || (len == 8 && 0 == strncasecmp(word, "Saturday", 8))
+            || (len == 6 && 0 == strncasecmp(word, "Sunday", 6));
     };
 
     while (!in.eof())
@@ -180,7 +215,7 @@ ReturnType parseDateTimeBestEffortImpl(
             }
             if (num_digits == 10 && !year && !has_time)
             {
-                if (strict)
+                if constexpr (strict)
                     return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Strict best effort parsing doesn't allow timestamps");
 
                 /// This is unix timestamp.
@@ -188,14 +223,18 @@ ReturnType parseDateTimeBestEffortImpl(
                 if (fractional && !in.eof() && *in.position() == '.')
                 {
                     ++in.position();
-                    fractional->digits = readDigits(digits, sizeof(digits), in);
+                    // Prevent numeric overflow
+                    using FractionalType = typename std::decay_t<decltype(fractional->value)>;
+                    fractional->digits = static_cast<UInt8>(std::min(
+                        static_cast<size_t>(std::numeric_limits<FractionalType>::digits10),
+                        readDigits(digits, sizeof(digits), in)));
                     readDecimalNumber(fractional->value, fractional->digits, digits);
                 }
                 return ReturnType(true);
             }
             if (num_digits == 9 && !year && !has_time)
             {
-                if (strict)
+                if constexpr (strict)
                     return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Strict best effort parsing doesn't allow timestamps");
 
                 /// This is unix timestamp.
@@ -203,14 +242,18 @@ ReturnType parseDateTimeBestEffortImpl(
                 if (fractional && !in.eof() && *in.position() == '.')
                 {
                     ++in.position();
-                    fractional->digits = readDigits(digits, sizeof(digits), in);
+                    // Prevent numeric overflow
+                    using FractionalType = typename std::decay_t<decltype(fractional->value)>;
+                    fractional->digits = static_cast<UInt8>(std::min(
+                        static_cast<size_t>(std::numeric_limits<FractionalType>::digits10),
+                        readDigits(digits, sizeof(digits), in)));
                     readDecimalNumber(fractional->value, fractional->digits, digits);
                 }
                 return ReturnType(true);
             }
             if (num_digits == 14 && !year && !has_time)
             {
-                if (strict)
+                if constexpr (strict)
                     return on_error(
                         ErrorCodes::CANNOT_PARSE_DATETIME, "Strict best effort parsing doesn't allow date times without separators");
 
@@ -225,7 +268,7 @@ ReturnType parseDateTimeBestEffortImpl(
             }
             else if (num_digits == 8 && !year)
             {
-                if (strict)
+                if constexpr (strict)
                     return on_error(
                         ErrorCodes::CANNOT_PARSE_DATETIME, "Strict best effort parsing doesn't allow date times without separators");
 
@@ -236,7 +279,7 @@ ReturnType parseDateTimeBestEffortImpl(
             }
             else if (num_digits == 6)
             {
-                if (strict)
+                if constexpr (strict)
                     return on_error(
                         ErrorCodes::CANNOT_PARSE_DATETIME, "Strict best effort parsing doesn't allow date times without separators");
 
@@ -433,6 +476,14 @@ ReturnType parseDateTimeBestEffortImpl(
                                     ErrorCodes::CANNOT_PARSE_DATETIME,
                                     "Cannot read DateTime: alphabetical characters after day of month don't look like month: {}",
                                     std::string(alpha, 3));
+
+                            /// If there are still more alphabetical characters, the word is longer than any known month name.
+                            if (!in.eof() && isAlphaASCII(*in.position()))
+                                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected word");
+
+                            /// If the word is longer than 3 characters, validate that it is a known full month name.
+                            if (num_alpha > 3 && !is_valid_month_or_weekday_name(alpha, num_alpha))
+                                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected word");
                         }
                         else
                             return on_error(
@@ -474,8 +525,9 @@ ReturnType parseDateTimeBestEffortImpl(
                 {
                     if (day_of_month)
                     {
-                        if (strict && hour)
-                            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: hour component is duplicated");
+                        if constexpr (strict)
+                            if (hour)
+                                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: hour component is duplicated");
 
                         hour = hour_or_day_of_month_or_month;
                     }
@@ -510,21 +562,24 @@ ReturnType parseDateTimeBestEffortImpl(
             {
                 if (!has_time)
                     return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected point symbol");
+                if (has_fractional)
+                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: duplicate fractional part");
+                has_fractional = true;
 
                 ++in.position();
                 num_digits = readDigits(digits, sizeof(digits), in);
                 if (fractional)
                 {
                     using FractionalType = typename std::decay_t<decltype(fractional->value)>;
-                    // Reading more decimal digits than fits into FractionalType would case an
+                    // Reading more decimal digits than fits into FractionalType would cause an
                     // overflow, so it is better to skip all digits from the right side that do not
                     // fit into result type. To provide less precise value rather than bogus one.
                     num_digits = std::min(static_cast<size_t>(std::numeric_limits<FractionalType>::digits10), num_digits);
 
-                    fractional->digits = num_digits;
+                    fractional->digits = static_cast<UInt8>(num_digits);
                     readDecimalNumber(fractional->value, num_digits, digits);
                 }
-                else if (strict)
+                else if constexpr (strict)
                 {
                     /// Fractional part is not allowed.
                     return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected fractional part");
@@ -569,7 +624,10 @@ ReturnType parseDateTimeBestEffortImpl(
                         readDecimalNumber<1>(time_zone_offset_hour, digits);
                     }
                     else
-                        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected number of decimal digits for time zone offset: {}", num_digits);
+                        return on_error(
+                            ErrorCodes::CANNOT_PARSE_DATETIME,
+                            "Cannot read DateTime: unexpected number of decimal digits for time zone offset: {}",
+                            num_digits);
 
                     if (num_digits < 3 && checkChar(':', in))
                     {
@@ -584,7 +642,10 @@ ReturnType parseDateTimeBestEffortImpl(
                             readDecimalNumber<1>(time_zone_offset_minute, digits);
                         }
                         else
-                            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected number of decimal digits for time zone offset in minutes: {}", num_digits);
+                            return on_error(
+                                ErrorCodes::CANNOT_PARSE_DATETIME,
+                                "Cannot read DateTime: unexpected number of decimal digits for time zone offset in minutes: {}",
+                                num_digits);
                     }
                 }
             }
@@ -660,8 +721,29 @@ ReturnType parseDateTimeBestEffortImpl(
                     else
                         return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected word");
 
-                    while (!in.eof() && isAlphaASCII(*in.position()))
-                        ++in.position();
+                    /// Read remaining alphabetical characters of the word.
+                    /// For example, "March" after reading "Mar", or "Monday" after reading "Mon".
+                    char rest[7]; /// Longest valid suffix: "tember" or "nesday" (6 chars)
+                    size_t num_rest = readAlpha(rest, sizeof(rest), in);
+
+                    /// If there are still more alphabetical characters, the word is longer than any known name.
+                    if (!in.eof() && isAlphaASCII(*in.position()))
+                    {
+                        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected word");
+                    }
+
+                    /// If the word is longer than 3 characters, validate that it is a known full month or weekday name.
+                    /// For example, "March" is valid but "Married" is not, even though both start with "Mar".
+                    if (num_rest > 0)
+                    {
+                        char full_word[10];
+                        memcpy(full_word, alpha, 3);
+                        memcpy(full_word + 3, rest, num_rest);
+                        size_t full_len = 3 + num_rest;
+
+                        if (!is_valid_month_or_weekday_name(full_word, full_len))
+                            return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected word");
+                    }
 
                     /// For RFC 2822
                     if (has_day_of_week)
@@ -715,7 +797,8 @@ ReturnType parseDateTimeBestEffortImpl(
 
     auto check_date = [](const auto & is_leap_year_, const auto & month_, const auto & day_)
     {
-        if ((month_ == 1 || month_ == 3 || month_ == 5 || month_ == 7 || month_ == 8 || month_ == 10 || month_ == 12) && day_ >= 1 && day_ <= 31)
+        if ((month_ == 1 || month_ == 3 || month_ == 5 || month_ == 7 || month_ == 8 || month_ == 10 || month_ == 12) && day_ >= 1
+            && day_ <= 31)
             return true;
         if (month_ == 2 && ((is_leap_year_ && day_ >= 1 && day_ <= 29) || (!is_leap_year_ && day_ >= 1 && day_ <= 28)))
             return true;
@@ -725,8 +808,12 @@ ReturnType parseDateTimeBestEffortImpl(
     };
 
     if (!check_date(is_leap_year, month, day_of_month))
-        return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected date: {}-{}-{}",
-                        year, static_cast<UInt16>(month), static_cast<UInt16>(day_of_month));
+        return on_error(
+            ErrorCodes::CANNOT_PARSE_DATETIME,
+            "Cannot read DateTime: unexpected date: {}-{}-{}",
+            year,
+            static_cast<UInt16>(month),
+            static_cast<UInt16>(day_of_month));
 
     if (is_am && hour == 12)
         hour = 0;
@@ -753,31 +840,64 @@ ReturnType parseDateTimeBestEffortImpl(
         }
     };
 
-    if constexpr (strict)
+    if constexpr (!strict || std::is_same_v<ReturnType, void>)
     {
-        if constexpr (is_64)
+        if (has_time_zone_offset)
         {
-            if (year < 1900)
-                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime64: year {} is less than minimum supported year 1900", year);
+            res = utc_time_zone.makeDateTime(year, month, day_of_month, hour, minute, second);
+            adjust_time_zone();
         }
         else
         {
-            if (year < 1970)
-                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year {} is less than minimum supported year 1970", year);
+            res = local_time_zone.makeDateTime(year, month, day_of_month, hour, minute, second);
         }
-    }
 
-    if (has_time_zone_offset)
-    {
-        res = utc_time_zone.makeDateTime(year, month, day_of_month, hour, minute, second);
-        adjust_time_zone();
+        if constexpr (std::is_same_v<ReturnType, bool>)
+            return true;
     }
     else
     {
-        res = local_time_zone.makeDateTime(year, month, day_of_month, hour, minute, second);
-    }
+        if (has_time_zone_offset)
+        {
+            auto res_maybe = utc_time_zone.tryToMakeDateTime(year, month, day_of_month, hour, minute, second);
+            if (!res_maybe)
+                return false;
 
-    return ReturnType(true);
+            /// For usual DateTime check if value is within supported range
+            if constexpr (!is_64)
+            {
+                if (*res_maybe < 0 || *res_maybe > UINT32_MAX)
+                    return false;
+            }
+            res = *res_maybe;
+            adjust_time_zone();
+
+            /// After timezone adjustment, the value may have shifted outside the valid range.
+            /// For example, "2106-02-07 06:28:15-01:00" is within range before adjustment,
+            /// but after converting to UTC it exceeds UINT32_MAX.
+            if constexpr (!is_64)
+            {
+                if (res < 0 || static_cast<uint64_t>(res) > UINT32_MAX)
+                    return false;
+            }
+        }
+        else
+        {
+            auto res_maybe = local_time_zone.tryToMakeDateTime(year, month, day_of_month, hour, minute, second);
+            if (!res_maybe)
+                return false;
+
+            /// For usual DateTime check if value is within supported range
+            if constexpr (!is_64)
+            {
+                if (*res_maybe < 0 || *res_maybe > UINT32_MAX)
+                    return false;
+            }
+            res = *res_maybe;
+        }
+
+        return true;
+    }
 }
 
 template <typename ReturnType, bool is_us_style, bool strict = false>
@@ -808,9 +928,9 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
     }
 
     if constexpr (std::is_same_v<ReturnType, bool>)
-        return DecimalUtils::tryGetDecimalFromComponents<DateTime64>(whole, fractional, scale, res);
+        return DecimalUtils::tryGetDateTimeFromComponents(whole, fractional, scale, res);
 
-    res = DecimalUtils::decimalFromComponents<DateTime64>(whole, fractional, scale);
+    res = DecimalUtils::dateTimeFromComponents(whole, fractional, scale);
     return ReturnType(true);
 }
 

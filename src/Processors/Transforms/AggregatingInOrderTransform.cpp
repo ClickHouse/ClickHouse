@@ -1,8 +1,10 @@
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Core/SortCursor.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Interpreters/sortBlock.h>
@@ -12,24 +14,27 @@ namespace DB
 {
 
 AggregatingInOrderTransform::AggregatingInOrderTransform(
-    Block header,
+    SharedHeader header,
     AggregatingTransformParamsPtr params_,
     const SortDescription & sort_description_for_merging,
     const SortDescription & group_by_description_,
-    size_t max_block_size_, size_t max_block_bytes_)
+    size_t max_block_size_, size_t max_block_bytes_,
+    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_)
     : AggregatingInOrderTransform(std::move(header), std::move(params_),
         sort_description_for_merging, group_by_description_,
         max_block_size_, max_block_bytes_,
-        std::make_unique<ManyAggregatedData>(1), 0)
+        std::make_unique<ManyAggregatedData>(1), 0,
+        std::move(dataflow_cache_updater_))
 {
 }
 
 AggregatingInOrderTransform::AggregatingInOrderTransform(
-    Block header, AggregatingTransformParamsPtr params_,
+    SharedHeader header, AggregatingTransformParamsPtr params_,
     const SortDescription & sort_description_for_merging,
     const SortDescription & group_by_description_,
     size_t max_block_size_, size_t max_block_bytes_,
-    ManyAggregatedDataPtr many_data_, size_t current_variant)
+    ManyAggregatedDataPtr many_data_, size_t current_variant,
+    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_)
     : IProcessor({std::move(header)}, {params_->getCustomHeader(false)})
     , max_block_size(max_block_size_)
     , max_block_bytes(max_block_bytes_)
@@ -39,6 +44,7 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::move(many_data_))
     , variants(*many_data->variants[current_variant])
+    , dataflow_cache_updater(std::move(dataflow_cache_updater_))
 {
     /// We won't finalize states in order to merge same states (generated due to multi-thread execution) in AggregatingSortedTransform
     res_header = params->getCustomHeader(/* final_= */ false);
@@ -82,8 +88,6 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         is_consume_started = true;
     }
 
-    if (rows_before_aggregation)
-        rows_before_aggregation->add(rows);
     src_rows += rows;
     src_bytes += chunk.bytes();
 
@@ -186,10 +190,12 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             if (cur_block_size >= max_block_size || cur_block_bytes + current_memory_usage >= max_block_bytes)
             {
                 if (group_by_key)
-                    group_by_block
-                        = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false);
+                    group_by_chunk
+                        = params->aggregator.prepareChunkAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false).chunk;
                 cur_block_bytes += current_memory_usage;
                 finalizeCurrentChunk(std::move(chunk), key_end);
+                if (rows_before_aggregation)
+                    rows_before_aggregation->add(key_end);
                 return;
             }
 
@@ -200,6 +206,9 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 
         key_begin = key_end;
     }
+
+    if (rows_before_aggregation)
+        rows_before_aggregation->add(rows);
 
     cur_block_bytes += current_memory_usage;
     block_end_reached = false;
@@ -283,9 +292,9 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
         return Status::NeedData;
     }
 
-    assert(!is_consume_finished);
+    chassert(!is_consume_finished);
     current_chunk = input.pull(true /* set_not_needed */);
-    convertToFullIfSparse(current_chunk);
+    removeSpecialColumnRepresentations(current_chunk);
     return Status::Ready;
 }
 
@@ -294,8 +303,8 @@ void AggregatingInOrderTransform::generate()
     if (cur_block_size && is_consume_finished)
     {
         if (group_by_key)
-            group_by_block
-                = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false);
+            group_by_chunk
+                = params->aggregator.prepareChunkAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false).chunk;
         else
             params->aggregator.addSingleKeyToAggregateColumns(variants, res_aggregate_columns);
         variants.invalidate();
@@ -318,12 +327,22 @@ void AggregatingInOrderTransform::generate()
     {
         /// Sorting is required after aggregation, for proper merging, via
         /// FinishAggregatingInOrderTransform/MergingAggregatedBucketTransform
-        sortBlock(group_by_block, sort_description);
-        to_push_chunk = convertToChunk(group_by_block);
+        auto block = params->getHeader();
+        block.setColumns(group_by_chunk.detachColumns());
+        sortBlock(block, sort_description);
+        to_push_chunk = convertToChunk(block);
     }
 
     if (!to_push_chunk.getNumRows())
         return;
+
+    if (dataflow_cache_updater)
+    {
+        dataflow_cache_updater->recordAggregationKeySizes(
+            to_push_chunk, params->aggregator.getKeysPositions(), params->aggregator.getKeyTypes());
+        dataflow_cache_updater->recordAggregationStateColumnSizes(
+            to_push_chunk, params->aggregator.getKeysPositions(), res_header);
+    }
 
     /// Clear arenas to allow to free them, when chunk will reach the end of pipeline.
     /// It's safe clear them here, because columns with aggregate functions already holds them.
@@ -340,8 +359,8 @@ void AggregatingInOrderTransform::generate()
     need_generate = false;
 }
 
-FinalizeAggregatedTransform::FinalizeAggregatedTransform(Block header, AggregatingTransformParamsPtr params_)
-    : ISimpleTransform({std::move(header)}, {params_->getHeader()}, true)
+FinalizeAggregatedTransform::FinalizeAggregatedTransform(SharedHeader header, const AggregatingTransformParamsPtr & params_)
+    : ISimpleTransform({std::move(header)}, {std::make_shared<const Block>(params_->getHeader())}, true)
     , params(params_)
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {

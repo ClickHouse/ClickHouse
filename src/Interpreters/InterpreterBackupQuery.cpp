@@ -49,7 +49,7 @@ BlockIO InterpreterBackupQuery::execute()
         status = backups_worker.wait(id);
 
     BlockIO res_io;
-    res_io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(getResultRow(id, status)));
+    res_io.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(getResultRow(id, status))));
     return res_io;
 }
 

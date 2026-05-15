@@ -1,16 +1,16 @@
-#include "NullDictionarySource.h"
+#include <Dictionaries/NullDictionarySource.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/NullSource.h>
 #include <Common/logger_useful.h>
-#include "DictionarySourceFactory.h"
-#include "DictionarySourceHelpers.h"
-#include "DictionaryStructure.h"
-#include "registerDictionaries.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/registerDictionaries.h>
 
 
 namespace DB
 {
-NullDictionarySource::NullDictionarySource(Block & sample_block_) : sample_block(sample_block_)
+NullDictionarySource::NullDictionarySource(SharedHeader sample_block_) : sample_block(sample_block_)
 {
 }
 
@@ -18,10 +18,12 @@ NullDictionarySource::NullDictionarySource(const NullDictionarySource & other) :
 {
 }
 
-QueryPipeline NullDictionarySource::loadAll()
+BlockIO NullDictionarySource::loadAll()
 {
     LOG_TRACE(getLogger("NullDictionarySource"), "loadAll {}", toString());
-    return QueryPipeline(std::make_shared<NullSource>(sample_block));
+    BlockIO io;
+    io.pipeline = QueryPipeline(std::make_shared<NullSource>(sample_block));
+    return io;
 }
 
 
@@ -41,7 +43,7 @@ void registerDictionarySourceNull(DictionarySourceFactory & factory)
               Block & sample_block,
               ContextPtr /* global_context */,
               const std::string & /* default_database */,
-              bool /* created_from_ddl*/) -> DictionarySourcePtr { return std::make_unique<NullDictionarySource>(sample_block); };
+              bool /* created_from_ddl*/) -> DictionarySourcePtr { return std::make_unique<NullDictionarySource>(std::make_shared<const Block>(sample_block)); };
 
     factory.registerSource("null", create_table_source);
 }

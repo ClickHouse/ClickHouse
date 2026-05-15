@@ -4,6 +4,7 @@ import glob
 import json
 import logging
 import os
+import re
 import random
 import time
 import uuid
@@ -12,8 +13,16 @@ from helpers.cluster import ClickHouseCluster
 import pytest
 import requests
 import urllib3
+import pyspark
+from pyspark.sql import Row
+from pyspark.sql.types import StructType, StructField, DateType, StringType
+from pyspark.sql.utils import AnalysisException
+from datetime import date
+import uuid
 
 from helpers.test_tools import TSV
+
+UC_LOG = "/var/lib/clickhouse/user_files/unitycatalog/uc.log"
 
 
 def start_unity_catalog(node):
@@ -21,9 +30,29 @@ def start_unity_catalog(node):
         [
             "bash",
             "-c",
-            f"""cd /unitycatalog && nohup bin/start-uc-server &""",
+            f"""cp -r /unitycatalog /var/lib/clickhouse/user_files/ && cd /var/lib/clickhouse/user_files/unitycatalog && nohup bin/start-uc-server > uc.log 2>&1 &""",
         ]
     )
+    # Wait for Unity Catalog to accept connections on port 8080 before returning.
+    # The 120s timeout matches the UC startup wait in tests/casa_del_dolor/catalogs/datalakes.py.
+    try:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                """for i in $(seq 1 120); do (echo > /dev/tcp/localhost/8080) 2>/dev/null && exit 0; sleep 1; done; echo 'Unity Catalog did not start within 120s' >&2; exit 1""",
+            ]
+        )
+    except Exception as e:
+        print("UC health check failed:", str(e))
+        try:
+            logs = node.exec_in_container(
+                ["tail", "-n", "50", UC_LOG]
+            )
+            print("Last 50 lines of UC log:\n", logs)
+        except Exception as log_e:
+            print(f"Cannot read UC log: {str(log_e)}")
+        raise
 
 
 @pytest.fixture(scope="module")
@@ -42,6 +71,11 @@ def started_cluster():
         logging.info("Starting cluster...")
         cluster.start()
 
+        if int(cluster.instances["node1"].query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'").strip()) == 0:
+            pytest.skip(
+                "DeltaLake engine is not available"
+            )
+
         start_unity_catalog(cluster.instances["node1"])
 
         yield cluster
@@ -50,45 +84,227 @@ def started_cluster():
         cluster.shutdown()
 
 
-def execute_spark_query(node, query_text, ignore_exit_code=False):
-    return node.exec_in_container(
+def _capture_spark_hang_diagnostics(node):
+    """
+    Capture diagnostic data when a Spark query times out or otherwise fails
+    unexpectedly. Each capture is wrapped in its own ``try``/``except`` so a
+    failure in one diagnostic does not prevent collection of the others.
+
+    None of these are intended to recover the test. They only produce data
+    for post-mortem analysis of the chronic Spark hang on
+    ``Integration tests (arm_binary, distributed plan, 4/4)`` and similar
+    shards, where on ``subprocess.TimeoutExpired`` the Spark JVM is killed
+    by SIGKILL and ``stdout``/``stderr`` are typically truncated to whatever
+    Spark logged before the hang point — leaving CIDB without enough
+    information to localize the stuck thread.
+
+    Captured:
+      * ``jstack`` thread dumps of every running ``org.apache.spark`` JVM
+        (shows where the JVM is stuck)
+      * Unity Catalog HTTP liveness probe on ``http://localhost:8080``
+        (shows whether UC is responsive while Spark is hung)
+      * ``ss -tnp`` snapshot of sockets to UC port ``8080`` and ``java``
+        connections (shows whether Spark holds open sockets to UC)
+    """
+    # 1. Thread dumps of running Spark JVMs.
+    try:
+        # `[o]rg.apache.spark` is a character-class trick: it matches the
+        # literal string `org.apache.spark` (because `[o]` matches `o`) but
+        # the regex itself does NOT contain that string, so `pgrep` will
+        # not match its own command line (`pgrep -f '[o]rg.apache.spark'`).
+        # Without this, on shards where no Spark JVM is left the `bash -c`
+        # wrapper's own cmdline can match and `jstack` then runs against
+        # an unrelated shell PID.
+        pids_out = node.exec_in_container(
+            ["bash", "-c", "pgrep -f '[o]rg.apache.spark' || true"],
+            nothrow=True,
+            timeout=30,
+        )
+        pids = [p.strip() for p in (pids_out or "").splitlines() if p.strip()]
+        # Cap the number of jstack-ed PIDs at 3 so a hang affecting both
+        # the driver and several executors does not consume 30s per PID
+        # before the test fails. In practice there is one driver JVM per
+        # query; the cap is a belt for the pathological case.
+        pids = pids[:3]
+        if not pids:
+            print(
+                "Spark hang diag: no running 'org.apache.spark' processes"
+                " (already exited)"
+            )
+        for pid in pids:
+            try:
+                # Prefer non-force `jstack`; fall back to `-F` if the JVM is
+                # unresponsive to the attach mechanism. The fallback must
+                # happen BEFORE `head` truncates, otherwise `head`'s exit
+                # code (always 0 once any bytes flow) masks `jstack`'s and
+                # the `||` branch never fires.
+                dump = node.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        f"(jstack {pid} 2>&1 || jstack -F {pid} 2>&1)"
+                        f" | head -500",
+                    ],
+                    nothrow=True,
+                    timeout=30,
+                )
+                print(f"Spark hang diag: jstack of PID {pid}:\n{dump}")
+            except Exception as je:
+                print(f"Spark hang diag: jstack PID {pid} failed: {str(je)}")
+    except Exception as e:
+        print(f"Spark hang diag: failed to enumerate Spark PIDs: {str(e)}")
+
+    # 2. Unity Catalog HTTP liveness probe.
+    try:
+        uc = node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "curl --silent --show-error --max-time 5 -o /dev/null"
+                " -w 'http_code=%{http_code} time_total=%{time_total}s'"
+                " http://localhost:8080/api/2.1/unity-catalog/schemas"
+                " || echo ' curl_failed'",
+            ],
+            nothrow=True,
+            timeout=15,
+        )
+        print(f"Spark hang diag: Unity Catalog liveness: {uc}")
+    except Exception as e:
+        print(f"Spark hang diag: UC liveness probe failed: {str(e)}")
+
+    # 3. Socket state snapshot for UC port and Java connections.
+    try:
+        # Capture `ss`'s output into a shell variable first, then filter and
+        # truncate from that variable. Checking `ss`'s exit status directly
+        # (via the `if` test on the assignment) avoids the trap of the
+        # earlier `ss | grep | head || sentinel` pipeline: with
+        # `set -o pipefail` enabled, `head -50` closing the pipe early on
+        # outputs longer than 50 lines caused upstream commands to receive
+        # `SIGPIPE`, which made the pipeline status non-zero and falsely
+        # triggered the ` no_matching_sockets` sentinel; without `pipefail`,
+        # the sentinel was unreachable because `head`'s exit code (always
+        # 0 once any bytes flow) masked `ss`'s. Decoupling capture from
+        # truncation breaks both horns of that dilemma. `grep -E ... ||
+        # true` keeps the no-match case from producing an `exit 1` that
+        # would print confusing output, but plays no role in detecting
+        # `ss` failure.
+        sockets = node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                'if ss_output=$(ss -tnp 2>&1); then '
+                'echo "$ss_output" | { grep -E ":8080|java" || true; } | head -50; '
+                'else '
+                "echo ' no_matching_sockets'; "
+                'fi',
+            ],
+            nothrow=True,
+            timeout=15,
+        )
+        print(f"Spark hang diag: socket state for UC port:\n{sockets}")
+    except Exception as e:
+        print(f"Spark hang diag: ss snapshot failed: {str(e)}")
+
+
+def execute_spark_query(node, query_text):
+    # Kill any lingering Spark processes and remove the Derby metastore
+    # before starting a new Spark session. The metastore_db is created inside
+    # /spark-3.5.4-bin-hadoop3/ because spark-sql is run with cd to that directory.
+    # We remove the entire metastore_db (not just the lock file) because after
+    # SIGKILL the database can be left in a corrupted state, causing the next
+    # Spark session to hang during initialization.
+    node.exec_in_container(
         [
             "bash",
             "-c",
-            f"""
-cd /spark-3.5.4-bin-hadoop3 && bin/spark-sql --name "s3-uc-test" \\
-    --master "local[*]" \\
-    --packages "org.apache.hadoop:hadoop-aws:3.3.4,io.delta:delta-spark_2.12:3.2.1,io.unitycatalog:unitycatalog-spark_2.12:0.2.0" \\
-    --conf "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension" \\
-    --conf "spark.sql.catalog.spark_catalog=io.unitycatalog.spark.UCSingleCatalog" \\
-    --conf "spark.hadoop.fs.s3.impl=org.apache.hadoop.fs.s3a.S3AFileSystem" \\
-    --conf "spark.sql.catalog.unity=io.unitycatalog.spark.UCSingleCatalog" \\
-    --conf "spark.sql.catalog.unity.uri=http://localhost:8080" \\
-    --conf "spark.sql.catalog.unity.token=" \\
-    --conf "spark.sql.defaultCatalog=unity" \\
-    -S -e "{query_text}" | grep -v 'loading settings'
-""",
+            """pkill -9 -f 'org.apache.spark' 2>/dev/null; sleep 1; rm -rf /spark-3.5.4-bin-hadoop3/metastore_db""",
         ],
-        nothrow=ignore_exit_code,
+        nothrow=True,
     )
 
+    try:
+        result = node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"""
+    cd /spark-3.5.4-bin-hadoop3 && bin/spark-sql --name "s3-uc-test" \\
+        --master "local[1]" \\
+        --packages "org.apache.hadoop:hadoop-aws:3.3.4,io.delta:delta-spark_2.12:3.2.1,io.unitycatalog:unitycatalog-spark_2.12:0.2.0" \\
+        --conf "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension" \\
+        --conf "spark.databricks.delta.schema.autoMerge.enabled=true" \\
+        --conf "spark.sql.catalog.spark_catalog=io.unitycatalog.spark.UCSingleCatalog" \\
+        --conf "spark.hadoop.fs.s3.impl=org.apache.hadoop.fs.s3a.S3AFileSystem" \\
+        --conf "spark.driver.allowMultipleContexts=false" \\
+        --conf "spark.sql.catalog.unity=io.unitycatalog.spark.UCSingleCatalog" \\
+        --conf "spark.sql.catalog.unity.uri=http://localhost:8080" \\
+        --conf "spark.sql.catalog.unity.token=" \\
+        --conf "spark.sql.defaultCatalog=unity" \\
+        -S -e "{query_text}"
+    """,
+            ],
+            timeout=600,
+        )
+    except Exception as e:
+        returncode = getattr(e, "returncode", None)
+        cmd = getattr(e, "cmd", None)
+        if returncode is not None:
+            print("Command failed with exit code:", returncode)
+        if cmd is not None:
+            print("Command:", cmd)
 
-def execute_multiple_spark_queries(node, queries_list, ignore_exit_code=False):
-    return execute_spark_query(node, ";".join(queries_list), ignore_exit_code)
+        stdout_bytes = getattr(e, "stdout", None)
+        stderr_bytes = getattr(e, "stderr", None)
+        if stdout_bytes is not None or stderr_bytes is not None:
+            stdout = stdout_bytes.decode() if stdout_bytes else "<no stdout>"
+            stderr = stderr_bytes.decode() if stderr_bytes else "<no stderr>"
+            print("STDOUT:\n", stdout)
+            print("STDERR:\n", stderr)
+        else:
+            print("Command failed with exception:", str(e))
+
+        try:
+            logs = node.exec_in_container(
+                ["tail", "-n", "50", UC_LOG]
+            )
+            print("Last 50 lines of UC log:\n", logs)
+        except Exception as log_e:
+            print(f"Cannot read log file: {str(log_e)}")
+
+        # Capture extra diagnostics that are only useful when the Spark JVM
+        # hangs (timeout case) — thread dumps, UC liveness, socket state.
+        # These run after the existing log capture so the legacy diagnostics
+        # remain at the same position in CI output.
+        _capture_spark_hang_diagnostics(node)
+
+        raise
+
+    # We do not use "grep -v" for the above command,
+    # because it will mess up the exit code.
+    exclude_pattern = r"loading settings"
+    lines = result.splitlines()
+    filtered = [line for line in lines if not re.search(exclude_pattern, line)]
+    result = "\n".join(filtered)
+    return result
+
+
+def execute_multiple_spark_queries(node, queries_list):
+    return execute_spark_query(node, ";".join(queries_list))
 
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_embedded_database_and_tables(started_cluster, use_delta_kernel):
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
     node1 = started_cluster.instances["node1"]
-    node1.query("drop database if exists unity_test")
+    node1.query(f"drop database if exists unity_test_{test_uuid}")
     node1.query(
-        f"create database unity_test engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}",
+        f"create database unity_test_{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}",
         settings={"allow_experimental_database_unity_catalog": "1"},
     )
     default_tables = list(
         sorted(
             node1.query(
-                "SHOW TABLES FROM unity_test LIKE 'default%'",
+                f"SHOW TABLES FROM unity_test_{test_uuid} LIKE 'default%'",
                 settings={"use_hive_partitioning": "0"},
             )
             .strip()
@@ -106,10 +322,14 @@ def test_embedded_database_and_tables(started_cluster, use_delta_kernel):
     for table in default_tables:
         if table == "default.marksheet_uniform":
             continue
-        assert "DeltaLake" in node1.query(f"show create table unity_test.`{table}`")
+        assert "DeltaLake" in node1.query(
+            f"show create table unity_test_{test_uuid}.`{table}`"
+        )
         if table in ("default.marksheet", "default.user_countries"):
             data_clickhouse = TSV(
-                node1.query(f"SELECT * FROM unity_test.`{table}` ORDER BY 1,2,3")
+                node1.query(
+                    f"SELECT * FROM unity_test_{test_uuid}.`{table}` ORDER BY 1,2,3"
+                )
             )
             data_spark = TSV(
                 execute_spark_query(
@@ -121,36 +341,93 @@ def test_embedded_database_and_tables(started_cluster, use_delta_kernel):
             assert data_clickhouse == data_spark
 
 
-def test_multiple_schemes_tables(started_cluster):
+def test_check_database_unity(started_cluster):
+    """
+    Test CHECK DATABASE query on Unity Catalog with a single schema.
+    Creates one schema with multiple tables and verifies CHECK DATABASE works correctly.
+    """
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
     node1 = started_cluster.instances["node1"]
-    execute_multiple_spark_queries(
-        node1, [f"CREATE SCHEMA test_schema{i}" for i in range(10)], True
-    )
-    execute_multiple_spark_queries(
-        node1,
-        [
-            f"CREATE TABLE test_schema{i}.test_table{i} (col1 int, col2 double) using Delta location '/tmp/test_schema{i}/test_table{i}'"
-            for i in range(10)
-        ],
-        True,
-    )
-    execute_multiple_spark_queries(
-        node1,
-        [
-            f"INSERT INTO test_schema{i}.test_table{i} VALUES ({i}, {i}.0)"
-            for i in range(10)
-        ],
-        True,
+    db_name = f"check_database_{test_uuid}"
+    schema_name = f"test_schema_{test_uuid}"
+
+    # Create multiple tables in the same schema
+    table_configs = [
+        (f"table1_{test_uuid}", "col1 int, col2 double", [(1, 1.0)]),
+        (f"table2_{test_uuid}", "col1 int, col2 double", [(2, 2.0)]),
+        (f"table3_{test_uuid}", "col1 int, col2 double", [(3, 3.0)]),
+    ]
+
+    # Combine schema creation, table creation and inserts into a single
+    # Spark invocation to avoid multiple slow JVM startups.
+    queries = [f"CREATE SCHEMA {schema_name}"]
+    for table_name, table_schema, data_rows in table_configs:
+        queries.append(
+            f"CREATE TABLE {schema_name}.{table_name} ({table_schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}'"
+        )
+        for row in data_rows:
+            queries.append(f"INSERT INTO {schema_name}.{table_name} VALUES {row}")
+    execute_multiple_spark_queries(node1, queries)
+
+    # Create ClickHouse database pointing to Unity Catalog
+    node1.query(
+        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false",
+        settings={"allow_database_unity_catalog": "1"},
     )
 
+    # Verify tables are visible
+    tables = list(
+        sorted(
+            node1.query(
+                f"SHOW TABLES FROM {db_name} LIKE '{schema_name}.%'",
+                settings={"use_hive_partitioning": "0"},
+            )
+            .strip()
+            .split("\n")
+        )
+    )
+
+    print(f"Found tables: {tables}")
+    assert len(tables) == len(table_configs), f"Expected {len(table_configs)} tables, got {len(tables)}"
+
+    # Run CHECK DATABASE - should succeed without errors
+    node1.query(f"CHECK DATABASE {db_name}")
+
+    try:
+        node1.query(
+            f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+        )
+        
+        assert "fault when checking database" in node1.query_and_get_error(
+            f"CHECK DATABASE {db_name}"
+        )
+    finally:
+        node1.query(
+            f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
+        )
+
+def test_multiple_schemes_tables(started_cluster):
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    node1 = started_cluster.instances["node1"]
+    # Combine schema creation, table creation and inserts into a single
+    # Spark invocation to avoid multiple slow JVM startups.
+    queries = []
+    for i in range(10):
+        queries.extend([
+            f"CREATE SCHEMA test_schema{test_uuid}{i}",
+            f"CREATE TABLE test_schema{test_uuid}{i}.test_table{test_uuid}{i} (col1 int, col2 double) using Delta location '/var/lib/clickhouse/user_files/tmp/test_schema{test_uuid}{i}/test_table{test_uuid}{i}'",
+            f"INSERT INTO test_schema{test_uuid}{i}.test_table{test_uuid}{i} VALUES ({i}, {i}.0)",
+        ])
+    execute_multiple_spark_queries(node1, queries)
+
     node1.query(
-        "create database multi_schema_test engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false",
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        f"create database multi_schema_test{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false",
+        settings={"allow_database_unity_catalog": "1"},
     )
     multi_schema_tables = list(
         sorted(
             node1.query(
-                "SHOW TABLES FROM multi_schema_test LIKE 'test_schema%'",
+                f"SHOW TABLES FROM multi_schema_test{test_uuid} LIKE 'test_schema{test_uuid}%'",
                 settings={"use_hive_partitioning": "0"},
             )
             .strip()
@@ -161,10 +438,14 @@ def test_multiple_schemes_tables(started_cluster):
 
     for i, table in enumerate(multi_schema_tables):
         assert node1.query(
-            f"SELECT col1 FROM multi_schema_test.`{table}`"
+            f"SELECT col1 FROM multi_schema_test{test_uuid}.`{table}`"
         ).strip() == str(i)
         assert (
-            int(node1.query(f"SELECT col2 FROM multi_schema_test.`{table}`").strip())
+            int(
+                node1.query(
+                    f"SELECT col2 FROM multi_schema_test{test_uuid}.`{table}`"
+                ).strip()
+            )
             == i
         )
 
@@ -172,18 +453,18 @@ def test_multiple_schemes_tables(started_cluster):
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_complex_table_schema(started_cluster, use_delta_kernel):
     node1 = started_cluster.instances["node1"]
-    schema_name = f"schema_with_complex_tables_{use_delta_kernel}"
-    execute_spark_query(
-        node1, f"CREATE SCHEMA {schema_name}", ignore_exit_code=True
+    schema_name = (
+        f"schema_with_complex_tables_{use_delta_kernel}_{uuid.uuid4()}".replace(
+            "-", "_"
+        )
     )
-    table_name = f"complex_table_{use_delta_kernel}"
+    table_name = f"complex_table_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
     schema = "event_date DATE, event_time TIMESTAMP, hits ARRAY<integer>, ids MAP<int, string>, really_complex STRUCT<f1:int,f2:string>"
-    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/tmp/complex_schema/{table_name}'"
-    execute_spark_query(node1, create_query, ignore_exit_code=True)
-    execute_spark_query(
+    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/complex_schema/{table_name}'"
+    insert_query = f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), array(42, 123, 77), map(7, 'v7', 5, 'v5'), named_struct(\\\"f1\\\", 34, \\\"f2\\\", 'hello')"
+    execute_multiple_spark_queries(
         node1,
-        f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), array(42, 123, 77), map(7, 'v7', 5, 'v5'), named_struct(\\\"f1\\\", 34, \\\"f2\\\", 'hello')",
-        ignore_exit_code=True,
+        [f"CREATE SCHEMA {schema_name}", create_query, insert_query],
     )
 
     node1.query(
@@ -193,7 +474,7 @@ create database complex_schema
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
         """,
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        settings={"allow_database_unity_catalog": "1"},
     )
 
     complex_schema_tables = list(
@@ -209,24 +490,20 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
 
     assert len(complex_schema_tables) == 1
 
-    print(
-        node1.query(
-            f"SHOW CREATE TABLE complex_schema.`{schema_name}.{table_name}`"
-        )
-    )
+    print(node1.query(f"SHOW CREATE TABLE complex_schema.`{schema_name}.{table_name}`"))
     complex_data = (
         node1.query(
-            f"SELECT * FROM complex_schema.`{schema_name}.{table_name}`", settings={"allow_experimental_delta_kernel_rs": use_delta_kernel}
+            f"SELECT * FROM complex_schema.`{schema_name}.{table_name}`",
+            settings={
+                "allow_experimental_delta_kernel_rs": use_delta_kernel
+            },
         )
         .strip()
         .split("\t")
     )
     print(complex_data)
     assert complex_data[0] == "2024-10-01"
-    if use_delta_kernel == "1":
-        assert complex_data[1] == "2024-10-01 00:12:00.000" #FIXME
-    else:
-        assert complex_data[1] == "2024-10-01 00:12:00.000000"
+    assert complex_data[1] == "2024-10-01 00:12:00.000000"
     assert complex_data[2] == "[42,123,77]"
     assert complex_data[3] == "{7:'v7',5:'v5'}"
     assert complex_data[4] == "(34,'hello')"
@@ -234,39 +511,43 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     if use_delta_kernel == "1":
         assert node1.contains_in_log(f"DeltaLakeMetadata: Initializing snapshot")
 
+
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_timestamp_ntz(started_cluster, use_delta_kernel):
+    table_name_src = f"ntz_schema_{uuid.uuid4()}".replace("-", "_")
     node1 = started_cluster.instances["node1"]
-    node1.query("drop database if exists ntz_schema")
+    node1.query(f"drop database if exists {table_name_src}")
 
-    schema_name = f"schema_with_timetstamp_ntz_{use_delta_kernel}"
-    execute_spark_query(
-        node1, f"CREATE SCHEMA {schema_name}", ignore_exit_code=True
+    schema_name = (
+        f"schema_with_timetstamp_ntz_{use_delta_kernel}_{uuid.uuid4()}".replace(
+            "-", "_"
+        )
     )
-    table_name = f"table_with_timestamp_{use_delta_kernel}"
+    table_name = f"table_with_timestamp_{use_delta_kernel}_{uuid.uuid4()}".replace(
+        "-", "_"
+    )
     schema = "event_date DATE, event_time TIMESTAMP, event_time_ntz TIMESTAMP_NTZ"
-    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/tmp/ntz_schema/{table_name}'"
-    execute_spark_query(node1, create_query, ignore_exit_code=True)
-    execute_spark_query(
+    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{table_name_src}/{table_name}'"
+    insert_query = f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), to_timestamp_ntz('2024-10-01 00:12:00')"
+    execute_multiple_spark_queries(
         node1,
-        f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), to_timestamp('2024-10-01 00:12:00'), to_timestamp_ntz('2024-10-01 00:12:00')",
-        ignore_exit_code=True,
+        [f"CREATE SCHEMA {schema_name}", create_query, insert_query],
     )
 
     node1.query(
         f"""
-drop database if exists ntz_schema;
-create database ntz_schema
+drop database if exists {table_name};
+create database {table_name_src}
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
         """,
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        settings={"allow_database_unity_catalog": "1"},
     )
 
     ntz_tables = list(
         sorted(
             node1.query(
-                f"SHOW TABLES FROM ntz_schema LIKE '{schema_name}%'",
+                f"SHOW TABLES FROM {table_name_src} LIKE '{schema_name}%'",
                 settings={"use_hive_partitioning": "0"},
             )
             .strip()
@@ -276,18 +557,399 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
 
     assert len(ntz_tables) == 1
 
-    ntz_data = (
+    ntz_data = ""
+    for i in range(10):
+        try:
+            ntz_data = (
+                node1.query(
+                    f"SELECT * FROM {table_name_src}.`{schema_name}.{table_name}`",
+                    settings={"allow_experimental_delta_kernel_rs": use_delta_kernel},
+                )
+                .strip()
+                .split("\t")
+            )
+            break
+        except Exception as ex:
+            if "Schema not found" not in str(ex):
+                raise ex
+            print(f"Retry {i + 1}")
+            time.sleep(1)
+
+    assert len(ntz_data) != 0
+    print(ntz_data)
+    assert ntz_data[0] == "2024-10-01"
+    assert ntz_data[1] == "2024-10-01 00:12:00.000000"
+    assert ntz_data[2] == "2024-10-01 00:12:00.000000"
+
+
+def test_no_permission_and_list_tables(started_cluster):
+    # this test supposed to test "SHOW TABLES" query when we have no permissions for some table
+    # unfortunately Unity catalog open source (or integration with spark) doesn't fully supports grants
+    # So this query fails and the test doesn't check anything :(
+    pytest.skip("Skipping test because it doesn't check anything")
+    node1 = started_cluster.instances["node1"]
+    node1.query("drop database if exists schema_with_permissions")
+
+    schema_name = f"schema_with_permissions"
+    execute_spark_query(node1, f"CREATE SCHEMA {schema_name}")
+    table_name_1 = f"table_granted"
+    table_name_2 = f"table_not_granted"
+
+    create_query_1 = f"CREATE TABLE {schema_name}.{table_name_1} (id INT) using Delta location '/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name_1}'"
+    create_query_2 = f"CREATE TABLE {schema_name}.{table_name_2} (id INT) using Delta location '/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name_2}'"
+
+    execute_multiple_spark_queries(node1, [create_query_2, create_query_1])
+
+    execute_spark_query(
+        node1,
+        f"REVOKE ALL PRIVILEGES ON TABLE {schema_name}.{table_name_1} FROM PUBLIC;",
+    )
+
+    node1.query(
+        f"""
+drop database if exists {schema_name};
+create database {schema_name}
+engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
+settings warehouse = 'unity', catalog_type='unity', vended_credentials=True
+        """,
+        settings={"allow_database_unity_catalog": "1"},
+    )
+
+    # This query will fail if bug exists
+    print(node1.query(f"SHOW TABLES FROM {schema_name}"))
+
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_view_with_void(started_cluster, use_delta_kernel):
+    # 25/08/20 16:45:23 WARN ObjectStore: Version information not found in metastore. hive.metastore.schema.verification is not enabled so recording the schema version 2.3.0
+    # 25/08/20 16:45:23 WARN ObjectStore: setMetaStoreSchemaVersion called but recording version is disabled: version = 2.3.0, comment = Set by MetaStore UNKNOWN@172.18.0.2
+    # 25/08/20 16:45:24 WARN ObjectStore: Failed to get database global_temp, returning NoSuchObjectException
+    # Catalog unity does not support views.
+    pytest.skip("Unfortunately open source Unity Catalog doesn't support views")
+    table_name_src = f"ntz_schema_{uuid.uuid4()}".replace("-", "_")
+    node1 = started_cluster.instances["node1"]
+    node1.query(f"drop database if exists {table_name_src}")
+
+    schema_name = (
+        f"schema_with_timetstamp_ntz_{use_delta_kernel}_{uuid.uuid4()}".replace(
+            "-", "_"
+        )
+    )
+    execute_spark_query(node1, f"CREATE SCHEMA {schema_name}")
+    table_name = f"table_with_timestamp_{use_delta_kernel}_{uuid.uuid4()}".replace(
+        "-", "_"
+    )
+    view_name = f"test_view_{table_name}"
+    schema = "event_date DATE, event_time TIMESTAMP"
+    create_query = f"CREATE TABLE {schema_name}.{table_name} ({schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{table_name_src}/{table_name}'"
+    execute_spark_query(node1, create_query)
+    execute_spark_query(
+        node1,
+        f"CREATE VIEW {schema_name}.{view_name} AS SELECT * FROM {schema_name}.{table_name}",
+    )
+
+    node1.query(
+        f"""
+drop database if exists {table_name};
+create database {table_name_src}
+engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
+settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
+        """,
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+
+    ntz_tables = list(
+        sorted(
+            node1.query(
+                f"SHOW TABLES FROM {table_name_src} LIKE '{schema_name}%'",
+                settings={"use_hive_partitioning": "0"},
+            )
+            .strip()
+            .split("\n")
+        )
+    )
+
+    assert len(ntz_tables) == 1
+
+    def get_schemas():
+        return execute_spark_query(node1, f"SHOW SCHEMAS")
+
+    assert schema_name in get_schemas()
+
+
+def test_snapshot_version(started_cluster):
+    """
+    Test table in delta lake catalog with CDF settings
+    (delta_lake_snapshot_start_version, delta_lake_snapshot_end_version).
+    Checks that schema is correctly processed at each version after being altered.
+    """
+    node1 = started_cluster.instances["node1"]
+    table_name = f"test_snapshot_version_{uuid.uuid4()}".replace("-", "_")
+    table_path = f"/var/lib/clickhouse/user_files/tmp/{table_name}"
+    db_name = f"db_{table_name}"
+
+    def get_table_versions():
+        history = execute_spark_query(
+            node1, f"DESCRIBE HISTORY {schema_name}.{table_name}"
+        )
+        lines = [line.strip() for line in history.splitlines() if line.strip()]
+        if "version" in lines[0].lower():
+            lines = lines[1:]
+
+        versions = [
+            line.split("\t")[0].strip()
+            for line in lines
+            if line.split("\t")[0].strip().isdigit()
+        ]
+        versions = sorted(versions, key=int)
+
+        print("Versions found:", versions)
+        return versions
+
+    schema_name = f"schema_{table_name}"
+
+    schema = "event_date DATE, data STRING"
+    create_query = f"""CREATE TABLE {schema_name}.{table_name} ({schema})
+USING Delta location '{table_path}'
+TBLPROPERTIES (
+  delta.enableChangeDataFeed = true
+)"""
+    # Combine schema creation, table creation and initial insert into a single
+    # Spark invocation to avoid multiple slow JVM startups.
+    execute_multiple_spark_queries(
+        node1,
+        [
+            f"CREATE SCHEMA {schema_name}",
+            create_query,
+            f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-01', 'yyyy-MM-dd'), 'hello'",
+        ],
+    )
+
+    # Create table with columns `event_date`, `data`
+    node1.query(
+        f"""
+drop database if exists {db_name};
+create database {db_name}
+engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
+settings warehouse = 'unity', catalog_type='unity', vended_credentials=false
+        """,
+        settings={"allow_database_unity_catalog": "1"},
+    )
+
+    # Validate data at version 1
+    data_v1 = (
         node1.query(
-            f"SELECT * FROM ntz_schema.`{schema_name}.{table_name}`", settings={"allow_experimental_delta_kernel_rs": use_delta_kernel}
+            f"SELECT event_date, data, _commit_version FROM {db_name}.`{schema_name}.{table_name}`",
+            settings={"delta_lake_snapshot_start_version": 1},
         )
         .strip()
         .split("\t")
     )
-    print(ntz_data)
-    assert ntz_data[0] == "2024-10-01"
-    if use_delta_kernel == "1":
-        assert ntz_data[1] == "2024-10-01 00:12:00.000" #FIXME
-        assert ntz_data[2] == "2024-10-01 00:12:00.000" #FIXME
-    else:
-        assert ntz_data[1] == "2024-10-01 00:12:00.000000"
-        assert ntz_data[2] == "2024-10-01 00:12:00.000000"
+
+    assert data_v1[0] == "2024-10-01"
+    assert data_v1[1] == "hello"
+    assert data_v1[2] == "1"
+
+    # Commit new data at version 2
+    execute_spark_query(
+        node1,
+        f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-02', 'yyyy-MM-dd'), 'world'",
+    )
+
+    # Check what commit versions we have now
+    assert get_table_versions() == ["0", "1", "2"]
+
+    # Validate data at version 2
+    data_v2 = (
+        node1.query(
+            f"""
+SELECT event_date, data, _commit_version
+FROM {db_name}.`{schema_name}.{table_name}`
+            """,
+            settings={"delta_lake_snapshot_start_version": 2},
+        )
+        .strip()
+        .split("\t")
+    )
+
+    assert data_v2[0] == "2024-10-02"
+    assert data_v2[1] == "world"
+    assert data_v2[2] == "2"
+
+    # Validate schema at version 2
+    data_v2 = (
+        node1.query(
+            f"""
+SELECT event_date, data, _commit_version
+FROM {db_name}.`{schema_name}.{table_name}`
+            """,
+            settings={"delta_lake_snapshot_start_version": 2},
+        )
+        .strip()
+        .split("\t")
+    )
+
+    assert data_v2[0] == "2024-10-02"
+    assert data_v2[1] == "world"
+    assert data_v2[2] == "2"
+
+    # Commit new data at version 3
+    execute_spark_query(
+        node1,
+        f"insert into {schema_name}.{table_name} SELECT to_date('2024-10-03', 'yyyy-MM-dd'), 'from', 'Pepe' as name",
+    )
+
+    # Validate data between versions 1 and 2
+    data_raw = node1.query(
+        f"""
+    SELECT event_date, data, _commit_version
+    FROM {db_name}.`{schema_name}.{table_name}`
+        """,
+        settings={
+            "delta_lake_snapshot_start_version": 1,
+            "delta_lake_snapshot_end_version": 2,
+        },
+    ).strip()
+    data_raw = [line.split("\t") for line in data_raw.splitlines()]
+    data_v1_v2 = [item for row in data_raw for item in row]
+
+    assert data_v1_v2[0] == "2024-10-01"
+    assert data_v1_v2[1] == "hello"
+    assert data_v1_v2[2] == "1"
+    assert data_v1_v2[3] == "2024-10-02"
+    assert data_v1_v2[4] == "world"
+    assert data_v1_v2[5] == "2"
+
+    # Validate data at version 3
+    data_raw_v3 = node1.query(
+        f"""
+    SELECT event_date, data, name, _commit_version
+    FROM {db_name}.`{schema_name}.{table_name}`
+        """,
+        settings={
+            "delta_lake_snapshot_start_version": 3,
+            "delta_lake_snapshot_end_version": 3,
+        },
+    ).strip()
+
+    data_v3 = [line.split("\t") for line in data_raw_v3.splitlines()]
+    flat_data_v3 = [item for row in data_v3 for item in row]
+
+    assert flat_data_v3[0] == "2024-10-03"
+    assert flat_data_v3[1] == "from"
+    assert flat_data_v3[2] == "Pepe"
+    assert flat_data_v3[3] == "3"
+
+    # Validate latest schema
+    assert (
+        "event_date\tNullable(Date32)\t\t\t\t\t\n"
+        "data\tNullable(String)\t\t\t\t\t\n"
+        "name\tNullable(String)"
+        == node1.query(f"DESCRIBE TABLE {db_name}.`{schema_name}.{table_name}`").strip()
+    )
+
+    # Validate schema at version 3
+    assert (
+        "event_date\tNullable(Date32)\t\t\t\t\t\n"
+        "data\tNullable(String)\t\t\t\t\t\n"
+        "name\tNullable(String)\t\t\t\t\t\n"
+        "_change_type\tString\t\t\t\t\t\n"
+        "_commit_version\tInt64\t\t\t\t\t\n"
+        "_commit_timestamp\tDateTime64(6)"
+        == node1.query(
+            f"DESCRIBE TABLE {db_name}.`{schema_name}.{table_name}`",
+            settings={
+                "delta_lake_snapshot_start_version": 3,
+            },
+        ).strip()
+    )
+
+    # Validate schema at version 1 and 2
+    assert (
+        "event_date\tNullable(Date32)\t\t\t\t\t\n"
+        "data\tNullable(String)\t\t\t\t\t\n"
+        "_change_type\tString\t\t\t\t\t\n"
+        "_commit_version\tInt64\t\t\t\t\t\n"
+        "_commit_timestamp\tDateTime64(6)"
+        == node1.query(
+            f"DESCRIBE TABLE {db_name}.`{schema_name}.{table_name}`",
+            settings={
+                "delta_lake_snapshot_start_version": 1,
+                "delta_lake_snapshot_end_version": 2,
+            },
+        ).strip()
+    )
+
+
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_varchar_char_types_via_unity_catalog(started_cluster, use_delta_kernel):
+    """
+    Regression test for: Unsupported DeltaLake type: varchar(n)
+
+    The Unity Catalog REST API returns the column schema via the `type_json` field,
+    which contains the logical SQL type name from Databricks (e.g. `varchar(256)`)
+    rather than the physical Delta Lake type (`string`). ClickHouse must map these
+    to `String` instead of throwing an exception.
+
+    This test creates a Delta table with VARCHAR and CHAR columns via Spark connected
+    to a real Unity Catalog server, then reads it through ClickHouse's DataLakeCatalog
+    engine, which fetches the schema from the Unity Catalog REST API endpoint — the
+    exact path that was broken before the fix.
+    """
+    node1 = started_cluster.instances["node1"]
+
+    schema_name = f"varchar_schema_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
+    table_name = f"varchar_table_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
+    db_name = f"uc_varchar_{use_delta_kernel}_{uuid.uuid4()}".replace("-", "_")
+
+    create_query = (
+        f"CREATE TABLE {schema_name}.{table_name} "
+        f"(id INT, name VARCHAR(256), code CHAR(10)) "
+        f"USING DELTA LOCATION '/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}'"
+    )
+    insert_query = (
+        f"INSERT INTO {schema_name}.{table_name} VALUES (1, 'hello varchar', 'hello char')"
+    )
+    execute_multiple_spark_queries(
+        node1,
+        [f"CREATE SCHEMA {schema_name}", create_query, insert_query],
+    )
+
+    node1.query(
+        f"""
+DROP DATABASE IF EXISTS {db_name};
+CREATE DATABASE {db_name}
+ENGINE DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
+SETTINGS warehouse = 'unity', catalog_type = 'unity', vended_credentials = false,
+         allow_experimental_delta_kernel_rs = {use_delta_kernel}
+        """,
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+
+    tables = (
+        node1.query(
+            f"SHOW TABLES FROM {db_name} LIKE '{schema_name}%'",
+            settings={"use_hive_partitioning": "0"},
+        )
+        .strip()
+        .split("\n")
+    )
+    assert len(tables) == 1
+
+    # Before the fix, this raised: DB::Exception: Unsupported DeltaLake type: varchar(256)
+    # because Unity Catalog REST API returns type_json with SQL type names, not physical
+    # Delta types, and getSimpleTypeByName had no handler for varchar(n)/char(n).
+    describe_result = node1.query(
+        f"DESCRIBE TABLE {db_name}.`{schema_name}.{table_name}`"
+    ).strip()
+    assert "id\tNullable(Int32)" in describe_result
+    assert "name\tNullable(String)" in describe_result
+    assert "code\tNullable(String)" in describe_result
+
+    row = (
+        node1.query(
+            f"SELECT id, name, code FROM {db_name}.`{schema_name}.{table_name}`",
+            settings={"allow_experimental_delta_kernel_rs": use_delta_kernel},
+        )
+        .strip()
+    )
+    assert row == "1\thello varchar\thello char"

@@ -30,6 +30,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -256,13 +257,13 @@ in addition to Arrays.
 )";
     FunctionDocumentation::Syntax syntax = "arrayReverse(arr)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "The array to reverse. [`Array(T)`](/sql-reference/data-types/array)."}
+        {"arr", "The array to reverse.", {"Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns an array of the same size as the original array containing the elements in reverse order. [`Array(T)`](/sql-reference/data-types/array).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of the same size as the original array containing the elements in reverse order", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayReverse([1, 2, 3])", "[3,2,1]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayReverse>(documentation);
 }

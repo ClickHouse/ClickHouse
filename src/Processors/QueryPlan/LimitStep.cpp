@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -26,7 +27,7 @@ static ITransformingStep::Traits getTraits()
 }
 
 LimitStep::LimitStep(
-    const Header & input_header_,
+    const SharedHeader & input_header_,
     size_t limit_, size_t offset_,
     bool always_read_till_end_,
     bool with_ties_,
@@ -41,14 +42,20 @@ LimitStep::LimitStep(
 void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto transform = std::make_shared<LimitTransform>(
-        pipeline.getHeader(), limit, offset, pipeline.getNumStreams(), always_read_till_end, with_ties, description);
-
+        pipeline.getSharedHeader(),
+        limit,
+        offset,
+        pipeline.getNumStreams(),
+        always_read_till_end,
+        with_ties,
+        description,
+        dataflow_cache_updater);
     pipeline.addTransform(std::move(transform));
 }
 
 void LimitStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
     settings.out << prefix << "Limit " << limit << '\n';
     settings.out << prefix << "Offset " << offset << '\n';
 
@@ -96,7 +103,7 @@ void LimitStep::serialize(Serialization & ctx) const
         serializeSortDescription(description, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> LimitStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
 {
     UInt8 flags;
     readIntBinary(flags, ctx.in);

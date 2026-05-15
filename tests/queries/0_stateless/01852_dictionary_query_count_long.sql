@@ -1,6 +1,6 @@
 -- Tags: long, no-parallel
 
--- originally intended to check found rate, as it is not deterministic, so check query_count instead 
+-- originally intended to check found rate, as it is not deterministic, so check query_count instead
 
 --
 -- Simple key
@@ -26,14 +26,14 @@ CREATE DICTIONARY simple_key_flat_dictionary_01862
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'simple_key_source_table_01862'))
 LAYOUT(FLAT())
-LIFETIME(MIN 0 MAX 1000);
+LIFETIME(MIN 1000 MAX 1000);
 
 SELECT * FROM simple_key_flat_dictionary_01862 FORMAT Null;
 SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_flat_dictionary_01862';
 SELECT * FROM simple_key_flat_dictionary_01862 WHERE id = 0 FORMAT Null;
 SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_flat_dictionary_01862';
 SELECT dictGet('simple_key_flat_dictionary_01862', 'value', toUInt64(2)) FORMAT Null;
-SELECT name, round(query_count, 2), status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_flat_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_flat_dictionary_01862';
 
 DROP DICTIONARY simple_key_flat_dictionary_01862;
 
@@ -69,7 +69,7 @@ CREATE DICTIONARY simple_key_hashed_dictionary_01862
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'simple_key_source_table_01862'))
 LAYOUT(HASHED())
-LIFETIME(MIN 0 MAX 1000);
+LIFETIME(MIN 1000 MAX 1000);
 
 SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_hashed_dictionary_01862';
 SELECT dictGet('simple_key_hashed_dictionary_01862', 'value', toUInt64(1)) FORMAT Null;
@@ -89,7 +89,7 @@ CREATE DICTIONARY simple_key_sparse_hashed_dictionary_01862
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'simple_key_source_table_01862'))
 LAYOUT(SPARSE_HASHED())
-LIFETIME(MIN 0 MAX 1000);
+LIFETIME(MIN 1000 MAX 1000);
 
 SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_sparse_hashed_dictionary_01862';
 SELECT dictGet('simple_key_sparse_hashed_dictionary_01862', 'value', toUInt64(1)) FORMAT Null;
@@ -109,7 +109,7 @@ CREATE DICTIONARY simple_key_cache_dictionary_01862
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'simple_key_source_table_01862'))
 LAYOUT(CACHE(SIZE_IN_CELLS 100000))
-LIFETIME(MIN 0 MAX 1000);
+LIFETIME(MIN 1000 MAX 1000);
 
 SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_cache_dictionary_01862';
 SELECT toUInt64(1) as key, dictGet('simple_key_cache_dictionary_01862', 'value', key) FORMAT Null;
@@ -147,7 +147,7 @@ CREATE DICTIONARY complex_key_hashed_dictionary_01862
 PRIMARY KEY id, id_key
 SOURCE(CLICKHOUSE(TABLE 'complex_key_source_table_01862'))
 LAYOUT(COMPLEX_KEY_HASHED())
-LIFETIME(MIN 0 MAX 1000);
+LIFETIME(MIN 1000 MAX 1000);
 
 SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_hashed_dictionary_01862';
 SELECT dictGet('complex_key_hashed_dictionary_01862', 'value', (toUInt64(1), 'FirstKey')) FORMAT Null;
@@ -188,7 +188,7 @@ CREATE DICTIONARY complex_key_cache_dictionary_01862
 PRIMARY KEY id, id_key
 SOURCE(CLICKHOUSE(TABLE 'complex_key_source_table_01862'))
 LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100000))
-LIFETIME(MIN 0 MAX 1000);
+LIFETIME(MIN 1000 MAX 1000);
 
 SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_cache_dictionary_01862';
 SELECT dictGet('complex_key_cache_dictionary_01862', 'value', (toUInt64(1), 'FirstKey')) FORMAT Null;
@@ -228,7 +228,7 @@ PRIMARY KEY id
 SOURCE(CLICKHOUSE(TABLE 'range_key_source_table_01862'))
 LAYOUT(RANGE_HASHED())
 RANGE(MIN first MAX last)
-LIFETIME(MIN 0 MAX 1000);
+LIFETIME(MIN 1000 MAX 1000);
 
 SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_range_hashed_dictionary_01862';
 SELECT dictGet('simple_key_range_hashed_dictionary_01862', 'value', toUInt64(1), today()) FORMAT Null;
@@ -263,7 +263,7 @@ CREATE DICTIONARY ip_trie_dictionary_01862
 PRIMARY KEY prefix
 SOURCE(CLICKHOUSE(TABLE 'ip_trie_source_table_01862'))
 LAYOUT(IP_TRIE())
-LIFETIME(MIN 0 MAX 1000);
+LIFETIME(MIN 1000 MAX 1000);
 
 -- found_rate = 0, because we didn't make any searches.
 SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'ip_trie_dictionary_01862';

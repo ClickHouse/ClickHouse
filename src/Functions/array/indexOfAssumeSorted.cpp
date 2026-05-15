@@ -1,7 +1,7 @@
-#include "arrayIndex.h"
+#include <Functions/array/arrayIndex.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
-#include "Common/FunctionDocumentation.h"
+#include <Common/FunctionDocumentation.h>
 
 namespace DB
 {
@@ -24,14 +24,14 @@ ascending order. If the array is not sorted, results are undefined.
     )";
     FunctionDocumentation::Syntax syntax = "indexOfAssumeSorted(arr, x)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "A sorted array to search. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"x", "Value of the first matching element in sorted `arr` for which to return an index.UInt64"},
+        {"arr", "A sorted array to search.", {"Array(T)"}},
+        {"x", "Value of the first matching element in sorted `arr` for which to return an index.", {"UInt64"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the index (numbered from one) of the first `x` in `arr` if it exists. Otherwise, returns `0`.";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the index (numbered from one) of the first `x` in `arr` if it exists. Otherwise, returns `0`.", {"UInt64"}};
     FunctionDocumentation::Examples example = {{"Basic example", "SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)", "5"}};
     FunctionDocumentation::IntroducedIn introduced_in = {24, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
 
     factory.registerFunction<FunctionIndexOfAssumeSorted>(documentation);
 }

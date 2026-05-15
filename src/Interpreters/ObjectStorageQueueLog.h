@@ -1,8 +1,6 @@
 #pragma once
 
-#include <Common/ProfileEvents.h>
 #include <Core/NamesAndAliases.h>
-#include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -29,6 +27,10 @@ struct ObjectStorageQueueLogElement
     time_t processing_start_time;
     time_t processing_end_time;
     std::string exception;
+    UInt64 commit_id;
+    time_t commit_time;
+    time_t transaction_start_time;
+    UInt64 get_object_time_ms;
 
     static std::string name() { return "ObjectStorageQueueLog"; }
 

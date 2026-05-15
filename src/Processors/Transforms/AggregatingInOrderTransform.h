@@ -25,16 +25,25 @@ struct ChunkInfoWithAllocatedBytes : public ChunkInfoCloneable<ChunkInfoWithAllo
 class AggregatingInOrderTransform : public IProcessor
 {
 public:
-    AggregatingInOrderTransform(Block header, AggregatingTransformParamsPtr params,
-                                const SortDescription & sort_description_for_merging,
-                                const SortDescription & group_by_description_,
-                                size_t max_block_size_, size_t max_block_bytes_,
-                                ManyAggregatedDataPtr many_data, size_t current_variant);
+    AggregatingInOrderTransform(
+        SharedHeader header,
+        AggregatingTransformParamsPtr params,
+        const SortDescription & sort_description_for_merging,
+        const SortDescription & group_by_description_,
+        size_t max_block_size_,
+        size_t max_block_bytes_,
+        ManyAggregatedDataPtr many_data,
+        size_t current_variant,
+        RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_);
 
-    AggregatingInOrderTransform(Block header, AggregatingTransformParamsPtr params,
-                                const SortDescription & sort_description_for_merging,
-                                const SortDescription & group_by_description_,
-                                size_t max_block_size_, size_t max_block_bytes_);
+    AggregatingInOrderTransform(
+        SharedHeader header,
+        AggregatingTransformParamsPtr params,
+        const SortDescription & sort_description_for_merging,
+        const SortDescription & group_by_description_,
+        size_t max_block_size_,
+        size_t max_block_bytes_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_);
 
     ~AggregatingInOrderTransform() override;
 
@@ -66,7 +75,7 @@ private:
     SortDescription sort_description;
     SortDescriptionWithPositions group_by_description;
     bool group_by_key = false;
-    Block group_by_block;
+    Chunk group_by_chunk;
     ColumnRawPtrs key_columns_raw;
 
     Aggregator::AggregateColumns aggregate_columns;
@@ -89,6 +98,8 @@ private:
 
     RowsBeforeStepCounterPtr rows_before_aggregation;
 
+    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
+
     LoggerPtr log = getLogger("AggregatingInOrderTransform");
 };
 
@@ -96,7 +107,7 @@ private:
 class FinalizeAggregatedTransform : public ISimpleTransform
 {
 public:
-    FinalizeAggregatedTransform(Block header, AggregatingTransformParamsPtr params_);
+    FinalizeAggregatedTransform(SharedHeader header, const AggregatingTransformParamsPtr & params_);
 
     void transform(Chunk & chunk) override;
     String getName() const override { return "FinalizeAggregatedTransform"; }

@@ -26,7 +26,7 @@ BlockIO InterpreterCheckGrantQuery::execute()
 
     BlockIO res;
     res.pipeline = QueryPipeline(
-        std::make_shared<SourceFromSingleChunk>(Block{{ColumnUInt8::create(1, is_granted), std::make_shared<DataTypeUInt8>(), "result"}}));
+        std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block{{ColumnUInt8::create(1, is_granted), std::make_shared<DataTypeUInt8>(), "result"}})));
 
     return res;
 }

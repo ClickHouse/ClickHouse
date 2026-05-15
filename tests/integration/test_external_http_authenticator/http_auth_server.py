@@ -1,6 +1,7 @@
 import base64
 import http.server
 import json
+from typing import List
 
 GOOD_PASSWORD = "good_password"
 USER_RESPONSES = {
@@ -12,7 +13,8 @@ USER_RESPONSES = {
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
-    def decode_basic(self, data):
+    @classmethod
+    def decode_basic(cls, data: bytes) -> List[str]:
         decoded_data = base64.b64decode(data).decode("utf-8")
         return decoded_data.split(":", 1)
 
@@ -24,8 +26,6 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
     def do_ACCESS_GRANTED(self, user: str) -> None:
         self.send_response(http.HTTPStatus.OK)
-        body = ""
-
         response = USER_RESPONSES.get(user)
 
         if isinstance(response, dict):
@@ -35,7 +35,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
         body_raw = body.encode("utf-8")
         self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", len(body_raw))
+        self.send_header("Content-Length", str(len(body_raw)))
         self.end_headers()
         self.wfile.write(body_raw)
 
@@ -63,7 +63,9 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             user_name, password = self.decode_basic(data)
             if password == GOOD_PASSWORD:
                 self.do_ACCESS_GRANTED(user_name)
-            elif self.headers.get("Custom-Header") == "ok" and not self.headers.get("User-Agent"):
+            elif self.headers.get("Custom-Header") == "ok" and not self.headers.get(
+                "User-Agent"
+            ):
                 self.do_ACCESS_GRANTED(user_name)
             else:
                 self.do_AUTHHEAD()

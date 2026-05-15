@@ -1,4 +1,4 @@
-#include "divide.h"
+#include <Functions/divide/divide.h>
 #include <Common/CPUID.h>
 
 #if defined(__x86_64__)

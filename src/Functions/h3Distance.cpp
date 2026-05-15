@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -11,10 +11,6 @@
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
-
-#include <constants.h>
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -32,7 +28,11 @@ class FunctionH3Distance : public IFunction
 public:
     static constexpr auto name = "h3Distance";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3Distance>(); }
+    H3Validator validator;
+
+    explicit FunctionH3Distance(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3Distance>(context); }
 
     std::string getName() const override { return name; }
 
@@ -101,9 +101,16 @@ public:
         {
             const UInt64 start = data_start_index[row];
             const UInt64 end = data_end_index[row];
+            Int64 res = -1;
 
-            auto size = gridPathCellsSize(start, end);
-            dst_data[row] = size;
+            if (validator.validateCell(start) && validator.validateCell(end))
+            {
+                int64_t distance = 0;
+                if (!gridDistance(start, end, &distance))
+                    res = distance;
+            }
+
+            dst_data[row] = res;
         }
 
         return dst;
@@ -114,7 +121,35 @@ public:
 
 REGISTER_FUNCTION(H3Distance)
 {
-    factory.registerFunction<FunctionH3Distance>();
+    FunctionDocumentation::Description description = R"(
+Returns the distance in grid cells between two [H3](#h3-index) indices.
+
+This function calculates the minimum number of grid cells between the start and end indices, following the connections of the H3 grid.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3Distance(start, end)";
+    FunctionDocumentation::Arguments arguments = {
+        {"start", "Hexagon index number that represents the starting point.", {"UInt64"}},
+        {"end", "Hexagon index number that represents the ending point.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the number of grid cells between the start and end indices. Returns a negative number if the distance cannot be computed.",
+        {"Int64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Calculate distance between two H3 indices",
+            "SELECT h3Distance(590080540275638271, 590103561300344831) AS distance",
+            R"(
+┌─distance─┐
+│        7 │
+└──────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3Distance>(documentation);
 }
 
 }

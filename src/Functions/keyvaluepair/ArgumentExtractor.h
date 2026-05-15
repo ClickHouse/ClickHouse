@@ -30,6 +30,7 @@ public:
         CharArgument key_value_delimiter = {};
         VectorArgument pair_delimiters = {};
         CharArgument quoting_character = {};
+        ColumnPtr unexpected_quoting_character_strategy = nullptr;
     };
 
 

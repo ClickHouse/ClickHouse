@@ -27,6 +27,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 
 #include <Backups/BackupFactory.h>
@@ -55,6 +56,8 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
 }
 
@@ -78,16 +81,6 @@ public:
     {}
 };
 
-String buildDataPath(const String & database_name)
-{
-    return std::filesystem::path("data") / escapeForFileName(database_name) / "";
-}
-
-String buildReplacementRelativePath(const DatabaseBackup::Configuration & config)
-{
-    return buildDataPath(config.database_name);
-}
-
 String buildStoragePolicyName(const DatabaseBackup::Configuration & config)
 {
     return fmt::format("__database_backup_config_{}_{})", config.database_name, config.backup_info.toString());
@@ -98,7 +91,7 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
     auto * storage = create_query->storage;
 
     bool is_replicated_or_shared_engine = false;
-    auto engine = std::make_shared<ASTFunction>();
+    auto engine = make_intrusive<ASTFunction>();
 
     static constexpr std::string_view replicated_engine_prefix = "Replicated";
 
@@ -120,7 +113,7 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
     }
 
     /// Add old engine's arguments
-    auto args = std::make_shared<ASTExpressionList>();
+    auto args = make_intrusive<ASTExpressionList>();
 
     if (storage->engine->arguments)
     {
@@ -131,6 +124,7 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
     }
 
     engine->arguments = std::move(args);
+    engine->setNoEmptyArgs(true);
 
     /// Set new engine for the old query
     create_query->storage->set(create_query->storage->engine, engine->clone());
@@ -148,7 +142,7 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
     }
     else
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         storage->set(storage->settings, settings_ast);
         settings = storage->settings;
     }
@@ -160,7 +154,12 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
 }
 
 DatabaseBackup::DatabaseBackup(const String & name_, const String & metadata_path_, const Configuration & config_, ContextPtr context_)
-    : DatabaseOrdinary(name_, metadata_path_, buildDataPath(name_), "DatabaseBackup(" + name_ + ")", context_)
+    : DatabaseOrdinary(
+        name_,
+        metadata_path_,
+        DatabaseCatalog::getDataDirPath(name_) / "",
+        "DatabaseBackup(" + name_ + ")",
+        context_)
     , config(config_)
 {
 }
@@ -203,7 +202,7 @@ void DatabaseBackup::renameTable(
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "RENAME TABLE is not supported for Backup database");
 }
 
-void DatabaseBackup::alterTable(ContextPtr, const StorageID &, const StorageInMemoryMetadata &)
+void DatabaseBackup::alterTable(ContextPtr, const StorageID &, const StorageInMemoryMetadata &, const bool)
 {
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ALTER TABLE is not supported for Backup database");
 }
@@ -225,7 +224,7 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
     {
         DiskBackup::PathPrefixReplacement path_prefix_replacement;
         path_prefix_replacement.from = data_path;
-        path_prefix_replacement.to = buildReplacementRelativePath(config);
+        path_prefix_replacement.to = DatabaseCatalog::getDataDirPath(config.database_name) / "";
 
         DiskBackupConfiguration disk_backup_config;
 
@@ -332,8 +331,14 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
 
             updateCreateQueryWithDatabaseBackupStoragePolicy(create_query, config, local_context);
 
-            NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
-            NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+            {
+                SelectIntersectExceptQueryVisitor::Data data{local_context->getSettingsRef()[Setting::intersect_default_mode], local_context->getSettingsRef()[Setting::except_default_mode]};
+                SelectIntersectExceptQueryVisitor{data}.visit(ast);
+            }
+            {
+                NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
+                NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+            }
 
             QualifiedTableName qualified_name{current_database_name, create_query->getTable()};
 
@@ -360,22 +365,26 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
 
     /// Read and parse metadata in parallel
     ThreadPool pool(CurrentMetrics::DatabaseBackupThreads, CurrentMetrics::DatabaseBackupThreadsActive, CurrentMetrics::DatabaseBackupThreadsScheduled);
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, "DatabaseBackup");
 
-    const auto batch_size = metadata_files.size() / pool.getMaxThreads() + 1;
-
-    for (auto it = metadata_files.begin(); it < metadata_files.end(); std::advance(it, batch_size))
     {
-        std::span batch{it, std::min(std::next(it, batch_size), metadata_files.end())};
-        runner([batch, &process_metadata_file]() mutable
-            {
-                for (const auto & file : batch)
-                    process_metadata_file(file);
-            },
-            Priority{},
-            getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalMicroseconds());
+        /// Note that we pass batch by value (always fine) and process_metadata_file by reference
+        /// process_metadata_file is ok since a) it outlives runner and b) it captures by reference only things that outlive runner
+        ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DATABASE_BACKUP);
+        const auto batch_size = metadata_files.size() / pool.getMaxThreads() + 1;
+
+        for (auto it = metadata_files.begin(); it < metadata_files.end(); std::advance(it, batch_size))
+        {
+            std::span batch{it, std::min(std::next(it, batch_size), metadata_files.end())};
+            runner.enqueueAndKeepTrack([batch, &process_metadata_file]() mutable
+                {
+                    for (const auto & file : batch)
+                        process_metadata_file(file);
+                },
+                Priority{},
+                getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalMicroseconds());
+        }
+        runner.waitForAllToFinishAndRethrowFirstError();
     }
-    runner.waitForAllToFinishAndRethrowFirstError();
 
     size_t objects_in_database = metadata.parsed_tables.size() - prev_tables_count;
     size_t dictionaries_in_database = metadata.total_dictionaries - prev_total_dictionaries;
@@ -407,15 +416,12 @@ ASTPtr DatabaseBackup::getCreateQueryFromMetadata(const String & table_name, boo
     return create_query;
 }
 
-ASTPtr DatabaseBackup::getCreateDatabaseQuery() const
+ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
 {
     const auto & settings = getContext()->getSettingsRef();
 
-    std::string creation_args;
-    creation_args += fmt::format("'{}'", config.database_name);
-    creation_args += fmt::format(", '{}'", config.backup_info.toString());
-
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({})", backQuoteIfNeed(getDatabaseName()), creation_args);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({}, {})",
+        backQuoteIfNeed(database_name), quoteString(config.database_name), quoteString(config.backup_info.toString()));
 
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser,
@@ -426,10 +432,10 @@ ASTPtr DatabaseBackup::getCreateDatabaseQuery() const
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
 
-    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
+    if (!comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
+        ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(comment));
     }
 
     return ast;
@@ -474,7 +480,7 @@ void registerDatabaseBackup(DatabaseFactory & factory)
         return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.context);
     };
 
-    factory.registerDatabase("Backup", create_fn, {.supports_arguments = true});
+    factory.registerDatabase("Backup", create_fn, {.supports_arguments = true, .is_external = true});
 }
 
 }

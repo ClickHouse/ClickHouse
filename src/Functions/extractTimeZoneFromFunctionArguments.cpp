@@ -1,5 +1,4 @@
 #include <Columns/ColumnString.h>
-#include <Core/Block.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Functions/FunctionHelpers.h>

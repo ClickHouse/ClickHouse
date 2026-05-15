@@ -180,15 +180,32 @@ namespace
 {
 void expandSelectorGlobImpl(const std::string & path, std::vector<std::string> & for_match_paths_expanded)
 {
-    /// regexp for {expr1,expr2,....} (a selector glob);
-    /// expr1, expr2,... cannot contain any of these: '{', '}', ','
-    static const re2::RE2 selector_regex(R"({([^{}*,]+,[^{}*]*[^{}*,])})");
-
     std::string_view path_view(path);
     std::string_view matched;
 
+    /// enum_regexp does not match elements of one char, e.g. {a}.tsv
+    auto definitely_no_selector_globs = path.find_first_of("{}") == std::string::npos;
+    if (!definitely_no_selector_globs)
+    {
+        auto left_bracket_pos = path.find_first_of('{');
+        auto right_bracket_pos = path.find_first_of('}');
+
+        auto is_this_enum_of_one_char =
+            left_bracket_pos != std::string::npos
+            && right_bracket_pos != std::string::npos
+            && (right_bracket_pos - left_bracket_pos) == 2;
+
+        definitely_no_selector_globs = !is_this_enum_of_one_char;
+    }
+
+    auto is_this_range_glob = RE2::PartialMatch(path_view, Regexps::instance().range_regex, &matched);
+    auto is_this_enum_glob = RE2::PartialMatch(path_view, Regexps::instance().enum_regex, &matched);
+
     /// No (more) selector globs found, quit
-    if (!RE2::FindAndConsume(&path_view, selector_regex, &matched))
+    ///
+    /// range_glob regex is stricter than enum_glob, so we need to check
+    /// if whatever matched enum_glob is also range_glob. If it does match it too -- this is a range glob.
+    if ((!is_this_enum_glob || (is_this_range_glob && is_this_enum_glob)) && definitely_no_selector_globs)
     {
         for_match_paths_expanded.push_back(path);
         return;

@@ -1,7 +1,9 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
 #include <Processors/IProcessor.h>
 
+#include <unordered_map>
 #include <vector>
 
 namespace DB
@@ -15,11 +17,11 @@ class Block;
 class DelayedPortsProcessor final : public IProcessor
 {
 public:
-    DelayedPortsProcessor(const Block & header, size_t num_ports, const PortNumbers & delayed_ports, bool assert_main_ports_empty = false);
+    DelayedPortsProcessor(SharedHeader header, size_t num_ports, const std::vector<UInt64> & delayed_ports, bool assert_main_ports_empty = false);
 
     String getName() const override { return "DelayedPorts"; }
 
-    Status prepare(const PortNumbers &, const PortNumbers &) override;
+    Status prepare(const UpdatedInputPorts &, const UpdatedOutputPorts &) override;
 
 private:
 
@@ -37,7 +39,8 @@ private:
     size_t num_finished_outputs = 0;
     size_t num_finished_main_inputs = 0;
 
-    std::vector<size_t> output_to_pair;
+    std::unordered_map<const InputPort *, size_t> input_port_to_pair;
+    std::unordered_map<const OutputPort *, size_t> output_port_to_pair;
     bool are_inputs_initialized = false;
 
     bool processPair(PortsPair & pair);

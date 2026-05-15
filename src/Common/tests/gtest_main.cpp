@@ -6,11 +6,16 @@ class ContextEnvironment : public testing::Environment
 {
 public:
     void SetUp() override { getContext(); }
+    void TearDown() override { getMutableContext().destroy(); }
 };
 
 int main(int argc, char ** argv)
 {
     testing::InitGoogleTest(&argc, argv);
+
+    auto & options = getTestCommandLineOptions();
+    options.argc = argc;
+    options.argv = argv;
 
     testing::AddGlobalTestEnvironment(new ContextEnvironment);
 

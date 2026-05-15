@@ -46,7 +46,7 @@ struct ResourceTestBase
     {
         std::stringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         stream << "<resource><node path=\"" << path << "\">" << xml << "</node></resource>";
-        Poco::AutoPtr config{new Poco::Util::XMLConfiguration(stream)};
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration(stream)};
         String config_prefix = "node";
 
         return add<TClass>(event_queue, root_node, path, std::ref(*config), config_prefix);
@@ -113,6 +113,12 @@ class ResourceTestClass : public ResourceTestBase
             delete this;
         }
     };
+
+    EventQueue event_queue;
+    EventQueue::SchedulerThread scheduler_thread{&event_queue};
+    SchedulerNodePtr root_node;
+    std::unordered_map<String, ResourceCost> consumed_cost;
+    ResourceCost failed_cost = 0;
 
 public:
     ~ResourceTestClass()
@@ -281,12 +287,6 @@ public:
     {
         while (event_queue.tryProcess()) {}
     }
-
-private:
-    EventQueue event_queue;
-    SchedulerNodePtr root_node;
-    std::unordered_map<String, ResourceCost> consumed_cost;
-    ResourceCost failed_cost = 0;
 };
 
 enum EnqueueOnlyEnum { EnqueueOnly };
@@ -404,7 +404,7 @@ struct ResourceTestManager : public ResourceTestBase
     void update(const String & xml)
     {
         std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        Poco::AutoPtr config{new Poco::Util::XMLConfiguration(stream)};
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration(stream)};
         manager->updateConfiguration(*config);
     }
 
