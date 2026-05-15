@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -21,6 +22,11 @@ static bool isTransparentStep(IQueryPlanStep * step)
 {
     if (typeid_cast<ExpressionStep *>(step))
         return true;
+
+    /// WindowStep preserves row count and may preserve sorting,
+    /// but we don't support crossing it for now.
+    if (typeid_cast<WindowStep *>(step))
+        return false;
 
     auto * transforming = dynamic_cast<ITransformingStep *>(step);
     if (!transforming)
