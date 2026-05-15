@@ -198,7 +198,9 @@ void KeeperRequestDispatcher2::shutdown(bool closed_all_connections)
         chassert(response_bytes_in_all_queues.load() == 0);
     }
 
-    // Send to leader Close requests for active sessions.
+    /// Send to leader Close requests for active sessions.
+    /// Maybe we should instead do this when client connection is closed for any reason
+    /// (KeeperTCPHandler::runImpl return).
     KeeperRequestsForSessions close_requests;
     if (server->isLeaderAlive())
     {

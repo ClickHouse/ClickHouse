@@ -153,6 +153,8 @@ def test_session_close_shutdown(started_cluster):
     node1_zk = None
     node2_zk = None
     for i in range(20):
+        print(f"attempt {i}")
+
         node1_zk = get_fake_zk(node1.name)
         node2_zk = get_fake_zk(node2.name)
 
@@ -160,17 +162,22 @@ def test_session_close_shutdown(started_cluster):
         node2_zk.create(eph_node, ephemeral=True)
         node1_zk.sync(eph_node)
 
-        node1_zk.exists(eph_node) != None
+        assert node1_zk.exists(eph_node) != None
 
         # restart while session is active so it's closed during shutdown
         node2.restart_clickhouse()
 
+        # give the Close request some time to get committed
+        # (shutdown only waits for the request to reach the leader)
+        time.sleep(1)
+
         if node1_zk.exists(eph_node) == None:
+            # success
             break
 
         assert node2.contains_in_log(
             "Sessions cannot be closed during shutdown because there is no active leader"
-        )
+        ) or node2.contains_in_log("Failed to close sessions in ")
 
         try:
             node1_zk.delete(eph_node)
@@ -183,8 +190,6 @@ def test_session_close_shutdown(started_cluster):
         node1_zk = None
         destroy_zk_client(node2_zk)
         node2_zk = None
-
-        time.sleep(1)
     else:
         assert False, "Session wasn't properly cleaned up on shutdown"
 

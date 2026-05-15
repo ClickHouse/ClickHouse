@@ -252,8 +252,6 @@
     M(KeeperCommitWaitElapsedMicroseconds) \
     M(KeeperBatchMaxCount) \
     M(KeeperBatchMaxTotalSize) \
-    M(KeeperBatchMaxCount) \
-    M(KeeperBatchMaxTotalSize) \
     M(KeeperBatchMaxReadCount) \
     M(KeeperBatchMaxReadTotalSize) \
     M(KeeperReadBatchCount) \
