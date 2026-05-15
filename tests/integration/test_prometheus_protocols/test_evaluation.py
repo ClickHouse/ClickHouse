@@ -630,6 +630,22 @@ def test_absent_functions():
         [["[('job','api'),('shape','circle')]", "1970-01-01 00:02:10.000", 1]],
     )
 
+    # Behavior: `offset` changes selector timing but Prometheus still synthesizes absent labels from the wrapped selector.
+    do_query_test(
+        'absent(no_such_metric{job="api"} offset 5m)',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [130, "1"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:10.000", 1]],
+    )
+
+    # Behavior: `@` fixes selector timing but Prometheus still synthesizes absent labels from the wrapped selector.
+    do_query_test(
+        'absent(no_such_metric{job="api"} @ 130)',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [130, "1"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:10.000", 1]],
+    )
+
     # Behavior: `__name__` never appears in absent-function output labels.
     do_query_test(
         'absent({__name__="ignored", shape="circle"})',
@@ -745,6 +761,14 @@ def test_absent_functions():
         210,
         '{"resultType": "vector", "result": [{"metric": {"shape": "circle"}, "value": [210, "1"]}]}',
         [["[('shape','circle')]", "1970-01-01 00:03:30.000", 1]],
+    )
+
+    # Behavior: Prometheus synthesizes labels from matrix selectors wrapped in `@`.
+    do_query_test(
+        'absent_over_time(no_such_metric{job="api"}[45s] @ 210)',
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [210, "1"]}]}',
+        [["[('job','api')]", "1970-01-01 00:03:30.000", 1]],
     )
 
     # Behavior: Prometheus absent_over_time label synthesis follows the same order-dependent matcher rules.

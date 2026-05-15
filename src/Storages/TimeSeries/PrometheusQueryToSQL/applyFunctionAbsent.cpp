@@ -68,6 +68,9 @@ void checkArgumentTypes(const PQT::Function * function_node, const std::vector<S
 
 const PQT::MatcherList * getSelectorMatchers(const Node * node)
 {
+    if (node->node_type == NodeType::Offset)
+        return getSelectorMatchers(static_cast<const PQT::Offset *>(node)->getExpression());
+
     if (node->node_type == NodeType::InstantSelector)
         return &static_cast<const PQT::InstantSelector *>(node)->matchers;
 
