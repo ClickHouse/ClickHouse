@@ -126,4 +126,14 @@ size_t StorageID::DatabaseAndTableNameHash::operator()(const StorageID & storage
     return hash_state.get64();
 }
 
+size_t StorageID::DatabaseAndTableNameAndUUIDHash::operator()(const StorageID & storage_id) const
+{
+    SipHash hash_state;
+    hash_state.update(storage_id.database_name.data(), storage_id.database_name.size());
+    hash_state.update(storage_id.table_name.data(), storage_id.table_name.size());
+    for (auto item : storage_id.uuid.toUnderType().items)
+        hash_state.update(item);
+    return hash_state.get64();
+}
+
 }
