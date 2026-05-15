@@ -2,7 +2,7 @@
 Integration tests for AI function execution paths.
 
 Tests the row-processing loop against a mock OpenAI-compatible HTTP server
-for aiGenerateContent, aiClassify, aiExtract, and aiTranslate.
+for aiGenerate, aiClassify, aiExtract, and aiTranslate.
 """
 
 import json
@@ -32,7 +32,7 @@ def run_mock_server():
         [
             "bash",
             "-c",
-            f"python3 /mock_ai_server.py > /var/log/clickhouse-server/mock_ai_server.log 2>&1",
+            "python3 /mock_ai_server.py > /var/log/clickhouse-server/mock_ai_server.log 2>&1",
         ],
         detach=True,
         user="root",
@@ -64,8 +64,6 @@ def get_profile_events(query_id):
             ProfileEvents['AIRowsSkipped'] AS rows_skipped
         FROM system.query_log
         WHERE query_id = '{query_id}' AND type = 'QueryFinish'
-        ORDER BY event_time_microseconds DESC
-        LIMIT 1
         FORMAT JSONEachRow
         """
     )
@@ -92,6 +90,34 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_embed AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings', "
+            f"model = 'test-embed-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_embed_error AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_error', "
+            f"model = 'test-embed-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_embed_dup_index AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_dup_index', "
+            f"model = 'test-embed-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_embed_wrong_count AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_wrong_count', "
+            f"model = 'test-embed-model', "
+            f"api_key = 'test-key'"
+        )
 
         instance.query("CREATE TABLE test_input (x String) ENGINE = Memory")
         instance.query(
@@ -104,7 +130,7 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
 
 
 # ---------------------------------------------------------------------------
-# aiGenerateContent
+# aiGenerate
 # ---------------------------------------------------------------------------
 
 
@@ -112,7 +138,7 @@ def test_generate_content_basic(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('hello world')")
     result = instance.query(
-        "SELECT aiGenerateContent('ai_mock', 'hello world')",
+        "SELECT aiGenerate('ai_mock', 'hello world')",
         settings=AI_SETTINGS,
     )
     assert result.strip() == "hello world"
@@ -122,7 +148,7 @@ def test_generate_content_multiple_rows(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('row1'), ('row2'), ('row3')")
     result = instance.query(
-        "SELECT aiGenerateContent('ai_mock', x) FROM test_input ORDER BY x",
+        "SELECT aiGenerate('ai_mock', x) FROM test_input ORDER BY x",
         settings=AI_SETTINGS,
     )
     assert result.strip().split("\n") == ["row1", "row2", "row3"]
@@ -133,7 +159,7 @@ def test_generate_content_profile_events(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('a'), ('b'), ('c')")
     qid = unique_query_id("gen_content_events")
     instance.query(
-        "SELECT aiGenerateContent('ai_mock', x) FROM test_input",
+        "SELECT aiGenerate('ai_mock', x) FROM test_input",
         settings=AI_SETTINGS,
         query_id=qid,
     )
@@ -151,7 +177,7 @@ def test_generate_content_null_input(started_cluster):
         "INSERT INTO test_input_nullable VALUES (NULL), ('hello'), (NULL)"
     )
     result = instance.query(
-        "SELECT aiGenerateContent('ai_mock', x) FROM test_input_nullable",
+        "SELECT aiGenerate('ai_mock', x) FROM test_input_nullable",
         settings=AI_SETTINGS,
     )
     lines = result.strip().split("\n")
@@ -161,7 +187,7 @@ def test_generate_content_null_input(started_cluster):
 
 def test_generate_content_error_throw(started_cluster):
     error = instance.query_and_get_error(
-        "SELECT aiGenerateContent('ai_error', 'hello')",
+        "SELECT aiGenerate('ai_error', 'hello')",
         settings=AI_SETTINGS,
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
@@ -169,7 +195,7 @@ def test_generate_content_error_throw(started_cluster):
 
 def test_generate_content_error_graceful(started_cluster):
     result = instance.query(
-        "SELECT aiGenerateContent('ai_error', 'hello')",
+        "SELECT aiGenerate('ai_error', 'hello')",
         settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
     )
     assert result.strip() == ""
@@ -230,6 +256,7 @@ def test_classify_null_input(started_cluster):
         settings=AI_SETTINGS,
     )
     lines = result.strip().split("\n")
+    assert len(lines) == 2
     assert "\\N" in lines
     assert "a" in lines
 
@@ -329,6 +356,17 @@ def test_translate_with_instructions(started_cluster):
     )
     assert result.strip() == "Hello"
 
+    last = json.loads(
+        instance.exec_in_container(
+            ["curl", "-s", f"http://localhost:{MOCK_PORT}/last-request"]
+        )
+    )
+    assert last["path"] == "/v1/chat/completions"
+    # Both the target language and the extra instructions must reach the prompt.
+    sent = last["body"]
+    assert "German" in sent
+    assert "Use formal tone" in sent
+
 
 def test_translate_profile_events(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
@@ -354,3 +392,201 @@ def test_translate_null_input(started_cluster):
     lines = result.strip().split("\n")
     assert "\\N" in lines
     assert "hello" in lines
+
+
+# ---------------------------------------------------------------------------
+# aiEmbed
+# ---------------------------------------------------------------------------
+
+
+def parse_embedding(s):
+    """Parse a TabSeparated `Array(Float32)` cell like '[0.1,0.2,0.3]' into a list."""
+    s = s.strip()
+    if not s or s == "[]":
+        return []
+    return [float(v) for v in s.strip("[]").split(",")]
+
+
+def test_embed_basic(started_cluster):
+    """Single-row aiEmbed returns an `Array(Float32)` of the model's native size."""
+    result = instance.query(
+        "SELECT aiEmbed('ai_embed', 'hello')",
+        settings=AI_SETTINGS,
+    )
+    vec = parse_embedding(result)
+    assert len(vec) == 4  # DEFAULT_EMBED_DIM in mock server
+    assert any(v != 0.0 for v in vec)
+
+
+def test_embed_multiple_rows(started_cluster):
+    """Multiple rows go through one batched request; each row gets its own vector."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('alpha'), ('beta'), ('gamma')")
+    result = instance.query(
+        "SELECT aiEmbed('ai_embed', x) FROM test_input ORDER BY x",
+        settings=AI_SETTINGS,
+    )
+    rows = [parse_embedding(line) for line in result.strip().split("\n")]
+    assert len(rows) == 3
+    assert all(len(v) == 4 for v in rows)
+    # Different inputs should yield different vectors (mock uses input bytes).
+    assert len({tuple(v) for v in rows}) == 3
+
+
+def test_embed_with_dimensions(started_cluster):
+    """The `dimensions` argument is forwarded to the provider and honored in the response."""
+    result = instance.query(
+        "SELECT aiEmbed('ai_embed', 'hello world', 16)",
+        settings=AI_SETTINGS,
+    )
+    vec = parse_embedding(result)
+    assert len(vec) == 16
+
+
+def test_embed_null_and_empty_input(started_cluster):
+    """`NULL` and empty-string inputs map to `[]` without making an API call."""
+    instance.query("TRUNCATE TABLE test_input_nullable")
+    instance.query(
+        "INSERT INTO test_input_nullable VALUES (NULL), (''), ('hi')"
+    )
+    qid = unique_query_id("embed_null_empty")
+    result = instance.query(
+        "SELECT aiEmbed('ai_embed', x) FROM test_input_nullable ORDER BY x NULLS FIRST",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    rows = [parse_embedding(line) for line in result.strip().split("\n")]
+    assert len(rows) == 3
+    empties = sum(1 for v in rows if v == [])
+    non_empties = sum(1 for v in rows if v)
+    assert empties == 2
+    assert non_empties == 1
+
+    events = get_profile_events(qid)
+    # Only the single non-empty row triggers an API call; NULL/'' are skipped.
+    assert int(events["api_calls"]) == 1
+    assert int(events["rows_processed"]) == 1
+    assert int(events["rows_skipped"]) == 2
+
+
+def test_embed_profile_events_token_accounting(started_cluster):
+    """`AIInputTokens` accumulates across rows. Mock reports `prompt_tokens = sum(len(inputs))`."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('abc'), ('de'), ('fghi')")
+    qid = unique_query_id("embed_tokens")
+    instance.query(
+        "SELECT aiEmbed('ai_embed', x) FROM test_input",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    events = get_profile_events(qid)
+    # All three rows fit in one batched call (default batch size is 100).
+    assert int(events["api_calls"]) == 1
+    assert int(events["input_tokens"]) == 3 + 2 + 4
+    assert int(events["rows_processed"]) == 3
+    assert int(events["rows_skipped"]) == 0
+
+
+def test_embed_batching(started_cluster):
+    """`ai_function_embedding_max_batch_size` splits inputs across HTTP calls."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query(
+        "INSERT INTO test_input SELECT 'row_' || toString(number) FROM numbers(5)"
+    )
+    qid = unique_query_id("embed_batch")
+    instance.query(
+        "SELECT aiEmbed('ai_embed', x) FROM test_input",
+        settings={**AI_SETTINGS, "ai_function_embedding_max_batch_size": 2},
+        query_id=qid,
+    )
+    events = get_profile_events(qid)
+    # 5 rows / batch of 2 -> ceil(5/2) = 3 HTTP calls.
+    assert int(events["api_calls"]) == 3
+    assert int(events["rows_processed"]) == 5
+    assert int(events["rows_skipped"]) == 0
+
+
+def test_embed_error_throw(started_cluster):
+    """By default, provider errors propagate as `RECEIVED_ERROR_FROM_REMOTE_IO_SERVER`."""
+    error = instance.query_and_get_error(
+        "SELECT aiEmbed('ai_embed_error', 'hello')",
+        settings=AI_SETTINGS,
+    )
+    assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+
+
+def test_embed_error_graceful(started_cluster):
+    """With `ai_function_throw_on_error = 0` the failed batch's rows become `[]`."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query("INSERT INTO test_input VALUES ('a'), ('b')")
+    result = instance.query(
+        "SELECT aiEmbed('ai_embed_error', x) FROM test_input",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_throw_on_error": 0,
+            "ai_function_max_retries": 0,
+        },
+    )
+    rows = [parse_embedding(line) for line in result.strip().split("\n")]
+    assert rows == [[], []]
+
+
+def test_embed_duplicate_index_rejected(started_cluster):
+    """`OpenAIProvider::embed` rejects responses with duplicate `index` values."""
+    error = instance.query_and_get_error(
+        "SELECT aiEmbed('ai_embed_dup_index', x) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
+        settings={**AI_SETTINGS, "ai_function_max_retries": 0},
+    )
+    assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+    assert "duplicates" in error or "duplicate" in error.lower()
+
+
+def test_embed_wrong_count_rejected(started_cluster):
+    """`OpenAIProvider::embed` rejects responses whose `data` size != number of inputs."""
+    error = instance.query_and_get_error(
+        "SELECT aiEmbed('ai_embed_wrong_count', x) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
+        settings={**AI_SETTINGS, "ai_function_max_retries": 0},
+    )
+    assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
+
+
+def test_embed_empty_input_table(started_cluster):
+    """Zero-row input must not make any API calls."""
+    instance.query("TRUNCATE TABLE test_input")
+    qid = unique_query_id("embed_zero_rows")
+    result = instance.query(
+        "SELECT aiEmbed('ai_embed', x) FROM test_input",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    assert result.strip() == ""
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 0
+    assert int(events["rows_processed"]) == 0
+
+
+def test_embed_quota_input_tokens_exceeded(started_cluster):
+    """When the input-token quota is exceeded, remaining batches are skipped."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query(
+        "INSERT INTO test_input SELECT 'row_' || toString(number) FROM numbers(4)"
+    )
+    qid = unique_query_id("embed_quota")
+    # Each batch costs `sum(len(text))` input tokens. With batch_size=1 and rows
+    # of length 5 ("row_0".."row_3"), the second batch pushes us over a 5-token cap.
+    result = instance.query(
+        "SELECT aiEmbed('ai_embed', x) FROM test_input",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_embedding_max_batch_size": 1,
+            "ai_function_max_input_tokens_per_query": 5,
+            "ai_function_throw_on_quota_exceeded": 0,
+        },
+        query_id=qid,
+    )
+    rows = [parse_embedding(line) for line in result.strip().split("\n")]
+    # First batch succeeds, remaining batches are aborted and produce [].
+    assert sum(1 for r in rows if r) == 1
+    assert sum(1 for r in rows if not r) == 3
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 1
