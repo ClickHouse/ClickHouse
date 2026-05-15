@@ -1167,7 +1167,6 @@ ClientFactory::ClientFactory()
 ClientFactory::~ClientFactory()
 {
     Aws::ShutdownAPI(aws_options);
-    Aws::Utils::Logging::ShutdownAWSLogging();
 }
 
 ClientFactory & ClientFactory::instance()
