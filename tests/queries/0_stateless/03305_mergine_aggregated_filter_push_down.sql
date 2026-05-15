@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-random-merge-tree-settings
 -- add_minmax_index_for_numeric_columns=0: Different plan (would use the index on x)
 

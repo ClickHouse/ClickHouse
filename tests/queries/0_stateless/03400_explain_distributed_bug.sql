@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 set enable_analyzer=1, prefer_localhost_replica=1, enable_parallel_blocks_marshalling = 1;
 
 set serialize_query_plan=0;

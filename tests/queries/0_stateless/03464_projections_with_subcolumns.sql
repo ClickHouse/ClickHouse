@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: long
 
 set enable_analyzer=1;

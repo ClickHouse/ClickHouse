@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 DROP TABLE IF EXISTS 03457_data;
 DROP TABLE IF EXISTS 03457_filter;
 

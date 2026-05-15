@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: long, no-tsan, no-asan, no-ubsan, no-msan, no-debug
 
 -- Randomized max_insert_threads can create multiple parts, causing

@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-parallel, no-flaky-check
 
 -- CNF optimization uses QueryNodeHash to order conditions. We need fixed database.table.column identifier name to stabilize result

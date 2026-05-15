@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-parallel-replicas
 
 -- Test that text indexes on mapKeys(m) do not cause "Not-ready Set" exception

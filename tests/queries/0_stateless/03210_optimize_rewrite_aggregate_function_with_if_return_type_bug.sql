@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET enable_analyzer = 1;
 
 -- For function count, rewrite countState to countStateIf changes the type from AggregateFunction(count, Nullable(UInt64)) to AggregateFunction(count, UInt64)

@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Test for issue https://github.com/ClickHouse/ClickHouse/issues/97792
 
 SET parallel_replicas_local_plan = 1;

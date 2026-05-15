@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 DROP TABLE IF EXISTS t_ind_merge_1;
 
 SET enable_analyzer = 1;

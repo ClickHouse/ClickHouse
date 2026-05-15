@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET enable_analyzer = 1;
 SET max_parallel_replicas = 1;
 SET use_skip_indexes_on_data_read = 1;

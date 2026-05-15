@@ -186,15 +186,21 @@ Settings:
 - `description` — Prints step description. Default: 1.
 - `indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables. Starting from ClickHouse >= v25.9, this statement only shows reasonable output when used with `SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0`.
 - `projections` — Shows all analyzed projections and their effect on part-level filtering based on projection primary key conditions. For each projection, this section includes statistics such as the number of parts, rows, marks, and ranges that were evaluated using the projection's primary key. It also shows how many data parts were skipped due to this filtering, without reading from the projection itself. Whether a projection was actually used for reading or only analyzed for filtering can be determined by the `description` field. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
-- `actions` — Prints detailed information about step actions. Default: 0.
+- `actions` — Prints detailed information about step actions. Default: 1 (see `query_plan_pretty_default` below).
 - `sorting` — Prints the sort description for each plan step that produces sorted output. Default: 0.
 - `keep_logical_steps` — Keeps logical plan steps for joins instead of converting them to physical join implementations. Default: 0.
 - `json` — Prints query plan steps as a row in [JSON](/interfaces/formats/JSON) format. Default: 0. It is recommended to use [TabSeparatedRaw (TSVRaw)](/interfaces/formats/TabSeparatedRaw) format to avoid unnecessary escaping.
 - `input_headers` — Prints input headers for step. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `column_structure` — Prints also the structure of columns in headers on top of their name and type. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Default: 0.
-- `compact` — When enabled, hides expression steps and detailed action info (inputs, functions, aliases, and output positions) from the plan. Only has an effect when actions = 1. Default: 0.
-- `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 0.
+- `compact` — When enabled, hides expression steps and detailed action info (inputs, functions, aliases, and output positions) from the plan. Only has an effect when `actions = 1`. Default: 1 (see `query_plan_pretty_default` below).
+- `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 1 (see `query_plan_pretty_default` below).
+
+:::note
+Starting from ClickHouse 26.5, the server setting `query_plan_pretty_default` is `true` by default. When it is `true`, `EXPLAIN PLAN` initializes `actions`, `compact`, and `pretty` to `1` so the plan is rendered in the compact, pretty, action-annotated form. Per-query `SETTINGS actions = ..., compact = ..., pretty = ...` always override this.
+:::
+
+To restore the pre-26.5 verbose output, either run `SET query_plan_pretty_default = 0` (or pass it in per-query `SETTINGS`), or set the `compatibility` setting to any version older than `26.5`.
 
 When `json=1` step names will contain an additional suffix with unique step identifier.
 

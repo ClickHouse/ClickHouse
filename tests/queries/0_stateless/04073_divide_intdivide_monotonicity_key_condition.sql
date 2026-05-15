@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- EXPLAIN output may differ
 

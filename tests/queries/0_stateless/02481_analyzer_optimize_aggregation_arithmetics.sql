@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET enable_analyzer = 1;
 SET optimize_arithmetic_operations_in_aggregate_functions = 1;
 

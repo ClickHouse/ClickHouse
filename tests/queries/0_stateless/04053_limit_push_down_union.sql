@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET enable_analyzer = 1;
 
 -- Test that LIMIT is pushed down into UNION ALL branches.

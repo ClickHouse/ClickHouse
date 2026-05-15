@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 DROP TABLE IF EXISTS t_alias_subcolumns;
 
 SET enable_analyzer = 1;

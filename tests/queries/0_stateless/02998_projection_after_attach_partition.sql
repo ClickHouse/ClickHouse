@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET optimize_use_projections = 1;
 
 -- { echoOn }

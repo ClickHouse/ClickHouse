@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = false;
 SET enable_join_runtime_filters = 0;

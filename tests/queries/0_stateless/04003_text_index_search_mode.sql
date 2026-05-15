@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-parallel-replicas
 
 SET optimize_or_like_chain = 0;

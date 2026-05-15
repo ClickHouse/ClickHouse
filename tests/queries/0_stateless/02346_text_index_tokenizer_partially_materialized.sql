@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 --- Verifies that tokenizer is properly passed to supported functions when a text index is partially materialized.
 
 SET use_skip_indexes = 1;

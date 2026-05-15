@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-fasttest, no-parallel-replicas
 -- Test: bloom_filter skip index support for JSONAllPaths on JSON data type
 --

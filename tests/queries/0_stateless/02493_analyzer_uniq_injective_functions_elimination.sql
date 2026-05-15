@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET enable_analyzer = 1, optimize_injective_functions_inside_uniq = 1;
 
 -- Simple test

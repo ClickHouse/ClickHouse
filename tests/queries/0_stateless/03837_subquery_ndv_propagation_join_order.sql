@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET allow_experimental_statistics = 1;
 
 DROP TABLE IF EXISTS test_sales;

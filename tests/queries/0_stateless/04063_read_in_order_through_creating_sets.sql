@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: long, no-random-settings, no-random-merge-tree-settings
 
 -- Test that read-in-order optimization works through CreatingSetsStep (IN subqueries)

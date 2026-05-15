@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-random-settings, no-random-merge-tree-settings
 
 -- Verify that SAMPLE clause is passed to remote replicas during distributed index analysis,

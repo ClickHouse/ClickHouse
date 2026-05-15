@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-parallel-replicas
 -- Tag no-parallel-replicas: output of explain is different
 

@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Test: read-in-order optimization should use InReverseOrder when constant ORDER BY columns are skipped
 
 -- This test specifically tests read-in-order optimization, so we need to ensure it's enabled

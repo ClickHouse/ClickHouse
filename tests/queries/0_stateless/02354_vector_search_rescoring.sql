@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
 -- no-parallel-replicas: If parallel replicas are on, the optimization (no rescoring) may not work.
 

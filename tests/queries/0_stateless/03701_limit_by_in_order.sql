@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- In order version of LIMIT BY works only if analyzer enabled
 SET enable_analyzer = 1;
 

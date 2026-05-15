@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tests delayed materialization of statistics in merge instead of during insert (setting 'materialize_statistics_on_insert = 0').
 -- (The concrete statistics type, column data type and predicate type don't matter)
 

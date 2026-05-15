@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET enable_parallel_replicas = 0;
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;

@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-fasttest
 -- encrypt function doesn't exist in the fastest build
 

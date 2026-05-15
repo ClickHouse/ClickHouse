@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 drop table if exists tab_v;
 drop table if exists tab;
 create table tab (x UInt64, y UInt64) engine MergeTree() order by (x, y);

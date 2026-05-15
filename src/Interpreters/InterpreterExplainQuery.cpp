@@ -46,6 +46,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsUInt64 query_plan_max_step_description_length;
+    extern const SettingsBool query_plan_pretty_default;
 }
 
 namespace ErrorCodes
@@ -567,6 +568,25 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN query");
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
+
+            if (!query_context->getSettingsRef()[Setting::query_plan_pretty_default])
+            {
+                auto user_set = [&](const std::string & name)
+                {
+                    if (!ast.getSettings())
+                        return false;
+                    for (const auto & change : ast.getSettings()->as<const ASTSetQuery &>().changes)
+                        if (change.name == name)
+                            return true;
+                    return false;
+                };
+                if (!user_set("actions"))
+                    settings.query_plan_options.actions = false;
+                if (!user_set("compact"))
+                    settings.query_plan_options.compact = false;
+                if (!user_set("pretty"))
+                    settings.query_plan_options.pretty = false;
+            }
             QueryPlan plan;
 
             ContextPtr context;

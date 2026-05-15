@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-fasttest, no-ordinary-database
 
 SET enable_analyzer = 1; -- analyzer vs. non-analyzer produce slightly different EXPLAIN

@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: shard
 -- Test that remote() with nested merge() table function works with the analyzer.
 -- https://github.com/ClickHouse/ClickHouse/issues/84672

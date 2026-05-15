@@ -8,6 +8,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
+
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --query_plan_pretty_default=0"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_table;"
 
 wait_for_mutations() {

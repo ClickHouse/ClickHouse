@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 drop table if exists pr_t;
 
 create table pr_t(a UInt64, b UInt64) engine=MergeTree order by a;

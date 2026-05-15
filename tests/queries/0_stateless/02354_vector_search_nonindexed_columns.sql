@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-fasttest
 -- no-fasttest: vector search needs usearch 3rd party library
 

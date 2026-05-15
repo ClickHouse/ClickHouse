@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Verify skip-index top-k is correctly guarded for nullable/collation types
 -- while dynamic filtering still works for them.
 -- Tags: no-parallel-replicas, no-fasttest

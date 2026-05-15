@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 CREATE TABLE test
 ENGINE = ReplacingMergeTree
 PRIMARY KEY id

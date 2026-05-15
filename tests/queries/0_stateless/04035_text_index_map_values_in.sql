@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tests that text indexes built on mapValues(m) work with the IN operator.
 
 SET enable_analyzer = 1;

@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET enable_parallel_replicas = 0;
 SET optimize_read_in_order = 1;
 DROP TABLE IF EXISTS t_row_policy_rio;

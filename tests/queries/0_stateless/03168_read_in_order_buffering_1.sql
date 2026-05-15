@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 DROP TABLE IF EXISTS t_read_in_order_1;
 
 CREATE TABLE t_read_in_order_1 (id UInt64, v UInt64)

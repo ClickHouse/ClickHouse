@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET enable_analyzer = 1;
 SET optimize_if_transform_strings_to_enum = 1;
 

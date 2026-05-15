@@ -2449,6 +2449,14 @@ Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both ta
 Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specified in the original query.
 )", 0) \
     \
+    DECLARE(Bool, query_plan_pretty_default, true, R"(
+When enabled, `EXPLAIN PLAN` defaults `actions`, `compact`, and `pretty` to `true`, producing a compact, pretty, action-annotated plan.
+
+Per-query `SETTINGS actions = ..., compact = ..., pretty = ...` always override this setting.
+
+Set this to `false` (or set `compatibility` to any version older than `26.5`) to restore the pre-26.5 verbose output.
+)", 0) \
+    \
     DECLARE(UInt64, query_plan_max_step_description_length, 500, R"(
 Maximum length of step description in EXPLAIN PLAN.
 )", 0) \

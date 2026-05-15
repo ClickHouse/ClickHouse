@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-random-settings
 
 -- Tests that text indexes built on mapValues(m) work correctly when the analyzer

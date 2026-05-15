@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET use_statistics_for_part_pruning = 0; -- disable statistics-based part pruning to test skip indexes
 
 -- add_minmax_index_for_numeric_columns=0: Different plan

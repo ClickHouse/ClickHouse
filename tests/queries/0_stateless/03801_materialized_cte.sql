@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: EXPLAIN QUERY TREE node IDs are not stable with parallel replicas
 

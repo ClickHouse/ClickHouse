@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-shared-catalog, no-parallel-replicas
 -- no-shared-catalog: STOP MERGES will only stop them on the current replica, the second one will continue to merge
 -- no-parallel-replicas: the result of EXPLAIN differs with parallel replicas

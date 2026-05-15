@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: distributed
 
 set prefer_localhost_replica = 1;

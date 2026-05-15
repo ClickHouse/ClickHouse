@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 

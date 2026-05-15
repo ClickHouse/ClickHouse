@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 DROP TABLE IF EXISTS t_length_1;
 DROP TABLE IF EXISTS t_length_2;
 

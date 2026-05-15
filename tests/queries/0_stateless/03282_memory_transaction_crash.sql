@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: zookeeper, no-encrypted-storage
 -- https://github.com/ClickHouse/ClickHouse/issues/72887
 DROP TABLE IF EXISTS t0;

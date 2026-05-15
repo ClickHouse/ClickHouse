@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- { echo ON }
 
 drop table if exists test;

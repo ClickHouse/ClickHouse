@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 DROP TABLE IF EXISTS a;
 DROP TABLE IF EXISTS b;
 DROP TABLE IF EXISTS c;

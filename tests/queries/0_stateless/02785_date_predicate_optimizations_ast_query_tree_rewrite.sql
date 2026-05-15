@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET optimize_time_filter_with_preimage = 1;
 
 DROP TABLE IF EXISTS date_t;

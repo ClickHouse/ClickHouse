@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET max_threads = 1;
 SET max_insert_threads = 1;
 SET max_block_size = 65536;

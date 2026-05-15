@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-fasttest, no-ordinary-database, no-parallel
 -- no-parallel: SQL functions are not per-database, they are global
 

@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Test that FORMAT Null is ignored for EXPLAIN queries when setting is enabled (default)
 
 SET enable_analyzer = 1, max_threads = 2;

@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-random-settings, no-parallel-replicas
 set enable_analyzer=1;
 

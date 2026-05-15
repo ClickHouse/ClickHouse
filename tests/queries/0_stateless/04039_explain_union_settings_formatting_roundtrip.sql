@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Verify that EXPLAIN with UNION and trailing SETTINGS round-trips correctly through formatting.
 -- The bug: SETTINGS on the EXPLAIN was consumed by the last SELECT during re-parse
 -- because the last SELECT in the UNION chain was not parenthesized.

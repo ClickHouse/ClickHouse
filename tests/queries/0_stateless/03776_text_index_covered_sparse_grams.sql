@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tsts that covered sparse grams are filtered out.
 
 DROP TABLE IF EXISTS tab;

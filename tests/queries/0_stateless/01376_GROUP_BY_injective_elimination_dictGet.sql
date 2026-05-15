@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-parallel, no-flaky-check
 
 SET optimize_injective_functions_in_group_by = 1;

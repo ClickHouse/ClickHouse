@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-parallel-replicas
 -- Optimization doen't work with parallel replicas
 

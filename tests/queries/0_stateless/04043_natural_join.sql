@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tests for NATURAL JOIN syntax.
 -- NATURAL JOIN automatically joins on all columns with matching names,
 -- equivalent to JOIN ... USING (col1, col2, ...) for all common column names.

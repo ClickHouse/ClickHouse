@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 CREATE TABLE t0 (c0 Int, c1 Int) ENGINE = Memory;
 
 INSERT INTO t0 VALUES (1, 2);

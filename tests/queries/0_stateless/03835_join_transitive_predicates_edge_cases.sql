@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Edge case tests for transitive predicate inference.
 
 SET allow_experimental_analyzer = 1;

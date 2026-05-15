@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET optimize_rewrite_sum_if_to_count_if = 0;
 
 SELECT sumIf(1, number % 2 > 2) FROM numbers(100);

@@ -41,7 +41,9 @@ def test_explanation(started_cluster_iceberg_with_spark, format_version, storage
             storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, format=format
         )
 
-        res = instance.query(f"EXPLAIN SELECT * FROM {TABLE_NAME}")
+        res = instance.query(
+            f"EXPLAIN SELECT * FROM {TABLE_NAME} SETTINGS query_plan_pretty_default = 0"
+        )
         res = list(
             map(
                 lambda x: x.split("\t"),

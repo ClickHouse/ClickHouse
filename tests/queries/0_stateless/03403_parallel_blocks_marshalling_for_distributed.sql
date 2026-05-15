@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 set serialize_query_plan = 0;
 set enable_parallel_blocks_marshalling = 1; -- EXPLAIN output includes BlocksMarshalling node when enabled
 

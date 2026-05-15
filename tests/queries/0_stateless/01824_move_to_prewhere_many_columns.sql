@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-random-merge-tree-settings
 
 SET optimize_move_to_prewhere = 1;

@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Test case for fix: QueryPlan was not initialized error when pushing down filter to Merge table
 
 DROP TABLE IF EXISTS t1;

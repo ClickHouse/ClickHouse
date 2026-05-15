@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET use_statistics_for_part_pruning = 0; -- disable statistics-based part pruning to test skip indexes
 
 DROP TABLE IF EXISTS skip_table;

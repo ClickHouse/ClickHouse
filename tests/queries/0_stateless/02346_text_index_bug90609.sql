@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Test for Bug 90609
 
 DROP TABLE IF EXISTS tab;

@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET enable_optimize_predicate_expression = 0;
 SET convert_query_to_cnf = 0;
 SET cross_to_inner_join_rewrite = 1;

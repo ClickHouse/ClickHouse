@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-random-merge-tree-settings
 SET optimize_use_projections = 1;
 SET query_plan_optimize_lazy_materialization = 1;

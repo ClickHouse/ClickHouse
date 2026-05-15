@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-parallel, no-replicated-database: Named collection is used
 --
 

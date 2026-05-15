@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 #!/usr/bin/env -S ${HOME}/clickhouse-client --queries-file
 
 DROP TABLE IF EXISTS t1;

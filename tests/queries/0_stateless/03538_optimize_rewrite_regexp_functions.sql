@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- { echo ON }
 
 SET enable_analyzer = 1;

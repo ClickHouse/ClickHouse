@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Testcase for bug #85897
 -- If skip index is part of primary key, then optimization 'use_skip_indexes_if_final_exact_mode' should
 -- not perform additional primary key intersection expand step.

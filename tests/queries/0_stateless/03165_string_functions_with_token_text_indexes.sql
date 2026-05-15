@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SELECT '-------- Bloom filter --------';
 SELECT '';
 DROP TABLE IF EXISTS 03165_token_bf;

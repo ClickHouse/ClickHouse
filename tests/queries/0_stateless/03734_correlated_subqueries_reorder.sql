@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET enable_analyzer = 1;
 
 SET query_plan_optimize_join_order_limit = 10;

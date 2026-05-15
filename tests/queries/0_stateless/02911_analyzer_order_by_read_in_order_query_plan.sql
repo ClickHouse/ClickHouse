@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET optimize_read_in_order = 1, query_plan_read_in_order = 1, enable_analyzer = 1;
 
 drop table if exists tab;

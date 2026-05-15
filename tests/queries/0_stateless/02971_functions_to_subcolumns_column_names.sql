@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 DROP TABLE IF EXISTS t_column_names;
 
 CREATE TABLE t_column_names (arr Array(UInt64), n Nullable(String)) ENGINE = Memory;

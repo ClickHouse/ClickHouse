@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-fasttest
 -- When there is GROUP BY and ORDER BY, trailing ORDER BY elements after
 -- all GROUP BY keys are covered are removed as an optimization.

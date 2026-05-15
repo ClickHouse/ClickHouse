@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-parallel-replicas
 
 -- Tests if a text index LIKE evaluation by scanning the inverted index dictionary is properly applied.

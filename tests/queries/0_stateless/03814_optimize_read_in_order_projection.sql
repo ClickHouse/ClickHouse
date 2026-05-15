@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Projections should use ReadType: InOrder when ORDER BY matches projection's sorting key.
 -- Previously, ReadType would be Default (https://github.com/ClickHouse/ClickHouse/issues/89453)
 -- Tags: no-random-settings

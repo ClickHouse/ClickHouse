@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET optimize_trivial_insert_select = 0;
 
 CREATE TABLE t1

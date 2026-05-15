@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 set optimize_syntax_fuse_functions = 0;
 
 set enable_analyzer = 1;

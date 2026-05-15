@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- {echoOn}
 
 SET use_query_condition_cache = 0;

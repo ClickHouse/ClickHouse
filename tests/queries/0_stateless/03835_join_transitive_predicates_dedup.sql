@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tests for predicate deduplication and multiple independent equivalence classes.
 
 SET allow_experimental_analyzer = 1;

@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET session_timezone = 'UTC';
 -- For explain with indexes and key condition values verification
 SET parallel_replicas_local_plan = 1;

@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Test that lazy materialization is applied to all branches of a UNION ALL query
 -- Tags: no-random-settings
 

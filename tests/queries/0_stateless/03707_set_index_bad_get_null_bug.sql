@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 set enable_parallel_replicas = 0;
 
 drop table if exists test;

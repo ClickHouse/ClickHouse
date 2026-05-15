@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-fasttest
 set optimize_move_to_prewhere = 1;
 set query_plan_optimize_prewhere = 1;

@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET enable_analyzer = 1;
 
 set optimize_rewrite_array_exists_to_has = false;

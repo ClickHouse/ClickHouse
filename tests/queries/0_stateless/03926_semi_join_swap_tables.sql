@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Test for swapping the build and probe sides of a SEMI join
 
 CREATE TABLE lhs(a UInt32)

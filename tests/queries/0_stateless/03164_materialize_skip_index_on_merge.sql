@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tests merge tree 'setting' materialize_skip_indexes_on_merge
 -- add_minmax_index_for_numeric_columns=0: Different indices and plans on b
 

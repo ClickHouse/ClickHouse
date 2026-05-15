@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- This test validates NaN comparison behavior in query execution.
 -- Since 323299fe, KeyCondition folds `x = NaN` to ALWAYS_FALSE and `x <> NaN` to ALWAYS_TRUE,
 -- so `= NaN` queries short-circuit before partition/statistics pruning (no Indexes in EXPLAIN),

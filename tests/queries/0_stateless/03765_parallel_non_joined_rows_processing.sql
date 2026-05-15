@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-random-settings
 
 SET enable_analyzer = 1, query_plan_join_swap_table = 0;

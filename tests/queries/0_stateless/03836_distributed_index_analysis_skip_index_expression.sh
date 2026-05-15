@@ -9,6 +9,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --query_plan_pretty_default=0"
 # Test that distributed index analysis works correctly when skip index contains
 # expressions over columns (e.g. toStartOfMinute(timestamp)), not just plain
 # column references.

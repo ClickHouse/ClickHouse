@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 DROP TABLE IF EXISTS t_skip_index_in;
 
 CREATE TABLE t_skip_index_in

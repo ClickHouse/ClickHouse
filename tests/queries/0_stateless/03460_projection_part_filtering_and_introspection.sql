@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- add_minmax_index_for_numeric_columns=0: Implicit indices will filter before projections
 
 -- { echo ON }

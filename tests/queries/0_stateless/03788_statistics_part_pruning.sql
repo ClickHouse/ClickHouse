@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- This test validates Statistics-based part pruning functionality.
 
 DROP TABLE IF EXISTS test_stats_pruning;

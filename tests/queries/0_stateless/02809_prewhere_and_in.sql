@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 DROP TABLE IF EXISTS t_02809;
 
 CREATE TABLE t_02809(a Int64, b Int64, s String)

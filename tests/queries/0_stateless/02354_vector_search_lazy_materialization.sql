@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-fasttest, no-parallel-replicas
 
 -- Verify that vector search queries on multiple parts use lazy materialization

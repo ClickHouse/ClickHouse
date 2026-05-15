@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-random-merge-tree-settings
 -- Test for applying join runtime filters to RIGHT ANY joins
 

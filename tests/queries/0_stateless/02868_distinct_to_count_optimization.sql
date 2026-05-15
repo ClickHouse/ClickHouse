@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 drop table if exists test_rewrite_uniq_to_count;
 
 CREATE TABLE test_rewrite_uniq_to_count

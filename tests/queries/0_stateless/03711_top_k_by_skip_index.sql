@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Test for verifying TopN optimizations
 -- Tags: no-parallel-replicas
 

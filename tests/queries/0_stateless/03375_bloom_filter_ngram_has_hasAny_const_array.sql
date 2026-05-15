@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET parallel_replicas_local_plan=1;
 
 DROP TABLE IF EXISTS bloom_filter_has_const_array;

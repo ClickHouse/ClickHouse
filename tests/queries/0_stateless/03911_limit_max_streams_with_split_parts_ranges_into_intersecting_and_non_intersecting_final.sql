@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: long, no-sanitizers, no-s3-storage, no-azure-blob-storage
 -- long: times out in private
 -- no-sanitizers: sometimes times out in private :(

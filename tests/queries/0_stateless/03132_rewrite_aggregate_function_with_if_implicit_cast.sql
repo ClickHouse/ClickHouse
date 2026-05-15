@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 SET enable_analyzer = 1;
 SET optimize_rewrite_aggregate_function_with_if = 1;
 -- { echoOn }

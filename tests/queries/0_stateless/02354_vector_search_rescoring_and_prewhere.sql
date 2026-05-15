@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
 
 -- Test for setting 'vector_search_with_rescoring' with filters.

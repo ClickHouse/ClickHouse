@@ -1,3 +1,4 @@
+SET query_plan_pretty_default = 0;
 -- Tags: no-parallel-replicas
 -- Test: Skip indexes (bloom_filter and text) work correctly with Map key subcolumns
 -- produced by FunctionToSubcolumnsPass (m.key_<serialized_key> form).
