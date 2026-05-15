@@ -4,6 +4,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
+#include <Common/UDFProcessSubtreeSampler.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -135,11 +136,13 @@ public:
         int stdout_fd_,
         int stderr_fd_,
         size_t timeout_milliseconds_,
-        ExternalCommandStderrReaction stderr_reaction_)
+        ExternalCommandStderrReaction stderr_reaction_,
+        UDFProcessSubtreeSampler * sampler_)
         : stdout_fd(stdout_fd_)
         , stderr_fd(stderr_fd_)
         , timeout_milliseconds(timeout_milliseconds_)
         , stderr_reaction(stderr_reaction_)
+        , sampler(sampler_)
     {
         makeFdNonBlocking(stdout_fd);
         makeFdNonBlocking(stderr_fd);
@@ -265,7 +268,11 @@ public:
                 }
 
                 if (res > 0)
+                {
                     bytes_read += res;
+                    if (sampler)
+                        sampler->recordOutputBytes(static_cast<size_t>(res));
+                }
             }
         }
 
@@ -329,6 +336,7 @@ private:
     int stderr_fd;
     size_t timeout_milliseconds;
     ExternalCommandStderrReaction stderr_reaction;
+    UDFProcessSubtreeSampler * sampler;
 
     static constexpr size_t BUFFER_SIZE = 4_KiB;
     static constexpr size_t MAX_STDERR_SIZE = 1_MiB;  /// Safety limit for stderr accumulation
@@ -342,8 +350,8 @@ private:
 class TimeoutWriteBufferFromFileDescriptor : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    explicit TimeoutWriteBufferFromFileDescriptor(int fd_, size_t timeout_milliseconds_)
-        : fd(fd_), timeout_milliseconds(timeout_milliseconds_)
+    explicit TimeoutWriteBufferFromFileDescriptor(int fd_, size_t timeout_milliseconds_, UDFProcessSubtreeSampler * sampler_)
+        : fd(fd_), timeout_milliseconds(timeout_milliseconds_), sampler(sampler_)
     {
         makeFdNonBlocking(fd);
     }
@@ -366,7 +374,11 @@ public:
                 throw ErrnoException(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Cannot write into pipe");
 
             if (res > 0)
+            {
                 bytes_written += res;
+                if (sampler)
+                    sampler->recordInputBytes(static_cast<size_t>(res));
+            }
         }
     }
 
@@ -383,6 +395,7 @@ public:
 private:
     int fd;
     size_t timeout_milliseconds;
+    UDFProcessSubtreeSampler * sampler;
 };
 
 class ShellCommandHolder
@@ -444,7 +457,7 @@ namespace
             , sample_block(sample_block_)
             , command(std::move(command_))
             , configuration(configuration_)
-            , timeout_command_out(command->out.getFD(), command->err.getFD(), command_read_timeout_milliseconds, stderr_reaction)
+            , timeout_command_out(command->out.getFD(), command->err.getFD(), command_read_timeout_milliseconds, stderr_reaction, configuration_.sampler.get())
             , command_holder(std::move(command_holder_))
             , process_pool(process_pool_)
             , check_exit_code(check_exit_code_)
@@ -528,6 +541,12 @@ namespace
 
             if (command_is_invalid)
                 command = nullptr;
+
+            /// Resource accounting must observe the borrow's resident set before
+            /// the slot is handed back to the pool, otherwise a concurrent borrow
+            /// could clear or grow the worker's VmHWM between release and read.
+            if (configuration.sampler)
+                configuration.sampler->recordReleased();
 
             if (command_holder && process_pool)
             {
@@ -748,6 +767,13 @@ Pipe ShellCommandSourceCoordinator::createPipe(
                 configuration.max_command_execution_time_seconds);
 
         process = process_holder->buildCommand();
+
+        /// Borrow acquired: capture pid for procfs sampling. Pool-wait time is
+        /// also frozen here. The few microseconds spent in buildCommand on
+        /// warm reuse are folded into pool wait — buildCommand is essentially
+        /// free on the warm path because the worker process already exists.
+        if (source_configuration.sampler)
+            source_configuration.sampler->recordBorrowAcquired(process->getPid());
     }
     else
     {
@@ -779,8 +805,12 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         }
 
         int write_buffer_fd = write_buffer->getFD();
+        /// Only the primary stdin pipe (i == 0) contributes to InputBytes.
+        /// Additional write descriptors carry side-channel data that isn't
+        /// part of the UDF's observable input.
+        UDFProcessSubtreeSampler * write_sampler = (i == 0) ? source_configuration.sampler.get() : nullptr;
         auto timeout_write_buffer
-            = std::make_shared<TimeoutWriteBufferFromFileDescriptor>(write_buffer_fd, configuration.command_write_timeout_milliseconds);
+            = std::make_shared<TimeoutWriteBufferFromFileDescriptor>(write_buffer_fd, configuration.command_write_timeout_milliseconds, write_sampler);
 
         input_pipes[i].resize(1);
 

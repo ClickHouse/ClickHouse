@@ -1354,6 +1354,7 @@ The server successfully detected this situation and will download merged part fr
     M(ExecutableUserDefinedFunctionMemoryUsageByteSeconds, "Memory used by executable and executable pool user-defined function child processes integrated over wall clock time, in byte-seconds.", ValueType::Number) \
     M(ExecutableUserDefinedFunctionInputBytes, "Total bytes written to the stdin of executable and executable pool user-defined function child processes.", ValueType::Bytes) \
     M(ExecutableUserDefinedFunctionOutputBytes, "Total bytes read from the stdout of executable and executable pool user-defined function child processes.", ValueType::Bytes) \
+    M(ExecutableUserDefinedFunctionPoolWaitMicroseconds, "Time spent waiting on tryBorrowObject when the executable pool user-defined function pool is exhausted, in microseconds.", ValueType::Microseconds) \
     \
     M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
     M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data", ValueType::Number) \

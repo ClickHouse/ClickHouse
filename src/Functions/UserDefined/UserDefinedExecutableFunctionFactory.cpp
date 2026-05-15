@@ -5,8 +5,11 @@
 
 #include <Core/Settings.h>
 #include <DataTypes/FieldToDataType.h>
+#include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/ProfileEvents.h>
+#include <Common/UDFProcessSubtreeSampler.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
@@ -23,6 +26,19 @@
 #include <Interpreters/castColumn.h>
 
 #include <boost/algorithm/string/join.hpp>
+
+
+namespace ProfileEvents
+{
+    extern const Event ExecutableUserDefinedFunctionInvocations;
+    extern const Event ExecutableUserDefinedFunctionElapsedMicroseconds;
+    extern const Event ExecutableUserDefinedFunctionPoolWaitMicroseconds;
+    extern const Event ExecutableUserDefinedFunctionCPUUserMicroseconds;
+    extern const Event ExecutableUserDefinedFunctionCPUSystemMicroseconds;
+    extern const Event ExecutableUserDefinedFunctionMemoryUsageByteSeconds;
+    extern const Event ExecutableUserDefinedFunctionInputBytes;
+    extern const Event ExecutableUserDefinedFunctionOutputBytes;
+}
 
 // On illumos, <sys/regset.h> defines FS as a macro (x86 segment register).
 // Undef it to allow use of the FS:: namespace from filesystemHelpers.h.
@@ -203,34 +219,66 @@ public:
 
             ShellCommandSourceConfiguration shell_command_source_configuration;
 
+            std::shared_ptr<UDFProcessSubtreeSampler> sampler;
             if (coordinator_configuration.is_executable_pool)
             {
                 shell_command_source_configuration.read_fixed_number_of_rows = true;
                 shell_command_source_configuration.number_of_rows_to_read = input_rows_count;
+
+                /// Count every executeImpl call against the pool path, even those
+                /// that fail before/inside the borrow. Resource counters below
+                /// only fire when the borrow actually completed.
+                ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionInvocations);
+
+                sampler = std::make_shared<UDFProcessSubtreeSampler>();
+                shell_command_source_configuration.sampler = sampler;
             }
+
+            /// Flush resource accumulators into ProfileEvents on every exit
+            /// path — successful return AND exception thrown from the
+            /// pipeline. `recordReleased` fires from `~ShellCommandSource`
+            /// regardless, so by the time this guard runs the sampler holds
+            /// the final counters for the borrow that did happen.
+            SCOPE_EXIT({
+                if (sampler && sampler->borrowAcquired())
+                {
+                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionPoolWaitMicroseconds, sampler->getPoolWaitMicroseconds());
+                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionElapsedMicroseconds, sampler->getElapsedMicroseconds());
+                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionCPUUserMicroseconds, sampler->getCPUUserMicroseconds());
+                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionCPUSystemMicroseconds, sampler->getCPUSystemMicroseconds());
+                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionMemoryUsageByteSeconds, sampler->getMemoryUsageByteSeconds());
+                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionInputBytes, sampler->getInputBytes());
+                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionOutputBytes, sampler->getOutputBytes());
+                }
+            });
 
             Pipes shell_input_pipes;
             shell_input_pipes.emplace_back(std::move(shell_input_pipe));
 
-            Pipe pipe = coordinator->createPipe(
-                command,
-                command_arguments_with_parameters,
-                std::move(shell_input_pipes),
-                result_block,
-                context,
-                shell_command_source_configuration);
-
-            QueryPipeline pipeline(std::move(pipe));
-            PullingPipelineExecutor executor(pipeline);
-
             auto result_column = result_type->createColumn();
             result_column->reserve(input_rows_count);
 
-            Block block;
-            while (executor.pull(block))
             {
-                const auto & result_column_to_add = *block.safeGetByPosition(0).column;
-                result_column->insertRangeFrom(result_column_to_add, 0, result_column_to_add.size());
+                /// Inner scope so the pipeline (and therefore the
+                /// ShellCommandSource) destructs and runs its borrow-release
+                /// hook before SCOPE_EXIT above reads the accumulators.
+                Pipe pipe = coordinator->createPipe(
+                    command,
+                    command_arguments_with_parameters,
+                    std::move(shell_input_pipes),
+                    result_block,
+                    context,
+                    shell_command_source_configuration);
+
+                QueryPipeline pipeline(std::move(pipe));
+                PullingPipelineExecutor executor(pipeline);
+
+                Block block;
+                while (executor.pull(block))
+                {
+                    const auto & result_column_to_add = *block.safeGetByPosition(0).column;
+                    result_column->insertRangeFrom(result_column_to_add, 0, result_column_to_add.size());
+                }
             }
 
             size_t result_column_size = result_column->size();
