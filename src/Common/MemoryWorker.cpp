@@ -16,6 +16,7 @@
 #include <fmt/ranges.h>
 
 #include <filesystem>
+#include <limits>
 #include <optional>
 
 namespace fs = std::filesystem;
@@ -434,17 +435,27 @@ void MemoryWorker::updateResidentMemoryThread()
             /// Speculatively reserve `(resident - tracked) * ratio` on top of the observed RSS.
             /// `resident - tracked` is the amount of memory we observed during the last tick that
             /// had not yet flowed into the tracker; treat it as a lower bound on what may grow in
-            /// the next tick as well. With the default ratio = 1.0 we reserve one full delta of
-            /// headroom, so `MemoryTracker::allocImpl` will throw `MEMORY_LIMIT_EXCEEDED` (via the
-            /// global `will_be_rss > current_hard_limit` branch) before the kernel OOM-killer
-            /// closes the gap. Setting the ratio to 0 disables the speculation entirely.
+            /// the next tick as well. With `ratio = 1.0` we reserve one full delta of headroom,
+            /// so `MemoryTracker::allocImpl` will throw `MEMORY_LIMIT_EXCEEDED` (via the global
+            /// `will_be_rss > current_hard_limit` branch) before the kernel OOM-killer closes the
+            /// gap. The default `ratio = 0` keeps the previous behaviour (`rss = resident`).
             Int64 speculative_rss = resident;
             if (rss_speculative_reserve_ratio > 0.0)
             {
                 Int64 tracked = total_memory_tracker.get();
                 Int64 delta = resident - tracked;
                 if (delta > 0)
-                    speculative_rss += static_cast<Int64>(static_cast<double>(delta) * rss_speculative_reserve_ratio);
+                {
+                    /// Clamp the speculative reservation so that the float multiplication
+                    /// and the subsequent `Int64` addition cannot overflow even if the
+                    /// configured ratio is very large.
+                    double reserve_double = static_cast<double>(delta) * rss_speculative_reserve_ratio;
+                    Int64 max_reserve = std::numeric_limits<Int64>::max() - resident;
+                    Int64 reserve = (reserve_double >= static_cast<double>(max_reserve))
+                        ? max_reserve
+                        : static_cast<Int64>(reserve_double);
+                    speculative_rss += reserve;
+                }
             }
             MemoryTracker::updateRSS(speculative_rss);
 
