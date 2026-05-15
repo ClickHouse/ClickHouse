@@ -17,7 +17,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int FUNCTION_NOT_ALLOWED;
 }
 
