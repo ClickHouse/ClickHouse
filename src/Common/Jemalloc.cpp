@@ -85,8 +85,10 @@ void setMaxBackgroundThreads(size_t max_threads)
 
 void setProfileSamplingRate(size_t lg_prof_sample)
 {
-    size_t current = getValue<size_t>("prof.lg_sample");
-    if (current == lg_prof_sample)
+    /// `prof.lg_sample` / `prof.reset` only exist on jemalloc builds with `JEMALLOC_PROF`.
+    /// When absent, treat the call as a no-op (just like the other `prof.*` setters in `setup`)
+    /// instead of asserting via the strict `getValue`.
+    if (size_t current = 0; !tryGetValue("prof.lg_sample", current) || current == lg_prof_sample)
         return;
 
     je_mallctl("prof.reset", nullptr, nullptr, &lg_prof_sample, sizeof(lg_prof_sample));

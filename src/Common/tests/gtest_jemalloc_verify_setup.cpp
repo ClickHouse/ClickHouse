@@ -38,11 +38,19 @@ TEST(Jemalloc, VerifySetupNoAbortWhenBackgroundThreadMallctlMissing)
         = Jemalloc::tryGetValue("background_thread", current_background_thread);
 
     /// Pass values that make every other check fall through: match the
-    /// current global profiler state, leave `collect_global_profile_samples`
-    /// at its default, set `max_background_threads_num=0` to skip that
-    /// check, and use `default_profiler_sampling_rate` to skip the
-    /// `prof.lg_sample` check.
-    const bool enable_global_profiler = Jemalloc::getThreadProfileInitMib().getValue();
+    /// current global profiler state (or the default when `prof.*` is
+    /// absent on builds without `JEMALLOC_PROF`), leave
+    /// `collect_global_profile_samples` at its default, set
+    /// `max_background_threads_num=0` to skip that check, and use
+    /// `default_profiler_sampling_rate` to skip the `prof.lg_sample`
+    /// check. Reading `prof.thread_active_init` via the strict
+    /// `MibCache::getValue` would itself assert on builds without prof,
+    /// which is exactly the scenario this test is meant to tolerate.
+    bool current_thread_active_init = false;
+    const bool enable_global_profiler
+        = Jemalloc::getThreadProfileInitMib().tryGetValue(current_thread_active_init)
+            ? current_thread_active_init
+            : Jemalloc::default_enable_global_profiler;
     const bool enable_background_threads = background_thread_supported
         ? current_background_thread
         : Jemalloc::default_enable_background_threads;
