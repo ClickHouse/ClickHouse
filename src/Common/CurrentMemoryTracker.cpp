@@ -144,7 +144,10 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
             Int64 untracked_memory = current_thread->untracked_memory;
             current_thread->untracked_memory = 0;
             if (untracked_memory > 0)
-                return memory_tracker->allocImpl(untracked_memory, /*throw_if_memory_exceeded=*/ false);
+            {
+                /// FIXME: ignore alloc
+                // return memory_tracker->allocImpl(untracked_memory, /*throw_if_memory_exceeded=*/ false);
+            }
             else
                 return memory_tracker->free(-untracked_memory);
         }
