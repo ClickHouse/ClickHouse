@@ -1,3 +1,6 @@
+import sys
+import traceback
+
 from ci.jobs.clickbench import install_clickbench_config
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.praktika.info import Info
@@ -63,8 +66,11 @@ def main():
             )
             test_results.append(Result(name="test 2", status=Result.Status.OK))
             results.append(Result.create_from(name="Tests", results=test_results))
-    except Exception:
-        pass
+    except Exception as e:
+        print(traceback.format_exc(), file=sys.stdout)
+        results.append(
+            Result(name="Job error", status=Result.Status.FAIL, info=str(e))
+        )
 
     Result.create_from(
         results=results,

@@ -1,4 +1,6 @@
 import os
+import sys
+import traceback
 
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
@@ -89,8 +91,11 @@ def main():
                     name="Queries", results=query_results, stopwatch=stop_watch_
                 )
             )
-    except Exception:
-        pass
+    except Exception as e:
+        print(traceback.format_exc(), file=sys.stdout)
+        results.append(
+            Result(name="Job error", status=Result.Status.FAIL, info=str(e))
+        )
 
     # stop log replication
     Shell.check(

@@ -868,8 +868,11 @@ def main():
                         command=lambda: run_single_test(test[0], test[1], test[2]),
                     )
                 )
-    except Exception:
-        pass
+    except Exception as e:
+        print(traceback.format_exc(), file=sys.stdout)
+        test_results.append(
+            Result(name="Job error", status=Result.Status.FAIL, info=str(e))
+        )
 
     Result.create_from(
         results=test_results, files=[], info="Check index build time & recall"
