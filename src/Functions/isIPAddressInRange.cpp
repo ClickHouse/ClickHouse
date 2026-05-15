@@ -17,7 +17,6 @@ namespace DB::ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace

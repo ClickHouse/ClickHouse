@@ -15,10 +15,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-}
 
 class FunctionGenerateULID : public IFunction
 {
