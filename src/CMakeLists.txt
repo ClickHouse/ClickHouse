@@ -231,26 +231,36 @@ else()
     target_compile_definitions(clickhouse_common_io PUBLIC ENABLE_DISTRIBUTED_CACHE=0)
 endif()
 
-# Origin tracking dominates two flush hot paths under MSan: Settings::dumpToMapColumn (in
-# Core/Settings.cpp) and ProfileEvents::dumpToMapColumn (in Interpreters/ProfileEventsExt.cpp).
-# Both walk hundreds of keys and do tight LowCardinality::insertData calls in a loop, so the
-# per-call __msan_set_alloca_origin / __msan_chain_origin cost adds up to seconds per
-# `SYSTEM FLUSH LOGS query_log` (test 01548_query_log_query_execution_ms etc. were timing out
-# on the MSan WasmEdge stateless check after x86-64-v3 became the default). SystemLog.cpp is
-# included because `flushImpl` is on the same thread and contributes to the same bottleneck.
-# Origin tracking is still on globally for the rest of the build; these files are leaf
-# helpers where MSan checks don't carry uninit values into user code, so the trade is safe.
-# History: Core/Settings.cpp got this treatment in #92716; the other two were added when the
-# same pattern surfaced on QueryLog flush under v3.
-set_source_files_properties(Core/Settings.cpp                  PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer")
-set_source_files_properties(Interpreters/ProfileEventsExt.cpp  PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer")
-set_source_files_properties(Interpreters/SystemLog.cpp         PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer")
+# Origin tracking dominates the QueryLog flush hot path under MSan. Both the per-element
+# helpers (SettingsImpl::dumpToMapColumn in Core/Settings.cpp,
+# ProfileEvents::dumpToMapColumn in Interpreters/ProfileEventsExt.cpp) and the per-row
+# LogElement::appendToBlock functions walk hundreds of values and do tight column inserts in
+# a loop, so the per-call __msan_set_alloca_origin / __msan_chain_origin cost adds up to
+# seconds per `SYSTEM FLUSH LOGS query_log`. With x86-64-v3 AVX2 codegen these flushes push
+# the MSan WasmEdge stateless check over the 600s/180s timeouts.
+#
+# Origin tracking is still on globally; these files are leaf helpers where MSan checks
+# don't carry uninit values into user code, so dropping origin tracking here is safe.
+# History: Core/Settings.cpp got this treatment in #92716. The QueryLog flush path
+# (Interpreters/ProfileEventsExt.cpp, Interpreters/SystemLog.cpp, and the LogElement files
+# Interpreters/QueryLog.cpp / QueryThreadLog.cpp / MetricLog.cpp / QueryMetricLog.cpp) was
+# added when the same pattern surfaced under v3.
 if (SANITIZE STREQUAL "memory")
-    set_source_files_properties(Core/Settings.cpp                  PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer -fno-sanitize-memory-track-origins")
-    set_source_files_properties(Interpreters/ProfileEventsExt.cpp  PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer -fno-sanitize-memory-track-origins")
-    set_source_files_properties(Interpreters/SystemLog.cpp         PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer -fno-sanitize-memory-track-origins")
+    set_source_files_properties(
+        Core/Settings.cpp
+        Interpreters/ProfileEventsExt.cpp
+        Interpreters/SystemLog.cpp
+        Interpreters/QueryLog.cpp
+        Interpreters/QueryThreadLog.cpp
+        Interpreters/MetricLog.cpp
+        Interpreters/QueryMetricLog.cpp
+        PROPERTIES COMPILE_FLAGS "-fno-sanitize-memory-track-origins"
+    )
 endif ()
 
+# ThreadFuzzer's injection() shows up in perf top of mutex-heavy code paths. Omitting the
+# frame pointer here shaves a couple of instructions off each call (almost a 2x speedup of
+# the ThreadFuzzer test); see commit d5825ec8 / azat 2024-03-04.
 set_source_files_properties(Common/ThreadFuzzer.cpp PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer")
 
 # Arrow IPC buffers use intentionally unaligned int32 offset arrays — suppress the alignment check.
