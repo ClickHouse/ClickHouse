@@ -1,5 +1,4 @@
 #pragma once
-#include <Core/Joins.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <array>
@@ -8,8 +7,6 @@ class SipHash;
 
 namespace DB
 {
-
-class JoinStepLogical;
 
 namespace QueryPlanOptimizations
 {
@@ -47,18 +44,9 @@ struct Optimization
 
         bool use_skip_indexes_for_top_k;
         bool use_top_k_dynamic_filtering;
-        bool use_top_k_dynamic_filtering_for_variable_length_types;
         size_t max_limit_for_top_k_optimization;
         bool use_skip_indexes_on_data_read;
         bool read_in_order;
-        bool read_in_order_through_join;
-
-        /// Mirrors `QueryPlanOptimizationSettings::join_swap_table`. `std::nullopt` means
-        /// "auto" (swap decided by `optimizeJoinLegacy` from per-side row estimations);
-        /// `true`/`false` are explicit. `topKThroughJoin` consults it because deferring to
-        /// the second-pass read-in-order would silently disable both optimizations if the
-        /// join is swapped from `LEFT` to `RIGHT` after we returned.
-        std::optional<bool> join_swap_table;
 
         // parallel replicas
         bool parallel_replicas_filter_pushdown = false;
@@ -150,14 +138,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 /// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
-/// Push ORDER BY ... LIMIT n down through a Join when the sort key only references
-/// columns from the side preserved by the join (LEFT/RIGHT). Restricts how many rows
-/// the preserved-side input must produce before joining.
-size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
-
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 19> optimizations = {{
+    static const std::array<Optimization, 18> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
@@ -176,7 +159,6 @@ inline const auto & getOptimizations()
         {tryConvertAnyJoinToSemiOrAntiJoin, "convertAnyJoinToSemiOrAntiJoin", &QueryPlanOptimizationSettings::convert_any_join_to_semi_or_anti_join},
         {tryRemoveUnusedColumns, "removeUnusedColumns", &QueryPlanOptimizationSettings::remove_unused_columns},
         {tryOptimizeTopK, "tryOptimizeTopK", &QueryPlanOptimizationSettings::try_use_top_k_optimization},
-        {tryTopKThroughJoin, "topKThroughJoin", &QueryPlanOptimizationSettings::top_k_through_join},
     }};
 
     return optimizations;
@@ -211,19 +193,6 @@ void useMemoryBufferForCommonSubplanResult(QueryPlan::Node & node, const QueryPl
 // Since those hashes are used for join optimization, the calculation performed before join optimization.
 std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root);
 
-/// Populates two maps in lock-step:
-///   raw_hashes[N]  = bottom-up hash of the sub-plan rooted at N, independent of N's parent.
-///   cache_keys[N]  = raw_hashes[N] XOR (the per-side contribution of N's parent join step).
-/// `raw_hashes` is what the join reorder pass needs to derive cache keys for sub-join nodes
-/// it builds itself; `cache_keys` matches the value `HashTablesStatistics` is keyed by.
-void calculateHashTableCacheKeys(
-    const QueryPlan::Node & root,
-    std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys,
-    std::unordered_map<const QueryPlan::Node *, UInt64> & raw_hashes);
-
-/// Per-side join-step hash used to derive HashTablesStatistics cache keys after join reorder.
-UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side);
-
 bool convertLogicalJoinToPhysical(
     QueryPlan::Node & node,
     QueryPlan::Nodes &,
@@ -238,12 +207,16 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
 std::optional<String> optimizeUseAggregateProjections(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
-    const QueryPlanOptimizationSettings & optimization_settings);
+    bool allow_implicit_projections,
+    bool is_parallel_replicas_initiator_with_projection_support,
+    size_t max_step_description_length);
 
 std::optional<String> optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
-    const QueryPlanOptimizationSettings & optimization_settings);
+    const QueryPlanOptimizationSettings & optimization_settings,
+    bool is_parallel_replicas_initiator_with_projection_support,
+    size_t max_step_description_length);
 
 bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 

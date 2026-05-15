@@ -7,6 +7,8 @@ title: 'INSERT INTO Statement'
 doc_type: 'reference'
 ---
 
+# INSERT INTO Statement
+
 Inserts data into a table.
 
 **Syntax**

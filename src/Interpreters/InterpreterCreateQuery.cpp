@@ -52,7 +52,6 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DDLTask.h>
@@ -332,7 +331,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
-    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext(), mode);
+    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext());
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -1567,21 +1566,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     DDLGuardPtr ddl_guard;
 
-    /// `ATTACH TABLE name <storage clauses>;` without `ENGINE` and without a columns list is ambiguous:
-    /// the parser allows `SETTINGS`, `ORDER BY`, `PARTITION BY`, etc. without an `ENGINE` (to support
-    /// `default_table_engine` on CREATE), but the short ATTACH path below reads the full table definition
-    /// from stored metadata and silently overwrites anything the user typed. Surface this as an error so
-    /// users do not assume their settings or storage clauses took effect.
-    if (create.attach && create.storage && !create.storage->engine && !create.columns_list)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "ATTACH TABLE without ENGINE cannot specify storage clauses (SETTINGS, ORDER BY, PARTITION BY, etc.) — "
-            "they would be silently ignored because the table definition is read from stored metadata. "
-            "Use 'ATTACH TABLE {0};' to re-attach with stored metadata, "
-            "or 'ALTER TABLE {0} MODIFY SETTING ...' (or 'MODIFY ORDER BY ...') after ATTACH to change settings.",
-            backQuoteIfNeed(create.getTable()));
-    }
-
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list)
     {
@@ -2034,14 +2018,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// so we allow waiting here. If database_atomic_wait_for_drop_and_detach_synchronously is disabled
         /// and old storage instance still exists it will throw exception.
         if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
-        {
-            QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
-            database->waitDetachedTableNotInUse(create.uuid, [&]()
-            {
-                if (query_status)
-                    query_status->throwIfKilled();
-            });
-        }
+            database->waitDetachedTableNotInUse(create.uuid);
         else
             database->checkDetachedTableNotInUse(create.uuid);
     }
@@ -2711,14 +2688,7 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     if (create.uuid != UUIDHelpers::Nil)
     {
         if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
-        {
-            QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
-            database->waitDetachedTableNotInUse(create.uuid, [&]()
-            {
-                if (query_status)
-                    query_status->throwIfKilled();
-            });
-        }
+            database->waitDetachedTableNotInUse(create.uuid);
         else
             database->checkDetachedTableNotInUse(create.uuid);
     }

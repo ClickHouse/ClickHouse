@@ -7,6 +7,8 @@ title: 'Developer Prerequisites'
 doc_type: 'guide'
 ---
 
+# Prerequisites
+
 ClickHouse can be built on Linux, FreeBSD and macOS.
 If you use Windows, you can still build ClickHouse in a virtual machine running Linux, e.g. [VirtualBox](https://www.virtualbox.org/) with Ubuntu.
 
