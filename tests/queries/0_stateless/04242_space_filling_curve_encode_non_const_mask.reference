@@ -1,0 +1,14 @@
+----- hilbertEncode: simple mode (no Tuple) -----
+31
+31
+----- hilbertEncode: constant Tuple mask -----
+4031541586602
+512
+----- mortonEncode: simple mode (no Tuple) -----
+53
+53
+----- mortonEncode: constant Tuple mask -----
+1572864
+32768
+----- hilbertEncode: multi-row non-constant Tuple mask is rejected -----
+----- mortonEncode: multi-row non-constant Tuple mask is rejected -----

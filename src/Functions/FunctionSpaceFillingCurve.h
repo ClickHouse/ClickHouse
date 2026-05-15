@@ -2,6 +2,7 @@
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Functions/FunctionHelpers.h>
 
@@ -33,6 +34,31 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    /// Extracts the optional range-mask Tuple from the first argument of `mortonEncode`/`hilbertEncode`.
+    /// Returns nullptr if the first argument is not a Tuple (i.e. the simple-mode call, e.g. `hilbertEncode(n1, n2)`).
+    /// Throws `ILLEGAL_COLUMN` if the first argument is a multi-row non-constant Tuple column:
+    /// the mask is a scaling/range specification, the implementation reads its values once
+    /// to drive bit shifts for every row, and a per-row varying Tuple is not supported.
+    /// (When all arguments are constants, `useDefaultImplementationForConstants` strips the
+    /// `ColumnConst` wrapper and passes a single-row `ColumnTuple` here — that case is safe.)
+    /// Mirrors the constant-only contract of `FunctionSpaceFillingCurveDecode::getReturnTypeImpl`.
+    static const ColumnTuple * extractConstantRangeMask(
+        const ColumnsWithTypeAndName & arguments, const String & function_name, size_t input_rows_count)
+    {
+        const auto * const_col = typeid_cast<const ColumnConst *>(arguments[0].column.get());
+        if (const_col)
+            return typeid_cast<const ColumnTuple *>(const_col->getDataColumnPtr().get());
+        if (const auto * tuple_col = typeid_cast<const ColumnTuple *>(arguments[0].column.get()))
+        {
+            if (input_rows_count > 1)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                                "Illegal column type {} for function {}, the range mask (Tuple) argument must be constant",
+                                arguments[0].column->getName(), function_name);
+            return tuple_col;
+        }
+        return nullptr;
+    }
 
     DataTypePtr getReturnTypeImpl(const DB::DataTypes & arguments) const override
     {

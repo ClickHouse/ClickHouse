@@ -32,12 +32,7 @@ public:
 
         size_t num_dimensions = arguments.size();
         size_t vector_start_index = 0;
-        const auto * const_col = typeid_cast<const ColumnConst *>(arguments[0].column.get());
-        const ColumnTuple * mask;
-        if (const_col)
-            mask = typeid_cast<const ColumnTuple *>(const_col->getDataColumnPtr().get());
-        else
-            mask = typeid_cast<const ColumnTuple *>(arguments[0].column.get());
+        const ColumnTuple * mask = extractConstantRangeMask(arguments, getName(), input_rows_count);
         if (mask)
         {
             num_dimensions = mask->tupleSize();
