@@ -37,3 +37,19 @@ SELECT length(if(materialize(CAST(1 AS UInt8)), materialize(CAST(toFixedString('
 -- consistent end-to-end.
 SELECT isNull(nullIf(materialize(CAST('' AS String)), CAST(toFixedString('', 135) AS FixedString(135))));
 SELECT isNull(nullIf(materialize(CAST('' AS String)), materialize(CAST(toFixedString('', 135) AS FixedString(135)))));
+
+-- `executeForNullThenElse`: when one branch is `NULL` and the other is `FixedString`,
+-- the const-condition path returns the FixedString directly (preserved) but the
+-- materialized-condition path used `castColumn` which trimmed.
+SELECT length(if(CAST(0 AS UInt8), CAST(NULL AS Nullable(String)), materialize(CAST(toFixedString('abc', 10) AS FixedString(10)))));
+SELECT length(if(materialize(CAST(0 AS UInt8)), CAST(NULL AS Nullable(String)), materialize(CAST(toFixedString('abc', 10) AS FixedString(10)))));
+SELECT length(if(CAST(1 AS UInt8), materialize(CAST(toFixedString('abc', 10) AS FixedString(10))), CAST(NULL AS Nullable(String))));
+SELECT length(if(materialize(CAST(1 AS UInt8)), materialize(CAST(toFixedString('abc', 10) AS FixedString(10))), CAST(NULL AS Nullable(String))));
+
+-- `getConstantResultForNonConstArguments`: with a constant condition and a constant
+-- `FixedString` branch the result was folded through `castColumn` at DAG-build time,
+-- which trimmed the padding; the materialized-condition runtime path preserves it.
+SELECT length(if(CAST(1 AS UInt8), CAST(toFixedString('abc', 10) AS FixedString(10)), materialize(CAST('zz' AS String))));
+SELECT length(if(materialize(CAST(1 AS UInt8)), CAST(toFixedString('abc', 10) AS FixedString(10)), materialize(CAST('zz' AS String))));
+SELECT length(if(CAST(0 AS UInt8), materialize(CAST('zz' AS String)), CAST(toFixedString('abc', 10) AS FixedString(10))));
+SELECT length(if(materialize(CAST(0 AS UInt8)), materialize(CAST('zz' AS String)), CAST(toFixedString('abc', 10) AS FixedString(10))));

@@ -1203,7 +1203,7 @@ private:
             /// In case when arg_else column type differs with result
             /// column type we should cast it to result type.
             if (removeNullable(arg_else.type)->getName() != removeNullable(result_type)->getName())
-                arg_else_column = castColumn(arg_else, result_type);
+                arg_else_column = castForIf(arg_else, result_type);
             else
                 arg_else_column = arg_else.column;
 
@@ -1249,7 +1249,7 @@ private:
             /// In case when arg_then column type differs with result
             /// column type we should cast it to result type.
             if (removeNullable(arg_then.type)->getName() != removeNullable(result_type)->getName())
-                arg_then_column = castColumn(arg_then, result_type);
+                arg_then_column = castForIf(arg_then, result_type);
             else
                 arg_then_column = arg_then.column;
 
@@ -1496,7 +1496,7 @@ public:
         if (!potential_const_column.column || !isColumnConst(*potential_const_column.column))
             return {};
 
-        auto result = castColumn(potential_const_column, result_type);
+        auto result = castForIf(potential_const_column, result_type);
         if (!isColumnConst(*result))
             return {};
 
