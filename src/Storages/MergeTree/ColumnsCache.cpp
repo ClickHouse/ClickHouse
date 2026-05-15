@@ -199,6 +199,14 @@ void ColumnsCache::set(const Key & key, const MappedPtr & mapped)
         }
     }
 
+    /// `lower_bound({row_begin, 0})` can land directly on an existing entry that
+    /// shares `row_begin` with the new key. The predecessor check above skips it
+    /// (because that entry is at `it`, not `prev`), so without this fast path the
+    /// erase loop below would drop a wider containing interval like `[100, 200)`
+    /// in favor of a narrower `[100, 150)`, reducing hit rate for later reads.
+    if (it != intervals.end() && it->first.first == key.row_begin && it->first.second >= key.row_end)
+        return;
+
     while (it != intervals.end() && it->first.first < key.row_end)
     {
         Base::remove(it->second);
