@@ -41,18 +41,21 @@ bool isDeduplicationEnabledForInsert(const Settings & settings)
     return isDeduplicationEnabledForInsert(settings[Setting::async_insert], settings);
 }
 
-bool isDeduplicationEnabledForInsertSelect(bool select_query_sorted, const Settings & settings, LoggerPtr logger)
+bool isDeduplicationEnabledForInsertSelect(bool select_query_sorted, const Settings & settings, const std::string & insert_deduplication_token, LoggerPtr logger)
 {
+    bool has_user_token = !insert_deduplication_token.empty();
+
     switch (settings[Setting::deduplicate_insert_select].value)
     {
         case DeduplicateInsertSelectMode::FORCE_ENABLE:
         {
-            if (!select_query_sorted)
+            if (!select_query_sorted && !has_user_token)
                 throw Exception(ErrorCodes::DEDUPLICATION_IS_NOT_POSSIBLE,
                     "Deduplication for INSERT SELECT with non-stable SELECT is not possible"
                     " (the SELECT part can return different results on each execution)."
                     " You can disable it by setting `insert_deduplicate` or `async_insert_deduplicate` to 0."
-                    " Or make SELECT query stable (for example, by adding ORDER BY all to the query).");
+                    " Or make SELECT query stable (for example, by adding ORDER BY all to the query)"
+                    " or provide `insert_deduplication_token`.");
 
             return true;
         }
@@ -60,7 +63,7 @@ bool isDeduplicationEnabledForInsertSelect(bool select_query_sorted, const Setti
             return false;
         case DeduplicateInsertSelectMode::ENABLE_EVEN_FOR_BAD_QUERIES:
         {
-            if (logger && !select_query_sorted && isDeduplicationEnabledForInsert(false, settings))
+            if (logger && !select_query_sorted && !has_user_token && isDeduplicationEnabledForInsert(false, settings))
                 LOG_INFO(logger, "INSERT SELECT deduplication is enabled in compatibility mode, but SELECT is not stable. "
                     "The deduplication may not work as expected because the SELECT part can return different results on each execution.");
 
@@ -68,10 +71,10 @@ bool isDeduplicationEnabledForInsertSelect(bool select_query_sorted, const Setti
         }
         case DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE:
         {
-            if (logger && !select_query_sorted && isDeduplicationEnabledForInsert(false, settings))
+            if (logger && !select_query_sorted && !has_user_token && isDeduplicationEnabledForInsert(false, settings))
                 LOG_INFO(logger, "INSERT SELECT deduplication is disabled because SELECT is not stable");
 
-            return select_query_sorted && isDeduplicationEnabledForInsert(false, settings);
+            return (select_query_sorted || has_user_token) && isDeduplicationEnabledForInsert(false, settings);
         }
     }
 }

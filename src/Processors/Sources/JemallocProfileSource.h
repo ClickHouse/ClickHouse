@@ -5,7 +5,9 @@
 #if USE_JEMALLOC
 
 #    include <memory>
+#    include <optional>
 #    include <string>
+#    include <unordered_map>
 #    include <vector>
 #    include <Core/SettingsEnums.h>
 #    include <IO/ReadBufferFromFile.h>
@@ -67,8 +69,6 @@ private:
     SymbolizedPhase symbolized_phase = SymbolizedPhase::CollectingAddresses;
     std::vector<UInt64> addresses;        /// Collected addresses to symbolize
     size_t current_address_index = 0;
-    std::vector<std::string> profile_lines;  /// Raw profile lines for heap section
-    size_t current_profile_line_index = 0;
 
     /// Track what we've output in header phases
     bool symbol_header_line_output = false;
@@ -76,17 +76,31 @@ private:
     bool heap_separator_output = false;
     bool heap_header_output = false;
 
-    /// For Collapsed mode: processed lines (need aggregation, can't stream)
-    std::vector<std::string> collapsed_lines;
-    size_t current_collapsed_line_index = 0;
+    /// For Collapsed mode: aggregated stacks streamed directly from the map
+    struct CollapsedState
+    {
+        std::unordered_map<std::string, UInt64> stack_to_metric;
+        std::unordered_map<std::string, UInt64>::const_iterator iter;
 
-
+        CollapsedState() = default;
+        CollapsedState(const CollapsedState &) = delete;
+        CollapsedState & operator=(const CollapsedState &) = delete;
+        CollapsedState(CollapsedState &&) = delete;
+        CollapsedState & operator=(CollapsedState &&) = delete;
+    };
+    std::optional<CollapsedState> collapsed_state;
 };
 
 /// Convenience wrapper: runs JemallocProfileSource and writes every output line to output_filename.
 void symbolizeJemallocHeapProfile(
     const std::string & input_filename,
     const std::string & output_filename,
+    JemallocProfileFormat format = JemallocProfileFormat::Symbolized,
+    bool symbolize_with_inline = true);
+
+/// Like symbolizeJemallocHeapProfile but returns the result as a string.
+std::string symbolizeJemallocHeapProfileToString(
+    const std::string & input_filename,
     JemallocProfileFormat format = JemallocProfileFormat::Symbolized,
     bool symbolize_with_inline = true);
 

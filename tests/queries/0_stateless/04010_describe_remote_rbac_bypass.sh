@@ -20,6 +20,7 @@ ${CLICKHOUSE_CLIENT} --user $user --query "DESCRIBE remote('127.0.0.1:${CLICKHOU
 ${CLICKHOUSE_CLIENT} --user $user --query "DESCRIBE clusterAllReplicas('test_shard_localhost', '$db', 'secret_table'); -- { serverError ACCESS_DENIED }"
 
 ${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON $db.secret_table TO $user"
+${CLICKHOUSE_CLIENT} --query "GRANT READ ON REMOTE TO $user"
 
 ${CLICKHOUSE_CLIENT} --user $user --query "DESCRIBE $db.secret_table" | cut -f1
 ${CLICKHOUSE_CLIENT} --user $user --query "DESCRIBE remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', '$db', 'secret_table')" | cut -f1

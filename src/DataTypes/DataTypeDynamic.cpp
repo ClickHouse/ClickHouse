@@ -3,6 +3,7 @@
 #include <DataTypes/Serializations/SerializationDynamicElement.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
+#include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -57,9 +58,11 @@ Field DataTypeDynamic::getDefault() const
     return Field(Null());
 }
 
-SerializationPtr DataTypeDynamic::doGetDefaultSerialization() const
+SerializationPtr DataTypeDynamic::doGetSerialization(const SerializationInfoSettings & settings) const
 {
-    return std::make_shared<SerializationDynamic>(max_dynamic_types);
+    if (settings.propagate_types_serialization_versions_to_nested_types)
+        return SerializationDynamic::create(max_dynamic_types, settings);
+    return SerializationDynamic::create(max_dynamic_types);
 }
 
 static DataTypePtr create(const ASTPtr & arguments)
@@ -76,9 +79,10 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (!argument || argument->name != "equals")
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Dynamic data type argument should be in a form 'max_types=N'");
 
-    const auto * identifier = argument->arguments->children[0]->as<ASTIdentifier>();
+    const auto & identifier_node = argument->arguments->children[0];
+    const auto * identifier = identifier_node->as<ASTIdentifier>();
     if (!identifier)
-        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected Dynamic type argument: {}. Expected expression 'max_types=N'", identifier->formatForErrorMessage());
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected Dynamic type argument: {}. Expected expression 'max_types=N'", identifier_node->formatForErrorMessage());
 
     auto identifier_name = identifier->name();
     if (identifier_name != "max_types")
@@ -153,7 +157,9 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
         return nullptr;
     }
 
-    std::unique_ptr<SubstreamData> res = std::make_unique<SubstreamData>(subcolumn_type->getDefaultSerialization());
+    const auto & dynamic_serialization = assert_cast<const SerializationDynamic &>(*removeNamedSerialization(data.serialization));
+    auto subcolumn_serialization = dynamic_serialization.createSerializationForType(subcolumn_type);
+    std::unique_ptr<SubstreamData> res = std::make_unique<SubstreamData>(subcolumn_serialization);
     res->type = subcolumn_type;
     std::optional<ColumnVariant::Discriminator> discriminator;
     ColumnPtr null_map_for_variant_from_shared_variant;
@@ -193,7 +199,7 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
                     auto type = decodeDataType(buf);
                     if (type->getName() == subcolumn_type_name)
                     {
-                        subcolumn_type->getDefaultSerialization()->deserializeBinary(*subcolumn, buf, format_settings);
+                        subcolumn_serialization->deserializeBinary(*subcolumn, buf, format_settings);
                         null_map.push_back(static_cast<UInt8>(0));
                     }
                     else
@@ -239,7 +245,12 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
         }
     }
 
-    res->serialization = std::make_shared<SerializationDynamicElement>(res->serialization, subcolumn_type->getName(), String(subcolumn_nested_name), is_null_map_subcolumn);
+    res->serialization = SerializationDynamicElement::create(
+        res->serialization,
+        dynamic_serialization.createSerializationForType(ColumnDynamic::getSharedVariantDataType()),
+        subcolumn_type->getName(),
+        String(subcolumn_nested_name),
+        is_null_map_subcolumn);
     /// Make resulting subcolumn Nullable only if type subcolumn can be inside Nullable or can be LowCardinality(Nullable()).
     bool make_subcolumn_nullable = canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(subcolumn_type);
     if (!is_null_map_subcolumn && make_subcolumn_nullable)

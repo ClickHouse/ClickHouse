@@ -106,6 +106,11 @@ public:
         DatabaseReplicated & db;
     };
 
+    /// Called when SYSTEM RESTART REPLICA fails after detaching a table.
+    /// Adjusts tables_metadata_digest to account for the table being absent
+    /// from the in-memory tables map, preventing false "Digest does not match" assertions.
+    void adjustDigestOnTableLostFromRestart(const String & table_name);
+
     bool hasReplicationThread() const override { return true; }
 
     void stopReplication() override;
@@ -185,7 +190,7 @@ private:
         bool cluster_secure_connection{false};
     } cluster_auth_info;
 
-    void fillClusterAuthInfo(String collection_name, const Poco::Util::AbstractConfiguration & config);
+    void fillClusterAuthInfo(String collection_name);
 
     void checkQueryValid(const ASTPtr & query, ContextPtr query_context) const;
     void checkTableEngine(const ASTCreateQuery & query, ASTStorage & storage, ContextPtr query_context) const;

@@ -29,6 +29,7 @@ public:
         SplitByString,
         Array,
         SparseGrams,
+        AsciiCJK,
     };
 
     ITokenizer() = default;
@@ -70,11 +71,8 @@ public:
         const char * data,
         size_t length,
         BloomFilter & bloom_filter,
-        bool /*is_prefix*/,
-        bool /*is_suffix*/) const
-    {
-        stringToBloomFilter(data, length, bloom_filter);
-    }
+        bool is_prefix,
+        bool is_suffix) const = 0;
 
     virtual void stringLikeToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const = 0;
 
@@ -89,11 +87,8 @@ public:
         const char * data,
         size_t length,
         std::vector<String> & tokens,
-        bool /*is_prefix*/,
-        bool /*is_suffix*/) const
-    {
-        stringToTokens(data, length, tokens);
-    }
+        bool is_prefix,
+        bool is_suffix) const = 0;
 
     virtual void stringLikeToTokens(const char * data, size_t length, std::vector<String> & tokens) const = 0;
     virtual bool supportsStringLike() const = 0;
@@ -113,7 +108,6 @@ protected:
     const char * getTokenizerName() const override { return Derived::getName(); }
     const char * getTokenizerExternalName() const override { return Derived::getExternalName(); }
 
-private:
     std::unique_ptr<ITokenizer> clone() const override
     {
         return std::make_unique<Derived>(*static_cast<const Derived *>(this));
@@ -179,6 +173,9 @@ struct NgramsTokenizer final : public ITokenizerHelper<NgramsTokenizer>
     size_t getN() const { return n; }
 
     bool supportsStringLike() const override { return true; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
 private:
     size_t n;
 };
@@ -315,6 +312,8 @@ struct SplitByStringTokenizer final : public ITokenizerHelper<SplitByStringToken
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
 
     bool supportsStringLike() const override { return false; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
 private:
     std::vector<String> separators;
 };
@@ -332,6 +331,8 @@ struct ArrayTokenizer final : public ITokenizerHelper<ArrayTokenizer>
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
 
     bool supportsStringLike() const override { return false; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
 };
 
 /// Parser extracting sparse grams (the same as function sparseGrams).
@@ -350,6 +351,8 @@ struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer
 
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
     bool supportsStringLike() const override { return true; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
 private:
     size_t min_gram_length;
     size_t max_gram_length;
@@ -357,6 +360,77 @@ private:
     mutable SparseGramsImpl<true> sparse_grams_iterator;
     mutable const char * previous_data = nullptr;
     mutable size_t previous_len = 0;
+};
+
+/// Split text into tokens using Unicode word boundary rules, similar to UAX #29.
+/// 1. ASCII Alphanumeric Tokens
+///
+/// * ASCII letters (`A-Z`, `a-z`) and digits (`0-9`) are accumulated into tokens.
+/// * `_` can appear at the **start, middle, or end** of a token, but a token cannot be **only `_` characters**.
+///
+///   * E.g., `a_b` -> token
+///   * `_a` -> token
+///   * `__` -> ignored (no alphanumeric)
+///
+/// 2. Connectors (ASCII only)
+///
+/// * ASCII `:` (U+003A) connects **letters only**, not digits.
+/// * ASCII `.` and `'` connect **letters-letters** or **digits-digits**.
+/// * If the connector cannot connect both sides, it is treated as a **token boundary**.
+///
+/// 3. Unicode / CJK
+///
+/// * Non-ASCII Unicode characters are **always single-character tokens** (including CJK).
+///
+/// 4. Token Validity
+///
+/// * ASCII tokens must contain at least **one ASCII letter or digit** to be valid.
+/// * Non-ASCII Unicode characters are valid single-character tokens on their own.
+/// * Connectors `_`, `:`, `.`, `'` cannot form a token by themselves.
+/// * `_` can start or end the token but must **not be the only character**.
+///
+/// 5. Stream Processing
+///
+/// * Tokenization is **stream-based** -- return tokens as soon as they are complete.
+/// * ASCII fast path should be taken first for performance.
+/// * Only parse Unicode for **non-ASCII characters or stop characters**.
+///
+/// ---
+///
+/// Examples
+///
+/// | Input                    | Output Tokens                         |
+/// | ------------------------ | ------------------------------------- |
+/// | `a_b a_3 a_ _a __a_b_3_` | `['a_b','a_3','a_','_a','__a_b_3_']`  |
+/// | `3_b 3_3 3_ _3 __3_4_3_` | `['3_b','3_3','3_','_3','__3_4_3_']`  |
+/// | `a:b a:3 a: :a ::a:b:3:` | `['a:b','a','3','a','a','a:b','3']`   |
+/// | `a'b a'3 a' 'a ''a'b'3'` | `['a\'b','a','3','a','a','a\'b','3']` |
+/// | `a.b a.3 a. .a ..a.b.3.` | `['a.b','a','3','a','a','a.b','3']`   |
+struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
+{
+    explicit AsciiCJKTokenizer()
+        : ITokenizerHelper(Type::AsciiCJK)
+    {
+    }
+
+    static const char * getName() { return "asciiCJK"; }
+    static const char * getExternalName() { return getName(); }
+    String getDescription() const override { return getName(); }
+
+    bool nextInString(
+        const char * data,
+        size_t length,
+        size_t & __restrict pos,
+        size_t & __restrict token_start,
+        size_t & __restrict token_length) const override;
+
+    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+
+    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
+    bool supportsStringLike() const override { return true; }
 };
 
 namespace detail
@@ -419,6 +493,12 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         {
             const auto & sparse_grams_tokenizer = assert_cast<const SparseGramsTokenizer &>(tokenizer);
             detail::forEachTokenImpl(sparse_grams_tokenizer, data, length, callback);
+            return;
+        }
+        case ITokenizer::Type::AsciiCJK:
+        {
+            const auto & ascii_cjk_tokenizer = assert_cast<const AsciiCJKTokenizer &>(tokenizer);
+            detail::forEachTokenImpl(ascii_cjk_tokenizer, data, length, callback);
             return;
         }
     }

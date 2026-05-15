@@ -34,8 +34,8 @@ namespace Tx
 {
     /// For transactions that are probably not committed (yet)
     const CSN UnknownCSN = 0;
-    /// For changes were made without creating a transaction
-    const CSN PrehistoricCSN = 1;
+    /// For changes made without creating a transaction.
+    const CSN NonTransactionalCSN = 1;
     /// Special reserved values
     const CSN CommittingCSN = 2;
     const CSN EverythingVisibleCSN = 3;
@@ -47,7 +47,7 @@ namespace Tx
     /// Maximum possible CSN for committed transactions (used for visibility checks)
     const CSN MaxCommittedCSN = RolledBackCSN - 1;
 
-    const LocalTID PrehistoricLocalTID = 1;
+    const LocalTID NonTransactionalLocalTID = 1;
     const LocalTID DummyLocalTID = 2;
     const LocalTID MaxReservedLocalTID = 32;
 }
@@ -85,10 +85,21 @@ struct TransactionID
         return local_tid == 0;
     }
 
-    bool isPrehistoric() const
+    bool isNonTransactional() const
     {
-        assert((local_tid == Tx::PrehistoricLocalTID) == (start_csn == Tx::PrehistoricCSN));
-        return local_tid == Tx::PrehistoricLocalTID;
+        /// `Tx::DummyTID` is exactly `{Tx::NonTransactionalCSN, Tx::DummyLocalTID, UUIDHelpers::Nil}` —
+        /// a special marker used by `VersionMetadataOnDisk::loadMetadata` to represent a
+        /// rolled-back part whose `txn_version.txt.tmp` file was left behind by an incomplete
+        /// write. Exclude only this exact shape from the invariant check so
+        /// `wasInvolvedInTransaction` and `validateInfo` can safely inspect such parts during
+        /// part loading. Any other combination — including a `DummyLocalTID` with a non-`Nil`
+        /// `host_id` — indicates corrupted on-disk metadata and must still trip the assertion.
+        assert(
+            (local_tid == Tx::NonTransactionalLocalTID) == (start_csn == Tx::NonTransactionalCSN)
+            || (local_tid == Tx::DummyLocalTID
+                && start_csn == Tx::NonTransactionalCSN
+                && host_id == UUIDHelpers::Nil));
+        return local_tid == Tx::NonTransactionalLocalTID;
     }
 
 
@@ -99,8 +110,8 @@ struct TransactionID
 namespace Tx
 {
     const TransactionID EmptyTID = {0, 0, UUIDHelpers::Nil};
-    const TransactionID PrehistoricTID = {PrehistoricCSN, PrehistoricLocalTID, UUIDHelpers::Nil};
-    const TransactionID DummyTID = {PrehistoricCSN, DummyLocalTID, UUIDHelpers::Nil};
+    const TransactionID NonTransactionalTID = {NonTransactionalCSN, NonTransactionalLocalTID, UUIDHelpers::Nil};
+    const TransactionID DummyTID = {NonTransactionalCSN, DummyLocalTID, UUIDHelpers::Nil};
 }
 
 }

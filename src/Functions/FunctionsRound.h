@@ -1,18 +1,16 @@
 #pragma once
 
 #include <Functions/FunctionHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <Core/callOnTypeIndex.h>
 #include <Columns/ColumnVector.h>
 #include <Common/intExp10.h>
 #include <Interpreters/castColumn.h>
 #include <Functions/IFunction.h>
 #include <Common/intExp.h>
+#include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <cmath>
@@ -756,8 +754,10 @@ public:
         return true;
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field & left, const Field & right) const override
     {
+        if (isNaNField(left) || isNaNField(right))
+            return {};
         return { .is_monotonic = true, .is_always_monotonic = true };
     }
 };
@@ -887,6 +887,10 @@ private:
         size_t size = src.size();
         dst.resize(size);
 
+        /// NaN inputs have no defined position in the boundary ordering: every comparison
+        /// against NaN is false, which breaks both the linear-search carry-over hint and
+        /// `std::upper_bound`'s strict-weak-ordering contract. Propagate NaN through
+        /// unchanged so the result is the same in scalar and vector paths.
         if (boundary_values.size() < 32)    /// Just a guess
         {
             /// Linear search with value on previous iteration as a hint.
@@ -899,6 +903,15 @@ private:
             for (size_t i = 0; i < size; ++i)
             {
                 auto value = src[i];
+
+                if constexpr (is_floating_point<ValueType>)
+                {
+                    if (isNaN(value))
+                    {
+                        dst[i] = value;
+                        continue;
+                    }
+                }
 
                 if (*it < value)
                 {
@@ -920,6 +933,15 @@ private:
         {
             for (size_t i = 0; i < size; ++i)
             {
+                if constexpr (is_floating_point<ValueType>)
+                {
+                    if (isNaN(src[i]))
+                    {
+                        dst[i] = src[i];
+                        continue;
+                    }
+                }
+
                 auto it = std::upper_bound(boundary_values.begin(), boundary_values.end(), src[i]);
                 if (it == boundary_values.end())
                 {

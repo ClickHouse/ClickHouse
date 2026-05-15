@@ -23,11 +23,12 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsMaxThreads max_threads;
+    extern const SettingsBool parallelize_output_from_storages;
 }
 
 
 ReadFromObjectStorageStep::ReadFromObjectStorageStep(
+    const StorageID & storage_id_,
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration_,
     const Names & columns_to_read,
@@ -42,6 +43,7 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     size_t max_block_size_,
     size_t num_streams_)
     : SourceStepWithFilter(std::make_shared<const Block>(info_.source_header), columns_to_read, query_info_, storage_snapshot_, context_)
+    , storage_id(storage_id_)
     , object_storage(object_storage_)
     , configuration(configuration_)
     , info(std::move(info_))
@@ -50,6 +52,7 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     , need_only_count(need_only_count_)
     , max_block_size(max_block_size_)
     , num_streams(num_streams_)
+    , max_num_streams(num_streams_)
     , distributed_processing(distributed_processing_)
 {
 }
@@ -109,6 +112,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<StorageObjectStorageSource>(
+            storage_id,
             getName(),
             object_storage,
             configuration,
@@ -127,6 +131,13 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
+
+    size_t output_ports = pipe.numOutputPorts();
+    const bool parallelize_output = context->getSettingsRef()[Setting::parallelize_output_from_storages];
+    if (parallelize_output
+        && FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context)
+        && output_ports > 0 && output_ports < max_num_streams)
+        pipe.resize(max_num_streams);
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
@@ -147,8 +158,7 @@ void ReadFromObjectStorageStep::createIterator()
 
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(context), object_storage, storage_snapshot->metadata, distributed_processing,
-        context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr,
-        context->getFileProgressCallback(),
+        context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
 }
 

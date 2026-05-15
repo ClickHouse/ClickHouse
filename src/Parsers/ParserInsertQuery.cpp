@@ -207,6 +207,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                             "Only one WITH should be presented, either before INSERT or SELECT.");
                     child_select->setExpression(ASTSelectQuery::Expression::WITH,
                         ASTPtr(with_expression_list));
+                    /// WITH was appended after SELECT/TABLES; normalize back to canonical order.
+                    child_select->normalizeChildrenOrder();
                 }
             }
         }

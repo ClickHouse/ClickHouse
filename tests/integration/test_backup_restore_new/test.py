@@ -24,6 +24,12 @@ instance = cluster.add_instance(
     user_configs=["configs/zookeeper_retries.xml"],
     external_dirs=["/backups/"],
 )
+instance_with_short_timeout = cluster.add_instance(
+    "instance_with_short_timeout",
+    main_configs=["configs/backups_disk.xml"],
+    user_configs=["configs/max_execution_time.xml"],
+    external_dirs=["/backups/"],
+)
 
 
 def create_and_fill_table(engine="MergeTree", n=100):
@@ -2232,3 +2238,70 @@ def test_incremental_backup_with_checksum_data_file_name():
         f"RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}"
     )
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == "102\t5081\n"
+
+
+def test_async_backup_restore_with_max_execution_time_zero():
+    """
+    Regression test: async BACKUP/RESTORE with max_execution_time = 0 in query SETTINGS
+    was incorrectly cancelled by the max_execution_time from the user's profile, even when
+    the query explicitly set max_execution_time = 0 to disable the timeout.
+
+    Root cause: QueryStatus cached limits.max_execution_time at construction time from the
+    original query settings (profile value). BackupsWorker called applySettingsChanges()
+    to apply BACKUP/RESTORE SETTINGS, updating the context — but not the cached
+    ProcessListElement, so the old profile-level timeout still fired via checkTimeLimit().
+    CancellationChecker was also registered with the old timeout at insert time.
+
+    The test uses a PAUSEABLE_ONCE failpoint to stall the background task long enough
+    for the profile-level timeout (500ms) to fire, which reliably triggers the bug.
+    The instance_with_short_timeout node has max_execution_time = 0.5 in its default profile.
+    """
+    import time
+
+    inst = instance_with_short_timeout
+    backup_name = new_backup_name()
+    inst.query("CREATE DATABASE IF NOT EXISTS test")
+    inst.query("CREATE TABLE test.table(x UInt32, y String) ENGINE=MergeTree ORDER BY y PARTITION BY x%10")
+    inst.query("INSERT INTO test.table SELECT number, toString(number) FROM numbers(100)")
+
+    try:
+        # Pause backup before it starts so the 500ms profile-level timeout fires.
+        inst.query("SYSTEM ENABLE FAILPOINT backup_pause_on_start")
+        [backup_id, _] = inst.query(
+            f"BACKUP TABLE test.table TO {backup_name}"
+            " SETTINGS async = 1, max_execution_time = 0",
+        ).split("\t")
+
+        inst.query("SYSTEM WAIT FAILPOINT backup_pause_on_start PAUSE")
+        time.sleep(0.7)  # exceed the 500ms profile-level timeout
+        inst.query("SYSTEM NOTIFY FAILPOINT backup_pause_on_start")
+
+        assert_eq_with_retry(
+            inst,
+            f"SELECT status, error FROM system.backups WHERE id='{backup_id}'",
+            TSV([["BACKUP_CREATED", ""]]),
+        )
+
+        # Same for RESTORE.
+        inst.query("DROP TABLE test.table")
+        inst.query("SYSTEM ENABLE FAILPOINT restore_pause_on_start")
+        [restore_id, _] = inst.query(
+            f"RESTORE TABLE test.table FROM {backup_name}"
+            " SETTINGS async = 1, max_execution_time = 0",
+        ).split("\t")
+
+        inst.query("SYSTEM WAIT FAILPOINT restore_pause_on_start PAUSE")
+        time.sleep(0.7)
+        inst.query("SYSTEM NOTIFY FAILPOINT restore_pause_on_start")
+
+        assert_eq_with_retry(
+            inst,
+            f"SELECT status, error FROM system.backups WHERE id='{restore_id}'",
+            TSV([["RESTORED", ""]]),
+        )
+
+        assert inst.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    finally:
+        inst.query("SYSTEM DISABLE FAILPOINT backup_pause_on_start")
+        inst.query("SYSTEM DISABLE FAILPOINT restore_pause_on_start")
+        inst.query("DROP DATABASE IF EXISTS test")

@@ -1,5 +1,6 @@
 #include <memory>
 #include <stack>
+#include <unordered_set>
 
 #include <Storages/VirtualColumnUtils.h>
 
@@ -7,6 +8,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/convertFieldToType.h>
@@ -34,6 +36,7 @@
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunction.h>
@@ -41,8 +44,10 @@
 #include <Functions/indexHint.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/StorageSnapshot.h>
 #include <Common/HashTable/HashSet.h>
 
 
@@ -92,6 +97,57 @@ void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, boo
 void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
 {
     buildSetsForDagImpl(dag, context, /* ordered = */ false);
+}
+
+void buildSetsForDAGExcludingGlobalIn(const ActionsDAG & dag, const ContextPtr & context)
+{
+    /// Collect ColumnSet nodes that are arguments to globalIn/globalNotIn functions.
+    /// These sets must NOT be built synchronously here because ReadFromRemote needs to
+    /// attach external tables to them first (via setExternalTable). Building them early
+    /// would make the set "created" without explicit elements, causing a LOGICAL_ERROR.
+    std::unordered_set<const ActionsDAG::Node *> global_in_set_nodes;
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
+        {
+            auto name = node.function_base->getName();
+            if (functionIsGlobalInOperator(name))
+            {
+                /// The set is the second argument (index 1)
+                if (node.children.size() >= 2)
+                    global_in_set_nodes.insert(node.children[1]);
+            }
+        }
+    }
+
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::COLUMN && !global_in_set_nodes.contains(&node))
+        {
+            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+            if (!column_set)
+                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
+
+            if (column_set)
+            {
+                auto future_set = column_set->getData();
+                if (!future_set->get())
+                {
+                    if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
+                    {
+                        /// Prefer ordered build so that the set retains explicit elements,
+                        /// which `KeyCondition` and skip-index analysis require to use the set
+                        /// for primary-key / skip-index filtering (via `buildOrderedSetInplace`).
+                        /// If `use_index_for_in_with_subqueries` is disabled, the ordered build
+                        /// returns `nullptr` without building; fall back to unordered so the set
+                        /// is still ready when PREWHERE is evaluated at read time.
+                        if (!set_from_subquery->buildOrderedSetInplace(context))
+                            set_from_subquery->buildSetInplace(context);
+                    }
+                }
+            }
+        }
+    }
 }
 
 void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
@@ -147,6 +203,8 @@ static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
         {"_tags", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
         {"_data_lake_snapshot_version", makeNullable(std::make_shared<DataTypeUInt64>())},
         {"_row_number", makeNullable(std::make_shared<DataTypeInt64>())},
+        {"_iceberg_metadata_file_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
     };
 }
 
@@ -200,7 +258,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
             return;
 
         const auto & type = pair.getTypeInStorage();
-        desc.addEphemeral(name, type, "");
+        desc.addEphemeral(name, type, "", VirtualsMaterializationPlace::Reader);
     };
 
     for (const auto & item : getCommonVirtualsForFileLikeStorage())
@@ -254,7 +312,9 @@ static void addPathAndFileToVirtualColumns(
             if (const auto * column = block.findByName(key))
             {
                 ReadBufferFromString buf(value);
-                column->type->getDefaultSerialization()->deserializeWholeText(column->column->assumeMutableRef(), buf, format_settings);
+                auto hive_format_settings = format_settings;
+                hive_format_settings.allow_number_leading_zeros = true;
+                column->type->getDefaultSerialization()->deserializeWholeText(column->column->assumeMutableRef(), buf, hive_format_settings);
             }
         }
     }
@@ -412,20 +472,50 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                         column->insertValue(i + row_num_offset);
                 auto null_map = ColumnUInt8::create(chunk.getNumRows(), static_cast<UInt8>(0));
                 chunk.addColumn(ColumnNullable::create(std::move(column), std::move(null_map)));
-                return;
+                continue;
             }
-#endif
-            /// Row numbers not known, _row_number = NULL.
+            else
+            {
+                /// Row numbers not known, _row_number = NULL.
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+            }
+#else
+            // If Parquet format is not used, we don't have row numbers info, so _row_number = NULL.
             chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+#endif
+        }
+        else if (virtual_column.name == "_iceberg_metadata_file_path")
+        {
+            if (virtual_values.iceberg_metadata_file_path)
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.iceberg_metadata_file_path)->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else if (virtual_column.name == "_table")
+        {
+            if (!virtual_values.storage_id.empty())
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), virtual_values.storage_id.getTableName())->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
         else if (auto it = hive_map.find(virtual_column.getNameInStorage()); it != hive_map.end())
         {
+            FormatSettings hive_format_settings;
+            hive_format_settings.allow_number_leading_zeros = true;
             chunk.addColumn(
                 virtual_column.type->createColumnConst(
                     chunk.getNumRows(),
-                    convertFieldToType(Field(it->second), *virtual_column.type))->convertToFullColumnIfConst());
+                    convertFieldToType(Field(String(it->second)), *virtual_column.type, nullptr, hive_format_settings))->convertToFullColumnIfConst());
         }
     }
+}
+
+bool hasRowDependentVirtualColumns(const NamesAndTypesList & requested_virtual_columns)
+{
+    return std::any_of(
+        requested_virtual_columns.begin(),
+        requested_virtual_columns.end(),
+        [](const auto & col) { return col.name == "_row_number"; });
 }
 
 static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allowed_inputs)
@@ -517,8 +607,26 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                 /// at least two arguments; also it can't be reduced to (256) because result type is different.
                 if (!res->result_type->equals(*node->result_type))
                 {
+                    /// Convert to boolean via notEquals(x, 0) instead of a truncating numeric cast.
+                    /// A plain CAST(256, 'UInt8') would give 0 (since 256 % 256 == 0), losing truthiness
+                    /// for values like 256, 512, 65536, 2147483648, etc.  See #101269.
+                    ///
+                    /// Use removeNullable to get the nested type's default (zero, not NULL).
+                    /// DataTypeNullable::getDefault() returns Null(), but notEquals(x, NULL)
+                    /// always returns NULL (SQL three-valued logic), which is treated as false and
+                    /// would incorrectly filter out all rows/parts.  See #101433 and #103049.
+                    /// Special case: Nullable(Nothing) — the child is a bare NULL literal.
+                    /// Nothing has no getDefault, so fall back to the Nullable default
+                    /// (Null field), which makes notEquals(x, NULL) -> NULL -> false.  Correct.
                     ActionsDAG tmp_dag;
-                    res = &tmp_dag.addCast(*res, node->result_type, {}, context);
+                    auto nested_type = removeNullable(res->result_type);
+                    auto zero_field = (nested_type->getTypeId() == TypeIndex::Nothing)
+                        ? res->result_type->getDefault()
+                        : nested_type->getDefault();
+                    auto zero_column = res->result_type->createColumnConst(1, zero_field);
+                    const auto & zero_node = tmp_dag.addColumn({zero_column, res->result_type, "0"});
+                    auto ne_func = FunctionFactory::instance().get("notEquals", context);
+                    res = &tmp_dag.addFunction(ne_func, {res, &zero_node}, {});
                     additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));
                 }
 
@@ -676,6 +784,75 @@ DataPartsVector filterDataPartsWithExpression(
             filtered_parts.push_back(part);
 
     return filtered_parts;
+}
+
+Names filterVirtualColumns(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    const VirtualsKind & kind_to_filter,
+    const VirtualsMaterializationPlace & place_to_filter)
+{
+    Names result;
+    result.reserve(column_names.size());
+    for (const auto & name : column_names)
+    {
+        if (metadata_snapshot->isVirtualColumn(name))
+            if (metadata_snapshot->virtuals.tryGet(name, kind_to_filter, place_to_filter))
+                continue;
+
+        result.push_back(name);
+    }
+
+    /// If all requested columns were common virtuals, we still need at least one
+    /// physical column so the storage has something to read.
+    if (result.empty())
+        if (const auto & all_physical = metadata_snapshot->getColumns().getAllPhysical(); !all_physical.empty())
+            result.push_back(ExpressionActions::getSmallestColumn(all_physical).name);
+
+    return result;
+}
+
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const ColumnsDescription & columns, const VirtualColumnsDescription & virtual_columns)
+{
+    return getColumnsWithVirtualsForAnalysis(
+        columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()),
+        virtual_columns.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList());
+}
+
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const NamesAndTypesList & columns, const NamesAndTypesList & virtual_columns)
+{
+    auto result = columns;
+    for (const auto & col : virtual_columns)
+        if (!result.contains(col.name))
+            result.push_back(col);
+
+    return result;
+}
+
+std::pair<Names, Names> splitPhysicalAndVirtualColumnNames(const Names & column_names, const StorageSnapshotPtr & storage_snapshot)
+{
+    Names physical_names;
+    Names virtual_names;
+    for (const auto & name : column_names)
+    {
+        /// If the column exists in the table schema, treat it as physical even if
+        /// a virtual column with the same name is registered.
+        if (storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), name))
+            physical_names.push_back(name);
+        else if (storage_snapshot->metadata->virtuals.tryGetDescription(name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+            virtual_names.push_back(name);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' is neither physical nor virtual", name);
+    }
+
+    /// We must always read at least one physical column to determine the number of rows.
+    if (physical_names.empty())
+    {
+        auto smallest = ExpressionActions::getSmallestColumn(storage_snapshot->metadata->getColumns().getAllPhysical());
+        physical_names.push_back(smallest.name);
+    }
+
+    return {std::move(physical_names), std::move(virtual_names)};
 }
 
 }

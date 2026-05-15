@@ -11,15 +11,9 @@
 
 #endif
 
-
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
-
-#include <filesystem>
-#include <variant>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -61,11 +55,13 @@ struct Endpoint
 {
     String storage_account_url;
     String account_name;
+    String account_key;
     String container_name;
     String prefix;
     String sas_auth;
     String additional_params;
     std::optional<bool> container_already_exists;
+    std::optional<bool> add_account_name_to_url;
 
     String getContainerEndpoint() const
     {
@@ -73,7 +69,7 @@ struct Endpoint
         if (url.ends_with('/'))
           url.pop_back();
 
-        if (!account_name.empty())
+        if (!account_name.empty() && add_account_name_to_url.value_or(true))
             url += "/" + account_name;
 
         if (!container_name.empty())
@@ -92,7 +88,7 @@ struct Endpoint
     {
         String url = storage_account_url;
 
-        if (!account_name.empty())
+        if (!account_name.empty() && add_account_name_to_url.value_or(true))
             url += "/" + account_name;
 
         if (!sas_auth.empty())
@@ -113,7 +109,10 @@ using RawContainerClient = Azure::Storage::Blobs::BlobContainerClient;
 
 using Azure::Storage::Blobs::ListBlobsOptions;
 using Azure::Storage::Blobs::ListBlobsPagedResponse;
+using Azure::Storage::Blobs::BlobContainerBatch;
 using BlobContainerPropertiesRespones = Azure::Response<Azure::Storage::Blobs::Models::BlobContainerProperties>;
+using BlobBatchResultResponse = Azure::Response<Azure::Storage::Blobs::Models::SubmitBlobBatchResult>;
+using DeleteBlobResultDeferredResponse = Azure::Storage::DeferredResponse<Azure::Storage::Blobs::Models::DeleteBlobResult>;
 
 /// A wrapper for ContainerClient that correctly handles the prefix of blobs.
 /// See AzureBlobStorageEndpoint and processAzureBlobStorageEndpoint for details.
@@ -127,6 +126,10 @@ public:
     BlockBlobClient GetBlockBlobClient(const String & blob_name) const;
     BlobContainerPropertiesRespones GetProperties() const;
     ListBlobsPagedResponse ListBlobs(const ListBlobsOptions & options) const;
+
+    BlobContainerBatch CreateBatch() const;
+    BlobBatchResultResponse SubmitBatch(const BlobContainerBatch & batch) const;
+    String GetBlobPath(const String & blob_name) const;
 
 private:
     RawContainerClient client;

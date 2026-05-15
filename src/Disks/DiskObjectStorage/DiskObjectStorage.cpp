@@ -1,4 +1,6 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/IOSchedulingSettings.h>
+#include <Common/CurrentThread.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromEmptyFile.h>
@@ -10,7 +12,6 @@
 #include <Common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/Scheduler/IResourceManager.h>
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
@@ -28,18 +29,22 @@
 #include <DistributedCache/Utils.h>
 #endif
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <base/sleep.h>
-
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool disk_transaction_wait_for_blob_removal;
+}
 
 namespace ErrorCodes
 {
     extern const int INCORRECT_DISK_INDEX;
     extern const int CANNOT_RMDIR;
 }
-
 
 DiskTransactionPtr DiskObjectStorage::createTransaction()
 {
@@ -55,12 +60,12 @@ ObjectStoragePtr DiskObjectStorage::getObjectStorage()
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
-    return std::make_shared<DiskObjectStorageTransaction>(cluster, metadata_storage, object_storages);
+    return std::make_shared<DiskObjectStorageTransaction>(cluster, metadata_storage, object_storages, blob_killer, wait_blob_removal, getReadResourceName(), getWriteResourceName());
 }
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk)
 {
-    return std::make_shared<MultipleDisksObjectStorageTransaction>(cluster, metadata_storage, object_storages, to_disk.cluster, to_disk.metadata_storage, to_disk.object_storages);
+    return std::make_shared<MultipleDisksObjectStorageTransaction>(cluster, metadata_storage, object_storages, to_disk.cluster, to_disk.metadata_storage, to_disk.object_storages, getReadResourceName(), to_disk.getWriteResourceName());
 }
 
 DiskObjectStorage::DiskObjectStorage(
@@ -68,20 +73,23 @@ DiskObjectStorage::DiskObjectStorage(
     ClusterConfigurationPtr cluster_,
     MetadataStoragePtr metadata_storage_,
     ObjectStorageRouterPtr object_storages_,
+    DiskObjectStorageConstPtr wrapped_disk_,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     bool use_fake_transaction_)
     : IDisk(name_, config, config_prefix)
+    , wrapped_disk(std::move(wrapped_disk_))
     , log(getLogger("DiskObjectStorage(" + name + ")"))
     , cluster(std::move(cluster_))
     , metadata_storage(std::move(metadata_storage_))
     , object_storages(std::move(object_storages_))
-    , blob_killer(std::make_shared<BlobKillerThread>(name, Context::getGlobalContextInstance(), cluster, metadata_storage, object_storages))
+    , blob_killer(std::make_shared<BlobKillerThread>(name, Context::getGlobalContextInstance(), cluster, metadata_storage, object_storages, wrapped_disk ? wrapped_disk->blob_killer : nullptr))
     , blob_copier(std::make_shared<BlobCopierThread>(name, Context::getGlobalContextInstance(), cluster, metadata_storage, object_storages))
     , read_resource_name_from_config(config.getString(config_prefix + ".read_resource", ""))
     , write_resource_name_from_config(config.getString(config_prefix + ".write_resource", ""))
     , enable_distributed_cache(config.getBool(config_prefix + ".enable_distributed_cache", true))
     , use_fake_transaction(use_fake_transaction_)
+    , wait_blob_removal(config.getBool(config_prefix + ".wait_for_blob_removal", Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::disk_transaction_wait_for_blob_removal]))
     , remove_shared_recursive_file_limit(config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT))
 {
     /// TODO: change description to cover multiple object storages
@@ -188,6 +196,7 @@ DiskObjectStorage::DiskObjectStorage(
             if (old_write_resource != new_write_resource)
                 LOG_INFO(log, "Using resource '{}' instead of '{}' for WRITE", new_write_resource, old_write_resource);
         });
+    cluster->applyNewSettings(config, config_prefix);
     blob_killer->applyNewSettings(config, config_prefix + ".data_background_cleanup");
     blob_copier->applyNewSettings(config, config_prefix + ".data_background_replication");
 }
@@ -265,7 +274,7 @@ void DiskObjectStorage::copyFile( /// NOLINT
         /// It may use s3-server-side copy
         auto & to_disk_object_storage = dynamic_cast<DiskObjectStorage &>(to_disk);
         auto transaction = createObjectStorageTransactionToAnotherDisk(to_disk_object_storage);
-        transaction->copyFile(from_file_path, to_file_path, /*read_settings*/ {}, /*write_settings*/ {});
+        transaction->copyFile(from_file_path, to_file_path, read_settings, write_settings);
         transaction->commit();
     }
     else
@@ -709,22 +718,6 @@ bool DiskObjectStorage::supportsHardLinks() const
     return !metadata_storage->isWriteOnce() && !metadata_storage->isPlain();
 }
 
-template <class Settings>
-static inline Settings updateIOSchedulingSettings(const Settings & settings, const String & read_resource_name, const String & write_resource_name)
-{
-    if (read_resource_name.empty() && write_resource_name.empty())
-        return settings;
-    if (auto query_context = CurrentThread::getQueryContext())
-    {
-        Settings result(settings);
-        if (!read_resource_name.empty())
-            result.io_scheduling.read_resource_link = query_context->getWorkloadClassifier()->get(read_resource_name);
-        if (!write_resource_name.empty())
-            result.io_scheduling.write_resource_link = query_context->getWorkloadClassifier()->get(write_resource_name);
-        return result;
-    }
-    return settings;
-}
 
 String DiskObjectStorage::getReadResourceName() const
 {
@@ -862,10 +855,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         const auto object_namespace = object_storages->takePointingTo(cluster->getLocalLocation())->getObjectsNamespace();
         if (!object_namespace.empty())
             cache_path_prefix += object_namespace + "/";
-        const auto cache_key = PageCacheKey { .path = cache_path_prefix + storage_objects.at(0).remote_path };
+        const auto cache_file = PageCacheFile { .path = cache_path_prefix + storage_objects.at(0).remote_path };
 
         impl = std::make_unique<CachedInMemoryReadBufferFromFile>(
-            cache_key, read_settings.page_cache, std::move(impl), read_settings);
+            cache_file, read_settings.page_cache, std::move(impl), read_settings);
     }
 
     if (use_async_buffer)
@@ -907,9 +900,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorage::writeFile(
 {
     LOG_TEST(log, "Write file: {}", path);
 
-    WriteSettings write_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     auto transaction = createObjectStorageTransaction();
-    return transaction->writeFileWithAutoCommit(path, buf_size, mode, write_settings);
+    return transaction->writeFileWithAutoCommit(path, buf_size, mode, settings);
 }
 
 Strings DiskObjectStorage::getBlobPath(const String & path) const
@@ -938,6 +930,11 @@ void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, W
     transaction->commit();
 }
 
+void DiskObjectStorage::waitBlobsCleanup()
+{
+    blob_killer->triggerAndWait();
+}
+
 void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map)
 {
     IDisk::applyNewSettings(config, context, config_prefix, map);
@@ -960,6 +957,7 @@ void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration
     }
 
     remove_shared_recursive_file_limit = config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT);
+    wait_blob_removal = config.getBool(config_prefix + ".wait_for_blob_removal", context->getServerSettings()[ServerSetting::disk_transaction_wait_for_blob_removal]);
     blob_killer->applyNewSettings(config, config_prefix + ".data_background_cleanup");
     blob_copier->applyNewSettings(config, config_prefix + ".data_background_replication");
 }

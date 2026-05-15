@@ -2,6 +2,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
+#include <base/TypeName.h>
 
 namespace DB
 {
@@ -9,7 +10,13 @@ namespace DB
 template <typename IPv>
 class SerializationIP : public SimpleTextSerialization
 {
+private:
+    SerializationIP() = default;
+
 public:
+    static UInt128 getHash();
+    static SerializationPtr create();
+
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;
     bool tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override;
