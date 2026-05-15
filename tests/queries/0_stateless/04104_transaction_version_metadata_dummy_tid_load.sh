@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-encrypted-storage, no-replicated-database, no-parallel, no-shared-merge-tree, no-object-storage, no-flaky-check
+# Tags: no-ordinary-database, no-encrypted-storage, no-replicated-database, no-parallel, no-shared-merge-tree, no-object-storage, no-flaky-check, no-random-detach
 # no-object-storage: the test writes raw text into `txn_version.txt.tmp` on the part's
 #   directory to simulate an incomplete atomic write on a local filesystem. On object
 #   storage disks every file is wrapped in `DiskObjectStorageMetadata`; reading the bogus
@@ -8,6 +8,10 @@
 # no-flaky-check: the test is deterministic by design (it constructs the specific on-disk
 #   state and asserts the `DETACH`+`ATTACH` behavior). Running it 50x in parallel inside
 #   the flaky-check / targeted variants under sanitizers exceeds the 600s per-test budget.
+# no-random-detach: the test asserts the specific outcome of a `DETACH`+`ATTACH` cycle
+#   on a hand-crafted on-disk state. Random `DETACH`/`ATTACH` between the setup steps
+#   and the asserted cycle clears the bogus `txn_version.txt.tmp` and changes the
+#   `rolled_back_part` accounting, so the reference output no longer matches.
 # Regression test for https://github.com/ClickHouse/ClickHouse/pull/92141
 # (STID 3547-447e):
 #
