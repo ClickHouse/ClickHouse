@@ -98,7 +98,12 @@ public:
     using AfterEvictWriteFunc = std::function<void(const CachePriorityGuard::WriteLock & lk)>;
     using AfterEvictStateFunc = std::function<void(const CacheStateGuard::Lock & lk)>;
 
-    EvictionCandidates();
+    /// `cache` is the FileCache that owns these candidates. It is read from
+    /// `evict()` to decide whether to record per-segment `filesystem_cache_*`
+    /// metrics (controlled by `FileCacheSettings::expose_eviction_metrics`).
+    /// May be left null in tests / non-FileCache callers; metrics are then
+    /// simply not emitted.
+    explicit EvictionCandidates(const FileCache * cache_ = nullptr);
     ~EvictionCandidates();
 
     /// Total number of eviction candidates.
@@ -118,9 +123,10 @@ public:
     void setAfterEvictStateFunc(AfterEvictStateFunc && func) { after_evict_state_func = std::move(func); }
 
     /// Evict all candidates, which were added before via add().
-    /// If `cache` is non-null and has eviction metrics enabled, records
-    /// `filesystem_cache_*` metrics for each successfully evicted segment.
-    void evict(const FileCache * cache = nullptr);
+    /// If the owning cache (passed to the constructor) has eviction metrics
+    /// enabled, records `filesystem_cache_*` metrics for each successfully
+    /// evicted segment.
+    void evict();
     /// Execute "after eviction callbacks".
     /// "write" callback must be executed before "state" callback.
     void afterEvictWrite(const CachePriorityGuard::WriteLock & lock);
@@ -181,6 +187,10 @@ private:
     bool removed_queue_entries = false;
 
     IFileCachePriority::HoldSpacePtr hold_space;
+
+    /// The owning FileCache. Used only to read the eviction-metrics flags.
+    /// May be null if metrics are not desired.
+    const FileCache * cache = nullptr;
 
     LoggerPtr log;
 };

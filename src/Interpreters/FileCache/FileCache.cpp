@@ -1194,7 +1194,7 @@ bool FileCache::doTryReserve(
         }
     }
 
-    EvictionCandidates eviction_candidates;
+    EvictionCandidates eviction_candidates(this);
     IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
 
     /// Collect candidates for eviction and
@@ -1378,7 +1378,7 @@ bool FileCache::doEviction(
         };
         try
         {
-            eviction_candidates.evict(this);
+            eviction_candidates.evict();
         }
         catch (...)
         {
@@ -1470,7 +1470,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     ProfileEvents::increment(ProfileEvents::FilesystemCacheFreeSpaceKeepingThreadRun);
 
     FileCacheReserveStat stat;
-    EvictionCandidates eviction_candidates;
+    EvictionCandidates eviction_candidates(this);
 
     IFileCachePriority::CollectStatus desired_size_status =  IFileCachePriority::CollectStatus::CANNOT_EVICT;
     /// Collect at most `keep_up_free_space_remove_batch` elements to evict,
@@ -1494,7 +1494,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     if (eviction_candidates.size() > 0)
     {
         desired_size_status = IFileCachePriority::CollectStatus::SUCCESS;
-        eviction_candidates.evict(this);
+        eviction_candidates.evict();
     }
 
     /// Take lock again to finalize eviction,
@@ -2399,7 +2399,7 @@ bool FileCache::doDynamicResizeImpl(
 
     chassert(!eviction_info->hasHoldSpace());
 
-    EvictionCandidates eviction_candidates;
+    EvictionCandidates eviction_candidates(this);
     if (!eviction_info->requiresEviction())
     {
         /// Nothing needs to be evicted,
@@ -2468,7 +2468,7 @@ bool FileCache::doDynamicResizeImpl(
     write_lock.unlock();
 
     /// Do actual eviction from filesystem.
-    eviction_candidates.evict(this);
+    eviction_candidates.evict();
 
     chassert(!eviction_candidates.requiresAfterEvictWrite());
     IFileCachePriority::removeEntries(invalidated_entries, cache_guard.writeLock());

@@ -157,8 +157,9 @@ std::string EvictionCandidates::FailedCandidates::getFirstErrorMessage() const
     return "";
 }
 
-EvictionCandidates::EvictionCandidates()
-    : log(getLogger("EvictionCandidates"))
+EvictionCandidates::EvictionCandidates(const FileCache * cache_)
+    : cache(cache_)
+    , log(getLogger("EvictionCandidates"))
 {
 }
 
@@ -246,7 +247,7 @@ void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::WriteLock 
     removed_queue_entries = true;
 }
 
-void EvictionCandidates::evict(const FileCache * cache)
+void EvictionCandidates::evict()
 {
     if (candidates.empty())
         return;
