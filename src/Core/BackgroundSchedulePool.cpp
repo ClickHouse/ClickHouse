@@ -264,26 +264,30 @@ Coordination::WatchCallbackPtr BackgroundSchedulePoolTaskInfo::getWatchCallback(
 /// BackgroundSchedulePool
 ///
 
-BackgroundSchedulePoolPtr BackgroundSchedulePool::create(size_t size, size_t max_parallel_tasks_per_type, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, ThreadName thread_name)
+BackgroundSchedulePoolPtr BackgroundSchedulePool::create(size_t size, size_t initial_size, size_t max_parallel_tasks_per_type, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, ThreadName thread_name)
 {
-    return std::shared_ptr<BackgroundSchedulePool>(new BackgroundSchedulePool(size, max_parallel_tasks_per_type, tasks_metric, size_metric, thread_name));
+    return std::shared_ptr<BackgroundSchedulePool>(new BackgroundSchedulePool(size, initial_size, max_parallel_tasks_per_type, tasks_metric, size_metric, thread_name));
 }
 
-BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, ThreadName thread_name_)
+BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, ThreadName thread_name_)
     : logger(getLogger(fmt::format("BackgroundSchedulePool/{}", toString(thread_name_))))
     , tasks_metric(tasks_metric_)
-    , size_metric(size_metric_, size_)
+    , size_metric(size_metric_, 0)
     , thread_name(thread_name_)
     , max_parallel_tasks_per_type(max_parallel_tasks_per_type_ ? max_parallel_tasks_per_type_ : size_)
 {
-    LOG_INFO(logger, "Create BackgroundSchedulePool with {} threads", size_);
-
-    threads.resize(size_);
+    const size_t initial_size = std::min(size_, initial_size_);
+    LOG_INFO(logger, "Create BackgroundSchedulePool with {} initial threads (grows lazily up to {})", initial_size, size_);
 
     try
     {
-        for (auto & thread : threads)
-            thread = ThreadFromGlobalPoolNoTracingContextPropagation([this] { threadFunction(); });
+        {
+            std::lock_guard tasks_lock(tasks_mutex);
+            max_size = size_;
+            threads.reserve(size_);
+            for (size_t i = 0; i < initial_size; ++i)
+                spawnThreadLocked();
+        }
 
         delayed_thread = std::make_unique<ThreadFromGlobalPoolNoTracingContextPropagation>([this] { delayExecutionThreadFunction(); });
     }
@@ -292,7 +296,7 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t max_parallel
         LOG_FATAL(
             logger,
             "Couldn't get {} threads from global thread pool: {}",
-            size_,
+            initial_size,
             getCurrentExceptionCode() == ErrorCodes::CANNOT_SCHEDULE_TASK
                 ? "Not enough threads. Please make sure max_thread_pool_size is considerably "
                   "bigger than background_schedule_pool_size."
@@ -302,25 +306,29 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t max_parallel
 }
 
 
+void BackgroundSchedulePool::spawnThreadLocked()
+{
+    threads.emplace_back(ThreadFromGlobalPoolNoTracingContextPropagation([this] { threadFunction(); }));
+    size_metric.changeTo(threads.size());
+}
+
+
 void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
 {
+    std::lock_guard tasks_lock(tasks_mutex);
+
     if (shutdown)
         throw Exception(ErrorCodes::ABORTED, "Pool already destroyed");
 
-    const size_t old_threads_count = threads.size();
-
-    if (new_threads_count < old_threads_count)
+    if (new_threads_count < max_size)
     {
         LOG_WARNING(logger,
-            "Tried to increase the number of threads but the new threads count ({}) is not greater than old one ({})", new_threads_count, old_threads_count);
+            "Tried to raise the schedule pool cap but the new cap ({}) is not greater than the current one ({})", new_threads_count, max_size);
         return;
     }
 
-    threads.resize(new_threads_count);
-    for (size_t i = old_threads_count; i < new_threads_count; ++i)
-        threads[i] = ThreadFromGlobalPoolNoTracingContextPropagation([this] { threadFunction(); });
-
-    size_metric.changeTo(new_threads_count);
+    max_size = new_threads_count;
+    /// Threads above the current count are spawned lazily on demand.
 }
 
 
@@ -330,10 +338,14 @@ void BackgroundSchedulePool::join()
     {
         shutdown = true;
 
-        /// Unlock threads
+        Threads threads_to_join;
+
+        /// Unlock threads and steal them out for joining without holding tasks_mutex
+        /// (workers re-acquire tasks_mutex on wake-up to observe shutdown and exit).
         {
             std::lock_guard tasks_lock(tasks_mutex);
             tasks_cond_var.notify_all();
+            threads_to_join = std::move(threads);
         }
         {
             std::lock_guard tasks_lock(delayed_tasks_mutex);
@@ -346,9 +358,8 @@ void BackgroundSchedulePool::join()
             LOG_TRACE(logger, "Waiting for threads to finish.");
             delayed_thread->join();
             delayed_thread.reset();
-            for (auto & thread : threads)
+            for (auto & thread : threads_to_join)
                 thread.join();
-            threads.clear();
             LOG_TRACE(logger, "Threads finished in {}ms.", watch.elapsedMilliseconds());
         }
     }
@@ -362,6 +373,7 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
 {
     chassert(shutdown == true, "BackgroundSchedulePool::join() has not been called");
     chassert(static_cast<bool>(delayed_thread) == false, "BackgroundSchedulePool::delayed_thread has not been joined");
+    std::lock_guard tasks_lock(tasks_mutex);
     chassert(threads.empty(), "BackgroundSchedulePool::threads have not been joined");
 }
 
@@ -402,6 +414,24 @@ void BackgroundSchedulePool::scheduleTask(TaskInfo & task_info)
             runnable_task_types.push_back(task_type);
         }
         running_tasks.erase(task_ptr);
+
+        /// Grow the pool lazily: if no worker is currently parked in cv.wait and we have headroom,
+        /// spawn an extra worker rather than letting the task queue behind a busy thread. We're
+        /// still holding tasks_mutex, so no thread can transition idle until we release — the
+        /// idle_threads == 0 observation is consistent.
+        if (idle_threads == 0 && threads.size() < max_size && !runnable_task_types.empty() && !shutdown)
+        {
+            try
+            {
+                spawnThreadLocked();
+                return; /// The new worker will pick up the task; no need to notify an existing one.
+            }
+            catch (...)
+            {
+                tryLogCurrentException(logger, "Failed to spawn an additional schedule pool worker");
+                /// Fall through to notify_one — an existing worker will eventually take the task.
+            }
+        }
     }
 
     tasks_cond_var.notify_one();
@@ -452,12 +482,14 @@ void BackgroundSchedulePool::threadFunction()
         {
             UniqueLock tasks_lock(tasks_mutex);
 
+            ++idle_threads;
             /// TSA_NO_THREAD_SAFETY_ANALYSIS because it doesn't understand within the lambda that the
             /// tasks_lock has already locked tasks_mutex.
             tasks_cond_var.wait(tasks_lock.getUnderlyingLock(), [&]() TSA_NO_THREAD_SAFETY_ANALYSIS
             {
                 return shutdown || !runnable_task_types.empty();
             });
+            --idle_threads;
             if (shutdown)
                 break;
 
