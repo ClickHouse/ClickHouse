@@ -46,21 +46,23 @@ namespace
 /// whose left-hand side is structurally identical but evaluates to different values across
 /// occurrences — collapsing them into one `multiSearchAny`/`multiMatchAny` call would change
 /// query results.
+///
+/// Recursion follows all children, not just `FunctionNode` arguments: a non-deterministic call
+/// can be nested inside a `LambdaNode` body (e.g. `arrayMap(x -> rand() + x, col)`), a subquery,
+/// or any other intermediate node, and `FunctionNode`-only descent would miss those cases.
 bool isExpressionNonDeterministic(const QueryTreeNodePtr & node)
 {
     if (!node)
         return false;
 
     if (auto * function = node->as<FunctionNode>())
-    {
         if (function->isResolved())
             if (auto func = function->getFunctionOrThrow(); !func->isDeterministicInScopeOfQuery())
                 return true;
 
-        for (const auto & argument : function->getArguments())
-            if (isExpressionNonDeterministic(argument))
-                return true;
-    }
+    for (const auto & child : node->getChildren())
+        if (isExpressionNonDeterministic(child))
+            return true;
 
     return false;
 }

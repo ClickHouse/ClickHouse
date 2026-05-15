@@ -30,3 +30,15 @@ WHERE (s LIKE '%a%') OR (s LIKE '%b%')
 SETTINGS enable_analyzer = 0;
 
 DROP TABLE t_or_like_chain_nondet;
+
+-- New analyzer: non-deterministic call nested inside a `LambdaNode` body (here `rand()`
+-- inside `arrayMap`) must also block the rewrite. Without descending past
+-- `LambdaNode`, the check would treat the two structurally identical LHS expressions
+-- as deterministic and collapse them into a single `multiSearchAny`, calling `rand`
+-- once instead of twice.
+EXPLAIN QUERY TREE run_passes = 1
+SELECT *
+FROM (SELECT 1 AS x)
+WHERE arrayElement(arrayMap(x -> toString(rand() + x), [1]), 1) LIKE '%1%'
+   OR arrayElement(arrayMap(x -> toString(rand() + x), [1]), 1) LIKE '%2%'
+SETTINGS enable_analyzer = 1;

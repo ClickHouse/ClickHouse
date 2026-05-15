@@ -45,3 +45,73 @@ SELECT s
 FROM t_or_like_chain_nondet
 WHERE multiSearchAny(s, [\'a\', \'b\']) OR false
 SETTINGS enable_analyzer = 0
+QUERY id: 0
+  PROJECTION COLUMNS
+    x UInt8
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: x, result_type: UInt8, source_id: 3
+  JOIN TREE
+    QUERY id: 3, alias: __table1, is_subquery: 1
+      PROJECTION COLUMNS
+        x UInt8
+      PROJECTION
+        LIST id: 4, nodes: 1
+          CONSTANT id: 5, constant_value: UInt64_1, constant_value_type: UInt8
+      JOIN TREE
+        TABLE id: 6, alias: __table2, table_name: system.one
+  WHERE
+    FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 8, nodes: 2
+          FUNCTION id: 9, function_name: like, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 10, nodes: 2
+                FUNCTION id: 11, function_name: arrayElement, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 12, nodes: 2
+                      FUNCTION id: 13, function_name: arrayMap, function_type: ordinary, result_type: Array(String)
+                        ARGUMENTS
+                          LIST id: 14, nodes: 2
+                            LAMBDA id: 15
+                              ARGUMENTS 
+                                LIST id: 16, nodes: 1
+                                  COLUMN id: 17, column_name: x, result_type: UInt8, source_id: 15
+                              EXPRESSION 
+                                FUNCTION id: 18, function_name: toString, function_type: ordinary, result_type: String
+                                  ARGUMENTS
+                                    LIST id: 19, nodes: 1
+                                      FUNCTION id: 20, function_name: plus, function_type: ordinary, result_type: UInt64
+                                        ARGUMENTS
+                                          LIST id: 21, nodes: 2
+                                            FUNCTION id: 22, function_name: rand, function_type: ordinary, result_type: UInt32
+                                            COLUMN id: 17, column_name: x, result_type: UInt8, source_id: 15
+                            CONSTANT id: 23, constant_value: Array_[UInt64_1], constant_value_type: Array(UInt8)
+                      CONSTANT id: 24, constant_value: UInt64_1, constant_value_type: UInt8
+                CONSTANT id: 25, constant_value: \'%1%\', constant_value_type: String
+          FUNCTION id: 26, function_name: like, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 27, nodes: 2
+                FUNCTION id: 28, function_name: arrayElement, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 29, nodes: 2
+                      FUNCTION id: 30, function_name: arrayMap, function_type: ordinary, result_type: Array(String)
+                        ARGUMENTS
+                          LIST id: 31, nodes: 2
+                            LAMBDA id: 32
+                              ARGUMENTS 
+                                LIST id: 33, nodes: 1
+                                  COLUMN id: 34, column_name: x, result_type: UInt8, source_id: 32
+                              EXPRESSION 
+                                FUNCTION id: 35, function_name: toString, function_type: ordinary, result_type: String
+                                  ARGUMENTS
+                                    LIST id: 36, nodes: 1
+                                      FUNCTION id: 37, function_name: plus, function_type: ordinary, result_type: UInt64
+                                        ARGUMENTS
+                                          LIST id: 38, nodes: 2
+                                            FUNCTION id: 39, function_name: rand, function_type: ordinary, result_type: UInt32
+                                            COLUMN id: 34, column_name: x, result_type: UInt8, source_id: 32
+                            CONSTANT id: 40, constant_value: Array_[UInt64_1], constant_value_type: Array(UInt8)
+                      CONSTANT id: 41, constant_value: UInt64_1, constant_value_type: UInt8
+                CONSTANT id: 42, constant_value: \'%2%\', constant_value_type: String
+  SETTINGS enable_analyzer=1
