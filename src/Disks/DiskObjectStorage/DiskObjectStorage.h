@@ -259,6 +259,9 @@ private:
     BlobKillerThreadPtr blob_killer;
     BlobCopierThreadPtr blob_copier;
 
+    /// Thread pool used to parallelize `copyObjectToAnotherObjectStorage` calls.
+    std::shared_ptr<ThreadPool> copy_object_pool;
+
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
     std::mutex reservation_mutex;
