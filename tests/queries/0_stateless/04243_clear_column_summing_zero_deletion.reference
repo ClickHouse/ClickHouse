@@ -1,0 +1,14 @@
+before clear
+1	1	100
+2	2	200
+after clear + optimize final
+2	2	200
+cross-check update c=0
+2	2	200
+multi-row partition after clear
+add column with no rewrite
+coalescing keeps rows
+1	1	0
+2	2	200
+ordinary keeps row
+1	1	0

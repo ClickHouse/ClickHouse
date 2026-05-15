@@ -612,6 +612,25 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     ///    making it unclear whether the default should be materialized or recomputed.
     /// 2. Default expressions may introduce semantic changes if re-evaluated during merges, leading to
     ///    non-deterministic results across parts.
+    ///
+    /// Additional constraint: for `Summing`, `Aggregating`, `Coalescing`, and `Graphite` merge modes,
+    /// all non-key columns participate in the merge algorithm and can affect which rows survive the
+    /// merge (e.g. zero-row deletion in `SummingMergeTree`/`CoalescingMergeTree`, aggregate-state
+    /// merging in `AggregatingMergeTree`). If a column is absent from all source parts (for example
+    /// after `ALTER TABLE ... CLEAR COLUMN IN PARTITION`) and we expire it here, the read pipeline
+    /// stops materializing the implicit default-value column for it, and `SummingSortedAlgorithm`
+    /// never sees the column. The zero-row deletion check then sees an empty `columns_to_aggregate`
+    /// and forces `current_row_is_zero = false`, so rows that should have been collapsed survive.
+    /// Skip the optimization for these modes to preserve the pre-#88860 merge semantics.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/101953
+    const auto merge_mode = global_ctx->merging_params.mode;
+    const bool merge_mode_uses_all_non_key_columns =
+        merge_mode == MergeTreeData::MergingParams::Summing
+        || merge_mode == MergeTreeData::MergingParams::Aggregating
+        || merge_mode == MergeTreeData::MergingParams::Coalescing
+        || merge_mode == MergeTreeData::MergingParams::Graphite;
+
+    if (!merge_mode_uses_all_non_key_columns)
     {
         NameSet columns_present_in_parts;
         columns_present_in_parts.reserve(global_ctx->storage_columns.size());
