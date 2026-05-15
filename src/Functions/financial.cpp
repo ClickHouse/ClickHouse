@@ -385,7 +385,7 @@ public:
         /// no Nullable), date accepts Date or Date32. Without these
         /// restrictions, unsupported nested types pass analyzer-time
         /// validation and fail at runtime with `LOGICAL_ERROR`.
-        return "(Array(NativeInt | NativeFloat), Array(Date | Date32), [Float], [String]) -> Float64";
+        return "(Array(NativeInt | NativeFloat), Array(Date | Date32), [NativeFloat], [String]) -> Float64";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -490,7 +490,7 @@ public:
     {
         /// Cashflow array must contain only Int8/16/32/64 or Float32/64; see
         /// the inline dispatch in `executeImpl`.
-        return "(Array(NativeInt | NativeFloat), [Float]) -> Float64";
+        return "(Array(NativeInt | NativeFloat), [NativeFloat]) -> Float64";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -577,7 +577,7 @@ public:
         /// rate accepts Float32/Float64; cashflow accepts Int8/16/32/64 or
         /// Float32/64; date accepts Date or Date32. See `dispatchCashflowDate`
         /// and the rate dispatch in `executeImpl`.
-        return "(Float, Array(NativeInt | NativeFloat), Array(Date | Date32), [String]) -> Float64";
+        return "(NativeFloat, Array(NativeInt | NativeFloat), Array(Date | Date32), [String]) -> Float64";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -681,7 +681,7 @@ public:
     {
         /// rate accepts Float32/Float64; cashflow accepts Int8/16/32/64 or
         /// Float32/64. See the dispatch tree in `executeImpl`.
-        return "(Float, Array(NativeInt | NativeFloat), [Integer]) -> Float64";
+        return "(NativeFloat, Array(NativeInt | NativeFloat), [Integer]) -> Float64";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
