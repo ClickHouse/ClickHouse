@@ -4098,11 +4098,14 @@ class TestSuite:
         return TestSuite(args, suite_path, suite_tmp_path, suite)
 
 
-class ServerDied(Exception):
-    pass
+class TestRunAbort(Exception):
+    """Raised to abort the whole test run.
 
-
-class GlobalTimeout(Exception):
+    The actual reason (server crash, hung-check timeout, --max-failures
+    limit, global time limit, etc.) is in the exception message — the
+    catch handler prefixes it with "Test run aborted:" so it stands out
+    in the log.
+    """
     pass
 
 
@@ -4333,12 +4336,13 @@ def run_tests_array(
 
         if stop_testing.is_set():
             stop_tests()
-            raise ServerDied("Server died")
+            raise TestRunAbort(
+                "another component requested stop (see earlier output for the cause)"
+            )
 
         if args.stop_time and time() > args.stop_time:
-            print("\nStop tests run because global time limit is exceeded.\n")
             stop_tests()
-            raise GlobalTimeout("Stop tests run because global time limit is exceeded")
+            raise TestRunAbort("global time limit exceeded (--stop-time)")
 
         test_case = TestCase(test_suite, case, args, is_concurrent)
 
@@ -4429,14 +4433,18 @@ def run_tests_array(
                     print_c_stacktraces(args)
                     stop_tests()
                     stop_testing.set()
-                    raise ServerDied("Server died")
+                    raise TestRunAbort(
+                        f"ClickHouse server died during test '{test_case.name}'"
+                    )
                 if args.max_failures > 0:
                     with total_failures_shared.get_lock():
                         total_failures_shared.value += 1
                         if total_failures_shared.value >= args.max_failures:
                             stop_tests()
                             stop_testing.set()
-                            raise ServerDied(f"Reached --max-failures limit ({args.max_failures})")
+                            raise TestRunAbort(
+                                f"reached --max-failures limit ({args.max_failures})"
+                            )
             elif test_result.status == TestStatus.SKIPPED:
                 skipped_total += 1
 
@@ -4448,7 +4456,9 @@ def run_tests_array(
         if failures_chain >= args.max_failures_chain:
             stop_tests()
             stop_testing.set()
-            raise ServerDied("Max failures chain")
+            raise TestRunAbort(
+                f"reached --max-failures-chain limit ({args.max_failures_chain})"
+            )
 
     if failures_total > 0:
         print(
@@ -6564,8 +6574,8 @@ if __name__ == "__main__":
 
     try:
         main(args)
-    except ServerDied as e:
-        print(f"{e}", file=sys.stderr)
+    except TestRunAbort as e:
+        print(f"Test run aborted: {e}", file=sys.stderr)
         traceback.print_exc()
         sys.exit(1)
     except Terminated as e:
