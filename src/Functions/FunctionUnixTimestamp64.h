@@ -19,6 +19,8 @@ namespace ErrorCodes
 {
     extern const int DECIMAL_OVERFLOW;
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /// Cast DateTime64 to Int64 representation narrowed down (or scaled up) to any scale value defined in Impl.
@@ -114,12 +116,23 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignatureString() const override
+    /// Not declarative: the timezone argument's constness requirement is
+    /// gated by the `allow_nonconst_timezone_arguments` setting, which the DSL
+    /// cannot express. With the setting enabled, a non-constant timezone is
+    /// accepted and the result becomes tz-less `DateTime64`.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const String scale = std::to_string(target_scale);
-        return
-            "(NativeInteger) -> DateTime64(" + scale + ")"
-            " OR (NativeInteger, const tz StringOrFixedString) -> DateTime64(" + scale + ", tz)";
+        if (arguments.empty() || arguments.size() > 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes one or two arguments", name);
+
+        if (!isInteger(arguments[0].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument for function {} must be integer", name);
+
+        std::string timezone;
+        if (arguments.size() == 2)
+            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, allow_nonconst_timezone_arguments);
+
+        return std::make_shared<DataTypeDateTime64>(target_scale, timezone);
     }
 
     template <typename T>
