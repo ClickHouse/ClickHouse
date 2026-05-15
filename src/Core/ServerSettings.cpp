@@ -1336,6 +1336,8 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(String, keeper_hosts, "", R"(Dynamic setting. Contains a set of [Zoo]Keeper hosts ClickHouse can potentially connect to. Doesn't expose information from `<auxiliary_zookeepers>`)", 0) \
     DECLARE(Bool, allow_experimental_webassembly_udf, false, R"(Enable experimental support for WebAssembly UDFs)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_webterminal, false, R"(Enable experimental web terminal interface at the `/webterminal` HTTP endpoint. Provides an interactive `clickhouse-client` session in the browser via WebSocket.)", EXPERIMENTAL) \
+    DECLARE(String, webterminal_allowed_origins, "", R"(Comma-separated list of full origins (scheme + host + optional port) allowed to open `/webterminal` WebSocket sessions. When empty, the same-origin policy is enforced strictly (Origin must match the request scheme, host, and port). Set this for deployments behind a TLS-terminating reverse proxy where `request.isSecure()` is `false` even though the browser uses `https`. Example: `https://example.com,https://app.example.com:8443`.)", EXPERIMENTAL) \
     DECLARE(String, webassembly_udf_engine, "wasmtime", "The engine used to execute WebAssembly UDFs. Supported values are 'wasmtime' and 'wasmedge'.", EXPERIMENTAL) \
     DECLARE(Bool, allow_impersonate_user, false, R"(Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). The setting is deprecated.)", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, s3_credentials_provider_max_cache_size, 100, R"(The maximum number of S3 credentials providers that can be cached)", 0) \
