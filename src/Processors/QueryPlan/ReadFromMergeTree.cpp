@@ -1,14 +1,12 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <Analyzer/QueryNode.h>
-#include <Functions/IFunction.h>
 #include <Core/Settings.h>
-#include <Core/ServerSettings.h>
+#include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TreeRewriter.h>
@@ -57,14 +55,11 @@
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Common/CurrentThread.h>
-#include <Common/DateLUT.h>
 #include <Common/JSONBuilder.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
 #include <algorithm>
-#include <city.h>
 #include <iterator>
 #include <memory>
 #include <string_view>
@@ -221,7 +216,6 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_top_k_dynamic_filtering;
     extern const SettingsBool use_query_condition_cache;
-    extern const SettingsUInt64 predicate_statistics_sample_rate;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
     extern const SettingsUInt64 query_plan_max_step_description_length;
@@ -2888,6 +2882,23 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
 {
     query_info.prewhere_info = prewhere_info_value;
 
+    /// Build sets for the new PREWHERE synchronously. PREWHERE is evaluated at the
+    /// storage level during data reading, before the pipeline-level CreatingSetsStep
+    /// has a chance to execute. If a condition with IN (subquery) was moved to PREWHERE
+    /// by optimizePrewhere after applyFilters already ran, the set would remain unbuilt
+    /// and cause a "Not-ready Set" error.
+    /// We must skip sets used in GLOBAL IN functions because ReadFromRemote needs to
+    /// attach external tables to those sets before they are built. Building them here
+    /// would cause "Trying to attach external table to a ready set" errors.
+    /// Only build sets when applyFilters has already been called for this step (indicated by
+    /// `indexes` being populated). The plan built by `considerEnablingParallelReplicas` for
+    /// statistics collection runs `optimizePrewhere` without `optimizePrimaryKeyConditionAndLimit`,
+    /// so `applyFilters` is skipped there and sets must not be built — the original plan's
+    /// `CreatingSetsStep` (added later via `addStepsToBuildSets`) handles them. Building here
+    /// would re-execute the IN-subquery and double-count its rows against `max_rows_to_read`.
+    if (query_info.prewhere_info && indexes.has_value())
+        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(query_info.prewhere_info->prewhere_actions, context);
+
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),
         query_info.row_level_filter,
@@ -3303,75 +3314,9 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     return true;
 }
 
-
-static const char * indexTypeToString(ReadFromMergeTree::IndexType type);
-
-void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) const
-{
-    UInt64 sample_rate = context->getSettingsRef()[Setting::predicate_statistics_sample_rate];
-    if (sample_rate == 0)
-        return;
-
-    if (sample_rate > 1)
-    {
-        auto qid = CurrentThread::getQueryId();
-        if (CityHash_v1_0_2::CityHash64(qid.data(), qid.size()) % sample_rate != 0)
-            return;
-    }
-
-    auto predicate_stats_log = context->getPredicateStatisticsLog();
-    if (!predicate_stats_log)
-        return;
-
-    if (result.index_stats.empty())
-        return;
-
-    auto storage_id = data.getStorageID();
-    if (storage_id.database_name.empty())
-        return;
-
-    PredicateStatisticsLogElement elem;
-    auto now = time(nullptr);
-    elem.event_date = static_cast<UInt16>(DateLUT::instance().toDayNum(now));
-    elem.event_time = now;
-    elem.database = storage_id.database_name;
-    elem.table = storage_id.table_name;
-    elem.query_id = String(CurrentThread::getQueryId());
-
-    UInt64 prev_granules = 0;
-    for (const auto & stat : result.index_stats)
-    {
-
-        if (stat.type == IndexType::None)
-        {
-            prev_granules = stat.num_granules_after;
-            continue;
-        }
-
-        if (!stat.part_name.empty())
-            continue;
-
-        UInt64 total = prev_granules > 0 ? prev_granules : stat.num_granules_after;
-        UInt64 after = stat.num_granules_after;
-
-        elem.index_names.push_back(stat.name.empty() ? indexTypeToString(stat.type) : stat.name);
-        elem.index_types.push_back(indexTypeToString(stat.type));
-        elem.total_granules.push_back(total);
-        elem.granules_after.push_back(after);
-        elem.index_selectivities.push_back(total > 0 ? static_cast<Float64>(after) / static_cast<Float64>(total) : 1.0);
-
-        prev_granules = after;
-    }
-
-    if (!elem.index_names.empty())
-        predicate_stats_log->add(std::move(elem));
-}
-
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto & result = getAnalysisResult();
-
-    logPredicateStatistics(result);
 
     if (enable_remove_parts_from_snapshot_optimization)
     {

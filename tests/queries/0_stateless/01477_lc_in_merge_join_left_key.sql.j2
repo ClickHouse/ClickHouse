@@ -1,5 +1,6 @@
 SET join_algorithm = 'auto';
 SET max_bytes_in_join = 100;
+SET max_bytes_before_external_join = 0; -- Auto spilling hash join has to be disabled to test switching to merge join.
 
 DROP TABLE IF EXISTS t;
 DROP TABLE IF EXISTS nr;

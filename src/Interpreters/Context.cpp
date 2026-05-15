@@ -20,7 +20,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/Throttler.h>
-#include <Common/ThrottlerArray.h>
 #include <Common/thread_local_rng.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
@@ -552,6 +551,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable OnceFlag build_vector_similarity_index_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
+    mutable bool index_uncompressed_cache_enabled TSA_GUARDED_BY(mutex) = false;      /// Whether index_uncompressed_cache should be used.
     mutable VectorSimilarityIndexCachePtr vector_similarity_index_cache TSA_GUARDED_BY(mutex);         /// Cache of deserialized secondary index granules.
     mutable TextIndexTokensCachePtr text_index_tokens_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index tokens.
     mutable TextIndexHeaderCachePtr text_index_header_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index headers.
@@ -4072,6 +4072,7 @@ void Context::setIndexUncompressedCache(const String & cache_policy, size_t max_
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache has been already created.");
 
     shared->index_uncompressed_cache = std::make_shared<UncompressedCache>(cache_policy, CurrentMetrics::IndexUncompressedCacheBytes, CurrentMetrics::IndexUncompressedCacheCells, max_size_in_bytes, size_ratio);
+    shared->index_uncompressed_cache_enabled = shared->index_uncompressed_cache->maxSizeInBytes() != 0;
 }
 
 void Context::updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
@@ -4088,11 +4089,14 @@ void Context::updateIndexUncompressedCacheConfiguration(const Poco::Util::Abstra
         LOG_DEBUG(shared->log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
     }
     shared->index_uncompressed_cache->setMaxSizeInBytes(size);
+    shared->index_uncompressed_cache_enabled = shared->index_uncompressed_cache->maxSizeInBytes() != 0;
 }
 
-UncompressedCachePtr Context::getIndexUncompressedCache() const
+UncompressedCachePtr Context::getIndexUncompressedCache(bool only_if_enabled) const
 {
     SharedLockGuard lock(shared->mutex);
+    if (only_if_enabled && !shared->index_uncompressed_cache_enabled)
+        return nullptr;
     return shared->index_uncompressed_cache;
 }
 
@@ -4772,10 +4776,6 @@ ThrottlerPtr Context::getRemoteReadThrottler() const
         throttler = shared->remote_read_throttler;
     }
 
-    /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
-    if (auto process_list_element = getProcessListElementSafe())
-        addThrottler(throttler, process_list_element->getUserNetworkThrottler());
-
     if (auto bandwidth = getSettingsRef()[Setting::max_remote_read_network_bandwidth])
     {
         std::lock_guard lock(mutex);
@@ -4793,10 +4793,6 @@ ThrottlerPtr Context::getRemoteWriteThrottler() const
         std::lock_guard lock(shared->mutex);
         throttler = shared->remote_write_throttler;
     }
-
-    /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
-    if (auto process_list_element = getProcessListElementSafe())
-        addThrottler(throttler, process_list_element->getUserNetworkThrottler());
 
     if (auto bandwidth = getSettingsRef()[Setting::max_remote_write_network_bandwidth])
     {
@@ -6147,16 +6143,6 @@ std::shared_ptr<AggregatedZooKeeperLog> Context::getAggregatedZooKeeperLog() con
         return {};
 
     return shared->system_logs->aggregated_zookeeper_log;
-}
-
-std::shared_ptr<PredicateStatisticsLog> Context::getPredicateStatisticsLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->predicate_statistics_log;
 }
 
 SystemLogs Context::getSystemLogs() const

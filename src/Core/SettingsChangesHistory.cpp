@@ -39,12 +39,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "26.5",
-        {
-            {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
-        });
         addSettingsChanges(settings_changes_history, "26.4",
         {
+            {"max_bytes_before_external_join", 0, 0, "New setting to control automatic spilling of hash joins to disk. Non-zero value enables spilling and sets the byte threshold."},
             {"allow_iceberg_remove_orphan_files", false, false, "New setting to gate Iceberg orphan file removal"},
             {"iceberg_orphan_files_older_than_seconds", 259200, 259200, "New setting for default orphan file age threshold"},
             {"output_format_arrow_unsupported_types_as_binary", false, true, "New setting to convert unsupported CH types to arrow binary instead of UNKNOWN_TYPE exception."},
@@ -69,6 +66,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"s3_uri_style", "auto", "auto", "New setting."},
             {"use_strict_insert_block_limits", false, false, "New setting to use strict min and max insert bounds on inserts. When min < max, max limits take precedence."},
             {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
+            {"optimize_rewrite_array_exists_to_has", false, true, "Enable arrayExists to has rewrite optimization by default, now that type compatibility is checked before rewriting."},
             {"parallel_replicas_allow_view_over_mergetree", false, false, "New setting"},
             {"read_in_order_use_virtual_row_per_block", false, false, "Emit virtual row after each block during read-in-order to allow more frequent source reprioritization in MergingSortedTransform."},
             {"distributed_plan_prefer_replicas_over_workers", false, false, "New setting to serialize distributed plan for replicas"},
@@ -91,8 +89,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ai_function_max_output_tokens_per_query", 500000, 500000, "New setting"},
             {"ai_function_max_api_calls_per_query", 0, 0, "New setting"},
             {"ai_function_throw_on_quota_exceeded", true, true, "New setting"},
-            {"materialize_statistics_on_insert", true, false, "Disable building statistics on INSERT by default, rely on merges instead"},
-            {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
             {"variant_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Variant implementation"},
             {"dynamic_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Dynamic implementation"},
         });
@@ -103,7 +99,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_trim_fixed_string", false, false, "New setting to trim trailing zero bytes from FixedString values in text output formats"},
             {"optimize_syntax_fuse_functions", false, true, "The optimization is production-ready"},
             {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", false, true, "Allow calculating subcolumns sizes for merge tree reading to improve read tasks splitting"},
-            {"enable_materialized_cte", false, false, "New setting"},
             {"use_parquet_metadata_cache", false, true, "Enables cache of parquet file metadata."},
             {"allow_nullable_tuple_in_extracted_subcolumns", false, false, "New setting controlling whether extracted Tuple subcolumns can be nullable."},
             {"use_text_index_tokens_cache", false, false, "New setting"},
@@ -1154,10 +1149,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "26.5",
-        {
-
-        });
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {
             {"share_nested_offsets", true, true, "When set to false, Array columns with dotted names that share a common prefix are treated as independent columns instead of sharing offset files as part of legacy Nested semantics"},
@@ -1172,7 +1163,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
             {"vertical_merge_optimize_ttl_delete", false, true, "Allow vertical merge algorithm for merges that need to remove rows expired by TTL"},
-            {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
             {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
             {"propagate_types_serialization_versions_to_nested_types", false, true, "Propagate data types serialization version to nested types by default"},
             {"map_serialization_version", "basic", "basic", "Add a setting to control Map serialization version"},

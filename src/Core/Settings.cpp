@@ -5534,7 +5534,7 @@ For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, c
 Supported only with the analyzer (`enable_analyzer = 1`).
 :::
 )", 0) \
-    DECLARE(Bool, optimize_rewrite_array_exists_to_has, false, R"(
+    DECLARE(Bool, optimize_rewrite_array_exists_to_has, true, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0) \
     DECLARE(Bool, optimize_rewrite_like_perfect_affix, true, R"(
@@ -6982,9 +6982,6 @@ See also:
     DECLARE(Bool, enable_blob_storage_log, true, R"(
 Write information about blob storage operations to system.blob_storage_log table
 )", 0) \
-    DECLARE(UInt64, predicate_statistics_sample_rate, 0, R"(
-Collect predicate selectivity statistics into `system.predicate_statistics_log`. When set to N > 0, approximately 1/N of queries are sampled (by the query ID). 0 means disabled.
-)", 0) \
     DECLARE(Bool, allow_create_index_without_type, false, R"(
 Allow CREATE INDEX query without TYPE. Query will be ignored. Made for SQL compatibility tests.
 )", 0) \
@@ -7617,6 +7614,9 @@ Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
+    DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
+If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), automatic spilling is disabled. It prevents read in order through join optimization.
+)", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
 )", 0) \

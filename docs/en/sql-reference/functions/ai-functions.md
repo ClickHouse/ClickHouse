@@ -51,6 +51,19 @@ Any OpenAI-compatible API (e.g. vLLM, Ollama, LiteLLM) can be used by setting `p
 
 All AI-related settings are listed in [Settings](/operations/settings/settings) under the `ai_function_` prefix.
 
+### Restricting endpoint hosts {#restricting-endpoint-hosts}
+
+The `endpoint` URL in an AI named collection is an outbound destination the server connects to under its own identity, carrying the named collection's `api_key` in the request headers. By default, ClickHouse permits any host. To restrict functions to a specific set of providers, configure [`remote_url_allow_hosts`](/operations/server-configuration-parameters/settings#remote_url_allow_hosts) in the server config, e.g.:
+
+```xml
+<remote_url_allow_hosts>
+    <host>api.openai.com</host>
+    <host>api.anthropic.com</host>
+</remote_url_allow_hosts>
+```
+
+Note that this setting is server-wide and applies to all HTTP-using features.
+
 ## Supported providers {#supported-providers}
 
 | Provider | `provider` value | Chat functions | Notes |

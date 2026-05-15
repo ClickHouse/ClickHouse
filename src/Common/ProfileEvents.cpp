@@ -224,10 +224,6 @@
     M(MergesThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_merges_bandwidth_for_server' throttling.", ValueType::Microseconds) \
     M(MutationsThrottlerBytes, "Bytes passed through 'max_mutations_bandwidth_for_server' throttler.", ValueType::Bytes) \
     M(MutationsThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_mutations_bandwidth_for_server' throttling.", ValueType::Microseconds) \
-    M(UserThrottlerBytes, "Bytes passed through 'max_network_bandwidth_for_user' throttler.", ValueType::Bytes) \
-    M(UserThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_network_bandwidth_for_user' throttling.", ValueType::Microseconds) \
-    M(AllUsersThrottlerBytes, "Bytes passed through 'max_network_bandwidth_for_all_users' throttler.", ValueType::Bytes) \
-    M(AllUsersThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_network_bandwidth_for_all_users' throttling.", ValueType::Microseconds) \
     M(QueryRemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryRemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth' throttling.", ValueType::Microseconds) \
     M(QueryRemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth' throttler.", ValueType::Bytes) \
@@ -369,6 +365,11 @@
     M(JoinBuildTableRowCount, "Total number of rows in the build table for a JOIN operation.", ValueType::Number) \
     M(JoinProbeTableRowCount, "Total number of rows in the probe table for a JOIN operation.", ValueType::Number) \
     M(JoinResultRowCount, "Total number of rows in the result of a JOIN operation.", ValueType::Number) \
+    M(JoinNonJoinedTransformBlockCount, "Number of blocks emitted by NonJoinedBlocksTransform.", ValueType::Number) \
+    M(JoinNonJoinedTransformRowCount, "Number of non-joined rows emitted by NonJoinedBlocksTransform.", ValueType::Number) \
+    M(JoinDelayedJoinedTransformBlockCount, "Number of blocks emitted by DelayedJoinedBlocksWorkerTransform.", ValueType::Number) \
+    M(JoinDelayedJoinedTransformRowCount, "Number of rows emitted by DelayedJoinedBlocksWorkerTransform.", ValueType::Number) \
+    M(JoinSpillingHashJoinSwitchedToGraceJoin, "Number of times a (Concurrent)HashJoin was switched to GraceHashJoin due to memory limit in SpillingHashJoin.", ValueType::Number) \
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \
     M(JoinOptimizeMicroseconds, "Total time spent executing JOIN plan optimizations.", ValueType::Microseconds) \
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \

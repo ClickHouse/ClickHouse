@@ -56,7 +56,7 @@ IProcessor::Status LazyUnorderedReadFromMergeTreeSource::prepare()
         return Status::PortFull;
 
     if (lazy_materializing_rows)
-        return Status::UpdatePipeline;
+        return Status::ExpandPipeline;
 
     /// Pass through chunks from any ready input.
     bool all_finished = true;
@@ -83,7 +83,7 @@ IProcessor::Status LazyUnorderedReadFromMergeTreeSource::prepare()
     return Status::NeedData;
 }
 
-IProcessor::PipelineUpdate LazyUnorderedReadFromMergeTreeSource::updatePipeline()
+Processors LazyUnorderedReadFromMergeTreeSource::expandPipeline()
 {
     if (!lazy_materializing_rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "LazyUnorderedReadFromMergeTreeSource: No lazy materializing rows");
@@ -99,7 +99,7 @@ IProcessor::PipelineUpdate LazyUnorderedReadFromMergeTreeSource::updatePipeline(
         inputs.back().setNeeded();
     }
 
-    return PipelineUpdate{.to_add = std::move(readers), .to_remove = {}};
+    return readers;
 }
 
 Processors LazyUnorderedReadFromMergeTreeSource::buildReaders()

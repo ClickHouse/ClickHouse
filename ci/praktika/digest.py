@@ -82,8 +82,7 @@ class Digest:
         drop_fields = [
             "requires",
             "enable_commit_status",
-            "allow_failure",
-            "force_success",
+            "allow_merge_on_failure",
             "digest_config",
         ]
         filtered_job_dict = {

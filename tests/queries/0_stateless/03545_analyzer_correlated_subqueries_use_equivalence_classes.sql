@@ -2,6 +2,7 @@ SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 SET query_plan_join_swap_table = 0; -- Changes query plan
 SET correlated_subqueries_default_join_kind = 'left';
+SET max_bytes_before_external_join = 0; -- Remove once spilling hash join is enabled by default
 
 EXPLAIN actions = 1
 SELECT

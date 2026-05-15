@@ -1327,7 +1327,7 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
         auto schema = schema_registry->getSchema(schema_id);
         AvroDeserializer deserializer(
             output.getHeader(), schema, format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
-        it = deserializer_cache.emplace(schema_id, deserializer).first;
+        it = deserializer_cache.emplace(schema_id, std::move(deserializer)).first;
     }
     return it->second;
 }

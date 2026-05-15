@@ -171,6 +171,7 @@ namespace ActionLocks
     extern const StorageActionBlockType PullReplicationLog;
     extern const StorageActionBlockType Cleanup;
     extern const StorageActionBlockType ViewRefresh;
+    extern const StorageActionBlockType ViewRefreshPause;
 }
 
 namespace
@@ -228,6 +229,8 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
     if (action_type == ActionLocks::Cleanup)
         return AccessType::SYSTEM_CLEANUP;
     if (action_type == ActionLocks::ViewRefresh)
+        return AccessType::SYSTEM_VIEWS;
+    if (action_type == ActionLocks::ViewRefreshPause)
         return AccessType::SYSTEM_VIEWS;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
 }
@@ -833,11 +836,19 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::START_VIEW:
         case Type::START_VIEWS:
+            /// `SYSTEM START VIEW` must undo both `SYSTEM STOP VIEW` and `SYSTEM PAUSE VIEW`.
+            /// Each call drops the corresponding lock (if any) and invokes `refresher->start()`;
+            /// `start` is idempotent so calling it twice is safe.
             startStopAction(ActionLocks::ViewRefresh, true);
+            startStopAction(ActionLocks::ViewRefreshPause, true);
             break;
         case Type::STOP_VIEW:
         case Type::STOP_VIEWS:
             startStopAction(ActionLocks::ViewRefresh, false);
+            break;
+        case Type::PAUSE_VIEW:
+        case Type::PAUSE_VIEWS:
+            startStopAction(ActionLocks::ViewRefreshPause, false);
             break;
         case Type::START_REPLICATED_VIEW:
             for (const auto & task : getRefreshTasks())
@@ -2437,6 +2448,8 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::STOP_VIEW:
         case Type::STOP_VIEWS:
         case Type::STOP_REPLICATED_VIEW:
+        case Type::PAUSE_VIEW:
+        case Type::PAUSE_VIEWS:
         case Type::CANCEL_VIEW:
         case Type::TEST_VIEW:
         {
