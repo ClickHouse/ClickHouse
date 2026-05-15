@@ -296,21 +296,47 @@ MemoryWorker::MemoryWorker(
             if (rss_update_period_ms == 0)
                 rss_update_period_ms = cgroups_memory_usage_tick_ms;
 
-            /// Also keep an open file for the cgroup's memory limit so the dynamic
-            /// hard-limit adjustment can read it cheaply on each tick. v1 and v2 use
-            /// different file names.
-            fs::path memory_max_path = fs::path(cgroup_path) / "memory.max";
-            if (!fs::exists(memory_max_path))
-                memory_max_path = fs::path(cgroup_path) / "memory.limit_in_bytes";
-            if (fs::exists(memory_max_path))
+            /// Open files for the cgroup memory limit so the dynamic hard-limit
+            /// adjustment can read them cheaply on each tick. v1 and v2 use different
+            /// file names and v2 uses a hierarchy.
+            if (version == ICgroupsReader::CgroupsVersion::V2)
             {
-                try
+                /// In cgroup v2, every ancestor cgroup has its own `memory.max`, and
+                /// the effective limit is the minimum finite value among them. Open
+                /// each ancestor's file so we can re-read them on every tick. If we
+                /// only opened the leaf, an ancestor's finite limit would be hidden
+                /// when the leaf has `memory.max = max`.
+                fs::path current = fs::path(cgroup_path);
+                while (current != default_cgroups_mount.parent_path())
                 {
-                    cgroup_memory_max_buf = std::make_unique<ReadBufferFromFile>(memory_max_path.string());
+                    fs::path path = current / "memory.max";
+                    if (fs::exists(path))
+                    {
+                        try
+                        {
+                            cgroup_memory_max_bufs.push_back(std::make_unique<ReadBufferFromFile>(path.string()));
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(log, fmt::format("Cannot open cgroup memory limit file '{}'", path.string()));
+                        }
+                    }
+                    current = current.parent_path();
                 }
-                catch (...)
+            }
+            else
+            {
+                fs::path memory_max_path = fs::path(cgroup_path) / "memory.limit_in_bytes";
+                if (fs::exists(memory_max_path))
                 {
-                    tryLogCurrentException(log, "Cannot open cgroup memory limit file");
+                    try
+                    {
+                        cgroup_memory_max_bufs.push_back(std::make_unique<ReadBufferFromFile>(memory_max_path.string()));
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, "Cannot open cgroup memory limit file");
+                    }
                 }
             }
 
@@ -426,6 +452,11 @@ void MemoryWorker::setDynamicHardLimitSettings(Int64 ceiling, double ratio)
     /// adjustment is enabled (ceiling becomes >= 0), the new ratio is already visible.
     dynamic_hard_limit_ratio.store(ratio, std::memory_order_relaxed);
     external_hard_limit.store(ceiling, std::memory_order_relaxed);
+    /// Bump generation *after* writing values so the worker, which reads the
+    /// generation before and after its tick, can detect a reload that happened
+    /// in flight and skip applying a stale `setHardLimit`. Release pairs with the
+    /// worker's acquire load when re-checking.
+    settings_generation.fetch_add(1, std::memory_order_release);
 }
 
 uint64_t MemoryWorker::readAvailableForDynamicLimit()
@@ -435,24 +466,41 @@ uint64_t MemoryWorker::readAvailableForDynamicLimit()
     /// the wrong source: the cgroup may be much smaller than the host, and other
     /// processes in the cgroup count toward our budget. Use the cgroup view instead,
     /// the same way `AsynchronousMetrics` reports `CGroupMemoryTotal` / `CGroupMemoryUsed`.
-    if (cgroups_reader && cgroup_memory_max_buf)
+    ///
+    /// In cgroup v2, walk all ancestors (their files were opened in the constructor)
+    /// and take the minimum finite `memory.max`. Any one of them can be the binding
+    /// limit, so missing an ancestor's limit could let us inflate the hard limit above
+    /// the effective cgroup budget. If *no* ancestor has a finite limit, the cgroup
+    /// has no memory limit at all, and `/proc/meminfo` (host-wide) is the right source.
+    if (cgroups_reader && !cgroup_memory_max_bufs.empty())
     {
-        try
+        uint64_t effective_limit = std::numeric_limits<uint64_t>::max();
+        bool any_finite = false;
+        for (auto & buf : cgroup_memory_max_bufs)
         {
-            cgroup_memory_max_buf->rewind();
-            uint64_t limit_bytes = 0;
-            if (tryReadIntText(limit_bytes, *cgroup_memory_max_buf) && limit_bytes > 0)
+            try
             {
-                /// `memory.max` value `"max"` means "no limit"; in that case `tryReadIntText`
-                /// fails to parse, we drop through to the meminfo fallback below.
-                uint64_t used = cgroups_reader->readMemoryUsage();
-                return (limit_bytes > used) ? (limit_bytes - used) : 0;
+                buf->rewind();
+                uint64_t limit_bytes = 0;
+                /// `memory.max` value `"max"` means "no limit at this level"; in that
+                /// case `tryReadIntText` fails to parse and we move on to the next
+                /// ancestor without contributing to `effective_limit`.
+                if (tryReadIntText(limit_bytes, *buf) && limit_bytes > 0)
+                {
+                    effective_limit = std::min(effective_limit, limit_bytes);
+                    any_finite = true;
+                }
+            }
+            catch (...)
+            {
+                if (!std::exchange(cgroup_memory_max_warnings_printed, true))
+                    tryLogCurrentException(log, "Cannot read cgroup memory limit");
             }
         }
-        catch (...)
+        if (any_finite)
         {
-            if (!std::exchange(cgroup_memory_max_warnings_printed, true))
-                tryLogCurrentException(log, "Cannot read cgroup memory limit; falling back to /proc/meminfo");
+            uint64_t used = cgroups_reader->readMemoryUsage();
+            return (effective_limit > used) ? (effective_limit - used) : 0;
         }
     }
 #endif
@@ -634,6 +682,11 @@ void MemoryWorker::updateResidentMemoryThread()
                 MemoryTracker::updateAllocated(resident, /*log_change=*/false);
 #endif
 
+            /// Capture the settings generation before reading ratio/ceiling. We re-read
+            /// it just before `setHardLimit` and skip the write if a reload happened
+            /// concurrently — otherwise the worker could overwrite the value the reload
+            /// just installed with one computed from the old ratio.
+            const uint64_t gen_before = settings_generation.load(std::memory_order_acquire);
             const double ratio = dynamic_hard_limit_ratio.load(std::memory_order_relaxed);
             if (ratio > 0.0)
             {
@@ -676,16 +729,23 @@ void MemoryWorker::updateResidentMemoryThread()
                         /// adjustment for this tick and keep the previous limit.
                         if (new_hard_limit > used && new_hard_limit != current_hard_limit)
                         {
-                            LOG_TRACE(
-                                log,
-                                "Adjusting total memory hard limit from {} to {} (resident: {}, available: {}, ceiling: {}, ratio: {})",
-                                formatReadableSizeWithBinarySuffix(current_hard_limit),
-                                formatReadableSizeWithBinarySuffix(new_hard_limit),
-                                formatReadableSizeWithBinarySuffix(used),
-                                formatReadableSizeWithBinarySuffix(available),
-                                formatReadableSizeWithBinarySuffix(ceiling),
-                                ratio);
-                            total_memory_tracker.setHardLimit(new_hard_limit);
+                            /// Defeat the reload race: if a concurrent reload bumped the
+                            /// generation (and possibly set ratio to 0 or installed its own
+                            /// hard limit), our `new_hard_limit` is stale. Skip the write so
+                            /// the reload's value persists.
+                            if (settings_generation.load(std::memory_order_acquire) == gen_before)
+                            {
+                                LOG_TRACE(
+                                    log,
+                                    "Adjusting total memory hard limit from {} to {} (resident: {}, available: {}, ceiling: {}, ratio: {})",
+                                    formatReadableSizeWithBinarySuffix(current_hard_limit),
+                                    formatReadableSizeWithBinarySuffix(new_hard_limit),
+                                    formatReadableSizeWithBinarySuffix(used),
+                                    formatReadableSizeWithBinarySuffix(available),
+                                    formatReadableSizeWithBinarySuffix(ceiling),
+                                    ratio);
+                                total_memory_tracker.setHardLimit(new_hard_limit);
+                            }
                         }
                     }
                 }

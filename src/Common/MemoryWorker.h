@@ -129,10 +129,21 @@ private:
     std::unique_ptr<ReadBufferFromFile> meminfo_buf;
     [[maybe_unused]] bool meminfo_warnings_printed = false;
 
-    /// Open file for the cgroup's memory limit (`memory.max` on v2, `memory.limit_in_bytes` on v1).
-    /// Set in the constructor when `cgroups_reader` is set. Empty otherwise.
-    std::unique_ptr<ReadBufferFromFile> cgroup_memory_max_buf;
+    /// Open files for the effective cgroup memory limits. On cgroup v2, every ancestor
+    /// cgroup up to the mount root has its own `memory.max`, and any of them can apply.
+    /// We open all of them at startup and on each tick take the minimum finite value,
+    /// so an ancestor's `memory.max = 10G` is respected even when the leaf cgroup has
+    /// `memory.max = max`. On cgroup v1 there is a single `memory.limit_in_bytes` for
+    /// the leaf cgroup, which is the only entry in the vector.
+    std::vector<std::unique_ptr<ReadBufferFromFile>> cgroup_memory_max_bufs;
     [[maybe_unused]] bool cgroup_memory_max_warnings_printed = false;
+
+    /// Bumped by `setDynamicHardLimitSettings` after writing the new ratio/ceiling.
+    /// The worker captures the generation when it starts a dynamic update tick, then
+    /// re-checks before calling `setHardLimit`. If the generation changed while the
+    /// tick was in flight, a config reload took effect concurrently and the tick's
+    /// computed value would be stale, so we skip applying it.
+    std::atomic<uint64_t> settings_generation{0};
 
     MemoryUsageSource source{MemoryUsageSource::None};
 
