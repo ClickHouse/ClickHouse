@@ -6,8 +6,6 @@ title: 'Arithmetic Functions'
 doc_type: 'reference'
 ---
 
-# Arithmetic functions
-
 ## Overview {#overview}
 
 Arithmetic functions work for any two operands of type `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, or `Float64`.
