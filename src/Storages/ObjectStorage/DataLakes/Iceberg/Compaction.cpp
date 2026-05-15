@@ -15,6 +15,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -230,6 +231,21 @@ static void writeDataFiles(
     const String & write_format,
     CompressionMethod write_compression_method)
 {
+    ColumnMapperPtr column_mapper;
+    {
+        auto current_schema_id = initial_plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
+        auto schemas = initial_plan.initial_metadata_object->getArray(Iceberg::f_schemas);
+        for (size_t i = 0; i < schemas->size(); ++i)
+        {
+            auto schema_object = schemas->getObject(static_cast<UInt32>(i));
+            if (schema_object->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+            {
+                column_mapper = createColumnMapper(schema_object);
+                break;
+            }
+        }
+    }
+
     for (auto & [_, data_file] : initial_plan.path_to_data_file)
     {
         auto delete_file_transform = std::make_shared<IcebergBitmapPositionDeleteTransform>(
@@ -269,8 +285,10 @@ static void writeDataFiles(
             DBMS_DEFAULT_BUFFER_SIZE,
             context->getWriteSettings());
 
-        auto output_format
-            = FormatFactory::instance().getOutputFormat(write_format, *write_buffer, *sample_block, context, format_settings);
+        FormatFilterInfoPtr output_format_filter_info
+            = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
+        auto output_format = FormatFactory::instance().getOutputFormat(
+            write_format, *write_buffer, *sample_block, context, format_settings, output_format_filter_info);
 
         while (true)
         {
