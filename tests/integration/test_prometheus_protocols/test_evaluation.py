@@ -361,7 +361,12 @@ def do_query_test(
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
 ):
-    assert execute_query_in_prometheus(query, timestamp) == result
+    actual_prometheus_result = execute_query_in_prometheus(query, timestamp)
+    assert http_api_response_close_to(
+        actual_prometheus_result, result, eps=eps
+    ), (
+        f"actual_prometheus_result: {actual_prometheus_result}, expected: {result}"
+    )
 
     actual_chresult = execute_query_in_clickhouse_sql(query, timestamp)
     assert tsv_close_to(
@@ -370,9 +375,14 @@ def do_query_test(
 
     actual_result_from_http_api = execute_query_in_clickhouse_http_api(query, timestamp)
     assert (
-        http_api_response_close_to(actual_result_from_http_api, result, eps=eps)
+        http_api_response_close_to(
+            actual_result_from_http_api, actual_prometheus_result, eps=eps
+        )
         == clickhouse_http_api_result_is_same_as_prometheus
-    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+    ), (
+        f"actual_result_from_http_api: {actual_result_from_http_api}, "
+        f"prometheus_result: {actual_prometheus_result}"
+    )
 
 
 def do_query_test_expect_error(
@@ -406,8 +416,13 @@ def do_range_query_test(
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
 ):
-    assert (
-        execute_range_query_in_prometheus(query, start_time, end_time, step) == result
+    actual_prometheus_result = execute_range_query_in_prometheus(
+        query, start_time, end_time, step
+    )
+    assert http_api_response_close_to(
+        actual_prometheus_result, result, eps=eps
+    ), (
+        f"actual_prometheus_result: {actual_prometheus_result}, expected: {result}"
     )
 
     actual_chresult = execute_range_query_in_clickhouse_sql(
@@ -421,9 +436,14 @@ def do_range_query_test(
         query, start_time, end_time, step
     )
     assert (
-        http_api_response_close_to(actual_result_from_http_api, result, eps=eps)
+        http_api_response_close_to(
+            actual_result_from_http_api, actual_prometheus_result, eps=eps
+        )
         == clickhouse_http_api_result_is_same_as_prometheus
-    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+    ), (
+        f"actual_result_from_http_api: {actual_result_from_http_api}, "
+        f"prometheus_result: {actual_prometheus_result}"
+    )
 
 
 # Evaluates a query in ClickHouse only (no comparison with Prometheus) and checks the result.
