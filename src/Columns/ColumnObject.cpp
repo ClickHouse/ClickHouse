@@ -2328,7 +2328,7 @@ void ColumnObject::validateDynamicPathsSizes() const
     {
         if (column->size() != expected_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
- l   }
+    }
 }
 
 bool ColumnObject::isEmptyAt(size_t n) const
