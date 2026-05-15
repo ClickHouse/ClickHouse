@@ -396,6 +396,9 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     auto cached_marks = merge_task->releaseCachedMarks();
     auto cached_index_marks = merge_task->releaseCachedIndexMarks();
     projections_merge_time = merge_task->grabProjectionsMergeTime();
+#if CLICKHOUSE_CLOUD
+    part->is_prewarmed = true;
+#endif
 
     storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr);
     /// Why we reset task here? Because it holds shared pointer to part and tryRemovePartImmediately will

@@ -284,6 +284,88 @@ def _prepare_submodule_cache(workflow_config: RunConfig) -> Result:
     )
 
 
+def _filter_unaffected_jobs(jobs, workflow_config, changed_files, affected_dockers=()):
+    """
+    Update workflow_config.filtered_jobs for jobs unaffected by changed_files.
+
+    Two fixes relative to the original inline algorithm:
+
+    Fix 1 (Bug 2) — jobs already filtered by workflow_filter_hooks are skipped.
+    They will not run, so their 'requires' must not keep their dependencies alive.
+
+    Fix 2 (Bug 3) — all_required_artifacts is propagated to a fixed point after
+    the initial sweep.  When an unaffected job is rescued because an affected job
+    requires it, that rescued job's own dependencies are also rescued.
+    """
+    affected_artifacts = []
+    unaffected_jobs = {}  # name → job
+    all_required_artifacts = set()
+
+    for job in jobs:
+        if _is_praktika_job(job.name):
+            continue
+        if job.name in workflow_config.filtered_jobs:
+            continue  # Already filtered by workflow_filter_hooks — skip entirely
+
+        is_affected = False
+
+        if any(dep in affected_artifacts for dep in job.requires):
+            print(f"Job [{job.name}] requires affected artifacts")
+            is_affected = True
+        elif job.get_docker_image_name() in affected_dockers:
+            print(
+                f"Job [{job.name}] runs in affected Docker image [{job.run_in_docker}]"
+            )
+            is_affected = True
+        elif job.is_affected_by(changed_files):
+            print(f"Job [{job.name}] is directly affected by changed files")
+            is_affected = True
+
+        if is_affected:
+            affected_artifacts.extend(job.provides)
+            # Propagate the job name so downstream jobs requiring it by name
+            # are marked as affected.
+            affected_artifacts.append(job.name)
+            for req in job.requires:
+                all_required_artifacts.add(req)
+        else:
+            print(f"Job [{job.name}] is not affected by the change")
+            unaffected_jobs[job.name] = job
+
+    print(f"All required artifacts [{all_required_artifacts}]")
+    print(f"Affected artifacts [{affected_artifacts}]")
+
+    # Propagate all_required_artifacts transitively: when an unaffected job is
+    # rescued (because an affected job requires it), add its own requirements so
+    # the jobs that produce its inputs are also rescued.
+    changed = True
+    while changed:
+        changed = False
+        for job in unaffected_jobs.values():
+            if (
+                any(a in all_required_artifacts for a in job.provides)
+                or job.name in all_required_artifacts
+            ):
+                for req in job.requires:
+                    if req not in all_required_artifacts:
+                        all_required_artifacts.add(req)
+                        changed = True
+
+    for job_name, job in unaffected_jobs.items():
+        if (
+            any(a in all_required_artifacts for a in job.provides)
+            or job_name in all_required_artifacts
+        ):
+            print(
+                f"NOTE: Job [{job_name}] is required by affected jobs - cannot be skipped"
+            )
+        else:
+            workflow_config.set_job_as_filtered(
+                job_name,
+                "Not affected by the changed files and not required",
+            )
+
+
 def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     # debug info
     GH.print_log_in_group("GITHUB envs", Shell.get_output("env | grep GITHUB"))
@@ -489,17 +571,23 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     if results[-1].is_ok() and workflow.workflow_filter_hooks:
         sw_ = Utils.Stopwatch()
         try:
-            for job in workflow.jobs:
-                if _is_praktika_job(job.name):
-                    continue
-                for hook in workflow.workflow_filter_hooks:
-                    should_skip, reason = hook(job.name)
-                    if should_skip:
-                        print(
-                            f"Job [{job.name}] set to skipped by custom hook [{hook.__name__}], reason [{reason}]"
-                        )
-                        workflow_config.set_job_as_filtered(job.name, reason)
+            pr_labels = Info().pr_labels
+            if Settings.CI_FORCE_ALL_LABEL in pr_labels:
+                print(
+                    f"NOTE: Workflow filter hooks bypassed (label '{Settings.CI_FORCE_ALL_LABEL}')"
+                )
+            else:
+                for job in workflow.jobs:
+                    if _is_praktika_job(job.name):
                         continue
+                    for hook in workflow.workflow_filter_hooks:
+                        should_skip, reason = hook(job.name)
+                        if should_skip:
+                            print(
+                                f"Job [{job.name}] set to skipped by custom hook [{hook.__name__}], reason [{reason}]"
+                            )
+                            workflow_config.set_job_as_filtered(job.name, reason)
+                            continue
             status = Result.Status.OK
             workflow_config.dump()
             info = ""
@@ -518,6 +606,13 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         print("Filter not affected jobs")
 
         def check_affected_jobs():
+            pr_labels = Info().pr_labels
+            if Settings.CI_FORCE_ALL_LABEL in pr_labels:
+                print(
+                    f"NOTE: Job filtering by changed files is bypassed (label '{Settings.CI_FORCE_ALL_LABEL}')"
+                )
+                return
+
             changed_files = Info().get_changed_files()
             if changed_files is None:
                 print(
@@ -530,59 +625,9 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             if all_affected_dockers:
                 print(f"Affected docker images [{all_affected_dockers}]")
 
-            affected_artifacts = []
-            unaffected_jobs_with_artifacts = {}
-            all_required_artifacts = set()
-
-            # Build set of all job names for quick lookup
-            job_names = {j.name for j in workflow.jobs}
-
-            for job in workflow.jobs:
-                # Skip native Praktika jobs
-                if _is_praktika_job(job.name):
-                    continue
-
-                is_affected = False
-
-                if any(dep in affected_artifacts for dep in job.requires):
-                    print(f"Job [{job.name}] requires affected artifacts")
-                    is_affected = True
-                elif job.get_docker_image_name() in all_affected_dockers:
-                    print(
-                        f"Job [{job.name}] runs in affected Docker image [{job.run_in_docker}]"
-                    )
-                    is_affected = True
-                elif job.is_affected_by(changed_files):
-                    print(f"Job [{job.name}] is directly affected by changed files")
-                    is_affected = True
-
-                if is_affected:
-                    affected_artifacts.extend(job.provides)
-                    # Propagate the job name so that downstream jobs
-                    # requiring this job by name are marked as affected
-                    affected_artifacts.append(job.name)
-                    # All items in requires are hard dependencies
-                    for req in job.requires:
-                        all_required_artifacts.add(req)
-                else:
-                    print(f"Job [{job.name}] is not affected by the change")
-                    unaffected_jobs_with_artifacts[job.name] = job.provides
-
-            print(f"All required artifacts [{all_required_artifacts}]")
-            print(f"Affected artifacts [{affected_artifacts}]")
-            for job_name, artifacts in unaffected_jobs_with_artifacts.items():
-                if (
-                    any(a in all_required_artifacts for a in artifacts)
-                    or job_name in all_required_artifacts
-                ):
-                    print(
-                        f"NOTE: Job [{job_name}] is required by affected jobs - cannot be skipped"
-                    )
-                else:
-                    workflow_config.set_job_as_filtered(
-                        job_name,
-                        "Not affected by the changed files and not required",
-                    )
+            _filter_unaffected_jobs(
+                workflow.jobs, workflow_config, changed_files, all_affected_dockers
+            )
 
             workflow_config.dump()
 
@@ -598,7 +643,9 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         stop_watch = Utils.Stopwatch()
         info = ""
         try:
-            workflow_config = CacheRunnerHooks.configure(workflow)
+            pr_labels = Info().pr_labels
+            skip_lookup = Settings.CI_FORCE_ALL_LABEL in pr_labels
+            workflow_config = CacheRunnerHooks.configure(workflow, skip_lookup=skip_lookup)
             files.append(RunConfig.file_name_static(workflow.name))
             res = True
         except Exception as e:
@@ -863,13 +910,14 @@ def _finish_workflow(workflow, job_name):
                 result.status = Result.Status.ERROR
                 # dump workflow result after update - to have an updated result in post
                 workflow_result.dump()
-                # add error into env - should appear in the report on the main page
-                env.add_info(f"{result.name}: {ResultInfo.NOT_FINALIZED}")
-                # add error info to job info as well
-                result.set_info(ResultInfo.NOT_FINALIZED)
+                # Attribute the error to the failed job (not Finish Workflow)
+                # so it appears under the correct source on the workflow report page.
+                env.add_workflow_error(
+                    ResultInfo.NOT_FINALIZED, source=result.name
+                )
                 update_final_report = True
         job = workflow.get_job(result.name)
-        if not job or not job.allow_merge_on_failure:
+        if not job or not job.allow_failure:
             print(
                 f"NOTE: Result for [{result.name}] has not ok status [{result.status}]"
             )
@@ -906,7 +954,7 @@ def _finish_workflow(workflow, job_name):
             url="",
         ):
             print(f"ERROR: failed to set ReadyForMerge status")
-            env.add_info(ResultInfo.GH_STATUS_ERROR)
+            env.add_workflow_error(ResultInfo.GH_STATUS_ERROR)
 
     if update_final_report:
         _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
