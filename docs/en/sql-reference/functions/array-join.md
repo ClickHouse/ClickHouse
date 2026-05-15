@@ -6,8 +6,6 @@ title: 'arrayJoin function'
 doc_type: 'reference'
 ---
 
-# arrayJoin function
-
 This is a very unusual function.
 
 Normal functions do not change a set of rows, but just change the values in each row (map).
