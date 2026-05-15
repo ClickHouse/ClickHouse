@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -38,13 +39,38 @@ namespace
             quota.setName(query.names.front());
 
         if (query.key_type)
+        {
             quota.key_type = *query.key_type;
+            /// Drop any stale prefix bits when the new key type cannot use them.
+            /// Otherwise switching `KEYED BY ip_address IPV4_PREFIX_BITS 24` to
+            /// `KEYED BY client_key` and back to `KEYED BY ip_address` would silently
+            /// resurrect the old `24` prefix.
+            if (*query.key_type != QuotaKeyType::IP_ADDRESS
+                && *query.key_type != QuotaKeyType::FORWARDED_IP_ADDRESS)
+            {
+                quota.ipv4_prefix_bits.reset();
+                quota.ipv6_prefix_bits.reset();
+            }
+        }
 
         if (query.ipv4_prefix_bits)
             quota.ipv4_prefix_bits = query.ipv4_prefix_bits;
 
         if (query.ipv6_prefix_bits)
             quota.ipv6_prefix_bits = query.ipv6_prefix_bits;
+
+        /// Reject setting prefix bits on a quota whose effective key type isn't IP-based.
+        /// The parser already catches this when the same query specifies `KEYED BY`,
+        /// but `ALTER QUOTA q IPV4_PREFIX_BITS 16` without `KEYED BY` reaches here with
+        /// the existing key type, which the parser can't see.
+        if ((quota.ipv4_prefix_bits || quota.ipv6_prefix_bits)
+            && quota.key_type != QuotaKeyType::IP_ADDRESS
+            && quota.key_type != QuotaKeyType::FORWARDED_IP_ADDRESS)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "IP prefix bits can only be specified for quotas KEYED BY ip_address or forwarded_ip_address");
+        }
 
         auto & quota_all_limits = quota.all_limits;
         for (const auto & query_limits : query.all_limits)

@@ -37,9 +37,10 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool th
     {
         using Family = Poco::Net::IPAddress::Family;
         const auto fam = addr.family();
+        /// A /0 prefix is also valid: it puts every IP into a single shared bucket.
         if (fam == Family::IPv4)
         {
-            if (quota->ipv4_prefix_bits && *quota->ipv4_prefix_bits > 0)
+            if (quota->ipv4_prefix_bits)
             {
                 Poco::Net::IPAddress mask(static_cast<unsigned>(*quota->ipv4_prefix_bits), Family::IPv4);
                 Poco::Net::IPAddress masked = addr & mask;
@@ -48,7 +49,7 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool th
         }
         else
         {
-            if (quota->ipv6_prefix_bits && *quota->ipv6_prefix_bits > 0)
+            if (quota->ipv6_prefix_bits)
             {
                 Poco::Net::IPAddress mask(static_cast<unsigned>(*quota->ipv6_prefix_bits), Family::IPv6);
                 Poco::Net::IPAddress masked = addr & mask;

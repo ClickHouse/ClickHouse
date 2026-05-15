@@ -121,3 +121,10 @@ q5_01297	32	128
 -- ip prefix bits with intervals
 CREATE QUOTA q1_01297 KEYED BY ip_address IPV4_PREFIX_BITS 24 IPV6_PREFIX_BITS 64 FOR INTERVAL 1 hour MAX queries = 100
 -- ip prefix bits invalid
+-- alter prefix bits on non-ip-keyed quota is rejected
+-- prefix bits cleared when key type changes away from ip
+CREATE QUOTA q1_01297 KEYED BY ip_address IPV4_PREFIX_BITS 24 IPV6_PREFIX_BITS 64
+CREATE QUOTA q1_01297 KEYED BY client_key
+q1_01297	\N	\N
+CREATE QUOTA q1_01297 KEYED BY ip_address
+q1_01297	\N	\N

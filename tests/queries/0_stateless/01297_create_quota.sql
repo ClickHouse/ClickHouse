@@ -285,3 +285,20 @@ CREATE QUOTA q1_01297 KEYED BY ip_address ipv4_prefix_bits 33; -- { clientError 
 CREATE QUOTA q2_01297 KEYED BY ip_address ipv6_prefix_bits 129; -- { clientError SYNTAX_ERROR }
 CREATE QUOTA q3_01297 KEYED BY user_name ipv4_prefix_bits 24; -- { clientError SYNTAX_ERROR }
 CREATE QUOTA q4_01297 NOT KEYED ipv6_prefix_bits 64; -- { clientError SYNTAX_ERROR }
+
+SELECT '-- alter prefix bits on non-ip-keyed quota is rejected';
+CREATE QUOTA q1_01297 KEYED BY user_name;
+ALTER QUOTA q1_01297 ipv4_prefix_bits 24; -- { serverError BAD_ARGUMENTS }
+ALTER QUOTA q1_01297 ipv6_prefix_bits 64; -- { serverError BAD_ARGUMENTS }
+DROP QUOTA IF EXISTS q1_01297;
+
+SELECT '-- prefix bits cleared when key type changes away from ip';
+CREATE QUOTA q1_01297 KEYED BY ip_address ipv4_prefix_bits 24 ipv6_prefix_bits 64;
+SHOW CREATE QUOTA q1_01297;
+ALTER QUOTA q1_01297 KEYED BY client_key;
+SHOW CREATE QUOTA q1_01297;
+SELECT name, ipv4_prefix_bits, ipv6_prefix_bits FROM system.quotas WHERE name = 'q1_01297';
+ALTER QUOTA q1_01297 KEYED BY ip_address;
+SHOW CREATE QUOTA q1_01297;
+SELECT name, ipv4_prefix_bits, ipv6_prefix_bits FROM system.quotas WHERE name = 'q1_01297';
+DROP QUOTA IF EXISTS q1_01297;
