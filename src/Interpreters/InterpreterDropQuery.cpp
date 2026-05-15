@@ -372,6 +372,14 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
 BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind)
 {
+    /// The guard in `executeToTableImpl` only catches the explicit
+    /// `DETACH TEMPORARY TABLE` form (`query.isTemporary()` is true). When a user
+    /// writes `DETACH TABLE tmp` without the `TEMPORARY` keyword and `tmp`
+    /// resolves to a temporary table via `Context::ResolveExternal`, we end up
+    /// here and must reject the operation the same way. See issue #103475.
+    if (kind == ASTDropQuery::Kind::Detach)
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "DETACH of TEMPORARY tables are not supported");
+
     auto context_handle = getContext()->hasSessionContext() ? getContext()->getSessionContext() : getContext();
     auto resolved_id = context_handle->tryResolveStorageID(StorageID("", table_name), Context::ResolveExternal);
     if (resolved_id)
@@ -388,10 +396,6 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
         else if (kind == ASTDropQuery::Kind::Drop)
         {
             context_handle->removeExternalTable(table_name);
-        }
-        else if (kind == ASTDropQuery::Kind::Detach)
-        {
-            table->is_detached = true;
         }
     }
 
