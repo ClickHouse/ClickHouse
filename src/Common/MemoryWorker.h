@@ -41,7 +41,7 @@ struct MemoryWorkerConfig
     bool correct_tracker = false;
     uint64_t decay_adjustment_period_ms = 0;
     bool use_cgroup = true;
-    double rss_speculative_reserve_ratio = 1.0;
+    double rss_speculative_reserve_ratio = 0.0;
 };
 
 /// Correct MemoryTracker based on external information (e.g. Cgroups or stats.resident from jemalloc)
@@ -90,7 +90,7 @@ private:
     double purge_dirty_pages_threshold_ratio;
     uint64_t page_size = 0;
     std::chrono::milliseconds decay_adjustment_period_ms{0};
-    double rss_speculative_reserve_ratio = 1.0;
+    double rss_speculative_reserve_ratio = 0.0;
 
     MemoryUsageSource source{MemoryUsageSource::None};
 
