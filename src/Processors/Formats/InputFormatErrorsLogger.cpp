@@ -47,12 +47,10 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context) : m
 
     if (context->getApplicationType() == Context::ApplicationType::SERVER)
     {
-        /// `WriteBufferFromFile` requires a local-filesystem destination, but the
-        /// resolved `errors_file_path` is validated against the full
-        /// `user_files_paths` list. With a mixed policy (some disks local, some
-        /// remote), an absolute `input_format_record_errors_file_path` under a
-        /// remote disk's root would pass the boundary check yet then fail in
-        /// local I/O. Reject up front if any configured disk is remote.
+        /// `WriteBufferFromFile` requires a local-filesystem destination, but
+        /// `user_files_policy` may resolve `user_files_path` to a non-local disk
+        /// root (e.g. `s3_plain`) whose `getPath()` is a virtual marker. Reject
+        /// up front instead of failing later with an opaque I/O error.
         if (auto user_files_volume = context->getUserFilesVolume())
         {
             for (const auto & disk : user_files_volume->getDisks())
@@ -64,10 +62,9 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context) : m
                                     disk->getName());
             }
         }
-        const auto user_files_paths = context->getUserFilesPaths();
-        /// Resolve against the first user_files_path
-        errors_file_path = fs::path(user_files_paths.front()) / path_in_setting;
-        if (!fileOrSymlinkPathStartsWith(errors_file_path, user_files_paths))
+        const auto user_files_path = context->getUserFilesPath();
+        errors_file_path = fs::path(user_files_path) / path_in_setting;
+        if (!fileOrSymlinkPathStartsWith(errors_file_path, user_files_path))
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                             "Cannot log errors in path `{}`, because it is not inside user files path",
                             errors_file_path);

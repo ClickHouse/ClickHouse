@@ -123,42 +123,40 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
         if (file_name.starts_with('/'))
             file_name = file_name.substr(1);
 
-        const auto user_files_paths = server.context()->getUserFilesPaths();
         /// `file_name` comes from the handler config, but `weakly_canonical(... / file_name)`
         /// silently follows `..` segments and can resolve to paths outside `user_files`.
         /// Without an explicit boundary check, `file://../etc/passwd` would expose arbitrary
-        /// server-side files. Resolve under each `user_files_path` and require containment
+        /// server-side files. Resolve under `user_files_path` and require containment
         /// before accepting the candidate.
         ///
-        /// `user_files_paths` may include disk roots from `user_files_policy`, including
-        /// non-local disks (e.g. `s3_plain`) whose `getPath()` is a virtual marker, not a
-        /// real local directory. `fs::canonical` would throw on those. Skip any root that
-        /// cannot be canonicalized rather than failing the whole handler — `file://` is a
-        /// local filesystem feature and is satisfied by any local root that contains the
+        /// `user_files_path` may be a disk root from `user_files_policy`, including a
+        /// non-local disk (e.g. `s3_plain`) whose `getPath()` is a virtual marker, not a
+        /// real local directory. `fs::canonical` would throw in that case — treat the
+        /// failure as "no candidate available" so the handler reports an access error
+        /// instead of leaking the underlying I/O exception. `file://` is a local
+        /// filesystem feature and is satisfied only by a local root that contains the
         /// resolved candidate.
         String file_path;
-        bool any_contained_candidate = false;
-        for (const auto & ufp : user_files_paths)
+        bool contained_candidate = false;
         {
             std::error_code ec;
-            const auto root = fs::canonical(fs::path(ufp), ec);
-            if (ec)
-                continue;
-            fs::path candidate = fs::weakly_canonical(root / file_name);
-            if (!pathStartsWith(candidate.string(), root.string()))
-                continue;
-            any_contained_candidate = true;
-            if (fs::exists(candidate))
+            const auto root = fs::canonical(fs::path(server.context()->getUserFilesPath()), ec);
+            if (!ec)
             {
-                file_path = candidate.string();
-                break;
+                fs::path candidate = fs::weakly_canonical(root / file_name);
+                if (pathStartsWith(candidate.string(), root.string()))
+                {
+                    contained_candidate = true;
+                    if (fs::exists(candidate))
+                        file_path = candidate.string();
+                }
             }
         }
         if (file_path.empty())
         {
-            if (!any_contained_candidate)
+            if (!contained_candidate)
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                    "File `{}` for static HTTPHandler is not inside any user files path", file_name);
+                    "File `{}` for static HTTPHandler is not inside user files path", file_name);
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME,
                 "Invalid file name {} for static HTTPHandler. ", file_name);
         }

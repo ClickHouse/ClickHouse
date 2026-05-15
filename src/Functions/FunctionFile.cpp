@@ -259,12 +259,9 @@ public:
         }
         else
         {
-        Strings user_files_paths = context->getUserFilesPaths();
         /// Do not use fs::canonical or fs::weakly_canonical.
         /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-        std::vector<std::string> user_files_absolute_paths;
-        for (const auto & ufp : user_files_paths)
-            user_files_absolute_paths.push_back(fs::absolute(fs::path(ufp)).lexically_normal().string());
+        const String user_files_absolute_path = fs::absolute(fs::path(context->getUserFilesPath())).lexically_normal().string();
 
         // If run in Local mode, no need for path checking.
         bool need_check = context->getApplicationType() != Context::ApplicationType::LOCAL;
@@ -275,23 +272,7 @@ public:
             fs::path file_path(filename.data(), filename.data() + filename.size());
 
             if (file_path.is_relative())
-            {
-                /// For relative paths, try each user_files_path and use the first one where the file exists.
-                /// If not found on any, fall back to the first path.
-                bool found = false;
-                for (const auto & ufp : user_files_absolute_paths)
-                {
-                    fs::path candidate = fs::absolute(fs::path(ufp) / file_path).lexically_normal();
-                    if (fs::exists(candidate))
-                    {
-                        file_path = candidate;
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found)
-                    file_path = fs::absolute(fs::path(user_files_absolute_paths.front()) / file_path).lexically_normal();
-            }
+                file_path = fs::absolute(fs::path(user_files_absolute_path) / file_path).lexically_normal();
 
             /// Do not use fs::canonical or fs::weakly_canonical.
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
@@ -299,7 +280,7 @@ public:
 
             try
             {
-                if (need_check && !pathStartsWith(file_path.string(), user_files_absolute_paths))
+                if (need_check && !pathStartsWith(file_path.string(), user_files_absolute_path))
                     throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside user files path");
 
                 ReadBufferFromFile in(file_path);

@@ -213,7 +213,7 @@ StorageFileLog::StorageFileLog(
         }
     }
 
-    if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPaths()))
+    if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
     {
         if (LoadingStrictnessLevel::SECONDARY_CREATE <= mode)
         {

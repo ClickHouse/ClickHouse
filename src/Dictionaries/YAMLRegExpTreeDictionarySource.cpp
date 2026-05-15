@@ -308,9 +308,7 @@ YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(
         }
     }
 
-    const auto user_files_paths = context->getUserFilesPaths();
-
-    if (created_from_ddl && !fileOrSymlinkPathStartsWith(filepath_, user_files_paths))
+    if (created_from_ddl && !fileOrSymlinkPathStartsWith(filepath_, context->getUserFilesPath()))
     {
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File {} is not inside user files path", filepath_);
     }

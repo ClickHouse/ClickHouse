@@ -67,10 +67,6 @@ bool pathStartsWith(const String & path, const String & prefix_path);
 /// (Path is made absolute and normalized.)
 bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path);
 
-/// Returns true if path starts with any of the prefix paths.
-bool pathStartsWith(const String & path, const std::vector<String> & prefix_paths);
-bool fileOrSymlinkPathStartsWith(const String & path, const std::vector<String> & prefix_paths);
-
 size_t getSizeFromFileDescriptor(int fd, const String & file_name = "");
 
 std::optional<size_t> tryGetSizeFromFilePath(const String & path);

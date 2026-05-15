@@ -58,8 +58,7 @@ FileDictionarySource::FileDictionarySource(
         }
     }
 
-    const auto user_files_paths = context->getUserFilesPaths();
-    if (created_from_ddl && !fileOrSymlinkPathStartsWith(filepath, user_files_paths))
+    if (created_from_ddl && !fileOrSymlinkPathStartsWith(filepath, context->getUserFilesPath()))
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside user files path", filepath);
 }
 

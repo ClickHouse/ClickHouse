@@ -515,7 +515,7 @@ std::string getTablePath(const std::string & table_dir_path, const std::string &
 /// Both db_dir_paths and table_path must be converted to absolute paths (in particular, path cannot contain '..').
 void checkCreationIsAllowed(
     ContextPtr context_global,
-    const Strings & db_dir_paths,
+    const String & db_dir_path,
     const std::string & table_path,
     bool can_be_directory)
 {
@@ -523,7 +523,7 @@ void checkCreationIsAllowed(
         return;
 
     /// "/dev/null" is allowed for perf testing
-    if (!fileOrSymlinkPathStartsWith(table_path, db_dir_paths) && table_path != "/dev/null")
+    if (!fileOrSymlinkPathStartsWith(table_path, db_dir_path) && table_path != "/dev/null")
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File `{}` is not inside user files path", table_path);
 
     if (can_be_directory)
@@ -563,124 +563,54 @@ std::pair<String, String> splitToArchivePathAndPathInArchive(const String & sour
     return {String{path_to_archive_view}, String{filename_view}};
 }
 
-/// Finds files matching a specified pattern with globs, searching across all user_files_paths.
-Strings getPathsList(const String & path_with_globs, const Strings & user_files_paths, const ContextPtr & context, size_t & total_bytes_to_read)
+/// Finds files matching a specified pattern with globs under `user_files_path`.
+Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read)
 {
     Strings all_paths;
     bool can_be_directory = true;
 
     fs::path fs_pattern(path_with_globs);
+    const String user_files_absolute_path = fs::weakly_canonical(user_files_path);
 
-    /// For absolute paths, resolve once.
-    /// For relative paths, try each user_files_path to find matching files.
-    Strings base_paths_to_try;
-    if (fs_pattern.is_relative())
+    fs::path resolved_pattern = fs_pattern.is_relative()
+        ? (fs::path(user_files_absolute_path) / fs_pattern)
+        : fs_pattern;
+
+    /// Do not use fs::canonical or fs::weakly_canonical.
+    /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
+    String pattern = fs::absolute(resolved_pattern).lexically_normal();
+
+    if (pattern.contains(PartitionedSink::PARTITION_ID_WILDCARD))
     {
-        for (const auto & ufp : user_files_paths)
-            base_paths_to_try.push_back(fs::weakly_canonical(ufp));
+        all_paths.push_back(pattern);
     }
-    else
+    else if (pattern.find_first_of("*?{") == std::string::npos)
     {
-        base_paths_to_try.push_back(fs::weakly_canonical(user_files_paths.front()));
-    }
-
-    bool is_glob = path_with_globs.find_first_of("*?{") != std::string::npos;
-
-    /// For non-glob relative paths, find the file on the first disk that has it,
-    /// or fall back to the first disk path (for write operations or error reporting).
-    if (fs_pattern.is_relative() && !is_glob)
-    {
-        bool found = false;
-        for (const auto & user_files_absolute_path : base_paths_to_try)
+        if (!fs::exists(pattern) || !fs::is_directory(pattern))
         {
-            fs::path resolved = fs::absolute(fs::path(user_files_absolute_path) / fs_pattern).lexically_normal();
-            String pattern = resolved.string();
+            std::error_code error;
+            size_t size = fs::file_size(pattern, error);
+            if (!error)
+                total_bytes_to_read += size;
 
-            if (pattern.contains(PartitionedSink::PARTITION_ID_WILDCARD))
-            {
-                all_paths.push_back(pattern);
-                found = true;
-                break;
-            }
-
-            if (fs::exists(resolved))
-            {
-                if (!fs::is_directory(resolved))
-                {
-                    std::error_code error;
-                    size_t size = fs::file_size(resolved, error);
-                    if (!error)
-                        total_bytes_to_read += size;
-                    all_paths.push_back(pattern);
-                }
-                else
-                {
-                    auto listed = listFilesWithRegexpMatching(resolved / fs::path("*"), total_bytes_to_read);
-                    all_paths.insert(all_paths.end(), listed.begin(), listed.end());
-                    can_be_directory = false;
-                }
-                found = true;
-                break;
-            }
-        }
-
-        /// File not found on any disk - use the first disk path (for write operations or to produce a proper error)
-        if (!found)
-        {
-            String pattern = fs::absolute(fs::path(base_paths_to_try.front()) / fs_pattern).lexically_normal();
             all_paths.push_back(pattern);
         }
+        else
+        {
+            auto listed = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read);
+            all_paths.insert(all_paths.end(), listed.begin(), listed.end());
+            can_be_directory = false;
+        }
     }
     else
     {
-        /// For globs or absolute paths, iterate over all base paths
-        for (const auto & user_files_absolute_path : base_paths_to_try)
-        {
-            fs::path resolved_pattern = fs_pattern.is_relative()
-                ? (fs::path(user_files_absolute_path) / fs_pattern)
-                : fs_pattern;
-
-            /// Do not use fs::canonical or fs::weakly_canonical.
-            /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-            String pattern = fs::absolute(resolved_pattern).lexically_normal();
-
-            if (pattern.contains(PartitionedSink::PARTITION_ID_WILDCARD))
-            {
-                all_paths.push_back(pattern);
-            }
-            else if (pattern.find_first_of("*?{") == std::string::npos)
-            {
-                if (!fs::is_directory(pattern))
-                {
-                    std::error_code error;
-                    size_t size = fs::file_size(pattern, error);
-                    if (!error)
-                        total_bytes_to_read += size;
-
-                    all_paths.push_back(pattern);
-                }
-                else
-                {
-                    auto listed = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read);
-                    all_paths.insert(all_paths.end(), listed.begin(), listed.end());
-                    can_be_directory = false;
-                }
-            }
-            else
-            {
-                auto listed = listFilesWithRegexpMatching(pattern, total_bytes_to_read);
-                all_paths.insert(all_paths.end(), listed.begin(), listed.end());
-                can_be_directory = false;
-            }
-
-            /// For absolute paths, only try once
-            if (!fs_pattern.is_relative())
-                break;
-        }
+        auto listed = listFilesWithRegexpMatching(pattern, total_bytes_to_read);
+        all_paths.insert(all_paths.end(), listed.begin(), listed.end());
+        can_be_directory = false;
     }
 
     for (const auto & path : all_paths)
-        checkCreationIsAllowed(context, user_files_paths, path, can_be_directory);
+        checkCreationIsAllowed(context, user_files_path, path, can_be_directory);
 
     return all_paths;
 }
@@ -824,7 +754,7 @@ Strings getPathsListOnDisk(
 StorageFile::ArchiveInfo getArchiveInfo(
     const std::string & path_to_archive,
     const std::string & file_in_archive,
-    const Strings & user_files_paths,
+    const String & user_files_path,
     const ContextPtr & context,
     size_t & total_bytes_to_read
 )
@@ -846,7 +776,7 @@ StorageFile::ArchiveInfo getArchiveInfo(
         };
     }
 
-    archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_paths, context, total_bytes_to_read);
+    archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_path, context, total_bytes_to_read);
 
     return archive_info;
 }
@@ -1509,12 +1439,12 @@ StorageFile::FileSource StorageFile::FileSource::parse(const String & source, co
     }
     else
     {
-        Strings user_files_paths = context->getUserFilesPaths();
+        const String user_files_path = context->getUserFilesPath();
 
         if (!path_to_archive.empty())
-            res.archive_info = getArchiveInfo(path_to_archive, filename, user_files_paths, context, res.total_bytes_to_read);
+            res.archive_info = getArchiveInfo(path_to_archive, filename, user_files_path, context, res.total_bytes_to_read);
         else
-            res.paths = getPathsList(filename, user_files_paths, context, res.total_bytes_to_read);
+            res.paths = getPathsList(filename, user_files_path, context, res.total_bytes_to_read);
     }
 
     res.with_globs = res.paths.size() > 1;
@@ -1947,7 +1877,7 @@ void StorageFileSource::beforeDestroy()
                 file_path = file_path.lexically_normal();
 
                 // Checking access rights
-                checkCreationIsAllowed(getContext(), getContext()->getUserFilesPaths(), file_path, true);
+                checkCreationIsAllowed(getContext(), getContext()->getUserFilesPath(), file_path, true);
 
                 // Checking an existing of new file
                 if (fs::exists(file_path))
@@ -2800,7 +2730,7 @@ public:
         fs::create_directories(fs::path(filepath).parent_path());
 
         validatePartitionKey(filepath, true);
-        checkCreationIsAllowed(context, context->getUserFilesPaths(), filepath, /*can_be_directory=*/ true);
+        checkCreationIsAllowed(context, context->getUserFilesPath(), filepath, /*can_be_directory=*/ true);
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
             table_name_for_log,

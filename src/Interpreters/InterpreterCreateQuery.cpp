@@ -1661,31 +1661,16 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             }
         }
 
-        const auto user_files_paths = getContext()->getUserFilesPaths();
+        const auto user_files_path = getContext()->getUserFilesPath();
         fs::path root_path = fs::path(getContext()->getPath()).lexically_normal();
 
         if (getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         {
             fs::path data_path = fs::path(create.attach_from_path).lexically_normal();
             if (data_path.is_relative())
-            {
-                /// Try each user_files_path and use the first one where the path exists.
-                bool found = false;
-                for (const auto & ufp : user_files_paths)
-                {
-                    fs::path candidate = (fs::path(ufp).lexically_normal() / data_path).lexically_normal();
-                    if (fs::exists(candidate))
-                    {
-                        data_path = candidate;
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found)
-                    data_path = (fs::path(user_files_paths.front()).lexically_normal() / data_path).lexically_normal();
-            }
+                data_path = (fs::path(user_files_path).lexically_normal() / data_path).lexically_normal();
 
-            if (!pathStartsWith(data_path.string(), user_files_paths))
+            if (!pathStartsWith(data_path.string(), user_files_path))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside user files path to attach it", String(data_path));
 
@@ -1695,7 +1680,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         else
         {
             fs::path data_path = (root_path / create.attach_from_path).lexically_normal();
-            if (!pathStartsWith(data_path.string(), user_files_paths))
+            if (!pathStartsWith(data_path.string(), user_files_path))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside user files path to attach it", String(data_path));
         }

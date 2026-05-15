@@ -27,31 +27,14 @@ void processSQLiteError(const String & message, bool throw_on_error)
     LOG_ERROR(getLogger("SQLiteEngine"), fmt::runtime(message));
 }
 
-String validateSQLiteDatabasePath(const String & path, const Strings & user_files_paths, bool need_check, bool throw_on_error)
+String validateSQLiteDatabasePath(const String & path, const String & user_files_path, bool need_check, bool throw_on_error)
 {
     String absolute_path;
 
     if (fs::path(path).is_relative())
-    {
-        /// For relative paths, try each user_files_path and use the first one where the file exists.
-        bool found = false;
-        for (const auto & ufp : user_files_paths)
-        {
-            String candidate = fs::absolute(fs::path(ufp) / path).lexically_normal();
-            if (fs::exists(candidate))
-            {
-                absolute_path = candidate;
-                found = true;
-                break;
-            }
-        }
-        if (!found)
-            absolute_path = fs::absolute(fs::path(user_files_paths.front()) / path).lexically_normal();
-    }
+        absolute_path = fs::absolute(fs::path(user_files_path) / path).lexically_normal();
     else
-    {
         absolute_path = fs::absolute(path).lexically_normal();
-    }
 
     if (need_check)
     {
@@ -74,31 +57,14 @@ String validateSQLiteDatabasePath(const String & path, const Strings & user_file
             return "";
         }
 
-        bool inside = false;
-        for (const auto & ufp : user_files_paths)
-        {
-            const fs::path resolved_root = fs::weakly_canonical(fs::path(ufp), ec);
-            if (ec)
-                continue;
-            if (pathStartsWith(resolved, resolved_root))
-            {
-                inside = true;
-                break;
-            }
-        }
-
-        if (!inside)
+        const fs::path resolved_root = fs::weakly_canonical(fs::path(user_files_path), ec);
+        if (ec || !pathStartsWith(resolved, resolved_root))
         {
             processSQLiteError(fmt::format("SQLite database file path '{}' must be inside 'user_files' directory", path), throw_on_error);
             return "";
         }
     }
     return absolute_path;
-}
-
-String validateSQLiteDatabasePath(const String & path, const String & user_files_path, bool need_check, bool throw_on_error)
-{
-    return validateSQLiteDatabasePath(path, Strings{user_files_path}, need_check, throw_on_error);
 }
 
 SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_error)
@@ -128,8 +94,7 @@ SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_er
         }
     }
 
-    const auto user_files_paths = context->getUserFilesPaths();
-    auto database_path = validateSQLiteDatabasePath(path, user_files_paths, need_check, throw_on_error);
+    auto database_path = validateSQLiteDatabasePath(path, context->getUserFilesPath(), need_check, throw_on_error);
 
     /// For attach database there is no throw mode.
     if (database_path.empty())

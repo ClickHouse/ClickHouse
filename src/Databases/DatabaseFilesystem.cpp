@@ -45,9 +45,9 @@ DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path
     : IDatabase(name_), WithContext(context_->getGlobalContext()), path(path_), log(getLogger("DatabaseFileSystem(" + name_ + ")"))
 {
     bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
-    const auto user_files_paths = is_local ? Strings{""} : getContext()->getUserFilesPaths();
+    const String user_files_path = is_local ? "" : getContext()->getUserFilesPath();
 
-    /// When `user_files_policy` is configured with non-local disks (e.g. `s3_plain`),
+    /// When `user_files_policy` is configured with a non-local disk (e.g. `s3_plain`),
     /// `fs::exists` only checks the local filesystem and would reject valid paths
     /// that exist on the configured `IDisk`. Use disk-aware existence checks that
     /// fall back to `fs::exists` when no volume is configured.
@@ -60,28 +60,11 @@ DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path
     };
 
     if (fs::path(path).is_relative())
-    {
-        /// For relative paths, try each user_files_path and use the first one where the path exists.
-        bool found = false;
-        for (const auto & ufp : user_files_paths)
-        {
-            fs::path candidate = fs::absolute(fs::path(ufp) / path).lexically_normal();
-            if (path_exists(candidate))
-            {
-                path = candidate.string();
-                found = true;
-                break;
-            }
-        }
-        if (!found)
-            path = fs::absolute(fs::path(user_files_paths.front()) / path).lexically_normal().string();
-    }
+        path = fs::absolute(fs::path(user_files_path) / path).lexically_normal().string();
     else
-    {
         path = fs::absolute(path).lexically_normal();
-    }
 
-    if (!is_local && !pathStartsWith(path, user_files_paths))
+    if (!is_local && !pathStartsWith(path, user_files_path))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Path must be inside user-files path");
@@ -112,7 +95,7 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
 {
     /// If run in Local mode, no need for path checking.
     bool check_path = context_->getApplicationType() != Context::ApplicationType::LOCAL;
-    const auto user_files_paths = context_->getUserFilesPaths();
+    const auto user_files_path = context_->getUserFilesPath();
     auto user_files_volume = check_path ? context_->getUserFilesVolume() : VolumePtr{};
 
     /// When `user_files_policy` is configured with a non-local disk (e.g. `s3_plain`),
@@ -130,7 +113,7 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
             throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside user files path");
         }
     }
-    else if (check_path && !fileOrSymlinkPathStartsWith(table_path, user_files_paths))
+    else if (check_path && !fileOrSymlinkPathStartsWith(table_path, user_files_path))
     {
         /// Access denied is thrown regardless of 'throw_on_error'
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside user files path");

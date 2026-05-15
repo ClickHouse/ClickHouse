@@ -737,7 +737,6 @@ public:
     String getPath() const;
     String getFlagsPath() const;
     String getUserFilesPath() const;
-    Strings getUserFilesPaths() const;
     VolumePtr getUserFilesVolume() const;
     String getDictionariesLibPath() const;
     String getUserScriptsPath() const;

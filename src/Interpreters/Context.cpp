@@ -474,7 +474,6 @@ struct ContextSharedPart : boost::noncopyable
     String path TSA_GUARDED_BY(mutex);                       /// Path to the data directory, with a slash at the end.
     String flags_path TSA_GUARDED_BY(mutex);                 /// Path to the directory with some control flags for server maintenance.
     String user_files_path TSA_GUARDED_BY(mutex);            /// Path to the directory with user provided files, usable by 'file' table function.
-    Strings user_files_paths TSA_GUARDED_BY(mutex);          /// All allowed user_files root paths (from policy volume or empty if single path).
     VolumePtr user_files_volume TSA_GUARDED_BY(mutex);       /// Volume for user files (from policy, or nullptr).
     String dictionaries_lib_path TSA_GUARDED_BY(mutex);      /// Path to the directory with user provided binaries and libraries for external dictionaries.
     String user_scripts_path TSA_GUARDED_BY(mutex);          /// Path to the directory with user provided scripts.
@@ -1382,14 +1381,6 @@ String Context::getUserFilesPath() const
     return shared->user_files_path;
 }
 
-Strings Context::getUserFilesPaths() const
-{
-    SharedLockGuard lock(shared->mutex);
-    if (!shared->user_files_paths.empty())
-        return shared->user_files_paths;
-    return {shared->user_files_path};
-}
-
 VolumePtr Context::getUserFilesVolume() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -1846,7 +1837,6 @@ void Context::setUserFilesPolicy(const String & policy_name)
         disk->createDirectory("");
 
     std::lock_guard lock(shared->mutex);
-    shared->user_files_paths = {disk_path};
     shared->user_files_volume = volume;
     shared->user_files_path = disk_path;
 }

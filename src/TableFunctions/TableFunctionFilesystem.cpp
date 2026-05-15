@@ -168,16 +168,14 @@ StoragePtr TableFunctionFilesystem::executeImpl(const ASTPtr &, ContextPtr conte
     bool local_mode = context->getApplicationType() == Context::ApplicationType::LOCAL;
 
     /// `StorageFilesystem` performs all access via local filesystem APIs (`fs::directory_iterator`,
-    /// `fileOrSymlinkPathStartsWith`). With `user_files_policy` configured on multiple disks - or
-    /// any non-local disk such as `s3_plain` - a single local prefix cannot represent the full
-    /// authorized set, and remote disk roots are not usable through local APIs. Reject up front
-    /// rather than silently authorizing only the first disk.
+    /// `fileOrSymlinkPathStartsWith`). With `user_files_policy` configured on a non-local disk
+    /// such as `s3_plain`, the disk root is not usable through local APIs. Reject up front rather
+    /// than failing later with an opaque I/O error.
     if (!local_mode)
     {
         if (auto user_files_volume = context->getUserFilesVolume())
         {
-            const auto & disks = user_files_volume->getDisks();
-            for (const auto & disk : disks)
+            for (const auto & disk : user_files_volume->getDisks())
             {
                 if (disk->isRemote())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -185,12 +183,6 @@ StoragePtr TableFunctionFilesystem::executeImpl(const ASTPtr &, ContextPtr conte
                                     "`user_files_policy` disks (disk `{}` is remote)",
                                     disk->getName());
             }
-
-            if (disks.size() > 1)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "`filesystem` table function is not supported with multi-disk "
-                                "`user_files_policy` (the policy has {} disks)",
-                                disks.size());
         }
     }
 
