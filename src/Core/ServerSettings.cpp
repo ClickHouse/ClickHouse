@@ -1171,7 +1171,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     Whether background memory worker should correct internal memory tracker based on the information from external sources like jemalloc and cgroups
     )", 0) \
     DECLARE(Bool, memory_worker_use_cgroup, true, "Use current cgroup memory usage information to correct memory tracking.", 0) \
-    DECLARE(Double, memory_worker_rss_speculative_reserve_ratio, 0.0, R"(
+    DECLARE(Double, memory_worker_rss_speculative_reserve_ratio, 1.0, R"(
     On each `MemoryWorker` tick the difference between the observed RSS and the
     globally-tracked memory (`resident - tracked`) represents allocations that
     happened during the last tick but are not yet reflected in the tracker.
@@ -1180,9 +1180,9 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     the same amount. The reservation is applied to the `rss` counter that the
     global hard-limit check consults via `MemoryTracker::allocImpl`, so when the
     extrapolated value crosses `max_server_memory_usage`, subsequent allocations
-    throw `MEMORY_LIMIT_EXCEEDED` before the kernel OOM-killer fires. The default
-    value `0` disables speculation; setting it to `1` reserves one full delta of
-    headroom for the next interval.
+    throw `MEMORY_LIMIT_EXCEEDED` before the kernel OOM-killer fires. A value of
+    `0` disables speculation (falling back to `rss = resident`); the default `1`
+    reserves one full delta of headroom for the next interval.
     )", 0) \
     DECLARE(Bool, disable_insertion_and_mutation, false, R"(
     Disable insert/alter/delete queries. This setting will be enabled if someone needs read-only nodes to prevent insertion and mutation affect reading performance. Inserts into external engines (S3, DataLake, MySQL, PostrgeSQL, Kafka, etc) are allowed despite this setting.

@@ -71,6 +71,11 @@ function is_fast_build()
     return $(clickhouse local --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
 }
 
+function is_sanitizer_build()
+{
+    [ "$(clickhouse local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" -eq 1 ]
+}
+
 echo "Going to install test configs from $SRC_PATH into $DEST_SERVER_PATH"
 
 mkdir -p $DEST_SERVER_PATH/users.d/
@@ -176,6 +181,15 @@ ln -sf $SRC_PATH/config.d/zookeeper_enforce_component_name.yaml $DEST_SERVER_PAT
 
 if [ "$FAST_TEST" != "1" ]; then
     ln -sf $SRC_PATH/config.d/abort_on_logical_error.yaml $DEST_SERVER_PATH/config.d/
+fi
+
+# Sanitizer builds hold a large amount of memory in shadow / runtime regions
+# that is not visible to the global `MemoryTracker`. The default
+# `memory_worker_rss_speculative_reserve_ratio = 1.0` therefore biases the
+# tracker far past `max_server_memory_usage` and breaks ordinary tests, so
+# pin it to `0` (the previous behaviour, no speculation) for sanitizer runs.
+if is_sanitizer_build; then
+    ln -sf $SRC_PATH/config.d/memory_worker_rss_speculative_reserve_ratio.yaml $DEST_SERVER_PATH/config.d/
 fi
 
 # SSH protocol support (not supported with fasttest or OpenSSL FIPS).
