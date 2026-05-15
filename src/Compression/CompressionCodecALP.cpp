@@ -239,7 +239,7 @@ template <FLOAT T>
 class ALPCodecEncoder
 {
 public:
-    ALPCodecEncoder() = default;
+    ALPCodecEncoder() = default; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
 
     UInt32 encode(const char * source, const UInt32 source_size, char * dest)
     {
@@ -296,7 +296,10 @@ private:
     };
 
     std::vector<EncodingParams> param_candidates;
-    BlockState block{};
+    /// `BlockState` contains tens of KiB of buffers (`encoded_floats`, `bitpacked`, `exceptions`) that
+    /// are overwritten by `encodeBlockToState` before being read. Default-initialization here would
+    /// zero them on every chunk on the compression hot path; skip it deliberately.
+    BlockState block; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
 
     char * encodeBlock(const char * source, const UInt16 float_count, char * dest)
     {
