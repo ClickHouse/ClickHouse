@@ -341,6 +341,34 @@ def test_disallowed_value_is_clamped_not_thrown(started_cluster):
     assert result.strip() == "1"
 
 
+def test_disallowed_value_overlapping_clamp_target(started_cluster):
+    """When a clamp target (min/max) coincides with a disallowed entry, the
+    disallowed check must see the post-clamp value rather than the pre-clamp
+    one. Otherwise an out-of-range value gets clamped to a disallowed value
+    and is silently accepted.
+
+    The overlap_constraint_user has min=5000000000 and disallowed=5000000000
+    on max_memory_usage. A secondary query that sends max_memory_usage below
+    the min would clamp up to 5000000000 — which is disallowed — and must
+    therefore be dropped, not applied."""
+
+    result = instance.exec_in_container(
+        [
+            "clickhouse",
+            "client",
+            "--user=overlap_constraint_user",
+            "--query_kind=secondary_query",
+            "--max_memory_usage=4000000000",
+            "--query=SELECT getSetting('max_memory_usage')",
+        ]
+    )
+    # Default max_memory_usage in 0_stateless tests is non-zero; we only need to
+    # verify the clamp-to-disallowed value is NOT what we ended up with.
+    assert result.strip() != "5000000000", (
+        f"Clamped value 5000000000 is on the disallowed list and must not be applied, got: {result!r}"
+    )
+
+
 def test_create_table_query_setting_constraints(started_cluster):
     """Test that query-level settings passed in CREATE TABLE's engine SETTINGS clause
     are validated against setting constraints (not bypassing them)."""

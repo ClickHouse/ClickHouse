@@ -403,7 +403,12 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
         return false;
     }
 
-    if (!min_value.isNull() && less_or_cannot_compare(new_value, min_value))
+    /// Track the effective value through clamping so that the disallowed-values loop below
+    /// compares against the post-clamp value. Otherwise an overlap between a clamp target and
+    /// a disallowed entry (e.g. min == disallowed) would let the clamped value through.
+    Field effective_value = new_value;
+
+    if (!min_value.isNull() && less_or_cannot_compare(effective_value, min_value))
     {
         if (reaction == THROW_ON_VIOLATION)
         {
@@ -411,9 +416,10 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
                 setting_name, applyVisitor(FieldVisitorToString(), min_value));
         }
         change.value = min_value;
+        effective_value = min_value;
     }
 
-    if (!max_value.isNull() && less_or_cannot_compare(max_value, new_value))
+    if (!max_value.isNull() && less_or_cannot_compare(max_value, effective_value))
     {
         if (reaction == THROW_ON_VIOLATION)
         {
@@ -421,11 +427,12 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
                 setting_name, applyVisitor(FieldVisitorToString(), max_value));
         }
         change.value = max_value;
+        effective_value = max_value;
     }
 
     for (const auto & value : disallowed_values)
     {
-        bool equals = equals_or_cannot_compare(value, new_value);
+        bool equals = equals_or_cannot_compare(value, effective_value);
         if (equals)
         {
             if (reaction == THROW_ON_VIOLATION)

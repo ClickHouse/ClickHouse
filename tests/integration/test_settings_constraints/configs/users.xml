@@ -53,6 +53,17 @@
              user only via the granted role. -->
         <empty_profile>
         </empty_profile>
+
+        <!-- A clamp target (min) that also appears in disallowed_values. Used to verify that the
+             disallowed check sees the post-clamp value rather than the pre-clamp value. -->
+        <overlap_constraint_profile>
+            <constraints>
+                <max_memory_usage>
+                    <min>5000000000</min>
+                    <disallowed>5000000000</disallowed>
+                </max_memory_usage>
+            </constraints>
+        </overlap_constraint_profile>
     </profiles>
 
     <users>
@@ -88,6 +99,14 @@
             <profile>alias_constraint_profile</profile>
             <quota>default</quota>
         </alias_constraint_user>
+        <overlap_constraint_user>
+            <password></password>
+            <networks incl="networks" replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>overlap_constraint_profile</profile>
+            <quota>default</quota>
+        </overlap_constraint_user>
     </users>
 
     <quotas>
