@@ -15,7 +15,7 @@
 namespace ProfileEvents
 {
     extern const Event TextIndexLazyPackedBlocksDecoded;
-    extern const Event TextIndexLazySeekCount;
+    extern const Event TextIndexLazyAdvanceCount;
     extern const Event TextIndexLazySegmentsPrepared;
     extern const Event TextIndexLazyBruteForceIntersections;
     extern const Event TextIndexLazyLeapfrogIntersections;
@@ -85,9 +85,33 @@ UInt32 PostingListCursor::cardinality() const
     return info->cardinality;
 }
 
+PostingListCursor::~PostingListCursor()
+{
+    using namespace ProfileEvents;
+
+    if (counters.blocks_decoded)
+        increment(TextIndexLazyPackedBlocksDecoded, counters.blocks_decoded);
+    if (counters.advance_count)
+        increment(TextIndexLazyAdvanceCount, counters.advance_count);
+    if (counters.segments_prepared)
+        increment(TextIndexLazySegmentsPrepared, counters.segments_prepared);
+    if (counters.segments_skipped_dense)
+        increment(TextIndexLazySegmentsSkippedDense, counters.segments_skipped_dense);
+    if (counters.segments_skipped_covered)
+        increment(TextIndexLazySegmentsSkippedCovered, counters.segments_skipped_covered);
+    if (counters.blocks_skipped_covered)
+        increment(TextIndexLazyBlocksSkippedCovered, counters.blocks_skipped_covered);
+    if (counters.and_segments_skipped_dense)
+        increment(TextIndexLazyAndSegmentsSkippedDense, counters.and_segments_skipped_dense);
+    if (counters.and_segments_skipped_zero)
+        increment(TextIndexLazyAndSegmentsSkippedZero, counters.and_segments_skipped_zero);
+    if (counters.and_blocks_skipped_zero)
+        increment(TextIndexLazyAndBlocksSkippedZero, counters.and_blocks_skipped_zero);
+}
+
 void PostingListCursor::prepareSegment(size_t segment_idx)
 {
-    ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsPrepared);
+    ++counters.segments_prepared;
 
     current_segment_idx = segment_idx;
     has_prepared_first_segment = true;
@@ -171,7 +195,7 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
 
 void PostingListCursor::decodeBlock(size_t block_idx)
 {
-    ProfileEvents::increment(ProfileEvents::TextIndexLazyPackedBlocksDecoded);
+    ++counters.blocks_decoded;
 
     chassert(block_idx < block_count);
     current_block = block_idx;
@@ -229,7 +253,7 @@ void PostingListCursor::decodeBlock(size_t block_idx)
 
 void PostingListCursor::advance(uint32_t target)
 {
-    ProfileEvents::increment(ProfileEvents::TextIndexLazySeekCount);
+    ++counters.advance_count;
 
     if (!is_valid)
         return;
@@ -441,7 +465,7 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
                 size_t clip_end = std::min(range_end + 1, row_offset + num_rows);
                 if (clip_begin < clip_end)
                 {
-                    ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedDense);
+                    ++counters.segments_skipped_dense;
                     memset(data + (clip_begin - row_offset), 1, clip_end - clip_begin);
                     return;
                 }
@@ -485,7 +509,7 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
 
                 if (hasNoZeros(data + clip_off, clip_count))
                 {
-                    ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedCovered);
+                    ++counters.segments_skipped_covered;
                     continue;
                 }
             }
@@ -506,7 +530,7 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
 
                 if (clip_begin < clip_end)
                 {
-                    ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedDense);
+                    ++counters.segments_skipped_dense;
                     memset(data + (clip_begin - row_offset), 1, clip_end - clip_begin);
                     continue;
                 }
@@ -539,7 +563,7 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
 
                     if (hasNoZeros(data + blk_off, blk_cnt))
                     {
-                        ProfileEvents::increment(ProfileEvents::TextIndexLazyBlocksSkippedCovered);
+                        ++counters.blocks_skipped_covered;
                         continue;
                     }
                 }
@@ -575,7 +599,7 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
 
                 if (clip_begin < clip_end)
                 {
-                    ProfileEvents::increment(ProfileEvents::TextIndexLazyAndSegmentsSkippedDense);
+                    ++counters.and_segments_skipped_dense;
                     UInt8 * out = data + (clip_begin - row_offset);
                     size_t count = clip_end - clip_begin;
                     for (size_t i = 0; i < count; ++i)
@@ -618,7 +642,7 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
 
                 if (memoryIsZero(data + clip_off, 0, clip_count))
                 {
-                    ProfileEvents::increment(ProfileEvents::TextIndexLazyAndSegmentsSkippedZero);
+                    ++counters.and_segments_skipped_zero;
                     continue;
                 }
             }
@@ -639,7 +663,7 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
 
                 if (clip_begin < clip_end)
                 {
-                    ProfileEvents::increment(ProfileEvents::TextIndexLazyAndSegmentsSkippedDense);
+                    ++counters.and_segments_skipped_dense;
                     UInt8 * out = data + (clip_begin - row_offset);
                     size_t count = clip_end - clip_begin;
                     for (size_t j = 0; j < count; ++j)
@@ -674,7 +698,7 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
 
                     if (memoryIsZero(data + blk_off, 0, blk_cnt))
                     {
-                        ProfileEvents::increment(ProfileEvents::TextIndexLazyAndBlocksSkippedZero);
+                        ++counters.and_blocks_skipped_zero;
                         continue;
                     }
                 }

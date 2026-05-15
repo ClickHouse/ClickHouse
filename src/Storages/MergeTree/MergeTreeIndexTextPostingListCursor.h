@@ -51,6 +51,9 @@ public:
     /// The cursor owns a copy of `info_` and pre-decodes the postings into `embedded_values`.
     explicit PostingListCursor(const TokenPostingsInfo & info_);
 
+    /// Flushes batched ProfileEvents counters to the global counters.
+    ~PostingListCursor();
+
     /// Set bits in `data` for all doc_ids in [row_offset, row_offset + num_rows).
     void linearOr(UInt8 * data, size_t row_offset, size_t num_rows);
 
@@ -141,6 +144,23 @@ private:
     size_t current_segment_idx = 0;
     bool has_prepared_first_segment = false;
     bool is_valid = true;
+
+    /// ProfileEvents are batched into these local counters and flushed in the destructor
+    /// to avoid per-block / per-advance atomic ops on the hot path.
+    struct EventsCounters
+    {
+        size_t blocks_decoded = 0;
+        size_t advance_count = 0;
+        size_t segments_prepared = 0;
+        size_t segments_skipped_dense = 0;
+        size_t segments_skipped_covered = 0;
+        size_t blocks_skipped_covered = 0;
+        size_t and_segments_skipped_dense = 0;
+        size_t and_segments_skipped_zero = 0;
+        size_t and_blocks_skipped_zero = 0;
+    };
+
+    EventsCounters counters;
 };
 
 using PostingListCursorPtr = std::shared_ptr<PostingListCursor>;
