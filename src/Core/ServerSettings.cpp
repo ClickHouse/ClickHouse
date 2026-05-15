@@ -32,6 +32,14 @@
 #include <Common/DNSResolver.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/DOM/DOMParser.h>
+#include <Poco/DOM/Document.h>
+#include <Poco/DOM/Element.h>
+#include <Poco/DOM/Node.h>
+#include <Common/Config/ConfigProcessor.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 
 namespace CurrentMetrics
@@ -2085,6 +2093,29 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                         if (!ref.empty())
                             referenced_keys.insert(ref);
                     }
+                }
+            }
+        }
+    }
+
+    /// (c) Top-level keys originating from the `include_from` source file.
+    /// `ConfigProcessor` merges every `config.d/*` file into the main config, so when a user
+    /// keeps their substitution source under `config.d/`, its top-level tags (referenced
+    /// later by `<elem incl="name"/>`) leak into the merged config as unrecognized keys.
+    /// These are substitution sources, not real config sections, so exempt them.
+    if (config.has("include_from"))
+    {
+        String include_from_path = config.getString("include_from");
+        if (!include_from_path.empty() && fs::exists(include_from_path) && fs::is_regular_file(include_from_path))
+        {
+            Poco::XML::DOMParser dom_parser;
+            Poco::AutoPtr<Poco::XML::Document> include_from_doc = ConfigProcessor::parseConfig(include_from_path, dom_parser);
+            if (auto * root = include_from_doc->documentElement())
+            {
+                for (auto * child = root->firstChild(); child; child = child->nextSibling())
+                {
+                    if (child->nodeType() == Poco::XML::Node::ELEMENT_NODE)
+                        referenced_keys.insert(child->nodeName());
                 }
             }
         }

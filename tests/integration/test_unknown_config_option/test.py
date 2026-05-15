@@ -47,6 +47,19 @@ node_protocols_custom_handlers = cluster_protocols.add_instance(
     main_configs=["configs/config.d/protocols_custom_handlers.xml"],
 )
 
+# Positive case: when the `include_from` source file lives under `config.d/`,
+# `ConfigProcessor` merges its top-level tags into the main config. Those tags
+# are pure substitution sources (referenced via `<elem incl="name"/>`) and must
+# not be rejected by the unknown-key check.
+cluster_include_from_in_configd = ClickHouseCluster(__file__, name="include_from_in_configd")
+node_include_from_in_configd = cluster_include_from_in_configd.add_instance(
+    "node_include_from_in_configd",
+    main_configs=[
+        "configs/config.d/include_from_main.xml",
+        "configs/config.d/include_from_source.xml",
+    ],
+)
+
 # Reload regression: the unknown-key check also runs on `SYSTEM RELOAD CONFIG`,
 # not only at startup. Use a separate cluster that starts with a minimal
 # placeholder config (no `<http_handlers>`) so that the test can later inject
@@ -114,6 +127,13 @@ def start_protocols_cluster():
 
 
 @pytest.fixture(scope="module")
+def start_include_from_in_configd_cluster():
+    cluster_include_from_in_configd.start()
+    yield
+    cluster_include_from_in_configd.shutdown()
+
+
+@pytest.fixture(scope="module")
 def start_reload_cluster():
     cluster_reload.start()
     yield
@@ -159,6 +179,19 @@ def test_protocols_custom_handlers_accepted(start_protocols_cluster):
     # the node would have failed to start.
     assert (
         node_protocols_custom_handlers.query("SELECT 1").strip() == "1"
+    )
+
+
+def test_include_from_source_in_configd_accepted(
+    start_include_from_in_configd_cluster,
+):
+    # If the unknown-key validator rejected `my_incl_payload` (which is the
+    # top-level tag in the `include_from` source file placed under `config.d/`,
+    # and thus auto-merged into the main config by `ConfigProcessor`), the node
+    # would have failed to start. The fix is to parse the `include_from` source
+    # separately and treat its top-level tag names as referenced (i.e. exempt).
+    assert (
+        node_include_from_in_configd.query("SELECT 1").strip() == "1"
     )
 
 
