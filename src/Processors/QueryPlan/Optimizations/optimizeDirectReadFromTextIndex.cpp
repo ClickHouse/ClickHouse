@@ -564,8 +564,10 @@ private:
             new_children.push_back(&actions_dag.addColumn(std::move(arg)));
         }
 
-        if (needApplyPostprocessor(function_name) && postprocessor)
+        if (needApplyPostprocessor(function_name) && postprocessor && postprocessor->hasActions() && !tokenizer->isArrayTokenizer())
         {
+            /// The array tokenizer stores raw elements (index build skips postprocessor), so skip
+            /// postprocessing here too — mirrors MergeTreeIndexConditionText::traverseFunctionNode.
             if (needles_field.getType() == Field::Types::String)
             {
                 /// hasToken case: single token string. If the postprocessor drops the needle (stop-word
@@ -574,10 +576,8 @@ private:
                 auto tokens = postprocessor->processTokens({needles_field.safeGet<String>()});
                 needles_field = tokens.empty() ? String{} : tokens.front();
             }
-            else if (needles_field.getType() == Field::Types::Array && !typeid_cast<const ArrayTokenizer *>(tokenizer))
+            else if (needles_field.getType() == Field::Types::Array)
             {
-                /// Array needle: skip postprocessor for the array tokenizer (raw elements).
-                /// Mirrors MergeTreeIndexConditionText::traverseFunctionNode.
                 const auto & src_array = needles_field.safeGet<Array>();
                 std::vector<String> tokens;
                 for (const auto & element : src_array)
