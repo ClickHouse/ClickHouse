@@ -9,6 +9,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/PreparedSets.h>
@@ -383,8 +384,21 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     }
                     if (!column_type->equals(*common_type))
                     {
-                        /// we assume that is "cast(column) < const", will not estimate this condition.
-                        return false;
+                        /// The common type is wider than the column type (e.g. Float64 literal on a
+                        /// Float32 column). For floating-point columns, narrow the constant to the
+                        /// column type so that column statistics can be used. Every Float32 value is
+                        /// exactly representable as Float64, so the narrowing is semantically sound
+                        /// for equality and a safe approximation for range predicates.
+                        /// For other combinations (e.g. Int32 column with Float64 constant) the
+                        /// conversion semantics are non-trivial (ceiling vs. floor for range queries),
+                        /// so we skip statistics estimation.
+                        if (!isFloat(column_type))
+                            return false;
+
+                        Field converted = tryConvertFieldToType(const_value, *column_type, const_type.get(), {});
+                        if (converted.isNull())
+                            return false;
+                        const_value = converted;
                     }
                 }
             }
