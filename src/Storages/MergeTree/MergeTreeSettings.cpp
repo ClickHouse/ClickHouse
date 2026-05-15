@@ -1698,6 +1698,14 @@ namespace ErrorCodes
     Activate concurrent part removal (see 'max_part_removal_threads') only if
     the number of inactive data parts is at least this.
     )", 0) \
+    DECLARE(UInt64, concurrent_part_removal_threshold_for_remote_disk, 16, R"(
+    Same as `concurrent_part_removal_threshold`, but used when at least one
+    part being removed is stored on a remote disk. The default is lower
+    because each part removal on remote storage typically requires a network
+    round-trip (e.g. one HTTP `DELETE` per part on object storage), so a
+    serial removal of even 100 parts can stall a `DROP TABLE` for tens of
+    seconds.
+    )", 0) \
     DECLARE(UInt64, zero_copy_concurrent_part_removal_max_split_times, 5, R"(
     Max recursion depth for splitting independent Outdated parts ranges into
     smaller subranges. Recommended not to change.
