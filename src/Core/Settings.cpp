@@ -7636,18 +7636,18 @@ The `min_outstreams_per_resize_after_split` setting ensures that the splitting o
 To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
 )", 0) \
     DECLARE(UInt64, min_rows_per_stream_for_gradual_resize, 1000, R"(
-Total number of rows that must be pushed through the `GROUP BY` pre-aggregation resize stage before all aggregation streams are activated. When non-zero, the pipeline starts `GROUP BY` aggregation with a single active stream; once the cumulative row count crosses this threshold, all `max_threads` streams are activated at once. This avoids the merge overhead of many nearly-empty partial hash tables when the input data is small. When set to 0, all aggregation streams are used from the start.
+Total number of rows that must be pushed through the `GROUP BY` pre-aggregation resize stage before all aggregation streams are activated. When non-zero, the pipeline starts `GROUP BY` aggregation with one active stream (or one stream per split group, see below); once the cumulative row count crosses this threshold, all `max_threads` streams are activated at once. This avoids the merge overhead of many nearly-empty partial hash tables when the input data is small. When set to 0, all aggregation streams are used from the start.
 
 The activation is a single-threshold switch from one stream to all streams, not a per-stream gradual ramp: ramping streams up one at a time would skew the data distribution across downstream aggregator hash tables and increase merge cost for heavy aggregate states such as `uniq`, `uniqExact`, or `groupArray`.
 
-When the pre-aggregation resize is split into `G` groups (see `min_outstreams_per_resize_after_split`) to mitigate lock contention at high parallelism, this threshold is divided by `G` so the cumulative behavior across all groups matches the documented global semantics under balanced data distribution.
+When the pre-aggregation resize is split into `G` groups (see `min_outstreams_per_resize_after_split`) to mitigate lock contention at high parallelism, the stage starts with `G` initial active streams (one per split group) rather than one, and this threshold is divided by `G` so the cumulative behavior across all groups matches the documented global semantics under balanced data distribution.
 
 Only affects `GROUP BY` queries with non-empty grouping keys. Global aggregates such as `SELECT count() FROM ...` (without `GROUP BY` keys) are unaffected: serializing the upstream scan/filter work would lose parallel-scan throughput while still producing one partial state per stream.
 )", 0) \
     DECLARE(UInt64, min_bytes_per_stream_for_gradual_resize, 0, R"(
 Total number of bytes that must be pushed through the `GROUP BY` pre-aggregation resize stage before all aggregation streams are activated. When set to 0 (default), this threshold is not used. Works together with `min_rows_per_stream_for_gradual_resize` — either threshold being met will activate all aggregation streams at once.
 
-When the pre-aggregation resize is split into `G` groups (see `min_outstreams_per_resize_after_split`) to mitigate lock contention at high parallelism, this threshold is divided by `G` so the cumulative behavior across all groups matches the documented global semantics under balanced data distribution.
+When the pre-aggregation resize is split into `G` groups (see `min_outstreams_per_resize_after_split`) to mitigate lock contention at high parallelism, the stage starts with `G` initial active streams (one per split group) rather than one, and this threshold is divided by `G` so the cumulative behavior across all groups matches the documented global semantics under balanced data distribution.
 
 Only affects `GROUP BY` queries with non-empty grouping keys. Global aggregates such as `SELECT count() FROM ...` (without `GROUP BY` keys) are unaffected.
 )", 0) \

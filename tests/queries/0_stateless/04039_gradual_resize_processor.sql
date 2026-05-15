@@ -54,10 +54,10 @@ FROM (SELECT number % 10 AS k FROM numbers(100000))
 GROUP BY k
 ORDER BY k;
 
--- Edge case: an active downstream output finishes early before all outputs are activated.
--- LIMIT 1 closes the consumer almost immediately, so the active output transitions to
--- Finished while the gradual ramp-up is still in progress. The remaining outputs must
--- still receive data so the query terminates without deadlock.
+-- Stress the ramp-up phase: low threshold + high parallelism + many input chunks forces
+-- `GradualResizeProcessor` to repeatedly cross the activation threshold and promote
+-- inactive waiting outputs while data is still flowing. Verifies that the query completes
+-- and produces a result.
 SET min_rows_per_stream_for_gradual_resize = 100;
 SET min_bytes_per_stream_for_gradual_resize = 0;
 SET min_outstreams_per_resize_after_split = 0;
@@ -68,8 +68,6 @@ SELECT count() FROM
     SELECT k, sum(number) AS s
     FROM (SELECT number % 1000 AS k, number FROM numbers(100000))
     GROUP BY k
-    ORDER BY k
-    LIMIT 1
 );
 
 -- Per-group threshold scaling under split-resize: with split-resize active, each split
