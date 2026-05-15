@@ -4443,6 +4443,16 @@ Possible values:
    - 0 — Optimization disabled.
    - 1 — Optimization enabled.
 )", 0) \
+    DECLARE(Bool, optimize_trivial_group_by_limit_query, true, R"(
+Enables or disables the optimization of a trivial query `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` (with no aggregate functions in the projection, no `HAVING`/`ORDER BY`/`LIMIT BY`/window clauses, and no `GROUP BY` modifiers) by setting `max_rows_to_group_by = n + offset` with `group_by_overflow_mode = 'any'`. The aggregation stops once `n + offset` distinct keys are produced.
+
+The optimization is suppressed when the user has explicitly set `group_by_overflow_mode` to a non-`any` value (to preserve their explicit `throw`/`break` contract), and when the user has already set a tighter `max_rows_to_group_by` (the optimization would be a no-op).
+
+Possible values:
+
+   - 0 — Optimization disabled.
+   - 1 — Optimization enabled.
+)", 0) \
     DECLARE(Bool, optimize_count_from_files, true, R"(
 Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
 
@@ -4968,6 +4978,16 @@ Result
 │ QueryMemoryLimitExceeded │     0 │ Number of times when memory limit exceeded for query. │
 └──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
 ```
+)", 0) \
+    DECLARE(Bool, system_metric_log_show_zero_values_in_histograms, false, R"(
+Controls whether zero-valued histogram data is written to the `histograms` nested column of `system.metric_log`.
+
+By default, histograms whose total observation `count` is zero are skipped, and within each emitted histogram, bucket entries with no observations are also omitted from the `histogram` map. Enable this to write every histogram and every bucket regardless of count — useful for monitoring systems that require every metric to appear at every checkpoint.
+
+Possible values:
+
+- 0 — Disabled. Histograms with `count = 0` are not emitted; emitted histograms include only buckets that received at least one observation.
+- 1 — Enabled. All histograms are written, and every bucket boundary appears in `histogram`.
 )", 0) \
     DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32", R"(
 Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32` or `date2String`. All modern mappings (`decimal`, `datetime64`, `date2Date32`) are enabled by default.
@@ -5927,6 +5947,15 @@ Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enabl
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
 :::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
+    DECLARE(Bool, query_plan_top_k_through_join, true, R"(
+Toggles a query-plan-level optimization which pushes `ORDER BY ... LIMIT n` down through a join when the sort key only references columns from the side preserved by the join (LEFT/RIGHT). Restricts how many rows the preserved-side input must produce before joining.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
 Possible values:
 
@@ -8366,8 +8395,9 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     /// we should remove it from settings_changed_by_compatibility_setting,
     /// otherwise the next time we will change compatibility setting
     /// this setting will be changed too (and we don't want it).
-    else if (settings_changed_by_compatibility_setting.contains(name))
-        settings_changed_by_compatibility_setting.erase(name);
+    /// Resolve aliases so the lookup matches the canonical names stored in the set.
+    else if (auto final_name = SettingsTraits::resolveName(name); settings_changed_by_compatibility_setting.contains(final_name))
+        settings_changed_by_compatibility_setting.erase(final_name);
 
     BaseSettings::set(name, value);
 }
