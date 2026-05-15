@@ -101,7 +101,7 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
     }
 
     if (default_expr_info.expr_list)
-        validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, columns_desc.getAll(), context);
+        validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, columns_desc, context);
 
     constexpr bool escape_index_filenames = true; /// We don't care, we are only doing validation and discarding the result
     bool is_implicitly_created = false; /// Same

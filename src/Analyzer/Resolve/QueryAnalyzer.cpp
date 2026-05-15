@@ -3973,7 +3973,9 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
 
             if (column_default && column_default->kind == ColumnDefaultKind::Alias)
             {
-                auto alias_expression = buildQueryTree(column_default->expression, scope.context);
+                auto alias_expression_ast = column_default->expression->clone();
+                expandColumnMatchersInExpression(alias_expression_ast, columns_description, scope.context);
+                auto alias_expression = buildQueryTree(alias_expression_ast, scope.context);
                 auto column_node = std::make_shared<ColumnNode>(column_name_and_type, std::move(alias_expression), table_expression_node);
                 column_name_to_column_node.emplace(column_name_and_type.name, column_node);
                 alias_columns_to_resolve.emplace_back(column_name_and_type.name, column_node);

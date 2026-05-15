@@ -197,6 +197,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
         const auto & col_default = column_defaults.at(col_name);
         RequiredSourceColumnsVisitor::Data columns_context;
         auto expr_clone = col_default.expression->clone();
+        expandColumnMatchersInExpression(expr_clone, columns, context);
         RequiredSourceColumnsVisitor(columns_context).visit(expr_clone);
         NameSet required = columns_context.requiredColumns();
 

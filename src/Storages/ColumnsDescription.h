@@ -292,11 +292,14 @@ struct DefaultExpressionsInfo
 
 void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info);
 
+void expandColumnMatchersInExpression(ASTPtr & expression, const ColumnsDescription & columns, ContextPtr context);
+void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const ColumnsDescription & columns, ContextPtr context);
+
 /// Validate default expressions and corresponding types compatibility, i.e.
 /// default expression result can be cast to column_type. Also checks, that we
 /// don't have strange constructions in default expression like SELECT query or
 /// arrayJoin function.
-void validateColumnsDefaults(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context);
-Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context);
+void validateColumnsDefaults(ASTPtr default_expr_list, const ColumnsDescription & columns, ContextPtr context);
+Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const ColumnsDescription & columns, ContextPtr context);
 
 }

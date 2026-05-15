@@ -57,7 +57,8 @@ void addDefaultRequiredExpressionsRecursively(
     const ColumnsDescription & columns,
     ASTPtr default_expr_list_accum,
     NameSet & added_columns,
-    bool null_as_default)
+    bool null_as_default,
+    ContextPtr context)
 {
     checkStackSize();
 
@@ -76,6 +77,7 @@ void addDefaultRequiredExpressionsRecursively(
     {
         /// expressions must be cloned to prevent modification by the ExpressionAnalyzer
         auto column_default_expr = column_default->expression->clone();
+        expandColumnMatchersInExpression(column_default_expr, columns, context);
 
         /// Our default may depend on columns with default expr which not present in block
         /// we have to add them to block too
@@ -115,7 +117,8 @@ void addDefaultRequiredExpressionsRecursively(
             addDefaultRequiredExpressionsRecursively(block,
                 next_required_column_name, required_column_type,
                 columns, default_expr_list_accum, added_columns,
-                recursive_null_as_default);
+                recursive_null_as_default,
+                context);
         }
     }
     else if (columns.has(required_column_name))
@@ -138,13 +141,13 @@ void addDefaultRequiredExpressionsRecursively(
     }
 }
 
-ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList & required_columns, const ColumnsDescription & columns, bool null_as_default)
+ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList & required_columns, const ColumnsDescription & columns, bool null_as_default, ContextPtr context)
 {
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
 
     NameSet added_columns;
     for (const auto & column : required_columns)
-        addDefaultRequiredExpressionsRecursively(block, column.name, column.type, columns, default_expr_list, added_columns, null_as_default);
+        addDefaultRequiredExpressionsRecursively(block, column.name, column.type, columns, default_expr_list, added_columns, null_as_default, context);
 
     if (default_expr_list->children.empty())
         return nullptr;
@@ -307,7 +310,7 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
     if (!columns.hasDefaults() && (!null_as_default || !needConvertAnyNullToDefault(header, required_columns, columns)))
         return {};
 
-    ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
+    ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default, context);
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context);
 

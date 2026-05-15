@@ -585,6 +585,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     DefaultExpressionsInfo default_expr_info{make_intrusive<ASTExpressionList>()};
     NamesAndTypesList column_names_and_types;
+    ColumnsDescription columns_for_default_validation;
     bool make_columns_nullable = mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup
         && context_->getSettingsRef()[Setting::data_type_default_nullable];
 
@@ -601,6 +602,11 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, mode, make_columns_nullable));
 
+        ColumnDescription column_for_validation(col_decl.name, column_names_and_types.back().type);
+        if (col_decl.getDefaultExpression())
+            column_for_validation.default_desc.kind = toColumnDefaultKind(col_decl.default_specifier);
+        columns_for_default_validation.add(std::move(column_for_validation));
+
         /// add column to postprocessing if there is a default_expression specified
         getDefaultExpressionInfoInto(col_decl, column_names_and_types.back().type, default_expr_info);
     }
@@ -613,7 +619,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     if (!default_expr_info.expr_list->children.empty()
         && (default_expr_info.has_columns_with_default_without_type || (mode <= LoadingStrictnessLevel::CREATE)))
     {
-        defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, column_names_and_types, context_);
+        defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, columns_for_default_validation, context_);
     }
 
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
