@@ -9,6 +9,7 @@
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -115,12 +116,49 @@ public:
 
         AlignedBuffer place(agg_func.sizeOfData(), agg_func.alignOfData());
 
+        /// If the aggregate function returns its own state (i.e. it is wrapped in
+        /// `-State`, possibly through `-OrDefault`/`-OrNull`/`-If`/`-ForEach`/etc.),
+        /// `AggregateFunctionState::insertResultInto` (called from below or from a
+        /// wrapping combinator) pushes raw state pointers into a
+        /// `ColumnAggregateFunction`. The accumulator `place` lives on the stack,
+        /// so we cannot push pointers into it (use-after-free at result-column
+        /// destruction time) — and even if it survived, every row would alias the
+        /// *final* accumulator. To support this case we allocate a fresh per-row
+        /// state slot inside an `Arena`, deep-copy the running accumulator into
+        /// the slot, and call `insertResultInto` on the slot. The arena is
+        /// attached to every `ColumnAggregateFunction` reachable inside the
+        /// result column tree (e.g. through `ColumnArray` for the `-ForEach`
+        /// case) via `addArena`, so its lifetime extends until those columns
+        /// are destroyed.
+        const bool returns_state = agg_func.isState();
+
         /// Will pass empty arena if agg_func does not allocate memory in arena
-        std::unique_ptr<Arena> arena = agg_func.allocatesMemoryInArena() ? std::make_unique<Arena>() : nullptr;
+        /// and does not return a state. When it returns a state, we also keep
+        /// the arena around for the same lifetime reason — auxiliary allocations
+        /// inside merged states (e.g. arena-allocated strings) would otherwise
+        /// dangle.
+        ArenaPtr arena = (returns_state || agg_func.allocatesMemoryInArena()) ? std::make_shared<Arena>() : nullptr;
 
         auto result_column_ptr = agg_func.getResultType()->createColumn();
         IColumn & result_column = *result_column_ptr;
         result_column.reserve(column_with_states->size());
+
+        if (returns_state)
+        {
+            /// The result column for state-returning aggregates can be either
+            /// a `ColumnAggregateFunction` directly (plain `-State`) or contain
+            /// one inside (`-ForEach`/`-Array`/etc. wrap it in a `ColumnArray`,
+            /// other combinators may wrap further). Attach the arena to every
+            /// `ColumnAggregateFunction` we find so that all paths that own
+            /// pushed state pointers keep their backing storage alive.
+            auto attach_arena = [&arena](IColumn & col)
+            {
+                if (auto * agg_col = typeid_cast<ColumnAggregateFunction *>(&col))
+                    agg_col->addArena(arena);
+            };
+            attach_arena(result_column);
+            result_column.forEachMutableSubcolumnRecursively(attach_arena);
+        }
 
         const auto & states = column_with_states->getData();
 
@@ -146,7 +184,33 @@ public:
             }
 
             agg_func.merge(place.data(), state_to_add, arena.get());
-            agg_func.insertResultInto(place.data(), result_column, arena.get());
+
+            if (returns_state)
+            {
+                /// Snapshot the running accumulator into a fresh arena-backed
+                /// slot, then ask `agg_func` to materialise the result from it.
+                /// After a successful `insertResultInto` the result column tree
+                /// owns whatever was pushed (either `row_state` itself for plain
+                /// `-State`, or sub-elements of `row_state` for `-ForEach`), so
+                /// we do not destroy `row_state` on the success path.
+                AggregateDataPtr row_state = arena->alignedAlloc(
+                    agg_func.sizeOfData(), agg_func.alignOfData());
+                agg_func.create(row_state); /// This function can throw.
+                try
+                {
+                    agg_func.merge(row_state, place.data(), arena.get());
+                    agg_func.insertResultInto(row_state, result_column, arena.get());
+                }
+                catch (...)
+                {
+                    agg_func.destroy(row_state);
+                    throw;
+                }
+            }
+            else
+            {
+                agg_func.insertResultInto(place.data(), result_column, arena.get());
+            }
 
             ++row_number;
         }
