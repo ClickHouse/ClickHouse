@@ -31,6 +31,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isHigherOrderFunction() const override { return true; }
 
     /// Documentation-only — folds the parallel arrays into a single
     /// accumulator value. The lambda's first argument is the accumulator

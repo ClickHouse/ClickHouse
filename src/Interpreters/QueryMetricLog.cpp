@@ -2,6 +2,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/UniqueLock.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -19,11 +20,25 @@
 #include <Parsers/parseQuery.h>
 
 #include <chrono>
+#include <string_view>
 #include <fmt/chrono.h>
 
 
 namespace DB
 {
+
+namespace FailPoints
+{
+extern const char query_metric_log_pause_before_finish[];
+}
+
+namespace
+{
+
+constexpr std::string_view query_metric_log_final_row_failpoint_query_id_prefix
+    = "query_metric_log_final_row_failpoint_";
+
+}
 
 static auto logger = getLogger("QueryMetricLog");
 
@@ -164,6 +179,17 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint start_time, U
 
 void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time, QueryStatusInfoPtr query_info)
 {
+    /// Test-only failpoint placed before `queries_mutex` so a concurrent periodic
+    /// `collectMetric` can overtake `finishQuery` and advance `info.last_collect_time`
+    /// past `finish_time`. The gate on `query_info` and the dedicated query-id prefix
+    /// ensures unrelated traffic is unaffected even when the failpoint is enabled.
+    /// The `query_info` gate filters `nullptr` finish paths. If a non-null phantom
+    /// finish-call still reaches this failpoint, `it == queries.end()` after resume
+    /// makes this function return immediately.
+    if (query_info && FailPointInjection::hasAnyFailPointBeenRegistered()
+        && query_id.starts_with(query_metric_log_final_row_failpoint_query_id_prefix))
+        FailPointInjection::pauseFailPoint(FailPoints::query_metric_log_pause_before_finish);
+
     UniqueLock global_lock(queries_mutex);
     auto it = queries.find(query_id);
 
@@ -196,7 +222,7 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
 
     if (query_info)
     {
-        auto elem = query_status.createLogMetricElement(query_id, *query_info, finish_time, false);
+        auto elem = query_status.createLogMetricElement(query_id, *query_info, finish_time, /* is_final = */ true);
         if (elem)
             add(std::move(elem.value()));
     }
@@ -257,17 +283,30 @@ void QueryMetricLogStatus::scheduleNext(String query_id)
     }
 }
 
-std::optional<QueryMetricLogElement> QueryMetricLogStatus::createLogMetricElement(const String & query_id, const QueryStatusInfo & query_info, TimePoint query_info_time, bool schedule_next)
+std::optional<QueryMetricLogElement> QueryMetricLogStatus::createLogMetricElement(
+    const String & query_id,
+    const QueryStatusInfo & query_info,
+    TimePoint query_info_time,
+    bool is_final)
 {
     LOG_TEST(logger, "Collecting query_metric_log for query {} and interval {} ms with QueryStatusInfo from {}. Next collection time: {}",
         query_id, info.interval_milliseconds, timePointToString(query_info_time),
-        schedule_next ? timePointToString(info.next_collect_time + std::chrono::milliseconds(info.interval_milliseconds)) : "finished");
+        is_final ? "finished" : timePointToString(info.next_collect_time + std::chrono::milliseconds(info.interval_milliseconds)));
 
+    /// Final rows must always be emitted, even when a late periodic row has already
+    /// advanced `info.last_collect_time` past `finish_time`. Periodic rows keep the
+    /// existing strict-monotonic dedup so duplicate/stale samples remain skipped.
     if (query_info_time <= info.last_collect_time)
     {
-        LOG_TEST(logger, "Query {} has a more recent metrics collected at {}. This metrics are from {}. Skipping this one",
+        if (!is_final)
+        {
+            LOG_TEST(logger, "Query {} has a more recent metrics collected at {}. This metrics are from {}. Skipping this one",
+                query_id, timePointToString(info.last_collect_time), timePointToString(query_info_time));
+            return {};
+        }
+
+        LOG_TEST(logger, "Query {} has a more recent periodic metrics collected at {}. Final metrics are from {}. Emitting final metrics anyway",
             query_id, timePointToString(info.last_collect_time), timePointToString(query_info_time));
-        return {};
     }
 
     info.last_collect_time = query_info_time;
@@ -304,7 +343,7 @@ std::optional<QueryMetricLogElement> QueryMetricLogStatus::createLogMetricElemen
         elem.profile_events = std::vector<ProfileEvents::Count>(ProfileEvents::end());
     }
 
-    if (schedule_next)
+    if (!is_final)
         scheduleNext(query_id);
 
     return elem;
