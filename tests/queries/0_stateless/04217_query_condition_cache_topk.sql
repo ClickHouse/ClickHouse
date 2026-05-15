@@ -59,3 +59,47 @@ SELECT v2 FROM tab WHERE v2 = 10000 ORDER BY v2 ASC LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 
 DROP TABLE tab;
+
+SELECT '';
+SELECT '--- Focused assertions for NULLS direction and COLLATE locale ---';
+
+-- Variable-length sort column (`String`) goes through `tryOptimizeTopK`'s dynamic-filtering
+-- branch only when this opt-in is set; the `COLLATE` assertions below rely on it.
+SET use_top_k_dynamic_filtering_for_variable_length_types = 1;
+
+DROP TABLE IF EXISTS tab2;
+CREATE TABLE tab2 (id UInt32, n Nullable(UInt32), s String, v UInt32) ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 64,
+         min_bytes_for_wide_part = 0,
+         min_bytes_for_full_part_storage = 0,
+         add_minmax_index_for_numeric_columns = 0;
+
+-- Half the rows have NULL in `n`, so `NULLS FIRST/LAST` is observably different on the data.
+INSERT INTO tab2
+SELECT rand(), if(number % 2 = 0, number, NULL), toString(number), number
+FROM numbers(1_000_000);
+
+SYSTEM CLEAR QUERY CONDITION CACHE;
+SELECT count() FROM system.query_condition_cache;
+
+SELECT '--- Same NULLS direction re-runs reuse the same QCC entry';
+SELECT n FROM tab2 WHERE v = 10000 ORDER BY n ASC NULLS FIRST LIMIT 5 FORMAT Null;
+SELECT count() FROM system.query_condition_cache;
+SELECT n FROM tab2 WHERE v = 10000 ORDER BY n ASC NULLS FIRST LIMIT 5 FORMAT Null;
+SELECT count() FROM system.query_condition_cache;
+
+SELECT '--- Different NULLS direction writes a separate entry';
+SELECT n FROM tab2 WHERE v = 10000 ORDER BY n ASC NULLS LAST LIMIT 5 FORMAT Null;
+SELECT count() FROM system.query_condition_cache;
+
+SELECT '--- Same COLLATE locale re-runs reuse the same QCC entry';
+SELECT s FROM tab2 WHERE v = 10000 ORDER BY s ASC COLLATE 'en_US' LIMIT 5 FORMAT Null;
+SELECT count() FROM system.query_condition_cache;
+SELECT s FROM tab2 WHERE v = 10000 ORDER BY s ASC COLLATE 'en_US' LIMIT 5 FORMAT Null;
+SELECT count() FROM system.query_condition_cache;
+
+SELECT '--- Different COLLATE locale writes a separate entry';
+SELECT s FROM tab2 WHERE v = 10000 ORDER BY s ASC COLLATE 'fr' LIMIT 5 FORMAT Null;
+SELECT count() FROM system.query_condition_cache;
+
+DROP TABLE tab2;
