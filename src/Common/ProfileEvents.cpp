@@ -1349,11 +1349,11 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ExecutableUserDefinedFunctionInvocations, "Number of executable and executable pool user-defined function invocations.", ValueType::Number) \
     M(ExecutableUserDefinedFunctionElapsedMicroseconds, "Wall clock time spent executing executable and executable pool user-defined functions, in microseconds.", ValueType::Microseconds) \
-    M(ExecutableUserDefinedFunctionCPUUserMicroseconds, "User mode CPU time consumed by executable user-defined function child processes, in microseconds.", ValueType::Microseconds) \
-    M(ExecutableUserDefinedFunctionCPUSystemMicroseconds, "Kernel mode CPU time consumed by executable user-defined function child processes, in microseconds.", ValueType::Microseconds) \
-    M(ExecutableUserDefinedFunctionMemoryUsageByteSeconds, "Memory used by executable user-defined function child processes integrated over wall clock time, in byte-seconds.", ValueType::Bytes) \
-    M(ExecutableUserDefinedFunctionInputBytes, "Total bytes written to the stdin of executable user-defined function child processes.", ValueType::Bytes) \
-    M(ExecutableUserDefinedFunctionOutputBytes, "Total bytes read from the stdout of executable user-defined function child processes.", ValueType::Bytes) \
+    M(ExecutableUserDefinedFunctionCPUUserMicroseconds, "User mode CPU time consumed by executable and executable pool user-defined function child processes, in microseconds.", ValueType::Microseconds) \
+    M(ExecutableUserDefinedFunctionCPUSystemMicroseconds, "Kernel mode CPU time consumed by executable and executable pool user-defined function child processes, in microseconds.", ValueType::Microseconds) \
+    M(ExecutableUserDefinedFunctionMemoryUsageByteSeconds, "Memory used by executable and executable pool user-defined function child processes integrated over wall clock time, in byte-seconds.", ValueType::Bytes) \
+    M(ExecutableUserDefinedFunctionInputBytes, "Total bytes written to the stdin of executable and executable pool user-defined function child processes.", ValueType::Bytes) \
+    M(ExecutableUserDefinedFunctionOutputBytes, "Total bytes read from the stdout of executable and executable pool user-defined function child processes.", ValueType::Bytes) \
     \
     M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
     M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data", ValueType::Number) \
