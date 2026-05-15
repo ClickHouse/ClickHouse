@@ -3,11 +3,13 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Compression/CompressionFactory.h>
+#include <IO/NullWriteBuffer.h>
 
 namespace ProfileEvents
 {
@@ -37,7 +39,6 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const VirtualsDescriptionPtr & virtual_columns_,
     const MergeTreeIndices & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
@@ -46,7 +47,7 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     WrittenOffsetSubstreams * written_offset_substreams_)
     : IMergeTreeDataPartWriter(
         data_part_name_, serializations_, data_part_storage_, index_granularity_info_,
-        storage_settings_, columns_list_, metadata_snapshot_, virtual_columns_, settings_, std::move(index_granularity_))
+        storage_settings_, columns_list_, metadata_snapshot_, settings_, std::move(index_granularity_))
     , skip_indices(indices_to_recalc_)
     , marks_file_extension(marks_file_extension_)
     , default_codec(default_codec_)
@@ -348,10 +349,15 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
 void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
 {
     for (auto & stream : skip_indices_streams_holders)
-    {
         stream->finalize();
-        if (sync)
-            stream->sync();
+
+    if (sync)
+    {
+        std::vector<const MergeTreeWriterStream *> streams_to_sync;
+        streams_to_sync.reserve(skip_indices_streams_holders.size());
+        for (const auto & stream : skip_indices_streams_holders)
+            streams_to_sync.push_back(stream.get());
+        parallelSyncFiles(streams_to_sync);
     }
 
     if (!skip_indices.empty() && log->is(Poco::Message::PRIO_DEBUG))
@@ -416,23 +422,30 @@ Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
     return Names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
 }
 
-void MergeTreeDataPartWriterOnDisk::initOrAdjustDynamicStructureIfNeeded(Block & block)
+void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
 {
-    if (!is_dynamic_streams_initialized)
+    /// If block sample is empty, initialize it using current block (it will be the first block to write).
+    if (block_sample.empty())
     {
-        block_sample = block.cloneEmpty();
-
-        for (const auto & column : columns_list)
+        for (size_t i = 0; i != block.columns(); ++i)
         {
-            if (column.type->hasDynamicSubcolumns())
-            {
-                /// Create all streams for dynamic subcolumns using dynamic structure from block.
-                auto compression = getCodecDescOrDefault(column.name, default_codec);
-                addStreams(column, compression);
-            }
+            auto & column = block.getByPosition(i);
+            ColumnWithTypeAndName sample_column;
+            sample_column.name = column.name;
+            sample_column.type = column.type;
+            auto mutable_column = column.column->cloneEmpty();
+            /// Set of streams may depend on dynamic structure and statistics.
+            /// For example: ColumnObject, ColumnDynamic, ColumnMap (with adaptive number of buckets).
+            /// So we need to save them from the first block and set them later to all next blocks.
+            if (column.column->hasDynamicStructure())
+                mutable_column->takeExactDynamicStructureFrom(*column.column);
+            if (column.column->hasStatistics())
+                mutable_column->takeOrCalculateStatisticsFrom({column.column});
+            sample_column.column = std::move(mutable_column);
+            block_sample.insert(std::move(sample_column));
         }
-        is_dynamic_streams_initialized = true;
     }
+    /// Otherwise, adjust this block so all columns will be written in the same set of substreams as columns from sample block.
     else
     {
         size_t size = block.columns();
@@ -440,19 +453,86 @@ void MergeTreeDataPartWriterOnDisk::initOrAdjustDynamicStructureIfNeeded(Block &
         {
             auto & column = block.getByPosition(i);
             const auto & sample_column = block_sample.getByPosition(i);
+
             /// Check if the dynamic structure of this column is different from the sample column.
-            if (column.type->hasDynamicSubcolumns() && !column.column->dynamicStructureEquals(*sample_column.column))
+            if (column.column->hasDynamicStructure() && !column.column->dynamicStructureEquals(*sample_column.column))
             {
                 /// We need to change the dynamic structure of the column so it matches the sample column.
                 /// To do it, we create empty column of this type, take dynamic structure from sample column
                 /// and insert data into it. Resulting column will have required dynamic structure and the content
                 /// of the column in current block.
                 auto new_column = sample_column.type->createColumn();
-                new_column->takeDynamicStructureFromColumn(sample_column.column);
+                new_column->takeExactDynamicStructureFrom(*sample_column.column);
                 new_column->insertRangeFrom(*column.column, 0, column.column->size());
                 column.column = std::move(new_column);
             }
+
+            /// Take statistics from sample column.
+            if (column.column->hasStatistics())
+            {
+                auto mutable_column = IColumn::mutate(std::move(column.column));
+                mutable_column->takeOrCalculateStatisticsFrom({sample_column.column});
+                column.column = std::move(mutable_column);
+            }
         }
+    }
+}
+
+void MergeTreeDataPartWriterOnDisk::initStreamsIfNeeded()
+{
+    if (streams_initialized)
+        return;
+
+    /// Block sample is required. It's initialized in prepareBlockForWriting on first written block.
+    /// If block sample is empty, it means we didn't write any data, so we need to initialize it
+    /// with empty columns.
+    if (block_sample.empty())
+    {
+        for (const auto & [name, type] : columns_list)
+            block_sample.insert(ColumnWithTypeAndName{type->createColumn(), type, name});
+    }
+
+    for (const auto & column : columns_list)
+    {
+        auto compression = getCodecDescOrDefault(column.name, default_codec);
+        addStreams(column, compression);
+    }
+
+    streams_initialized = true;
+}
+
+void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
+{
+    if (columns_substreams.getTotalSubstreams() || (index_granularity_info.mark_type.part_type == MergeTreeDataPartType::Compact && !index_granularity_info.mark_type.with_substreams))
+        return;
+
+    /// Block sample is required. It's initialized in prepareBlockForWriting on first written block.
+    /// If block sample is empty, it means we didn't write any data, so we need to initialize it
+    /// with empty columns.
+    if (block_sample.empty())
+    {
+        for (const auto & [name, type] : columns_list)
+            block_sample.insert(ColumnWithTypeAndName{type->createColumn(), type, name});
+    }
+
+    NullWriteBuffer buf;
+    auto serialize_settings = getSerializationSettings();
+    for (const auto & name_and_type : columns_list)
+    {
+        columns_substreams.addColumn(name_and_type.name);
+        serialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings)));
+            return &buf;
+        };
+        serialize_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath &){ return MarkInCompressedFile(); };
+
+        ISerialization::SerializeBinaryBulkStatePtr state;
+        auto serialization = getSerialization(name_and_type.name);
+        const auto & column = block_sample.getByName(name_and_type.name);
+        serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
+        serialization->serializeBinaryBulkWithMultipleStreams(*column.column, column.column->size(), 0, serialize_settings, state);
+        serialization->serializeBinaryBulkStateSuffix(serialize_settings, state);
     }
 }
 

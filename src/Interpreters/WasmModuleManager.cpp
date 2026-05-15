@@ -202,6 +202,9 @@ void linkHostFunctions(WasmModule & module)
 {
     for (const auto & declaration : module.getImports())
     {
+        if (declaration.getModuleName() != "env")
+            continue;
+
         auto host_func = WebAssembly::getHostFunction(declaration.getName());
         checkFunctionDeclarationMatches(declaration, host_func.getFunctionDeclaration());
         module.linkFunction(std::move(host_func));
@@ -241,13 +244,37 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
     UniqueLock write_lock(modules_mutex);
 
     auto wasm_code = loadModuleImpl(module_name);
-    std::shared_ptr<WasmModule> module = engine->compileModule(wasm_code);
+    std::shared_ptr<WasmModule> module = engine->compileModule(module_name, wasm_code);
     UInt256 module_hash = calculateHash(wasm_code);
 
     modules[std::string(module_name)] = {module, module_hash};
     linkHostFunctions(*module);
 
     return {module, module_hash};
+}
+
+void WasmModuleManager::deleteModuleIfExists(std::function<bool(std::string_view)> name_match)
+{
+    UniqueLock lock(modules_mutex);
+
+    for (auto it = modules.begin(); it != modules.end();)
+    {
+        if (!name_match(it->first))
+        {
+            ++it;
+            continue;
+        }
+
+        if (!it->second.ptr.expired())
+            throw Exception(
+                ErrorCodes::CANNOT_DROP_FUNCTION,
+                "Cannot delete WebAssembly module '{}' while it is in use. "
+                "Drop all functions referring to it first",
+                it->first);
+
+        user_scripts_disk->removeFileIfExists(getFilePath(it->first));
+        it = modules.erase(it);
+    }
 }
 
 void WasmModuleManager::deleteModuleIfExists(std::string_view module_name)

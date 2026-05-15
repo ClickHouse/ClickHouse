@@ -1,3 +1,5 @@
+#include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include "config.h"
 
 #if USE_NURAFT
@@ -5,10 +7,12 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/KeeperOverDispatcher.h>
+#include <Common/ZooKeeper/KeeperSpans.h>
 
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 
@@ -24,23 +28,27 @@ KeeperOverDispatcher::KeeperOverDispatcher(
 {
     LOG_DEBUG(&Poco::Logger::get("KeeperOverDispatcher"), "Created KeeperOverDispatcher session {} with timeout {} ms", session_id, session_timeout_.totalMilliseconds());
 
-    /// Register session with a callback that dispatches responses based on XID
-    auto response_callback = [this](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr)
+    /// Register session with a callback that dispatches responses based on XID.
+    /// Capture callback_state by shared_ptr so the lambda remains valid even after
+    /// this KeeperOverDispatcher is destroyed (prevents use-after-free when
+    /// setResponse invokes the callback outside its mutex).
+    auto state = callback_state;
+    auto response_callback = [state](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr)
     {
         if (dynamic_cast<const ZooKeeperCloseResponse *>(response.get()))
         {
-            expired = true;
+            state->expired = true;
             return;
         }
 
         ResponseCallback callback;
         {
-            std::lock_guard lock(callbacks_mutex);
-            auto it = callbacks.find(response->xid);
-            if (it != callbacks.end())
+            std::lock_guard lock(state->callbacks_mutex);
+            auto it = state->callbacks.find(response->xid);
+            if (it != state->callbacks.end())
             {
                 callback = std::move(it->second);
-                callbacks.erase(it);
+                state->callbacks.erase(it);
             }
         }
 
@@ -58,7 +66,7 @@ KeeperOverDispatcher::~KeeperOverDispatcher()
 
 void KeeperOverDispatcher::finalize(const String & /* reason */)
 {
-    expired = true;
+    callback_state->expired = true;
 }
 
 void KeeperOverDispatcher::pushRequest(ZooKeeperRequestPtr request, ResponseCallback callback)
@@ -66,11 +74,12 @@ void KeeperOverDispatcher::pushRequest(ZooKeeperRequestPtr request, ResponseCall
     request->xid = next_xid++;
 
     {
-        std::lock_guard lock(callbacks_mutex);
-        callbacks[request->xid] = std::move(callback);
+        std::lock_guard lock(callback_state->callbacks_mutex);
+        callback_state->callbacks[request->xid] = std::move(callback);
     }
 
-    keeper_dispatcher->putRequest(request, session_id, false);
+    if (!keeper_dispatcher->putRequest(request, session_id, false))
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session was disconnected");
 }
 
 void KeeperOverDispatcher::create(
@@ -134,17 +143,11 @@ void KeeperOverDispatcher::exists(
 
     const auto request = std::make_shared<ZooKeeperExistsRequest>();
     request->path = path;
-    request->xid = next_xid++;
 
+    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
-        std::lock_guard lock(callbacks_mutex);
-        callbacks[request->xid] = [callback](const ZooKeeperResponsePtr & response)
-        {
-            callback(dynamic_cast<const ExistsResponse &>(*response));
-        };
-    }
-
-    keeper_dispatcher->putLocalReadRequest(request, session_id);
+        callback(dynamic_cast<const ExistsResponse &>(*response));
+    });
 }
 
 void KeeperOverDispatcher::get(
@@ -157,17 +160,36 @@ void KeeperOverDispatcher::get(
 
     const auto request = std::make_shared<ZooKeeperGetRequest>();
     request->path = path;
+
+    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
+    {
+        callback(dynamic_cast<const GetResponse &>(*response));
+    });
+}
+
+void KeeperOverDispatcher::listRecursive(
+    const String & path,
+    uint32_t get_children_recursive_nodes_limit,
+    ListRecursiveCallback callback)
+{
+
+    const auto request = std::make_shared<ZooKeeperListRecursiveRequest>();
+    request->path = path;
+    request->children_nodes_limit = get_children_recursive_nodes_limit;
     request->xid = next_xid++;
 
     {
-        std::lock_guard lock(callbacks_mutex);
-        callbacks[request->xid] = [callback](const ZooKeeperResponsePtr & response)
+        std::lock_guard lock(callback_state->callbacks_mutex);
+        callback_state->callbacks[request->xid] = [callback](const ZooKeeperResponsePtr & response)
         {
-            callback(dynamic_cast<const GetResponse &>(*response));
+            callback(dynamic_cast<const ListRecursiveResponse &>(*response));
         };
     }
 
-    keeper_dispatcher->putLocalReadRequest(request, session_id);
+    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
+    {
+        callback(dynamic_cast<const ListRecursiveResponse &>(*response));
+    });
 }
 
 void KeeperOverDispatcher::set(
@@ -203,17 +225,11 @@ void KeeperOverDispatcher::list(
     const auto request = std::make_shared<ZooKeeperFilteredListRequest>();
     request->path = path;
     request->list_request_type = list_request_type;
-    request->xid = next_xid++;
 
+    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
-        std::lock_guard lock(callbacks_mutex);
-        callbacks[request->xid] = [callback](const ZooKeeperResponsePtr & response)
-        {
-            callback(dynamic_cast<const ListResponse &>(*response));
-        };
-    }
-
-    keeper_dispatcher->putLocalReadRequest(request, session_id);
+        callback(dynamic_cast<const ListResponse &>(*response));
+    });
 }
 
 void KeeperOverDispatcher::check(
@@ -224,17 +240,11 @@ void KeeperOverDispatcher::check(
     const auto request = std::make_shared<ZooKeeperCheckRequest>();
     request->path = path;
     request->version = version;
-    request->xid = next_xid++;
 
+    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
-        std::lock_guard lock(callbacks_mutex);
-        callbacks[request->xid] = [callback](const ZooKeeperResponsePtr & response)
-        {
-            callback(dynamic_cast<const CheckResponse &>(*response));
-        };
-    }
-
-    keeper_dispatcher->putLocalReadRequest(request, session_id);
+        callback(dynamic_cast<const CheckResponse &>(*response));
+    });
 }
 
 void KeeperOverDispatcher::sync(
@@ -292,17 +302,11 @@ void KeeperOverDispatcher::getACL(const String & path, GetACLCallback callback)
 {
     const auto request = std::make_shared<ZooKeeperGetACLRequest>();
     request->path = path;
-    request->xid = next_xid++;
 
+    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
-        std::lock_guard lock(callbacks_mutex);
-        callbacks[request->xid] = [callback](const ZooKeeperResponsePtr & response)
-        {
-            callback(dynamic_cast<const GetACLResponse &>(*response));
-        };
-    }
-
-    keeper_dispatcher->putLocalReadRequest(request, session_id);
+        callback(dynamic_cast<const GetACLResponse &>(*response));
+    });
 }
 
 

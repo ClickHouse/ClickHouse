@@ -84,6 +84,19 @@ lcov --extract base_llvm_coverage.info "${patterns[@]}" \
   --quiet \
   -o baseline.changed.info
 
+current_sf_count=$(grep -c '^SF:' current.changed.info 2>/dev/null || true)
+baseline_sf_count=$(grep -c '^SF:' baseline.changed.info 2>/dev/null || true)
+
+if [ "$current_sf_count" -eq 0 ] && [ "$baseline_sf_count" -eq 0 ]; then
+  echo "No coverage data found for changed files (files may be new or not instrumented), skipping differential coverage report"
+  exit 0
+fi
+
+if [ "$current_sf_count" -eq 0 ]; then
+  echo "Current coverage is empty for changed files (tests may have been removed or disabled). Skipping genhtml — LBC analysis will run separately."
+  exit 0
+fi
+
 echo "Workspace path: $WORKSPACE_PATH"
 
 HEADER_TITLE="differential coverage report"

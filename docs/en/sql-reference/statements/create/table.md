@@ -42,26 +42,33 @@ If necessary, primary key can be specified, with one or more key expressions.
 
 Comments can be added for columns and for the table.
 
-### With a Schema Similar to Other Table {#with-a-schema-similar-to-other-table}
+### With Schema of Existing Table {#with-a-schema-similar-to-other-table}
+
+ClickHouse supports the ability to copy the schema and data of an existing table. 
+
+For replicating the schema of an existing table:
 
 ```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
 ```
 
-Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table.
+This creates a table with the same structure as another table. 
 
-### With a Schema and Data Cloned from Another Table {#with-a-schema-and-data-cloned-from-another-table}
+### With Schema and Data of Existing Table {#with-a-schema-and-data-cloned-from-another-table}
+
+For replicating the schema and data of an existing table:
+```sql
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = engine]
+```
+
+This creates a table with the same schema and data as an existing table.  After the new table is created, all partitions from `db.table` are attached to it. In other words, the data of `db.table` is cloned into `db2.table_clone` upon creation. This query is equivalent to the following:
 
 ```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name CLONE AS [db2.]name2 [ENGINE = engine]
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
+ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
 ```
 
-Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table. After the new table is created, all partitions from `db2.name2` are attached to it. In other words, the data of `db2.name2` is cloned into `db.table_name` upon creation. This query is equivalent to the following:
-
-```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine];
-ALTER TABLE [db.]table_name ATTACH PARTITION ALL FROM [db2].name2;
-```
+For both features, you can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the original table (`db.table`).
 
 ### From a Table Function {#from-a-table-function}
 
@@ -85,16 +92,12 @@ There can be other clauses after the `ENGINE` clause in the query. See detailed 
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
 SELECT x, toTypeName(x) FROM t1;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─x─┬─toTypeName(x)─┐
 │ 1 │ String        │
 └───┴───────────────┘
@@ -264,7 +267,7 @@ You can define a [primary key](../../../engines/table-engines/mergetree-family/m
 - Inside the column list
 
 ```sql
-CREATE TABLE db.table_name
+CREATE TABLE [db.]table_name
 (
     name1 type1, name2 type2, ...,
     PRIMARY KEY(expr1[, expr2,...])
@@ -275,7 +278,7 @@ ENGINE = engine;
 - Outside the column list
 
 ```sql
-CREATE TABLE db.table_name
+CREATE TABLE [db.]table_name
 (
     name1 type1, name2 type2, ...
 )
@@ -709,7 +712,7 @@ You can add a comment to the table when creating it.
 **Syntax**
 
 ```sql
-CREATE TABLE db.table_name
+CREATE TABLE [db.]table_name
 (
     name1 type1, name2 type2, ...
 )
@@ -731,16 +734,12 @@ This means the correct clause order is:
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE TABLE t1 (x String) ENGINE = Memory COMMENT 'The temporary table';
 SELECT name, comment FROM system.tables WHERE name = 't1';
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─name─┬─comment─────────────┐
 │ t1   │ The temporary table │
 └──────┴─────────────────────┘

@@ -52,7 +52,7 @@ private:
     bool measure_performance;
     bool compare_explain;
 
-    std::unordered_set<uint32_t> found_tables;
+    std::unordered_set<String> found_tables;
     DB::Strings nsettings;
 
     void iterateQuery(google::protobuf::Message & message, const std::vector<MatchHandler> & rules);
@@ -97,6 +97,15 @@ public:
     /// Both forms must return the same integer (different code paths: uniqExact vs DISTINCT + COUNT).
     void generateCountDistinctFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
     void generateCountDistinctSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
+
+    /// Row policy correctness oracle.
+    /// Picks an existing catalog row policy (with a stored USING predicate) on a suitable table.
+    /// Query 1 (sq1):  SELECT count() FROM db.t [FINAL] INTO OUTFILE ...
+    ///                  (FuzzLoop sends "EXECUTE AS buzzhouse_oracle_user" first → policy active)
+    /// Query 2 (sq2):  SELECT count() FROM db.t [FINAL] WHERE pred INTO OUTFILE ...
+    ///                  (run as admin after reconnect → explicit WHERE equivalent to policy filter)
+    /// Both counts must be equal.  No setup or teardown needed — the policy already exists.
+    void generateRowPolicyOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2);
 
     /// Dump and read table oracle
     void dumpTableContent(

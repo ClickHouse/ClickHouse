@@ -17,7 +17,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Common/assert_cast.h>
-#include <Interpreters/castColumn.h>
+
 #include <memory>
 
 namespace DB
@@ -26,7 +26,8 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -152,7 +153,9 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of {} with {} first argument must be a constant String", getName(), input_type->getName());
 
             auto subcolumn_name = subcolumn_name_col->getValue<String>();
-            return wrapInArrays(object->getSubcolumnType(subcolumn_name), count_arrays);
+            /// Use combined `@` subcolumn that merges literal value and sub-object.
+            auto combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + subcolumn_name + "`";
+            return wrapInArrays(object->getSubcolumnType(combined_name), count_arrays);
         }
 
         throw Exception(
@@ -315,7 +318,7 @@ private:
                 return {index - 1};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with index '{}'", index);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Tuple doesn't have element with index '{}'", index);
             return std::nullopt;
         }
 
@@ -332,7 +335,7 @@ private:
                 return {index + size};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with index '{}'", index);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Tuple doesn't have element with index '{}'", index);
             return std::nullopt;
         }
 
@@ -345,7 +348,7 @@ private:
 
             if (argument_size == 2)
                 throw Exception(
-                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name_col->getValue<String>());
+                    ErrorCodes::BAD_ARGUMENTS, "Tuple doesn't have element with name '{}'", name_col->getValue<String>());
             return std::nullopt;
         }
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant Int, UInt or String", getName());
@@ -362,7 +365,7 @@ private:
                 return {index - 1};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "QBit doesn't have an element with index '{}'", index);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "QBit doesn't have an element with index '{}'", index);
 
             return std::nullopt;
         }
@@ -379,42 +382,11 @@ private:
 
     ColumnPtr getObjectElement(const DataTypeObject & object_type, const ColumnPtr & object_column, const String & element_name) const
     {
-        /// tupleElement(json, path) is a bit different from `json.name` subcolumn.
-        /// We want to support a chain of tupleElement functions over json: tupleElement(tupleElement(json, path1), path2)
-        /// to be able to read nested paths in expressions, like '{"a" : {"b" : 42}}'::JSON.a.b.
-        /// So single tupleElement(json, path1) cannot just return subcolumn json.name, otherwise we will try to
-        /// call tupleElement(..., path2) on extracted JSON subcolumn containing literal with path1.
-        /// Instead, tupleElement(json, path1) returns a Dynamic column that is a combinarion of subcolumns json.path1 and json.^path1,
-        /// so for rows with a literal at requested path we will return a literal and for rows with nested object we will
-        /// return this nested object as JSON column, so nested tupleElement(..., path2) can be applied to it.
-        auto literal_subcolumn_type = object_type.getSubcolumnType(element_name);
-        auto literal_subcolumn = object_type.getSubcolumn(element_name, object_column);
-        /// The only exception is when requested path had type hint, in this case we consider that this path is present in all rows
-        /// and we should return it as a literal subcolumn with the hint type.
-        if (object_type.getTypedPaths().contains(element_name))
-            return literal_subcolumn;
-
-        auto sub_object_subcolumn_name = "^`" + element_name + "`";
-        auto sub_object_subcolumn_type = object_type.getSubcolumnType(sub_object_subcolumn_name);
-        auto sub_object_subcolumn = object_type.getSubcolumn(sub_object_subcolumn_name, object_column);
-
-        /// If there is no nested sub-object at this path, just return literal subcolumn.
-        if (sub_object_subcolumn->getNumberOfDefaultRows() == sub_object_subcolumn->size())
-            return literal_subcolumn;
-
-        auto casted_sub_object_subcolumn = castColumn({sub_object_subcolumn, sub_object_subcolumn_type, ""}, literal_subcolumn_type);
-        auto result = literal_subcolumn_type->createColumn();
-        for (size_t i = 0; i != object_column->size(); ++i)
-        {
-            if (!literal_subcolumn->isDefaultAt(i))
-                result->insertFrom(*literal_subcolumn, i);
-            else if (!sub_object_subcolumn->isDefaultAt(i))
-                result->insertFrom(*casted_sub_object_subcolumn, i);
-            else
-                result->insertDefault();
-        }
-
-        return result;
+        /// Use combined `@` subcolumn that merges literal value and sub-object.
+        /// For rows with a literal at requested path we return the literal, for rows with a nested object
+        /// we return the nested object as JSON column, so nested `tupleElement` calls can be applied to it.
+        auto combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + element_name + "`";
+        return object_type.getSubcolumn(combined_name, object_column);
     }
 };
 
