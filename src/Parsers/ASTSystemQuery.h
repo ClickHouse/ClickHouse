@@ -50,6 +50,7 @@ public:
         CLEAR_PAGE_CACHE,
         CLEAR_SCHEMA_CACHE,
         CLEAR_FORMAT_SCHEMA_CACHE,
+        CLEAR_AVRO_SCHEMA_CACHE,
         CLEAR_S3_CLIENT_CACHE,
         STOP_LISTEN,
         START_LISTEN,
@@ -117,6 +118,8 @@ public:
         START_PULLING_REPLICATION_LOG,
         STOP_CLEANUP,
         START_CLEANUP,
+        SCHEDULE_MERGE,
+        SYNC_MERGES,
         RESET_COVERAGE,
         SET_COVERAGE_TEST,
         REFRESH_VIEW,
@@ -127,6 +130,8 @@ public:
         STOP_VIEW,
         STOP_VIEWS,
         STOP_REPLICATED_VIEW,
+        PAUSE_VIEW,
+        PAUSE_VIEWS,
         CANCEL_VIEW,
         TEST_VIEW,
         LOAD_PRIMARY_KEY,
@@ -229,6 +234,8 @@ public:
     /// Unix time.
     std::optional<Int64> fake_time_for_view;
 
+    ASTPtr scheduled_merge_parts;
+
     String getID(char) const override { return "SYSTEM query"; }
 
     ASTPtr clone() const override
@@ -240,6 +247,7 @@ public:
         if (table) { res->table = table->clone(); res->children.push_back(res->table); }
         if (query_settings) { res->query_settings = query_settings->clone(); res->children.push_back(res->query_settings); }
         if (backup_source) { res->backup_source = backup_source->clone(); res->children.push_back(res->backup_source); }
+        if (scheduled_merge_parts) { res->scheduled_merge_parts = scheduled_merge_parts->clone(); res->children.push_back(res->scheduled_merge_parts); }
 
         return res;
     }

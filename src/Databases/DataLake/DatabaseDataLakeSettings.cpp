@@ -45,28 +45,14 @@ namespace ErrorCodes
     DECLARE(String, google_adc_credentials_file, "", "Deprecated setting, will throw an exception if used", 0) \
     DECLARE(String, dlf_access_key_id, "", "Access id of DLF token for Paimon REST Catalog", 0) \
     DECLARE(String, dlf_access_key_secret, "", "Access secret of DLF token for Paimon REST Catalog", 0) \
-    DECLARE(Bool, polaris_style_paths, true, "Enable Polaris/ADLS Gen2 path convention: the container name is prepended to the path in ABFSS locations (e.g. abfss://c@account/c/actual/path). When enabled, the redundant container prefix is stripped when building Azure HTTPS URLs. Disable if a real directory inside the container has the same name as the container itself.", 0) \
+    DECLARE(Bool, force_add_bucket, false, "Add bucket name to the metadata path", 0) \
 
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS(M, ALIAS) \
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS) \
     LIST_OF_DATA_LAKE_STORAGE_SETTINGS(M, ALIAS) \
 
-DECLARE_SETTINGS_TRAITS(DatabaseDataLakeSettingsTraits, LIST_OF_DATABASE_ICEBERG_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(DatabaseDataLakeSettingsTraits, LIST_OF_DATABASE_ICEBERG_SETTINGS)
-
-struct DatabaseDataLakeSettingsImpl : public BaseSettings<DatabaseDataLakeSettingsTraits>
-{
-};
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    DatabaseDataLakeSettings##TYPE NAME = &DatabaseDataLakeSettingsImpl ::NAME;
-
-namespace DatabaseDataLakeSetting
-{
-LIST_OF_DATABASE_ICEBERG_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(DatabaseDataLakeSettingsTraits, LIST_OF_DATABASE_ICEBERG_SETTINGS, LIST_OF_DATABASE_ICEBERG_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(DatabaseDataLakeSettingsTraits, LIST_OF_DATABASE_ICEBERG_SETTINGS, DatabaseDataLakeSettings, DatabaseDataLakeSetting)
 
 DatabaseDataLakeSettings::DatabaseDataLakeSettings() : impl(std::make_unique<DatabaseDataLakeSettingsImpl>())
 {
