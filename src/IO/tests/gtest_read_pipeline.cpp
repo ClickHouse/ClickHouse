@@ -102,7 +102,7 @@ try
     std::string data = "hello world";
 
     ReadPipeline pipeline;
-    pipeline.setSource(StoredObjects{testObject(data.size())}, memoryCreator(data), ReadSettings{});
+    pipeline.setSource(memoryCreator(data), StoredObjects{testObject(data.size())}, ReadSettings{});
 
     auto buf = pipeline.build();
     ASSERT_TRUE(buf != nullptr);
@@ -125,7 +125,7 @@ try
     std::string data = "hello world";
 
     ReadPipeline pipeline;
-    pipeline.setSource(StoredObjects{testObject(data.size())}, memoryCreator(data), ReadSettings{});
+    pipeline.setSource(memoryCreator(data), StoredObjects{testObject(data.size())}, ReadSettings{});
     pipeline.needGather();
     auto buf = pipeline.build();
     ASSERT_TRUE(buf != nullptr);
@@ -156,8 +156,8 @@ try
 
     ReadPipeline pipeline;
     pipeline.setSource(
-        StoredObjects{testObject("obj/a", data_a.size()), testObject("obj/b", data_b.size())},
         std::move(creator),
+        StoredObjects{testObject("obj/a", data_a.size()), testObject("obj/b", data_b.size())},
         ReadSettings{});
     pipeline.needGather();
     auto buf = pipeline.build();
@@ -185,8 +185,8 @@ try
 
     ReadPipeline pipeline;
     pipeline.setSource(
-        StoredObjects{testObject("obj/a", 3), testObject("obj/b", 3), testObject("obj/c", 3)},
         std::move(creator),
+        StoredObjects{testObject("obj/a", 3), testObject("obj/b", 3), testObject("obj/c", 3)},
         ReadSettings{});
     pipeline.needGather();
     auto buf = pipeline.build();
@@ -221,7 +221,7 @@ TEST(ReadPipeline, BuildWithEmptyObjectsThrows)
 try
 {
     ReadPipeline pipeline;
-    pipeline.setSource(StoredObjects{}, memoryCreator("data"), ReadSettings{});
+    pipeline.setSource(memoryCreator("data"), StoredObjects{}, ReadSettings{});
     EXPECT_THROW(pipeline.build(), Exception);
 }
 catch (...)
@@ -242,7 +242,7 @@ TEST(ReadPipeline, DescribeEmpty)
 TEST(ReadPipeline, DescribeSourceOnly)
 {
     ReadPipeline pipeline;
-    pipeline.setSource(StoredObjects{testObject()}, memoryCreator(""), ReadSettings{});
+    pipeline.setSource(memoryCreator(""), StoredObjects{testObject()}, ReadSettings{});
     EXPECT_EQ(pipeline.describe(), "Source(Custom)");
 }
 
@@ -250,7 +250,7 @@ TEST(ReadPipeline, DescribeSourceOnly)
 TEST(ReadPipeline, DescribeMultipleStages)
 {
     ReadPipeline pipeline;
-    pipeline.setSource(StoredObjects{testObject()}, memoryCreator(""), ReadSettings{});
+    pipeline.setSource(memoryCreator(""), StoredObjects{testObject()}, ReadSettings{});
     pipeline.needDiskCache(nullptr, FilesystemCacheSettings{});
     pipeline.needGather();
     EXPECT_EQ(pipeline.describe(), "Source(Custom) -> DiskCache -> Gather");
@@ -264,7 +264,7 @@ TEST(ReadPipeline, HasSource)
     ReadPipeline pipeline;
     EXPECT_FALSE(pipeline.hasSource());
 
-    pipeline.setSource(StoredObjects{testObject()}, memoryCreator(""), ReadSettings{});
+    pipeline.setSource(memoryCreator(""), StoredObjects{testObject()}, ReadSettings{});
     EXPECT_TRUE(pipeline.hasSource());
 }
 
@@ -274,7 +274,7 @@ try
 {
     ReadPipeline pipeline;
     auto obj = testObject(42);
-    pipeline.setSource(StoredObjects{obj}, memoryCreator(""), ReadSettings{});
+    pipeline.setSource(memoryCreator(""), StoredObjects{obj}, ReadSettings{});
 
     const auto & objects = pipeline.getStoredObjects();
     ASSERT_EQ(objects.size(), 1u);
@@ -307,7 +307,7 @@ try
     std::string data = "clone test data";
 
     ReadPipeline original;
-    original.setSource(StoredObjects{testObject(data.size())}, memoryCreator(data), ReadSettings{});
+    original.setSource(memoryCreator(data), StoredObjects{testObject(data.size())}, ReadSettings{});
 
     ReadPipeline cloned = original.clone();
 
@@ -329,10 +329,10 @@ TEST(ReadPipeline, CloneIsIndependent)
 try
 {
     ReadPipeline original;
-    original.setSource(StoredObjects{testObject()}, memoryCreator("original"), ReadSettings{});
+    original.setSource(memoryCreator("original"), StoredObjects{testObject()}, ReadSettings{});
 
     ReadPipeline cloned = original.clone();
-    cloned.setSource(StoredObjects{testObject()}, memoryCreator("cloned"), ReadSettings{});
+    cloned.setSource(memoryCreator("cloned"), StoredObjects{testObject()}, ReadSettings{});
 
     auto buf1 = original.build();
     String result1;

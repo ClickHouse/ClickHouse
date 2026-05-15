@@ -63,7 +63,7 @@ void ReadPipeline::setBackupSource(std::shared_ptr<IBackup> backup, String path,
         .read_settings = read_settings};
 }
 
-void ReadPipeline::setSource(StoredObjects objects, BufferCreator creator, const ReadSettings & read_settings)
+void ReadPipeline::setSource(BufferCreator creator, StoredObjects objects, const ReadSettings & read_settings)
 {
     source = SourceStage{
         .objects = std::move(objects),
@@ -78,7 +78,12 @@ void ReadPipeline::needGather()
 
 void ReadPipeline::needDiskCache(FileCachePtr cache, FilesystemCacheSettings cache_settings, std::shared_ptr<FilesystemCacheLog> cache_log)
 {
-    disk_caches.push_back(DiskCacheStage{.cache = std::move(cache), .cache_log = std::move(cache_log), .cache_settings = std::move(cache_settings), .custom_cache_key = std::nullopt, .custom_origin = std::nullopt});
+    disk_caches.push_back(DiskCacheStage{
+        .cache = std::move(cache),
+        .cache_log = std::move(cache_log),
+        .cache_settings = std::move(cache_settings),
+        .custom_cache_key = std::nullopt,
+        .custom_origin = std::nullopt});
 }
 
 void ReadPipeline::needDiskCache(
@@ -98,7 +103,12 @@ void ReadPipeline::needDiskCache(
 
 void ReadPipeline::needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix, PageCacheSettings page_cache_settings)
 {
-    memory_cache = MemoryCacheStage{.cache = std::move(cache), .cache_path_prefix = std::move(cache_path_prefix), .page_cache_settings = std::move(page_cache_settings), .custom_cache_path = {}, .custom_file_version = {}};
+    memory_cache = MemoryCacheStage{
+        .cache = std::move(cache),
+        .cache_path_prefix = std::move(cache_path_prefix),
+        .page_cache_settings = std::move(page_cache_settings),
+        .custom_cache_path = {},
+        .custom_file_version = {}};
 }
 
 void ReadPipeline::needMemoryCache(
@@ -133,7 +143,10 @@ void ReadPipeline::needAsyncPrefetch(
 
 void ReadPipeline::needDecryption(String path, size_t buffer_size, KeyFinderFunc key_finder)
 {
-    decryption_stages.push_back(DecryptionStage{.path = std::move(path), .buffer_size = buffer_size, .key_finder = std::move(key_finder)});
+    decryption_stages.push_back(DecryptionStage{
+        .path = std::move(path),
+        .buffer_size = buffer_size,
+        .key_finder = std::move(key_finder)});
 }
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
@@ -207,8 +220,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 auto origin = custom_origin.value_or(cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
                 /// Copy, not move: gather_creator may be called multiple times (once per object).
-                auto prev_copy = prev_creator;
-                auto impl_creator = [prev_copy, restricted_seek, object]() mutable
+                auto impl_creator = [prev_copy = prev_creator, restricted_seek, object]() mutable
                     -> std::unique_ptr<ReadBufferFromFileBase>
                 {
                     return prev_copy(restricted_seek, object);
