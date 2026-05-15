@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 -- New columns on system.functions: deterministic, higher_order.
 
 SELECT '-- columns exist with the expected types';
@@ -49,10 +51,10 @@ SELECT count() FROM system.functions
 WHERE is_aggregate = 1 AND deterministic IS NOT NULL;
 
 SELECT '-- SQL UDFs: metadata is NULL (parse syntax field for arity)';
-DROP FUNCTION IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
-CREATE FUNCTION {CLICKHOUSE_DATABASE:Identifier} AS (x, y) -> x + y;
-SELECT deterministic, higher_order
-FROM system.functions WHERE name = currentDatabase();
-DROP FUNCTION {CLICKHOUSE_DATABASE:Identifier};
+DROP FUNCTION IF EXISTS test_udf_04212;
+CREATE FUNCTION test_udf_04212 AS (x, y) -> x + y;
+SELECT name, deterministic, higher_order
+FROM system.functions WHERE name = 'test_udf_04212';
+DROP FUNCTION test_udf_04212;
 SELECT '-- after DROP the UDF is gone (count should be 0)';
-SELECT count() FROM system.functions WHERE name = currentDatabase();
+SELECT count() FROM system.functions WHERE name = 'test_udf_04212';
