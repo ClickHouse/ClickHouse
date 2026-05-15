@@ -16,7 +16,7 @@ echo -ne '1\n2\n3\n4\n5\n6\n7\n8\n' | \
     ${CLICKHOUSE_CURL} -sS "${url}&query=INSERT+INTO+t_ifmbs_override+FORMAT+CSV" --data-binary @-
 
 for _ in $(seq 1 60); do
-    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS "
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
     count=$($CLICKHOUSE_CLIENT -q "
         SELECT count() FROM system.query_log
         WHERE event_date >= yesterday()
