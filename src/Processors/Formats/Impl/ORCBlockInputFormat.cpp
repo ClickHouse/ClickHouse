@@ -11,7 +11,6 @@
 #    include <boost/algorithm/string/case_conv.hpp>
 #    include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #    include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
-#    include <Processors/Formats/Impl/ArrowFieldIndexUtil.h>
 #    include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
 #    include <Interpreters/Context.h>
 
