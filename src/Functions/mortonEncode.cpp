@@ -24,23 +24,29 @@ namespace ErrorCodes
     const ColumnPtr & col##INDEX = non_const_arguments[(INDEX) + vectorStartIndex].column;
 
 #define EXPAND(IDX, ...) \
-    (mask) ? expand(mask->getColumn(IDX).getUInt(0), __VA_ARGS__) : __VA_ARGS__
+    (mask ? expand(mask.read(IDX, i), __VA_ARGS__) : __VA_ARGS__)
 
 #define EXECUTE() \
     size_t nd = arguments.size(); \
     size_t vectorStartIndex = 0; \
-    const ColumnTuple * mask = extractConstantRangeMask(arguments); \
+    auto mask = extractRangeMask(arguments); \
     if (mask) \
     { \
-        nd = mask->tupleSize(); \
+        nd = mask.tupleSize(); \
         vectorStartIndex = 1; \
-        for (size_t i = 0; i < nd; i++) \
+        /* Validate ratios. For constant masks check row 0 only; for non-constant */ \
+        /* masks every row may have its own ratio, so each row is validated. */ \
+        const size_t rows_to_check_morton = mask.is_const ? 1 : input_rows_count; \
+        for (size_t row = 0; row < rows_to_check_morton; row++) \
         { \
-            auto ratio = mask->getColumn(i).getUInt(0); \
-            if (ratio > 8 || ratio < 1) \
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, \
-                                "Illegal argument {} of function {}, should be a number in range 1-8", \
-                                arguments[0].column->getName(), getName()); \
+            for (size_t i = 0; i < nd; i++) \
+            { \
+                auto ratio = mask.read(i, row); \
+                if (ratio > 8 || ratio < 1) \
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, \
+                                    "Illegal argument {} of function {}, should be a number in range 1-8", \
+                                    arguments[0].column->getName(), getName()); \
+            } \
         } \
     } \
      \

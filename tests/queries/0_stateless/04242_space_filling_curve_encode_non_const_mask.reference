@@ -10,10 +10,33 @@
 ----- mortonEncode: constant Tuple mask -----
 1572864
 32768
------ hilbertEncode: multi-row non-constant Tuple mask is rejected -----
------ mortonEncode: multi-row non-constant Tuple mask is rejected -----
------ block-size independence: rejection holds with max_block_size = 1 -----
+----- hilbertEncode: multi-row non-constant Tuple mask is computed per row -----
+3
+6
+12
+3843754
+4209322
+61500074
+67349162
+----- mortonEncode: multi-row non-constant Tuple mask is computed per row -----
+3
+10
+36
+1049088
+4398047035392
+536870912
+549755813888
+----- block-size independence: per-row computation is consistent across chunk sizes -----
 31
 512
 53
 32768
+3
+6
+12
+3
+10
+36
+12
+36
+----- per-row validation: out-of-range mask in any row is rejected -----
