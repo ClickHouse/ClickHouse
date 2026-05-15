@@ -3,6 +3,8 @@
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/DimensionalMetrics.h>
+#include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
@@ -29,6 +31,16 @@ namespace
             return static_cast<size_t>(std::ceil(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0)));
         return std::lround(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0));
     }
+
+    /// Counts probationary -> protected promotions per SLRU cache. Gated by
+    /// the same `FileCacheSettings::expose_eviction_metrics` flag as
+    /// `filesystem_cache_*` eviction metrics, since promotion volume is
+    /// part of the same observability story (hot-set residency + churn).
+    DimensionalMetrics::MetricFamily & filesystem_cache_slru_promotions_total = DimensionalMetrics::Factory::instance().registerMetric(
+        "filesystem_cache_slru_promotions_total",
+        "Number of file segments promoted from the probationary to the protected queue in an SLRU filesystem cache. "
+        "Emitted only when `expose_eviction_metrics` is enabled on the cache.",
+        {"cache_name"});
 }
 
 SLRUFileCachePriority::SLRUFileCachePriority(
@@ -726,6 +738,19 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         prev_iterator.invalidate();
         reset_evicting_flag_for_prev_entry = false;
         check(lock);
+    }
+
+    /// Probationary -> protected promotion succeeded.
+    if (const FileCache * cache = getOwningCache(); cache && cache->areEvictionMetricsEnabled())
+    {
+        try
+        {
+            filesystem_cache_slru_promotions_total.withLabels({cache->getName()}).increment();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to record SLRU promotion metric; ignored");
+        }
     }
 
     return true;

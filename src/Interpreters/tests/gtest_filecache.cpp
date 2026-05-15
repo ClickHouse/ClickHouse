@@ -2066,6 +2066,7 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics_SLRUPromotionInducedEviction)
     auto key = FileCacheKey::fromPath("promo");
 
     const double evictions_before = sum_dim("filesystem_cache_evictions_total");
+    const double promotions_before = sum_dim("filesystem_cache_slru_promotions_total");
 
     /// Add 6 segments of size 5; max_size=30 fits all initially in
     /// probationary. Hitting each promotes it to protected; once protected
@@ -2088,4 +2089,6 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics_SLRUPromotionInducedEviction)
     EXPECT_GT(sum_dim("filesystem_cache_evictions_total"), evictions_before)
         << "Promotion-induced SLRU downgrade did not record any eviction. "
            "Check IFileCachePriority::setOwningCache plumbing.";
+    EXPECT_GT(sum_dim("filesystem_cache_slru_promotions_total"), promotions_before)
+        << "SLRU promotion counter did not advance despite forced promotions.";
 }
