@@ -41,7 +41,9 @@ namespace
     {
         if (nested->use_count() > 1)
         {
-            auto cloned = IColumn::mutate(std::move(nested));
+            /// Keep the original pointer intact until the replacement is fully ready,
+            /// so an exception inside `filter` leaves `nested` valid rather than moved-from.
+            auto cloned = IColumn::mutate(nested);
             cloned->filter(filt);
             nested = std::move(cloned);
         }
