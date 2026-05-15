@@ -152,7 +152,7 @@
             position: sticky;
             top: 0;
             z-index: 1;
-            height: 100vh;
+            height: calc(100vh - var(--terminal-height, 0px));
             align-self: start;
             background: var(--table-header-color);
             border-right: 1px solid var(--border-color);
@@ -4303,6 +4303,13 @@ document.getElementById('download-button').addEventListener('click', async funct
         }
     }
 
+    /// Keep the `--terminal-height` CSS variable in sync so the side menu can
+    /// size itself as `100vh - terminal_height` and its bottom icons stay visible.
+    function updateTerminalHeightVar() {
+        const h = terminalActive ? terminalPanel.offsetHeight : 0;
+        document.documentElement.style.setProperty('--terminal-height', h + 'px');
+    }
+
     function activateTerminal() {
         if (terminalActive) return;
         terminalActive = true;
@@ -4320,6 +4327,7 @@ document.getElementById('download-button').addEventListener('click', async funct
             terminalPanel.style.height = Math.round(window.innerHeight * 0.4) + 'px';
         }
         terminalHiddenByResize = false;
+        updateTerminalHeightVar();
 
         // Tell the iframe to refit the terminal after becoming visible again, and focus it
         if (terminalIframe && terminalIframe.contentWindow) {
@@ -4334,6 +4342,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         terminalActive = false;
         terminalIcon.classList.remove('active');
         terminalPanel.classList.remove('active');
+        updateTerminalHeightVar();
     }
 
     /// Destroy the terminal: remove the iframe and hide the panel.
@@ -4405,6 +4414,7 @@ document.getElementById('download-button').addEventListener('click', async funct
             return;
         }
         terminalPanel.style.height = newHeight + 'px';
+        updateTerminalHeightVar();
     }
 
     function termStop() {
