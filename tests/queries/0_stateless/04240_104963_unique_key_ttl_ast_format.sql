@@ -10,6 +10,13 @@
 -- and a `TTL` clause triggered `LOGICAL_ERROR: Inconsistent AST formatting` from
 -- the round-trip check in `executeQueryImpl`.
 --
+-- The round-trip check is gated by `#ifndef NDEBUG`, so the failure only fires
+-- in debug builds; release-build binaries silently accept the same statement.
+-- This test therefore relies on debug-build CI variants for regression coverage
+-- and is categorised as `CI Fix or Improvement` rather than `Bug Fix` (the
+-- `pr-bugfix` `Bugfix validation` runner uses a `RelWithDebInfo + NDEBUG`
+-- master binary that cannot reproduce the original `LOGICAL_ERROR`).
+--
 -- Root cause: `ParserStorage::parseImpl` appended children in the order
 -- (engine, partition_by, primary_key, order_by, sample_by, ttl_table,
 -- unique_key, settings) — but `ASTStorage::formatImpl` and
@@ -20,8 +27,10 @@
 -- so the re-parsed AST had `unique_key` and `ttl_table` swapped relative
 -- to the original, breaking the dump-comparison round-trip check.
 --
--- Fix: reorder the `set()` calls in `ParserStorage::parseImpl` to match the
--- canonical order so re-parses produce identical child order.
+-- Fix: reorder the `set` calls in `ParserStorage::parseImpl` and
+-- `ASTStorage::clone` to match the canonical order so re-parses and clones
+-- both produce identical child order without depending on
+-- `normalizeChildrenOrder`.
 
 SET allow_experimental_unique_key = 1;
 
