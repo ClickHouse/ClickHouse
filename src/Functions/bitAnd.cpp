@@ -19,7 +19,12 @@ struct BitAndImpl
     static constexpr bool allow_fixed_string = true;
     static constexpr bool allow_string_integer = false;
     static constexpr auto signature =
-        "(A : Number, B : Number) -> nativeNumber(selectIf(anyFloating(A, B), 64, maxBits(A, B)), anySigned(A, B), 0)"
+        /// `BinaryArithmeticOverloadResolver<..., true, false>` (4th param =
+        /// `valid_on_float_arguments=false`) rejects floats at runtime — the
+        /// signature must mirror that so a `Float` argument is caught during
+        /// analysis as `ILLEGAL_TYPE_OF_ARGUMENT`, not later as
+        /// `LOGICAL_ERROR` from the executor's "incorrect data types" branch.
+        "(A : Integer, B : Integer) -> nativeNumber(maxBits(A, B), anySigned(A, B), 0)"
         " OR (F : FixedString, FixedString) -> F";
 
     template <typename Result = ResultType>

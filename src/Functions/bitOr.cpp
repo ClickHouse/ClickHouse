@@ -18,7 +18,9 @@ struct BitOrImpl
     static constexpr bool allow_fixed_string = true;
     static constexpr bool allow_string_integer = false;
     static constexpr auto signature =
-        "(A : Number, B : Number) -> nativeNumber(selectIf(anyFloating(A, B), 64, maxBits(A, B)), anySigned(A, B), 0)"
+        /// Float arguments are rejected by the runtime (`valid_on_float_arguments=false`);
+        /// see the matching comment in `bitAnd.cpp`.
+        "(A : Integer, B : Integer) -> nativeNumber(maxBits(A, B), anySigned(A, B), 0)"
         " OR (F : FixedString, FixedString) -> F";
 
     template <typename Result = ResultType>
