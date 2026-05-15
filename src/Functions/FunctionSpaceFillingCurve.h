@@ -36,8 +36,9 @@ public:
 
     /// `mortonEncode`/`hilbertEncode` accept either (a) one to eight `NativeUInt`s
     /// (encoded as a single space-filling-curve key), or (b) a leading `Tuple` of
-    /// size N followed by exactly N `NativeUInt` "mask" arguments. The
-    /// `TupleOfSize(N)` matcher enforces the per-arity equality at type-check
+    /// size N whose elements are all `NativeUInt`, followed by exactly N
+    /// `NativeUInt` "mask" arguments. The `Tuple(NativeUInt, …)` matcher
+    /// enforces both the arity equality and the per-element type at type-check
     /// time. `max_dimensions` for these encoders is 8.
     String getSignatureString() const override
     {
@@ -49,14 +50,14 @@ public:
                " OR (NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt) -> UInt64"
                " OR (NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt) -> UInt64"
                " OR (NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt) -> UInt64"
-               " OR (TupleOfSize(1), NativeUInt) -> UInt64"
-               " OR (TupleOfSize(2), NativeUInt, NativeUInt) -> UInt64"
-               " OR (TupleOfSize(3), NativeUInt, NativeUInt, NativeUInt) -> UInt64"
-               " OR (TupleOfSize(4), NativeUInt, NativeUInt, NativeUInt, NativeUInt) -> UInt64"
-               " OR (TupleOfSize(5), NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt) -> UInt64"
-               " OR (TupleOfSize(6), NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt) -> UInt64"
-               " OR (TupleOfSize(7), NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt) -> UInt64"
-               " OR (TupleOfSize(8), NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt) -> UInt64";
+               " OR (Tuple(NativeUInt), NativeUInt) -> UInt64"
+               " OR (Tuple(NativeUInt, NativeUInt), NativeUInt, NativeUInt) -> UInt64"
+               " OR (Tuple(NativeUInt, NativeUInt, NativeUInt), NativeUInt, NativeUInt, NativeUInt) -> UInt64"
+               " OR (Tuple(NativeUInt, NativeUInt, NativeUInt, NativeUInt), NativeUInt, NativeUInt, NativeUInt, NativeUInt) -> UInt64"
+               " OR (Tuple(NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt), NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt) -> UInt64"
+               " OR (Tuple(NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt), NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt) -> UInt64"
+               " OR (Tuple(NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt), NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt) -> UInt64"
+               " OR (Tuple(NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt), NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt, NativeUInt) -> UInt64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

@@ -140,8 +140,10 @@ public:
     String getSignatureString() const override
     {
         /// Legacy enforces FixedString(16) (uuid_bytes_length) at execution; here we accept
-        /// any FixedString and the executor handles the length check.
-        return "(FixedString, [Any]) -> String";
+        /// any FixedString and the executor handles the length check. The optional second
+        /// argument selects the UUID variant — `parseVariant` reads it via `getInt`, so it
+        /// must be an integer (`Int8`/`UInt8` in practice).
+        return "(FixedString, [Integer]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -207,7 +209,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(String | FixedString, [Any]) -> FixedString(16)";
+        return "(String | FixedString, [Integer]) -> FixedString(16)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -301,7 +303,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(UUID, [Any]) -> FixedString(16)";
+        return "(UUID, [Integer]) -> FixedString(16)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

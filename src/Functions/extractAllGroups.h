@@ -77,7 +77,10 @@ public:
 
     String getSignatureString() const override
     {
-        return "(StringOrFixedString, StringOrFixedString) -> Array(Array(String))";
+        /// The regexp must be a constant: `executeImpl` reads it via
+        /// `typeid_cast<const ColumnConst &>(*column_needle).getValue<String>()`,
+        /// so a non-const second argument would only fail at execution.
+        return "(StringOrFixedString, const StringOrFixedString) -> Array(Array(String))";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
