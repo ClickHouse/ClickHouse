@@ -80,12 +80,18 @@ static void threadFunction(
         /// Speculatively reserve `additional_memory_tracking_per_thread` against the
         /// query's MemoryTracker. See note in PipelineExecutor::spawnThreads.
         const int64_t speculative_memory = additional_memory_tracking_per_thread.load(std::memory_order_relaxed);
-        if (speculative_memory > 0)
-            std::ignore = CurrentMemoryTracker::alloc(speculative_memory);
+        bool reserved = false;
         SCOPE_EXIT({
-            if (speculative_memory > 0)
+            if (reserved)
                 std::ignore = CurrentMemoryTracker::free(speculative_memory);
         });
+        if (speculative_memory > 0)
+        {
+            std::ignore = CurrentMemoryTracker::alloc(speculative_memory);
+            reserved = true;
+            CurrentThread::flushUntrackedMemory();
+            CurrentMemoryTracker::check();
+        }
 
         data.executor->execute(num_threads, concurrency_control);
     }

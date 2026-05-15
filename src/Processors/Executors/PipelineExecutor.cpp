@@ -580,12 +580,23 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
                 /// fires, the surrounding `catch` propagates `MEMORY_LIMIT_EXCEEDED` through
                 /// the pipeline (calling `finish()` so consumers unblock).
                 const int64_t speculative_memory = additional_memory_tracking_per_thread.load(std::memory_order_relaxed);
-                if (speculative_memory > 0)
-                    std::ignore = CurrentMemoryTracker::alloc(speculative_memory);
+                bool reserved = false;
                 SCOPE_EXIT({
-                    if (speculative_memory > 0)
+                    if (reserved)
                         std::ignore = CurrentMemoryTracker::free(speculative_memory);
                 });
+                if (speculative_memory > 0)
+                {
+                    std::ignore = CurrentMemoryTracker::alloc(speculative_memory);
+                    reserved = true;
+                    /// `alloc` buffers in per-thread `untracked_memory` when the size fits
+                    /// under `max_untracked_memory` (default 4 MiB == 4 MiB), so without an
+                    /// explicit flush the reservation never reaches the global tracker.
+                    /// Flush it and then re-run the limit check so we either propagate
+                    /// `MEMORY_LIMIT_EXCEEDED` or get an accurate accounting.
+                    CurrentThread::flushUntrackedMemory();
+                    CurrentMemoryTracker::check();
+                }
 
                 executeSingleThread(thread_num, my_slot.get());
             }
