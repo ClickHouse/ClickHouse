@@ -1,8 +1,11 @@
+#include <Planner/Utils.h>
 #include <Processors/QueryPlan/MaterializingCTEStep.h>
 
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -111,7 +114,7 @@ QueryPipelineBuilderPtr DelayedMaterializingCTEsStep::updatePipeline(QueryPipeli
 
 std::vector<std::unique_ptr<QueryPlan>> DelayedMaterializingCTEsStep::makePlansForCTEs(
     DelayedMaterializingCTEsStep && step,
-    const QueryPlanOptimizationSettings & optimization_settings)
+    const QueryPlanOptimizationSettings & /*optimization_settings*/)
 {
     std::vector<std::unique_ptr<QueryPlan>> plans;
     for (auto & materialized_cte : step.ctes)
@@ -119,7 +122,12 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedMaterializingCTEsStep::makePlansF
         if (materialized_cte->is_materialization_planned.exchange(true))
             continue;
 
-        materialized_cte->plan->optimize(optimization_settings);
+        /// The plan was already optimized in the first traversal of
+        /// `resolveMaterializingCTEs`. Calling `optimize` again here would
+        /// duplicate the recursive `buildSetInplace` work and is no longer
+        /// the right place to do it — by the time we reach this point any
+        /// safety-net `DelayedMaterializingCTEsStep` inside an IN-subquery
+        /// plan that actually needed to claim the CTE has already done so.
         plans.emplace_back(std::move(materialized_cte->plan));
     }
     return plans;
