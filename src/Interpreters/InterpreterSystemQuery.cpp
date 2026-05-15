@@ -2109,9 +2109,9 @@ void InterpreterSystemQuery::syncMerges()
     DynamicDelay poll_delay;
     poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
 
-    const auto max_execution_time_sec = getContext()->getSettingsRef()[Setting::max_execution_time].totalSeconds();
-    const auto timeout = max_execution_time_sec == 0 ? std::numeric_limits<int32_t>::max() : max_execution_time_sec;
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout);
+    const auto max_execution_time_ms = getContext()->getSettingsRef()[Setting::max_execution_time].totalMilliseconds();
+    const auto timeout = max_execution_time_ms == 0 ? std::numeric_limits<int32_t>::max() : max_execution_time_ms;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout);
     while (std::chrono::steady_clock::now() < deadline)
     {
         if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
