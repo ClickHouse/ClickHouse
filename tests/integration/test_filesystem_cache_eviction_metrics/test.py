@@ -83,3 +83,7 @@ def test_filesystem_cache_eviction_metrics(start_cluster):
     assert sum_dim("filesystem_cache_slru_promotions_total") > 0, (
         "SLRU promotion counter did not advance:\n" + debug
     )
+    # `expose_eviction_metrics_per_client` is also enabled in the test config.
+    assert sum_dim("filesystem_cache_slru_promotions_by_client_total") > 0, (
+        "Per-client SLRU promotion counter did not advance:\n" + debug
+    )

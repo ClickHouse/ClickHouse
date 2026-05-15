@@ -2057,6 +2057,7 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics_SLRUPromotionInducedEviction)
     settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
     settings[FileCacheSetting::slru_size_ratio] = 0.5;
     settings[FileCacheSetting::expose_eviction_metrics] = true;
+    settings[FileCacheSetting::expose_eviction_metrics_per_client] = true;
 
     auto cache = DB::FileCache("eviction_metrics_promo", settings);
     cache.initialize();
@@ -2067,6 +2068,7 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics_SLRUPromotionInducedEviction)
 
     const double evictions_before = sum_dim("filesystem_cache_evictions_total");
     const double promotions_before = sum_dim("filesystem_cache_slru_promotions_total");
+    const double promotions_by_client_before = sum_dim("filesystem_cache_slru_promotions_by_client_total");
 
     /// Add 6 segments of size 5; max_size=30 fits all initially in
     /// probationary. Hitting each promotes it to protected; once protected
@@ -2091,4 +2093,6 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics_SLRUPromotionInducedEviction)
            "Check IFileCachePriority::setOwningCache plumbing.";
     EXPECT_GT(sum_dim("filesystem_cache_slru_promotions_total"), promotions_before)
         << "SLRU promotion counter did not advance despite forced promotions.";
+    EXPECT_GT(sum_dim("filesystem_cache_slru_promotions_by_client_total"), promotions_by_client_before)
+        << "Per-client promotion counter did not advance despite _per_client flag on.";
 }

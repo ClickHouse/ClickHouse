@@ -41,6 +41,15 @@ namespace
         "Number of file segments promoted from the probationary to the protected queue in an SLRU filesystem cache. "
         "Emitted only when `expose_eviction_metrics` is enabled on the cache.",
         {"cache_name"});
+
+    /// Per-client promotions; mirrors the `_by_client` tier of the eviction
+    /// metrics. Gated by `expose_eviction_metrics_per_client`, which has
+    /// unbounded cardinality in the `client_id` dimension.
+    DimensionalMetrics::MetricFamily & filesystem_cache_slru_promotions_by_client_total = DimensionalMetrics::Factory::instance().registerMetric(
+        "filesystem_cache_slru_promotions_by_client_total",
+        "Number of file segments promoted from probationary to protected in an SLRU filesystem cache, labelled by user id. "
+        "Disabled by default; enable via `expose_eviction_metrics_per_client`.",
+        {"cache_name", "client_id"});
 }
 
 SLRUFileCachePriority::SLRUFileCachePriority(
@@ -746,6 +755,12 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         try
         {
             filesystem_cache_slru_promotions_total.withLabels({cache->getName()}).increment();
+            if (cache->areEvictionMetricsPerClientEnabled())
+            {
+                filesystem_cache_slru_promotions_by_client_total
+                    .withLabels({cache->getName(), prev_entry->key_metadata->origin.user_id})
+                    .increment();
+            }
         }
         catch (...)
         {
