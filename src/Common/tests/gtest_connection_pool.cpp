@@ -717,14 +717,14 @@ TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
     /// other loopback IPs (`127.0.0.99` below) are not silently accepted by the
     /// existing test fixture server.
     constexpr UInt16 secondary_port = 9872;
-    constexpr const char * test_host = "dual-stack-test.invalid";
-    constexpr const char * bad_addr = "127.0.0.99";
-    constexpr const char * good_addr = "127.0.0.1";
+    const String test_host = "dual-stack-test.invalid";
+    const Poco::Net::IPAddress bad_ip("127.0.0.99");
+    const Poco::Net::IPAddress good_ip("127.0.0.1");
 
     auto secondary_options = std::make_shared<SafeHandler<RequestOptions>>();
     secondary_options->set(RequestOptions());
     Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new HTTPRequestHandlerFactory(secondary_options);
-    Poco::Net::SocketAddress bind_addr(good_addr, secondary_port);
+    Poco::Net::SocketAddress bind_addr(good_ip, secondary_port);
     Poco::Net::ServerSocket server_socket(bind_addr);
     auto secondary_server = std::make_unique<Poco::Net::HTTPServer>(
         factory, server_socket, new Poco::Net::HTTPServerParams);
@@ -737,15 +737,18 @@ TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
     /// path calls `address.setFail()`, which re-runs `update` and the second call
     /// returns both addresses - with the bad one pessimized, `selectBest` then
     /// deterministically picks the working address.
-    std::atomic<size_t> resolve_calls{0};
-    auto resolve_func = [&](const String &)
+    ///
+    /// The injected mock resolver is registered in the global `HostResolversPool`
+    /// and outlives this test scope, so capture the call counter by value through
+    /// a `shared_ptr` to avoid leaving a dangling reference behind. The address
+    /// values are likewise captured by value (and pre-constructed above), which
+    /// also lets the static analyzer see that they are read.
+    auto resolve_calls = std::make_shared<std::atomic<size_t>>(0);
+    auto resolve_func = [resolve_calls, bad_ip, good_ip](const String &) -> std::vector<Poco::Net::IPAddress>
     {
-        if (resolve_calls.fetch_add(1) == 0)
-            return std::vector<Poco::Net::IPAddress>{Poco::Net::IPAddress(bad_addr)};
-        return std::vector<Poco::Net::IPAddress>{
-            Poco::Net::IPAddress(bad_addr),
-            Poco::Net::IPAddress(good_addr),
-        };
+        if (resolve_calls->fetch_add(1) == 0)
+            return {bad_ip};
+        return {bad_ip, good_ip};
     };
 
     struct ResolveMock : public DB::HostResolver
@@ -757,12 +760,12 @@ TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
     };
 
     auto mock_resolver = std::make_shared<ResolveMock>(
-        String(test_host),
+        test_host,
         Poco::Timespan(60 * 1000 * 1000),
         std::move(resolve_func));
     DB::HostResolversPool::instance().injectResolverForTest(test_host, mock_resolver);
 
-    auto uri = Poco::URI("http://" + std::string(test_host) + ":" + std::to_string(secondary_port));
+    auto uri = Poco::URI("http://" + test_host + ":" + std::to_string(secondary_port));
     auto pool = DB::HTTPConnectionPools::instance().getPool(
         DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{});
     auto metrics = pool->getMetrics();
@@ -775,8 +778,8 @@ TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
     auto connection = pool->getConnection(timeouts, nullptr);
     ASSERT_TRUE(connection->connected());
 
-    /// First attempt: connect to `bad_addr` → fails (counted in `errors` and resolver `failed`).
-    /// Retry: connect to `good_addr` → succeeds (counted in `created`).
+    /// First attempt: connect to `bad_ip` → fails (counted in `errors` and resolver `failed`).
+    /// Retry: connect to `good_ip` → succeeds (counted in `created`).
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created].load() - created_before);
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.errors].load() - errors_before);
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[resolver_metrics.failed].load() - failed_before);
