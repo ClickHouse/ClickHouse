@@ -37,6 +37,8 @@ private:
     template <typename TSortingQueue>
     Chunk mergeBatchImpl(TSortingQueue & queue);
 
+    MutableColumns createMergedColumns() const;
+
 };
 
 

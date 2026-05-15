@@ -1,4 +1,5 @@
 #include <optional>
+#include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/hilbertEncode2DLUT.h>
 
@@ -178,7 +179,7 @@ SELECT hilbertEncode(n1, n2) FROM hilbert_numbers;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionHilbertEncode>(documentation);
 }

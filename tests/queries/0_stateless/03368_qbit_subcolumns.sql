@@ -1,5 +1,3 @@
-SET allow_experimental_qbit_type = 1;
-
 SELECT 'Test QBit subcolumns: corner cases';
 DROP TABLE IF EXISTS qbit;
 CREATE TABLE qbit (id UInt32, vec QBit(BFloat16, 3)) ENGINE = Memory;
@@ -8,8 +6,8 @@ INSERT INTO qbit VALUES (1, [-1.70141183460469231731687e+38, -1.7014118346046923
 INSERT INTO qbit VALUES (2, [-1.70141183460469231731687e+38, -1.70141183460469231731687e+38, -1.70141183460469231731687e+38]);
 INSERT INTO qbit VALUES (3, [-1.70141183460469231731687e+38, -1.70141183460469231731687e+38, -1.70141183460469231731687e+38]);
 
-select vec.0 from qbit; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
-select vec.17 from qbit; -- { serverError NOT_FOUND_COLUMN_IN_BLOCK }
+select vec.0 from qbit; -- { serverError ARGUMENT_OUT_OF_BOUND }
+select vec.17 from qbit; -- { serverError ARGUMENT_OUT_OF_BOUND }
 select bin(vec.1) from qbit;
 select bin(vec.4) from qbit;
 select bin(vec.15) from qbit;
@@ -28,8 +26,8 @@ INSERT INTO qbit VALUES (4, [-0, 0, 0, 0, 0, 0, 0, 0]);
 
 SELECT bin(vec.1) FROM qbit ORDER BY id;
 SELECT bin(vec.2) FROM qbit ORDER BY id;
-SELECT vec.7 FROM qbit ORDER BY id;
-SELECT vec.15 FROM qbit ORDER BY id;
+SELECT bin(vec.7) FROM qbit ORDER BY id;
+SELECT bin(vec.15) FROM qbit ORDER BY id;
 
 
 
@@ -44,10 +42,10 @@ INSERT INTO qbit VALUES (4, [-0, 0, 0, 0, 0, 0, 0, 0]);
 
 SELECT bin(vec.1) FROM qbit ORDER BY id;
 SELECT bin(vec.2) FROM qbit ORDER BY id;
-SELECT vec.7 FROM qbit ORDER BY id;
-SELECT vec.15 FROM qbit ORDER BY id;
-SELECT vec.23 FROM qbit ORDER BY id;
-SELECT vec.31 FROM qbit ORDER BY id;
+SELECT bin(vec.7) FROM qbit ORDER BY id;
+SELECT bin(vec.15) FROM qbit ORDER BY id;
+SELECT bin(vec.23) FROM qbit ORDER BY id;
+SELECT bin(vec.31) FROM qbit ORDER BY id;
 
 
 
@@ -62,11 +60,11 @@ INSERT INTO qbit VALUES (4, [-0, 0, 0, 0, 0, 0, 0, 0]);
 
 SELECT bin(vec.1) FROM qbit ORDER BY id;
 SELECT bin(vec.2) FROM qbit ORDER BY id;
-SELECT vec.7 FROM qbit ORDER BY id;
-SELECT vec.15 FROM qbit ORDER BY id;
-SELECT vec.23 FROM qbit ORDER BY id;
-SELECT vec.31 FROM qbit ORDER BY id;
-SELECT vec.39 FROM qbit ORDER BY id;
-SELECT vec.47 FROM qbit ORDER BY id;
-SELECT vec.55 FROM qbit ORDER BY id;
-SELECT vec.63 FROM qbit ORDER BY id;
+SELECT bin(vec.7) FROM qbit ORDER BY id;
+SELECT bin(vec.15) FROM qbit ORDER BY id;
+SELECT bin(vec.23) FROM qbit ORDER BY id;
+SELECT bin(vec.31) FROM qbit ORDER BY id;
+SELECT bin(vec.39) FROM qbit ORDER BY id;
+SELECT bin(vec.47) FROM qbit ORDER BY id;
+SELECT bin(vec.55) FROM qbit ORDER BY id;
+SELECT bin(vec.63) FROM qbit ORDER BY id;

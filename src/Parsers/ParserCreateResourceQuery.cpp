@@ -142,7 +142,7 @@ bool ParserCreateResourceQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     if (!parseOperations(pos, expected, operations))
         return false;
 
-    auto create_resource_query = std::make_shared<ASTCreateResourceQuery>();
+    auto create_resource_query = make_intrusive<ASTCreateResourceQuery>();
     node = create_resource_query;
 
     create_resource_query->resource_name = resource_name;

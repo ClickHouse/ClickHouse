@@ -18,11 +18,6 @@ EXTRA_COLUMNS=${EXTRA_COLUMNS:-"repo LowCardinality(String), pull_request_number
 echo "EXTRA_COLUMNS_EXPRESSION=${EXTRA_COLUMNS_EXPRESSION:?}"
 EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name"}
 
-# coverage_log needs more columns for symbolization, but only symbol names (the line numbers are too heavy to calculate)
-EXTRA_COLUMNS_COVERAGE_LOG="${EXTRA_COLUMNS} symbols Array(LowCardinality(String)), "
-EXTRA_COLUMNS_EXPRESSION_COVERAGE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayDistinct(arrayMap(x -> demangle(addressToSymbol(x)), coverage))::Array(LowCardinality(String)) AS symbols"
-
-
 function __set_connection_args()
 {
     # It's impossible to use a generic $CONNECTION_ARGS string, it's unsafe from word splitting perspective.
@@ -82,31 +77,12 @@ function setup_logs_replication()
     debug_or_sanitizer_build=$(clickhouse-client -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'")
     echo "Build is debug or sanitizer: $debug_or_sanitizer_build"
 
-    # We will pre-create a table system.coverage_log.
-    # It is normally created by clickhouse-test rather than the server,
-    # so we will create it in advance to make it be picked up by the next commands:
-
-    clickhouse-client --query "
-        CREATE TABLE IF NOT EXISTS system.coverage_log
-        (
-            time DateTime COMMENT 'The time of test run',
-            test_name String COMMENT 'The name of the test',
-            coverage Array(UInt64) COMMENT 'An array of addresses of the code (a subset of addresses instrumented for coverage) that were encountered during the test run'
-        ) ENGINE = MergeTree ORDER BY test_name COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster'
-    "
-
     # For each system log table:
     echo 'Create %_log tables'
     clickhouse-client --query "SHOW TABLES FROM system LIKE '%\\_log'" | while read -r table
     do
-        if [[ "$table" = "coverage_log" ]]
-        then
-            EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS_COVERAGE_LOG}"
-            EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION_COVERAGE_LOG}"
-        else
-            EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS}"
-            EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
-        fi
+        EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS}"
+        EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
 
         # Calculate hash of its structure according to the columns and their types, including extra columns
         hash=$(clickhouse-client --query "
@@ -123,7 +99,10 @@ function setup_logs_replication()
             s/^ORDER BY (([^\(].+?)|\((.+?)\))$/ORDER BY ('"$EXTRA_ORDER_BY_COLUMNS"', \2\3)/;
             s/^CREATE TABLE system\.\w+_log$/CREATE TABLE IF NOT EXISTS '"$table"'_'"$hash"'/;
             /^TTL /d
+            /^SETTINGS /d
+            /^COMMENT /d
             ')
+        statement+=" SETTINGS use_const_adaptive_granularity = 1"
 
         echo -e "Creating remote destination table ${table}_${hash} with statement:" >&2
 

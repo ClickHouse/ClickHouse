@@ -1,4 +1,5 @@
 #pragma once
+#include <Core/Joins.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <array>
@@ -7,6 +8,8 @@ class SipHash;
 
 namespace DB
 {
+
+class JoinStepLogical;
 
 namespace QueryPlanOptimizations
 {
@@ -41,6 +44,24 @@ struct Optimization
         /// Other settings
         size_t use_index_for_in_with_subqueries_max_values;
         SizeLimits network_transfer_limits;
+
+        bool use_skip_indexes_for_top_k;
+        bool use_top_k_dynamic_filtering;
+        bool use_top_k_dynamic_filtering_for_variable_length_types;
+        size_t max_limit_for_top_k_optimization;
+        bool use_skip_indexes_on_data_read;
+        bool read_in_order;
+        bool read_in_order_through_join;
+
+        /// Mirrors `QueryPlanOptimizationSettings::join_swap_table`. `std::nullopt` means
+        /// "auto" (swap decided by `optimizeJoinLegacy` from per-side row estimations);
+        /// `true`/`false` are explicit. `topKThroughJoin` consults it because deferring to
+        /// the second-pass read-in-order would silently disable both optimizations if the
+        /// join is swapped from `LEFT` to `RIGHT` after we returned.
+        std::optional<bool> join_swap_table;
+
+        // parallel replicas
+        bool parallel_replicas_filter_pushdown = false;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);
@@ -108,13 +129,35 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
 
 size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
+/// Removes unused columns from the query plan. Unused columns can appear after other optimizations, such as filter
+/// push down over JOINs. If a column is only used for filtering after a JOIN, and the filter is pushed down into
+/// the JOIN condition, then the column may become unused in the plan.
+/// This optimization traverses the query plan and attempts to remove such unused columns from the steps if they
+/// support the optimization (canRemoveUnusedColumns method).
+/// It might happen that a child step supports removing unused columns, but it cannot remove any more columns
+/// (canRemoveColumnsFromOutput method returns false, e.g. JoinStepLogical always needs to keep at least one column for
+/// its output). In this case or when the children step doesn't support the optimization at all, then the inputs of the
+/// optimized step doesn't change.
+/// If the children support the optimization but cannot produce the expected output (e.g. JoinStepLogical can remove
+/// arbitrary number of columns as long as at least one column remains in the output), then the optimization adds an
+/// expression step to convert between the child's new output and the input of the parent node.
+size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
+
 /// Build BloomFilter from right side of JOIN and add condition that looks up into this BloomFilter to the left side of the JOIN.
 /// This condition can potentially be pushed down all the way to the storage and filter unmatched rows very early.
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
+/// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering
+size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+
+/// Push ORDER BY ... LIMIT n down through a Join when the sort key only references
+/// columns from the side preserved by the join (LEFT/RIGHT). Restricts how many rows
+/// the preserved-side input must produce before joining.
+size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 16> optimizations = {{
+    static const std::array<Optimization, 19> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
@@ -131,6 +174,9 @@ inline const auto & getOptimizations()
         {tryConvertJoinToIn, "convertJoinToIn", &QueryPlanOptimizationSettings::convert_join_to_in},
         {tryMergeFilterIntoJoinCondition, "mergeFilterIntoJoinCondition", &QueryPlanOptimizationSettings::merge_filter_into_join_condition},
         {tryConvertAnyJoinToSemiOrAntiJoin, "convertAnyJoinToSemiOrAntiJoin", &QueryPlanOptimizationSettings::convert_any_join_to_semi_or_anti_join},
+        {tryRemoveUnusedColumns, "removeUnusedColumns", &QueryPlanOptimizationSettings::remove_unused_columns},
+        {tryOptimizeTopK, "tryOptimizeTopK", &QueryPlanOptimizationSettings::try_use_top_k_optimization},
+        {tryTopKThroughJoin, "topKThroughJoin", &QueryPlanOptimizationSettings::top_k_through_join},
     }};
 
     return optimizations;
@@ -146,20 +192,37 @@ using Stack = std::vector<Frame>;
 
 /// Second pass optimizations
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
-void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & nodes);
-void optimizePrewhere(QueryPlan::Node & parent_node);
-void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
-void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
-bool optimizeLazyMaterialization(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, size_t max_limit_for_lazy_materialization);
+void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index);
+void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns);
+void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization);
+void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeJoinByShards(QueryPlan::Node & root);
-void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
+void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeVectorSearchSecondPass(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
+void materializeQueryPlanReferences(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
+void optimizeUnusedCommonSubplans(QueryPlan::Node & node);
+void useMemoryBufferForCommonSubplanResult(QueryPlan::Node & node, const QueryPlanOptimizationSettings & settings);
 
 // Should be called once the query plan tree structure is finalized, i.e. no nodes addition, deletion or pushing down should happen after that call.
 // Since those hashes are used for join optimization, the calculation performed before join optimization.
 std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root);
+
+/// Populates two maps in lock-step:
+///   raw_hashes[N]  = bottom-up hash of the sub-plan rooted at N, independent of N's parent.
+///   cache_keys[N]  = raw_hashes[N] XOR (the per-side contribution of N's parent join step).
+/// `raw_hashes` is what the join reorder pass needs to derive cache keys for sub-join nodes
+/// it builds itself; `cache_keys` matches the value `HashTablesStatistics` is keyed by.
+void calculateHashTableCacheKeys(
+    const QueryPlan::Node & root,
+    std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys,
+    std::unordered_map<const QueryPlan::Node *, UInt64> & raw_hashes);
+
+/// Per-side join-step hash used to derive HashTablesStatistics cache keys after join reorder.
+UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side);
 
 bool convertLogicalJoinToPhysical(
     QueryPlan::Node & node,
@@ -175,17 +238,19 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
 std::optional<String> optimizeUseAggregateProjections(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
-    bool allow_implicit_projections,
-    bool is_parallel_replicas_initiator_with_projection_support,
-    size_t max_step_description_length);
+    const QueryPlanOptimizationSettings & optimization_settings);
 
 std::optional<String> optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
-    bool is_parallel_replicas_initiator_with_projection_support,
-    size_t max_step_description_length);
+    const QueryPlanOptimizationSettings & optimization_settings);
 
 bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
+
+/// Resolve all DelayedMaterializingCTEsStep nodes in the plan tree.
+/// Must be called after the second optimization pass so that is_planned flags
+/// set by buildOrderedSetInplace are already visible.
+void resolveMaterializingCTEs(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & root_plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
 /// Enable memory bound merging of aggregation states for remote queries
 /// in case it was enabled for local plan

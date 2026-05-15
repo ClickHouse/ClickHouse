@@ -99,10 +99,12 @@ private:
             return default_port;
 
         p = host.data() + host.size();
-        if (*p++ != ':')
+        if (p >= end || *p != ':')
             return default_port;
+        ++p;
 
-        Int64 port = default_port;
+        Int64 port = 0;
+        bool saw_digit = false;
         while (p < end)
         {
             if (*p == '/')
@@ -110,12 +112,13 @@ private:
             if (!isNumericASCII(*p))
                 return default_port;
 
+            saw_digit = true;
             port = (port * 10) + (*p - '0');
             if (port < 0 || port > static_cast<UInt16>(-1))
                 return default_port;
             ++p;
         }
-        return port;
+        return saw_digit ? static_cast<UInt16>(port) : default_port;
     }
 };
 
@@ -160,7 +163,7 @@ SELECT port('https://clickhouse.com:8443/docs'), port('https://clickhouse.com/do
     };
     FunctionDocumentation::IntroducedIn introduced_in_port = {20, 5};
     FunctionDocumentation::Category category_port = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_port = {description_port, syntax_port, arguments_port, returned_value_port, examples_port, introduced_in_port, category_port};
+    FunctionDocumentation documentation_port = {description_port, syntax_port, arguments_port, {}, returned_value_port, examples_port, introduced_in_port, category_port};
 
     factory.registerFunction<FunctionPort>(documentation_port);
 
@@ -190,7 +193,7 @@ SELECT port('http://user:password@example.com:8080/'), portRFC('http://user:pass
     };
     FunctionDocumentation::IntroducedIn introduced_in_portRFC = {22, 10};
     FunctionDocumentation::Category category_portRFC = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_portRFC = {description_portRFC, syntax_portRFC, arguments_portRFC, returned_value_portRFC, examples_portRFC, introduced_in_portRFC, category_portRFC};
+    FunctionDocumentation documentation_portRFC = {description_portRFC, syntax_portRFC, arguments_portRFC, {}, returned_value_portRFC, examples_portRFC, introduced_in_portRFC, category_portRFC};
 
     factory.registerFunction<FunctionPortRFC>(documentation_portRFC);
 }

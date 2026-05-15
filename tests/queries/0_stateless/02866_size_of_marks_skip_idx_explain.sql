@@ -3,8 +3,6 @@
 SET optimize_move_to_prewhere = 1;
 SET convert_query_to_cnf = 0;
 SET optimize_read_in_order = 1;
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-SET use_skip_indexes_on_data_read = 0;
 
 SET enable_analyzer = 1; -- slightly different operator names than w/o
 

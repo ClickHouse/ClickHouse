@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -22,7 +23,7 @@ EXECUTABLE_SETTINGS_SUPPORTED_TYPES(ExecutableSettings, DECLARE_SETTING_TRAIT)
 struct ExecutableSettings
 {
     std::string script_name;
-    std::vector<std::string> script_arguments;
+    VectorWithMemoryTracking<std::string> script_arguments;
     bool is_executable_pool = false;
 
     ExecutableSettings();

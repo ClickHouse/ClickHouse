@@ -195,7 +195,10 @@ private:
         template <typename T>
         static size_t writeNumber2(char * p, T v)
         {
-            memcpy(p, &digits100[v * 2], 2);
+            static_assert(std::is_integral_v<T>);
+            assert(v >= 0 && v <= 99);
+
+            memcpy(p, &digits100[v * 2], 2);  /// NOLINT(clang-analyzer-security.ArrayBound)
             return 2;
         }
 
@@ -268,7 +271,7 @@ private:
             }
             if (digits_written < digits)
             {
-                dest[pos] = '0' + n;
+                dest[pos] = static_cast<char>('0' + n);
                 ++pos;
             }
 
@@ -589,7 +592,7 @@ private:
                 ++writes;
             }
 
-            for (UInt32 i = writes; i < 6; ++i)
+            for (size_t i = writes; i < 6; ++i)
                 dest[i] = '0';
 
             return 6;
@@ -603,7 +606,9 @@ private:
 
             for (UInt32 i = scale; i > 0; --i)
             {
-                dest[i - 1] += fractional_second % 10;
+                /// Use assignment instead of `+=` to avoid reading uninitialized memory
+                /// when the output buffer is not pre-filled with the template (variable-width formatters path).
+                dest[i - 1] = '0' + (fractional_second % 10);
                 fractional_second /= 10;
             }
             return scale;
@@ -617,7 +622,9 @@ private:
 
             for (UInt32 i = scale; i > 0; --i)
             {
-                dest[i - 1] += fractional_second % 10;
+                /// Use assignment instead of `+=` to avoid reading uninitialized memory
+                /// when the output buffer is not pre-filled with the template (variable-width formatters path).
+                dest[i - 1] = '0' + (fractional_second % 10);
                 fractional_second /= 10;
             }
             return scale;
@@ -819,6 +826,11 @@ private:
                 return min_represent_digits;
             }
             auto str = toString(fractional_second);
+            /// Left-pad with zeros to `scale` digits, because `toString` does not preserve leading zeros
+            /// (e.g. fractional_second=5, scale=3 gives "5" but we need "005").
+            /// Without this, the buffer would be left partially uninitialized.
+            if (str.size() < scale)
+                str.insert(0, scale - str.size(), '0');
             if (min_represent_digits > scale)
             {
                 for (UInt64 i = 0; i < min_represent_digits - scale; ++i)
@@ -851,7 +863,7 @@ private:
     static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name, bool mysql_format_ckl_without_leading_zeros, bool mysql_e_with_space_padding)
     {
         static constexpr std::array variable_width_formatter = {'W'};
-        static constexpr std::array variable_width_formatter_M_is_month_name = {'W', 'M'};
+        static constexpr std::array variable_width_formatter_M_is_month_name = {'M'};
         static constexpr std::array variable_width_formatter_leading_zeros = {'c', 'l', 'k'};
         static constexpr std::array variable_width_formatter_e_with_space_padding = {'e'};
 
@@ -862,6 +874,12 @@ private:
                 case '%':
                     if (i + 1 >= format.size())
                         throwLastCharacterIsPercentException();
+
+                    if (std::any_of(
+                            variable_width_formatter.begin(), variable_width_formatter.end(),
+                            [&](char c){ return c == format[i + 1]; }))
+                        return false;
+
                     if (mysql_M_is_month_name)
                     {
                         if (std::any_of(
@@ -883,13 +901,7 @@ private:
                                 [&](char c){ return c == format[i + 1]; }))
                             return false;
                     }
-                    else
-                    {
-                        if (std::any_of(
-                                variable_width_formatter.begin(), variable_width_formatter.end(),
-                                [&](char c){ return c == format[i + 1]; }))
-                            return false;
-                    }
+
                     i += 1;
                     continue;
                 default:
@@ -1133,8 +1145,8 @@ public:
         {
             if (!const_time_zone_column && arguments.size() > 2)
             {
-                if (!arguments[2].column.get()->getDataAt(i).toString().empty())
-                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i).toString());
+                if (!arguments[2].column.get()->getDataAt(i).empty())
+                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i));
                 else
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
             }
@@ -2011,7 +2023,7 @@ Formats a date or date with time according to the given format string. `format` 
 
 `formatDateTime` uses MySQL datetime format style, refer to the [mysql docs](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format).
 
-The opposite operation of this function is [`parseDateTime`](/sql-reference/functions/type-conversion-functions#parsedatetime).
+The opposite operation of this function is [`parseDateTime`](/sql-reference/functions/type-conversion-functions#parseDateTime).
 
 Using replacement fields, you can define a pattern for the resulting string.
 The example column in the table below shows formatting result for `2018-01-02 22:33:44`.
@@ -2116,7 +2128,7 @@ LIMIT 10
     };
     FunctionDocumentation::IntroducedIn introduced_in_formatDateTime = {1, 1};
     FunctionDocumentation::Category category_formatDateTime = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_formatDateTime = {description_formatDateTime, syntax_formatDateTime, arguments_formatDateTime, returned_value_formatDateTime, examples_formatDateTime, introduced_in_formatDateTime, category_formatDateTime};
+    FunctionDocumentation documentation_formatDateTime = {description_formatDateTime, syntax_formatDateTime, arguments_formatDateTime, {}, returned_value_formatDateTime, examples_formatDateTime, introduced_in_formatDateTime, category_formatDateTime};
 
     factory.registerFunction<FunctionFormatDateTime>(documentation_formatDateTime);
     factory.registerAlias("DATE_FORMAT", FunctionFormatDateTime::name, FunctionFactory::Case::Insensitive);
@@ -2126,7 +2138,7 @@ This function converts a Unix timestamp to a calendar date and a time of a day.
 
 It can be called in two ways:
 
-- When given a single argument of type [`Integer`](../data-types/int-uint.md), it returns a value of type [`DateTime`](../data-types/datetime.md), i.e. behaves like [`toDateTime`](../../sql-reference/functions/type-conversion-functions.md#todatetime).
+- When given a single argument of type [`Integer`](../data-types/int-uint.md), it returns a value of type [`DateTime`](../data-types/datetime.md), i.e. behaves like [`toDateTime`](../../sql-reference/functions/type-conversion-functions.md#toDateTime).
 - When given two or three arguments where the first argument is a value of type [`Integer`](../data-types/int-uint.md), [`Date`](../data-types/date.md), [`Date32`](../data-types/date32.md), [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md), the second argument is a constant format string and the third argument is an optional constant time zone string, the function returns a value of type [`String`](../data-types/string.md), i.e. it behaves like [`formatDateTime`](#formatDateTime).
   In this case, [MySQL's datetime format style](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format) is used.
     )";
@@ -2163,7 +2175,7 @@ SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime
     FunctionDocumentation::IntroducedIn introduced_in_fromUnixTimestamp = {20, 8};
     FunctionDocumentation::Category category_fromUnixTimestamp = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation_fromUnixTimestamp =
-    {description_fromUnixTimestamp, syntax_fromUnixTimestamp, arguments_fromUnixTimestamp, returned_value_fromUnixTimestamp, examples_fromUnixTimestamp, introduced_in_fromUnixTimestamp, category_fromUnixTimestamp};
+    {description_fromUnixTimestamp, syntax_fromUnixTimestamp, arguments_fromUnixTimestamp, {}, returned_value_fromUnixTimestamp, examples_fromUnixTimestamp, introduced_in_fromUnixTimestamp, category_fromUnixTimestamp};
 
     factory.registerFunction<FunctionFromUnixTimestamp>(documentation_fromUnixTimestamp);
     factory.registerAlias("FROM_UNIXTIME", FunctionFromUnixTimestamp::name, FunctionFactory::Case::Insensitive);
@@ -2171,7 +2183,7 @@ SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime
     FunctionDocumentation::Description description_formatDateTimeInJodaSyntax = R"(
 Similar to `formatDateTime`, except that it formats datetime in Joda style instead of MySQL style. Refer to [Joda Time documentation](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html).
 
-The opposite operation of this function is [`parseDateTimeInJodaSyntax`](/sql-reference/functions/type-conversion-functions#parsedatetimeinjodasyntax).
+The opposite operation of this function is [`parseDateTimeInJodaSyntax`](/sql-reference/functions/type-conversion-functions#parseDateTimeInJodaSyntax).
 
 Using replacement fields, you can define a pattern for the resulting string.
 
@@ -2226,7 +2238,7 @@ SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd
     };
     FunctionDocumentation::IntroducedIn introduced_in_formatDateTimeInJodaSyntax = {20, 1};
     FunctionDocumentation::Category category_formatDateTimeInJodaSyntax = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_formatDateTimeInJodaSyntax = {description_formatDateTimeInJodaSyntax, syntax_formatDateTimeInJodaSyntax, arguments_formatDateTimeInJodaSyntax, returned_value_formatDateTimeInJodaSyntax, examples_formatDateTimeInJodaSyntax, introduced_in_formatDateTimeInJodaSyntax, category_formatDateTimeInJodaSyntax};
+    FunctionDocumentation documentation_formatDateTimeInJodaSyntax = {description_formatDateTimeInJodaSyntax, syntax_formatDateTimeInJodaSyntax, arguments_formatDateTimeInJodaSyntax, {}, returned_value_formatDateTimeInJodaSyntax, examples_formatDateTimeInJodaSyntax, introduced_in_formatDateTimeInJodaSyntax, category_formatDateTimeInJodaSyntax};
 
     factory.registerFunction<FunctionFormatDateTimeInJodaSyntax>(documentation_formatDateTimeInJodaSyntax);
 
@@ -2235,7 +2247,7 @@ This function converts a Unix timestamp to a calendar date and a time of a day.
 
 It can be called in two ways:
 
-When given a single argument of type [`Integer`](../data-types/int-uint.md), it returns a value of type [`DateTime`](../data-types/datetime.md), i.e. behaves like [`toDateTime`](../../sql-reference/functions/type-conversion-functions.md#todatetime).
+When given a single argument of type [`Integer`](../data-types/int-uint.md), it returns a value of type [`DateTime`](../data-types/datetime.md), i.e. behaves like [`toDateTime`](../../sql-reference/functions/type-conversion-functions.md#toDateTime).
 
 When given two or three arguments where the first argument is a value of type [`Integer`](../data-types/int-uint.md), [`Date`](../data-types/date.md), [`Date32`](../data-types/date32.md), [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md), the second argument is a constant format string and the third argument is an optional constant time zone string, the function returns a value of type [`String`](../data-types/string.md), i.e. it behaves like [`formatDateTimeInJodaSyntax`](#formatDateTimeInJodaSyntax). In this case, [Joda datetime format style](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) is used.
     )";
@@ -2263,7 +2275,7 @@ SELECT fromUnixTimestampInJodaSyntax(1234334543, 'yyyy-MM-dd HH:mm:ss', 'UTC') A
     };
     FunctionDocumentation::IntroducedIn introduced_in_fromUnixTimestampInJodaSyntax = {23, 1};
     FunctionDocumentation::Category category_fromUnixTimestampInJodaSyntax = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_fromUnixTimestampInJodaSyntax = {description_fromUnixTimestampInJodaSyntax, syntax_fromUnixTimestampInJodaSyntax, arguments_fromUnixTimestampInJodaSyntax, returned_value_fromUnixTimestampInJodaSyntax, examples_fromUnixTimestampInJodaSyntax, introduced_in_fromUnixTimestampInJodaSyntax, category_fromUnixTimestampInJodaSyntax};
+    FunctionDocumentation documentation_fromUnixTimestampInJodaSyntax = {description_fromUnixTimestampInJodaSyntax, syntax_fromUnixTimestampInJodaSyntax, arguments_fromUnixTimestampInJodaSyntax, {}, returned_value_fromUnixTimestampInJodaSyntax, examples_fromUnixTimestampInJodaSyntax, introduced_in_fromUnixTimestampInJodaSyntax, category_fromUnixTimestampInJodaSyntax};
 
     factory.registerFunction<FunctionFromUnixTimestampInJodaSyntax>(documentation_fromUnixTimestampInJodaSyntax);
 }

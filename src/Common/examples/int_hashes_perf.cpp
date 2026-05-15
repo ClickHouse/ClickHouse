@@ -193,25 +193,28 @@ static inline size_t tabulation(UInt64 x)
 }
 
 
+namespace
+{
+
 const size_t BUF_SIZE = 1024;
 
 using Source = std::vector<UInt64>;
 
 
-static void report(const char * name, size_t n, double elapsed, UInt64 tsc_diff, size_t res)
+void report(const char * name, size_t n, double elapsed, UInt64 tsc_diff, size_t res)
 {
     std::cerr << name << std::endl
-        << "Done in " << elapsed
-        << " (" << n / elapsed << " elem/sec."
-        << ", " << n * sizeof(UInt64) / elapsed / (1ULL << 30) << " GiB/sec."
-        << ", " << (tsc_diff * 1.0 / n) << " tick/elem)"
-        << "; res = " << res
-        << std::endl << std::endl;
+              << "Done in " << elapsed << " (" << static_cast<double>(n) / elapsed << " elem/sec."
+              << ", " << (static_cast<double>(n) * sizeof(UInt64)) / (elapsed * (1ULL << 30))
+              << " GiB/sec."
+              << ", " << static_cast<double>(tsc_diff) / static_cast<double>(n) << " tick/elem)"
+              << "; res = " << res << std::endl
+              << std::endl;
 }
 
 
 template <size_t Func(UInt64)>
-static inline void test(size_t n, const UInt64 * data, const char * name)
+inline void test(size_t n, const UInt64 * data, const char * name)
 {
     /// throughput. Calculations of hash functions from different values may overlap.
     {
@@ -254,8 +257,9 @@ static inline void test(size_t n, const UInt64 * data, const char * name)
     }
 }
 
+}
 
-int main(int argc, char ** argv)
+int mainEntryExampleIntHashesPerf(int argc, char ** argv)
 {
     size_t n = (std::stol(argv[1]) + (BUF_SIZE - 1)) / BUF_SIZE * BUF_SIZE;
     size_t method = argc <= 2 ? 0 : std::stol(argv[2]);

@@ -1,8 +1,9 @@
 #include <Storages/MergeTree/Compaction/PartsCollectors/MergeTreePartsCollector.h>
-#include <Storages/MergeTree/Compaction/PartsCollectors/Common.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 #include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
+#include <Storages/MergeTree/Compaction/PartsCollectors/Common.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {
@@ -31,7 +32,7 @@ MergeTreeDataPartsVector collectInitial(const MergeTreeData & data, const MergeT
     MergeTreeDataPartsVector outdated_parts;
 
     {
-        auto lock = data.lockParts();
+        auto lock = data.readLockParts();
         active_parts = data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, affordable_kinds, lock);
         outdated_parts = data.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Outdated}, affordable_kinds, lock);
     }
@@ -42,16 +43,17 @@ MergeTreeDataPartsVector collectInitial(const MergeTreeData & data, const MergeT
 
     for (const auto & part : outdated_parts)
     {
+        auto current_version_info = part->version->getInfo();
         /// We don't need rolled back parts.
         /// NOTE When rolling back a transaction we set creation_csn to RolledBackCSN at first
         /// and then remove part from working set, so there's no race condition
-        if (part->version.creation_csn == Tx::RolledBackCSN)
+        if (current_version_info.creation_csn == Tx::RolledBackCSN)
             continue;
 
         /// We don't need parts that are finally removed.
         /// NOTE There's a minor race condition: we may get UnknownCSN if a transaction has been just committed concurrently.
         /// But it's not a problem if we will add such part to `data_parts`.
-        if (part->version.removal_csn != Tx::UnknownCSN)
+        if (current_version_info.removal_csn != Tx::UnknownCSN)
             continue;
 
         active_parts_set.add(part->name);
@@ -77,24 +79,19 @@ MergeTreeDataPartsVector collectInitial(const MergeTreeData & data, const MergeT
 
 auto constructPreconditionsPredicate(const StoragePolicyPtr & storage_policy, const MergeTreeTransactionPtr & tx, const MergeTreeMergePredicatePtr & merge_pred)
 {
-    bool has_volumes_with_disabled_merges = storage_policy->hasAnyVolumeWithDisabledMerges();
-
-    auto predicate = [storage_policy, tx, merge_pred, has_volumes_with_disabled_merges](const MergeTreeDataPartPtr & part) -> std::expected<void, PreformattedMessage>
+    auto predicate = [storage_policy, tx, merge_pred](const MergeTreeDataPartPtr & part) -> std::expected<void, PreformattedMessage>
     {
         if (tx)
         {
             /// Cannot merge parts if some of them are not visible in current snapshot
             /// TODO Transactions: We can use simplified visibility rules (without CSN lookup) here
-            if (!part->version.isVisible(tx->getSnapshot(), Tx::EmptyTID))
+            if (!part->version->isVisible(tx->getSnapshot(), Tx::EmptyTID))
                 return std::unexpected(PreformattedMessage::create("Part {} is not visible in transaction {}", part->name, tx->dumpDescription()));
 
             /// Do not try to merge parts that are locked for removal (merge will probably fail)
-            if (part->version.isRemovalTIDLocked())
+            if (part->version->isRemovalTIDLocked())
                 return std::unexpected(PreformattedMessage::create("Part {} is locked for removal", part->name));
         }
-
-        if (has_volumes_with_disabled_merges && !part->shallParticipateInMerges(storage_policy))
-            return std::unexpected(PreformattedMessage::create("Merges for part's {} volume are disabled", part->name));
 
         chassert(merge_pred);
         return merge_pred->canUsePartInMerges(part);
@@ -126,7 +123,7 @@ MergeTreePartsCollector::MergeTreePartsCollector(StorageMergeTree & storage_, Me
 {
 }
 
-PartsRanges MergeTreePartsCollector::grabAllPossibleRanges(
+CollectedPartsRanges MergeTreePartsCollector::grabAllPossibleRanges(
     const StorageMetadataPtr & metadata_snapshot,
     const StoragePolicyPtr & storage_policy,
     const time_t & current_time,
@@ -134,8 +131,9 @@ PartsRanges MergeTreePartsCollector::grabAllPossibleRanges(
     LogSeriesLimiter & series_log) const
 {
     auto parts = filterByPartitions(collectInitial(storage, tx), partitions_hint);
+    auto partitions_stats = calculateStatisticsForParts(parts, current_time);
     auto ranges = splitPartsByPreconditions(std::move(parts), storage_policy, tx, merge_pred, series_log);
-    return constructPartsRanges(std::move(ranges), metadata_snapshot, current_time);
+    return {constructPartsRanges(std::move(ranges), metadata_snapshot, storage_policy, current_time), std::move(partitions_stats)};
 }
 
 std::expected<PartsRange, PreformattedMessage> MergeTreePartsCollector::grabAllPartsInsidePartition(
@@ -148,7 +146,7 @@ std::expected<PartsRange, PreformattedMessage> MergeTreePartsCollector::grabAllP
     if (auto result = checkAllParts(parts, storage_policy, tx, merge_pred); !result)
         return std::unexpected(std::move(result.error()));
 
-    auto ranges = constructPartsRanges({std::move(parts)}, metadata_snapshot, current_time);
+    auto ranges = constructPartsRanges({std::move(parts)}, metadata_snapshot, storage_policy, current_time);
     chassert(ranges.size() == 1);
 
     return std::move(ranges.front());

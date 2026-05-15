@@ -1,3 +1,5 @@
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageMySQL.h>
 
 #if USE_MYSQL
@@ -10,6 +12,7 @@
 #include <Processors/Sources/MySQLSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -64,7 +67,7 @@ StorageMySQL::StorageMySQL(
     const String & comment,
     ContextPtr context_,
     const MySQLSettings & mysql_settings_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , WithContext(context_->getGlobalContext())
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
@@ -86,7 +89,16 @@ StorageMySQL::StorageMySQL(
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageMySQL::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 ColumnsDescription StorageMySQL::getTableStructureFromData(
@@ -106,19 +118,20 @@ ColumnsDescription StorageMySQL::getTableStructureFromData(
     return columns->second;
 }
 
-Pipe StorageMySQL::read(
-    const Names & column_names_,
+void StorageMySQL::readImpl(
+    QueryPlan & query_plan,
+    const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info_,
+    SelectQueryInfo & query_info,
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    storage_snapshot->check(column_names_);
+    storage_snapshot->check(column_names);
     String query = transformQueryForExternalDatabase(
-        query_info_,
-        column_names_,
+        query_info,
+        column_names,
         storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::BackticksMySQL,
         LiteralEscapingStyle::Regular,
@@ -128,7 +141,7 @@ Pipe StorageMySQL::read(
     LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
-    for (const String & column_name : column_names_)
+    for (const String & column_name : column_names)
     {
         auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
 
@@ -139,10 +152,13 @@ Pipe StorageMySQL::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-
     StreamSettings mysql_input_stream_settings(context_->getSettingsRef(),
             (*mysql_settings)[MySQLSetting::connection_auto_close]);
-    return Pipe(std::make_shared<MySQLWithFailoverSource>(pool, query, sample_block, mysql_input_stream_settings));
+    query_plan.addStep(std::make_unique<ReadFromMySQLStep>(
+        sample_block,
+        pool,
+        query,
+        mysql_input_stream_settings));
 }
 
 
@@ -215,7 +231,7 @@ public:
         if (block.rows() <= max_rows)
             return {block};
 
-        const size_t split_block_size = static_cast<size_t>(ceil(block.rows() * 1.0 / max_rows));
+        const size_t split_block_size = static_cast<size_t>(ceil(static_cast<double>(block.rows()) * 1.0 / static_cast<double>(max_rows)));
         Blocks split_blocks(split_block_size);
 
         for (size_t idx = 0; idx < split_block_size; ++idx)
@@ -317,10 +333,10 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     return configuration;
 }
 
-StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings)
+StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLSettings & storage_settings, const StorageID * table_id)
 {
     StorageMySQL::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_, true, nullptr, table_id))
     {
         configuration = StorageMySQL::processNamedCollectionResult(*named_collection, storage_settings, context_);
     }
@@ -356,13 +372,33 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
     return configuration;
 }
 
+ReadFromMySQLStep::ReadFromMySQLStep(
+    const Block & sample_block_,
+    mysqlxx::PoolWithFailoverPtr pool_,
+    const std::string & query_str_,
+    const StreamSettings & mysql_input_stream_settings_
+)
+    : ISourceStep(std::make_shared<const Block>(sample_block_.cloneEmpty()))
+    , pool(std::move(pool_))
+    , query_str(query_str_)
+    , mysql_input_stream_settings(mysql_input_stream_settings_)
+{
+}
+
+void ReadFromMySQLStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/)
+{
+    auto pipe = Pipe(std::make_shared<MySQLWithFailoverSource>(pool, query_str, *getOutputHeader(), mysql_input_stream_settings));
+
+    pipeline.init(std::move(pipe));
+}
+
 
 void registerStorageMySQL(StorageFactory & factory)
 {
     factory.registerStorage("MySQL", [](const StorageFactory::Arguments & args)
     {
         MySQLSettings mysql_settings; /// TODO: move some arguments from the arguments to the SETTINGS.
-        auto configuration = StorageMySQL::getConfiguration(args.engine_args, args.getLocalContext(), mysql_settings);
+        auto configuration = StorageMySQL::getConfiguration(args.engine_args, args.getLocalContext(), mysql_settings, &args.table_id);
 
         if (args.storage_def->settings)
             mysql_settings.loadFromQuery(*args.storage_def);

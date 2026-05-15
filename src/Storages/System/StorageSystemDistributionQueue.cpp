@@ -121,7 +121,7 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, Cont
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
     std::map<String, std::map<String, StoragePtr>> tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases())
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         /// Check if database can contain distributed tables
         if (db.second->isExternal())

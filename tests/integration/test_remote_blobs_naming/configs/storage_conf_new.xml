@@ -57,5 +57,7 @@
 
     <merge_tree>
         <storage_policy>s3</storage_policy>
+        <serialization_info_version>basic</serialization_info_version>
+        <string_serialization_version>single_stream</string_serialization_version>
     </merge_tree>
 </clickhouse>

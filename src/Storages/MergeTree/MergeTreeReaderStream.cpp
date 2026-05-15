@@ -4,6 +4,7 @@
 
 #include <base/getThreadId.h>
 #include <base/range.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <utility>
 #include <filesystem>
 
@@ -58,6 +59,7 @@ void MergeTreeReaderStream::init()
     if (initialized)
         return;
 
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeReaderStream::init");
     /// Compute the size of the buffer.
     auto [max_mark_range_bytes, sum_mark_range_bytes] = estimateMarkRangeBytes(all_mark_ranges);
 
@@ -76,12 +78,27 @@ void MergeTreeReaderStream::init()
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
 
     /// Initialize the objects that shall be used to perform read operations.
-    if (uncompressed_cache)
+    if (!settings.is_compressed)
+    {
+        auto buffer = data_part_storage->readFile(
+            path_prefix + data_file_extension,
+            read_settings,
+            estimated_sum_mark_range_bytes);
+
+        if (profile_callback)
+            buffer->setProfileCallback(profile_callback, clock_type);
+
+        data_buffer = buffer.get();
+        plain_file_buffer = buffer.get();
+        read_buffer_holder = std::move(buffer);
+    }
+    else if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
             std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
             [this, estimated_sum_mark_range_bytes, read_settings]()
             {
+                auto local_component_guard = Coordination::setCurrentComponent("MergeTreeReaderStream::create_buffer");
                 return data_part_storage->readFile(
                     path_prefix + data_file_extension,
                     read_settings,
@@ -96,9 +113,9 @@ void MergeTreeReaderStream::init()
         if (!settings.checksum_on_read)
             buffer->disableChecksumming();
 
-        cached_buffer = std::move(buffer);
-        data_buffer = cached_buffer.get();
-        compressed_data_buffer = cached_buffer.get();
+        data_buffer = buffer.get();
+        compressed_data_buffer = buffer.get();
+        read_buffer_holder = std::move(buffer);
     }
     else
     {
@@ -114,9 +131,9 @@ void MergeTreeReaderStream::init()
         if (!settings.checksum_on_read)
             buffer->disableChecksumming();
 
-        non_cached_buffer = std::move(buffer);
-        data_buffer = non_cached_buffer.get();
-        compressed_data_buffer = non_cached_buffer.get();
+        data_buffer = buffer.get();
+        compressed_data_buffer = buffer.get();
+        read_buffer_holder = std::move(buffer);
     }
 
     initialized = true;
@@ -131,7 +148,7 @@ void MergeTreeReaderStream::seekToMarkAndColumn(size_t row_index, size_t column_
 
     try
     {
-        compressed_data_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
+        seekToMark(mark);
     }
     catch (Exception & e)
     {
@@ -148,7 +165,17 @@ void MergeTreeReaderStream::seekToMarkAndColumn(size_t row_index, size_t column_
 
 void MergeTreeReaderStream::seekToMark(const MarkInCompressedFile & mark)
 {
-    compressed_data_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
+    if (compressed_data_buffer)
+    {
+        compressed_data_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
+    }
+    else
+    {
+        if (mark.offset_in_decompressed_block != 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot seek to offset in decompressed block ({}) for uncompressed data", mark.offset_in_decompressed_block);
+
+        plain_file_buffer->seek(mark.offset_in_compressed_file, SEEK_SET);
+    }
 }
 
 void MergeTreeReaderStream::seekToStart()
@@ -156,7 +183,7 @@ void MergeTreeReaderStream::seekToStart()
     init();
     try
     {
-        compressed_data_buffer->seek(0, 0);
+        seekToMark(MarkInCompressedFile{0, 0});
     }
     catch (Exception & e)
     {
@@ -201,12 +228,6 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
 {
     init();
     return data_buffer;
-}
-
-CompressedReadBufferBase * MergeTreeReaderStream::getCompressedDataBuffer()
-{
-    init();
-    return compressed_data_buffer;
 }
 
 size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
@@ -270,7 +291,7 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
     /// It consists of 2 parts of data - during the serialization the first part is written before the data and second - after the data.
     /// But during deserialization we read both parts before the data, so we can't use the marks and need to always return the
     /// whole file size.
-    if (settings.is_dynamic_or_object_structure)
+    if (settings.is_metadata_file)
         return file_size;
 
     /// This is a good scenario. The compressed block is finished within the right mark,

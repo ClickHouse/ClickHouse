@@ -25,10 +25,6 @@ class FunctionReverse : public IFunction
 {
 public:
     static constexpr auto name = "reverse";
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<FunctionReverse>();
-    }
 
     String getName() const override
     {
@@ -98,6 +94,13 @@ public:
         if (const ColumnTuple * col_tuple = checkAndGetColumn<ColumnTuple>(column.get()))
         {
             size_t tuple_size = col_tuple->tupleSize();
+
+            if (tuple_size == 0)
+            {
+                /// Preserve the number of rows for empty tuple columns
+                return ColumnTuple::create(col_tuple->size());
+            }
+
             Columns tuple_columns(tuple_size);
             for (size_t i = 0; i < tuple_size; ++i)
             {
@@ -118,17 +121,22 @@ public:
     static constexpr auto name = "reverse";
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ReverseOverloadResolver>(context); }
 
-    explicit ReverseOverloadResolver(ContextPtr context_) : context(context_) {}
+    explicit ReverseOverloadResolver(ContextPtr context)
+        : array_reverse(FunctionFactory::instance().get("arrayReverse", context))
+    {
+    }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
 
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))
-            return FunctionFactory::instance().getImpl("arrayReverse", context)->build(arguments);
+            return array_reverse->build(arguments);
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
-            FunctionReverse::create(context),
+            std::make_shared<FunctionReverse>(),
             DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
             return_type);
     }
@@ -136,7 +144,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override { return FunctionReverse{}.getReturnTypeImpl(arguments); }
 
 private:
-    ContextPtr context;
+    FunctionOverloadResolverPtr array_reverse;
 };
 
 }
@@ -155,7 +163,7 @@ REGISTER_FUNCTION(Reverse)
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<ReverseOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
 }

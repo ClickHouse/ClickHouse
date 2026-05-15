@@ -5,7 +5,7 @@
 #include <expected>
 
 #include <Common/ActionBlocker.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/SharedMutex.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
@@ -19,6 +19,8 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+
 
 namespace DB
 {
@@ -82,7 +84,7 @@ private:
     LoggerPtr log = nullptr;
 
     /// Protects the queue, future_parts and other queue state variables.
-    mutable std::mutex state_mutex;
+    mutable SharedMutex state_mutex;
 
     /// A set of parts that should be on this replica according to the queue entries that have been done
     /// up to this point. The invariant holds: `virtual_parts` = `current_parts` + `queue`.
@@ -132,6 +134,7 @@ private:
         MutationStatus(const ReplicatedMergeTreeMutationEntryPtr & entry_, MergeTreeDataFormatVersion format_version_)
             : entry(entry_)
             , parts_to_do(format_version_)
+            , parts_in_progress(format_version_)
         {
         }
 
@@ -145,6 +148,9 @@ private:
         /// We use ActiveDataPartSet structure to be able to manage covering and
         /// covered parts.
         ActiveDataPartSet parts_to_do;
+
+        /// Current parts that are currently being mutated.
+        ActiveDataPartSet parts_in_progress;
 
         /// Note that is_done is not equivalent to parts_to_do.size() == 0
         /// (even if parts_to_do.size() == 0 some relevant parts can still commit in the future).
@@ -160,6 +166,9 @@ private:
 
     /// Mapping from znode path to Mutations Status
     std::map<String, MutationStatus> mutations_by_znode;
+
+    /// Mapping from part name to postpone reason
+    mutable std::map<String, String> current_parts_postpone_reasons;
 
     /// Unfinished mutations that are required for AlterConversions.
     MutationCounters mutation_counters;
@@ -212,7 +221,7 @@ private:
     /// Insert new entry from log into queue
     void insertUnlocked(
         const LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed,
-        std::lock_guard<std::mutex> & state_lock);
+        std::lock_guard<SharedMutex> & state_lock);
 
     void removeProcessedEntry(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
 
@@ -225,7 +234,7 @@ private:
         MergeTreeDataMergerMutator & merger_mutator,
         MergeTreeData & data,
         const CommittingBlocks & committing_blocks,
-        std::unique_lock<std::mutex> & state_lock) const;
+        std::unique_lock<SharedMutex> & state_lock) const;
 
     /// Return the version (block number) of the last mutation that we don't need to apply to the part
     /// with getDataVersion() == data_version. (Either this mutation was already applied or the part
@@ -240,7 +249,7 @@ private:
     bool isCoveredByFuturePartsImpl(
         const LogEntry & entry,
         const String & new_part_name, String & out_reason,
-        std::unique_lock<std::mutex> & state_lock,
+        std::unique_lock<SharedMutex> & state_lock,
         std::vector<LogEntryPtr> * covered_entries_to_wait) const;
 
     /// After removing the queue element, update the insertion times in the RAM. Running under state_mutex.
@@ -249,7 +258,7 @@ private:
         bool is_successful,
         std::optional<time_t> & min_unprocessed_insert_time_changed,
         std::optional<time_t> & max_processed_insert_time_changed,
-        std::unique_lock<std::mutex> & state_lock);
+        std::unique_lock<SharedMutex> & state_lock);
 
     /// Add part for mutations with block_number > part.getDataVersion()
     void addPartToMutations(const String & part_name, const MergeTreePartInfo & part_info);
@@ -265,6 +274,22 @@ private:
     ///    ^ (this may happen if we downloaded mutated part from other replica)
     void removeCoveredPartsFromMutations(const String & part_name, bool remove_part, bool remove_covered_parts);
 
+    /// Add part to mutations (parts_in_progress), which satisfy conditions:
+    /// block_number > part_info.getDataVersion()
+    /// and block_number <= new_part_info.getMutationVersion()
+    void addPartInProgressToMutations(const String & part_name, const MergeTreePartInfo & part_info, const MergeTreePartInfo & new_part_info);
+
+    /// Remove part from mutations(parts_in_progress), which satisfy conditions:
+    /// block_number > part_info.getDataVersion()
+    /// and block_number <= new_part_info.getMutationVersion()
+    void removePartInProgressFromMutations(const String & part_name, const MergeTreePartInfo & part_info, const MergeTreePartInfo & new_part_info);
+
+    /// Add part postpone reason into current_parts_postpone_reasons
+    void addPartsPostponeReasons(const String & part_name, const String & postpone_reason) const;
+
+    /// Clear current_parts_postpone_reasons
+    void clearPartsPostponeReasons() const;
+
     /// Update the insertion times in ZooKeeper.
     void updateTimesInZooKeeper(zkutil::ZooKeeperPtr zookeeper,
         std::optional<time_t> min_unprocessed_insert_time_changed,
@@ -272,11 +297,11 @@ private:
 
     bool isIntersectingWithDropReplaceIntent(
         const LogEntry & entry,
-        const String & part_name, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex lock*/) const;
+        const String & part_name, String & out_reason, std::unique_lock<SharedMutex> & /*state_mutex lock*/) const;
 
-    bool isMergeOfPatchPartsBlocked(const LogEntry & entry, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex_lock*/) const;
-    bool isDropOfPatchPartBlocked(const LogEntry & entry, String & out_reason, std::unique_lock<std::mutex> & /*state_mutex_lock*/) const;
-    bool havePendingPatchPartsForMutation(const LogEntry & entry, String & out_reason, const CommittingBlocks & committing_blocks, std::unique_lock<std::mutex> & /*state_mutex_lock*/) const;
+    bool isMergeOfPatchPartsBlocked(const LogEntry & entry, String & out_reason, std::unique_lock<SharedMutex> & /*state_mutex_lock*/) const;
+    bool isDropOfPatchPartBlocked(const LogEntry & entry, String & out_reason, std::unique_lock<SharedMutex> & /*state_mutex_lock*/) const;
+    bool havePendingPatchPartsForMutation(const LogEntry & entry, String & out_reason, const CommittingBlocks & committing_blocks, std::unique_lock<SharedMutex> & /*state_mutex_lock*/) const;
 
     /// Marks the element of the queue as running.
     class CurrentlyExecuting
@@ -291,14 +316,14 @@ private:
         CurrentlyExecuting(
             const ReplicatedMergeTreeQueue::LogEntryPtr & entry_,
             ReplicatedMergeTreeQueue & queue_,
-            std::unique_lock<std::mutex> & state_lock);
+            std::unique_lock<SharedMutex> & state_lock);
 
         /// In case of fetch, we determine actual part during the execution, so we need to update entry. It is called under state_mutex.
         static void setActualPartName(
             ReplicatedMergeTreeQueue::LogEntry & entry,
             const String & actual_part_name,
             ReplicatedMergeTreeQueue & queue,
-            std::unique_lock<std::mutex> & state_lock,
+            std::unique_lock<SharedMutex> & state_lock,
             std::vector<LogEntryPtr> & covered_entries_to_wait);
 
     public:
@@ -447,6 +472,7 @@ public:
     /// it according to part mutation version. Used when we apply alter commands on fly,
     /// without actual data modification on disk.
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot(const MutationsSnapshot::Params & params) const;
+
     MutationCounters getMutationCounters() const;
 
     /// Mark finished mutations as done. If the function needs to be called again at some later time
@@ -522,7 +548,7 @@ public:
 
     void removeCurrentPartsFromMutations();
 
-    using QueueLocks = std::scoped_lock<std::mutex, std::mutex, std::mutex>;
+    using QueueLocks = std::scoped_lock<SharedMutex, std::mutex, std::mutex>;
 
     /// This method locks all important queue mutexes: state_mutex,
     /// pull_logs_to_queue and update_mutations_mutex. It should be used only
