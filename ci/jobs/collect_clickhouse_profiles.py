@@ -262,11 +262,29 @@ def configure_datasets(server_dir, port=9000):
         stop_server(proc, log_fd)
         return False
 
-    Shell.check(
-        f"{server_dir}/clickhouse-client --port {port} --query 'create database IF NOT EXISTS test' "
-        f"&& {server_dir}/clickhouse-client --port {port} --query 'rename table datasets.hits_v1 to test.hits'",
+    client = f"{server_dir}/clickhouse-client --port {port}"
+    if not Shell.check(
+        f"{client} --query 'CREATE DATABASE IF NOT EXISTS test'",
+        verbose=True,
+    ):
+        stop_server(proc, log_fd)
+        return False
+    # The dataset directory is shared between PGO and BOLT passes, so the rename
+    # only happens on the first run; skip it when the source table is gone.
+    res, out, _ = Shell.get_res_stdout_stderr(
+        f"{client} --query 'EXISTS TABLE datasets.hits_v1'",
         verbose=True,
     )
+    if res != 0:
+        stop_server(proc, log_fd)
+        return False
+    if out.strip() == "1":
+        if not Shell.check(
+            f"{client} --query 'RENAME TABLE datasets.hits_v1 TO test.hits'",
+            verbose=True,
+        ):
+            stop_server(proc, log_fd)
+            return False
     stop_server(proc, log_fd)
     time.sleep(3)
 
