@@ -15,6 +15,7 @@ namespace DB
 {
 struct FileCacheReserveStat;
 class EvictionCandidates;
+class FileCache;
 class EvictionInfo;
 using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 struct CacheUsageStatGuard;
@@ -393,6 +394,15 @@ public:
 
     virtual void setCacheUsageStatGuard(std::shared_ptr<CacheUsageStatGuard>) {}
 
+    /// One-shot back-reference set by FileCache at the end of its constructor
+    /// so internally-spawned EvictionCandidates instances (e.g. SLRU's
+    /// promotion-induced downgrade in tryIncreasePriority) can attribute
+    /// evictions to the owning cache for `filesystem_cache_*` metrics.
+    /// Wrapping priorities (SLRU, Split) override to propagate to their
+    /// nested priorities.
+    virtual void setOwningCache(const FileCache * cache) { owning_cache = cache; }
+    const FileCache * getOwningCache() const { return owning_cache; }
+
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);
 
@@ -403,6 +413,9 @@ protected:
 
     std::atomic<size_t> max_size = 0;
     std::atomic<size_t> max_elements = 0;
+
+    /// Back-reference to the owning FileCache. See setOwningCache.
+    const FileCache * owning_cache = nullptr;
 };
 
 using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;

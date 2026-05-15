@@ -656,7 +656,10 @@ bool SLRUFileCachePriority::tryIncreasePriority(
 #endif
     }
 
-    EvictionCandidates downgrade_candidates;
+    /// Pass the owning FileCache so `filesystem_cache_*` metrics count
+    /// promotion-induced downgrade evictions, not only the FileCache.cpp
+    /// reservation/resize call sites.
+    EvictionCandidates downgrade_candidates(getOwningCache());
     FileCacheReserveStat downgrade_stat;
     InvalidatedEntriesInfos invalidated_entries;
 

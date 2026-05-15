@@ -304,6 +304,11 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     }
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
 
+    /// Back-reference used by priority code (e.g. SLRU's promotion-induced
+    /// downgrade in tryIncreasePriority) to attribute internally-evicted
+    /// segments to the owning cache for `filesystem_cache_*` metrics.
+    main_priority->setOwningCache(this);
+
     if (settings[FileCacheSetting::enable_filesystem_query_cache_limit])
         query_limit = std::make_unique<FileCacheQueryLimit>();
 

@@ -117,6 +117,14 @@ public:
 
     void resetEvictionPos() override;
 
+    void setOwningCache(const FileCache * cache) override
+    {
+        IFileCachePriority::setOwningCache(cache);
+        for (auto & p : priorities_holder)
+            if (p)
+                p->setOwningCache(cache);
+    }
+
 protected:
     size_t getHoldSize() override;
 

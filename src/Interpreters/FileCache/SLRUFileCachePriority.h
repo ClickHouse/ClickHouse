@@ -129,6 +129,13 @@ protected:
         protected_queue.setCacheUsageStatGuard(guard);
     }
 
+    void setOwningCache(const FileCache * cache) override
+    {
+        IFileCachePriority::setOwningCache(cache);
+        probationary_queue.setOwningCache(cache);
+        protected_queue.setOwningCache(cache);
+    }
+
 private:
     using LRUIterator = LRUFileCachePriority::LRUIterator;
     using LRUQueue = std::list<Entry>;
