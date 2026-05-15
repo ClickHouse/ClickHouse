@@ -19,10 +19,25 @@ namespace DB
     }
 
     QueryProcessingStage::Enum StorageLoop::getQueryProcessingStage(
-        ContextPtr local_context, QueryProcessingStage::Enum to_stage, const StorageSnapshotPtr &, SelectQueryInfo & query_info) const
+        ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const
     {
-        auto storage_snapshot = inner_storage->getStorageSnapshot(inner_storage->getInMemoryMetadataPtr(local_context, false), local_context);
-        return inner_storage->getQueryProcessingStage(local_context, to_stage, storage_snapshot, query_info);
+        /// The Loop source emits raw rows: `LoopSource::initLoop` always builds the inner
+        /// select via `InterpreterSelectQueryAnalyzer` / `InterpreterSelectWithUnionQuery`
+        /// with `QueryProcessingStage::Complete`, so the chunks it produces are plain
+        /// column data with no `AggregatedChunkInfo` attached.
+        ///
+        /// Previously this method delegated to `inner_storage->getQueryProcessingStage`,
+        /// which for a wrapped Distributed/remote table (or any storage that can defer
+        /// aggregation) could return `WithMergeableState`. The outer planner would then
+        /// add a `MergingAggregatedStep` that asserts an `AggregatedChunkInfo` is present
+        /// on every input chunk — and the LoopSource's plain chunks would trip the
+        /// `LOGICAL_ERROR` "Chunk info was not set for chunk in MergingAggregatedTransform"
+        /// (issue #104863). Without parallel replicas the same mismatch silently dropped
+        /// the outer aggregation, returning duplicated rows instead.
+        ///
+        /// Reporting `FetchColumns` lets the outer planner add a regular `AggregatingStep`
+        /// over the loop output, which matches what the source actually produces.
+        return QueryProcessingStage::FetchColumns;
     }
 
     void StorageLoop::read(
