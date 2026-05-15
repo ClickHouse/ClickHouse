@@ -1588,6 +1588,27 @@ and you want FINAL to select the winning row before filtering. When disabled, PR
 Note: If apply_row_level_security_after_final is enabled and row policy uses non-sorting-key columns, PREWHERE will also
 be deferred to maintain correct execution order (row policy must be applied before PREWHERE).
 )", 0) \
+    DECLARE(Bool, defer_partition_pruning_after_final, true, R"(
+When enabled (default), partition pruning is skipped for `FINAL` queries on tables whose
+partition-key columns are not part of the sorting key. This is the correctness-safe behavior
+introduced in 26.3: `FINAL` may need to deduplicate rows that share a primary key but live
+in different partitions, and partition pruning would silently exclude such rows from the
+deduplication input.
+
+When disabled, partition pruning is applied even with `FINAL`, restoring the pre-26.3
+behavior. This can be substantially faster for queries with `WHERE` predicates on the
+partition column, but is only correct when rows with the same primary key cannot exist
+in different partitions — e.g. event-log tables whose partition column is set at insert
+time and never changes.
+
+This setting only affects partitioned tables whose partition-key columns are not contained
+in the sorting key; for other tables partition pruning is always applied.
+
+Possible values:
+
+- 0 — Apply partition pruning before `FINAL` (pre-26.3 behavior, faster but unsafe in the general case).
+- 1 — Defer partition pruning to after `FINAL` (default, correctness-safe).
+)", 0) \
     \
     DECLARE(UInt64, mysql_max_rows_to_insert, 65536, R"(
 The maximum number of rows in MySQL batch insertion of the MySQL storage engine
@@ -4978,6 +4999,16 @@ Result
 │ QueryMemoryLimitExceeded │     0 │ Number of times when memory limit exceeded for query. │
 └──────────────────────────┴───────┴───────────────────────────────────────────────────────┘
 ```
+)", 0) \
+    DECLARE(Bool, system_metric_log_show_zero_values_in_histograms, false, R"(
+Controls whether zero-valued histogram data is written to the `histograms` nested column of `system.metric_log`.
+
+By default, histograms whose total observation `count` is zero are skipped, and within each emitted histogram, bucket entries with no observations are also omitted from the `histogram` map. Enable this to write every histogram and every bucket regardless of count — useful for monitoring systems that require every metric to appear at every checkpoint.
+
+Possible values:
+
+- 0 — Disabled. Histograms with `count = 0` are not emitted; emitted histograms include only buckets that received at least one observation.
+- 1 — Enabled. All histograms are written, and every bucket boundary appears in `histogram`.
 )", 0) \
     DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32", R"(
 Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32` or `date2String`. All modern mappings (`decimal`, `datetime64`, `date2Date32`) are enabled by default.
