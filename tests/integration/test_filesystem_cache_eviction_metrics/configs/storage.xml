@@ -9,14 +9,13 @@
                 <type>cache</type>
                 <disk>local_blob</disk>
                 <path>cache_eviction_metrics/</path>
-                <!-- Small cache so a modest workload forces several evictions. -->
-                <max_size>1Mi</max_size>
-                <max_elements>32</max_elements>
-                <max_file_segment_size>64Ki</max_file_segment_size>
-                <boundary_alignment>64Ki</boundary_alignment>
+                <!-- Very small cache so the test workload immediately forces evictions. -->
+                <max_size>100Ki</max_size>
+                <max_elements>16</max_elements>
+                <max_file_segment_size>10Ki</max_file_segment_size>
+                <boundary_alignment>10Ki</boundary_alignment>
                 <cache_policy>SLRU</cache_policy>
                 <slru_size_ratio>0.5</slru_size_ratio>
-                <cache_on_write_operations>1</cache_on_write_operations>
                 <!-- The feature under test. -->
                 <expose_eviction_metrics>1</expose_eviction_metrics>
                 <expose_eviction_metrics_per_client>1</expose_eviction_metrics_per_client>

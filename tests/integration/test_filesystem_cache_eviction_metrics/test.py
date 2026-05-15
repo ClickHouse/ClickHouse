@@ -6,6 +6,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/storage.xml"],
+    user_configs=["users.d/cache_on_write.xml"],
     stay_alive=True,
 )
 
@@ -24,10 +25,8 @@ def query(sql):
 
 
 def aggregate_metric_value(family_name):
-    """Sum every label-set value of a DimensionalMetric family.
-
-    Returns 0 when the family has no recorded entries yet (which happens
-    before any eviction has been driven through the cache)."""
+    """Sum every label-set value of a DimensionalMetric family. Returns 0
+    when the family has no recorded entries yet."""
     return float(
         query(
             f"SELECT toFloat64(coalesce(sum(value), 0)) "
@@ -38,9 +37,8 @@ def aggregate_metric_value(family_name):
 
 def histogram_observation_count(family_name):
     """Sum the bucket counters of a HistogramMetric family across all label
-    sets. Each observation increments exactly one bucket counter (the bucket
-    it falls into, or the +Inf overflow), so summing every counter gives the
-    total observation count."""
+    sets. Each observation increments exactly one bucket counter, so summing
+    every counter gives the total observation count."""
     return int(
         query(
             f"SELECT toUInt64(coalesce(sum(value), 0)) "
@@ -55,12 +53,12 @@ def test_filesystem_cache_eviction_metrics(start_cluster):
     `filesystem_cache_*` metric families must be registered and must
     receive updates as segments are evicted under cache pressure.
 
-    The unit gtest in `gtest_filecache.cpp` covers the
-    flag-on / flag-off semantics directly against an in-process FileCache.
-    This integration test covers the end-to-end concern: are the metrics
-    actually exposed via `system.dimensional_metrics` /
-    `system.histogram_metrics` when a real `clickhouse-server` process is
-    configured to enable them on a real disk-backed cache?
+    The unit gtest in `gtest_filecache.cpp` covers the flag-on / flag-off
+    semantics directly against an in-process FileCache. This integration
+    test covers the orthogonal concern: do the metrics actually surface
+    via `system.dimensional_metrics` / `system.histogram_metrics` when
+    a real `clickhouse-server` process is configured to enable them on
+    a real disk-backed cache?
     """
     node.query(
         """
@@ -74,62 +72,48 @@ def test_filesystem_cache_eviction_metrics(start_cluster):
         """
     )
 
-    # Confirm families are registered (description visible) even before
-    # the first eviction.
-    descriptions = query(
-        """
-        SELECT count() FROM system.dimensional_metrics
-        WHERE metric IN (
-            'filesystem_cache_evictions_total',
-            'filesystem_cache_evicted_bytes_total',
-            'filesystem_cache_evictions_by_client_total',
-            'filesystem_cache_evicted_bytes_by_client_total'
-        )
-        """
-    )
-    # Families are registered but have no label-set entries yet, so the
-    # count of rows is 0. Verify the description rows for these families
-    # appear in the metadata view, which is `system.dimensional_metrics`
-    # without filtering by label-values:
-    has_families = query(
-        """
-        SELECT countDistinct(metric) FROM system.dimensional_metrics
-        WHERE metric LIKE 'filesystem_cache_%'
-        """
-    )
-    # Drive evictions: each blob is 8 KiB, max_size is 1 MiB, so inserting
-    # ~256 KiB worth of blob bytes and then reading the full table back to
-    # populate the cache, plus more inserts, forces SLRU eviction churn.
+    # Cache is 100 KiB with 10 KiB file segments. Each blob is 8 KiB; an
+    # INSERT of 100 rows writes ~800 KiB which far exceeds the cache and
+    # forces eviction churn during cache-on-write. Re-reading the table
+    # with the cache enabled then evicts further as old segments get
+    # displaced by newly downloaded ones.
     node.query(
         "INSERT INTO eviction_metrics_test "
-        "SELECT number, repeat('x', 8192) FROM numbers(256)"
+        "SELECT number, repeat('x', 8192) FROM numbers(100)"
     )
-    # Read everything to populate the cache.
-    node.query("SELECT count() FROM eviction_metrics_test SETTINGS enable_filesystem_cache=1")
-    # Force pressure: append more data and re-read so the cache must evict.
+    node.query(
+        "SELECT sum(length(blob)) FROM eviction_metrics_test "
+        "SETTINGS enable_filesystem_cache = 1"
+    )
+    # Append more data and re-read so the cache has to keep evicting.
     node.query(
         "INSERT INTO eviction_metrics_test "
-        "SELECT number + 1000, repeat('y', 8192) FROM numbers(256)"
+        "SELECT number + 100, repeat('y', 8192) FROM numbers(100)"
     )
-    node.query("SELECT count() FROM eviction_metrics_test SETTINGS enable_filesystem_cache=1")
     node.query(
-        "INSERT INTO eviction_metrics_test "
-        "SELECT number + 2000, repeat('z', 8192) FROM numbers(256)"
+        "SELECT sum(length(blob)) FROM eviction_metrics_test "
+        "SETTINGS enable_filesystem_cache = 1"
     )
-    node.query("SELECT count() FROM eviction_metrics_test SETTINGS enable_filesystem_cache=1")
-    # Read the original rows again so probationary entries get promoted to
-    # protected (gives the protected/probationary distinction something to
-    # show in the metric labels).
-    node.query("SELECT count() FROM eviction_metrics_test WHERE id < 256 SETTINGS enable_filesystem_cache=1")
+    # Read the original rows again so probationary entries can be promoted
+    # to protected and we get coverage of both SLRU queue labels.
+    node.query(
+        "SELECT sum(length(blob)) FROM eviction_metrics_test "
+        "WHERE id < 100 SETTINGS enable_filesystem_cache = 1"
+    )
 
     evictions = aggregate_metric_value("filesystem_cache_evictions_total")
     bytes_evicted = aggregate_metric_value("filesystem_cache_evicted_bytes_total")
     hits_observations = histogram_observation_count("filesystem_cache_evicted_segment_hits")
     size_observations = histogram_observation_count("filesystem_cache_evicted_segment_size_bytes")
 
+    debug_dump = node.query(
+        "SELECT * FROM system.dimensional_metrics "
+        "WHERE metric LIKE 'filesystem_cache_%' FORMAT Vertical"
+    )
+
     assert evictions > 0, (
         "Aggregate eviction counter did not advance despite cache pressure.\n"
-        + node.query("SELECT * FROM system.dimensional_metrics WHERE metric LIKE 'filesystem_cache_%' FORMAT Vertical")
+        f"{debug_dump}"
     )
     assert bytes_evicted > 0, "Evicted-bytes counter did not advance."
     assert hits_observations > 0, "Hits histogram recorded no observations."
@@ -141,8 +125,7 @@ def test_filesystem_cache_eviction_metrics(start_cluster):
         f"evictions={evictions} should match size histogram observation count={size_observations}"
     )
 
-    # Per-client variants are also enabled in this test config; they must
-    # have advanced too. cache_name and queue labels must be present.
+    # Per-client variants are enabled too; they must have recorded entries.
     by_client_rows = query(
         """
         SELECT count() FROM system.dimensional_metrics
