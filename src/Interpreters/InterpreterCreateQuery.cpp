@@ -1805,6 +1805,24 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             auto existing_table = DatabaseCatalog::instance().getTable(
                 {create.getDatabase(), create.getTable()}, getContext());
             create.uuid = existing_table->getStorageID().uuid;
+
+            if (database && database->getEngineName() == "Replicated")
+            {
+                const bool actual_is_replicated =
+                    typeid_cast<const StorageReplicatedMergeTree *>(existing_table.get()) != nullptr;
+
+                const bool allow_heavy =
+                    getContext()->getSettingsRef()[Setting::database_replicated_allow_heavy_create];
+
+
+                if (!allow_heavy && actual_is_replicated)
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "AND INSERT into an existing table with a Replicated engine is not supported "
+                        "in Replicated databases. Consider using a separate INSERT query. "
+                        "Alternatively, enable 'database_replicated_allow_heavy_create' to allow "
+                        "this operation, use with caution.");
+            }
             return fillTableIfNeeded(create);
         }
         return {};
