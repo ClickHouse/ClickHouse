@@ -95,6 +95,13 @@ ENGINE = Memory;
 INSERT INTO default_expr_matchers_alias_nested_matcher (a, c) VALUES (1, 'x');
 SELECT b FROM default_expr_matchers_alias_nested_matcher;
 
+CREATE TABLE default_expr_matchers_invalid_regexp
+(
+    a UInt8,
+    b String ALIAS toJSONString(namedTuple(COLUMNS('(')))
+)
+ENGINE = Memory; -- { serverError CANNOT_COMPILE_REGEXP }
+
 CREATE TABLE default_expr_matchers_error
 (
     a UInt8,
