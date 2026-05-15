@@ -8,6 +8,8 @@
 namespace DB
 {
 
+class FileCache;
+
 /// Eviction info:
 /// - contains information about how much size/elements is needed to be evicted
 /// - holds "space holders", for space which was already available
@@ -116,7 +118,9 @@ public:
     void setAfterEvictStateFunc(AfterEvictStateFunc && func) { after_evict_state_func = std::move(func); }
 
     /// Evict all candidates, which were added before via add().
-    void evict();
+    /// If `cache` is non-null and has eviction metrics enabled, records
+    /// `filesystem_cache_*` metrics for each successfully evicted segment.
+    void evict(const FileCache * cache = nullptr);
     /// Execute "after eviction callbacks".
     /// "write" callback must be executed before "state" callback.
     void afterEvictWrite(const CachePriorityGuard::WriteLock & lock);

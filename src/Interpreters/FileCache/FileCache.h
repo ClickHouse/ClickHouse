@@ -249,6 +249,15 @@ public:
 
     const String & getName() const { return name; }
 
+    /// True when this FileCache should populate the
+    /// filesystem_cache_* eviction metrics on each eviction. See
+    /// `expose_eviction_metrics` in `FileCacheSettings`.
+    bool areEvictionMetricsEnabled() const { return expose_eviction_metrics; }
+
+    /// True when, in addition, the `_by_client` variants should be populated.
+    /// Cardinality grows with the number of distinct evicting users; opt-in.
+    bool areEvictionMetricsPerClientEnabled() const { return expose_eviction_metrics_per_client; }
+
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
@@ -272,6 +281,14 @@ private:
     // Use IFileCachePriority wrapper in order to separate data/system files into different segments.
     const bool use_split_cache;
     const double split_cache_ratio;
+
+    /// Eviction-time Prometheus metrics. See filesystem_cache_evictions_total
+    /// and friends in `FileCacheMetrics.cpp`. Off by default; turn on by setting
+    /// `<expose_eviction_metrics>true</expose_eviction_metrics>` on the cache
+    /// configuration. `expose_eviction_metrics_per_client` additionally enables
+    /// per-user-id labelled variants (which have unbounded cardinality).
+    const bool expose_eviction_metrics;
+    const bool expose_eviction_metrics_per_client;
 
     const bool skip_cache_on_disk_failure;
 

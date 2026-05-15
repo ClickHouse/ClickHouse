@@ -102,6 +102,8 @@ namespace FileCacheSetting
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
     extern const FileCacheSettingsUInt64 dynamic_resize_lock_wait_ms;
     extern const FileCacheSettingsBool use_split_cache;
+    extern const FileCacheSettingsBool expose_eviction_metrics;
+    extern const FileCacheSettingsBool expose_eviction_metrics_per_client;
     extern const FileCacheSettingsDouble split_cache_ratio;
     extern const FileCacheSettingsUInt64 overcommit_eviction_evict_step;
     extern const FileCacheSettingsBool skip_cache_on_disk_failure;
@@ -210,6 +212,8 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , keep_up_free_space_remove_batch(settings[FileCacheSetting::keep_free_space_remove_batch])
     , use_split_cache(settings[FileCacheSetting::use_split_cache])
     , split_cache_ratio(settings[FileCacheSetting::split_cache_ratio])
+    , expose_eviction_metrics(settings[FileCacheSetting::expose_eviction_metrics])
+    , expose_eviction_metrics_per_client(settings[FileCacheSetting::expose_eviction_metrics_per_client])
     , skip_cache_on_disk_failure(settings[FileCacheSetting::skip_cache_on_disk_failure])
     , name(cache_name)
     , log(getLogger("FileCache(" + cache_name + ")"))
@@ -1374,7 +1378,7 @@ bool FileCache::doEviction(
         };
         try
         {
-            eviction_candidates.evict();
+            eviction_candidates.evict(this);
         }
         catch (...)
         {
@@ -1490,7 +1494,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     if (eviction_candidates.size() > 0)
     {
         desired_size_status = IFileCachePriority::CollectStatus::SUCCESS;
-        eviction_candidates.evict();
+        eviction_candidates.evict(this);
     }
 
     /// Take lock again to finalize eviction,
@@ -2464,7 +2468,7 @@ bool FileCache::doDynamicResizeImpl(
     write_lock.unlock();
 
     /// Do actual eviction from filesystem.
-    eviction_candidates.evict();
+    eviction_candidates.evict(this);
 
     chassert(!eviction_candidates.requiresAfterEvictWrite());
     IFileCachePriority::removeEntries(invalidated_entries, cache_guard.writeLock());

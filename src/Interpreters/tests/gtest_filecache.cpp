@@ -25,6 +25,9 @@
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/Cache/OvercommitFileCachePriority.h>
+
+#include <Common/DimensionalMetrics.h>
+#include <Common/HistogramMetrics.h>
 #endif
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -74,6 +77,8 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
+    extern const FileCacheSettingsBool expose_eviction_metrics;
+    extern const FileCacheSettingsBool expose_eviction_metrics_per_client;
 }
 
 void printRanges(const auto & segments)
@@ -1919,5 +1924,185 @@ TEST_F(FileCacheTest, LoadMetadataParallelism)
 
         ASSERT_EQ(total_loaded, num_keys * segments_per_key)
             << "load_metadata_threads=" << thread_count;
+    }
+}
+
+namespace
+{
+    DimensionalMetrics::MetricFamily * findDimensionalFamily(const std::string & name)
+    {
+        DimensionalMetrics::MetricFamily * result = nullptr;
+        DimensionalMetrics::Factory::instance().forEachFamily([&](DimensionalMetrics::MetricFamily & f)
+        {
+            if (f.getName() == name)
+                result = &f;
+        });
+        return result;
+    }
+
+    HistogramMetrics::MetricFamily * findHistogramFamily(const std::string & name)
+    {
+        HistogramMetrics::MetricFamily * result = nullptr;
+        HistogramMetrics::Factory::instance().forEachFamily([&](HistogramMetrics::MetricFamily & f)
+        {
+            if (f.getName() == name)
+                result = &f;
+        });
+        return result;
+    }
+
+    /// Total observation count across every label set of a histogram family.
+    /// Each observation increments exactly one bucket (the bucket it falls into,
+    /// or the +Inf overflow at index buckets.size()), so summing all bucket
+    /// counters gives the total observation count.
+    uint64_t totalHistogramObservations(HistogramMetrics::MetricFamily & family)
+    {
+        uint64_t total = 0;
+        const auto & buckets = family.getBuckets();
+        family.forEachMetric([&](const HistogramMetrics::LabelValues &, const HistogramMetrics::Metric & m)
+        {
+            for (size_t i = 0; i <= buckets.size(); ++i)
+                total += m.getCounter(i);
+        });
+        return total;
+    }
+
+    double totalDimensionalValue(DimensionalMetrics::MetricFamily & family)
+    {
+        double total = 0;
+        family.forEachMetric([&](const DimensionalMetrics::LabelValues &, const DimensionalMetrics::Metric & m)
+        {
+            total += m.get();
+        });
+        return total;
+    }
+}
+
+TEST_F(FileCacheTest, ExposeEvictionMetrics)
+{
+    /// Verifies that when `expose_eviction_metrics` is set on a FileCache,
+    /// the filesystem_cache_* metric families receive updates as segments
+    /// are evicted. When the flag is off, the metrics must not move.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(R"(<clickhouse></clickhouse>)");
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("eviction_metrics_test");
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    /// Resolve the metric families up front; they are statically registered
+    /// in FileCacheMetrics.cpp so they must exist.
+    auto * evictions = findDimensionalFamily("filesystem_cache_evictions_total");
+    auto * evicted_bytes = findDimensionalFamily("filesystem_cache_evicted_bytes_total");
+    auto * hits_hist = findHistogramFamily("filesystem_cache_evicted_segment_hits");
+    auto * size_hist = findHistogramFamily("filesystem_cache_evicted_segment_size_bytes");
+    auto * by_client_evictions = findDimensionalFamily("filesystem_cache_evictions_by_client_total");
+    ASSERT_NE(evictions, nullptr);
+    ASSERT_NE(evicted_bytes, nullptr);
+    ASSERT_NE(hits_hist, nullptr);
+    ASSERT_NE(size_hist, nullptr);
+    ASSERT_NE(by_client_evictions, nullptr);
+
+    auto makeSettings = [&](bool expose, bool per_client)
+    {
+        DB::FileCacheSettings settings;
+        settings[FileCacheSetting::path] = cache_base_path;
+        settings[FileCacheSetting::max_size] = 40;
+        settings[FileCacheSetting::max_elements] = 6;
+        settings[FileCacheSetting::boundary_alignment] = 1;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
+        settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+        settings[FileCacheSetting::slru_size_ratio] = 0.5;
+        settings[FileCacheSetting::expose_eviction_metrics] = expose;
+        settings[FileCacheSetting::expose_eviction_metrics_per_client] = per_client;
+        return settings;
+    };
+
+    const size_t file_size = -1;
+    const auto & user = FileCache::getCommonOrigin();
+
+    auto drive_evictions = [&](FileCache & cache, const std::string & key_name)
+    {
+        auto key = FileCacheKey::fromPath(key_name);
+        auto add_range = [&](size_t offset, size_t size)
+        {
+            auto holder = cache.getOrSet(key, offset, size, file_size, {}, 0, user);
+            ASSERT_EQ(holder->size(), 1u);
+            download(*holder->begin());
+        };
+        /// max_size=40, max_elements=6. Adding 8 segments of size 5 each
+        /// forces evictions from the probationary queue.
+        for (size_t i = 0; i < 8; ++i)
+            add_range(i * 10, 5);
+    };
+
+    /// Phase 1: flag OFF. Snapshot the families and confirm no delta after
+    /// driving evictions.
+    {
+        const double evictions_before = totalDimensionalValue(*evictions);
+        const double bytes_before = totalDimensionalValue(*evicted_bytes);
+        const uint64_t hits_before = totalHistogramObservations(*hits_hist);
+        const uint64_t size_before = totalHistogramObservations(*size_hist);
+        const double by_client_before = totalDimensionalValue(*by_client_evictions);
+
+        auto cache = DB::FileCache("eviction_metrics_off", makeSettings(false, false));
+        cache.initialize();
+        drive_evictions(cache, "key_off");
+
+        EXPECT_EQ(totalDimensionalValue(*evictions), evictions_before)
+            << "Aggregate counter advanced even though expose_eviction_metrics is off";
+        EXPECT_EQ(totalDimensionalValue(*evicted_bytes), bytes_before);
+        EXPECT_EQ(totalHistogramObservations(*hits_hist), hits_before);
+        EXPECT_EQ(totalHistogramObservations(*size_hist), size_before);
+        EXPECT_EQ(totalDimensionalValue(*by_client_evictions), by_client_before);
+    }
+
+    /// Phase 2: aggregate flag on, per-client off. Aggregate families update;
+    /// per-client variants don't.
+    {
+        const double evictions_before = totalDimensionalValue(*evictions);
+        const double bytes_before = totalDimensionalValue(*evicted_bytes);
+        const uint64_t hits_before = totalHistogramObservations(*hits_hist);
+        const uint64_t size_before = totalHistogramObservations(*size_hist);
+        const double by_client_before = totalDimensionalValue(*by_client_evictions);
+
+        auto cache = DB::FileCache("eviction_metrics_aggregate", makeSettings(true, false));
+        cache.initialize();
+        drive_evictions(cache, "key_agg");
+
+        const double evictions_delta = totalDimensionalValue(*evictions) - evictions_before;
+        const double bytes_delta = totalDimensionalValue(*evicted_bytes) - bytes_before;
+        const uint64_t hits_delta = totalHistogramObservations(*hits_hist) - hits_before;
+        const uint64_t size_delta = totalHistogramObservations(*size_hist) - size_before;
+        const double by_client_delta = totalDimensionalValue(*by_client_evictions) - by_client_before;
+
+        EXPECT_GT(evictions_delta, 0.0) << "Aggregate eviction counter did not advance";
+        EXPECT_GT(bytes_delta, 0.0) << "Aggregate evicted-bytes counter did not advance";
+        EXPECT_GT(hits_delta, 0u) << "Hits histogram recorded no observations";
+        EXPECT_GT(size_delta, 0u) << "Size histogram recorded no observations";
+        EXPECT_EQ(static_cast<uint64_t>(evictions_delta), hits_delta)
+            << "Counter and hits histogram should advance in lockstep";
+        EXPECT_EQ(static_cast<uint64_t>(evictions_delta), size_delta)
+            << "Counter and size histogram should advance in lockstep";
+        EXPECT_EQ(by_client_delta, 0.0)
+            << "Per-client counter advanced even though _per_client flag is off";
+    }
+
+    /// Phase 3: both flags on. Per-client variant updates too.
+    {
+        const double by_client_before = totalDimensionalValue(*by_client_evictions);
+
+        auto cache = DB::FileCache("eviction_metrics_per_client", makeSettings(true, true));
+        cache.initialize();
+        drive_evictions(cache, "key_pc");
+
+        EXPECT_GT(totalDimensionalValue(*by_client_evictions) - by_client_before, 0.0)
+            << "Per-client counter did not advance when _per_client flag is on";
     }
 }

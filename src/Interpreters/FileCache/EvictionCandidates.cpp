@@ -1,4 +1,6 @@
 #include <Interpreters/FileCache/EvictionCandidates.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheMetrics.h>
 #include <Interpreters/FileCache/Metadata.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentThread.h>
@@ -244,12 +246,17 @@ void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::WriteLock 
     removed_queue_entries = true;
 }
 
-void EvictionCandidates::evict()
+void EvictionCandidates::evict(const FileCache * cache)
 {
     if (candidates.empty())
         return;
 
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::FilesystemCacheEvictMicroseconds);
+
+    const bool emit_aggregate_metrics = cache && cache->areEvictionMetricsEnabled();
+    const bool emit_per_client_metrics = emit_aggregate_metrics && cache->areEvictionMetricsPerClientEnabled();
+    const String empty_name;
+    const String & cache_name = emit_aggregate_metrics ? cache->getName() : empty_name;
 
     /// If queue entries are already removed, then nothing to invalidate.
     if (!removed_queue_entries)
@@ -322,6 +329,35 @@ void EvictionCandidates::evict()
 
                 ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
                 ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
+
+                if (emit_aggregate_metrics)
+                {
+                    FileCacheQueueEntryType queue_type = FileCacheQueueEntryType::None;
+                    if (iterator)
+                    {
+                        /// Use the nested iterator so SLRU reports protected/probationary,
+                        /// not the wrapping SplitCache type.
+                        queue_type = iterator->getNestedOrThis()->getType();
+                    }
+                    else
+                    {
+                        /// Dynamic-resize path: queue entries were already removed before evict().
+                        /// We saved the original type in removeQueueEntries.
+                        auto type_it = original_queue_types.find(candidate.get());
+                        if (type_it != original_queue_types.end())
+                            queue_type = type_it->second;
+                    }
+
+                    const size_t bytes = segment->range().size();
+                    const size_t hits = segment->getHitsCount();
+                    FileCacheMetrics::recordEviction(cache_name, queue_type, bytes, hits);
+
+                    if (emit_per_client_metrics)
+                    {
+                        FileCacheMetrics::recordEvictionByClient(
+                            cache_name, queue_type, key_candidates.key_metadata->origin.user_id, bytes, hits);
+                    }
+                }
 
                 if (iterator)
                     queue_entries_to_invalidate.push_back(iterator);
