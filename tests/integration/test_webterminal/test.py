@@ -302,6 +302,41 @@ def test_disallowed_origin_rejected_with_allowlist():
     assert response.startswith(b"HTTP/1.1 403"), response
 
 
+def test_oversized_frame_rejected_with_1009():
+    """A frame whose advertised payload length exceeds the server's per-frame
+    cap (`MAX_FRAME_SIZE`, 16 MiB) must trigger an explicit `1009` close.
+
+    The server inspects the extended length header before reading the payload,
+    so the test only needs to send the 14-byte header advertising a huge
+    length, not the megabytes themselves. Before the fix, this path returned
+    `frame.valid = false` without flagging the oversize condition; the main
+    loop then terminated the session silently, and the client saw the
+    standard `1000 Session ended` close. The contract is now `1009` so
+    clients/tests can distinguish oversized messages from a graceful exit.
+    """
+    sock = _open_ws(instance.ip_address, 8123)
+    try:
+        # Frame header: FIN | text opcode, masked, extended 8-byte length = 17 MiB.
+        oversize = (16 * 1024 * 1024) + 1
+        mask = secrets.token_bytes(4)
+        header = bytearray()
+        header.append(0x81)  # FIN | text opcode
+        header.append(0x80 | 127)  # masked, extended 64-bit length follows
+        header += struct.pack(">Q", oversize)
+        header += mask
+        sock.sendall(bytes(header))
+
+        frame = _ws_read_frame(sock, timeout=10.0)
+        assert frame is not None, "Server did not send a close frame for oversized message"
+        opcode, payload = frame
+        assert opcode == 0x08, f"Expected close frame, got opcode={opcode:#x}"
+        assert len(payload) >= 2, f"Close frame missing 2-byte status code, payload={payload!r}"
+        code = struct.unpack(">H", payload[:2])[0]
+        assert code == 1009, f"Expected close code 1009, got {code}"
+    finally:
+        sock.close()
+
+
 def test_non_auth_first_message_rejected():
     """A first frame that is valid JSON but not an auth message must trigger close 1008.
 

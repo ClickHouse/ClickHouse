@@ -155,6 +155,10 @@ struct WebSocketFrame
     String payload;
     bool valid = false;
     bool protocol_error = false;
+    /// Set when the advertised frame payload length exceeds `MAX_FRAME_SIZE`.
+    /// Distinct from `protocol_error` so callers can map it to the dedicated
+    /// `1009` close code instead of `1002`.
+    bool message_too_big = false;
 };
 
 /// Read a single WebSocket frame from the socket.
@@ -221,10 +225,16 @@ WebSocketFrame readWebSocketFrame(Poco::Net::StreamSocket & socket, UInt64 deadl
             payload_len = (payload_len << 8) | byte;
     }
 
-    /// Limit frame size to prevent DoS
+    /// Limit frame size to prevent DoS. Surface this as an explicit
+    /// `message_too_big` state so the caller can close with `1009` rather
+    /// than silently terminating the session (which would look like a
+    /// normal `1000` close to the client).
     static constexpr uint64_t MAX_FRAME_SIZE = 16 * 1024 * 1024;
     if (payload_len > MAX_FRAME_SIZE)
+    {
+        frame.message_too_big = true;
         return frame;
+    }
 
     uint8_t mask_key[4] = {};
     if (!readExact(socket, reinterpret_cast<char *>(mask_key), 4, deadline_ns))
@@ -497,6 +507,11 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
         return;
     }
     socket.setReceiveTimeout(Poco::Timespan(0)); /// Clear timeout for the main loop
+    if (auth_frame.message_too_big)
+    {
+        sendWebSocketClose(socket, 1009, "Message too big");
+        return;
+    }
     if (auth_frame.protocol_error)
     {
         sendWebSocketClose(socket, 1002, "Protocol error");
@@ -681,6 +696,13 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                 /// time spent reading a single frame.
                 UInt64 frame_deadline = clock_gettime_ns() + 30'000'000'000ULL; /// 30 seconds per frame
                 WebSocketFrame frame = readWebSocketFrame(socket, frame_deadline);
+
+                if (frame.message_too_big)
+                {
+                    send_close_once(1009, "Message too big");
+                    running = false;
+                    continue;
+                }
 
                 if (frame.protocol_error)
                 {
