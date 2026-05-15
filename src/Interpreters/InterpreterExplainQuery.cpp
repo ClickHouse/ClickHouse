@@ -380,12 +380,23 @@ struct QuerySyntaxSettings
 };
 
 template <typename Settings>
-ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
+ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings, bool set_default_legacy_explain_settings = false)
 {
-    if (!ast_settings)
-        return {};
-
     ExplainSettings<Settings> settings;
+
+    if constexpr (std::is_same_v<Settings, QueryPlanSettings>)
+    {
+        if (set_default_legacy_explain_settings)
+        {
+            settings.query_plan_options.actions = false;
+            settings.query_plan_options.compact = false;
+            settings.query_plan_options.pretty  = false;
+        }
+    }
+
+    if (!ast_settings)
+        return settings;
+
     const auto & set_query = ast_settings->as<ASTSetQuery &>();
 
     for (const auto & change : set_query.changes)
@@ -567,26 +578,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN query");
 
-            auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
+            auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings(), !query_context->getSettingsRef()[Setting::query_plan_pretty_default]);
 
-            if (!query_context->getSettingsRef()[Setting::query_plan_pretty_default])
-            {
-                auto user_set = [&](const std::string & name)
-                {
-                    if (!ast.getSettings())
-                        return false;
-                    for (const auto & change : ast.getSettings()->as<const ASTSetQuery &>().changes)
-                        if (change.name == name)
-                            return true;
-                    return false;
-                };
-                if (!user_set("actions"))
-                    settings.query_plan_options.actions = false;
-                if (!user_set("compact"))
-                    settings.query_plan_options.compact = false;
-                if (!user_set("pretty"))
-                    settings.query_plan_options.pretty = false;
-            }
             QueryPlan plan;
 
             ContextPtr context;
