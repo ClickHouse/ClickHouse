@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: 'countmin' sketches need a 3rd party library
+
 SET allow_statistics = 1;
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;
