@@ -663,6 +663,29 @@ def test_function_over_time():
         ],
     )
 
+    # Behavior: `@` on a subquery range vector fixes the whole subquery grid;
+    # downstream range functions consume all fixed samples.
+    do_query_test(
+        "last_over_time(test[45s:15s] @ 210)",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "test"}, "value": [210, "8"]}]}',
+        [["[('__name__','test')]", "1970-01-01 00:03:30.000", 8]],
+    )
+    do_query_test(
+        "deriv(test[45s:15s] @ 210)",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "0.13333333333333333"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 0.13333333333333333]],
+        eps=1e-9,
+    )
+    do_query_test(
+        "predict_linear(test[45s:15s] @ 210, 60)",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "15.666666666666668"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 15.666666666666668]],
+        eps=1e-9,
+    )
+
     do_query_test(
         "delta(test[45s])[120s:15s]",
         210,

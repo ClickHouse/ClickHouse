@@ -141,6 +141,14 @@ namespace
             case StoreMethod::SCALAR_GRID:
             case StoreMethod::VECTOR_GRID:
             {
+                if (expression.type == ResultType::RANGE_VECTOR
+                    && expression.store_method == StoreMethod::VECTOR_GRID)
+                {
+                    /// A range-vector subquery already materializes all samples in the fixed `@` window.
+                    /// Keep the full grid so downstream range functions do not collapse it to values[1].
+                    return std::move(expression);
+                }
+
                 /// For scalar grid:
                 /// SELECT arrayResize([], <count_of_time_steps>, values[1])) AS values
                 /// FROM <scalar_grid>

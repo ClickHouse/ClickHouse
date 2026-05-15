@@ -502,19 +502,17 @@ SQLQueryPiece applyFunctionOverRange(
             /// GROUP BY group
             has_group = true;
 
-            /// (timeSeriesFromGrid(<start_time>, <end_time>, <step>, values) AS time_series).1
+            /// timeSeriesFromGrid(<start_time>, <end_time>, <step>, values).1
             ASTPtr ts = makeASTFunction(
                 "timeSeriesFromGrid",
                 timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
                 timeSeriesTimestampToAST(argument.end_time, context.timestamp_data_type),
                 timeSeriesDurationToAST(argument.step, context.timestamp_data_type),
                 make_intrusive<ASTIdentifier>(ColumnNames::Values));
-            ts->setAlias(ColumnNames::TimeSeries);
-            timestamps = makeASTFunction("tupleElement", std::move(ts), make_intrusive<ASTLiteral>(1));
+            timestamps = makeASTFunction("tupleElement", ts->clone(), make_intrusive<ASTLiteral>(1));
 
-            /// time_series.2
-            values = makeASTFunction(
-                "tupleElement", make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries), make_intrusive<ASTLiteral>(2));
+            /// timeSeriesFromGrid(<start_time>, <end_time>, <step>, values).2
+            values = makeASTFunction("tupleElement", std::move(ts), make_intrusive<ASTLiteral>(2));
 
             break;
         }
