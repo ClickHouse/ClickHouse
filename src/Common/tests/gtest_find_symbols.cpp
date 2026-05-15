@@ -213,4 +213,147 @@ TEST(FindNotSymbols, NullCharacter)
     std::string s("abcdefg\0x", 9u);
     test_find_first_not<'a', 'b', 'c', 'd', 'e', 'f', 'g'>(s, 7u);
     test_find_first_not(s, "abcdefg", 7u);
+
+    // Same check with a haystack long enough to exercise the SIMD body — guards against
+    // implementations that pad unused needle slots with \0 and falsely match it.
+    std::string long_s("abcdefgabcdefgab\0", 17u);
+    test_find_first_not<'a', 'b', 'c', 'd', 'e', 'f', 'g'>(long_s, 16u);
+    test_find_first_not(long_s, "abcdefg", 16u);
+}
+
+TEST(FindSymbols, EmptyRunTimeNeedle)
+{
+    // Empty SearchSymbols. With `positive=true` the result must be end/nullptr
+    // (no byte is in the empty symbol set); with `positive=false` the first/last
+    // byte qualifies. Long haystacks (>= 16 bytes) and embedded `\0` bytes also
+    // guard against the SIMD body matching `\0` via a zero-padded needle vector.
+
+    const SearchSymbols empty{};
+
+    auto end_of = [](const std::string & h) { return h.data() + h.size(); };
+
+    // Short haystack, no `\0`.
+    {
+        const std::string h = "abc";
+        EXPECT_EQ(find_first_symbols(h, empty), end_of(h));
+        EXPECT_EQ(find_first_not_symbols(h, empty), h.data());
+        EXPECT_EQ(find_first_symbols_or_null(h, empty), nullptr);
+        EXPECT_EQ(find_first_not_symbols_or_null(h, empty), h.data());
+        EXPECT_EQ(find_last_symbols_or_null(h, empty), nullptr);
+        EXPECT_EQ(find_last_not_symbols_or_null(h, empty), end_of(h) - 1);
+    }
+
+    // Empty haystack.
+    {
+        const std::string h;
+        EXPECT_EQ(find_first_symbols(h, empty), end_of(h));
+        EXPECT_EQ(find_first_not_symbols(h, empty), end_of(h));
+        EXPECT_EQ(find_first_symbols_or_null(h, empty), nullptr);
+        EXPECT_EQ(find_first_not_symbols_or_null(h, empty), nullptr);
+        EXPECT_EQ(find_last_symbols_or_null(h, empty), nullptr);
+        EXPECT_EQ(find_last_not_symbols_or_null(h, empty), nullptr);
+    }
+
+    // Long haystack (exercises SIMD body) containing a `\0`. A zero-padded needle
+    // vector would falsely match the `\0`; the empty-needle fast path must skip
+    // SIMD entirely.
+    {
+        const std::string h("aaaaaaaaaaaaaaaa\0aaaaaaaaaaaaaaa", 32u);
+        ASSERT_EQ(h.size(), 32u);
+        EXPECT_EQ(find_first_symbols(h, empty), end_of(h));
+        EXPECT_EQ(find_first_symbols_or_null(h, empty), nullptr);
+        EXPECT_EQ(find_last_symbols_or_null(h, empty), nullptr);
+
+        EXPECT_EQ(find_first_not_symbols(h, empty), h.data());
+        EXPECT_EQ(find_first_not_symbols_or_null(h, empty), h.data());
+        EXPECT_EQ(find_last_not_symbols_or_null(h, empty), end_of(h) - 1);
+    }
+}
+
+TEST(FindLastSymbols, RunTimeNeedleLongHaystack)
+{
+    // These exercise find_last_symbols_or_null(string_view, SearchSymbols) and
+    // find_last_not_symbols_or_null(string_view, SearchSymbols) on haystacks
+    // long enough to enter the SIMD reverse-search body (end - begin >= 16).
+    // The reverse path computes the match index as `__builtin_clzll(bit_mask) >> 2`
+    // on AArch64, so we cover the boundary positions and the \0 case.
+
+    auto offset = [](const char * p, const std::string & h) -> ssize_t
+    {
+        return p == nullptr ? -1 : p - h.data();
+    };
+
+    // 32 bytes — two full SIMD chunks, no scalar tail.
+    {
+        const std::string haystack = "abcdefghijklmnop0123456789ABCDEF";
+        ASSERT_EQ(haystack.size(), 32u);
+
+        // Match in the second (most-recent, scanned-first) SIMD chunk.
+        EXPECT_EQ(offset(find_last_symbols_or_null(haystack, SearchSymbols("F")), haystack), 31);
+        // Match only in the first SIMD chunk (must skip the empty second chunk).
+        EXPECT_EQ(offset(find_last_symbols_or_null(haystack, SearchSymbols("a")), haystack), 0);
+        // Match in the middle of the haystack (first byte of the second chunk).
+        EXPECT_EQ(offset(find_last_symbols_or_null(haystack, SearchSymbols("0")), haystack), 16);
+        // Last byte of the first chunk (boundary).
+        EXPECT_EQ(offset(find_last_symbols_or_null(haystack, SearchSymbols("p")), haystack), 15);
+        // Multiple matches: must return the rightmost one (second chunk, position 22).
+        EXPECT_EQ(offset(find_last_symbols_or_null(haystack, SearchSymbols("ag6")), haystack), 22);
+        // No match — must return nullptr.
+        EXPECT_EQ(find_last_symbols_or_null(haystack, SearchSymbols("xyz")), nullptr);
+    }
+
+    // 17 bytes — minimal length that takes the SIMD branch (one chunk + 1-byte scalar tail).
+    {
+        const std::string haystack = "0123456789abcdefX";
+        ASSERT_EQ(haystack.size(), 17u);
+
+        // Tail byte (handled by scalar prologue of the reverse helper, pos[-1]).
+        EXPECT_EQ(offset(find_last_symbols_or_null(haystack, SearchSymbols("X")), haystack), 16);
+        // First byte of the haystack.
+        EXPECT_EQ(offset(find_last_symbols_or_null(haystack, SearchSymbols("0")), haystack), 0);
+        // Match inside the SIMD chunk, not in the prologue.
+        EXPECT_EQ(offset(find_last_symbols_or_null(haystack, SearchSymbols("5")), haystack), 5);
+    }
+
+    // \0 byte in the haystack: a runtime needle of "\0" must find it; an unrelated
+    // needle must not falsely match the embedded \0. This guards against any padding
+    // of unused needle slots with \0.
+    {
+        const std::string haystack("abcdefghijklmnop\0qrstuvwxyz", 27u);
+        ASSERT_EQ(haystack.size(), 27u);
+
+        EXPECT_EQ(offset(find_last_symbols_or_null(haystack, SearchSymbols(std::string("\0", 1u))), haystack), 16);
+        EXPECT_EQ(find_last_symbols_or_null(haystack, SearchSymbols("0123")), nullptr);
+    }
+
+    // Negative variant (find_last_not_symbols_or_null) with a runtime needle.
+    {
+        // 17 bytes, last byte differs from the needle — that byte should be returned
+        // by the scalar prologue (pos[-1]).
+        const std::string haystack = "aaaaaaaaaaaaaaaab";
+        ASSERT_EQ(haystack.size(), 17u);
+        EXPECT_EQ(offset(find_last_not_symbols_or_null(haystack, SearchSymbols("a")), haystack), 16);
+
+        // First byte differs from the needle, rest matches the needle — must be found
+        // in the SIMD body of the reverse pass.
+        const std::string haystack2 = "Xaaaaaaaaaaaaaaaa";
+        ASSERT_EQ(haystack2.size(), 17u);
+        EXPECT_EQ(offset(find_last_not_symbols_or_null(haystack2, SearchSymbols("a")), haystack2), 0);
+
+        // 32 bytes with a single non-needle byte exactly at the SIMD chunk boundary
+        // (position 15 — last byte of the first reverse-scanned chunk).
+        const std::string haystack3 = "aaaaaaaaaaaaaaaXaaaaaaaaaaaaaaaa";
+        ASSERT_EQ(haystack3.size(), 32u);
+        EXPECT_EQ(offset(find_last_not_symbols_or_null(haystack3, SearchSymbols("a")), haystack3), 15);
+
+        // All bytes match the needle — must return nullptr.
+        const std::string haystack4(32u, 'a');
+        EXPECT_EQ(find_last_not_symbols_or_null(haystack4, SearchSymbols("a")), nullptr);
+
+        // \0 byte: with needle "a", an embedded \0 is a non-needle byte and must be
+        // found by find_last_not.
+        const std::string haystack5("aaaaaaaaaaaaaaaa\0aaaaaaaaaaaaaaa", 32u);
+        ASSERT_EQ(haystack5.size(), 32u);
+        EXPECT_EQ(offset(find_last_not_symbols_or_null(haystack5, SearchSymbols("a")), haystack5), 16);
+    }
 }
