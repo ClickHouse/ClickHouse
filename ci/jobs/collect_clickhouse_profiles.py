@@ -491,7 +491,7 @@ def main():
             print("WARNING: BOLT instrumentation failed, skipping BOLT profile collection")
             results[-1] = Result(
                 name="BOLT instrument (skipped)",
-                status=Result.Status.SUCCESS,
+                status=Result.Status.OK,
                 info="BOLT instrumentation failed (best-effort), skipping",
             )
         else:
