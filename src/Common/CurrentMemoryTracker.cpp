@@ -91,7 +91,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
             {
                 /// nallocs / per_cpu_memory_budget.nallocs already advanced; leave them.
                 /// The next op may flush slightly sooner, no correctness loss.
-                current_thread->untracked_memory = previous_untracked_memory;
+                current_thread->untracked_memory += previous_untracked_memory;
                 throw;
             }
         }
