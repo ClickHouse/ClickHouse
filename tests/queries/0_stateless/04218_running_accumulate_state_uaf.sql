@@ -14,6 +14,7 @@
 
 SET allow_deprecated_error_prone_window_functions = 1;
 SET group_by_two_level_threshold = 0;
+SET group_by_two_level_threshold_bytes = 0;
 
 -- The exact AST-fuzzer query that originally triggered the
 -- use-after-free. It must now run cleanly and produce non-empty output.
