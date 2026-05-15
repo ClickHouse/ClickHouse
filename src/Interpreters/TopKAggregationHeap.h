@@ -1,11 +1,9 @@
 #pragma once
 #include <algorithm>
-#include <queue>
 #include <vector>
 
 #include <base/defines.h>
 #include <Common/assert_cast.h>
-#include <Common/PODArray.h>
 #include <Core/CompareHelper.h>
 #include <Core/TypeId.h>
 
@@ -17,21 +15,27 @@
 namespace DB
 {
 
-/** A bounded heap that tracks the top-N best keys according to the query's
+/** A bounded heap that tracks the top-K best keys according to the query's
   * `ORDER BY` semantics.
   *
   * Supports both single-column and composite (multi-column) keys.
-  * For composite keys, the heap stores a ColumnTuple of sub-columns
+  * For composite keys, the heap stores a `ColumnTuple` of sub-columns
   * and performs lexicographic comparison with per-column direction,
   * NULLS direction, and collators.
   *
-  * Uses std::priority_queue over row indices into `heap_column`.
-  * The boundary element (the worst kept key that would be evicted next) is at the top.
+  * The heap itself is a plain `std::vector<size_t>` of row indices into
+  * `heap_column`, manipulated through `std::push_heap` / `std::pop_heap` /
+  * `std::make_heap` with a transient comparator.  The boundary element (the
+  * worst kept key, which would be evicted next) sits at the front.
+  *
+  * Using a bare vector instead of `std::priority_queue` keeps move and
+  * move-assignment defaultable: there is no comparator instance with a
+  * back-pointer to the owning heap that would have to be rebuilt.
   */
 struct TopKAggregationHeap
 {
     /// Column holding the key values currently in the heap.
-    /// For single-column keys this is a plain column; for composite keys it is a ColumnTuple.
+    /// For single-column keys this is a plain column; for composite keys it is a `ColumnTuple`.
     MutableColumnPtr heap_column;
 
     /// Per-column ORDER BY directions.
@@ -40,17 +44,17 @@ struct TopKAggregationHeap
     /// Per-column NULLS/NaNs directions.
     std::vector<int> nulls_directions;
 
-    /// Per-column collators for comparison (nullptr entries mean no collation for that column).
+    /// Per-column collators for comparison (`nullptr` entries mean no collation for that column).
     /// For single-column keys this has exactly one element.
     std::vector<const Collator *> collators;
 
-    /// True when the heap stores composite (multi-column) keys via ColumnTuple.
+    /// True when the heap stores composite (multi-column) keys via `ColumnTuple`.
     bool is_composite = false;
 
-    /// True when the heap tracks only a prefix of the GROUP BY keys (ORDER BY
-    /// uses fewer columns than GROUP BY).  In this case the evicted heap value
+    /// True when the heap tracks only a prefix of the GROUP BY keys (`ORDER BY`
+    /// uses fewer columns than `GROUP BY`).  In this case the evicted heap value
     /// does not represent the full hash-table key, so hash-table pruning must
-    /// be skipped — reading KeyType bytes from the prefix column would be an
+    /// be skipped — reading `KeyType` bytes from the prefix column would be an
     /// out-of-bounds read or match the wrong entry.
     bool is_prefix_mode = false;
 
@@ -58,66 +62,10 @@ struct TopKAggregationHeap
     TopKAggregationHeap(const TopKAggregationHeap &) = delete;
     TopKAggregationHeap & operator=(const TopKAggregationHeap &) = delete;
 
-    TopKAggregationHeap(TopKAggregationHeap && other) noexcept
-        : heap_column(std::move(other.heap_column))
-        , directions(std::move(other.directions))
-        , nulls_directions(std::move(other.nulls_directions))
-        , collators(std::move(other.collators))
-        , is_composite(other.is_composite)
-        , is_prefix_mode(other.is_prefix_mode)
-        , should_skip_numeric_fn(other.should_skip_numeric_fn)
-        , capacity(other.capacity)
-        , compaction_threshold(other.compaction_threshold)
-    {
-        if (heap_column)
-        {
-            /// Reconstruct the priority queue with the correct 'this' pointer in the comparator.
-            /// Extract the underlying container from the old priority_queue via a helper struct
-            /// that inherits from it and exposes the protected member `c`.
-            struct HeapAccess : std::priority_queue<size_t, std::vector<size_t>, HeapComparator>
-            {
-                using PQ = std::priority_queue<size_t, std::vector<size_t>, HeapComparator>;
-                explicit HeapAccess(PQ && pq) : PQ(std::move(pq)) {}
-                std::vector<size_t> && takeContainer() { return std::move(this->c); }
-            };
-            HeapAccess other_access(std::move(other.heap));
-            heap = std::priority_queue<size_t, std::vector<size_t>, HeapComparator>(
-                HeapComparator{this}, other_access.takeContainer());
-        }
-    }
-
-    TopKAggregationHeap & operator=(TopKAggregationHeap && other) noexcept
-    {
-        if (this != &other)
-        {
-            heap_column = std::move(other.heap_column);
-            directions = std::move(other.directions);
-            nulls_directions = std::move(other.nulls_directions);
-            collators = std::move(other.collators);
-            is_composite = other.is_composite;
-            is_prefix_mode = other.is_prefix_mode;
-            should_skip_numeric_fn = other.should_skip_numeric_fn;
-            capacity = other.capacity;
-            compaction_threshold = other.compaction_threshold;
-            if (heap_column)
-            {
-                struct HeapAccess : std::priority_queue<size_t, std::vector<size_t>, HeapComparator>
-                {
-                    using PQ = std::priority_queue<size_t, std::vector<size_t>, HeapComparator>;
-                    explicit HeapAccess(PQ && pq) : PQ(std::move(pq)) {}
-                    std::vector<size_t> && takeContainer() { return std::move(this->c); }
-                };
-                HeapAccess other_access(std::move(other.heap));
-                heap = std::priority_queue<size_t, std::vector<size_t>, HeapComparator>(
-                    HeapComparator{this}, std::move(other_access.takeContainer()));
-            }
-            else
-            {
-                heap = {};
-            }
-        }
-        return *this;
-    }
+    /// The heap container holds plain `size_t` indices and the comparator is
+    /// constructed transiently per call, so move and move-assignment are trivial.
+    TopKAggregationHeap(TopKAggregationHeap &&) noexcept = default;
+    TopKAggregationHeap & operator=(TopKAggregationHeap &&) noexcept = default;
 
     /// Initialize for a single-column key.
     void init(
@@ -132,14 +80,14 @@ struct TopKAggregationHeap
         collators = {col};
         is_composite = false;
         capacity = cap;
-        heap_column = source_column.cloneEmpty();
-        heap = std::priority_queue<size_t, std::vector<size_t>, HeapComparator>(HeapComparator{this});
         compaction_threshold = capacity + capacity / 2;  /// 1.5x capacity
+        heap_column = source_column.cloneEmpty();
+        heap_indices.clear();
         initNumericSkipFn();
     }
 
     /// Initialize for composite (multi-column) keys.
-    /// The heap stores a ColumnTuple of cloned-empty sub-columns.
+    /// The heap stores a `ColumnTuple` of cloned-empty sub-columns.
     void init(
         const ColumnRawPtrs & source_columns,
         size_t cap,
@@ -147,36 +95,41 @@ struct TopKAggregationHeap
         const std::vector<int> & null_dirs,
         const std::vector<const Collator *> & cols)
     {
+        const size_t n = source_columns.size();
         is_composite = true;
         capacity = cap;
+        compaction_threshold = capacity + capacity / 2;
 
-        directions.resize(source_columns.size(), 1);
-        for (size_t i = 0; i < dirs.size() && i < source_columns.size(); ++i)
+        directions.assign(n, 1);
+        for (size_t i = 0; i < dirs.size() && i < n; ++i)
             directions[i] = dirs[i];
 
-        nulls_directions.resize(source_columns.size(), 1);
-        for (size_t i = 0; i < null_dirs.size() && i < source_columns.size(); ++i)
+        nulls_directions.assign(n, 1);
+        for (size_t i = 0; i < null_dirs.size() && i < n; ++i)
             nulls_directions[i] = null_dirs[i];
 
         /// Pad or copy the collators vector to match the number of key columns.
-        collators.resize(source_columns.size(), nullptr);
-        for (size_t i = 0; i < cols.size() && i < source_columns.size(); ++i)
+        collators.assign(n, nullptr);
+        for (size_t i = 0; i < cols.size() && i < n; ++i)
             collators[i] = cols[i];
 
-        /// Build a ColumnTuple of cloned-empty sub-columns.
+        /// Build a `ColumnTuple` of cloned-empty sub-columns.
         MutableColumns sub_columns;
-        sub_columns.reserve(source_columns.size());
+        sub_columns.reserve(n);
         for (const auto * col : source_columns)
             sub_columns.emplace_back(col->cloneEmpty());
         heap_column = ColumnTuple::create(std::move(sub_columns));
 
-        heap = std::priority_queue<size_t, std::vector<size_t>, HeapComparator>(HeapComparator{this});
-        compaction_threshold = capacity + capacity / 2;
+        heap_indices.clear();
+        /// Composite keys never use the typed numeric fast path; reset the
+        /// pointer defensively in case the heap is re-initialized after a
+        /// previous single-column setup.
+        should_skip_numeric_fn = nullptr;
     }
 
     /// Initialize the heap if not already initialized.
-    /// Dispatches to the single-column or composite init based on `heap_key_count`.
-    /// `total_group_by_keys` is the total number of GROUP BY key columns;
+    /// Dispatches to the single-column or composite `init` based on `heap_key_count`.
+    /// `total_group_by_keys` is the total number of `GROUP BY` key columns;
     /// when `heap_key_count < total_group_by_keys`, the heap is in prefix mode.
     void initIfNeeded(
         const ColumnRawPtrs & key_columns,
@@ -208,17 +161,18 @@ struct TopKAggregationHeap
         }
     }
 
-    size_t size() const { return heap.size(); }
-    bool empty() const { return heap.empty(); }
+    size_t size() const { return heap_indices.size(); }
+    bool empty() const { return heap_indices.empty(); }
 
-    /// Returns true if the source key at source_row is worse than the current boundary
+    /// Returns true if the source key at `source_row` is worse than the current boundary
     /// (the heap root), meaning it should be skipped.
     /// Dispatches to single-column or composite comparison based on `is_composite`.
     bool shouldSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
     {
+        const size_t boundary = heap_indices.front();
         if (is_composite)
-            return sourceAboveHeapComposite(source_columns, source_row, heap.top());
-        return sourceAboveHeap(*source_columns[0], source_row, heap.top());
+            return sourceAboveHeapComposite(source_columns, source_row, boundary);
+        return sourceAboveHeap(*source_columns[0], source_row, boundary);
     }
 
     /// Whether the typed numeric fast path is available for `shouldSkipNumeric`.
@@ -237,87 +191,77 @@ struct TopKAggregationHeap
         return should_skip_numeric_fn(*this, source_data, source_row);
     }
 
-    /// Push a new key from source_columns[source_row] into the heap.
+    /// Push a new key from `source_columns[source_row]` into the heap.
     /// Dispatches to single-column or composite insertion based on `is_composite`.
     void push(const ColumnRawPtrs & source_columns, size_t source_row)
     {
+        size_t new_idx;
         if (is_composite)
         {
             auto & tuple = assert_cast<ColumnTuple &>(*heap_column);
-            size_t new_idx = tuple.size();
+            new_idx = tuple.size();
             for (size_t i = 0; i < source_columns.size(); ++i)
                 tuple.getColumn(i).insertFrom(*source_columns[i], source_row);
             tuple.addSize(1);
-            heap.push(new_idx);
         }
         else
         {
-            size_t new_idx = heap_column->size();
+            new_idx = heap_column->size();
             heap_column->insertFrom(*source_columns[0], source_row);
-            heap.push(new_idx);
         }
+        heap_indices.push_back(new_idx);
+        std::push_heap(heap_indices.begin(), heap_indices.end(), HeapComparator{this});
     }
 
     /// Returns true when the heap has grown past the compaction threshold
     /// and needs to be trimmed back down to `capacity`.
     bool needsTrim() const
     {
-        return compaction_threshold > 0 && heap.size() > compaction_threshold;
+        return compaction_threshold > 0 && heap_indices.size() > compaction_threshold;
     }
 
     /// Trim the heap back to `capacity` by popping excess elements, calling `on_evict`
-    /// for each evicted element's index in heap_column, then compact the column to
+    /// for each evicted element's index in `heap_column`, then compact the column to
     /// reclaim dead slots. This batches O(0.5 * capacity) pops and one column filter
     /// instead of doing a pop+erase per row.
     ///
-    /// `on_evict` receives the heap_column index of each evicted key and is responsible
+    /// `on_evict` receives the `heap_column` index of each evicted key and is responsible
     /// for erasing it from the hash table and destroying aggregate states if needed.
     template <typename EvictCallback>
     void trimAndCompact(EvictCallback && on_evict)
     {
         /// Pop excess entries from the heap, calling the callback for each.
-        /// For composite (multi-column) keys, reconstructing the hash table key from the
-        /// evicted ColumnTuple row is too complex and not worth the overhead.
-        /// Just trim the heap without pruning — the hash table may keep some extra entries,
-        /// but the heap still bounds the final result correctly.
-        while (heap.size() > capacity)
+        /// Hash-table pruning is only safe when the heap stores the full
+        /// `GROUP BY` key as a single column.  Skip when composite (multi-column
+        /// heap — can't reconstruct the hash key) or when in prefix mode
+        /// (heap column is narrower than the hash-table key — reading `KeyType`
+        /// bytes would be an out-of-bounds read or match the wrong entry).
+        const bool prune_hash_table = !is_composite && !is_prefix_mode;
+        const HeapComparator cmp{this};
+        while (heap_indices.size() > capacity)
         {
-            size_t evicted = heap.top();
-            heap.pop();
-            /// Hash-table pruning is only safe when the heap stores the full
-            /// GROUP BY key as a single column.  Skip when composite (multi-column
-            /// heap — can't reconstruct the hash key) or when in prefix mode
-            /// (heap column is narrower than the hash-table key — reading KeyType
-            /// bytes would be an out-of-bounds read or match the wrong entry).
-            if (!is_composite && !is_prefix_mode)
+            std::pop_heap(heap_indices.begin(), heap_indices.end(), cmp);
+            const size_t evicted = heap_indices.back();
+            heap_indices.pop_back();
+            if (prune_hash_table)
                 on_evict(evicted);
         }
 
-        /// Now compact the heap_column: filter out dead slots and remap indices.
-        size_t col_size = heap_column->size();
-        size_t heap_size = heap.size();
+        /// Now compact the `heap_column`: filter out dead slots and remap indices.
+        const size_t col_size = heap_column->size();
+        const size_t heap_size = heap_indices.size();
         if (col_size <= heap_size)
             return;
 
-        /// Extract the underlying container from the priority queue.
-        struct HeapAccess : std::priority_queue<size_t, std::vector<size_t>, HeapComparator>
-        {
-            using PQ = std::priority_queue<size_t, std::vector<size_t>, HeapComparator>;
-            explicit HeapAccess(PQ && pq) : PQ(std::move(pq)) {}
-            std::vector<size_t> & getContainer() { return this->c; }
-        };
-
-        HeapAccess access(std::move(heap));
-        auto & indices = access.getContainer();
-
         /// Build filter: mark live slots as 1, dead as 0.
         IColumn::Filter filter(col_size, 0);
-        /// old_to_new[old_idx] = new_idx after filtering.
-        std::vector<size_t> old_to_new(col_size);
-        for (size_t idx : indices)
+        for (size_t idx : heap_indices)
             filter[idx] = 1;
 
-        /// Compute prefix sum for index remapping.
+        /// Compute prefix sum for index remapping: `old_to_new[old_idx] = new_idx`.
+        /// Entries for dead slots are never read (only live indices are remapped below),
+        /// so leaving them at the default zero is safe.
+        std::vector<size_t> old_to_new(col_size);
         size_t new_idx = 0;
         for (size_t i = 0; i < col_size; ++i)
         {
@@ -325,73 +269,71 @@ struct TopKAggregationHeap
                 old_to_new[i] = new_idx++;
         }
 
-        /// Filter heap_column in-place, keeping only live rows.
-        /// For ColumnTuple this filters all sub-columns and updates column_length.
+        /// Filter `heap_column` in-place, keeping only live rows.
+        /// For `ColumnTuple` this filters all sub-columns and updates `column_length`.
         heap_column->filter(filter);
 
-        /// Remap all indices in the priority queue container.
-        for (auto & idx : indices)
+        /// Remap all indices and rebuild the heap structure on top of the
+        /// renumbered container.  The comparator's identity has not changed, but
+        /// the indices have, so we need a fresh `make_heap`.
+        for (auto & idx : heap_indices)
             idx = old_to_new[idx];
-
-        /// Rebuild the priority queue with the updated indices and correct comparator.
-        /// The constructor calls std::make_heap on the container.
-        heap = std::priority_queue<size_t, std::vector<size_t>, HeapComparator>(
-            HeapComparator{this}, std::move(indices));
+        std::make_heap(heap_indices.begin(), heap_indices.end(), HeapComparator{this});
     }
 
 private:
-    /// Compare a row in source_column against a row in heap_column (single-column case).
-    /// Returns true if source row is worse than the heap row in ORDER BY order.
+    /// Compare a row in `source_column` against a row in `heap_column` (single-column case).
+    /// Returns true if source row is worse than the heap row in `ORDER BY` order.
     bool sourceAboveHeap(const IColumn & source_column, size_t source_row, size_t heap_row) const
     {
-        int cmp;
-        if (collators[0])
-            cmp = source_column.compareAtWithCollation(source_row, heap_row, *heap_column, nulls_directions[0], *collators[0]);
-        else
-            cmp = source_column.compareAt(source_row, heap_row, *heap_column, nulls_directions[0]);
+        const int cmp = compareColumns(source_column, source_row, *heap_column, heap_row, 0);
         return directions[0] * cmp > 0;
     }
 
-    /// Compare a composite source key against a row in the heap's ColumnTuple.
-    /// Performs lexicographic comparison with per-column ORDER BY semantics.
-    /// Returns true if source row is worse than the heap row in ORDER BY order.
+    /// Compare a composite source key against a row in the heap's `ColumnTuple`.
+    /// Performs lexicographic comparison with per-column `ORDER BY` semantics.
+    /// Returns true if source row is worse than the heap row in `ORDER BY` order.
     bool sourceAboveHeapComposite(const ColumnRawPtrs & source_columns, size_t source_row, size_t heap_row) const
     {
         const auto & tuple = assert_cast<const ColumnTuple &>(*heap_column);
         for (size_t i = 0; i < source_columns.size(); ++i)
         {
-            int cmp;
-            if (collators[i])
-                cmp = source_columns[i]->compareAtWithCollation(source_row, heap_row, tuple.getColumn(i), nulls_directions[i], *collators[i]);
-            else
-                cmp = source_columns[i]->compareAt(source_row, heap_row, tuple.getColumn(i), nulls_directions[i]);
+            const int cmp = compareColumns(*source_columns[i], source_row, tuple.getColumn(i), heap_row, i);
             if (cmp != 0)
                 return directions[i] * cmp > 0;
         }
         return false;  /// equal keys are not above the heap boundary
     }
 
-    /// Lexicographic comparison of two rows within the heap's ColumnTuple.
+    /// Lexicographic comparison of two rows within the heap's `ColumnTuple`.
     /// Returns negative if `a` should be ordered before `b`, positive if after, zero if equal.
     int compareHeapRowsComposite(size_t a, size_t b) const
     {
         const auto & tuple = assert_cast<const ColumnTuple &>(*heap_column);
-        for (size_t i = 0; i < collators.size(); ++i)
+        for (size_t i = 0; i < directions.size(); ++i)
         {
             const auto & col = tuple.getColumn(i);
-            int cmp;
-            if (collators[i])
-                cmp = col.compareAtWithCollation(a, b, col, nulls_directions[i], *collators[i]);
-            else
-                cmp = col.compareAt(a, b, col, nulls_directions[i]);
+            const int cmp = compareColumns(col, a, col, b, i);
             if (cmp != 0)
                 return directions[i] * cmp;
         }
         return 0;
     }
 
-    /// Comparator for the priority queue. The worst kept element sits at the top,
-    /// so we return true when `a` should be below `b` in ORDER BY order.
+    /// Compare a row in `lhs` against a row in `rhs` honoring the per-column collator
+    /// and NULLS direction stored at position `column_index`.  Encapsulates the
+    /// `compareAt` / `compareAtWithCollation` switch used in three places.
+    int compareColumns(const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row, size_t column_index) const
+    {
+        if (collators[column_index])
+            return lhs.compareAtWithCollation(lhs_row, rhs_row, rhs, nulls_directions[column_index], *collators[column_index]);
+        return lhs.compareAt(lhs_row, rhs_row, rhs, nulls_directions[column_index]);
+    }
+
+    /// Comparator for the heap algorithms.  The worst kept element sits at the
+    /// front, so we return true when `a` should be below `b` in `ORDER BY` order.
+    /// The struct stores only a back-pointer; it is constructed transiently at
+    /// each `std::*_heap` call and never persisted as a member of the heap.
     struct HeapComparator
     {
         const TopKAggregationHeap * owner;
@@ -401,18 +343,14 @@ private:
             if (owner->is_composite)
                 return owner->compareHeapRowsComposite(a, b) < 0;
 
-            int cmp;
-            if (owner->collators[0])
-                cmp = owner->heap_column->compareAtWithCollation(a, b, *owner->heap_column, owner->nulls_directions[0], *owner->collators[0]);
-            else
-                cmp = owner->heap_column->compareAt(a, b, *owner->heap_column, owner->nulls_directions[0]);
+            const int cmp = owner->compareColumns(*owner->heap_column, a, *owner->heap_column, b, 0);
             return owner->directions[0] * cmp < 0;
         }
     };
 
     /// Type-erased function pointer for the numeric skip fast path.
     /// Resolved once at init time based on `heap_column->getDataType()`.
-    /// Takes (self, raw_key_data, row_index) and returns true if the row should be skipped.
+    /// Takes `(self, raw_key_data, row_index)` and returns true if the row should be skipped.
     using ShouldSkipNumericFn = bool (*)(const TopKAggregationHeap &, const void *, size_t);
     ShouldSkipNumericFn should_skip_numeric_fn = nullptr;
 
@@ -425,13 +363,15 @@ private:
     {
         const auto * src = reinterpret_cast<const ActualKeyType *>(source_data);
         const auto & heap_data = assert_cast<const ColumnVector<ActualKeyType> &>(*self.heap_column).getData();
-        return self.directions[0] * CompareHelper<ActualKeyType>::compare(src[source_row], heap_data[self.heap.top()], self.nulls_directions[0]) > 0;
+        const size_t boundary_row = self.heap_indices.front();
+        return self.directions[0] * CompareHelper<ActualKeyType>::compare(src[source_row], heap_data[boundary_row], self.nulls_directions[0]) > 0;
     }
 
     /// Resolve the typed numeric skip function pointer based on the actual column type.
     /// Called once at init time for single-column, non-collated keys.
     void initNumericSkipFn()
     {
+        should_skip_numeric_fn = nullptr;
         if (is_composite || (!collators.empty() && collators[0]))
             return;
 
@@ -457,8 +397,10 @@ private:
         }
     }
 
-    std::priority_queue<size_t, std::vector<size_t>, HeapComparator> heap;
-    size_t capacity = 0;              /// target heap size (= top_k_keys)
+    /// Heap of row indices into `heap_column`, maintained via `std::*_heap`.
+    /// `heap_indices.front()` is the worst (root) element under the comparator.
+    std::vector<size_t> heap_indices;
+    size_t capacity = 0;              /// target heap size (= `top_k_keys`)
     size_t compaction_threshold = 0;  /// heap size at which to trigger trim+compact (1.5x capacity)
 };
 
