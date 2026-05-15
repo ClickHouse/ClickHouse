@@ -61,7 +61,7 @@ private:
 
         /// It is possible to SIMD optimize this loop. By no need for that in practice.
 
-        Src prev{};
+        Dst prev{};
         bool has_prev_value = false;
 
         for (size_t i = 0; i < size; ++i)
@@ -72,21 +72,25 @@ private:
                 continue;
             }
 
-            Src cur = src[i];
             if (!has_prev_value)
             {
-                dst[i] = is_first_line_zero ? static_cast<Dst>(0) : static_cast<Dst>(cur);
-                prev = cur;
+                dst[i] = is_first_line_zero ? static_cast<Dst>(0) : static_cast<Dst>(src[i]);
+                prev = static_cast<Dst>(src[i]);
                 has_prev_value = true;
             }
             else
             {
-                /// Compute the difference in the source domain so that unsigned
-                /// inputs use well-defined modular subtraction. The explicit
-                /// static_cast to Dst avoids -Wdouble-promotion for floating
-                /// types. Signed overflow is intentionally tolerated via
-                /// NO_SANITIZE_UNDEFINED.
-                dst[i] = static_cast<Dst>(cur - prev);
+                /// Subtract in the destination type (`ResultOfSubtraction<Src, Src>`),
+                /// which is signed and at least as wide as `Src` for all narrow
+                /// integer inputs. This preserves the historically observable
+                /// result for widened cases such as `UInt32 -> Int64` (e.g.
+                /// `runningDifference(toUInt32(0))` after `1` produces `-1`,
+                /// not `4294967295`) and avoids the `-Wdouble-promotion`
+                /// warning by performing both casts explicitly. Overflow on
+                /// same-width inputs (e.g. `Int64 -> Int64`) is tolerated
+                /// via `NO_SANITIZE_UNDEFINED`.
+                auto cur = static_cast<Dst>(src[i]);
+                dst[i] = cur - prev;
                 prev = cur;
             }
         }
