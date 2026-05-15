@@ -112,7 +112,7 @@ void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQu
                 }
             }
 
-            return field.safeGet<Float64>();
+            return field.resolveNumberLiteral().safeGet<Float64>();
         }
 
         static Int64 getNotNegativeInt64(const String & name, const Field & field)

@@ -22,8 +22,10 @@
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <Interpreters/resolveNumberLiteral.h>
 #include <DataTypes/hasNullable.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
@@ -272,6 +274,30 @@ QueryTreeNodePtr QueryAnalyzer::castNodeToType(
 {
     if (node->getResultType()->equals(*target_type))
         return node;
+
+    /// When a constant was originally a NumberLiteral (e.g. "3.14" parsed as Float64 or
+    /// "100000000000000000000000" parsed as UInt128), cast from the original text to the
+    /// target type. This preserves precision — parsing "3.14" → Decimal64 directly is
+    /// exact, whereas Float64(3.14) → Decimal64 loses trailing digits.
+    if (const auto * constant_node = node->as<ConstantNode>())
+    {
+        if (constant_node->hasNumberLiteralText())
+        {
+            auto string_constant = std::make_shared<ConstantNode>(
+                constant_node->getNumberLiteralText(), std::make_shared<DataTypeString>());
+
+            auto cast_node = std::make_shared<FunctionNode>("CAST");
+            auto cast_args = std::make_shared<ListNode>();
+            cast_args->getNodes().push_back(string_constant);
+            cast_args->getNodes().push_back(
+                std::make_shared<ConstantNode>(target_type->getName(), std::make_shared<DataTypeString>()));
+            cast_node->getArgumentsNode() = cast_args;
+
+            QueryTreeNodePtr result = cast_node;
+            resolveFunction(result, scope);
+            return result;
+        }
+    }
 
     auto cast_node = std::make_shared<FunctionNode>("CAST");
     auto cast_args = std::make_shared<ListNode>();
@@ -1229,6 +1255,49 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         argument_types.push_back(argument_column.type);
         argument_columns.emplace_back(std::move(argument_column));
+    }
+
+    /// Resolve NumberLiteral constants: replace each with a properly typed value based on context.
+    {
+        static const std::unordered_set<String> comparison_functions = {
+            "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
+            "in", "notIn", "globalIn", "globalNotIn", "nullIn", "notNullIn", "globalNullIn", "globalNotNullIn",
+        };
+        bool is_comparison = comparison_functions.contains(function_name);
+
+        /// Find the "reference" type from non-NumberLiteral numeric arguments.
+        DataTypePtr reference_type;
+        for (size_t i = 0; i < function_arguments_size; ++i)
+        {
+            const auto * const_node = function_arguments[i]->as<ConstantNode>();
+            if (const_node && const_node->hasNumberLiteralText())
+                continue;
+            auto arg_type = removeNullable(argument_types[i]);
+            if (arg_type && (isNumber(*arg_type) || isDecimal(*arg_type)))
+            {
+                reference_type = arg_type;
+                break;
+            }
+        }
+
+        for (size_t i = 0; i < function_arguments_size; ++i)
+        {
+            auto * const_node = function_arguments[i]->as<ConstantNode>();
+            if (!const_node || !const_node->hasNumberLiteralText())
+                continue;
+
+            auto [parsed_field, target_type] = resolveNumberLiteralForFunction(
+                const_node->getNumberLiteralText(), reference_type, is_comparison);
+
+            if (target_type)
+            {
+                auto new_constant = std::make_shared<ConstantNode>(parsed_field, target_type);
+                function_arguments[i] = new_constant;
+                argument_columns[i].column = new_constant->getColumn();
+                argument_columns[i].type = target_type;
+                argument_types[i] = target_type;
+            }
+        }
     }
 
     /// Calculate function projection name

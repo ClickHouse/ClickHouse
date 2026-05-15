@@ -199,28 +199,43 @@ Numeric literals are parsed as follows:
 - The numeric literal is first parsed as a 64-bit unsigned integer, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
   - If the value is prefixed with `0b` or `0x`/`0X`, the number is parsed as binary or hexadecimal, respectively.
   - If the value is negative and the absolute magnitude is greater than 2<sup>63</sup>, an error is returned.
-- If unsuccessful, the value is next parsed as a floating-point number using the [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) function.
+- If the integer parsing overflows (value exceeds `UInt64` range), the behavior depends on the ClickHouse version:
+  - **Version 25.5 and later**: the literal is parsed as a wide integer (`UInt128`, `Int128`, `UInt256`, or `Int256`), whichever is the smallest type that fits. If the value exceeds all integer types, it falls back to `Float64`. Decimal-point literals (e.g. `3.14`) and exponent literals (e.g. `1e10`) are stored internally as deferred-parsed values and resolved to `Float64` by default, but when compared with a `Decimal` column they are parsed directly to the target `Decimal` type from the original text, preserving full precision.
+  - **Before version 25.5**: the literal is parsed as a `Float64` using [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof), which can silently lose precision for large integers. For example, `100000000000000000000000` is parsed as `Float64(1e23)` and adjacent values become indistinguishable. To avoid this, string-based conversion was required: `toUInt128('100000000000000000000000')`.
 - Otherwise, an error is returned.
 
 Literal values are cast to the smallest type that the value fits in.
 For example:
 - `1` is parsed as `UInt8`
-- `256` is parsed as `UInt16`. 
+- `256` is parsed as `UInt16`
 
-:::note Important
-Integer values wider than 64-bit (`UInt128`, `Int128`, `UInt256`, `Int256`) must be cast to a larger type to parse properly:
+#### Changes in version 25.5 {#numeric-literal-changes-25-5}
+
+Starting with version 25.5, numeric literal parsing was improved in two ways:
+
+**1. Wide integer literals are parsed natively.** Integer values wider than 64-bit no longer require explicit casts:
 
 ```sql
--170141183460469231731687303715884105728::Int128
-340282366920938463463374607431768211455::UInt128
--57896044618658097711785492504343953926634992332820282019728792003956564819968::Int256
-115792089237316195423570985008687907853269984665640564039457584007913129639935::UInt256
+-- These now work directly (version 25.5+):
+SELECT -170141183460469231731687303715884105728;  -- Int128
+SELECT 340282366920938463463374607431768211455;   -- UInt128
+
+-- Before version 25.5, string-based conversion was required to avoid Float64 precision loss:
+SELECT toInt128('-170141183460469231731687303715884105728');
+SELECT toUInt128('340282366920938463463374607431768211455');
 ```
 
-This bypasses the above algorithm and parses the integer with a routine that supports arbitrary precision.
+**2. Decimal comparison precision is preserved.** Decimal-point literals like `3.14` are parsed with deferred type resolution. When used in equality or comparison operations with `Decimal` columns, the literal is parsed directly from the original text to the target `Decimal` type. This avoids the precision loss that previously occurred when going through `Float64`:
 
-Otherwise, the literal will be parsed as a floating-point number and thus subject to loss of precision due to truncation.
-:::
+```sql
+-- Version 25.5+: literal "1.123456789012345678" is compared exactly as Decimal128(18)
+SELECT count() FROM table WHERE decimal_col = 1.123456789012345678;
+
+-- Before 25.5: the literal was first parsed as Float64(1.1234567890123457),
+-- losing the last 2 digits, causing incorrect comparison results.
+```
+
+For arithmetic and standalone expressions (e.g. `SELECT 3.14`), `Float64` is still used as the default type for backward compatibility.
 
 For more information, see [Data types](../sql-reference/data-types/index.md).
 

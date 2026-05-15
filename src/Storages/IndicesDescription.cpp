@@ -164,7 +164,7 @@ Field getFieldFromIndexArgumentAST(const ASTPtr & ast)
 {
     /// E.g. INDEX index_name column_name TYPE vector_similarity('hnsw', 'f32')
     if (const auto * ast_literal = ast->as<ASTLiteral>())
-        return ast_literal->value;
+        return ast_literal->value.resolveNumberLiteral();
     /// E.g. INDEX index_name column_name TYPE vector_similarity(index_name, column_name)
     if (const auto * ast_identifier = ast->as<ASTIdentifier>())
         return Field(ast_identifier->name());

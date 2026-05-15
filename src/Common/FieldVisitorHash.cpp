@@ -180,6 +180,14 @@ void FieldVisitorHash::operator() (const bool & x) const
     hash.update(x);
 }
 
+void FieldVisitorHash::operator() (const NumberLiteral & x) const
+{
+    UInt8 type = Field::Types::Number;
+    hash.update(type);
+    hash.update(x.value.size());
+    hash.update(x.value.data(), x.value.size());
+}
+
 void FieldVisitorHash::operator() (const CustomType & x) const
 {
     UInt8 type = Field::Types::CustomType;

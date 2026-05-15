@@ -69,6 +69,7 @@ public:
     void operator() (const DecimalField<Decimal256> & x, WriteBuffer & buf) const;
     void operator() (const AggregateFunctionStateData & x, WriteBuffer & buf) const;
     [[noreturn]] void operator() (const CustomType & x, WriteBuffer & buf) const;
+    [[noreturn]] void operator() (const NumberLiteral & x, WriteBuffer & buf) const;
     void operator() (const bool & x, WriteBuffer & buf) const;
 };
 
@@ -237,6 +238,12 @@ void FieldVisitorEncodeBinary::operator()(const bool & x, WriteBuffer & buf) con
 {
     /// TODO: Support binary encoding/decoding for custom types somehow.
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Binary encoding of Field with custom type is not supported");
+}
+
+[[noreturn]] void FieldVisitorEncodeBinary::operator()(const NumberLiteral &, WriteBuffer &) const
+{
+    /// NumberLiteral should be resolved to a concrete type before binary encoding.
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Binary encoding of Field with NumberLiteral is not supported");
 }
 
 template <typename T>

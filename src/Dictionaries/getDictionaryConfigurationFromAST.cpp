@@ -167,7 +167,7 @@ void buildLayoutConfiguration(
                 pair->second->formatForErrorMessage());
         }
 
-        const Field & value_field = value_literal->value;
+        Field value_field = value_literal->value.resolveNumberLiteral();
 
         if (value_field.getType() != Field::Types::UInt64 && value_field.getType() != Field::Types::Float64 && value_field.getType() != Field::Types::String)
         {

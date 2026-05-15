@@ -53,6 +53,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/resolveNumberLiteral.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/misc.h>
@@ -924,7 +925,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             for (size_t i = 0; i < parameters_size; ++i)
             {
                 ASTPtr literal = evaluateConstantExpressionAsLiteral(node_parameters[i], current_context);
-                parameters[i] = literal->as<ASTLiteral>()->value;
+                parameters[i] = literal->as<ASTLiteral>()->value.resolveNumberLiteral();
             }
         }
 
@@ -1152,6 +1153,52 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
     if (arguments_present)
     {
+        /// Deferred NumberLiteral resolution for comparison functions only.
+        static const std::unordered_set<String> comparison_functions = {
+            "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
+        };
+        if (node.arguments && comparison_functions.contains(node.name))
+        {
+            const auto & args = node.arguments->children;
+            const auto & index = data.actions_stack.getLastActionsIndex();
+
+            /// Find a reference type from non-NumberLiteral numeric arguments.
+            DataTypePtr reference_type;
+            for (size_t i = 0; i < args.size(); ++i)
+            {
+                const auto * lit = args[i]->as<ASTLiteral>();
+                if (lit && lit->value.getType() == Field::Types::Number)
+                    continue;
+                if (i < argument_names.size())
+                {
+                    const auto * arg_node = index.tryGetNode(argument_names[i]);
+                    if (arg_node && arg_node->result_type && (isNumber(*removeNullable(arg_node->result_type)) || isDecimal(*removeNullable(arg_node->result_type))))
+                    {
+                        reference_type = arg_node->result_type;
+                        break;
+                    }
+                }
+            }
+
+            for (size_t i = 0; i < args.size(); ++i)
+            {
+                const auto * lit = args[i]->as<ASTLiteral>();
+                if (!lit || lit->value.getType() != Field::Types::Number)
+                    continue;
+
+                auto [parsed, target_type] = resolveNumberLiteralForFunction(
+                    lit->value.safeGet<NumberLiteral>().value, reference_type, /*is_comparison=*/ true);
+
+                if (target_type && i < argument_names.size())
+                {
+                    String new_name = data.getUniqueName("__number_literal");
+                    data.addColumn(ColumnWithTypeAndName(
+                        target_type->createColumnConst(1, parsed), target_type, new_name));
+                    argument_names[i] = new_name;
+                }
+            }
+        }
+
         /// Calculate column name here again, because AST may be changed here (in case of untuple).
         data.addFunction(function_builder, argument_names, ast->getColumnName());
     }

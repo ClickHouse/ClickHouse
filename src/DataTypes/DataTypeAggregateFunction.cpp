@@ -280,7 +280,7 @@ static DataTypePtr create(const ASTPtr & arguments)
                         "Got parameter '{}' for function '{}'",
                         parameters[i]->formatForErrorMessage(), function_name);
 
-                params_row[i] = literal->value;
+                params_row[i] = literal->value.resolveNumberLiteral();
             }
         }
     }

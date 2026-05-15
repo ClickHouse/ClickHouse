@@ -376,6 +376,21 @@ private:
             fillLiteralInfo(nested_types, info);
             info.type = std::make_shared<DataTypeMap>(nested_types);
         }
+        else if (field_type == Field::Types::Number)
+        {
+            /// Resolve NumberLiteral to its default type (Float64 for decimal literals, wide int for big integers).
+            Field resolved = info.literal->value.resolveNumberLiteral();
+            if (resolved.getType() == Field::Types::Float64)
+            {
+                info.type = std::make_shared<DataTypeFloat64>();
+                info.special_parser = SpecialParserType(Field::Types::Float64);
+            }
+            else
+            {
+                info.type = applyVisitor(FieldToDataType(), resolved);
+                info.special_parser = SpecialParserType(resolved.getType());
+            }
+        }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Unexpected literal type {}",

@@ -707,12 +707,12 @@ struct SettingFieldCustom final : SettingFieldBase
     Field value;
     bool changed = false;
 
-    explicit SettingFieldCustom(const Field & f = {}) : value(f) {}
+    explicit SettingFieldCustom(const Field & f = {}) : value(f.resolveNumberLiteral()) {}
     SettingFieldCustom(const SettingFieldCustom & o)
         : value(o.value), changed(o.changed)
     {}
 
-    SettingFieldCustom & operator =(const Field & f) override { value = f; changed = true; return *this; }
+    SettingFieldCustom & operator =(const Field & f) override { value = f.resolveNumberLiteral(); changed = true; return *this; }
     SettingFieldCustom & operator =(const SettingFieldCustom & o)
     {
         if (this != &o)

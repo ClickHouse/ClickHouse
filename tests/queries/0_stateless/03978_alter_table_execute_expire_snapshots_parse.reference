@@ -32,5 +32,5 @@ AlterQuery  t (children 2)
    ExpressionList (children 3)
     Literal \'a\'
     Literal UInt64_42
-    Literal Float64_3.14
+    Literal Number_3.14
  Identifier t

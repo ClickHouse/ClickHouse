@@ -24,6 +24,7 @@ void FieldVisitorScale::operator() (UUID &) const { throw Exception(ErrorCodes::
 void FieldVisitorScale::operator() (IPv4 &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scale IPv4s"); }
 void FieldVisitorScale::operator() (IPv6 &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scale IPv6s"); }
 void FieldVisitorScale::operator() (CustomType & x) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scale custom type {}", x.getTypeName()); }
+void FieldVisitorScale::operator() (NumberLiteral &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scale NumberLiterals"); }
 void FieldVisitorScale::operator() (AggregateFunctionStateData &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scale AggregateFunctionStates"); }
 void FieldVisitorScale::operator() (bool &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scale Bools"); }
 
