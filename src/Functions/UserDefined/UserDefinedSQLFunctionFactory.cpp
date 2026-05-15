@@ -13,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -24,6 +25,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsBool log_queries;
 }
@@ -101,8 +104,14 @@ ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const Co
         query->or_replace = false;
         FunctionNameNormalizer::visit(query->function_core.get());
 
-        NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef()[Setting::union_default_mode]};
-        NormalizeSelectWithUnionQueryVisitor{data}.visit(query->function_core);
+        {
+            SelectIntersectExceptQueryVisitor::Data data{context->getSettingsRef()[Setting::intersect_default_mode], context->getSettingsRef()[Setting::except_default_mode]};
+            SelectIntersectExceptQueryVisitor{data}.visit(query->function_core);
+        }
+        {
+            NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef()[Setting::union_default_mode]};
+            NormalizeSelectWithUnionQueryVisitor{data}.visit(query->function_core);
+        }
     }
 
     if (auto * query = typeid_cast<ASTCreateWasmFunctionQuery *>(ptr.get()))
@@ -121,7 +130,7 @@ UserDefinedSQLFunctionFactory & UserDefinedSQLFunctionFactory::instance()
 }
 
 UserDefinedSQLFunctionFactory::UserDefinedSQLFunctionFactory()
-    : global_context(Context::getGlobalContextInstance())
+    : WithContext(Context::getGlobalContextInstance())
 {}
 
 /// Checks that a specified function can be registered, throws an exception if not.
@@ -153,27 +162,27 @@ static void checkCanBeUnregistered(const ContextPtr & context, const String & fu
         throw Exception(ErrorCodes::CANNOT_DROP_FUNCTION, "Cannot drop user defined executable function '{}'", function_name);
 }
 
-bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists)
+bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & current_context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists)
 {
-    checkCanBeRegistered(context, function_name, *create_function_query, throw_if_exists);
-    create_function_query = normalizeCreateFunctionQuery(*create_function_query, context);
+    checkCanBeRegistered(current_context, function_name, *create_function_query, throw_if_exists);
+    create_function_query = normalizeCreateFunctionQuery(*create_function_query, current_context);
 
     try
     {
         if (create_function_query->as<ASTCreateWasmFunctionQuery>())
-            UserDefinedWebAssemblyFunctionFactory::instance().addOrReplace(create_function_query, context->getWasmModuleManager());
+            UserDefinedWebAssemblyFunctionFactory::instance().addOrReplace(create_function_query, current_context->getWasmModuleManager());
         else if (replace_if_exists && UserDefinedWebAssemblyFunctionFactory::instance().has(function_name))
             UserDefinedWebAssemblyFunctionFactory::instance().dropIfExists(function_name);
 
-        auto & loader = context->getUserDefinedSQLObjectsStorage();
+        auto & loader = current_context->getUserDefinedSQLObjectsStorage();
         bool stored = loader.storeObject(
-            context,
+            current_context,
             UserDefinedSQLObjectType::Function,
             function_name,
             create_function_query,
             throw_if_exists,
             replace_if_exists,
-            context->getSettingsRef());
+            current_context->getSettingsRef());
         if (!stored)
             return false;
     }
@@ -186,15 +195,15 @@ bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & c
     return true;
 }
 
-bool UserDefinedSQLFunctionFactory::unregisterFunction(const ContextMutablePtr & context, const String & function_name, bool throw_if_not_exists)
+bool UserDefinedSQLFunctionFactory::unregisterFunction(const ContextMutablePtr & current_context, const String & function_name, bool throw_if_not_exists)
 {
-    checkCanBeUnregistered(context, function_name);
+    checkCanBeUnregistered(current_context, function_name);
 
     try
     {
-        auto & storage = context->getUserDefinedSQLObjectsStorage();
+        auto & storage = current_context->getUserDefinedSQLObjectsStorage();
         bool removed = storage.removeObject(
-            context,
+            current_context,
             UserDefinedSQLObjectType::Function,
             function_name,
             throw_if_not_exists);
@@ -216,7 +225,7 @@ bool UserDefinedSQLFunctionFactory::unregisterFunction(const ContextMutablePtr &
 
 ASTPtr UserDefinedSQLFunctionFactory::get(const String & function_name) const
 {
-    ASTPtr ast = global_context->getUserDefinedSQLObjectsStorage().get(function_name);
+    ASTPtr ast = getContext()->getUserDefinedSQLObjectsStorage().get(function_name);
 
     if (ast && CurrentThread::isInitialized())
     {
@@ -230,7 +239,7 @@ ASTPtr UserDefinedSQLFunctionFactory::get(const String & function_name) const
 
 ASTPtr UserDefinedSQLFunctionFactory::tryGet(const std::string & function_name) const
 {
-    ASTPtr ast = global_context->getUserDefinedSQLObjectsStorage().tryGet(function_name);
+    ASTPtr ast = getContext()->getUserDefinedSQLObjectsStorage().tryGet(function_name);
 
     if (ast && CurrentThread::isInitialized())
     {
@@ -244,17 +253,17 @@ ASTPtr UserDefinedSQLFunctionFactory::tryGet(const std::string & function_name) 
 
 bool UserDefinedSQLFunctionFactory::has(const String & function_name) const
 {
-    return global_context->getUserDefinedSQLObjectsStorage().has(function_name);
+    return getContext()->getUserDefinedSQLObjectsStorage().has(function_name);
 }
 
 std::vector<std::string> UserDefinedSQLFunctionFactory::getAllRegisteredNames() const
 {
-    return global_context->getUserDefinedSQLObjectsStorage().getAllObjectNames();
+    return getContext()->getUserDefinedSQLObjectsStorage().getAllObjectNames();
 }
 
 bool UserDefinedSQLFunctionFactory::empty() const
 {
-    return global_context->getUserDefinedSQLObjectsStorage().empty();
+    return getContext()->getUserDefinedSQLObjectsStorage().empty();
 }
 
 void UserDefinedSQLFunctionFactory::backup(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup) const
@@ -263,7 +272,7 @@ void UserDefinedSQLFunctionFactory::backup(BackupEntriesCollector & backup_entri
         backup_entries_collector,
         data_path_in_backup,
         UserDefinedSQLObjectType::Function,
-        global_context->getUserDefinedSQLObjectsStorage().getAllObjects());
+        getContext()->getUserDefinedSQLObjectsStorage().getAllObjects());
 }
 
 void UserDefinedSQLFunctionFactory::restore(RestorerFromBackup & restorer, const String & data_path_in_backup)
@@ -272,9 +281,9 @@ void UserDefinedSQLFunctionFactory::restore(RestorerFromBackup & restorer, const
     const auto & restore_settings = restorer.getRestoreSettings();
     bool throw_if_exists = (restore_settings.create_function == RestoreUDFCreationMode::kCreate);
     bool replace_if_exists = (restore_settings.create_function == RestoreUDFCreationMode::kReplace);
-    auto context = restorer.getContext();
+    auto restore_context = restorer.getContext();
     for (const auto & [function_name, create_function_query] : restored_functions)
-        registerFunction(context, function_name, create_function_query, throw_if_exists, replace_if_exists);
+        registerFunction(restore_context, function_name, create_function_query, throw_if_exists, replace_if_exists);
 }
 
 void UserDefinedSQLFunctionFactory::loadFunctions(IUserDefinedSQLObjectsStorage & function_storage, WasmModuleManager & wasm_module_manager)

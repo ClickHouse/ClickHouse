@@ -22,6 +22,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <optional>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -152,21 +153,21 @@ public:
         current_metadata->mutate(commands, shared_from_this(), context, storage_id, metadata_snapshot, catalog, format_settings);
     }
 
-    void checkMutationIsPossible(const MutationCommands & commands) override
+    void checkMutationIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const MutationCommands & commands) override
     {
-        assertInitialized();
+        lazyInitializeIfNeeded(object_storage, context);
         current_metadata->checkMutationIsPossible(commands);
     }
 
-    void checkAlterIsPossible(const AlterCommands & commands) override
+    void checkAlterIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const AlterCommands & commands) override
     {
-        assertInitialized();
+        lazyInitializeIfNeeded(object_storage, context);
         current_metadata->checkAlterIsPossible(commands);
     }
 
-    void alter(const AlterCommands & params, ContextPtr context) override
+    void alter(ObjectStoragePtr object_storage, const AlterCommands & params, ContextPtr context) override
     {
-        assertInitialized();
+        lazyInitializeIfNeeded(object_storage, context);
         current_metadata->alter(params, context);
 
     }
@@ -350,9 +351,9 @@ public:
 #endif
     }
 
-    bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
+    bool optimize(ObjectStoragePtr object_storage, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
     {
-        assertInitialized();
+        lazyInitializeIfNeeded(object_storage, context);
         return current_metadata->optimize(metadata_snapshot, context, format_settings);
     }
 
