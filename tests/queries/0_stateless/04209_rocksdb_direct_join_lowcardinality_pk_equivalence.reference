@@ -1,13 +1,31 @@
-inner join legacy planner result
+inner join result
 a	A
 b	B
 c	C
-inner join legacy planner explain
+inner join explain
 Algorithm: DirectKeyValueJoin
-left join legacy planner result
+left join result
 a	A
 b	B
 c	C
 d	
-left join legacy planner explain
+left join explain
+Algorithm: DirectKeyValueJoin
+inner join on result
+a	A
+b	B
+c	C
+inner join on explain
+Algorithm: DirectKeyValueJoin
+lc(nullable) inner join result
+a	A
+b	B
+c	C
+lc(nullable) inner join explain
+Algorithm: DirectKeyValueJoin
+lc(nullable) inner join on result
+a	A
+b	B
+c	C
+lc(nullable) inner join on explain
 Algorithm: DirectKeyValueJoin

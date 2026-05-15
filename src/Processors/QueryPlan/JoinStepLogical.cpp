@@ -15,6 +15,8 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/ComparisonNames.h>
@@ -611,6 +613,7 @@ struct JoinPlanningContext
 {
     NameViewToNodeMapping actions_after_join_map;
     bool is_storage_join;
+    bool is_storage_key_value;
 };
 
 void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & right_node, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
@@ -660,7 +663,14 @@ void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & ri
     if (!left_type->equals(*common_type))
         left_node = JoinActionRef::transform({left_node}, cast_transform);
 
-    if (planning_context.is_storage_join)
+    if (planning_context.is_storage_key_value)
+    {
+        auto stripped_right = removeNullable(recursiveRemoveLowCardinality(right_type));
+        auto stripped_common = removeNullable(recursiveRemoveLowCardinality(common_type));
+        if (!stripped_right->equals(*stripped_common))
+            right_node = JoinActionRef::transform({right_node}, cast_transform);
+    }
+    else if (planning_context.is_storage_join)
     {
         if (!right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
             right_node = JoinActionRef::transform({right_node}, cast_transform);
@@ -1057,6 +1067,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
     JoinPlanningContext planning_context;
     planning_context.is_storage_join = bool(prepared_join_storage);
+    planning_context.is_storage_key_value = bool(prepared_join_storage.storage_key_value);
     for (const auto * node : actions_after_join)
     {
         if (node->type == ActionsDAG::ActionType::ALIAS)
