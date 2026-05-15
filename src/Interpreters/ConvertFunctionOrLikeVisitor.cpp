@@ -302,6 +302,15 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/) 
 
                 ASTPtr match_fn;
 
+                /// Skip rewriting groups with too few patterns — the rewrite cost (fixed setup of
+                /// `multiSearchAny`/Hyperscan) typically exceeds the benefit of short-circuit OR
+                /// evaluation for short chains. Controlled by `optimize_or_like_chain_min_patterns`.
+                if (info.patterns.size() < min_patterns_for_rewrite)
+                {
+                    slot = std::move(key_data.originals);
+                    continue;
+                }
+
                 if (info.canUseMultiSearchAny())
                 {
                     /// Use `multiSearchAny` or `multiSearchAnyCaseInsensitiveUTF8` for pure substring patterns.

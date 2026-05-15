@@ -59,6 +59,7 @@ namespace Setting
     extern const SettingsBool optimize_using_constraints;
     extern const SettingsBool optimize_redundant_functions_in_order_by;
     extern const SettingsBool optimize_or_like_chain;
+    extern const SettingsUInt64 optimize_or_like_chain_min_patterns;
 }
 
 namespace ErrorCodes
@@ -584,6 +585,7 @@ void optimizeOrLikeChain(ASTPtr & query, const Settings & settings, ContextPtr c
     data.max_hyperscan_regexp_length = settings[Setting::max_hyperscan_regexp_length];
     data.max_hyperscan_regexp_total_length = settings[Setting::max_hyperscan_regexp_total_length];
     data.reject_expensive_hyperscan_regexps = settings[Setting::reject_expensive_hyperscan_regexps];
+    data.min_patterns_for_rewrite = settings[Setting::optimize_or_like_chain_min_patterns];
     data.context = std::move(context);
     ConvertFunctionOrLikeVisitor(data).visit(query);
 }

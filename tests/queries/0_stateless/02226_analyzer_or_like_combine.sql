@@ -2,6 +2,7 @@
 -- no-fasttest: Reference output uses `multiMatchAny`, which requires vectorscan
 SET allow_hyperscan = 1, max_hyperscan_regexp_length = 0, max_hyperscan_regexp_total_length = 0;
 SET optimize_rewrite_like_perfect_affix = 0; -- prevent input/output interference from another LIKE rewrite pass
+SET optimize_or_like_chain_min_patterns = 1; -- exercise the rewrite for the short chains in this test; production default is 5
 
 EXPLAIN SYNTAX SELECT materialize('Привет, World') AS s WHERE (s LIKE 'hell%') OR (s ILIKE '%привет%') OR (s ILIKE 'world%') SETTINGS optimize_or_like_chain = 0;
 EXPLAIN QUERY TREE run_passes=1 SELECT materialize('Привет, World') AS s WHERE (s LIKE 'hell%') OR (s ILIKE '%привет%') OR (s ILIKE 'world%') SETTINGS optimize_or_like_chain = 0, enable_analyzer = 1;

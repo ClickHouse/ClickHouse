@@ -35,6 +35,7 @@ namespace Setting
     extern const SettingsUInt64 max_hyperscan_regexp_length;
     extern const SettingsUInt64 max_hyperscan_regexp_total_length;
     extern const SettingsBool optimize_or_like_chain;
+    extern const SettingsUInt64 optimize_or_like_chain_min_patterns;
     extern const SettingsBool reject_expensive_hyperscan_regexps;
 }
 
@@ -341,6 +342,7 @@ public:
         const size_t max_hyperscan_regexp_length = context->getSettingsRef()[Setting::max_hyperscan_regexp_length];
         const size_t max_hyperscan_regexp_total_length = context->getSettingsRef()[Setting::max_hyperscan_regexp_total_length];
         const bool reject_expensive_hyperscan_regexps = context->getSettingsRef()[Setting::reject_expensive_hyperscan_regexps];
+        const size_t min_patterns_for_rewrite = context->getSettingsRef()[Setting::optimize_or_like_chain_min_patterns];
 
         /// `indexHint(X) AND expr` restricts index analysis to granules that may satisfy `X`. To stay
         /// correct, `X` must be a *superset* of the rows the outer OR can match — otherwise we'd
@@ -361,7 +363,13 @@ public:
 
             std::shared_ptr<FunctionNode> match_function;
 
-            if (info.canUseMultiSearchAny())
+            /// Skip rewriting groups with too few patterns — `optimize_or_like_chain_min_patterns` is
+            /// calibrated so the rewrite is only applied where it is consistently beneficial (see the
+            /// setting's documentation). We still let the loop reach the indexHint-originals collection
+            /// below, then fall through to the "keep originals" branch, so the chain stays as written.
+            const bool too_few_patterns = info.patterns.size() < min_patterns_for_rewrite;
+
+            if (!too_few_patterns && info.canUseMultiSearchAny())
             {
                 /// Use `multiSearchAny` or `multiSearchAnyCaseInsensitiveUTF8` for pure substring patterns.
                 /// `multiSearchAny*` operates on raw substrings, not regexps, so the hyperscan
@@ -373,7 +381,7 @@ public:
                 auto resolver = FunctionFactory::instance().get(func_name, context);
                 match_function->resolveAsFunction(resolver);
             }
-            else if (info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length))
+            else if (!too_few_patterns && info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length))
             {
                 if (allow_hyperscan && !(reject_expensive_hyperscan_regexps && info.hasExpensiveRegexp()))
                 {

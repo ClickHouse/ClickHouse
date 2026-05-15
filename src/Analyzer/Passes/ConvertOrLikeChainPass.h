@@ -26,6 +26,11 @@ namespace DB
   * For mixed OR chains (`{i}like`/`match` combined with non-LIKE branches), the rewrite
   * intentionally skips the `indexHint` wrapping. Wrapping `indexHint(LIKE_subset)` would
   * prune ranges that satisfy only the non-LIKE branch, producing false negatives.
+  *
+  * Only chains with at least `optimize_or_like_chain_min_patterns` LIKE/ILIKE/match branches
+  * sharing the same LHS expression are rewritten; shorter chains are kept verbatim because the
+  * fixed setup cost of `multiSearchAny`/Hyperscan tends to outweigh short-circuit OR evaluation
+  * for very few patterns.
   */
 class ConvertOrLikeChainPass final : public IQueryTreePass
 {
