@@ -404,6 +404,7 @@ void DiskLocal::prepareRead(
         && settings.local_fs_method != LocalFSReadMethod::pread_threadpool;
 
     if (use_page_cache && settings.direct_io_threshold
+        && file_size >= settings.direct_io_threshold
         && settings.page_cache_block_size % DEFAULT_AIO_FILE_BLOCK_SIZE != 0)
         use_page_cache = false;
 
