@@ -1,0 +1,57 @@
+-- Regression test for https://github.com/ClickHouse/ClickHouse/issues/104791
+--
+-- `ATTACH TABLE name <storage clauses>;` without `ENGINE` and without a columns list
+-- used to silently drop the user-provided storage clauses, because the short ATTACH
+-- path reads the table definition from stored metadata and overwrites anything the
+-- user typed. The parser allows `SETTINGS`, `ORDER BY`, `PARTITION BY`, etc. without
+-- an `ENGINE` to support `default_table_engine` on `CREATE`, but for `ATTACH` the
+-- same syntax produced no error and no effect — users assumed their settings took
+-- effect. We now reject this with `BAD_ARGUMENTS` so the user notices.
+--
+-- However `ATTACH TABLE t SETTINGS log_comment = 'foo';` is a legitimate, supported
+-- pattern: `InterpreterSetQuery::applySettingsFromQuery` extracts session settings
+-- out of `create.storage->settings` and applies them to the context BEFORE this
+-- interpreter runs, so by the time the guard sees the storage, those settings have
+-- already been hoisted out and `storage->settings` is reset. The guard must allow
+-- that case.
+
+SET default_table_engine = 'MergeTree';
+
+DROP TABLE IF EXISTS t_104791;
+CREATE TABLE t_104791 (id UInt32) ORDER BY id;
+
+-- 1. SETTINGS with an engine (MergeTree) setting and no ENGINE: should error.
+--    `max_part_loading_threads` is neither a session setting nor a builtin
+--    MergeTree setting, so `applySettingsFromQuery` leaves it inside
+--    `storage->settings`. The guard catches it.
+DETACH TABLE t_104791;
+ATTACH TABLE t_104791 SETTINGS max_part_loading_threads = 16; -- { serverError BAD_ARGUMENTS }
+
+-- 2. SETTINGS with a MergeTree-builtin setting (`index_granularity`): should error.
+--    `applySettingsFromQuery` keeps MergeTree builtin settings inside
+--    `storage->settings`.
+ATTACH TABLE t_104791 SETTINGS index_granularity = 100; -- { serverError BAD_ARGUMENTS }
+
+-- 3. ORDER BY without ENGINE: same bug class, same fix.
+ATTACH TABLE t_104791 ORDER BY id; -- { serverError BAD_ARGUMENTS }
+
+-- 4. PARTITION BY without ENGINE: same.
+ATTACH TABLE t_104791 PARTITION BY id; -- { serverError BAD_ARGUMENTS }
+
+-- 5. Mixed (session + MergeTree builtin) SETTINGS: must still error, because
+--    after `applySettingsFromQuery` extracts `log_comment`, the MergeTree
+--    builtin setting `index_granularity` remains in `storage->settings`.
+ATTACH TABLE t_104791 SETTINGS log_comment = 'attach_test_104791', index_granularity = 100; -- { serverError BAD_ARGUMENTS }
+
+-- 6. Session-only SETTINGS (`log_comment`): must succeed. `applySettingsFromQuery`
+--    hoists `log_comment` to the context and resets `storage->settings`, so the
+--    guard sees an empty storage and falls through to the short-ATTACH path.
+ATTACH TABLE t_104791 SETTINGS log_comment = 'attach_test_104791';
+SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name = 't_104791';
+
+-- 7. Short ATTACH (no storage clauses at all): must still work.
+DETACH TABLE t_104791;
+ATTACH TABLE t_104791;
+SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name = 't_104791';
+
+DROP TABLE t_104791;

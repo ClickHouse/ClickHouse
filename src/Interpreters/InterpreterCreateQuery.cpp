@@ -1567,6 +1567,43 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     DDLGuardPtr ddl_guard;
 
+    /// `ATTACH TABLE name <storage clauses>;` without `ENGINE` and without a columns list is ambiguous:
+    /// the parser allows `SETTINGS`, `ORDER BY`, `PARTITION BY`, etc. without an `ENGINE` (to support
+    /// `default_table_engine` on `CREATE`), but the short `ATTACH` path below reads the full table
+    /// definition from stored metadata and silently overwrites anything the user typed.
+    ///
+    /// However `ATTACH TABLE t SETTINGS log_comment = 'foo';` is a legitimate, supported pattern:
+    /// `InterpreterSetQuery::applySettingsFromQuery` (called from `executeQueryImpl` before this
+    /// interpreter runs) extracts session settings out of `create.storage->settings` and applies
+    /// them to the context, then clears `create.storage->settings` when nothing engine-specific
+    /// is left. So the case we must reject is the *remaining* one: at this point any of the
+    /// non-engine storage fields (`ORDER BY`, `PARTITION BY`, `PRIMARY KEY`, `SAMPLE BY`, `TTL`,
+    /// `UNIQUE KEY`, or `SETTINGS` containing keys that are not known session settings) are still
+    /// populated — those would be silently dropped by the short `ATTACH` path below.
+    if (create.attach && create.storage && !create.storage->engine && !create.columns_list)
+    {
+        const auto & storage = *create.storage;
+        const bool has_non_engine_storage_clauses
+            = storage.partition_by != nullptr
+            || storage.primary_key != nullptr
+            || storage.order_by != nullptr
+            || storage.sample_by != nullptr
+            || storage.ttl_table != nullptr
+            || storage.unique_key != nullptr
+            || storage.settings != nullptr;
+
+        if (has_non_engine_storage_clauses)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ATTACH TABLE without ENGINE cannot specify storage clauses (ORDER BY, PARTITION BY, PRIMARY KEY, "
+                "SAMPLE BY, TTL, UNIQUE KEY, or engine SETTINGS) — they would be silently ignored because the "
+                "table definition is read from stored metadata. Use 'ATTACH TABLE {0};' to re-attach with stored "
+                "metadata, or 'ALTER TABLE {0} MODIFY SETTING ...' (or 'MODIFY ORDER BY ...') after ATTACH to "
+                "change settings. Session settings (e.g. log_comment) are allowed and applied automatically.",
+                backQuoteIfNeed(create.getTable()));
+        }
+    }
+
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list)
     {
