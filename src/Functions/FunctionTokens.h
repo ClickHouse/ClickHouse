@@ -2,17 +2,13 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
@@ -132,6 +128,8 @@ public:
                 size_t j = 0;
                 while (generator.get(token_begin, token_end))
                 {
+                    chassert(token_begin >= pos && token_end >= token_begin);
+                    chassert(token_end <= end);
                     size_t token_size = token_end - token_begin;
 
                     res_strings_chars.resize(res_strings_chars.size() + token_size);

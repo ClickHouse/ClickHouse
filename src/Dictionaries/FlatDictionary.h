@@ -2,7 +2,7 @@
 
 #include <atomic>
 #include <variant>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 
 #include <Common/HashTable/HashSet.h>
@@ -108,7 +108,10 @@ public:
 
 private:
     template <typename Value>
-    using ContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
+    using ContainerType = std::conditional_t<
+        std::is_same_v<Value, Array> || std::is_same_v<Value, Map> || std::is_same_v<Value, Object>,
+        VectorWithMemoryTracking<Value>,
+        PaddedPODArray<Value>>;
 
     using NullableSet = HashSet<UInt64, DefaultHash<UInt64>, HashTableGrower<>>;
 
@@ -140,7 +143,9 @@ private:
             ContainerType<IPv4>,
             ContainerType<IPv6>,
             ContainerType<std::string_view>,
-            ContainerType<Array>>
+            ContainerType<Array>,
+            ContainerType<Map>,
+            ContainerType<Object>>
             container;
 
         AttributeUnderlyingType type;
@@ -180,8 +185,8 @@ private:
     const DictionarySourcePtr source_ptr;
     const Configuration configuration;
 
-    std::vector<Attribute> attributes;
-    std::vector<bool> loaded_keys;
+    VectorWithMemoryTracking<Attribute> attributes;
+    VectorWithMemoryTracking<bool> loaded_keys;
 
     size_t bytes_allocated = 0;
     size_t hierarchical_index_bytes_allocated = 0;

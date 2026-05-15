@@ -355,7 +355,9 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
         insert_it = range.second;
     }
 
-    if (add_subcolumns)
+    /// Aliases don't have real subcolumns, they should be extracted
+    /// using getSubcolumn after expression evaluation.
+    if (add_subcolumns && column.default_desc.kind != ColumnDefaultKind::Alias)
         addSubcolumns(column.name, column.type);
     columns.get<0>().insert(insert_it, std::move(column));
 }
@@ -635,13 +637,31 @@ bool ColumnsDescription::hasNested(const String & column_name) const
     return range.first != range.second && range.first->name.length() > column_name.length();
 }
 
-bool ColumnsDescription::hasSubcolumn(const String & column_name) const
+static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
 {
-    if (subcolumns.get<0>().count(column_name))
+    switch (kind)
+    {
+        case ColumnDefaultKind::Default:
+            return GetColumnsOptions::Ordinary;
+        case ColumnDefaultKind::Materialized:
+            return GetColumnsOptions::Materialized;
+        case ColumnDefaultKind::Alias:
+            return GetColumnsOptions::Aliases;
+        case ColumnDefaultKind::Ephemeral:
+            return GetColumnsOptions::Ephemeral;
+    }
+
+    return GetColumnsOptions::None;
+}
+
+bool ColumnsDescription::hasSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
+{
+    auto jt = subcolumns.get<0>().find(column_name);
+    if (jt != subcolumns.get<0>().end() && (defaultKindToGetKind(columns.get<1>().find(jt->getNameInStorage())->default_desc.kind) & kind))
         return true;
 
     /// Check for dynamic subcolumns
-    if (tryGetDynamicSubcolumn(column_name))
+    if (tryGetDynamicSubcolumn(column_name, kind))
         return true;
 
     return false;
@@ -660,23 +680,6 @@ const ColumnDescription * ColumnsDescription::tryGet(const String & column_name)
 {
     auto it = columns.get<1>().find(column_name);
     return it == columns.get<1>().end() ? nullptr : &(*it);
-}
-
-static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
-{
-    switch (kind)
-    {
-        case ColumnDefaultKind::Default:
-            return GetColumnsOptions::Ordinary;
-        case ColumnDefaultKind::Materialized:
-            return GetColumnsOptions::Materialized;
-        case ColumnDefaultKind::Alias:
-            return GetColumnsOptions::Aliases;
-        case ColumnDefaultKind::Ephemeral:
-            return GetColumnsOptions::Ephemeral;
-    }
-
-    return GetColumnsOptions::None;
 }
 
 NamesAndTypesList ColumnsDescription::getByNames(const GetColumnsOptions & options, const Names & names) const
@@ -715,27 +718,14 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumns
     if (options.with_subcolumns)
     {
         auto jt = subcolumns.get<0>().find(column_name);
-        if (jt != subcolumns.get<0>().end())
-        {
-            /// Skip subcolumns of EPHEMERAL columns: they have no physical data
-            /// and no expression to compute them during SELECT.
-            auto parent_name = jt->getNameInStorage();
-            auto it_parent = columns.get<1>().find(parent_name);
-            if (it_parent != columns.get<1>().end() && it_parent->default_desc.kind != ColumnDefaultKind::Ephemeral)
-                return *jt;
-        }
+        if (jt != subcolumns.get<0>().end() && (defaultKindToGetKind(columns.get<1>().find(jt->getNameInStorage())->default_desc.kind) & options.kind))
+            return *jt;
 
         if (options.with_dynamic_subcolumns)
         {
             /// Check for dynamic subcolumns.
-            if (auto dynamic_subcolumn = tryGetDynamicSubcolumn(column_name))
-            {
-                /// Skip subcolumns of EPHEMERAL columns.
-                auto parent_name = dynamic_subcolumn->getNameInStorage();
-                auto it_parent = columns.get<1>().find(parent_name);
-                if (it_parent != columns.get<1>().end() && it_parent->default_desc.kind != ColumnDefaultKind::Ephemeral)
-                    return dynamic_subcolumn;
-            }
+            if (auto dynamic_subcolumn = tryGetDynamicSubcolumn(column_name, options))
+                return dynamic_subcolumn;
         }
     }
 
@@ -766,7 +756,7 @@ std::optional<const ColumnDescription> ColumnsDescription::tryGetColumnDescripti
     if (options.with_subcolumns)
     {
         auto jt = subcolumns.get<0>().find(column_name);
-        if (jt != subcolumns.get<0>().end())
+        if (jt != subcolumns.get<0>().end() && (defaultKindToGetKind(columns.get<1>().find(jt->getNameInStorage())->default_desc.kind) & options.kind))
             return ColumnDescription{jt->name, jt->type};
     }
 
@@ -825,29 +815,8 @@ bool ColumnsDescription::hasAlias(const String & column_name) const
 bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
-    if (it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & kind))
+    if ((it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & kind)) || hasSubcolumn(kind, column_name))
         return true;
-
-    auto jt = subcolumns.get<0>().find(column_name);
-    if (jt != subcolumns.get<0>().end())
-    {
-        /// Skip subcolumns of EPHEMERAL columns: they have no physical data
-        /// and no expression to compute them during SELECT.
-        auto parent_name = jt->getNameInStorage();
-        auto it_parent = columns.get<1>().find(parent_name);
-        if (it_parent != columns.get<1>().end() && it_parent->default_desc.kind != ColumnDefaultKind::Ephemeral)
-            return true;
-    }
-
-    /// Check for dynamic subcolumns.
-    if (auto dynamic_subcolumn = tryGetDynamicSubcolumn(column_name))
-    {
-        /// Skip subcolumns of EPHEMERAL columns.
-        auto parent_name = dynamic_subcolumn->getNameInStorage();
-        auto it_parent = columns.get<1>().find(parent_name);
-        if (it_parent != columns.get<1>().end() && it_parent->default_desc.kind != ColumnDefaultKind::Ephemeral)
-            return true;
-    }
 
     return false;
 }
@@ -1006,12 +975,12 @@ std::vector<String> ColumnsDescription::getAllRegisteredNames() const
     return names;
 }
 
-std::optional<NameAndTypePair> ColumnsDescription::tryGetDynamicSubcolumn(const String & column_name) const
+std::optional<NameAndTypePair> ColumnsDescription::tryGetDynamicSubcolumn(const String & column_name, const GetColumnsOptions & options) const
 {
     for (auto [ordinary_column_name, dynamic_subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(column_name))
     {
         auto it = columns.get<1>().find(String(ordinary_column_name));
-        if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
+        if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns() && (defaultKindToGetKind(it->default_desc.kind) & options.kind))
         {
             if (auto dynamic_subcolumn_type = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
                 return NameAndTypePair(String(ordinary_column_name), String(dynamic_subcolumn_name), it->type, dynamic_subcolumn_type);
@@ -1235,7 +1204,7 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
     QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
-    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
     QueryAnalyzer analyzer(/* only_analyze */ true);

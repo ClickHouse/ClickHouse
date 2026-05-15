@@ -3,8 +3,6 @@
 
 set -x
 
-# core.COMM.PID-TID
-sysctl kernel.core_pattern='core.%e.%p-%P'
 dmesg --clear ||:
 
 set -e
@@ -40,24 +38,25 @@ function configure
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/fuzz-server-settings.xml $CONFIG_DIR/config.d
 
+    if [[ -n "${SERVER_FUZZER_ENABLED:-}" ]]; then
+        cat > $CONFIG_DIR/users.d/serverfuzz-tweaks.xml <<EOL
+<clickhouse>
+    <profiles>
+        <default>
+            <ast_fuzzer_runs>5</ast_fuzzer_runs>
+            <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
+        </default>
+    </profiles>
+</clickhouse>
+EOL
+    fi
+
     cat > $CONFIG_DIR/config.d/max_server_memory_usage_to_ram_ratio.xml <<EOL
 <clickhouse>
     <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
 </clickhouse>
 EOL
 
-    cat > $CONFIG_DIR/config.d/core.xml <<EOL
-<clickhouse>
-    <core_dump>
-        <!-- 100GiB -->
-        <size_limit>107374182400</size_limit>
-    </core_dump>
-    <!-- NOTE: no need to configure core_path,
-         since clickhouse is not started as daemon (via clickhouse start)
-    -->
-    <core_path>$PWD</core_path>
-</clickhouse>
-EOL
 
     (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config) || echo "Failed to create log export config"
 }
@@ -109,12 +108,14 @@ function fuzz
 
     # server.log -> All server logs, including sanitizer
     # stderr.log -> Process logs (sanitizer) only
-    clickhouse-server \
-        --config-file $CONFIG_DIR/config.xml \
-        --pid-file /var/run/clickhouse-server/clickhouse-server.pid \
-        --  --path $CONFIG_DIR \
-            --logger.console=0 \
-            --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1 &
+    ( clickhouse-server \
+          --config-file $CONFIG_DIR/config.xml \
+          --pid-file /var/run/clickhouse-server/clickhouse-server.pid \
+          --  --path $CONFIG_DIR \
+              --logger.console=0 \
+              --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1
+      exit "${PIPESTATUS[0]}" ) &
+    server_bg_pid=$!
     for _ in {1..30}
     do
         if clickhouse-client --query "select 1"
@@ -190,8 +191,21 @@ function fuzz
 
     if [[ "$FUZZER_TO_RUN" = "AST Fuzzer" ]];
     then
-        QUERIES_FILE=$(find /repo/tests/queries/0_stateless -type f -name "*.sql" | sort -R)
-        FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
+        if [[ -n "${TARGETED_QUERIES_FILE:-}" ]] && [[ -f "${TARGETED_QUERIES_FILE}" ]];
+        then
+            QUERIES_FILE="$(cat "${TARGETED_QUERIES_FILE}")"
+            echo "Using targeted AST fuzzer corpus from ${TARGETED_QUERIES_FILE}"
+        else
+            QUERIES_FILE=$(find /repo/tests/queries/0_stateless -type f -name "*.sql" | sort -R)
+        fi
+        if [[ -n "${FUZZER_COMPATIBILITY:-}" ]];
+        then
+            COMPAT_ARG="--compatibility=${FUZZER_COMPATIBILITY}"
+            echo "Using AST fuzzer compatibility setting: ${FUZZER_COMPATIBILITY}"
+        else
+            COMPAT_ARG=""
+        fi
+        FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 $COMPAT_ARG --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
     elif [ "$FUZZER_TO_RUN" = "BuzzHouse" ]
     then
         FUZZER_ARGS="--buzz-house-config=fuzz.json"
@@ -267,6 +281,10 @@ function fuzz
                 # Give it some time to cool down
                 clickhouse-client --query "SHOW PROCESSLIST"
                 sleep 1
+            elif grep -F 'MEMORY_LIMIT_EXCEEDED' err
+            then
+                # Server is alive but at memory limit, give it time to reclaim
+                sleep 1
             else
                 echo "Server live check returns $?"
                 cat err
@@ -276,12 +294,15 @@ function fuzz
         fi
     done
 
-    # wait in background to call wait in foreground and ensure that the
-    # process is alive, since w/o job control this is the only way to obtain
-    # the exit code
+    # Stop the server in background so we can wait for the subshell to
+    # finish in the foreground. We wait on server_bg_pid (the subshell running
+    # the server pipeline) rather than server_pid (from the PID file), because
+    # the PID file contains the forked server process which is not a direct
+    # child of this shell, so wait would fail with "not a child of this shell".
+    # The subshell exits with clickhouse-server's exit code via PIPESTATUS.
     stop_server &
     server_exit_code=0
-    wait $server_pid || server_exit_code=$?
+    wait $server_bg_pid || server_exit_code=$?
     echo "Server exit code is $server_exit_code"
 
     echo -e "$server_died\t$server_exit_code\t$fuzzer_exit_code" > status.tsv

@@ -7,11 +7,11 @@ SET mutations_sync = 1;
 
 DROP TABLE IF EXISTS tab;
 
-SET allow_experimental_statistics = 0;
--- Error case: Can't create statistics when allow_experimental_statistics = 0
+SET allow_statistics = 0;
+-- Error case: Can't create statistics when allow_statistics = 0
 CREATE TABLE tab (col Float64 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
-SET allow_experimental_statistics = 1;
+SET allow_statistics = 1;
 
 -- Error case: Unknown statistics types are rejected
 CREATE TABLE tab (col Float64 STATISTICS(no_statistics_type)) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
@@ -119,6 +119,14 @@ CREATE TABLE tab (col Map(UInt64, UInt64) STATISTICS(minmax)) Engine = MergeTree
 CREATE TABLE tab (col UUID STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 CREATE TABLE tab (col IPv6 STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 
+--   nullcount requires isNullableOrLowCardinalityNullable
+--     These types work:
+CREATE TABLE tab (col Nullable(UInt8) STATISTICS(nullcount)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col LowCardinality(Nullable(UInt8)) STATISTICS(nullcount)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+--     These types don't work:
+CREATE TABLE tab (col UInt8 STATISTICS(nullcount)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+CREATE TABLE tab (col Array(Float64) STATISTICS(nullcount)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+
 -- CREATE TABLE was easy, ALTER is more fun
 
 CREATE TABLE tab
@@ -127,7 +135,8 @@ CREATE TABLE tab
     f64_tdigest   Float64 STATISTICS(tdigest),
     f32           Float32,
     s             String,
-    a             Array(Float64)
+    a             Array(Float64),
+    n             Nullable(Int64)
 )
 Engine = MergeTree()
 ORDER BY tuple();
@@ -172,7 +181,7 @@ ALTER TABLE tab DROP STATISTICS IF EXISTS s; -- no-op
 ALTER TABLE tab CLEAR STATISTICS s; -- { serverError ILLEGAL_STATISTICS }
 ALTER TABLE tab CLEAR STATISTICS IF EXISTS s; -- no-op
 
--- We don't check systematically that that statistics can only be created via ALTER ADD STATISTICS on columns of specific data types (the
+-- We don't check systematically that statistics can only be created via ALTER ADD STATISTICS on columns of specific data types (the
 -- internal type validation code is tested already above, (*)). Only do a rudimentary check for each statistics type with a data type that
 -- works and one that doesn't work.
 --   tdigest
@@ -203,6 +212,13 @@ ALTER TABLE tab MODIFY STATISTICS f64 TYPE minmax; ALTER TABLE tab DROP STATISTI
 --     Doesn't work:
 ALTER TABLE tab ADD STATISTICS a TYPE minmax; -- { serverError ILLEGAL_STATISTICS }
 ALTER TABLE tab MODIFY STATISTICS a TYPE minmax; -- { serverError ILLEGAL_STATISTICS }
+--   nullcount
+--     Works:
+ALTER TABLE tab ADD STATISTICS n TYPE nullcount; ALTER TABLE tab DROP STATISTICS n;
+ALTER TABLE tab MODIFY STATISTICS n TYPE nullcount; ALTER TABLE tab DROP STATISTICS n;
+--     Doesn't work:
+ALTER TABLE tab ADD STATISTICS f64 TYPE nullcount; -- { serverError ILLEGAL_STATISTICS }
+ALTER TABLE tab MODIFY STATISTICS f64 TYPE nullcount; -- { serverError ILLEGAL_STATISTICS }
 ALTER TABLE tab MODIFY COLUMN f64_tdigest UInt64;
 
 -- Finally, do a full-circle test of a good case. Print table definition after each step.

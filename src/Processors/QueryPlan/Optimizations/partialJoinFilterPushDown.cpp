@@ -194,6 +194,15 @@ std::optional<ActionsDAG> tryToExtractPartialPredicate(
     full_dag.addOrReplaceInOutputs(*predicate_node);
     full_dag.removeUnusedActions();
 
+    /// removeUnusedActions unconditionally keeps ARRAY_JOIN nodes because they change
+    /// the number of rows. This can bring back INPUT nodes from the other side of the
+    /// JOIN that are not available in the target stream. Since extractPartialPredicate
+    /// already correctly rejects predicates depending on ARRAY_JOIN (via
+    /// onlyDependsOnAvailableColumns), any ARRAY_JOIN surviving here is an artifact
+    /// and pushing it below a JOIN would cause duplicate rows.
+    if (full_dag.hasArrayJoin())
+        return {};
+
     return full_dag;
 }
 

@@ -1,4 +1,5 @@
 #include "config.h"
+#include <Common/CurrentThread.h>
 
 #if USE_AWS_S3
 
@@ -10,7 +11,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>
-#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/FileCache/FileCache.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/S3Common.h>
@@ -26,7 +27,6 @@ namespace ProfileEvents
     extern const Event WriteBufferFromS3Bytes;
     extern const Event WriteBufferFromS3Microseconds;
     extern const Event WriteBufferFromS3RequestsErrors;
-    extern const Event S3WriteBytes;
 
     extern const Event S3CreateMultipartUpload;
     extern const Event S3CompleteMultipartUpload;
@@ -780,8 +780,14 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             }
             else
             {
-                LOG_ERROR(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
-                          outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);
+                /// PreconditionFailed is an expected response for conditional writes (e.g. If-None-Match: *),
+                /// not a genuine error — the caller handles it.
+                if (outcome.GetError().GetExceptionName() == "PreconditionFailed")
+                    LOG_INFO(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
+                              outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);
+                else
+                    LOG_ERROR(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
+                              outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);
                 throw S3Exception(
                     outcome.GetError().GetErrorType(),
                     "Message: {}, bucket {}, key {}, object size {}",

@@ -1,16 +1,19 @@
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StatisticsSerialization.h>
 #include <IO/WriteBuffer.h>
 #include <IO/PackedFilesWriter.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Common/escapeForFileName.h>
 
 namespace DB
 {
 
 static String getStatisticsFilename(const String & column_name)
 {
-    return String(STATS_FILE_PREFIX) + column_name + String(STATS_FILE_SUFFIX);
+    /// Note, we cannot use replaceFileNameToHashIfNeeded(), since we do not handle hashes->column names for statistics in getColumnForStatisticsFile()
+    return String(STATS_FILE_PREFIX) + escapeForFileName(column_name) + String(STATS_FILE_SUFFIX);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> serializeStatisticsPacked(

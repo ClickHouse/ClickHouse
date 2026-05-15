@@ -1,10 +1,10 @@
-if (SANITIZE OR NOT (
+if ((SANITIZE AND NOT SANITIZE STREQUAL "undefined") OR NOT (
     ((OS_LINUX OR OS_FREEBSD) AND (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_RISCV64 OR ARCH_S390X OR ARCH_E2K)) OR
     (OS_DARWIN AND (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG"))
 ))
     if (ENABLE_JEMALLOC)
         message (${RECONFIGURE_MESSAGE_LEVEL}
-                 "jemalloc is disabled implicitly: it doesn't work with sanitizers and can only be used with x86_64, aarch64, or ppc64le Linux or FreeBSD builds and RelWithDebInfo macOS builds. Use -DENABLE_JEMALLOC=0")
+                 "jemalloc is disabled implicitly: it doesn't work with sanitizers (except UBSan) and can only be used with x86_64, aarch64, or ppc64le Linux or FreeBSD builds and RelWithDebInfo macOS builds. Use -DENABLE_JEMALLOC=0")
     endif ()
     set (ENABLE_JEMALLOC OFF)
 else ()
@@ -72,13 +72,13 @@ set (SRCS
     "${LIBRARY_DIR}/src/arena.c"
     "${LIBRARY_DIR}/src/background_thread.c"
     "${LIBRARY_DIR}/src/base.c"
-    "${LIBRARY_DIR}/src/batcher.c"
     "${LIBRARY_DIR}/src/bin.c"
     "${LIBRARY_DIR}/src/bin_info.c"
     "${LIBRARY_DIR}/src/bitmap.c"
     "${LIBRARY_DIR}/src/buf_writer.c"
     "${LIBRARY_DIR}/src/cache_bin.c"
     "${LIBRARY_DIR}/src/ckh.c"
+    "${LIBRARY_DIR}/src/conf.c"
     "${LIBRARY_DIR}/src/counter.c"
     "${LIBRARY_DIR}/src/ctl.c"
     "${LIBRARY_DIR}/src/decay.c"
@@ -96,7 +96,9 @@ set (SRCS
     "${LIBRARY_DIR}/src/fxp.c"
     "${LIBRARY_DIR}/src/hook.c"
     "${LIBRARY_DIR}/src/hpa.c"
+    "${LIBRARY_DIR}/src/hpa_central.c"
     "${LIBRARY_DIR}/src/hpa_hooks.c"
+    "${LIBRARY_DIR}/src/hpa_utils.c"
     "${LIBRARY_DIR}/src/hpdata.c"
     "${LIBRARY_DIR}/src/inspect.c"
     "${LIBRARY_DIR}/src/jemalloc.c"
@@ -109,15 +111,14 @@ set (SRCS
     "${LIBRARY_DIR}/src/pac.c"
     "${LIBRARY_DIR}/src/pa_extra.c"
     "${LIBRARY_DIR}/src/pages.c"
-    "${LIBRARY_DIR}/src/pai.c"
     "${LIBRARY_DIR}/src/peak_event.c"
     "${LIBRARY_DIR}/src/prof.c"
     "${LIBRARY_DIR}/src/prof_data.c"
     "${LIBRARY_DIR}/src/prof_log.c"
     "${LIBRARY_DIR}/src/prof_recent.c"
     "${LIBRARY_DIR}/src/prof_stats.c"
+    "${LIBRARY_DIR}/src/prof_stack_range.c"
     "${LIBRARY_DIR}/src/prof_sys.c"
-    "${LIBRARY_DIR}/src/prof_threshold.c"
     "${LIBRARY_DIR}/src/psset.c"
     "${LIBRARY_DIR}/src/rtree.c"
     "${LIBRARY_DIR}/src/safety_check.c"
@@ -130,6 +131,7 @@ set (SRCS
     "${LIBRARY_DIR}/src/tcache.c"
     "${LIBRARY_DIR}/src/test_hooks.c"
     "${LIBRARY_DIR}/src/thread_event.c"
+    "${LIBRARY_DIR}/src/thread_event_registry.c"
     "${LIBRARY_DIR}/src/ticker.c"
     "${LIBRARY_DIR}/src/tsd.c"
     "${LIBRARY_DIR}/src/util.c"
@@ -184,10 +186,15 @@ configure_file(${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal/jemalloc_internal_de
 target_include_directories(_jemalloc SYSTEM PRIVATE
     "${CMAKE_CURRENT_BINARY_DIR}/${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal")
 
+# This is only about private functions, and we cannot use private namespace since we do not provide private_namespace.h
 target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_NO_PRIVATE_NAMESPACE)
+# Do not rename je_malloc to malloc (and friends)
+target_compile_definitions(_jemalloc INTERFACE -DJEMALLOC_NO_RENAME)
 
 # Because our coverage callbacks call malloc, and recursive call of malloc could not work.
 target_compile_options(_jemalloc PRIVATE ${WITHOUT_COVERAGE_FLAGS_LIST})
+# Due to LTO there are some UB in tcache
+target_compile_options(_jemalloc PRIVATE -fno-lto -fno-whole-program-vtables)
 
 target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_PROF=1)
 
