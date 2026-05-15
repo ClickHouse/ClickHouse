@@ -69,7 +69,6 @@ namespace Setting
 
 RelationStats getDummyStats(ContextPtr context, const String & table_name);
 RelationStats getDummyStats(const String & dummy_stats_str, const String & table_name);
-RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const String & table_name, const Block & header);
 
 namespace QueryPlanOptimizations
 {
@@ -477,7 +476,6 @@ struct QueryGraphBuilder
         JoinSettings join_settings;
         SortingStep::Settings sorting_settings;
         String dummy_stats;
-        UInt64 effective_randomize_seed = 0;
 
         BuilderContext(
             const QueryPlanOptimizationSettings & optimization_settings_,
@@ -488,9 +486,7 @@ struct QueryGraphBuilder
             , statistics_context(optimization_settings_, root_node)
             , join_settings(join_settings_)
             , sorting_settings(sorting_settings_)
-            , effective_randomize_seed(optimization_settings_.query_plan_optimize_join_order_randomize)
-        {
-        }
+        {}
     };
 
     std::shared_ptr<BuilderContext> context;
@@ -626,9 +622,6 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
     if (!label.empty())
         stats.table_name = label;
 
-    if (UInt64 seed = graph.context->effective_randomize_seed)
-        stats = getRandomizedStats(seed, graph.relation_stats.size(), stats.table_name, *node->step->getOutputHeader());
-
     LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
         num_rows_from_cache.has_value() ? " (from cache)" : "",
         node->step->getName(), dumpStatsForLogs(stats));
@@ -742,15 +735,27 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         else
         {
             auto sources = edge.getSourceRelations();
+            bool should_pin = false;
+
             for (auto rel_id : sources)
             {
                 auto it = query_graph.join_kinds.find(rel_id);
                 if (it != query_graph.join_kinds.end())
                 {
-                    query_graph.pinned[edge] = total_inputs - 1;
+                    should_pin = true;
                     break;
                 }
             }
+
+            /// If a condition references only the preserved side of an outer join,
+            /// it must not be placed in that outer join's ON clause, because
+            /// ON-clause conditions on the preserved side only affect matching,
+            /// not filtering — rows from the preserved side are kept regardless.
+            should_pin = should_pin || std::ranges::any_of(query_graph.join_kinds | std::views::values,
+                [&sources](const auto & partner_info) { return isSubsetOf(sources, partner_info.first); });
+
+            if (should_pin)
+                query_graph.pinned[edge] = total_inputs - 1;
         }
     }
 
@@ -1215,28 +1220,6 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     {
         join_step->setOptimized();
         return;
-    }
-
-    /// Skip join order optimization if children's output headers have overlapping column names.
-    /// The `JoinExpressionActions` constructor used during join reconstruction requires unique column names
-    /// across left and right sides. Overlapping names can occur when scalar subquery results and join
-    /// table aliases collide (e.g. both sides produce `__table2`).
-    {
-        auto left_header = node.children[0]->step->getOutputHeader();
-        auto right_header = node.children[1]->step->getOutputHeader();
-
-        std::unordered_set<std::string_view> left_names;
-        for (const auto & col : *left_header)
-            left_names.insert(col.name);
-
-        for (const auto & col : *right_header)
-        {
-            if (left_names.contains(col.name))
-            {
-                join_step->setOptimized();
-                return;
-            }
-        }
     }
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());

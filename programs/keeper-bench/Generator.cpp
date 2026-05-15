@@ -695,25 +695,27 @@ void MultiRequestGenerator::setSeedImpl(uint64_t seed)
         size->setSeed(seed + 100003);
 }
 
-void Generator::startup(const Poco::Util::AbstractConfiguration & config, Coordination::ZooKeeper & zookeeper, size_t thread_idx)
+Generator::Generator(const Poco::Util::AbstractConfiguration & config)
 {
     if (config.has("generator.seed"))
-        seed = config.getUInt64("generator.seed") + thread_idx;
+        seed = config.getUInt64("generator.seed");
     else
         seed = randomSeed();
+    std::cerr << "Generator seed: " << seed << std::endl;
 
     default_acls = getDefaultACLs();
 
+    std::cerr << "---- Collecting request generators ----" << std::endl;
     static const std::string requests_key = "generator.requests";
     request_getter = RequestGetter::fromConfig(requests_key, config);
     request_getter.setSeed(seed);
+    std::cerr << request_getter.description() << std::endl;
+    std::cerr << "---- Done collecting request generators ----\n" << std::endl;
+}
 
-    if (thread_idx == 0)
-    {
-        std::cerr << "Generator seed: " << seed << std::endl;
-        std::cerr << request_getter.description() << std::endl;
-    }
-
+void Generator::startup(Coordination::ZooKeeper & zookeeper)
+{
+    std::cerr << "---- Initializing generators ----" << std::endl;
     request_getter.startup(zookeeper);
 }
 

@@ -301,17 +301,6 @@ def test_create_table():
         f"ArrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '{password}')",
         f"URL('https://username:{password}@domain.com/path', 'CSV')",
         f"Redis('localhost', 0, '{password}') PRIMARY KEY x;",
-        f"JDBC('DSN=mydb;Uid=user;Pwd={password}', 'mydb', 'mytable')",
-        f"ODBC('DSN=mydb;Uid=user;Pwd={password}', 'mydb', 'mytable')",
-        f"JDBC('jdbc://user:{password}@localhost:5432/mydb', 'mydb', 'mytable')",
-        f"ODBC('odbc://user:{password}@localhost:5432/mydb', 'mydb', 'mytable')",
-        f"JDBC(named_collection_1, datasource = 'DSN=mydb;Uid=user;Pwd={password}', external_database = 'mydb', external_table = 'mytable')",
-        f"ODBC(named_collection_1, connection_settings = 'DSN=mydb;Uid=user;Pwd={password}', external_database = 'mydb', external_table = 'mytable')",
-        f"JDBC(named_collection_1, datasource = 'jdbc://user:{password}@localhost:5432/mydb', external_database = 'mydb', external_table = 'mytable')",
-        f"ODBC(named_collection_1, connection_settings = 'odbc://user:{password}@localhost:5432/mydb', external_database = 'mydb', external_table = 'mytable')",
-        (f"JDBC(named_collection_1, datasource = 'DSN=mydb;Uid=user;Pwd={password}', connection_settings = 'DSN=mydb2;Uid=user2;Pwd={password}', external_database = 'mydb', external_table = 'mytable')", "ARGUMENTS"),
-        (f"JDBC(named_collection_1, connection_settings = 'jdbc://user2:{password}@localhost:5432/mydb2', external_database = 'mydb', datasource = 'jdbc://user:{password}@localhost:5432/mydb', external_table = 'mytable')", "ARGUMENTS"),
-        (f"NATS() SETTINGS nats_url = 'localhost:4222', nats_subjects = 'subject', nats_format = 'JSONEachRow', nats_token = '{password}'", "CANNOT_CONNECT_NATS"),
     ]
 
     def make_test_case(i):
@@ -405,17 +394,6 @@ def test_create_table():
             generate_create_table_numbered("(`x` int) ENGINE = ArrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')"),
             generate_create_table_numbered("(`x` int) ENGINE = URL('https://username:[HIDDEN]@domain.com/path', 'CSV')"),
             generate_create_table_numbered("(`x` int) ENGINE = Redis('localhost', 0, '[HIDDEN]') PRIMARY KEY x"),
-            generate_create_table_numbered("(`x` int) ENGINE = JDBC('[HIDDEN]', 'mydb', 'mytable')"),
-            generate_create_table_numbered("(`x` int) ENGINE = ODBC('[HIDDEN]', 'mydb', 'mytable')"),
-            generate_create_table_numbered("(`x` int) ENGINE = JDBC('jdbc://user:[HIDDEN]@localhost:5432/mydb', 'mydb', 'mytable')"),
-            generate_create_table_numbered("(`x` int) ENGINE = ODBC('odbc://user:[HIDDEN]@localhost:5432/mydb', 'mydb', 'mytable')"),
-            generate_create_table_numbered("(`x` int) ENGINE = JDBC(named_collection_1, datasource = '[HIDDEN]', external_database = 'mydb', external_table = 'mytable')"),
-            generate_create_table_numbered("(`x` int) ENGINE = ODBC(named_collection_1, connection_settings = '[HIDDEN]', external_database = 'mydb', external_table = 'mytable')"),
-            generate_create_table_numbered("(`x` int) ENGINE = JDBC(named_collection_1, datasource = 'jdbc://user:[HIDDEN]@localhost:5432/mydb', external_database = 'mydb', external_table = 'mytable')"),
-            generate_create_table_numbered("(`x` int) ENGINE = ODBC(named_collection_1, connection_settings = 'odbc://user:[HIDDEN]@localhost:5432/mydb', external_database = 'mydb', external_table = 'mytable')"),
-            generate_create_table_numbered("(`x` int) ENGINE = JDBC(named_collection_1, datasource = '[HIDDEN]', connection_settings = '[HIDDEN]', external_database = '[HIDDEN]', external_table = '[HIDDEN]')"),
-            generate_create_table_numbered("(`x` int) ENGINE = JDBC(named_collection_1, connection_settings = '[HIDDEN]', external_database = '[HIDDEN]', datasource = '[HIDDEN]', external_table = '[HIDDEN]')"),
-            generate_create_table_numbered("(`x` int) ENGINE = NATS SETTINGS nats_url = 'localhost:4222', nats_subjects = 'subject', nats_format = 'JSONEachRow', nats_token = '[HIDDEN]'"),
         ],
         must_not_contain=[password],
     )
@@ -545,17 +523,7 @@ def test_table_functions():
         f"arrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '{password}')",
         f"arrowflight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '{password}')",
         f"url('https://username:{password}@domain.com/path', 'CSV')",
-        f"redis('localhost', 'key', 'key Int64', 0, '{password}')",
-        f"jdbc('DSN=mydb;Uid=user;Pwd={password}', 'mydb', 'mytable')",
-        f"odbc('DSN=mydb;Uid=user;Pwd={password}', 'mydb', 'mytable')",
-        f"jdbc('jdbc://user:{password}@localhost:5432/mydb', 'mydb', 'mytable')",
-        f"odbc('odbc://user:{password}@localhost:5432/mydb', 'mydb', 'mytable')",
-        f"jdbc(named_collection_1, datasource = 'DSN=mydb;Uid=user;Pwd={password}')",
-        f"odbc(named_collection_1, connection_settings = 'DSN=mydb;Uid=user;Pwd={password}')",
-        f"jdbc(named_collection_1, datasource = 'jdbc://user:{password}@localhost:5432/mydb')",
-        f"odbc(named_collection_1, connection_settings = 'odbc://user:{password}@localhost:5432/mydb')",
-        (f"jdbc(named_collection_1, datasource = 'DSN=mydb;Uid=user;Pwd={password}', connection_settings = 'DSN=mydb2;Uid=user2;Pwd={password}')", "ARGUMENTS"),
-        (f"jdbc(named_collection_1, connection_settings = 'jdbc://user2:{password}@localhost:5432/mydb2', external_database = 'mydb', datasource = 'jdbc://user:{password}@localhost:5432/mydb')", "ARGUMENTS"),
+        f"redis('localhost', 'key', 'key Int64', 0, '{password}')"
     ]
 
     def make_test_case(i):
@@ -649,16 +617,6 @@ def test_table_functions():
             "CREATE TABLE tablefunc47 (`x` int) AS arrowflight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')",
             "CREATE TABLE tablefunc48 (`x` int) AS url('https://username:[HIDDEN]@domain.com/path', 'CSV')",
             "CREATE TABLE tablefunc49 (`x` int) AS redis('localhost', 'key', 'key Int64', 0, '[HIDDEN]')",
-            "CREATE TABLE tablefunc50 (`x` int) AS jdbc('[HIDDEN]', 'mydb', 'mytable')",
-            "CREATE TABLE tablefunc51 (`x` int) AS odbc('[HIDDEN]', 'mydb', 'mytable')",
-            "CREATE TABLE tablefunc52 (`x` int) AS jdbc('jdbc://user:[HIDDEN]@localhost:5432/mydb', 'mydb', 'mytable')",
-            "CREATE TABLE tablefunc53 (`x` int) AS odbc('odbc://user:[HIDDEN]@localhost:5432/mydb', 'mydb', 'mytable')",
-            "CREATE TABLE tablefunc54 (`x` int) AS jdbc(named_collection_1, datasource = '[HIDDEN]')",
-            "CREATE TABLE tablefunc55 (`x` int) AS odbc(named_collection_1, connection_settings = '[HIDDEN]')",
-            "CREATE TABLE tablefunc56 (`x` int) AS jdbc(named_collection_1, datasource = 'jdbc://user:[HIDDEN]@localhost:5432/mydb')",
-            "CREATE TABLE tablefunc57 (`x` int) AS odbc(named_collection_1, connection_settings = 'odbc://user:[HIDDEN]@localhost:5432/mydb')",
-            "CREATE TABLE tablefunc58 (`x` int) AS jdbc(named_collection_1, datasource = '[HIDDEN]', connection_settings = '[HIDDEN]')",
-            "CREATE TABLE tablefunc59 (`x` int) AS jdbc(named_collection_1, connection_settings = '[HIDDEN]', external_database = '[HIDDEN]', datasource = '[HIDDEN]')",
         ],
         must_not_contain=[password],
     )
@@ -840,9 +798,24 @@ def test_encryption_functions():
 def test_create_dictionary():
     password = new_password()
 
+    # ClickHouse source.
     node.query(
         f"CREATE DICTIONARY dict1 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
         f"SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'user1' TABLE 'test' PASSWORD '{password}' DB 'default')) "
+        f"LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())"
+    )
+
+    # HTTP source with top-level USER/PASSWORD keys.
+    node.query(
+        f"CREATE DICTIONARY dict2 (n int DEFAULT 0) PRIMARY KEY n "
+        f"SOURCE(HTTP(url 'http://localhost:8123/dict.tsv' format 'TabSeparated' user 'huser' password '{password}')) "
+        f"LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())"
+    )
+
+    # HTTP source with nested CREDENTIALS(USER ... PASSWORD ...).
+    node.query(
+        f"CREATE DICTIONARY dict3 (n int DEFAULT 0) PRIMARY KEY n "
+        f"SOURCE(HTTP(url 'http://localhost:8123/dict.tsv' format 'TabSeparated' credentials(user 'huser' password '{password}'))) "
         f"LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())"
     )
 
@@ -853,22 +826,46 @@ def test_create_dictionary():
         )
 
         assert (
+            node.query(f"SHOW CREATE TABLE dict2 {show_secrets}={toggle}")
+            == f"CREATE DICTIONARY default.dict2\\n(\\n    `n` int DEFAULT 0\\n)\\nPRIMARY KEY n\\nSOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' USER \\'huser\\' PASSWORD \\'{secret}\\'))\\nLIFETIME(MIN 0 MAX 10)\\nLAYOUT(FLAT())\n"
+        )
+
+        assert (
+            node.query(f"SHOW CREATE TABLE dict3 {show_secrets}={toggle}")
+            == f"CREATE DICTIONARY default.dict3\\n(\\n    `n` int DEFAULT 0\\n)\\nPRIMARY KEY n\\nSOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' CREDENTIALS (USER \\'huser\\' PASSWORD \\'{secret}\\')))\\nLIFETIME(MIN 0 MAX 10)\\nLAYOUT(FLAT())\n"
+        )
+
+        assert (
             node.query(
-                f"SELECT create_table_query FROM system.tables WHERE name = 'dict1' {show_secrets}={toggle}"
+                f"SELECT create_table_query FROM system.tables WHERE name IN ['dict1', 'dict2', 'dict3'] ORDER BY name {show_secrets}={toggle}"
             )
-            == f"CREATE DICTIONARY default.dict1 (`n` int DEFAULT 0, `m` int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST \\'localhost\\' PORT 9000 USER \\'user1\\' TABLE \\'test\\' PASSWORD \\'{secret}\\' DB \\'default\\')) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
+            == (
+                f"CREATE DICTIONARY default.dict1 (`n` int DEFAULT 0, `m` int DEFAULT 1) PRIMARY KEY n SOURCE(CLICKHOUSE(HOST \\'localhost\\' PORT 9000 USER \\'user1\\' TABLE \\'test\\' PASSWORD \\'{secret}\\' DB \\'default\\')) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
+                f"CREATE DICTIONARY default.dict2 (`n` int DEFAULT 0) PRIMARY KEY n SOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' USER \\'huser\\' PASSWORD \\'{secret}\\')) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
+                f"CREATE DICTIONARY default.dict3 (`n` int DEFAULT 0) PRIMARY KEY n SOURCE(HTTP(URL \\'http://localhost:8123/dict.tsv\\' FORMAT \\'TabSeparated\\' CREDENTIALS (USER \\'huser\\' PASSWORD \\'{secret}\\'))) LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())\n"
+            )
         )
 
     check_logs(
         must_contain=[
             "CREATE DICTIONARY dict1 (`n` int DEFAULT 0, `m` int DEFAULT 1) PRIMARY KEY n "
             "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'user1' TABLE 'test' PASSWORD '[HIDDEN]' DB 'default')) "
-            "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())"
+            "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())",
+
+            "CREATE DICTIONARY dict2 (`n` int DEFAULT 0) PRIMARY KEY n "
+            "SOURCE(HTTP(URL 'http://localhost:8123/dict.tsv' FORMAT 'TabSeparated' USER 'huser' PASSWORD '[HIDDEN]')) "
+            "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())",
+
+            "CREATE DICTIONARY dict3 (`n` int DEFAULT 0) PRIMARY KEY n "
+            "SOURCE(HTTP(URL 'http://localhost:8123/dict.tsv' FORMAT 'TabSeparated' CREDENTIALS (USER 'huser' PASSWORD '[HIDDEN]'))) "
+            "LIFETIME(MIN 0 MAX 10) LAYOUT(FLAT())",
         ],
         must_not_contain=[password],
     )
 
     node.query("DROP DICTIONARY dict1")
+    node.query("DROP DICTIONARY dict2")
+    node.query("DROP DICTIONARY dict3")
 
 
 def test_backup_to_s3():
