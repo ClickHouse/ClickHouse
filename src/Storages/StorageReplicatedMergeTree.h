@@ -599,7 +599,7 @@ private:
     void clearCreateQueryZooKeeperRetriesInfo();
 
     bool checkTableStructure(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, int32_t * metadata_version, bool strict_check,
-                             const ZooKeeperRetriesInfo & zookeeper_retries_info) const;
+                             const ZooKeeperRetriesInfo & zookeeper_retries_info);
     bool checkTableStructureAttempt(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, int32_t * metadata_version, bool strict_check) const;
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
@@ -949,7 +949,7 @@ private:
 
     /// Check granularity of already existing replicated table in zookeeper if it exists
     /// return true if it's fixed
-    bool checkFixedGranularityInZookeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info) const;
+    bool checkFixedGranularityInZookeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info);
 
     /// Wait for timeout seconds mutation is finished on replicas
     void waitMutationToFinishOnReplicas(
@@ -990,7 +990,7 @@ private:
     void createAndStoreFreezeMetadata(DiskPtr disk, DataPartPtr part, String backup_part_path) const override;
 
     // Create table id if needed
-    void createTableSharedID(const ZooKeeperRetriesInfo & zookeeper_retries_info) const;
+    void createTableSharedID(const ZooKeeperRetriesInfo & zookeeper_retries_info);
     void createTableSharedIDAttempt() const;
 
     bool checkZeroCopyLockExists(const String & part_name, const DiskPtr & disk, String & lock_replica);
