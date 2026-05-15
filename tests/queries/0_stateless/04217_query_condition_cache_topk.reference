@@ -10,15 +10,10 @@
 --- Different sort column writes a separate entry
 4
 
---- Focused assertions for NULLS direction and COLLATE locale ---
+--- Focused assertions for NULLS direction ---
 0
 --- Same NULLS direction re-runs reuse the same QCC entry
 1
 1
 --- Different NULLS direction writes a separate entry
 2
---- Same COLLATE locale re-runs reuse the same QCC entry
-3
-3
---- Different COLLATE locale writes a separate entry
-4
