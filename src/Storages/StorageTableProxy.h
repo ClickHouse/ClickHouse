@@ -94,6 +94,12 @@ public:
             auto nested_storage = get_nested();
             nested_storage->drop();
             get_nested = {};
+            /// Keep the dropped storage around so `dropSkipsDataDirectoryCleanup`
+            /// can delegate to it: `DatabaseCatalog::dropTableFinally` queries it
+            /// right after `drop()` returns to decide whether to skip per-disk
+            /// cleanup. Without this, an unloaded `MergeTree` with
+            /// `leader_election = 1` would fall back to the unsafe default.
+            nested = std::move(nested_storage);
         }
         catch (...)
         {
@@ -145,11 +151,12 @@ public:
 
     bool dropSkipsDataDirectoryCleanup() const override
     {
-        /// `drop()` may have already consumed `get_nested` without storing
-        /// `nested`, so unconditionally delegating through `getNested()` here
-        /// would invoke an empty `std::function` and throw. Fall back to the
-        /// safe default (perform per-disk cleanup) when the proxy has nothing
-        /// loaded to ask.
+        /// `drop()` always stores `nested` (loading the lazy table if needed)
+        /// so the catalog-level cleanup decision matches the nested storage's
+        /// choice. The only path that leaves `nested` empty here is when both
+        /// the proxy was never accessed and `drop()` could not even obtain
+        /// the factory — in that case fall back to the safe default of
+        /// per-disk cleanup.
         std::lock_guard lock{nested_mutex};
         if (nested)
             return nested->dropSkipsDataDirectoryCleanup();
