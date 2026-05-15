@@ -5,9 +5,9 @@ DROP TABLE IF EXISTS right;
 DROP TABLE IF EXISTS right_asof;
 DROP TABLE IF EXISTS right_storage_join;
 
-CREATE TABLE left (k Int64, t DateTime) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE left (k Int64, t DateTime('UTC')) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE right (k Int64, v2 Nullable(Int64), s String) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE right_asof (k Int64, t DateTime, v2 Nullable(Int64), s String) ENGINE = MergeTree ORDER BY (k, t);
+CREATE TABLE right_asof (k Int64, t DateTime('UTC'), v2 Nullable(Int64), s String) ENGINE = MergeTree ORDER BY (k, t);
 CREATE TABLE right_storage_join (k Int64, v2 Nullable(Int64), s String) ENGINE = Join(ANY, LEFT, k);
 
 INSERT INTO left SELECT number, toDateTime('2024-01-01 00:00:00') + number FROM numbers(10);

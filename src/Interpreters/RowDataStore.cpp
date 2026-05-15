@@ -68,7 +68,7 @@ std::shared_ptr<RowDataStore> RowDataStore::create(const Columns & columns)
 
     RowLayout layout = initLayout(materialized_columns);
     auto row_store = std::shared_ptr<RowDataStore>(new RowDataStore(std::move(layout)));
-    if (!materialized_columns.empty() && materialized_columns[0]->size() > 0)
+    if (!materialized_columns.empty() && !materialized_columns[0]->empty())
         row_store->gatherRows(materialized_columns, 0, materialized_columns[0]->size());
     return row_store;
 }
