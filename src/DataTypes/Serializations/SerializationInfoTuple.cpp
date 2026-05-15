@@ -3,6 +3,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+#include <IO/WriteHelpers.h>
 
 #include <Poco/JSON/Object.h>
 
@@ -162,6 +163,24 @@ void SerializationInfoTuple::deserializeFromKindsBinary(ReadBuffer & in)
     SerializationInfo::deserializeFromKindsBinary(in);
     for (const auto & elem : elems)
         elem->deserializeFromKindsBinary(in);
+}
+
+void SerializationInfoTuple::writeJSONFields(WriteBuffer & out, const String * name) const
+{
+    SerializationInfo::writeJSONFields(out, name);
+    writeString(R"(,"subcolumns":[)", out);
+
+    bool first = true;
+    for (const auto & elem : elems)
+    {
+        if (!first)
+            writeChar(',', out);
+        first = false;
+
+        elem->writeJSON(out, nullptr);
+    }
+
+    writeChar(']', out);
 }
 
 void SerializationInfoTuple::toJSON(Poco::JSON::Object & object) const
