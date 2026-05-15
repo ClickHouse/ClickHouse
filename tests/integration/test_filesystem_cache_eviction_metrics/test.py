@@ -76,3 +76,10 @@ def test_filesystem_cache_eviction_metrics(start_cluster):
     assert int(evictions) == hits, f"counter={evictions} hits_observations={hits}"
     assert int(evictions) == sizes, f"counter={evictions} size_observations={sizes}"
     assert sum_dim("filesystem_cache_evictions_by_client_total") > 0
+
+    # SLRU is configured; repeated SELECTs over the same blob data promote
+    # probationary segments to protected, which must show up in the
+    # promotions counter (same `expose_eviction_metrics` flag enables it).
+    assert sum_dim("filesystem_cache_slru_promotions_total") > 0, (
+        "SLRU promotion counter did not advance:\n" + debug
+    )
