@@ -1,13 +1,13 @@
 ---
-description: 'Documentation for the EXCEPT clause which returns only those rows that result from the first query without the second.'
+description: 'Documentation for EXCEPT Clause'
 sidebar_label: 'EXCEPT'
 slug: /sql-reference/statements/select/except
-title: 'EXCEPT clause'
-keywords: ['EXCEPT', 'clause']
-doc_type: 'reference'
+title: 'EXCEPT Clause'
 ---
 
-> The `EXCEPT` clause returns only those rows that result from the first query without the second. 
+# EXCEPT Clause
+
+The `EXCEPT` clause returns only those rows that result from the first query without the second. 
 
 - Both queries must have the same number of columns in the same order and data type.
 - The result of `EXCEPT` can contain duplicate rows. Use `EXCEPT DISTINCT` if this is not desirable.
@@ -45,7 +45,9 @@ The examples in this section demonstrate usage of the `EXCEPT` clause.
 
 Here is a simple example that returns the numbers 1 to 10 that are _not_ a part of the numbers 3 to 8:
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT number
 FROM numbers(1, 10)
 EXCEPT
@@ -53,7 +55,9 @@ SELECT number
 FROM numbers(3, 6)
 ```
 
-```response title="Response"
+Result:
+
+```response
 ┌─number─┐
 │      1 │
 │      2 │
@@ -66,7 +70,9 @@ FROM numbers(3, 6)
 
 `EXCEPT()` can be used to quickly exclude columns from a result. For instance if we want to select all columns from a table, except a few select columns as shown in the example below:
 
-```sql title="Query"
+Query:
+
+```sql
 SHOW COLUMNS IN system.settings
 
 SELECT * EXCEPT (default, alias_for, readonly, description)
@@ -74,7 +80,9 @@ FROM system.settings
 LIMIT 5
 ```
 
-```response title="Response"
+Result:
+
+```response
     ┌─field───────┬─type─────────────────────────────────────────────────────────────────────┬─null─┬─key─┬─default─┬─extra─┐
  1. │ alias_for   │ String                                                                   │ NO   │     │ ᴺᵁᴸᴸ    │       │
  2. │ changed     │ UInt8                                                                    │ NO   │     │ ᴺᵁᴸᴸ    │       │
@@ -104,7 +112,9 @@ LIMIT 5
 `EXCEPT` and `INTERSECT` can often be used interchangeably with different Boolean logic, and they are both useful if you have two tables that share a common column (or columns).
 For example, suppose we have a few million rows of historical cryptocurrency data that contains trade prices and volume:
 
-```sql title="Query"
+Query:
+
+```sql
 CREATE TABLE crypto_prices
 (
     trade_date Date,
@@ -130,7 +140,9 @@ ORDER BY trade_date DESC
 LIMIT 10;
 ```
 
-```response title="Response"
+Result:
+
+```response
 ┌─trade_date─┬─crypto_name─┬──────volume─┬────price─┬───market_cap─┬──change_1_day─┐
 │ 2020-11-02 │ Bitcoin     │ 30771456000 │ 13550.49 │ 251119860000 │  -0.013585099 │
 │ 2020-11-01 │ Bitcoin     │ 24453857000 │ 13737.11 │ 254569760000 │ -0.0031840964 │
@@ -167,14 +179,16 @@ INSERT INTO holdings VALUES
 
 We can use `EXCEPT` to answer a question like **"Which coins do we own have never traded below $10?"**:
 
-```sql title="Query"
+```sql
 SELECT crypto_name FROM holdings
 EXCEPT
 SELECT crypto_name FROM crypto_prices
 WHERE price < 10;
 ```
 
-```response title="Response"
+Result:
+
+```response
 ┌─crypto_name─┐
 │ Bitcoin     │
 │ Bitcoin     │
@@ -187,14 +201,16 @@ This means of the four cryptocurrencies we own, only Bitcoin has never dropped b
 
 Notice in the previous query we had multiple Bitcoin holdings in the result. You can add `DISTINCT` to `EXCEPT` to eliminate duplicate rows from the result:
 
-```sql title="Query"
+```sql
 SELECT crypto_name FROM holdings
 EXCEPT DISTINCT
 SELECT crypto_name FROM crypto_prices
 WHERE price < 10;
 ```
 
-```response title="Response"
+Result:
+
+```response
 ┌─crypto_name─┐
 │ Bitcoin     │
 └─────────────┘

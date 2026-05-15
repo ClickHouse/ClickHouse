@@ -3,7 +3,6 @@ description: 'Existing and properly configured ClickHouse users can be authentic
   via Kerberos authentication protocol.'
 slug: /operations/external-authenticators/kerberos
 title: 'Kerberos'
-doc_type: 'reference'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
