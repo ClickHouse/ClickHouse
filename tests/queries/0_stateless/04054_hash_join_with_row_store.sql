@@ -10,9 +10,9 @@ CREATE TABLE right (k Int64, v2 Nullable(Int64), s String) ENGINE = MergeTree OR
 CREATE TABLE right_asof (k Int64, t DateTime('UTC'), v2 Nullable(Int64), s String) ENGINE = MergeTree ORDER BY (k, t);
 CREATE TABLE right_storage_join (k Int64, v2 Nullable(Int64), s String) ENGINE = Join(ANY, LEFT, k);
 
-INSERT INTO left SELECT number, toDateTime('2024-01-01 00:00:00') + number FROM numbers(10);
+INSERT INTO left SELECT number, toDateTime('2024-01-01 00:00:00', 'UTC') + number FROM numbers(10);
 INSERT INTO right SELECT number + 7, number, toString(number) FROM numbers(5);
-INSERT INTO right_asof SELECT number, toDateTime('2024-01-01 00:00:00') + number, number, toString(number) FROM numbers(5);
+INSERT INTO right_asof SELECT number, toDateTime('2024-01-01 00:00:00', 'UTC') + number, number, toString(number) FROM numbers(5);
 INSERT INTO right_storage_join SELECT * FROM right;
 
 SET join_algorithm = 'hash';
