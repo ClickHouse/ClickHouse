@@ -87,26 +87,24 @@ UInt32 PostingListCursor::cardinality() const
 
 PostingListCursor::~PostingListCursor()
 {
-    using namespace ProfileEvents;
-
     if (counters.blocks_decoded)
-        increment(TextIndexLazyPackedBlocksDecoded, counters.blocks_decoded);
+        ProfileEvents::increment(ProfileEvents::TextIndexLazyPackedBlocksDecoded, counters.blocks_decoded);
     if (counters.advance_count)
-        increment(TextIndexLazyAdvanceCount, counters.advance_count);
+        ProfileEvents::increment(ProfileEvents::TextIndexLazyAdvanceCount, counters.advance_count);
     if (counters.segments_prepared)
-        increment(TextIndexLazySegmentsPrepared, counters.segments_prepared);
+        ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsPrepared, counters.segments_prepared);
     if (counters.segments_skipped_dense)
-        increment(TextIndexLazySegmentsSkippedDense, counters.segments_skipped_dense);
+        ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedDense, counters.segments_skipped_dense);
     if (counters.segments_skipped_covered)
-        increment(TextIndexLazySegmentsSkippedCovered, counters.segments_skipped_covered);
+        ProfileEvents::increment(ProfileEvents::TextIndexLazySegmentsSkippedCovered, counters.segments_skipped_covered);
     if (counters.blocks_skipped_covered)
-        increment(TextIndexLazyBlocksSkippedCovered, counters.blocks_skipped_covered);
+        ProfileEvents::increment(ProfileEvents::TextIndexLazyBlocksSkippedCovered, counters.blocks_skipped_covered);
     if (counters.and_segments_skipped_dense)
-        increment(TextIndexLazyAndSegmentsSkippedDense, counters.and_segments_skipped_dense);
+        ProfileEvents::increment(ProfileEvents::TextIndexLazyAndSegmentsSkippedDense, counters.and_segments_skipped_dense);
     if (counters.and_segments_skipped_zero)
-        increment(TextIndexLazyAndSegmentsSkippedZero, counters.and_segments_skipped_zero);
+        ProfileEvents::increment(ProfileEvents::TextIndexLazyAndSegmentsSkippedZero, counters.and_segments_skipped_zero);
     if (counters.and_blocks_skipped_zero)
-        increment(TextIndexLazyAndBlocksSkippedZero, counters.and_blocks_skipped_zero);
+        ProfileEvents::increment(ProfileEvents::TextIndexLazyAndBlocksSkippedZero, counters.and_blocks_skipped_zero);
 }
 
 void PostingListCursor::prepareSegment(size_t segment_idx)
