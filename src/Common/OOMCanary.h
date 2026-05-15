@@ -1,11 +1,12 @@
 #pragma once
 
+#if defined(OS_LINUX)
+
 #include <Interpreters/Context_fwd.h>  // ContextMutablePtr
+#include <Common/EventFD.h>
 #include <Common/ThreadPool.h>
 
-#include <atomic>
 #include <cstdint>
-#include <mutex>
 #include <optional>
 #include <string>
 
@@ -15,34 +16,34 @@ namespace DB
 /// OOM Canary: a sacrificial child process that attracts the OOM killer
 /// before the main ClickHouse server process.
 ///
-/// The canary is a child process (created via raw `clone` syscall to avoid
-/// jemalloc `pthread_atfork` deadlocks) that allocates, touches, and `mlock`-s
-/// a configurable amount of memory. Its `oom_score_adj` is set to 1000
+/// The canary is a separate `clickhouse oom-canary` sub-process spawned via
+/// posix_spawn, so it inherits nothing from the parent's
+/// address space — no COW residue under memory pressure, no jemalloc state,
+/// no signal handlers. The child allocates, touches, and `mlock`-s a
+/// configurable amount of memory. Its `oom_score_adj` is set to 1000
 /// (the maximum), so the kernel OOM killer will target it first.
 ///
-/// A dedicated monitor thread blocks on `waitpid`. When the canary dies from
+/// A dedicated monitor thread owns the canary's pidfd and `epoll`-waits on
+/// either the canary's death or a shutdown event. When the canary dies from
 /// `SIGKILL` and Linux OOM-kill counters confirm an OOM event, the monitor
 /// executes the response sequence: purge jemalloc arenas, best-effort cancel
 /// all queries, cancel all merges, queue event to `system.crash_log`, and
 /// optionally relaunch. Note that synchronous system log flushing is
 /// deliberately avoided under memory pressure.
-///
-/// Non-Linux platforms: the canary is a no-op (start returns immediately).
 class OOMCanary
 {
 public:
     struct Config
     {
-        bool enable = false;
         size_t size_bytes = 100 * 1024 * 1024; /// 100 MB
         bool relaunch = true;
         /// Relaunch backoff policy (applies only when `relaunch` is true).
         uint64_t max_rapid_relaunches = 10;
-        uint64_t initial_backoff_sec = 1;
-        uint64_t max_backoff_sec = 60;
+        uint64_t initial_backoff_seconds = 1;
+        uint64_t max_backoff_seconds = 60;
     };
 
-    explicit OOMCanary(ContextMutablePtr context_);
+    OOMCanary(ContextMutablePtr context_, Config config_);
     ~OOMCanary();
 
     /// Non-copyable, non-movable
@@ -51,34 +52,24 @@ public:
     OOMCanary(OOMCanary &&) = delete;
     OOMCanary & operator=(OOMCanary &&) = delete;
 
-    /// Spawn the canary child process and start the monitor thread.
-    /// On failure, logs a warning and returns (does not throw).
-    void start(const Config & config);
+    /// Launch the monitor thread.
+    void start();
 
-    /// Stop the canary: kill the child process and join the monitor thread.
+    /// Stop the canary: signal shutdown and join the monitor thread.
     /// Idempotent: safe to call multiple times.
     void stop();
 
-    bool isRunning() const;
-
 private:
-#if defined(OS_LINUX)
-    /// Create and set up the canary child process.
+    /// Spawn the canary process via posix_spawn.
     /// Returns the child pid, or -1 on failure.
     pid_t spawnCanary(size_t size_bytes);
 
-    /// The child process main function (runs after `clone`).
-    /// Only uses async-signal-safe functions/syscalls.
-    /// `page_size` and `max_fd` must be obtained before `clone`.
-    [[noreturn]] static void childMain(size_t size_bytes, int64_t page_size, int max_fd, pid_t parent_pid);
-
-    /// Monitor thread function: waitpid loop, response, optional relaunch.
+    /// Monitor thread function: spawn, wait via epoll on (pidfd, shutdown_fd),
+    /// classify the death, optionally relaunch.
     void monitorThread();
 
-    /// Execute the OOM response sequence. This path intentionally avoids slow
-    /// synchronous system-log flushing so the monitor can relaunch the canary
-    /// promptly after shedding memory.
-    void onCanaryDied();
+    /// Execute the OOM response sequence.
+    void onCanaryOOM();
 
     struct OOMKillCounters
     {
@@ -99,25 +90,17 @@ private:
     /// kernel OOM killer from an operator's `kill -9`.
     bool hasOOMKillCounterAdvanced(const OOMKillCounters & before, const OOMKillCounters & after) const;
 
-    std::atomic<pid_t> canary_pid{-1};
-    std::atomic<bool> running{false};
-    std::atomic<bool> shutdown_requested{false};
-    bool relaunch_enabled = false;
-    uint64_t max_rapid_relaunches = 10;
-    uint64_t initial_backoff_sec = 1;
-    uint64_t max_backoff_sec = 60;
-    size_t canary_size_bytes = 0;
-    std::optional<std::string> cgroup_memory_events_path;
-    OOMKillCounters oom_kill_counters_before_spawn;
+    EventFD shutdown_fd;
 
-    /// Protects start/stop transitions
-    std::mutex state_mutex;
+    std::optional<std::string> cgroup_memory_events_path;
 
     ThreadFromGlobalPool monitor_thread;
-#endif
 
     ContextMutablePtr context;
     LoggerPtr log;
+    const Config config;
 };
 
 }
+
+#endif

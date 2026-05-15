@@ -58,12 +58,23 @@ enum PollPidResult
     #define SYS_pidfd_open __NR_pidfd_open
 #endif
 
+#if !defined(__NR_pidfd_send_signal)
+    #define SYS_pidfd_send_signal 424
+#else
+    #define SYS_pidfd_send_signal __NR_pidfd_send_signal
+#endif
+
 namespace DB
 {
 
-static int syscall_pidfd_open(pid_t pid)
+int syscall_pidfd_open(pid_t pid)
 {
     return static_cast<int>(syscall(SYS_pidfd_open, pid, 0));
+}
+
+int syscall_pidfd_send_signal(int pidfd, int sig)
+{
+    return static_cast<int>(syscall(SYS_pidfd_send_signal, pidfd, sig, nullptr, 0));
 }
 
 static bool supportsPidFdOpen()

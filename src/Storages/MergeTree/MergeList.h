@@ -156,7 +156,6 @@ public:
         }
     }
 
-    /// Cancel all running merges and mutations. Used by OOM canary response.
     void cancelAll()
     {
         std::lock_guard lock{mutex};

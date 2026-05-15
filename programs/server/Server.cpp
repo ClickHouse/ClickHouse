@@ -411,8 +411,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 oom_canary_size;
     extern const ServerSettingsBool oom_canary_relaunch;
     extern const ServerSettingsUInt64 oom_canary_max_rapid_relaunches;
-    extern const ServerSettingsUInt64 oom_canary_initial_backoff_sec;
-    extern const ServerSettingsUInt64 oom_canary_max_backoff_sec;
+    extern const ServerSettingsUInt64 oom_canary_initial_backoff_seconds;
+    extern const ServerSettingsUInt64 oom_canary_max_backoff_seconds;
     extern const ServerSettingsBool remap_executable;
     extern const ServerSettingsBool mlock_executable;
     extern const ServerSettingsUInt64 mlock_executable_min_total_memory_amount_bytes;
@@ -1780,17 +1780,29 @@ try
         setOOMScore(oom_score, log);
 #endif
 
+#if defined(OS_LINUX)
     std::optional<OOMCanary> oom_canary;
-    oom_canary.emplace(global_context);
-    OOMCanary::Config canary_config;
     /// Require both the experimental gate and the feature toggle.
-    canary_config.enable = server_settings[ServerSetting::allow_experimental_oom_canary]
-        && server_settings[ServerSetting::oom_canary_enable];
-    canary_config.size_bytes = server_settings[ServerSetting::oom_canary_size];
-    canary_config.relaunch = server_settings[ServerSetting::oom_canary_relaunch];
-    canary_config.max_rapid_relaunches = server_settings[ServerSetting::oom_canary_max_rapid_relaunches];
-    canary_config.initial_backoff_sec = server_settings[ServerSetting::oom_canary_initial_backoff_sec];
-    canary_config.max_backoff_sec = server_settings[ServerSetting::oom_canary_max_backoff_sec];
+    if (server_settings[ServerSetting::allow_experimental_oom_canary]
+        && server_settings[ServerSetting::oom_canary_enable])
+    {
+        OOMCanary::Config canary_config;
+        canary_config.size_bytes = server_settings[ServerSetting::oom_canary_size];
+        canary_config.relaunch = server_settings[ServerSetting::oom_canary_relaunch];
+        canary_config.max_rapid_relaunches = server_settings[ServerSetting::oom_canary_max_rapid_relaunches];
+        canary_config.initial_backoff_seconds = server_settings[ServerSetting::oom_canary_initial_backoff_seconds];
+        canary_config.max_backoff_seconds = server_settings[ServerSetting::oom_canary_max_backoff_seconds];
+        oom_canary.emplace(global_context, std::move(canary_config));
+    }
+    else
+    {
+        LOG_INFO(log, "OOM canary is disabled");
+    }
+#else
+    if (server_settings[ServerSetting::allow_experimental_oom_canary]
+        && server_settings[ServerSetting::oom_canary_enable])
+        LOG_WARNING(log, "OOM canary is only supported on Linux, ignoring");
+#endif
 
     std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> cancellation_task;
 
@@ -2919,7 +2931,10 @@ try
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
 
-        oom_canary->start(canary_config);
+#if defined(OS_LINUX)
+        if (oom_canary)
+            oom_canary->start();
+#endif
 
         global_context->handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded();
 
@@ -3144,6 +3159,13 @@ try
 #endif
         };
 
+        auto stop_oom_canary = [&]{
+#if defined(OS_LINUX)
+            if (oom_canary)
+                oom_canary->stop();
+#endif
+        };
+
         SCOPE_EXIT_SAFE({
             const auto & logger_shutdown_level_setting = server_settings[ServerSetting::logger_shutdown_level];
             if (logger_shutdown_level_setting.changed && !logger_shutdown_level_setting.value.empty())
@@ -3207,10 +3229,7 @@ try
             else
                 global_context->cancelAllBackupsAndRestores();
 
-            /// Stop OOM canary before killing queries to avoid the canary's
-            /// response sequence interfering with the normal shutdown path.
-            if (oom_canary)
-                oom_canary->stop();
+            stop_oom_canary();
 
             /// Killing remaining queries.
             if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])

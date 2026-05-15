@@ -163,12 +163,6 @@ protected:
 
         PipelineExecutor * executor;
         std::mutex mutex;
-
-        /// Used only by `cancelQueryBestEffort`. The normal cancellation path
-        /// builds a snapshot of all executors first; the OOM canary path cannot
-        /// afford that allocation, so it scans the map in small batches and
-        /// marks holders that were already requested for cancellation.
-        bool best_effort_cancel_requested = false;
     };
 
     using ExecutorHolderPtr = std::shared_ptr<ExecutorHolder>;
@@ -265,20 +259,6 @@ public:
 
     /// Returns an entry in the ProcessList associated with this QueryStatus. The function can return nullptr.
     std::shared_ptr<ProcessListEntry> getProcessListEntry() const;
-
-    /// Best-effort cancellation for emergency low-memory paths.
-    ///
-    /// The regular `cancelQuery` path copies all executor holders into a vector
-    /// before calling `PipelineExecutor::cancel`, which is the safest general
-    /// pattern because it avoids holding `executors_mutex` while cancelling.
-    /// During OOM recovery that vector allocation can fail and make the
-    /// cancellation ineffective exactly when memory has to be released.
-    ///
-    /// This variant keeps the same lock-ordering rule but processes executors
-    /// in a fixed-size stack buffer. It is intentionally best-effort: marking
-    /// the query as killed is the primary signal, and executor cancellation is
-    /// an acceleration mechanism.
-    CancellationCode cancelQueryBestEffort(CancelReason reason) noexcept;
 
     void setAllDataSent() { is_all_data_sent = true; }
 
@@ -554,16 +534,6 @@ public:
     CancellationCode sendCancelToQuery(QueryStatusPtr elem);
 
     void killAllQueries();
-
-    /// Best-effort cancellation for emergency low-memory paths.
-    ///
-    /// The regular `killAllQueries` path snapshots all running queries into a
-    /// vector. That is fine for administrative shutdown, but an OOM canary
-    /// response must not depend on allocating memory proportional to the number
-    /// of active queries. This method walks the process list in fixed-size
-    /// batches, marks each batch as cancelling under the process-list lock, and
-    /// then cancels outside the lock.
-    void killAllQueriesBestEffort() noexcept;
 };
 
 }

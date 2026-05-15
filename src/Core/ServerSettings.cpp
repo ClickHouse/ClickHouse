@@ -1513,11 +1513,11 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     is disabled to avoid thrashing under sustained memory pressure.
     Applies only when `oom_canary_relaunch` is true.
     )", 0) \
-    DECLARE(UInt64, oom_canary_initial_backoff_sec, 1, R"(
+    DECLARE(UInt64, oom_canary_initial_backoff_seconds, 1, R"(
     Initial backoff delay in seconds between consecutive OOM canary relaunches.
-    The delay doubles on each relaunch up to `oom_canary_max_backoff_sec`.
+    The delay doubles on each relaunch up to `oom_canary_max_backoff_seconds`.
     )", 0) \
-    DECLARE(UInt64, oom_canary_max_backoff_sec, 60, R"(
+    DECLARE(UInt64, oom_canary_max_backoff_seconds, 60, R"(
     Maximum backoff delay in seconds between consecutive OOM canary relaunches.
     )", 0) \
     DECLARE(Bool, remap_executable, false, R"(
