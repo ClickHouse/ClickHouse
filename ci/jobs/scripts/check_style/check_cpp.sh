@@ -100,6 +100,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::checkCPUOverload
     ProfileEvents::getDocumentation
     ProfileEvents::NAME
+    ProfileEvents::setUserPerCPUEnabled
 
     CurrentMetrics::add
     CurrentMetrics::max
