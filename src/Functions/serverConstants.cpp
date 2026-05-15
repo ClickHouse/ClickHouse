@@ -31,7 +31,7 @@ namespace
         bool isServerConstant() const override { return true; }
     };
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     /// buildId() - returns the compiler build id of the running binary.
     class FunctionBuildId : public FunctionServerConstantBase<FunctionBuildId, String, DataTypeString>
     {
@@ -146,7 +146,7 @@ namespace
     };
 }
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 REGISTER_FUNCTION(BuildId)
 {
     FunctionDocumentation::Description description = R"(
@@ -171,7 +171,7 @@ SELECT buildId()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBuildId>(documentation);
 }
@@ -203,7 +203,7 @@ SELECT hostName()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionHostName>(documentation);
     factory.registerAlias("hostname", "hostName");
@@ -211,13 +211,37 @@ SELECT hostName()
 
 REGISTER_FUNCTION(ServerUUID)
 {
-    factory.registerFunction<FunctionServerUUID>();
+    FunctionDocumentation::Description description_serverUUID = R"(
+Returns the random and unique UUID (v4) generated when the server is first started.
+The UUID is persisted, i.e. the second, third, etc. server start return the same UUID.
+    )";
+    FunctionDocumentation::Syntax syntax_serverUUID = "serverUUID()";
+    FunctionDocumentation::Arguments arguments_serverUUID = {};
+    FunctionDocumentation::ReturnedValue returned_value_serverUUID = {"Returns the random UUID of the server.", {"UUID"}};
+    FunctionDocumentation::Examples examples_serverUUID = {
+    {
+        "Usage example",
+        R"(
+SELECT serverUUID();
+        )",
+        R"(
+┌─serverUUID()─────────────────────────────┐
+│ 7ccc9260-000d-4d5c-a843-5459abaabb5f     │
+└──────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_serverUUID = {20, 1};
+    FunctionDocumentation::Category category_serverUUID = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_serverUUID = {description_serverUUID, syntax_serverUUID, arguments_serverUUID, {}, returned_value_serverUUID, examples_serverUUID, introduced_in_serverUUID, category_serverUUID};
+
+    factory.registerFunction<FunctionServerUUID>(documentation_serverUUID);
 }
 
 REGISTER_FUNCTION(TCPPort)
 {
     FunctionDocumentation::Description description = R"(
-Returns the [native interface](../../interfaces/tcp.md) TCP port number listened to by the server.
+Returns the [native interface](/interfaces/tcp) TCP port number listened to by the server.
 If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard.
 Otherwise it produces a constant value.
     )";
@@ -239,7 +263,7 @@ SELECT tcpPort()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTCPPort>(documentation);
 }
@@ -270,7 +294,7 @@ SELECT timezone()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimezone>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("timeZone", "timezone");
@@ -282,7 +306,7 @@ REGISTER_FUNCTION(ServerTimezone)
 Returns the timezone of the server, i.e. the value of the [`timezone`](/operations/server-configuration-parameters/settings#timezone) setting.
 If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
     )";
-    FunctionDocumentation::Syntax syntax = "serverTimeZone()";
+    FunctionDocumentation::Syntax syntax = "serverTimezone()";
     FunctionDocumentation::Arguments arguments = {};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the server timezone as a", {"String"}};
     FunctionDocumentation::Examples examples = {
@@ -299,7 +323,7 @@ SELECT serverTimeZone()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionServerTimezone>(documentation);
     factory.registerAlias("serverTimeZone", "serverTimezone");
@@ -330,7 +354,7 @@ SELECT uptime() AS Uptime
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionUptime>(documentation);
 }
@@ -360,7 +384,7 @@ SELECT version()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionVersion>(documentation, FunctionFactory::Case::Insensitive);
 }
@@ -388,35 +412,95 @@ SELECT revision()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRevision>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(ZooKeeperSessionUptime)
 {
-    factory.registerFunction<FunctionZooKeeperSessionUptime>();
+    FunctionDocumentation::Description description_zookeeperSessionUptime = R"(
+Returns the uptime of the current ZooKeeper session in seconds.
+)";
+    FunctionDocumentation::Syntax syntax_zookeeperSessionUptime = "zookeeperSessionUptime()";
+    FunctionDocumentation::Arguments arguments_zookeeperSessionUptime = {};
+    FunctionDocumentation::ReturnedValue returned_value_zookeeperSessionUptime = {"Returns the uptime of the current ZooKeeper session in seconds.", {"UInt32"}};
+    FunctionDocumentation::Examples examples_zookeeperSessionUptime = {
+    {
+        "Usage example",
+        R"(
+SELECT zookeeperSessionUptime();
+        )",
+        R"(
+┌─zookeeperSessionUptime()─┐
+│                      286 │
+└──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_zookeeperSessionUptime = {21, 11};
+    FunctionDocumentation::Category category_zookeeperSessionUptime = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_zookeeperSessionUptime = {description_zookeeperSessionUptime, syntax_zookeeperSessionUptime, arguments_zookeeperSessionUptime, {}, returned_value_zookeeperSessionUptime, examples_zookeeperSessionUptime, introduced_in_zookeeperSessionUptime, category_zookeeperSessionUptime};
+
+    factory.registerFunction<FunctionZooKeeperSessionUptime>(documentation_zookeeperSessionUptime);
 }
 
 
 REGISTER_FUNCTION(GetOSKernelVersion)
 {
-    factory.registerFunction<FunctionGetOSKernelVersion>();
+    FunctionDocumentation::Description description_getOSKernelVersion = R"(
+Returns a string with the OS kernel version.
+)";
+    FunctionDocumentation::Syntax syntax_getOSKernelVersion = "getOSKernelVersion()";
+    FunctionDocumentation::Arguments arguments_getOSKernelVersion = {};
+    FunctionDocumentation::ReturnedValue returned_value_getOSKernelVersion = {"Returns the current OS kernel version.", {"String"}};
+    FunctionDocumentation::Examples examples_getOSKernelVersion = {
+    {
+        "Usage example",
+        R"(
+SELECT getOSKernelVersion();
+        )",
+        R"(
+┌─getOSKernelVersion()────┐
+│ Linux 4.15.0-55-generic │
+└─────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_getOSKernelVersion = {21, 11};
+    FunctionDocumentation::Category category_getOSKernelVersion = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_getOSKernelVersion = {description_getOSKernelVersion, syntax_getOSKernelVersion, arguments_getOSKernelVersion, {}, returned_value_getOSKernelVersion, examples_getOSKernelVersion, introduced_in_getOSKernelVersion, category_getOSKernelVersion};
+
+    factory.registerFunction<FunctionGetOSKernelVersion>(documentation_getOSKernelVersion);
 }
 
 
 REGISTER_FUNCTION(DisplayName)
 {
-    factory.registerFunction<FunctionDisplayName>(FunctionDocumentation
-        {
-            .description=R"(
-Returns the value of `display_name` from config or server FQDN if not set.
+    FunctionDocumentation::Description description = R"(
+Returns the value of `display_name` from [config](/operations/configuration-files) or the server's Fully Qualified Domain Name (FQDN) if not set.
+)";
+    FunctionDocumentation::Syntax syntax = "displayName()";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the value of `display_name` from config or server FQDN if not set.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT displayName();
+        )",
+        R"(
+┌─displayName()─┐
+│ production    │
+└───────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-[example:displayName]
-)",
-            .examples{{"displayName", "SELECT displayName();", ""}},
-            .category = FunctionDocumentation::Category::Other
-        });
+    factory.registerFunction<FunctionDisplayName>(documentation);
 }
 
 

@@ -1,4 +1,4 @@
-// Copyright 2022 The OpenSSL Project Authors. All Rights Reserved.
+// Copyright 2022-2025 The OpenSSL Project Authors. All Rights Reserved.
 //
 // Licensed under the Apache License 2.0 (the "License").  You may not use
 // this file except in compliance with the License.  You can obtain a copy
@@ -15,7 +15,11 @@
 #include "arm_arch.h"
 .arch	armv8-a+crypto
 .text
+
+.section	.rodata
+.type	_sm4_v8_consts,%object
 .align	6
+_sm4_v8_consts:
 .Lck:
 .long	0x00070E15, 0x1C232A31, 0x383F464D, 0x545B6269
 .long	0x70777E85, 0x8C939AA1, 0xA8AFB6BD, 0xC4CBD2D9
@@ -27,17 +31,22 @@
 .long	0x10171E25, 0x2C333A41, 0x484F565D, 0x646B7279
 .Lfk:
 .long	0xa3b1bac6, 0x56aa3350, 0x677d9197, 0xb27022dc
+.size	_sm4_v8_consts,.-_sm4_v8_consts
+.previous
+
 .globl	sm4_v8_set_encrypt_key
 .type	sm4_v8_set_encrypt_key,%function
 .align	5
 sm4_v8_set_encrypt_key:
 	AARCH64_VALID_CALL_TARGET
 	ld1	{v0.4s},[x0]
-	adr	x2,.Lfk
+	adrp	x2,.Lfk
+	add	x2,x2,#:lo12:.Lfk
 	ld1	{v24.4s},[x2]
-	adr	x2,.Lck
+	adrp	x2,.Lck
+	add	x2,x2,#:lo12:.Lck
 	ld1	{v16.4s,v17.4s,v18.4s,v19.4s},[x2],64
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v0.16b,v0.16b
 #endif
 	ld1	{v20.4s,v21.4s,v22.4s,v23.4s},[x2]
@@ -60,11 +69,13 @@ sm4_v8_set_encrypt_key:
 sm4_v8_set_decrypt_key:
 	AARCH64_VALID_CALL_TARGET
 	ld1	{v7.4s},[x0]
-	adr	x2,.Lfk
+	adrp	x2,.Lfk
+	add	x2,x2,#:lo12:.Lfk
 	ld1	{v24.4s},[x2]
-	adr	x2, .Lck
+	adrp	x2,.Lck
+	add	x2,x2,#:lo12:.Lck
 	ld1	{v16.4s,v17.4s,v18.4s,v19.4s},[x2],64
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v7.16b,v7.16b
 #endif
 	ld1	{v20.4s,v21.4s,v22.4s,v23.4s},[x2]
@@ -105,7 +116,7 @@ sm4_v8_encrypt:
 	ld1	{v16.4s},[x0]
 	ld1	{v0.4s,v1.4s,v2.4s,v3.4s},[x2],64
 	ld1	{v4.4s,v5.4s,v6.4s,v7.4s},[x2]
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
 .inst	0xcec08410	//sm4e v16.4s,v0.4s
@@ -118,7 +129,7 @@ sm4_v8_encrypt:
 .inst	0xcec084f0	//sm4e v16.4s,v7.4s
 	rev64	v16.4S,v16.4S
 	ext	v16.16b,v16.16b,v16.16b,#8
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
 	st1	{v16.4s},[x1]
@@ -132,7 +143,7 @@ sm4_v8_decrypt:
 	ld1	{v16.4s},[x0]
 	ld1	{v0.4s,v1.4s,v2.4s,v3.4s},[x2],64
 	ld1	{v4.4s,v5.4s,v6.4s,v7.4s},[x2]
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
 .inst	0xcec08410	//sm4e v16.4s,v0.4s
@@ -145,7 +156,7 @@ sm4_v8_decrypt:
 .inst	0xcec084f0	//sm4e v16.4s,v7.4s
 	rev64	v16.4S,v16.4S
 	ext	v16.16b,v16.16b,v16.16b,#8
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
 	st1	{v16.4s},[x1]
@@ -166,28 +177,28 @@ sm4_v8_ecb_encrypt:
 	b.lt	2f
 	ld1	{v20.4s,v21.4s,v22.4s,v23.4s},[x0],#64
 	// 8 blocks
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v17.16b,v17.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v18.16b,v18.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v19.16b,v19.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v20.16b,v20.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v21.16b,v21.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v22.16b,v22.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v23.16b,v23.16b
 #endif
 .inst	0xcec08410	//sm4e v16.4s,v0.4s
@@ -284,29 +295,29 @@ sm4_v8_ecb_encrypt:
 	ext	v22.16b,v22.16b,v22.16b,#8
 	rev64	v23.4S,v23.4S
 	ext	v23.16b,v23.16b,v23.16b,#8
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v17.16b,v17.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v18.16b,v18.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v19.16b,v19.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v20.16b,v20.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v21.16b,v21.16b
 #endif
 	st1	{v16.4s,v17.4s,v18.4s,v19.4s},[x1],#64
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v22.16b,v22.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v23.16b,v23.16b
 #endif
 	st1	{v20.4s,v21.4s,v22.4s,v23.4s},[x1],#64
@@ -315,16 +326,16 @@ sm4_v8_ecb_encrypt:
 	ret
 	// 4 blocks
 2:
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v17.16b,v17.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v18.16b,v18.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v19.16b,v19.16b
 #endif
 .inst	0xcec08410	//sm4e v16.4s,v0.4s
@@ -374,16 +385,16 @@ sm4_v8_ecb_encrypt:
 	ext	v18.16b,v18.16b,v18.16b,#8
 	rev64	v19.4S,v19.4S
 	ext	v19.16b,v19.16b,v19.16b,#8
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v17.16b,v17.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v18.16b,v18.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v19.16b,v19.16b
 #endif
 	st1	{v16.4s,v17.4s,v18.4s,v19.4s},[x1],#64
@@ -393,7 +404,7 @@ sm4_v8_ecb_encrypt:
 	subs	x2,x2,#16
 	b.lt	1f
 	ld1	{v16.4s},[x0],#16
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
 .inst	0xcec08410	//sm4e v16.4s,v0.4s
@@ -406,7 +417,7 @@ sm4_v8_ecb_encrypt:
 .inst	0xcec084f0	//sm4e v16.4s,v7.4s
 	rev64	v16.4S,v16.4S
 	ext	v16.16b,v16.16b,v16.16b,#8
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
 	st1	{v16.4s},[x1],#16
@@ -431,16 +442,16 @@ sm4_v8_cbc_encrypt:
 	b.lt	1f
 	ld1	{v16.4s,v17.4s,v18.4s,v19.4s},[x0],#64
 	eor	v16.16b,v16.16b,v8.16b
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v17.16b,v17.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v18.16b,v18.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v19.16b,v19.16b
 #endif
 .inst	0xcec08410	//sm4e v16.4s,v0.4s
@@ -464,7 +475,7 @@ sm4_v8_cbc_encrypt:
 .inst	0xcec084f1	//sm4e v17.4s,v7.4s
 	rev64	v17.4S,v17.4S
 	ext	v17.16b,v17.16b,v17.16b,#8
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
 	eor	v18.16b,v18.16b,v17.16b
@@ -478,7 +489,7 @@ sm4_v8_cbc_encrypt:
 .inst	0xcec084f2	//sm4e v18.4s,v7.4s
 	rev64	v18.4S,v18.4S
 	ext	v18.16b,v18.16b,v18.16b,#8
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v17.16b,v17.16b
 #endif
 	eor	v19.16b,v19.16b,v18.16b
@@ -492,10 +503,10 @@ sm4_v8_cbc_encrypt:
 .inst	0xcec084f3	//sm4e v19.4s,v7.4s
 	rev64	v19.4S,v19.4S
 	ext	v19.16b,v19.16b,v19.16b,#8
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v18.16b,v18.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v19.16b,v19.16b
 #endif
 	mov	v8.16b,v19.16b
@@ -507,7 +518,7 @@ sm4_v8_cbc_encrypt:
 	b.lt	3f
 	ld1	{v16.4s},[x0],#16
 	eor	v8.16b,v8.16b,v16.16b
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v8.16b,v8.16b
 #endif
 .inst	0xcec08408	//sm4e v8.4s,v0.4s
@@ -520,10 +531,10 @@ sm4_v8_cbc_encrypt:
 .inst	0xcec084e8	//sm4e v8.4s,v7.4s
 	rev64	v8.4S,v8.4S
 	ext	v8.16b,v8.16b,v8.16b,#8
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v8.16b,v8.16b
 #endif
-	st1	{v8.16b},[x1],#16
+	st1	{v8.4s},[x1],#16
 	b.ne	1b
 	b	3f
 .Ldec:
@@ -537,28 +548,28 @@ sm4_v8_cbc_encrypt:
 	// 8 blocks mode
 	ld1	{v20.4s,v21.4s,v22.4s,v23.4s},[x0]
 	ld1	{v28.4s,v29.4s,v30.4s,v31.4s},[x0],#64
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v17.16b,v17.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v18.16b,v18.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v19.16b,v19.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v20.16b,v20.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v21.16b,v21.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v22.16b,v22.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v23.16b,v23.16b
 #endif
 .inst	0xcec08410	//sm4e v16.4s,v0.4s
@@ -655,28 +666,28 @@ sm4_v8_cbc_encrypt:
 	ext	v22.16b,v22.16b,v22.16b,#8
 	rev64	v23.4S,v23.4S
 	ext	v23.16b,v23.16b,v23.16b,#8
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v17.16b,v17.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v18.16b,v18.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v19.16b,v19.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v20.16b,v20.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v21.16b,v21.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v22.16b,v22.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v23.16b,v23.16b
 #endif
 	eor	v16.16b,v16.16b,v8.16b
@@ -695,16 +706,16 @@ sm4_v8_cbc_encrypt:
 	b	3f
 	// 4 blocks mode
 2:
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v17.16b,v17.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v18.16b,v18.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v19.16b,v19.16b
 #endif
 .inst	0xcec08410	//sm4e v16.4s,v0.4s
@@ -754,16 +765,16 @@ sm4_v8_cbc_encrypt:
 	ext	v18.16b,v18.16b,v18.16b,#8
 	rev64	v19.4S,v19.4S
 	ext	v19.16b,v19.16b,v19.16b,#8
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v17.16b,v17.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v18.16b,v18.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v19.16b,v19.16b
 #endif
 	eor	v16.16b,v16.16b,v8.16b
@@ -779,7 +790,7 @@ sm4_v8_cbc_encrypt:
 	b.lt	3f
 	ld1	{v16.4s},[x0],#16
 	mov	v24.16b,v16.16b
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
 .inst	0xcec08410	//sm4e v16.4s,v0.4s
@@ -792,16 +803,16 @@ sm4_v8_cbc_encrypt:
 .inst	0xcec084f0	//sm4e v16.4s,v7.4s
 	rev64	v16.4S,v16.4S
 	ext	v16.16b,v16.16b,v16.16b,#8
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
 	eor	v16.16b,v16.16b,v8.16b
 	mov	v8.16b,v24.16b
-	st1	{v16.16b},[x1],#16
+	st1	{v16.4s},[x1],#16
 	b.ne	1b
 3:
 	// save back IV
-	st1	{v8.16b},[x4]
+	st1	{v8.4s},[x4]
 	ldp	d8,d9,[sp],#16
 	ret
 .size	sm4_v8_cbc_encrypt,.-sm4_v8_cbc_encrypt
@@ -815,7 +826,7 @@ sm4_v8_ctr32_encrypt_blocks:
 	ld1	{v8.4s},[x4]
 	ld1	{v0.4s,v1.4s,v2.4s,v3.4s},[x3],64
 	ld1	{v4.4s,v5.4s,v6.4s,v7.4s},[x3]
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v8.16b,v8.16b
 #endif
 	mov	w5,v8.s[3]
@@ -942,28 +953,28 @@ sm4_v8_ctr32_encrypt_blocks:
 	ext	v22.16b,v22.16b,v22.16b,#8
 	rev64	v23.4S,v23.4S
 	ext	v23.16b,v23.16b,v23.16b,#8
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v17.16b,v17.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v18.16b,v18.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v19.16b,v19.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v20.16b,v20.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v21.16b,v21.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v22.16b,v22.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v23.16b,v23.16b
 #endif
 	eor	v16.16b,v16.16b,v24.16b
@@ -1029,16 +1040,16 @@ sm4_v8_ctr32_encrypt_blocks:
 	ext	v18.16b,v18.16b,v18.16b,#8
 	rev64	v19.4S,v19.4S
 	ext	v19.16b,v19.16b,v19.16b,#8
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v17.16b,v17.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v18.16b,v18.16b
 #endif
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v19.16b,v19.16b
 #endif
 	eor	v16.16b,v16.16b,v24.16b
@@ -1066,7 +1077,7 @@ sm4_v8_ctr32_encrypt_blocks:
 .inst	0xcec084f0	//sm4e v16.4s,v7.4s
 	rev64	v16.4S,v16.4S
 	ext	v16.16b,v16.16b,v16.16b,#8
-#ifndef __ARMEB__
+#ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
 	eor	v16.16b,v16.16b,v24.16b

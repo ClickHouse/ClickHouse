@@ -4,9 +4,8 @@ sidebar_label: 'Encoding'
 slug: /sql-reference/functions/encoding-functions
 title: 'Encoding functions'
 keywords: ['encoding', 'regular functions', 'encode', 'decode']
+doc_type: 'reference'
 ---
-
-# Encoding functions
 
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 

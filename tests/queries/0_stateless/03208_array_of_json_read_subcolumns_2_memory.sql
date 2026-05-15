@@ -1,4 +1,6 @@
--- Tags: no-fasttest, long, no-debug, no-tsan, no-asan, no-msan, no-ubsan
+-- Tags: no-asan, no-tsan, no-msan, no-flaky-check, long, no-random-merge-tree-settings
+-- too slow for sanitizers and flaky check
+-- index_granularity=1 with 40K rows of complex JSON causes timeout
 
 SET enable_json_type = 1;
 set allow_experimental_variant_type = 1;

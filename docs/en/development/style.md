@@ -4,9 +4,8 @@ sidebar_label: 'C++ Style Guide'
 sidebar_position: 70
 slug: /development/style
 title: 'C++ Style Guide'
+doc_type: 'guide'
 ---
-
-# C++ style guide
 
 ## General recommendations {#general-recommendations}
 

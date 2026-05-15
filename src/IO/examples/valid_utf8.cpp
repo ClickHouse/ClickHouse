@@ -4,7 +4,7 @@
 #include <string>
 #include <iostream>
 
-int main(int, char **)
+int mainEntryExampleValidUtf8(int, char **)
 {
     try
     {

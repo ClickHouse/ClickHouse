@@ -26,8 +26,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -53,13 +51,12 @@ namespace
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            if (arguments.empty())
-                throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} requires at least one argument.", getName());
+            FunctionArgumentDescriptor variadic_args{
+                "json1",isString, nullptr, "String"
+            };
+            FunctionArgumentDescriptors mandatory_args{variadic_args};
 
-            for (const auto & arg : arguments)
-                if (!isString(arg.type))
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} requires string arguments", getName());
-
+            validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, variadic_args);
             return std::make_shared<DataTypeString>();
         }
 
@@ -96,7 +93,7 @@ namespace
             auto parse_json_document = [](const ColumnString & column, rapidjson::Document & document, size_t i)
             {
                 auto str_ref = column.getDataAt(i);
-                document.Parse(str_ref.toString().c_str());
+                document.Parse(std::string{str_ref}.c_str());
 
                 if (document.HasParseError())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong JSON string to merge: {}", rapidjson::GetParseError_En(document.GetParseError()));
@@ -167,10 +164,33 @@ namespace
 
 REGISTER_FUNCTION(JSONMergePatch)
 {
-    factory.registerFunction<FunctionJSONMergePatch>(FunctionDocumentation{
-        .description="Returns the merged JSON object string, which is formed by merging multiple JSON objects.",
-        .category = FunctionDocumentation::Category::JSON
-        });
+    /// jsonMergePatch documentation
+    FunctionDocumentation::Description description = R"(
+Returns the merged JSON object string which is formed by merging multiple JSON objects.
+    )";
+    FunctionDocumentation::Syntax syntax = "JSONMergePatch(json1[, json2, ...])";
+    FunctionDocumentation::Arguments arguments = {
+        {"json1[, json2, ...]", "One or more strings with valid JSON.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the merged JSON object string, if the JSON object strings are valid.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT JSONMergePatch('{"a":1}', '{"name": "joey"}', '{"name": "tom"}', '{"name": "zoey"}') AS res;
+        )",
+        R"(
+┌─res───────────────────┐
+│ {"a":1,"name":"zoey"} │
+└───────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 10};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionJSONMergePatch>(documentation);
 
     factory.registerAlias("jsonMergePatch", "JSONMergePatch");
 }

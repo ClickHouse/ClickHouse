@@ -9,14 +9,14 @@
 
 using namespace DB;
 
-int main(int, char **)
+int mainEntryExampleReadEscapedString(int, char **)
 try
 {
     std::string s1 = "abc\\x\n";
     std::string s2 = "\tdef";
 
     ReadBufferFromMemory rb1(s1.data(), 3);
-    ReadBufferFromMemory rb2(s2.data(), s2.size());
+    ReadBufferFromMemory rb2(s2);
 
     ConcatReadBuffer rb3(rb1, rb2);
 

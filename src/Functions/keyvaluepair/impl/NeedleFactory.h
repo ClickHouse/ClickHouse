@@ -20,7 +20,7 @@ template <bool WITH_ESCAPING>
 class NeedleFactory
 {
 public:
-    SearchSymbols getWaitKeyNeedles(const Configuration & extractor_configuration)
+    static SearchSymbols getWaitKeyNeedles(const Configuration & extractor_configuration)
     {
         const auto & [key_value_delimiter, quoting_character, pair_delimiters, _]
             = extractor_configuration;
@@ -39,7 +39,7 @@ public:
         return SearchSymbols {std::string{needles.data(), needles.size()}};
     }
 
-    SearchSymbols getReadKeyNeedles(const Configuration & extractor_configuration)
+    static SearchSymbols getReadKeyNeedles(const Configuration & extractor_configuration)
     {
         const auto & [key_value_delimiter, quoting_character, pair_delimiters, unexpected_quoting_character_strategy]
             = extractor_configuration;
@@ -63,7 +63,7 @@ public:
         return SearchSymbols {std::string{needles.data(), needles.size()}};
     }
 
-    SearchSymbols getReadValueNeedles(const Configuration & extractor_configuration)
+    static SearchSymbols getReadValueNeedles(const Configuration & extractor_configuration)
     {
         const auto & [key_value_delimiter, quoting_character, pair_delimiters, unexpected_quoting_character_strategy]
             = extractor_configuration;
@@ -85,7 +85,7 @@ public:
         return SearchSymbols {std::string{needles.data(), needles.size()}};
     }
 
-    SearchSymbols getReadQuotedNeedles(const Configuration & extractor_configuration)
+    static SearchSymbols getReadQuotedNeedles(const Configuration & extractor_configuration)
     {
         const auto quoting_character = extractor_configuration.quoting_character;
 
@@ -101,7 +101,7 @@ public:
         return SearchSymbols {std::string{needles.data(), needles.size()}};
     }
 
-    SearchSymbols getWaitPairDelimiterNeedles(const Configuration & extractor_configuration)
+    static SearchSymbols getWaitPairDelimiterNeedles(const Configuration & extractor_configuration)
     {
         const auto & pair_delimiters = extractor_configuration.pair_delimiters;
 

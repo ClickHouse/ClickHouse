@@ -2,8 +2,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/Impl/TSKVRowOutputFormat.h>
-#include <Formats/FormatFactory.h>
 #include <Processors/Port.h>
+#include <Formats/FormatFactory.h>
 
 namespace DB
 {

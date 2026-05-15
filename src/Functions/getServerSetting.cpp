@@ -19,13 +19,12 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionGetServerSetting : public IFunction, WithContext
+class FunctionGetServerSetting : public IFunction
 {
 public:
     static constexpr auto name = "getServerSetting";
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGetServerSetting>(context_); }
-    explicit FunctionGetServerSetting(ContextPtr context_) : WithContext(context_) {}
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGetServerSetting>(); }
 
     String getName() const override { return name; }
 
@@ -69,9 +68,9 @@ private:
                             "The argument of function {} should be a constant string with the name of a setting",
                             String{name});
 
-        std::string_view setting_name{column->getDataAt(0).toView()};
+        std::string_view setting_name{column->getDataAt(0)};
 
-        return getContext()->getServerSettings().get(setting_name);
+        return Context::getGlobalContextInstance()->getServerSettings().get(setting_name);
     }
 };
 
@@ -79,19 +78,32 @@ private:
 
 REGISTER_FUNCTION(GetServerSetting)
 {
-    factory.registerFunction<FunctionGetServerSetting>(FunctionDocumentation{
-        .description = R"(
-Returns the current value of server setting.
-)",
-        .syntax = "getServerSetting('custom_setting')",
-        .arguments = {
-            {"custom_setting", "The setting name.", {"String"}}
-        },
-        .returned_value = {"The setting's current value."},
-        .examples = {
-            {"getServerSetting", "SELECT getSetting('page_cache_size_ratio');", "SRLU"},
-        },
-        .category = FunctionDocumentation::Category::Other}, FunctionFactory::Case::Sensitive);
+    FunctionDocumentation::Description description = R"(
+Returns the currently set value, given a server setting name.
+    )";
+    FunctionDocumentation::Syntax syntax = "getServerSetting(setting_name')";
+    FunctionDocumentation::Arguments arguments = {
+        {"setting_name", "The server setting name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the server setting's current value.",{"Any"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT getServerSetting('allow_use_jemalloc_memory');
+        )",
+        R"(
+┌─getServerSetting('allow_use_jemalloc_memory')─┐
+│ true                                          │
+└───────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionGetServerSetting>(documentation, FunctionFactory::Case::Sensitive);
 }
 
 }

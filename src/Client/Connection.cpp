@@ -36,12 +36,10 @@
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <pcg_random.hpp>
-#include <base/scope_guard.h>
 #include <Common/FailPoint.h>
+#include <Client/JWTProvider.h>
 
 #include <Common/config_version.h>
-#include <Common/scope_guard_safe.h>
 #include <Core/Types.h>
 #include "config.h"
 
@@ -60,6 +58,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event DistributedConnectionReconnectCount;
+    extern const Event DistributedConnectionConnectCount;
 }
 
 namespace DB
@@ -68,8 +67,6 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
-    extern const SettingsBool enable_deflate_qpl_codec;
-    extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsString network_compression_method;
     extern const SettingsInt64 network_zstd_compression_level;
 }
@@ -88,6 +85,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
+    extern const int LOGICAL_ERROR;
 }
 
 Connection::~Connection()
@@ -108,7 +106,12 @@ Connection::Connection(const String & host_, UInt16 port_,
     const String & client_name_,
     Protocol::Compression compression_,
     Protocol::Secure secure_,
-    const String & bind_host_)
+    const String & tls_sni_override_,
+    const String & bind_host_
+#if USE_JWT_CPP && USE_SSL
+    , std::shared_ptr<JWTProvider> jwt_provider_
+#endif
+)
     : host(host_), port(port_), default_database(default_database_)
     , user(user_), password(password_)
     , proto_send_chunked(proto_send_chunked_), proto_recv_chunked(proto_recv_chunked_)
@@ -118,12 +121,14 @@ Connection::Connection(const String & host_, UInt16 port_,
     , quota_key(quota_key_)
 #if USE_JWT_CPP && USE_SSL
     , jwt(jwt_)
+    , jwt_provider(jwt_provider_)
 #endif
     , cluster(cluster_)
     , cluster_secret(cluster_secret_)
     , client_name(client_name_)
     , compression(compression_)
     , secure(secure_)
+    , tls_sni_override(tls_sni_override_)
     , bind_host(bind_host_)
     , log_wrapper(*this)
 {
@@ -141,6 +146,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     /// if connection was broken it is necessary to cancel it before reconnecting
     disconnect();
 
+    ProfileEvents::increment(ProfileEvents::DistributedConnectionConnectCount);
     try
     {
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: {}. User: {}{}{}. Bind_Host: {}",
@@ -157,6 +163,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         {
             have_more_addresses_to_connect = it != std::prev(addresses.end());
 
+            LOG_TRACE(log_wrapper.get(), "Connecting to {}:{} (using address {}, {}/{})", host, port, it->toString(), std::distance(addresses.begin(), it) + 1, addresses.size());
+
             if (isConnected())
                 disconnect();
 
@@ -168,7 +176,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 /// we resolve the ip when we open SecureStreamSocket, so to make Server Name Indication (SNI)
                 /// work we need to pass host name separately. It will be send into TLS Hello packet to let
                 /// the server know which host we want to talk with (single IP can process requests for multiple hosts using SNI).
-                static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setPeerHostName(host);
+                static_cast<Poco::Net::SecureStreamSocket *>(socket.get())
+                    ->setPeerHostName(tls_sni_override.empty() ? host : tls_sni_override);
                 /// we want to postpone SSL handshake until first read or write operation
                 /// so any errors during negotiation would be properly processed
                 static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setLazyHandshake(true);
@@ -191,7 +200,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 {
                     Poco::Net::SocketAddress socket_address(bind_host, 0);
 
-                    static_cast<Poco::Net::StreamSocket*>(socket.get())->bind(socket_address, true);
+                    static_cast<Poco::Net::StreamSocket *>(socket.get())->bind(socket_address, true);
                 }
             }
 
@@ -199,9 +208,14 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             {
                 if (async_callback)
                 {
+                    address_connect_timeout_expired = false;
                     socket->connectNB(*it);
                     while (!socket->poll(0, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_WRITE | Poco::Net::Socket::SELECT_ERROR))
+                    {
                         async_callback(socket->impl()->sockfd(), connection_timeout, AsyncEventTimeoutType::CONNECT, description, AsyncTaskExecutor::READ | AsyncTaskExecutor::WRITE | AsyncTaskExecutor::ERROR);
+                        if (address_connect_timeout_expired)
+                            throw Poco::TimeoutException("Connection timeout expired for address: " + it->toString());
+                    }
 
                     if (auto err = socket->impl()->socketError())
                         socket->impl()->error(err); // Throws an exception /// NOLINT(readability-static-accessed-through-instance)
@@ -214,42 +228,51 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 }
 
                 current_resolved_address = *it;
+                have_more_addresses_to_connect = false;
                 break;
             }
-            catch (DB::NetException &)
+            catch (DB::NetException & e)
             {
+                LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
                 if (++it == addresses.end())
                     throw;
                 continue;
             }
-            catch (Poco::Net::NetException &)
+            catch (Poco::Net::NetException & e)
             {
+                LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
                 if (++it == addresses.end())
                     throw;
                 continue;
             }
-            catch (Poco::TimeoutException &)
+            catch (Poco::TimeoutException & e)
             {
+                LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
                 if (++it == addresses.end())
                     throw;
                 continue;
             }
         }
 
-        socket->setReceiveTimeout(timeouts.receive_timeout);
-        socket->setSendTimeout(timeouts.send_timeout);
+        /// Use handshake timeout as send and receive timeout. Note that in the case of secure sockets,
+        /// these timeouts also apply to the TLS handshake. The TLS handshake is deferred until the
+        /// first send/receive operation (sendHello in our case).
+        socket->setReceiveTimeout(timeouts.handshake_timeout);
+        socket->setSendTimeout(timeouts.handshake_timeout);
         socket->setNoDelay(true);
         int tcp_keep_alive_timeout_in_sec = timeouts.tcp_keep_alive_timeout.totalSeconds();
         if (tcp_keep_alive_timeout_in_sec)
         {
             socket->setKeepAlive(true);
-            socket->setOption(IPPROTO_TCP,
-#if defined(TCP_KEEPALIVE)
-                TCP_KEEPALIVE
-#else
-                TCP_KEEPIDLE  // __APPLE__
+#if defined(TCP_KEEPIDLE)
+            // TCP_KEEPIDLE: Linux, illumos
+            // Note: Check TCP_KEEPIDLE first because illumos defines TCP_KEEPALIVE
+            // but doesn't implement it.
+            socket->setOption(IPPROTO_TCP, TCP_KEEPIDLE, tcp_keep_alive_timeout_in_sec);
+#elif defined(TCP_KEEPALIVE)
+            // TCP_KEEPALIVE: macOS
+            socket->setOption(IPPROTO_TCP, TCP_KEEPALIVE, tcp_keep_alive_timeout_in_sec);
 #endif
-                , tcp_keep_alive_timeout_in_sec);
         }
 
         in = std::make_shared<ReadBufferFromPocoSocketChunked>(*socket);
@@ -260,8 +283,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         connected = true;
         setDescription();
 
-        sendHello(timeouts.handshake_timeout);
-        receiveHello(timeouts.handshake_timeout);
+        sendHello();
+        receiveHello();
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
         {
@@ -320,6 +343,10 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         LOG_TRACE(log_wrapper.get(), "Connected to {} server version {}.{}.{}.",
             server_name, server_version_major, server_version_minor, server_version_patch);
+
+        /// Now that the handshake is complete, use the regular timeouts
+        socket->setReceiveTimeout(timeouts.receive_timeout);
+        socket->setSendTimeout(timeouts.send_timeout);
     }
     catch (DB::NetException & e)
     {
@@ -401,7 +428,7 @@ void Connection::disconnect()
 }
 
 
-void Connection::sendHello([[maybe_unused]] const Poco::Timespan & handshake_timeout)
+void Connection::sendHello()
 {
     /** Disallow control characters in user controlled parameters
       *  to mitigate the possibility of SSRF.
@@ -454,7 +481,7 @@ void Connection::sendHello([[maybe_unused]] const Poco::Timespan & handshake_tim
         writeStringBinary(String(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) + user, *out);
         writeStringBinary(password, *out);
 
-        performHandshakeForSSHAuth(handshake_timeout);
+        performHandshakeForSSHAuth();
     }
 #endif
 #if USE_JWT_CPP && USE_SSL
@@ -493,10 +520,8 @@ void Connection::sendAddendum()
 
 
 #if USE_SSH
-void Connection::performHandshakeForSSHAuth(const Poco::Timespan & handshake_timeout)
+void Connection::performHandshakeForSSHAuth()
 {
-    TimeoutSetter timeout_setter(*socket, handshake_timeout, handshake_timeout);
-
     String challenge;
     {
         writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
@@ -513,7 +538,7 @@ void Connection::performHandshakeForSSHAuth(const Poco::Timespan & handshake_tim
         else if (packet_type == Protocol::Server::Exception)
             receiveException()->rethrow();
         else
-            throwUnexpectedPacket(timeout_setter, packet_type, "SSHChallenge or Exception");
+            throwUnexpectedPacket(packet_type, "SSHChallenge or Exception");
     }
 
     writeVarUInt(Protocol::Client::SSHChallengeResponse, *out);
@@ -536,10 +561,8 @@ void Connection::performHandshakeForSSHAuth(const Poco::Timespan & handshake_tim
 #endif
 
 
-void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
+void Connection::receiveHello()
 {
-    TimeoutSetter timeout_setter(*socket, socket->getSendTimeout(), handshake_timeout);
-
     /// Receive hello packet.
     UInt64 packet_type = 0;
 
@@ -609,16 +632,16 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
             readVarUInt(server_query_plan_serialization_version, *in);
         }
 
-        server_cluster_function_protocol_version = DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION;
+        worker_cluster_function_protocol_version = DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION;
         if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL)
         {
-            readVarUInt(server_cluster_function_protocol_version, *in);
+            readVarUInt(worker_cluster_function_protocol_version, *in);
         }
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
     else
-        throwUnexpectedPacket(timeout_setter, packet_type, "Hello or Exception");
+        throwUnexpectedPacket(packet_type, "Hello or Exception");
 }
 
 void Connection::setDefaultDatabase(const String & database)
@@ -750,7 +773,7 @@ bool Connection::ping(const ConnectionTimeouts & timeouts)
         }
 
         if (pong != Protocol::Server::Pong)
-            throwUnexpectedPacket(timeout_setter, pong, "Pong");
+            throwUnexpectedPacket(pong, "Pong", &timeout_setter);
     }
     catch (const Poco::Exception & e)
     {
@@ -789,7 +812,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     if (response_type == Protocol::Server::Exception)
         receiveException()->rethrow();
     else if (response_type != Protocol::Server::TablesStatusResponse)
-        throwUnexpectedPacket(timeout_setter, response_type, "TablesStatusResponse");
+        throwUnexpectedPacket(response_type, "TablesStatusResponse", &timeout_setter);
 
     TablesStatusResponse response;
     response.read(*in, server_revision);
@@ -825,7 +848,24 @@ void Connection::sendQuery(
         client_info = &new_client_info;
     }
 
-    if (!isConnected())
+#if USE_JWT_CPP && USE_SSL
+    if (jwt_provider && !jwt.empty())
+    {
+        if (JWTProvider::getJwtExpiry(jwt) < (Poco::Timestamp() + Poco::Timespan(30, 0)))
+        {
+            String new_jwt = jwt_provider->getJWT();
+            if (!new_jwt.empty())
+            {
+                jwt = new_jwt;
+                // We have a new token, so we need to reconnect.
+                // The current connection is still using the old token.
+                disconnect();
+            }
+        }
+    }
+#endif
+
+    if (!connected)
         connect(timeouts);
 
     /// Query is not executed within sendQuery() function.
@@ -841,6 +881,14 @@ void Connection::sendQuery(
         std::string method = Poco::toUpper((*settings)[Setting::network_compression_method].toString());
 
         /// Bad custom logic
+        /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
+        /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
+        /// be broken afterwards.
+        if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
+
+        /// More bad custom logic
         if (method == "ZSTD")
             level = (*settings)[Setting::network_zstd_compression_level];
 
@@ -848,9 +896,7 @@ void Connection::sendQuery(
             method,
             level,
             !(*settings)[Setting::allow_suspicious_codecs],
-            (*settings)[Setting::allow_experimental_codecs],
-            (*settings)[Setting::enable_deflate_qpl_codec],
-            (*settings)[Setting::enable_zstd_qat_codec]);
+            (*settings)[Setting::allow_experimental_codecs]);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else
@@ -993,14 +1039,25 @@ void Connection::sendQuery(
 void Connection::sendQueryPlan(const QueryPlan & query_plan)
 {
     writeVarUInt(Protocol::Client::QueryPlan, *out);
-    query_plan.serialize(*out, server_query_plan_serialization_version);
+
+    if (query_plan.isSerialized())
+    {
+        // Use cached serialization
+        auto serialized_data = query_plan.getSerializedData();
+        out->write(serialized_data.data(), serialized_data.size());
+    }
+    else
+    {
+        // Fallback: serialize on-the-fly
+        query_plan.serialize(*out, server_query_plan_serialization_version);
+    }
 }
 
 void Connection::sendCancel()
 {
     /// If we already disconnected.
     if (!out)
-        return;
+        throw Exception(ErrorCodes::NETWORK_ERROR, "Connection to {} terminated", getDescription());
 
     writeVarUInt(Protocol::Client::Cancel, *out);
     out->finishChunk();
@@ -1051,7 +1108,7 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
-    response.serialize(*out, server_cluster_function_protocol_version);
+    response.serialize(*out, worker_cluster_function_protocol_version);
     out->finishChunk();
     out->next();
 }
@@ -1060,7 +1117,7 @@ void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTa
 void Connection::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
 {
     writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
-    response.serialize(*out, server_parallel_replicas_protocol_version);
+    response.serialize(*out, server_parallel_replicas_protocol_version, server_revision);
     out->finishChunk();
     out->next();
 }
@@ -1119,19 +1176,19 @@ void Connection::sendScalarsData(Scalars & data)
         LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
             data.size(), rows, elapsed,
-            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
-            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()),
-            static_cast<double>(maybe_compressed_out_bytes) / out_bytes,
+            ReadableSize(static_cast<double>(maybe_compressed_out_bytes) / watch.elapsedSeconds()),
+            static_cast<double>(maybe_compressed_out_bytes) / static_cast<double>(out_bytes),
             ReadableSize(out_bytes),
-            ReadableSize(out_bytes / watch.elapsedSeconds()));
+            ReadableSize(static_cast<double>(out_bytes) / watch.elapsedSeconds()));
     else
         LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
             data.size(), rows, elapsed,
-            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
-            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()));
+            ReadableSize(static_cast<double>(maybe_compressed_out_bytes) / watch.elapsedSeconds()));
 }
 
 namespace
@@ -1199,7 +1256,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
             elem->pipe = elem->creating_pipe_callback();
 
         QueryPipelineBuilder pipeline = std::move(*elem->pipe);
-        elem->pipe.reset();
+        elem->pipe = nullptr;
         pipeline.resize(1);
         auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getSharedHeader(), *this, *elem, std::move(on_cancel));
         pipeline.setSinks([&](const SharedHeader &, QueryPipelineBuilder::StreamType type) -> ProcessorPtr
@@ -1230,19 +1287,19 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
             data.size(), rows, elapsed,
-            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
-            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()),
-            static_cast<double>(maybe_compressed_out_bytes) / out_bytes,
+            ReadableSize(static_cast<double>(maybe_compressed_out_bytes) / watch.elapsedSeconds()),
+            static_cast<double>(maybe_compressed_out_bytes) / static_cast<double>(out_bytes),
             ReadableSize(out_bytes),
-            ReadableSize(out_bytes / watch.elapsedSeconds()));
+            ReadableSize(static_cast<double>(out_bytes) / watch.elapsedSeconds()));
     else
         LOG_DEBUG(log_wrapper.get(),
             "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
             data.size(), rows, elapsed,
-            static_cast<size_t>(rows / watch.elapsedSeconds()),
+            static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
-            ReadableSize(maybe_compressed_out_bytes / watch.elapsedSeconds()));
+            ReadableSize(static_cast<double>(maybe_compressed_out_bytes) / watch.elapsedSeconds()));
 }
 
 std::optional<Poco::Net::SocketAddress> Connection::getResolvedAddress() const
@@ -1297,6 +1354,11 @@ Packet Connection::receivePacket()
 {
     try
     {
+        /// We are trying to send something to already disconnected connection,
+        /// this means that we continue using Connection after exception.
+        if (!in)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Connection to {} is terminated", getDescription());
+
         Packet res;
 
         /// Have we already read packet type?
@@ -1335,7 +1397,7 @@ Packet Connection::receivePacket()
                 return res;
 
             case Protocol::Server::TableColumns:
-                res.multistring_message = receiveMultistringMessage(res.type);
+                res.columns_description = receiveTableColumns();
                 return res;
 
             case Protocol::Server::EndOfStream:
@@ -1432,7 +1494,19 @@ Block Connection::receiveProfileEvents()
 
 void Connection::initInputBuffers()
 {
+}
 
+
+void Connection::initMaybeCompressedInput()
+{
+    if (!maybe_compressed_in)
+    {
+        if (compression == Protocol::Compression::Enable)
+            // Different codecs in this case are the default (e.g. LZ4) and codec NONE to skip compression in case of ColumnBLOB.
+            maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /*allow_different_codec=*/true);
+        else
+            maybe_compressed_in = in;
+    }
 }
 
 
@@ -1440,15 +1514,7 @@ void Connection::initBlockInput()
 {
     if (!block_in)
     {
-        if (!maybe_compressed_in)
-        {
-            if (compression == Protocol::Compression::Enable)
-                // Different codecs in this case are the default (e.g. LZ4) and codec NONE to skip compression in case of ColumnBLOB.
-                maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /*allow_different_codec=*/true);
-            else
-                maybe_compressed_in = in;
-        }
-
+        initMaybeCompressedInput();
         block_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision, format_settings);
     }
 }
@@ -1458,8 +1524,15 @@ void Connection::initBlockLogsInput()
 {
     if (!block_logs_in)
     {
+        ReadBuffer * logs_buf = in.get();
+        if (server_revision >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+        {
+            initMaybeCompressedInput();
+            logs_buf = maybe_compressed_in.get();
+        }
+
         /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
-        block_logs_in = std::make_unique<NativeReader>(*in, server_revision, format_settings);
+        block_logs_in = std::make_unique<NativeReader>(*logs_buf, server_revision, format_settings);
     }
 }
 
@@ -1468,7 +1541,14 @@ void Connection::initBlockProfileEventsInput()
 {
     if (!block_profile_events_in)
     {
-        block_profile_events_in = std::make_unique<NativeReader>(*in, server_revision, format_settings);
+        ReadBuffer * profile_events_buf = in.get();
+        if (server_revision >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+        {
+            initMaybeCompressedInput();
+            profile_events_buf = maybe_compressed_in.get();
+        }
+
+        block_profile_events_in = std::make_unique<NativeReader>(*profile_events_buf, server_revision, format_settings);
     }
 }
 
@@ -1501,13 +1581,21 @@ std::unique_ptr<Exception> Connection::receiveException() const
 }
 
 
-std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type) const
+String Connection::receiveTableColumns()
 {
-    size_t num = Protocol::Server::stringsInMessage(msg_type);
-    std::vector<String> strings(num);
-    for (size_t i = 0; i < num; ++i)
-        readStringBinary(strings[i], *in);
-    return strings;
+    ReadBuffer * columns_buf = in.get();
+    if (server_revision >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
+    {
+        initMaybeCompressedInput();
+        columns_buf = maybe_compressed_in.get();
+    }
+
+    String table_name_ignored;
+    readStringBinary(table_name_ignored, *columns_buf);
+
+    String columns;
+    readStringBinary(columns, *columns_buf);
+    return columns;
 }
 
 
@@ -1537,10 +1625,11 @@ InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement(
 }
 
 
-void Connection::throwUnexpectedPacket(TimeoutSetter & timeout_setter, UInt64 packet_type, const char * expected)
+void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected, TimeoutSetter * timeout_setter)
 {
     /// Reset timeout_setter before disconnect, because after disconnect socket will be invalid.
-    timeout_setter.reset();
+    if (timeout_setter)
+        timeout_setter->reset();
 
     /// Close connection, to avoid leaving it in an unsynchronised state.
     disconnect();
@@ -1568,7 +1657,12 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         std::string(DEFAULT_CLIENT_NAME),
         parameters.compression,
         parameters.security,
-        parameters.bind_host);
+        parameters.tls_sni_override,
+        parameters.bind_host
+#if USE_JWT_CPP && USE_SSL
+        , parameters.jwt_provider
+#endif
+        );
 }
 
 }

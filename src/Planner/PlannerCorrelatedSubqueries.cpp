@@ -3,10 +3,12 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 
+#include <Common/EquivalenceClasses.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
 #include <Core/Joins.h>
+#include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeNullable.h>
@@ -27,11 +29,17 @@
 #include <Planner/Utils.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+
+#include <Storages/ColumnsDescription.h>
+#include <Storages/ConstraintsDescription.h>
+#include <Storages/IStorage.h>
 
 #include <memory>
 #include <string_view>
@@ -53,8 +61,13 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 
-extern const SettingsBool join_use_nulls;
 extern const SettingsBool correlated_subqueries_substitute_equivalent_expressions;
+extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
+extern const SettingsBool join_use_nulls;
+extern const SettingsBool use_variant_as_common_type;
+extern const SettingsDecorrelationJoinKind correlated_subqueries_default_join_kind;
+extern const SettingsMaxThreads max_threads;
+extern const SettingsNonZeroUInt64 max_block_size;
 
 }
 
@@ -106,73 +119,6 @@ CorrelatedPlanStepMap buildCorrelatedPlanStepMap(QueryPlan & correlated_query_pl
     return result;
 }
 
-struct EquivalenceClasses
-{
-    void add(const String & a, const String & b)
-    {
-        auto & class_a = member_to_class[a];
-        auto & class_b = member_to_class[b];
-
-        if (!class_a && class_b)
-        {
-            /// Add A to existing class B
-            class_a = class_b;
-            class_b->push_back(a);
-        }
-        else if (class_a && !class_b)
-        {
-            /// Add B to existing class A
-            class_b = class_a;
-            class_a->push_back(b);
-        }
-        else if (!class_a && !class_b)
-        {
-            /// Both A and B are new, create a class for them
-            auto new_class = std::make_shared<std::list<String>>();
-            new_class->push_back(a);
-            class_a = new_class;
-            if (a != b)
-            {
-                new_class->push_back(b);
-                class_b = new_class;
-            }
-        }
-        else
-        {
-            /// A and B already belong to the same class?
-            if (class_a == class_b)
-                return;
-
-            /// Merge class of smaller size into bigger one
-            if (class_a->size() < class_b->size())
-                mergeFromTo(class_a, class_b);
-            else
-                mergeFromTo(class_b, class_a);
-        }
-    }
-
-    std::shared_ptr<const std::list<String>> getClass(const String & name) const
-    {
-        auto it = member_to_class.find(name);
-        if (it == member_to_class.end())
-            return {};
-        return it->second;
-    }
-
-private:
-    void mergeFromTo(std::shared_ptr<std::list<String>> class_from, std::shared_ptr<std::list<String>> class_to)
-    {
-        /// For all existing members of class From set their class to To
-        for (const auto & member_from : *class_from)
-            member_to_class[member_from] = class_to;
-        /// Add all elements from class From to class To
-        class_to->splice(class_to->end(), *class_from);
-    }
-
-    /// Elements that belong to the same class will point to the same list of all elements of this class
-    std::unordered_map<String, std::shared_ptr<std::list<String>>> member_to_class;
-};
-
 struct DecorrelationContext
 {
     const CorrelatedSubquery & correlated_subquery;
@@ -180,40 +126,13 @@ struct DecorrelationContext
     QueryPlan query_plan; // LHS plan
     QueryPlan correlated_query_plan;
     CorrelatedPlanStepMap correlated_plan_steps;
-    /// Equivalence classes stack for subqeiries. Equivalence classes should not be propagated
+    /// Equivalence classes stack for subqueries. Equivalence classes should not be propagated
     /// to the subqueries of the JOIN or UNION steps.
-    std::vector<EquivalenceClasses> equivalence_class_stack;
+    std::vector<EquivalenceClasses<String>> equivalence_class_stack;
+    /// Whether the input subplan is referenced during decorrelation.
+    /// This is necessary to identify if in-memory buffer would be used.
+    bool referenced_input_subplan = false;
 };
-
-namespace
-{
-
-void projectCorrelatedColumns(
-    QueryPlan & lhs_plan,
-    const ColumnIdentifiers & correlated_column_identifiers)
-{
-    ActionsDAG project_only_correlated_columns_actions;
-
-    NameSet correlated_column_identifiers_set(correlated_column_identifiers.begin(), correlated_column_identifiers.end());
-
-    const auto & lhs_plan_header = lhs_plan.getCurrentHeader();
-
-    auto & outputs = project_only_correlated_columns_actions.getOutputs();
-    for (const auto & column : lhs_plan_header->getColumnsWithTypeAndName())
-    {
-        const auto * input_node = &project_only_correlated_columns_actions.addInput(column);
-        if (correlated_column_identifiers_set.contains(column.name))
-        {
-            outputs.push_back(input_node);
-        }
-    }
-
-    lhs_plan.addStep(std::make_unique<ExpressionStep>(
-        lhs_plan_header,
-        std::move(project_only_correlated_columns_actions)));
-}
-
-}
 
 /// Correlated subquery is represented by implicit dependent join operator.
 /// This function builds a query plan to evaluate correlated subquery by
@@ -225,12 +144,12 @@ QueryPlan decorrelateQueryPlan(
 {
     if (!context.correlated_plan_steps[node])
     {
+        /// The rest of the query plan doesn't use any correlated columns.
         const auto & settings = context.planner_context->getQueryContext()->getSettingsRef();
-
-        auto decorrelated_plan_header = node->step->getOutputHeader();
 
         if (settings[Setting::correlated_subqueries_substitute_equivalent_expressions])
         {
+            const auto & decorrelated_plan_header = node->step->getOutputHeader();
             ActionsDAG dag(decorrelated_plan_header->getNamesAndTypesList());
             auto & outputs = dag.getOutputs();
 
@@ -238,6 +157,7 @@ QueryPlan decorrelateQueryPlan(
             for (const auto * output : outputs)
                 decorrelated_nodes_names[output->result_name] = output;
 
+            /// Find possible renamings for all correlated columns
             std::vector<std::pair<const ActionsDAG::Node *, const String &>> expression_renamings;
             for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
             {
@@ -256,6 +176,8 @@ QueryPlan decorrelateQueryPlan(
                 }
             }
 
+            /// If all columns from outer query have equivalent expressions in the current subplan,
+            /// we can safely replace them and avoid introduction of CROSS JOIN.
             if (context.correlated_subquery.correlated_column_identifiers.size() == expression_renamings.size())
             {
                 for (const auto & [from, to] : expression_renamings)
@@ -268,25 +190,42 @@ QueryPlan decorrelateQueryPlan(
                 return result_plan;
             }
         }
+        /// JOIN reordering might be disabled in such case.
+        context.referenced_input_subplan = true;
 
-        /// The rest of the query plan doesn't use any correlated columns.
-        auto lhs_plan = context.query_plan.clone();
+        QueryPlan lhs_plan = context.correlated_query_plan.extractSubplan(node);
+        QueryPlan rhs_plan;
 
-        projectCorrelatedColumns(lhs_plan, context.correlated_subquery.correlated_column_identifiers);
+        auto default_join_kind = settings[Setting::correlated_subqueries_default_join_kind];
+        context.query_plan.addStep(std::make_unique<CommonSubplanStep>(context.query_plan.getCurrentHeader()));
+
+        auto buffer_header = std::make_shared<Block>();
+        for (const auto & column : context.correlated_subquery.correlated_column_identifiers)
+            buffer_header->insert(context.query_plan.getCurrentHeader()->getByName(column));
+
+        rhs_plan.addStep(std::make_unique<CommonSubplanReferenceStep>(
+            buffer_header,
+            context.query_plan.getRootNode(),
+            context.correlated_subquery.correlated_column_identifiers));
+        rhs_plan.getRootNode()->step->setStepDescription("Input for " + context.correlated_subquery.action_node_name, 100);
+
+        if (default_join_kind == DecorrelationJoinKind::LEFT)
+            std::swap(lhs_plan, rhs_plan);
 
         auto lhs_plan_header = lhs_plan.getCurrentHeader();
+        auto rhs_plan_header = rhs_plan.getCurrentHeader();
 
         JoinExpressionActions join_expression_actions(
             lhs_plan_header->getColumnsWithTypeAndName(),
-            decorrelated_plan_header->getColumnsWithTypeAndName());
+            rhs_plan_header->getColumnsWithTypeAndName());
 
         NameSet output_columns;
         output_columns.insert_range(lhs_plan_header->getNames());
-        output_columns.insert_range(node->step->getOutputHeader()->getNames());
+        output_columns.insert_range(rhs_plan_header->getNames());
 
         auto decorrelated_join = std::make_unique<JoinStepLogical>(
-            lhs_plan_header,
-            /*right_header_=*/decorrelated_plan_header,
+            /*left_header_=*/lhs_plan_header,
+            /*right_header_=*/rhs_plan_header,
             JoinOperator(JoinKind::Cross),
             std::move(join_expression_actions),
             output_columns,
@@ -296,12 +235,12 @@ QueryPlan decorrelateQueryPlan(
             SortingStep::Settings(settings));
         decorrelated_join->setStepDescription("JOIN to evaluate correlated expression");
 
-        /// Add CROSS JOIN
+        /// Add CROSS JOIN to combine data streams from left and right plans.
         QueryPlan result_plan;
 
         std::vector<QueryPlanPtr> plans;
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
-        plans.emplace_back(std::make_unique<QueryPlan>(context.correlated_query_plan.extractSubplan(node)));
+        plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
 
         result_plan.unitePlans(std::move(decorrelated_join), {std::move(plans)});
 
@@ -380,6 +319,7 @@ QueryPlan decorrelateQueryPlan(
         ///     FROM t2
         ///     WHERE t.x = t2.y
         /// )
+        const auto & settings = context.planner_context->getQueryContext()->getSettingsRef();
         auto process_isolated_subplan = [](
             DecorrelationContext & current_context,
             QueryPlan::Node * subplan_root
@@ -400,8 +340,11 @@ QueryPlan decorrelateQueryPlan(
         child_plans.emplace_back(std::make_unique<QueryPlan>(std::move(decorrelated_lhs_plan)));
         child_plans.emplace_back(std::make_unique<QueryPlan>(std::move(decorrelated_rhs_plan)));
 
-        Block union_common_header = buildCommonHeaderForUnion(query_plans_headers, SelectUnionMode::UNION_ALL); // Union mode doesn't matter here
-        addConvertingToCommonHeaderActionsIfNeeded(child_plans, union_common_header, query_plans_headers);
+        Block union_common_header = buildCommonHeaderForUnion(
+            query_plans_headers,
+            SelectUnionMode::UNION_ALL,
+            settings[Setting::use_variant_as_common_type]); // Union mode doesn't matter here
+        addConvertingToCommonHeaderActionsIfNeeded(child_plans, union_common_header, query_plans_headers, context.planner_context->getQueryContext());
 
         union_step->updateInputHeaders(std::move(query_plans_headers));
 
@@ -443,7 +386,7 @@ QueryPlan decorrelateQueryPlan(
             aggeregating_step->usingMemoryBoundMerging(),
             aggeregating_step->explicitSortingRequired()
         );
-        result_step->setStepDescription(aggeregating_step->getStepDescription());
+        result_step->setStepDescription(*aggeregating_step);
 
         decorrelated_query_plan.addStep(std::move(result_step));
 
@@ -514,39 +457,60 @@ void buildExistsResultExpression(
 
 QueryPlan buildLogicalJoin(
     const PlannerContextPtr & planner_context,
-    QueryPlan left_plan,
-    QueryPlan right_plan,
-    const CorrelatedSubquery & correlated_subquery
+    QueryPlan input_stream_plan,
+    QueryPlan decorrelated_plan,
+    const CorrelatedSubquery & correlated_subquery,
+    bool referenced_input_subplan
 )
 {
-    const auto & lhs_plan_header = left_plan.getCurrentHeader();
-    const auto & rhs_plan_header = right_plan.getCurrentHeader();
+    auto lhs_plan_header = decorrelated_plan.getCurrentHeader();
+    auto rhs_plan_header = input_stream_plan.getCurrentHeader();
+
+    using ColumnNameGetter = std::function<String(const String &)>;
+    ColumnNameGetter get_lhs_column_name = [&](const String & column_name) -> String {
+        return fmt::format("{}.{}", correlated_subquery.action_node_name, column_name);
+    };
+    ColumnNameGetter get_rhs_column_name = [&](const String & column_name) -> String {
+        return column_name;
+    };
+
+    auto lhs_plan = std::move(decorrelated_plan);
+    auto rhs_plan = std::move(input_stream_plan);
+
+    NameSet output_columns;
+    output_columns.insert_range(rhs_plan_header->getNames());
+    output_columns.insert(correlated_subquery.action_node_name);
+
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+
+    if (settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::LEFT)
+    {
+        std::swap(lhs_plan, rhs_plan);
+        std::swap(lhs_plan_header, rhs_plan_header);
+        std::swap(get_lhs_column_name, get_rhs_column_name);
+    }
 
     JoinExpressionActions join_expression_actions(
         lhs_plan_header->getColumnsWithTypeAndName(),
         rhs_plan_header->getColumnsWithTypeAndName());
 
-    NameSet output_columns;
-    output_columns.insert_range(lhs_plan_header->getNames());
-    output_columns.insert(correlated_subquery.action_node_name);
-
-    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
-
     std::vector<JoinActionRef> predicates;
     for (const auto & column_name : correlated_subquery.correlated_column_identifiers)
     {
         std::vector<JoinActionRef> eq_arguments;
-        eq_arguments.push_back(join_expression_actions.findNode(column_name, /* is_input= */ true));
-        eq_arguments.push_back(join_expression_actions.findNode(fmt::format("{}.{}", correlated_subquery.action_node_name, column_name), /* is_input= */ true));
+        eq_arguments.push_back(join_expression_actions.findNode(get_lhs_column_name(column_name), /* is_input= */ true));
+        eq_arguments.push_back(join_expression_actions.findNode(get_rhs_column_name(column_name), /* is_input= */ true));
         auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
         predicates.push_back(std::move(eq_node));
     }
 
-    /// Add LEFT OUTER JOIN
+    auto join_kind_to_use = settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT ? JoinKind::Right : JoinKind::Left;
+
+    /// Add ANY OUTER JOIN
     auto result_join = std::make_unique<JoinStepLogical>(
         lhs_plan_header,
         rhs_plan_header,
-        JoinOperator(JoinKind::Left, JoinStrictness::Any, JoinLocality::Unspecified, std::move(predicates)),
+        JoinOperator(join_kind_to_use, JoinStrictness::Any, JoinLocality::Unspecified, std::move(predicates)),
         std::move(join_expression_actions),
         output_columns,
         std::unordered_map<String, const ActionsDAG::Node *>{},
@@ -555,11 +519,28 @@ QueryPlan buildLogicalJoin(
         SortingStep::Settings(settings));
     result_join->setStepDescription("JOIN to generate result stream");
 
+    /// Depending on correlated_subqueries_use_in_memory_buffer setting,
+    /// the RHS input stream can be buffered in memory.
+    /// In this case, we cannot reorder JOIN to ensure correlated subquery input
+    /// is evaluated before the subquery itself.
+    /// Do not disable reordering if the input subplan is not referenced (expression substitution happened).
+    if (referenced_input_subplan && settings[Setting::correlated_subqueries_use_in_memory_buffer] && join_kind_to_use == JoinKind::Right)
+    {
+        auto & join_algorithms = result_join->getJoinSettings().join_algorithms;
+        /// Remove algorithms that are not compatible with in-memory buffering
+        /// of correlated subquery input.
+        /// We must be sure that the input stream is fully evaluated
+        /// before the correlated subquery is executed.
+        std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH && join_algorithm != JoinAlgorithm::PARALLEL_HASH; });
+        /// Forbid reordering of this JOIN step. Child subplans still can be reordered and optimized.
+        result_join->setOptimized();
+    }
+
     QueryPlan result_plan;
 
     std::vector<QueryPlanPtr> plans;
-    plans.emplace_back(std::make_unique<QueryPlan>(std::move(left_plan)));
-    plans.emplace_back(std::make_unique<QueryPlan>(std::move(right_plan)));
+    plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
+    plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
 
     result_plan.unitePlans(std::move(result_join), {std::move(plans)});
     return result_plan;
@@ -572,7 +553,7 @@ Planner buildPlannerForCorrelatedSubquery(
 )
 {
     auto subquery_options = select_query_options.subquery();
-    auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+    auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     /// Register table expression data for correlated columns sources in the global context.
     /// Table expression data would be reused because it can't be initialized
     /// during plan construction for correlated subquery.
@@ -589,7 +570,8 @@ Planner buildPlannerForCorrelatedSubquery(
 
 void addStepForResultRenaming(
     const CorrelatedSubquery & correlated_subquery,
-    QueryPlan & correlated_subquery_plan
+    QueryPlan & correlated_subquery_plan,
+    const PlannerContextPtr & planner_context
 )
 {
     const auto & header = correlated_subquery_plan.getCurrentHeader();
@@ -619,7 +601,8 @@ void addStepForResultRenaming(
         result_node = &dag.addCast(
             *dag.getOutputs()[0],
             expected_result_type,
-            correlated_subquery.action_node_name);
+            correlated_subquery.action_node_name,
+            planner_context->getQueryContext());
     }
     else
     {
@@ -646,10 +629,7 @@ void addStepForResultRenaming(
  * Instead, it produces a query plan where almost every step has an analog from relational algebra.
  * This function implements a decorrelation algorithm using the ClickHouse query plan.
  *
- * TODO: Support scalar correlated subqueries.
  * TODO: Support decorrelation of all kinds of query plan steps.
- * TODO: Implement left table substitution optimization: T_left DEPENDENT JOIN T_right is a subset of T_right
- * if T_right has all the necessary columns of T_left.
  */
 void buildQueryPlanForCorrelatedSubquery(
     const PlannerContextPtr & planner_context,
@@ -657,8 +637,8 @@ void buildQueryPlanForCorrelatedSubquery(
     const CorrelatedSubquery & correlated_subquery,
     const SelectQueryOptions & select_query_options)
 {
-    auto * query_node = correlated_subquery.query_tree->as<QueryNode>();
-    auto * union_node = correlated_subquery.query_tree->as<UnionNode>();
+    auto * query_node = correlated_subquery.query_tree->as<QueryNode>();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+    auto * union_node = correlated_subquery.query_tree->as<UnionNode>();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     chassert(query_node != nullptr && query_node->isCorrelated() || union_node != nullptr && union_node->isCorrelated());
 
     switch (correlated_subquery.kind)
@@ -669,19 +649,25 @@ void buildQueryPlanForCorrelatedSubquery(
             /// Logical plan for correlated subquery
             auto & correlated_query_plan = subquery_planner.getQueryPlan();
 
-            addStepForResultRenaming(correlated_subquery, correlated_query_plan);
+            addStepForResultRenaming(correlated_subquery, correlated_query_plan, planner_context);
 
             /// Mark all query plan steps if they or their subplans contain usage of correlated subqueries.
             /// It's needed to identify the moment when dependent join can be replaced by CROSS JOIN.
             auto correlated_step_map = buildCorrelatedPlanStepMap(correlated_query_plan);
 
+            auto correlated_plan = std::move(subquery_planner).extractQueryPlan();
+            /// Propagate interpreter contexts (e.g. for table functions like `url()`) to the parent plan,
+            /// so they stay alive after decorrelation destroys the correlated plan.
+            for (const auto & ctx : correlated_plan.getInterpretersContexts())
+                query_plan.addInterpreterContext(ctx);
+
             DecorrelationContext context{
                 .correlated_subquery = correlated_subquery,
                 .planner_context = planner_context,
                 .query_plan = std::move(query_plan),
-                .correlated_query_plan = std::move(subquery_planner).extractQueryPlan(),
+                .correlated_query_plan = std::move(correlated_plan),
                 .correlated_plan_steps = std::move(correlated_step_map),
-                .equivalence_class_stack = { EquivalenceClasses{} }
+                .equivalence_class_stack = { EquivalenceClasses<String>{} }
             };
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
@@ -692,7 +678,8 @@ void buildQueryPlanForCorrelatedSubquery(
                 planner_context,
                 std::move(context.query_plan),
                 std::move(decorrelated_plan),
-                correlated_subquery);
+                correlated_subquery,
+                context.referenced_input_subplan);
             break;
         }
         case CorrelatedSubqueryKind::EXISTS:
@@ -716,13 +703,19 @@ void buildQueryPlanForCorrelatedSubquery(
             /// It's needed to identify the moment when dependent join can be replaced by CROSS JOIN.
             auto correlated_step_map = buildCorrelatedPlanStepMap(correlated_query_plan);
 
+            auto correlated_plan = std::move(subquery_planner).extractQueryPlan();
+            /// Propagate interpreter contexts (e.g. for table functions like `url()`) to the parent plan,
+            /// so they stay alive after decorrelation destroys the correlated plan.
+            for (const auto & ctx : correlated_plan.getInterpretersContexts())
+                query_plan.addInterpreterContext(ctx);
+
             DecorrelationContext context{
                 .correlated_subquery = correlated_subquery,
                 .planner_context = planner_context,
                 .query_plan = std::move(query_plan),
-                .correlated_query_plan = std::move(subquery_planner).extractQueryPlan(),
+                .correlated_query_plan = std::move(correlated_plan),
                 .correlated_plan_steps = std::move(correlated_step_map),
-                .equivalence_class_stack = { EquivalenceClasses{} }
+                .equivalence_class_stack = { EquivalenceClasses<String>{} }
             };
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
@@ -735,7 +728,8 @@ void buildQueryPlanForCorrelatedSubquery(
                 planner_context,
                 std::move(context.query_plan),
                 std::move(decorrelated_plan),
-                correlated_subquery);
+                correlated_subquery,
+                context.referenced_input_subplan);
             break;
         }
     }

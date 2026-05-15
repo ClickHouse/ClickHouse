@@ -1,5 +1,7 @@
 #include <memory>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/copyData.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Storages/StorageKeeperMap.h>
 
 #include <Columns/ColumnString.h>
@@ -11,6 +13,7 @@
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/DatabaseCatalog.h>
@@ -26,6 +29,7 @@
 #include <Parsers/ASTSelectQuery.h>
 
 #include <Processors/ISource.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/NullSource.h>
@@ -66,6 +70,9 @@
 #include <base/types.h>
 
 #include <boost/core/noncopyable.hpp>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 namespace DB
 {
@@ -96,6 +103,7 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
     extern const int INVALID_STATE;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+    extern const int TABLE_WAS_NOT_DROPPED;
 }
 
 namespace
@@ -186,6 +194,7 @@ public:
     template <bool for_update>
     void finalize(bool strict)
     {
+        auto component_guard = Coordination::setCurrentComponent("StorageKeeperMapSink::finalize");
         const auto & settings = context->getSettingsRef();
 
         ZooKeeperRetriesControl zk_retry{
@@ -311,6 +320,7 @@ public:
 
     Chunk generate() override
     {
+        auto component_guard = Coordination::setCurrentComponent("StorageKeeperMapSource::generate");
         if (it >= end)
         {
             it = {};
@@ -346,8 +356,9 @@ StorageKeeperMap::StorageKeeperMap(
     bool attach,
     std::string_view primary_key_,
     const std::string & zk_root_path_,
-    UInt64 keys_limit_)
-    : IStorage(table_id)
+    UInt64 keys_limit_,
+    bool override_metadata)
+    : StorageWithCommonVirtualColumns(table_id)
     , WithContext(context_->getGlobalContext())
     , zk_root_path(zkutil::extractZooKeeperPath(zk_root_path_, false))
     , primary_key(primary_key_)
@@ -355,21 +366,17 @@ StorageKeeperMap::StorageKeeperMap(
     , keys_limit(keys_limit_)
     , log(getLogger(fmt::format("StorageKeeperMap ({})", table_id.getNameForLogs())))
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::StorageKeeperMap");
     std::string path_prefix = context_->getConfigRef().getString("keeper_map_path_prefix", "");
     if (path_prefix.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "KeeperMap is disabled because 'keeper_map_path_prefix' config is not defined");
 
     verifyTableId(table_id);
-
-    setInMemoryMetadata(metadata);
-
-    VirtualColumnsDescription virtuals;
-    virtuals.addEphemeral(String(version_column_name), std::make_shared<DataTypeInt32>(), "");
-    setVirtuals(std::move(virtuals));
+    setInMemoryMetadata(metadata.withVirtuals(createVirtuals()));
 
     WriteBufferFromOwnString out;
     out << "KeeperMap metadata format version: 1\n"
-        << "columns: " << metadata.columns.toString()
+        << "columns: " << metadata.columns.toString(true)
         << "primary key: " << formattedAST(metadata.getPrimaryKey().expression_list_ast) << "\n";
     metadata_string = out.str();
 
@@ -467,7 +474,7 @@ StorageKeeperMap::StorageKeeperMap(
                     }
 
                     /// We most likely created the path but got a timeout or disconnect
-                    if (code == Coordination::Error::ZNODEEXISTS && zk_retry.isRetry())
+                    if (code == Coordination::Error::ZNODEEXISTS && (zk_retry.isRetry() || override_metadata))
                     {
                         success = true;
                         return;
@@ -511,7 +518,7 @@ StorageKeeperMap::StorageKeeperMap(
                         {
                             metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(zk_dropped_lock_path, *client);
                             drop_lock_version = dynamic_cast<const Coordination::SetResponse &>(*drop_lock_responses[0]).stat.version;
-                            if (!dropTable(client, metadata_drop_lock))
+                            if (!dropTableData(client, metadata_drop_lock))
                                 return;
                             drop_finished = true;
                         }
@@ -519,6 +526,11 @@ StorageKeeperMap::StorageKeeperMap(
 
                     if (!drop_finished)
                     {
+                        /// Backward compatibility: tables created before 25.1 don't have
+                        /// the drop_lock_version node. Create it if missing so the set below
+                        /// doesn't fail with ZNONODE (same pattern as drop() uses).
+                        client->createIfNotExists(zk_dropped_lock_version_path, "");
+
                         Coordination::Requests drop_lock_requests{
                             zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral),
                             zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, -1),
@@ -544,10 +556,17 @@ StorageKeeperMap::StorageKeeperMap(
                         {
                             metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(zk_dropped_lock_path, *client);
                             drop_lock_version = dynamic_cast<const Coordination::SetResponse &>(*drop_lock_responses[1]).stat.version;
-                            if (!dropTable(client, metadata_drop_lock))
+                            if (!dropTableData(client, metadata_drop_lock))
                                 return;
                         }
                     }
+                }
+
+                /// Root path may have been removed by dropTableData above.
+                if (zk_root_path != "/" && !client->exists(zk_root_path))
+                {
+                    client->createAncestors(zk_root_path);
+                    client->createIfNotExists(zk_root_path, "");
                 }
 
                 Coordination::Requests create_requests{
@@ -629,6 +648,15 @@ private:
     Strings getAllKeys() const;
 };
 
+VirtualColumnsDescription StorageKeeperMap::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral(String(version_column_name), std::make_shared<DataTypeInt32>(), "", VirtualsMaterializationPlace::Reader);
+    return desc;
+}
+
 bool StorageKeeperMap::isMetadataStringEqual(
     const std::string & zk_metadata_string,
     const std::string & local_metadata_string,
@@ -689,7 +717,7 @@ bool StorageKeeperMap::isMetadataStringEqual(
 }
 
 
-void StorageKeeperMap::read(
+void StorageKeeperMap::readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -699,6 +727,7 @@ void StorageKeeperMap::read(
         size_t max_block_size,
         size_t num_streams)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::read");
     checkTable<true>(context_);
     storage_snapshot->check(column_names);
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
@@ -725,6 +754,7 @@ void StorageKeeperMap::read(
 
 void ReadFromKeeperMap::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    auto component_guard = Coordination::setCurrentComponent("ReadFromKeeperMap::initializePipeline");
     if (all_scan)
         initializePipelineImpl(pipeline, std::make_shared<Strings>(getAllKeys()));
     else
@@ -798,7 +828,7 @@ Strings ReadFromKeeperMap::getAllKeys() const
 
 void ReadFromKeeperMap::describeActions(FormatSettings & format_settings) const
 {
-    std::string prefix(format_settings.offset, format_settings.indent_char);
+    const std::string & prefix = format_settings.detail_prefix;
     if (!all_scan)
     {
         format_settings.out << prefix << "ReadType: GetKeys\n";
@@ -821,12 +851,14 @@ void ReadFromKeeperMap::describeActions(JSONBuilder::JSONMap & map) const
 
 SinkToStoragePtr StorageKeeperMap::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::write");
     checkTable<true>(local_context);
     return std::make_shared<StorageKeeperMapSink>(*this, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()), local_context);
 }
 
 void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::truncate");
     checkTable<true>(local_context);
     const auto & settings = local_context->getSettingsRef();
     ZooKeeperRetriesControl zk_retry{
@@ -845,21 +877,103 @@ void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     });
 }
 
-bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock)
+void StorageKeeperMap::dropTableFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, String path_prefix_, String zk_root_path_, String uuid, LoggerPtr logger)
+{
+    auto zk_root_path_fs = fs::path(path_prefix_) / std::string_view{zk_root_path_}.substr(1);
+    zk_root_path_ = zk_root_path_fs;
+
+    String zk_data_path_to_remove = zk_root_path_fs / "data";
+
+    auto metadata_path_fs = zk_root_path_fs / "metadata";
+    String zk_metadata_path_to_remove = metadata_path_fs;
+    String zk_tables_path_to_remove = metadata_path_fs / "tables";
+
+    String zk_dropped_path_to_remove = metadata_path_fs / "dropped";
+    String zk_dropped_lock_path_to_remove = fs::path(zk_dropped_path_to_remove) / "lock";
+    String zk_dropped_lock_version_path = metadata_path_fs / "drop_lock_version";
+
+    LOG_INFO(logger, "Removing table data in ZooKeeper at {}", zk_root_path_);
+
+    if (!zookeeper->exists(zk_root_path_))
+    {
+        LOG_INFO(logger, "Table at {} does not exist", zk_root_path_);
+        return;
+    }
+
+    Strings tables;
+    zookeeper->tryGetChildren(zk_tables_path_to_remove, tables);
+    std::sort(tables.begin(), tables.end());
+
+    for (const auto & table : tables)
+    {
+        if (table.starts_with(uuid))
+        {
+            LOG_INFO(logger, "Removing table {} in /tables", table);
+            auto code = zookeeper->tryRemove(fs::path(zk_tables_path_to_remove) / table);
+            if (code == Coordination::Error::ZNONODE)
+                throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Table at {} is already started to be removed by another replica right now", zk_root_path_);
+        }
+    }
+
+    Coordination::Requests ops;
+    Coordination::Responses responses;
+
+    /// Previous drop attempts might have failed
+    if (zookeeper->exists(zk_tables_path_to_remove))
+        ops.emplace_back(zkutil::makeRemoveRequest(zk_tables_path_to_remove, -1));
+
+    if (!zookeeper->exists(zk_dropped_path_to_remove))
+        ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_path_to_remove, "", zkutil::CreateMode::Persistent));
+
+    if (!zookeeper->exists(zk_dropped_lock_version_path))
+        ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_lock_version_path, "", zkutil::CreateMode::Persistent));
+
+    ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_lock_path_to_remove, "", zkutil::CreateMode::Ephemeral));
+    auto code = zookeeper->tryMulti(ops, responses);
+
+    if (code == Coordination::Error::ZNOTEMPTY)
+        return;
+
+    if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZNODEEXISTS)
+        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Table at {} is already started to be removed by another replica right now", zk_root_path_);
+
+    zkutil::KeeperMultiException::check(code, ops, responses);
+
+    auto drop_lock = zkutil::EphemeralNodeHolder::existing(zk_dropped_lock_path_to_remove, *zookeeper);
+    if (!dropTableData(zookeeper, drop_lock, zk_data_path_to_remove, zk_metadata_path_to_remove, zk_dropped_path_to_remove, zk_dropped_lock_version_path, zk_root_path_, logger))
+        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Table at {} is already started to be removed by another replica right now", zk_root_path_);
+}
+
+bool StorageKeeperMap::dropTableData(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock)
+{
+    return dropTableData(zookeeper, metadata_drop_lock, zk_data_path, zk_metadata_path, zk_dropped_path, zk_dropped_lock_version_path, zk_root_path, log);
+}
+
+
+bool StorageKeeperMap::dropTableData(
+    zkutil::ZooKeeperPtr zookeeper,
+    const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock,
+    const String & zk_data_path_,
+    const String & zk_metadata_path_,
+    const String & zk_dropped_path_,
+    const String & zk_dropped_lock_version_path_,
+    const String & zk_root_path_,
+    LoggerPtr logger)
 {
     fiu_do_on(FailPoints::keepermap_fail_drop_data,
     {
         throw zkutil::KeeperException(Coordination::Error::ZOPERATIONTIMEOUT, "Manually triggered operation timeout");
     });
-    zookeeper->removeChildrenRecursive(zk_data_path);
+    zookeeper->removeChildrenRecursive(zk_data_path_);
 
     bool completely_removed = false;
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_path, -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zk_data_path, -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_lock_version_path, -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zk_metadata_path, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_path_, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_data_path_, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_lock_version_path_, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_metadata_path_, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_root_path_, -1));
 
     Coordination::Responses responses;
     auto code = zookeeper->tryMulti(ops, responses);
@@ -870,17 +984,17 @@ bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::E
         {
             metadata_drop_lock->setAlreadyRemoved();
             completely_removed = true;
-            LOG_INFO(log, "Metadata ({}) and data ({}) was successfully removed from ZooKeeper", zk_metadata_path, zk_data_path);
+            LOG_INFO(logger, "Metadata ({}) and data ({}) was successfully removed from ZooKeeper", zk_metadata_path_, zk_data_path_);
             break;
         }
         case ZNONODE:
         {
             size_t failed_op = zkutil::getFailedOpIndex(code, responses);
-            LOG_ERROR(log, "Got ZNONODE code while trying to drop {}", ops[failed_op]->getPath());
+            LOG_ERROR(logger, "Got ZNONODE code while trying to drop {}", ops[failed_op]->getPath());
             throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of metadata. It's a bug");
         }
         case ZNOTEMPTY:
-            LOG_ERROR(log, "Metadata was not completely removed from ZooKeeper");
+            LOG_ERROR(logger, "Metadata was not completely removed from ZooKeeper");
             break;
         default:
             zkutil::KeeperMultiException::check(code, ops, responses);
@@ -891,6 +1005,7 @@ bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::E
 
 void StorageKeeperMap::drop()
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::drop");
     auto current_table_status = getTableStatus(getContext());
     if (current_table_status == TableStatus::UNKNOWN)
     {
@@ -919,13 +1034,27 @@ void StorageKeeperMap::drop()
         code != Coordination::Error::ZOK || !children.empty())
         return;
 
+    // used in private build
+    bool do_not_drop_table_data_in_keeper = false;
+#if CLICKHOUSE_CLOUD
+    /// In case of Shared Catalog, table data in ZooKeeper will be dropped separately
+    do_not_drop_table_data_in_keeper = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::instance().isTableInLocalDropOrDetachQueue(getStorageID().uuid);
+#endif
+    if (do_not_drop_table_data_in_keeper)
+        return;
+
     Coordination::Requests ops;
     Coordination::Responses responses;
 
     ops.emplace_back(zkutil::makeRemoveRequest(zk_tables_path, -1));
     ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_path, "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral));
-    ops.emplace_back(zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, -1));
+
+    /// 'zk_dropped_lock_version_path' node was added in 25.1, so we need to check if it exists
+    if (client->exists(zk_dropped_lock_version_path))
+        ops.emplace_back(zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, -1));
+    else
+        ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_lock_version_path, table_unique_id, zkutil::CreateMode::Persistent));
 
     auto code = client->tryMulti(ops, responses);
 
@@ -943,7 +1072,7 @@ void StorageKeeperMap::drop()
         zkutil::KeeperMultiException::check(code, ops, responses);
 
     auto metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(zk_dropped_lock_path, *client);
-    dropTable(client, metadata_drop_lock);
+    dropTableData(client, metadata_drop_lock);
 }
 
 namespace
@@ -958,12 +1087,10 @@ public:
     KeeperMapBackup(
         const std::string & data_zookeeper_path_,
         const std::string & data_path_in_backup,
-        const DiskPtr & temp_disk_,
-        UInt64 max_compress_block_size_,
+        const TemporaryDataOnDiskScopePtr & tmp_data_,
         std::shared_ptr<WithRetries> with_retries_)
         : data_zookeeper_path(data_zookeeper_path_)
-        , temp_disk(temp_disk_)
-        , max_compress_block_size(max_compress_block_size_)
+        , tmp_data(tmp_data_)
         , with_retries(std::move(with_retries_))
     {
         file_path = fs::path(data_path_in_backup) / backup_data_filename;
@@ -983,14 +1110,8 @@ private:
 
     BackupEntries generate() override
     {
-        temp_dir_owner.emplace(temp_disk);
-        fs::path temp_dir = temp_dir_owner->getRelativePath();
-        temp_disk->createDirectories(temp_dir);
-
-        auto data_file_path = temp_dir / fs::path{file_path}.filename();
-        auto data_out_compressed = temp_disk->writeFile(data_file_path);
-        auto data_out = std::make_unique<CompressedWriteBuffer>(
-            *data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
+        auto component_guard = Coordination::setCurrentComponent("KeeperMapBackup::generate");
+        auto data_out = std::make_unique<TemporaryDataBuffer>(tmp_data);
         std::vector<std::string> data_children;
         {
             auto holder = with_retries->createRetriesControlHolder("getKeeperMapDataKeys");
@@ -1041,18 +1162,12 @@ private:
             keys_it = keys_it + step;
         }
 
-        data_out->finalize();
-        data_out.reset();
-        data_out_compressed->finalize();
-        data_out_compressed.reset();
-
-        return {{file_path, std::make_shared<BackupEntryFromAppendOnlyFile>(temp_disk, data_file_path)}};
+        data_out->finishWriting();
+        return {{file_path, std::make_shared<BackupEntryFromAppendOnlyFile>(std::move(data_out))}};
     }
 
     fs::path data_zookeeper_path;
-    DiskPtr temp_disk;
-    std::optional<TemporaryFileOnDisk> temp_dir_owner;
-    UInt64 max_compress_block_size;
+    TemporaryDataOnDiskScopePtr tmp_data;
     String file_path;
     std::shared_ptr<WithRetries> with_retries;
 };
@@ -1060,6 +1175,7 @@ private:
 
 void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /*partitions*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::backupData");
     auto coordination = backup_entries_collector.getBackupCoordination();
     coordination->addKeeperMapTable(zk_root_path, table_unique_id, data_path_in_backup);
 
@@ -1067,6 +1183,7 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
     /// assign each path to a single table only.
     auto post_collecting_task = [coordination, &backup_entries_collector, my_data_path_in_backup = data_path_in_backup, this]
     {
+        auto local_component_guard = Coordination::setCurrentComponent("StorageKeeperMap::post_collecting_task");
         auto path_with_data = coordination->getKeeperMapDataPath(zk_root_path);
         if (path_with_data != my_data_path_in_backup)
         {
@@ -1076,20 +1193,24 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
             return;
         }
 
-        auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
+        TemporaryDataOnDiskSettings tmp_data_settings;
         auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
+        tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
 
+        auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
+
+        auto self = std::static_pointer_cast<StorageKeeperMap>(shared_from_this());
         auto with_retries = std::make_shared<WithRetries>
         (
             getLogger(fmt::format("StorageKeeperMapBackup ({})", getStorageID().getNameForLogs())),
-            [&] { return getClient(); },
+            [self] { return self->getClient(); },
             BackupKeeperSettings(backup_entries_collector.getContext()),
             backup_entries_collector.getContext()->getProcessListElement()
         );
 
         backup_entries_collector.addBackupEntries(
             std::make_shared<KeeperMapBackup>(
-                this->zk_data_path, path_with_data, temp_disk, max_compress_block_size, std::move(with_retries))
+                this->zk_data_path, path_with_data, tmp_data, std::move(with_retries))
                 ->getBackupEntries());
     };
 
@@ -1098,6 +1219,7 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
 
 void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /*partitions*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::restoreDataFromBackup");
     auto backup = restorer.getBackup();
     if (!backup->hasFiles(data_path_in_backup))
         return;
@@ -1134,25 +1256,22 @@ void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, cons
             RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
     }
 
-    auto temp_disk = restorer.getContext()->getGlobalTemporaryVolume()->getDisk(0);
-
     /// only 1 table should restore data for a single path
     restorer.addDataRestoreTask(
         [storage = std::static_pointer_cast<StorageKeeperMap>(shared_from_this()),
          backup,
          data_path_in_backup,
          with_retries,
-         allow_non_empty_tables,
-         temp_disk] { storage->restoreDataImpl(backup, data_path_in_backup, with_retries, allow_non_empty_tables, temp_disk); });
+         allow_non_empty_tables] { storage->restoreDataImpl(backup, data_path_in_backup, with_retries, allow_non_empty_tables); });
 }
 
 void StorageKeeperMap::restoreDataImpl(
     const BackupPtr & backup,
     const String & data_path_in_backup,
     std::shared_ptr<WithRetries> with_retries,
-    bool allow_non_empty_tables,
-    const DiskPtr & temporary_disk)
+    bool allow_non_empty_tables)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::restoreDataImpl");
     const auto & table_id = toString(getStorageID().uuid);
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
@@ -1162,19 +1281,7 @@ void StorageKeeperMap::restoreDataImpl(
     if (!backup->fileExists(data_file))
         throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", data_file);
 
-    /// should we store locally in temp file?
-    auto in = backup->readFile(data_file);
-    std::optional<TemporaryFileOnDisk> temp_data_file;
-    if (!dynamic_cast<ReadBufferFromFileBase *>(in.get()))
-    {
-        temp_data_file.emplace(temporary_disk);
-        auto out = WriteBufferFromFile(temp_data_file->getAbsolutePath());
-        copyData(*in, out);
-        out.finalize();
-        in = createReadBufferFromFileBase(temp_data_file->getAbsolutePath(), {});
-    }
-    std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
-    CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
+    CompressedReadBufferFromFile compressed_in{backup->readFile(data_file)};
     fs::path data_path_fs(zk_data_path);
 
     auto max_multi_size = with_retries->getKeeperSettings().batch_size_for_multi;
@@ -1233,6 +1340,7 @@ void StorageKeeperMap::restoreDataImpl(
 
 zkutil::ZooKeeperPtr StorageKeeperMap::getClient() const
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::getClient");
     std::lock_guard lock{zookeeper_mutex};
     if (!zookeeper_client || zookeeper_client->expired())
     {
@@ -1345,7 +1453,7 @@ StorageKeeperMap::TableStatus StorageKeeperMap::getTableStatus(const ContextPtr 
     return table_status;
 }
 
-Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const
+Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, const Names &, PaddedPODArray<UInt8> & null_map, IColumn::Offsets & /* out_offsets */) const
 {
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageKeeperMap supports only one key, got: {}", keys.size());
@@ -1361,7 +1469,7 @@ Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPOD
 Chunk StorageKeeperMap::getBySerializedKeys(
     const std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version, const ContextPtr & local_context) const
 {
-    Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
+    Block sample_block = getInMemoryMetadataPtr(local_context, false)->getSampleBlock();
     MutableColumns columns = sample_block.cloneEmptyColumns();
     MutableColumnPtr version_column = nullptr;
 
@@ -1439,7 +1547,7 @@ Chunk StorageKeeperMap::getBySerializedKeys(
 
 Block StorageKeeperMap::getSampleBlock(const Names &) const
 {
-    auto metadata = getInMemoryMetadataPtr();
+    auto metadata = getInMemoryMetadataPtr(getContext(), false);
     return metadata->getSampleBlock();
 }
 
@@ -1469,6 +1577,7 @@ void StorageKeeperMap::checkMutationIsPossible(const MutationCommands & commands
 
 void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr local_context)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::mutate");
     checkTable<true>(local_context);
 
     if (commands.empty())
@@ -1478,9 +1587,12 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
 
     chassert(commands.size() == 1);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, local_context);
+
+    auto mutation_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
+    mutation_columns.push_back(String(version_column_name));
 
     if (commands.front().type == MutationCommand::Type::DELETE)
     {
@@ -1492,6 +1604,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
             storage_ptr,
             metadata_snapshot,
             commands,
+            mutation_columns,
             local_context,
             mutation_settings);
 
@@ -1583,6 +1696,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
         storage_ptr,
         metadata_snapshot,
         commands,
+        mutation_columns,
         local_context,
         settings);
 
@@ -1629,13 +1743,21 @@ StoragePtr create(const StorageFactory::Arguments & args)
     if (!args.storage_def->primary_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");
 
-    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
+    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, {}, args.getContext());
     auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
     if (primary_key_names.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");
 
+    // used in private build
+#if CLICKHOUSE_CLOUD
+    const auto & client_info = args.getLocalContext()->getClientInfo();
+    bool override_metadata = client_info.is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(args.getLocalContext());
+#else
+    bool override_metadata = false;
+#endif
+
     return std::make_shared<StorageKeeperMap>(
-        args.getContext(), args.table_id, metadata, args.query.attach, primary_key_names[0], zk_root_path, keys_limit);
+        args.getContext(), args.table_id, metadata, args.query.attach, primary_key_names[0], zk_root_path, keys_limit, override_metadata);
 }
 
 }

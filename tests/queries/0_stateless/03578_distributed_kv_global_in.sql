@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, use-rocksdb
 
 SET prefer_localhost_replica = 0;
 
@@ -43,7 +43,7 @@ SELECT '-- Rows read:';
 
 SELECT read_rows
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
   AND type = 'QueryFinish'
   AND query LIKE '%FROM 03578_rocksdb_dist%'
   AND is_initial_query
@@ -92,7 +92,7 @@ SELECT '-- Rows read:';
 
 SELECT read_rows
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
   AND type = 'QueryFinish'
   AND query LIKE '%FROM 03578_keepermap_dist%'
   AND is_initial_query

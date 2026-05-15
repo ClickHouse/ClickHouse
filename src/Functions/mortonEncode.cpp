@@ -203,7 +203,7 @@ public:
 #define MASK(ND, IDX, ...) \
     (EXPAND(IDX, __VA_ARGS__))
 
-DECLARE_AVX2_SPECIFIC_CODE(
+DECLARE_X86_64_V3_SPECIFIC_CODE(
 using MortonND_2D = mortonnd::MortonNDBmi<2, uint64_t>;
 using MortonND_3D = mortonnd::MortonNDBmi<3, uint64_t>;
 using MortonND_4D = mortonnd::MortonNDBmi<4, uint64_t>;
@@ -244,7 +244,7 @@ public:
         EXECUTE()
     }
 };
-) // DECLARE_AVX2_SPECIFIC_CODE
+) // DECLARE_X86_64_V3_SPECIFIC_CODE
 #endif // MORTON_ND_BMI2_ENABLED
 
 #undef ENCODE
@@ -262,8 +262,8 @@ public:
                                         TargetSpecific::Default::FunctionMortonEncode>();
 
 #if USE_MULTITARGET_CODE && defined(MORTON_ND_BMI2_ENABLED)
-        selector.registerImplementation<TargetArch::AVX2,
-                                        TargetSpecific::AVX2::FunctionMortonEncode>();
+        selector.registerImplementation<TargetArch::x86_64_v3,
+                                        TargetSpecific::x86_64_v3::FunctionMortonEncode>();
 #endif
     }
 
@@ -377,7 +377,7 @@ SELECT mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8) FROM morton_numbers;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMortonEncode>(documentation);
 }

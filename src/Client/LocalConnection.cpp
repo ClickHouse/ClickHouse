@@ -5,6 +5,7 @@
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -16,6 +17,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/IStorage.h>
+#include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -34,6 +36,9 @@ namespace Setting
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -140,12 +145,36 @@ void LocalConnection::sendQuery(
         query_context = session->makeQueryContext(*client_info);
     else
         query_context = session->makeQueryContext();
-    query_context->setCurrentQueryId(query_id);
 
-    if (send_progress)
+    query_context->setCurrentQueryId(query_id);
+    query_context->setClientInterface(ClientInfo::Interface::LOCAL);
+
+    /// Always track progress so that output formats (e.g. JSON) can report accurate statistics.
+    /// The send_progress flag only controls the client-side progress bar, not progress tracking.
+    query_context->setProgressCallback([this](const Progress & value) { this->updateProgress(value); });
+    query_context->setFileProgressCallback([this](const FileProgress & value) { this->updateProgress(Progress(value)); });
+
+    if (is_cancelled_callback)
     {
-        query_context->setProgressCallback([this] (const Progress & value) { this->updateProgress(value); });
-        query_context->setFileProgressCallback([this](const FileProgress & value) { this->updateProgress(Progress(value)); });
+        query_context->setInteractiveCancelCallback(
+            [this, check_cancelled = is_cancelled_callback, progress_callback = process_progress_callback]() -> bool
+        {
+            /// Send accumulated progress to the client so the progress bar updates during analysis.
+            if (progress_callback)
+            {
+                auto progress = state->progress.fetchAndResetPiecewiseAtomically();
+                if (progress.read_rows || progress.read_bytes)
+                    progress_callback(progress);
+            }
+
+            if (!check_cancelled())
+                return false;
+
+            state->is_cancelled = true;
+            if (auto elem = query_context->getProcessListElement())
+                elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
+            return true;
+        });
     }
 
     /// Switch the database to the desired one (set by the USE query)
@@ -162,7 +191,7 @@ void LocalConnection::sendQuery(
 
     state->query_id = query_id;
     state->query = query;
-    state->query_scope_holder = std::make_unique<CurrentThread::QueryScope>(query_context);
+    state->query_scope_holder = QueryScope::create(query_context);
     state->stage = QueryProcessingStage::Enum(stage);
     state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
     CurrentThread::attachInternalProfileEventsQueue(state->profile_queue);
@@ -186,7 +215,7 @@ void LocalConnection::sendQuery(
         if (context != query_context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
 
-        auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
+        auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
         Block sample = metadata_snapshot->getSampleBlock();
 
         next_packet_type = Protocol::Server::Data;
@@ -239,7 +268,16 @@ void LocalConnection::sendQuery(
         }
 
         chassert(in, "ReadBuffer should be initialized");
-        auto source = context->getInputFormat(current_format, *in, sample, context->getSettingsRef()[Setting::max_insert_block_size]);
+
+        auto source = context->getInputFormat(
+            current_format,
+            *in,
+            sample,
+            settings[Setting::max_insert_block_size],
+            std::nullopt,
+            settings[Setting::max_insert_block_size_bytes],
+            settings[Setting::min_insert_block_size_rows],
+            settings[Setting::min_insert_block_size_bytes]);
         Pipe pipe(source);
 
         auto columns_description = metadata_snapshot->getColumns();
@@ -286,14 +324,10 @@ void LocalConnection::sendQuery(
                 state->block = state->pushing_executor->getHeader();
             }
 
-            const auto & table_id = query_context->getInsertionTable();
             if (query_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
             {
-                if (!table_id.empty())
-                {
-                    auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
-                    state->columns_description = storage_ptr->getInMemoryMetadataPtr()->getColumns();
-                }
+                if (query_context->hasInsertionTableColumnsDescription())
+                    state->columns_description = query_context->getInsertionTableColumnsDescription();
             }
         }
         else if (state->io.pipeline.pulling())
@@ -336,7 +370,7 @@ void LocalConnection::sendQuery(
         state->io.onException();
         state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
     }
-    catch (...)
+    catch (...) // Ok: wrap unknown exception for the client
     {
         state->io.onException();
         state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
@@ -458,7 +492,7 @@ bool LocalConnection::poll(size_t)
             state->io.onException();
             state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
         }
-        catch (...)
+        catch (...) // Ok: wrap unknown exception for the client
         {
             state->io.onException();
             state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
@@ -546,6 +580,13 @@ bool LocalConnection::poll(size_t)
         }
     }
 
+    if (state->is_finished && !state->sent_progress)
+    {
+        state->sent_progress = true;
+        next_packet_type = Protocol::Server::Progress;
+        return true;
+    }
+
     if (state->is_finished)
     {
         if (needSendLogs())
@@ -566,7 +607,7 @@ bool LocalConnection::poll(size_t)
 
 bool LocalConnection::needSendProgressOrMetrics()
 {
-    if (send_progress && (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef()[Setting::interactive_delay]))
+    if (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef()[Setting::interactive_delay])
     {
         state->after_send_progress.restart();
         next_packet_type = Protocol::Server::Progress;
@@ -693,9 +734,7 @@ Packet LocalConnection::receivePacket()
         {
             if (state->columns_description)
             {
-                /// Send external table name (empty name is the main table)
-                /// (see TCPHandler::sendTableColumns)
-                packet.multistring_message = {"", state->columns_description->toString()};
+                packet.columns_description = state->columns_description->toString(/* include_comments = */ false);
             }
 
             if (state->block)
@@ -732,11 +771,15 @@ Packet LocalConnection::receivePacket()
 }
 
 void LocalConnection::getServerVersion(
-    const ConnectionTimeouts & /* timeouts */, String & /* name */,
-    UInt64 & /* version_major */, UInt64 & /* version_minor */,
-    UInt64 & /* version_patch */, UInt64 & /* revision */)
+    const ConnectionTimeouts & /* timeouts */, String & name,
+    UInt64 & version_major, UInt64 & version_minor,
+    UInt64 & version_patch, UInt64 & revision)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+    name = std::string(VERSION_NAME);
+    version_major = VERSION_MAJOR;
+    version_minor = VERSION_MINOR;
+    version_patch = VERSION_PATCH;
+    revision = DBMS_TCP_PROTOCOL_VERSION;
 }
 
 void LocalConnection::setDefaultDatabase(const String & database)

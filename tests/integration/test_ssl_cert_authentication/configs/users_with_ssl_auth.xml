@@ -28,5 +28,18 @@
         <jane>
             <password>qwe123</password>
         </jane>
+        <trurl>
+            <auth_methods>
+                <cert>
+                    <ssl_certificates>
+                        <subject_alt_name>URI:spiffe://foo.com/bar</subject_alt_name>
+                    </ssl_certificates>
+                </cert>
+                <pw>
+                    <!-- Hash of "mixed_sha_pass" -->
+                    <password_sha256_hex>944495bf3c516d8dd9d318a047cac2d15db940cd836f95bc8bbb3e83fe3f15ad</password_sha256_hex>
+                </pw>
+            </auth_methods>
+        </trurl>
     </users>
 </clickhouse>

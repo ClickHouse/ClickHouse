@@ -3,16 +3,15 @@
 #if USE_DELTA_KERNEL_RS
 #include "delta_kernel_ffi.hpp"
 
-#include <base/defines.h>
-#include <base/EnumReflection.h>
 
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>
-#include <Core/Field.h>
+#include <IO/WriteHelpers.h>
 
 #include <Poco/String.h>
 #include <fmt/ranges.h>
 #include <filesystem>
+
 
 namespace DB::ErrorCodes
 {
@@ -148,13 +147,21 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
     }
 }
 
-std::string getPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map)
+std::optional<std::string> tryGetPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map)
 {
     if (physical_names_map.empty())
         return name;
 
     auto it = physical_names_map.find(name);
     if (it == physical_names_map.end())
+        return std::nullopt;
+    return it->second;
+}
+
+std::string getPhysicalName(const std::string & name, const DB::NameToNameMap & physical_names_map)
+{
+    auto physical_name = tryGetPhysicalName(name, physical_names_map);
+    if (!physical_name)
     {
         DB::Names keys;
         keys.reserve(physical_names_map.size());
@@ -166,7 +173,7 @@ std::string getPhysicalName(const std::string & name, const DB::NameToNameMap & 
             "Not found column {} in physical names map. There are only columns: {}",
             name, fmt::join(keys, ", "));
     }
-    return it->second;
+    return *physical_name;
 }
 
 }

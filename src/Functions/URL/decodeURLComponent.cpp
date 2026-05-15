@@ -83,7 +83,7 @@ static size_t decodeURL(const char * __restrict src, size_t src_size, char * __r
 
             if (high != 0xFF && low != 0xFF)
             {
-                unsigned char octet = (high << 4) + low;
+                auto octet = static_cast<unsigned char>((high << 4) + low);
 
                 size_t bytes_to_copy = src_curr_pos - src_prev_pos;
                 memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
@@ -180,10 +180,117 @@ using FunctionEncodeURLFormComponent = FunctionStringToString<CodeURLComponentIm
 
 REGISTER_FUNCTION(EncodeAndDecodeURLComponent)
 {
-    factory.registerFunction<FunctionDecodeURLComponent>();
-    factory.registerFunction<FunctionEncodeURLComponent>();
-    factory.registerFunction<FunctionDecodeURLFormComponent>();
-    factory.registerFunction<FunctionEncodeURLFormComponent>();
+    /// decodeURLComponent documentation
+    FunctionDocumentation::Description description_decodeURLComponent = R"(
+Takes a URL-encoded string as input and decodes it back to its original, readable form.
+    )";
+    FunctionDocumentation::Syntax syntax_decodeURLComponent = "decodeURLComponent(url)";
+    FunctionDocumentation::Arguments arguments_decodeURLComponent = {
+        {"url", "URL.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_decodeURLComponent = {"Returns the decoded URL.", {"String"}};
+    FunctionDocumentation::Examples examples_decodeURLComponent = {
+    {
+        "Usage example",
+        R"(
+SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS DecodedURL;
+        )",
+        R"(
+┌─DecodedURL─────────────────────────────┐
+│ http://127.0.0.1:8123/?query=SELECT 1; │
+└────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_decodeURLComponent = {1, 1};
+    FunctionDocumentation::Category category_decodeURLComponent = FunctionDocumentation::Category::URL;
+    FunctionDocumentation documentation_decodeURLComponent = {description_decodeURLComponent, syntax_decodeURLComponent, arguments_decodeURLComponent, {}, returned_value_decodeURLComponent, examples_decodeURLComponent, introduced_in_decodeURLComponent, category_decodeURLComponent};
+
+    factory.registerFunction<FunctionDecodeURLComponent>(documentation_decodeURLComponent);
+
+    /// encodeURLComponent documentation
+    FunctionDocumentation::Description description_encodeURLComponent = R"(
+Takes a regular string and converts it into a URL-encoded (percent-encoded) format where special characters are replaced with their percent-encoded equivalents.
+    )";
+    FunctionDocumentation::Syntax syntax_encodeURLComponent = "encodeURLComponent(url)";
+    FunctionDocumentation::Arguments arguments_encodeURLComponent = {
+        {"url", "URL.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_encodeURLComponent = {"Returns the encoded URL.", {"String"}};
+    FunctionDocumentation::Examples examples_encodeURLComponent = {
+    {
+        "Usage example",
+        R"(
+SELECT encodeURLComponent('http://127.0.0.1:8123/?query=SELECT 1;') AS EncodedURL;
+        )",
+        R"(
+┌─EncodedURL───────────────────────────────────────────────┐
+│ http%3A%2F%2F127.0.0.1%3A8123%2F%3Fquery%3DSELECT%201%3B │
+└──────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_encodeURLComponent = {22, 3};
+    FunctionDocumentation::Category category_encodeURLComponent = FunctionDocumentation::Category::URL;
+    FunctionDocumentation documentation_encodeURLComponent = {description_encodeURLComponent, syntax_encodeURLComponent, arguments_encodeURLComponent, {}, returned_value_encodeURLComponent, examples_encodeURLComponent, introduced_in_encodeURLComponent, category_encodeURLComponent};
+
+    factory.registerFunction<FunctionEncodeURLComponent>(documentation_encodeURLComponent);
+
+    /// decodeURLFormComponent documentation
+    FunctionDocumentation::Description description_decodeURLFormComponent = R"(
+Decodes URL-encoded strings using form encoding rules ([RFC-1866](https://www.rfc-editor.org/rfc/rfc1866.html)), where `+` signs are converted to spaces and percent-encoded characters are decoded.
+    )";
+    FunctionDocumentation::Syntax syntax_decodeURLFormComponent = "decodeURLFormComponent(url)";
+    FunctionDocumentation::Arguments arguments_decodeURLFormComponent = {
+        {"url", "URL.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_decodeURLFormComponent = {"Returns the decoded URL.", {"String"}};
+    FunctionDocumentation::Examples examples_decodeURLFormComponent = {
+    {
+        "Usage example",
+        R"(
+SELECT decodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT%201+2%2B3') AS DecodedURL;
+        )",
+        R"(
+┌─DecodedURL────────────────────────────────┐
+│ http://127.0.0.1:8123/?query=SELECT 1 2+3 │
+└───────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_decodeURLFormComponent = {1, 1};
+    FunctionDocumentation::Category category_decodeURLFormComponent = FunctionDocumentation::Category::URL;
+    FunctionDocumentation documentation_decodeURLFormComponent = {description_decodeURLFormComponent, syntax_decodeURLFormComponent, arguments_decodeURLFormComponent, {}, returned_value_decodeURLFormComponent, examples_decodeURLFormComponent, introduced_in_decodeURLFormComponent, category_decodeURLFormComponent};
+
+    factory.registerFunction<FunctionDecodeURLFormComponent>(documentation_decodeURLFormComponent);
+
+    /// encodeURLFormComponent documentation
+    FunctionDocumentation::Description description_encodeURLFormComponent = R"(
+Encodes strings using form encoding rules ([RFC-1866](https://www.rfc-editor.org/rfc/rfc1866.html)), where spaces are converted to + signs and special characters are percent-encoded.
+    )";
+    FunctionDocumentation::Syntax syntax_encodeURLFormComponent = "encodeURLFormComponent(url)";
+    FunctionDocumentation::Arguments arguments_encodeURLFormComponent = {
+        {"url", "URL.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_encodeURLFormComponent = {"Returns the encoded URL.", {"String"}};
+    FunctionDocumentation::Examples examples_encodeURLFormComponent = {
+    {
+        "Usage example",
+        R"(
+SELECT encodeURLFormComponent('http://127.0.0.1:8123/?query=SELECT 1 2+3') AS EncodedURL;
+        )",
+        R"(
+┌─EncodedURL────────────────────────────────────────────────┐
+│ http%3A%2F%2F127.0.0.1%3A8123%2F%3Fquery%3DSELECT+1+2%2B3 │
+└───────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_encodeURLFormComponent = {22, 3};
+    FunctionDocumentation::Category category_encodeURLFormComponent = FunctionDocumentation::Category::URL;
+    FunctionDocumentation documentation_encodeURLFormComponent = {description_encodeURLFormComponent, syntax_encodeURLFormComponent, arguments_encodeURLFormComponent, {}, returned_value_encodeURLFormComponent, examples_encodeURLFormComponent, introduced_in_encodeURLFormComponent, category_encodeURLFormComponent};
+
+    factory.registerFunction<FunctionEncodeURLFormComponent>(documentation_encodeURLFormComponent);
 }
 
 }

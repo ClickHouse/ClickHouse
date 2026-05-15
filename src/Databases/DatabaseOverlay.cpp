@@ -2,6 +2,7 @@
 
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Common/AsyncLoader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -128,7 +129,7 @@ void DatabaseOverlay::attachTable(
             db->attachTable(context_, table_name, table, relative_table_path);
             return;
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -215,22 +216,22 @@ ASTPtr DatabaseOverlay::getCreateTableQueryImpl(const String & name, ContextPtr 
     return result;
 }
 
-ASTPtr DatabaseOverlay::getCreateDatabaseQuery() const
+ASTPtr DatabaseOverlay::getCreateDatabaseQueryImpl() const
 {
-    auto query = std::make_shared<ASTCreateQuery>();
-    query->setDatabase(getDatabaseName());
+    auto query = make_intrusive<ASTCreateQuery>();
+    query->setDatabase(database_name);
 
     if (readonly)
     {
-        auto storage = std::make_shared<ASTStorage>();
+        auto storage = make_intrusive<ASTStorage>();
 
-        auto engine_func = std::make_shared<ASTFunction>();
+        auto engine_func = make_intrusive<ASTFunction>();
         engine_func->name = "Overlay";
 
-        auto args = std::make_shared<ASTExpressionList>();
+        auto args = make_intrusive<ASTExpressionList>();
         args->children.reserve(databases.size());
         for (const auto & db : databases)
-            args->children.emplace_back(std::make_shared<ASTLiteral>(db->getDatabaseName()));
+            args->children.emplace_back(make_intrusive<ASTLiteral>(db->getDatabaseName()));
         engine_func->arguments = args;
 
         storage->set(storage->engine, engine_func);
@@ -321,7 +322,7 @@ void DatabaseOverlay::drop(ContextPtr context_)
         db->drop(context_);
 }
 
-void DatabaseOverlay::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
+void DatabaseOverlay::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
 {
     if (readonly)
         throw Exception(
@@ -333,7 +334,7 @@ void DatabaseOverlay::alterTable(ContextPtr local_context, const StorageID & tab
     {
         if (!db->isReadOnly() && db->isTableExist(table_id.table_name, local_context))
         {
-            db->alterTable(local_context, table_id, metadata);
+            db->alterTable(local_context, table_id, metadata, validate_new_create_query);
             return;
         }
     }
@@ -409,28 +410,12 @@ DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
 }
 
-bool DatabaseOverlay::canContainMergeTreeTables() const
+bool DatabaseOverlay::isExternal() const
 {
     for (const auto & db : databases)
-        if (db->canContainMergeTreeTables())
-            return true;
-    return false;
-}
-
-bool DatabaseOverlay::canContainDistributedTables() const
-{
-    for (const auto & db : databases)
-        if (db->canContainDistributedTables())
-            return true;
-    return false;
-}
-
-bool DatabaseOverlay::canContainRocksDBTables() const
-{
-    for (const auto & db : databases)
-        if (db->canContainRocksDBTables())
-            return true;
-    return false;
+        if (!db->isExternal())
+            return false;
+    return true;
 }
 
 void DatabaseOverlay::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel loading_mode)
@@ -487,7 +472,7 @@ void DatabaseOverlay::loadTableFromMetadata(
             db->loadTableFromMetadata(local_context, file_path, name, ast, loading_mode);
             return;
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -519,7 +504,7 @@ LoadTaskPtr DatabaseOverlay::loadTableFromMetadataAsync(
         {
             return db->loadTableFromMetadataAsync(async_loader, load_after, local_context, file_path, name, ast, loading_mode);
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -548,7 +533,7 @@ LoadTaskPtr DatabaseOverlay::startupTableAsync(
         {
             return db->startupTableAsync(async_loader, startup_after, name, loading_mode);
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -575,7 +560,7 @@ LoadTaskPtr DatabaseOverlay::startupDatabaseAsync(
         {
             return db->startupDatabaseAsync(async_loader, startup_after, loading_mode);
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -599,7 +584,7 @@ void DatabaseOverlay::waitTableStarted(const String & name) const
             db->waitTableStarted(name);
             return;
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -624,7 +609,7 @@ void DatabaseOverlay::waitDatabaseStarted() const
             db->waitDatabaseStarted();
             return;
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -648,7 +633,7 @@ void DatabaseOverlay::stopLoading()
             db->stopLoading();
             return;
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }

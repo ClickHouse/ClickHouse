@@ -1,9 +1,11 @@
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include <Common/memory.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Core/Settings.h>
@@ -86,7 +88,7 @@ struct ThreadStack
 
     static size_t getSize()
     {
-        auto size = std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ);
+        auto size = std::max<size_t>({UNWIND_MINSIGSTKSZ, static_cast<size_t>(MINSIGSTKSZ), static_cast<size_t>(getPageSize())});
 
         if constexpr (guardPagesEnabled())
             size += getPageSize();
@@ -96,7 +98,6 @@ struct ThreadStack
     void * getData() const { return data; }
 
 private:
-    /// 16 KiB - not too big but enough to handle error.
     void * data = nullptr;
 };
 
@@ -106,10 +107,6 @@ static thread_local ThreadStack alt_stack;
 static thread_local bool has_alt_stack = false;
 #endif
 
-ThreadGroup::ThreadGroup()
-    : master_thread_id(CurrentThread::get().thread_id)
-    , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(false))
-{}
 
 ThreadStatus::ThreadStatus()
     : thread_id(getThreadId())
@@ -189,7 +186,7 @@ const String & ThreadStatus::getQueryId() const
     return query_id;
 }
 
-ContextPtr ThreadStatus::getQueryContext() const
+ContextPtr ThreadStatus::tryGetQueryContext() const
 {
     return query_context.lock();
 }
@@ -242,7 +239,7 @@ void ThreadStatus::flushUntrackedMemory()
         return;
 
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
-    Int64 current_untracked_memory = current_thread->untracked_memory;
+    Int64 current_untracked_memory = untracked_memory;
     untracked_memory = 0;
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
@@ -350,7 +347,7 @@ MainThreadStatus::~MainThreadStatus()
     /// the file descriptors are closed, which will throw errors.
     /// As we don't really care about stats of the main thread (they won't be used) it's simpler to just disable them before the
     /// implicit ~ThreadStatus is called here
-    getInstance().taskstats.reset();
+    getInstance().taskstats = nullptr;
     main_thread = nullptr;
 }
 

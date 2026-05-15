@@ -7,6 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -25,7 +26,6 @@ namespace Setting
 }
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_DATA;
     extern const int ILLEGAL_COLUMN;
     extern const int ARGUMENT_OUT_OF_BOUND;
@@ -55,28 +55,18 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isFloat64())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be Float64",
-                arg->getName(), 1, getName());
-
-        arg = arguments[1].get();
-        if (!WhichDataType(arg).isFloat64())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be Float64",
-                arg->getName(), 2, getName());
-
-        arg = arguments[2].get();
-        if (!WhichDataType(arg).isUInt8())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt8",
-                arg->getName(), 3, getName());
+        FunctionArgumentDescriptors mandatory_args = geotoh3_argument_order == GeoToH3ArgumentOrder::LON_LAT
+            ? FunctionArgumentDescriptors{
+                {"longitude", &isFloat, nullptr, "Float64"},
+                {"latitude", &isFloat, nullptr, "Float64"},
+                {"resolution", &isUInt8, nullptr, "UInt8"}}
+            : FunctionArgumentDescriptors{
+                {"latitude", &isFloat, nullptr, "Float64"},
+                {"longitude", &isFloat, nullptr, "Float64"},
+                {"resolution", &isUInt8, nullptr, "UInt8"}};
+        validateFunctionArguments(*this, arguments, mandatory_args);
 
         return std::make_shared<DataTypeUInt64>();
     }
@@ -147,11 +137,11 @@ public:
 
             if (res > MAX_H3_RES)
                 throw Exception(
-                        ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
-                        toString(res),
-                        getName(),
-                        MAX_H3_RES);
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
+                    static_cast<uint8_t>(res),
+                    getName(),
+                    MAX_H3_RES);
 
             LatLng coord;
             coord.lng = degsToRads(lon);
@@ -203,7 +193,7 @@ The previous behavior can be restored using setting `geotoh3_argument_order = 'l
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionGeoToH3>(documentation);
 }
 

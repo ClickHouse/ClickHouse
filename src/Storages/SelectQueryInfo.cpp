@@ -25,12 +25,11 @@ std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNod
     if (planner_context)
     {
         auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(table_expression);
-        const auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
         for (const auto & [column_identifier, column_name] : table_expression_data.getColumnIdentifierToColumnName())
         {
             /// ALIAS columns cannot be used in the filter expression without being calculated in ActionsDAG,
             /// so they should not be added to the input nodes.
-            if (alias_column_expressions.contains(column_name))
+            if (table_expression_data.hasAliasColumn(column_name))
                 continue;
             const auto & column = table_expression_data.getColumnOrThrow(column_name);
             node_name_to_input_node_column.emplace(column_identifier, ColumnWithTypeAndName(column.type, column_name));
@@ -39,51 +38,53 @@ std::unordered_map<std::string, ColumnWithTypeAndName> SelectQueryInfo::buildNod
     return node_name_to_input_node_column;
 }
 
-PrewhereInfoPtr PrewhereInfo::clone() const
+PrewhereInfo PrewhereInfo::clone() const
 {
-    PrewhereInfoPtr prewhere_info = std::make_shared<PrewhereInfo>();
+    PrewhereInfo prewhere_info;
 
-    if (row_level_filter)
-        prewhere_info->row_level_filter = row_level_filter->clone();
-
-    prewhere_info->prewhere_actions = prewhere_actions.clone();
-
-    prewhere_info->row_level_column_name = row_level_column_name;
-    prewhere_info->prewhere_column_name = prewhere_column_name;
-    prewhere_info->remove_prewhere_column = remove_prewhere_column;
-    prewhere_info->need_filter = need_filter;
-    prewhere_info->generated_by_optimizer = generated_by_optimizer;
+    prewhere_info.prewhere_actions = prewhere_actions.clone();
+    prewhere_info.prewhere_column_name = prewhere_column_name;
+    prewhere_info.remove_prewhere_column = remove_prewhere_column;
+    prewhere_info.need_filter = need_filter;
 
     return prewhere_info;
 }
 
 void PrewhereInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
-    writeBinary(row_level_filter.has_value(), ctx.out);
-    if (row_level_filter.has_value())
-        row_level_filter->serialize(ctx.out, ctx.registry);
     prewhere_actions.serialize(ctx.out, ctx.registry);
-    writeStringBinary(row_level_column_name, ctx.out);
     writeStringBinary(prewhere_column_name, ctx.out);
     writeBinary(remove_prewhere_column, ctx.out);
-    writeBinary(need_filter, ctx.out);
-    writeBinary(generated_by_optimizer, ctx.out);
 }
 
-PrewhereInfoPtr PrewhereInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
+PrewhereInfo PrewhereInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
 {
-    PrewhereInfoPtr result = std::make_shared<PrewhereInfo>();
-    bool has_row_level_filter;
-    readBinary(has_row_level_filter, ctx.in);
-    if (has_row_level_filter)
-        result->row_level_filter = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
-    result->prewhere_actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
-    readStringBinary(result->row_level_column_name, ctx.in);
-    readStringBinary(result->prewhere_column_name, ctx.in);
-    readBinary(result->remove_prewhere_column, ctx.in);
-    readBinary(result->need_filter, ctx.in);
-    readBinary(result->generated_by_optimizer, ctx.in);
-    return result;
+    PrewhereInfo prewhere_info;
+
+    prewhere_info.prewhere_actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
+    readStringBinary(prewhere_info.prewhere_column_name, ctx.in);
+    readBinary(prewhere_info.remove_prewhere_column, ctx.in);
+    prewhere_info.need_filter = true;
+
+    return prewhere_info;
+}
+
+void FilterDAGInfo::serialize(IQueryPlanStep::Serialization & ctx) const
+{
+    actions.serialize(ctx.out, ctx.registry);
+    writeStringBinary(column_name, ctx.out);
+    writeBinary(do_remove_column, ctx.out);
+}
+
+FilterDAGInfo FilterDAGInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
+{
+    FilterDAGInfo filter_dag_info;
+
+    filter_dag_info.actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
+    readStringBinary(filter_dag_info.column_name, ctx.in);
+    readBinary(filter_dag_info.do_remove_column, ctx.in);
+
+    return filter_dag_info;
 }
 
 }

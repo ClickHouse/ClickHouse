@@ -4,9 +4,8 @@ sidebar_label: 'clickhouse-local'
 sidebar_position: 60
 slug: /operations/utilities/clickhouse-local
 title: 'clickhouse-local'
+doc_type: 'reference'
 ---
-
-# clickhouse-local
 
 ## When to use clickhouse-local vs. ClickHouse {#when-to-use-clickhouse-local-vs-clickhouse}
 
@@ -238,9 +237,63 @@ Arguments:
 
 Also, there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
 
+## Commands {#commands}
+
+### LS Command {#ls-command}
+
+Lists all the files in the current working directory accessible to clickhouse-local.
+
+You can run it in interactive mode like:
+
+```sql title="Query"
+ClickHouse local version 26.3.1.1.
+
+:) ls
+
+SELECT _file AS file
+FROM file('*', 'One')
+ORDER BY file ASC
+```
+
+```text title="Response"
+┌─file────────┐
+│ file1.csv   │
+│ file2.json  │
+│ file3.xml   │
+└─────────────┘
+```
+
+You can also run it as a query using the argument -q:
+
+```sh
+./clickhouse-local -q ls
+```
+
+```text title="Response"
+file1.csv
+file2.json
+file3.xml
+```
+
+### CLEAR command {#clear-command}
+
+Clears the terminal screen (similar to the `clear` command on Linux or Ctrl+L in many terminals). This is a client-side action: it is not sent to the SQL engine.
+
+In `clickhouse-local`, the meta-command is recognized in **interactive** mode and for **`-q`** and **`--queries-file`** input (same client path as `-q`, same idea as `ls`), so a bare `clear` does not produce an `UNKNOWN_IDENTIFIER` error. Remote **`clickhouse-client --queries-file`** is unchanged: file contents are executed as SQL only (no text-level meta-commands).
+
+In `clickhouse-client`, it is recognized only in **interactive** mode. With **`-q`** or query files, `clear` is still parsed as SQL, so automation keeps the previous error behavior instead of turning typos into a silent no-op.
+
+Supported forms: `clear`, `CLEAR`, `/clear` (optional trailing `;` is ignored). If standard output is not a terminal (for example, when piping output), the meta-command is accepted when recognized but does not emit control sequences.
+
+With `clickhouse-local` and `-q`:
+
+```sh
+./clickhouse-local -q clear
+```
+
 ## Examples {#examples}
 
-```bash
+```bash title="Query"
 $ echo -e "1,2\n3,4" | clickhouse-local --structure "a Int64, b Int64" \
     --input-format "CSV" --query "SELECT * FROM table"
 Read 2 rows, 32.00 B in 0.000 sec., 5182 rows/sec., 80.97 KiB/sec.
@@ -250,7 +303,7 @@ Read 2 rows, 32.00 B in 0.000 sec., 5182 rows/sec., 80.97 KiB/sec.
 
 Previous example is the same as:
 
-```bash
+```bash title="Query"
 $ echo -e "1,2\n3,4" | clickhouse-local -n --query "
     CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin);
     SELECT a, b FROM table;
@@ -262,7 +315,7 @@ Read 2 rows, 32.00 B in 0.000 sec., 4987 rows/sec., 77.93 KiB/sec.
 
 You don't have to use `stdin` or `--file` argument, and can open any number of files using the [`file` table function](../../sql-reference/table-functions/file.md):
 
-```bash
+```bash title="Query"
 $ echo 1 | tee 1.tsv
 1
 
@@ -277,18 +330,14 @@ $ clickhouse-local --query "
 
 Now let's output memory user for each Unix user:
 
-Query:
-
-```bash
+```bash title="Query"
 $ ps aux | tail -n +2 | awk '{ printf("%s\t%s\n", $1, $4) }' \
     | clickhouse-local --structure "user String, mem Float64" \
         --query "SELECT user, round(sum(mem), 2) as memTotal
             FROM table GROUP BY user ORDER BY memTotal DESC FORMAT Pretty"
 ```
 
-Result:
-
-```text
+```text title="Response"
 Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ┏━━━━━━━━━━┳━━━━━━━━━━┓
 ┃ user     ┃ memTotal ┃

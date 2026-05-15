@@ -71,7 +71,7 @@ private:
     DataTypePtr return_type;
 };
 
-class GetServerPortOverloadResolver : public IFunctionOverloadResolver, WithContext
+class GetServerPortOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "getServerPort";
@@ -83,7 +83,9 @@ public:
         return std::make_unique<GetServerPortOverloadResolver>(context_);
     }
 
-    explicit GetServerPortOverloadResolver(ContextPtr context_) : WithContext(context_) {}
+    explicit GetServerPortOverloadResolver(ContextPtr context)
+        : is_distributed(context->isDistributed())
+    {}
 
     size_t getNumberOfArguments() const override { return 1; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
@@ -116,19 +118,47 @@ public:
                 getName());
 
         String port_name{column->getDataAt(0)};
-        auto port = getContext()->getServerPort(port_name);
+        auto port = Context::getGlobalContextInstance()->getServerPort(port_name);
 
         DataTypes argument_types;
         argument_types.emplace_back(arguments.back().type);
-        return std::make_unique<FunctionBaseGetServerPort>(getContext()->isDistributed(), port, argument_types, return_type);
+        return std::make_unique<FunctionBaseGetServerPort>(is_distributed, port, argument_types, return_type);
     }
+
+private:
+    const bool is_distributed;
 };
 
 }
 
 REGISTER_FUNCTION(GetServerPort)
 {
-    factory.registerFunction<GetServerPortOverloadResolver>();
+    FunctionDocumentation::Description description = R"(
+Returns the server's port number for a given protocol.
+    )";
+    FunctionDocumentation::Syntax syntax = "getServerPort(port_name)";
+    FunctionDocumentation::Arguments arguments = {
+        {"port_name", "The name of the port.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the server port number.", {"UInt16"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT getServerPort('tcp_port');
+        )",
+        R"(
+┌─getServerPort('tcp_port')─┐
+│                      9000 │
+└───────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 10};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<GetServerPortOverloadResolver>(documentation);
 }
 
 }

@@ -16,6 +16,7 @@
 namespace ProfileEvents
 {
     extern const Event ReadPatchesMicroseconds;
+    extern const Event PatchesReadRows;
     extern const Event PatchesReadUncompressedBytes;
 }
 
@@ -29,10 +30,29 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+/// When perform_alter_conversions is false, performRequiredConversions was skipped
+/// so the actual column data has on-disk types that may differ from current schema types.
+/// Fix declared types to match the actual data, enabling correct castColumn later.
+static void fixPatchBlockTypes(Block & block, const IMergeTreeReader & patch_reader)
+{
+    const auto & requested = patch_reader.getColumns();
+    const auto & on_disk = patch_reader.getColumnsToRead();
+
+    auto req_it = requested.begin();
+    auto disk_it = on_disk.begin();
+    for (; req_it != requested.end() && disk_it != on_disk.end(); ++req_it, ++disk_it)
+    {
+        if (isPatchPartSystemColumn(req_it->name) || !block.has(req_it->name))
+            continue;
+        if (!req_it->type->equals(*disk_it->type))
+            block.getByName(req_it->name).type = disk_it->type;
+    }
+}
+
 MergeTreePatchReader::MergeTreePatchReader(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_)
     : patch_part(std::move(patch_part_))
     , reader(std::move(reader_))
-    , range_reader(reader.get(), {}, nullptr, std::make_shared<ReadStepPerformanceCounters>(), false)
+    , range_reader(reader.get(), {}, nullptr, std::make_shared<ReadStepPerformanceCounters>(), false, reader->canReadIncompleteGranules())
 {
 }
 
@@ -47,13 +67,15 @@ MergeTreePatchReader::ReadResult MergeTreePatchReader::readPatchRanges(MarkRange
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read the full ranges ({}) for patch part {}", ranges.describe(), patch_part.part->getPartName());
 
     for (auto & column : read_result.columns)
-        column = recursiveRemoveSparse(column);
+        column = removeSpecialRepresentations(column);
 
     if (patch_part.perform_alter_conversions)
         range_reader.getReader()->performRequiredConversions(read_result.columns);
 
     ProfileEvents::increment(ProfileEvents::ReadPatchesMicroseconds, watch.elapsedMicroseconds());
+    ProfileEvents::increment(ProfileEvents::PatchesReadRows, read_result.num_rows);
     ProfileEvents::increment(ProfileEvents::PatchesReadUncompressedBytes, read_result.numBytesRead());
+
     return read_result;
 }
 
@@ -72,6 +94,9 @@ PatchReadResultPtr MergeTreePatchReaderMerge::readPatch(const MarkRange & range)
 
     const auto & sample_block = range_reader.getReadSampleBlock();
     patch_read_result->block = sample_block.cloneWithColumns(read_result.columns);
+
+    if (!patch_part.perform_alter_conversions)
+        fixPatchBlockTypes(patch_read_result->block, *reader);
 
     patch_read_result->min_part_offset = 0;
     patch_read_result->max_part_offset = 0;
@@ -156,7 +181,7 @@ static MinMaxStat getResultBlockStat(const Block & result_block, const String & 
     Field min_value;
     Field max_value;
 
-    column->getExtremes(min_value, max_value);
+    column->getExtremes(min_value, max_value, 0, column->size());
     return {min_value.safeGet<UInt64>(), max_value.safeGet<UInt64>()};
 }
 
@@ -164,7 +189,7 @@ static void filterReadRanges(MarkRanges & all_ranges, const MarkRanges & read_ra
 {
     std::unordered_set<MarkRange, MarkRangeHash> read_ranges_set(read_ranges.begin(), read_ranges.end());
 
-    for (auto it = all_ranges.begin(); it != all_ranges.end();)
+    for (auto * it = all_ranges.begin(); it != all_ranges.end();)
     {
         if (read_ranges_set.contains(*it))
             it = all_ranges.erase(it);
@@ -195,7 +220,10 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderJoin::readPatches(
         auto read_result = readPatchRanges(ranges_to_read);
         auto & entry = patch_read_result->entries.emplace_back(std::make_shared<PatchJoinCache::Entry>());
 
-        entry->addBlock(sample_block.cloneWithColumns(read_result.columns));
+        auto block = sample_block.cloneWithColumns(read_result.columns);
+        if (!patch_part.perform_alter_conversions)
+            fixPatchBlockTypes(block, *reader);
+        entry->addBlock(std::move(block));
         results.push_back(std::move(patch_read_result));
         return results;
     }
@@ -218,14 +246,17 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderJoin::readPatches(
     if (ranges_to_read.empty())
         return results;
 
-    auto reader = [this, &sample_block](const MarkRanges & task_ranges)
+    auto block_reader = [this, &sample_block](const MarkRanges & task_ranges)
     {
         auto read_result = readPatchRanges(task_ranges);
-        return sample_block.cloneWithColumns(read_result.columns);
+        auto block = sample_block.cloneWithColumns(read_result.columns);
+        if (!patch_part.perform_alter_conversions)
+            fixPatchBlockTypes(block, *reader);
+        return block;
     };
 
     filterReadRanges(ranges, ranges_to_read);
-    patch_read_result->entries = patch_join_cache->getEntries(patch_part.part->getPartName(), ranges_to_read, std::move(reader));
+    patch_read_result->entries = patch_join_cache->getEntries(patch_part.part->getPartName(), ranges_to_read, std::move(block_reader));
     results.push_back(std::move(patch_read_result));
     return results;
 }

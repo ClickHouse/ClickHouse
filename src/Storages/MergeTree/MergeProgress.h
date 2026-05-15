@@ -85,7 +85,7 @@ public:
         if (stage.total_rows > 0)
         {
             merge_list_element_ptr->progress.store(
-                stage.initial_progress + stage.weight * stage.rows_read / stage.total_rows,
+                stage.initial_progress + stage.weight * static_cast<double>(stage.rows_read) / static_cast<double>(stage.total_rows),
                 std::memory_order_relaxed);
         }
     }

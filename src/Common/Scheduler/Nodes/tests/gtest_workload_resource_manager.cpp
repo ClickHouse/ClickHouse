@@ -18,6 +18,7 @@
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 #include <Common/Scheduler/Nodes/WorkloadResourceManager.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 
 #include <base/scope_guard.h>
 
@@ -66,7 +67,12 @@ public:
         : WorkloadEntityStorageBase(Context::getGlobalContextInstance())
     {}
 
-    void loadEntities() override {}
+    std::string_view getName() const override { return "test"; }
+
+    void loadEntities(const Poco::Util::AbstractConfiguration & config) override
+    {
+        WorkloadEntityStorageBase::loadEntities(config);
+    }
 
     void executeQuery(const String & query)
     {
@@ -319,7 +325,7 @@ TEST(SchedulerWorkloadResourceManager, Fairness)
     auto fairness_diff = [&] (Int64 value)
     {
         Int64 cur_unfairness = unfairness.fetch_add(value, std::memory_order_relaxed) + value;
-        EXPECT_NEAR(cur_unfairness, 0, 1);
+        EXPECT_NEAR(static_cast<double>(cur_unfairness), 0, 1);
     };
 
     constexpr size_t threads_per_queue = 2;
@@ -572,7 +578,7 @@ public:
         // then we add quantum for every thread that can run concurrently (according to configure slots limit)
         // then we add quantum for every query because it is allowed to run one extra thread.
         // and finally due to report_ns period, quantum can be extended by 10%
-        return static_cast<UInt64>(burst_sec * 1'000'000'000 + (max_concurrent_threads + max_concurrent_queries) * (quantum_ns * 1.1));
+        return static_cast<UInt64>(burst_sec * 1'000'000'000 + static_cast<double>(max_concurrent_threads + max_concurrent_queries) * (static_cast<double>(quantum_ns) * 1.1));
     }
 
     /// Waits for share of group to stabilize on given value
@@ -679,30 +685,30 @@ public:
                     }
                     if (assertion.max_speed > 0.0)
                     {
-                        double allowed_consumption_ns = assertion.max_speed * (measured_ns - start_ns) + assertion.max_burst_ns;
-                        if (assertion.consumed_integral_ns > allowed_consumption_ns)
+                        double allowed_consumption_ns = assertion.max_speed * (measured_ns - start_ns) + static_cast<double>(assertion.max_burst_ns);
+                        if (static_cast<double>(assertion.consumed_integral_ns) > allowed_consumption_ns)
                         {
-                            DBG_PRINT("Assertion failed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, assertion.consumed_integral_ns / 1'000'000.0);
+                            DBG_PRINT("Assertion failed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, static_cast<double>(assertion.consumed_integral_ns) / 1'000'000.0);
                             GTEST_FAIL();
                         }
                         else
                         {
-                            DBG_PRINT("Assertion passed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, assertion.consumed_integral_ns / 1'000'000.0);
+                            DBG_PRINT("Assertion passed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, static_cast<double>(assertion.consumed_integral_ns) / 1'000'000.0);
                         }
                     }
                 }
 
                 if (max_speed > 0.0)
                 {
-                    double allowed_consumption_ns = max_speed * (measured_ns - start_ns) + max_burst_ns;
-                    if (total_consumed_integral_ns > allowed_consumption_ns)
+                    double allowed_consumption_ns = max_speed * (measured_ns - start_ns) + static_cast<double>(max_burst_ns);
+                    if (static_cast<double>(total_consumed_integral_ns) > allowed_consumption_ns)
                     {
-                        DBG_PRINT("Assertion failed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, total_consumed_integral_ns / 1'000'000.0);
+                        DBG_PRINT("Assertion failed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, static_cast<double>(total_consumed_integral_ns) / 1'000'000.0);
                         GTEST_FAIL();
                     }
                     else
                     {
-                        DBG_PRINT("Assertion passed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, total_consumed_integral_ns / 1'000'000.0);
+                        DBG_PRINT("Assertion passed: expected less than {:.2f} ms, actual {:.2f} ms", allowed_consumption_ns / 1'000'000.0, static_cast<double>(total_consumed_integral_ns) / 1'000'000.0);
                     }
                 }
             }
@@ -922,7 +928,7 @@ struct TestQuery {
             cpu_lease->startConsumption();
         metrics.start(thread_num);
 
-        setThreadName(fmt::format("name.{}", name, thread_num).c_str());
+        DB::setThreadName(DB::ThreadName::TEST_SCHEDULER);
         while (true)
         {
             if (!controlConcurrency(cpu_lease))
@@ -977,7 +983,7 @@ struct TestQuery {
         master_thread = t.async(workload, t.storage.getMasterThreadResourceName(), t.storage.getWorkerThreadResourceName(),
             [&, type, workload] (ResourceLink master_link, ResourceLink worker_link)
             {
-                setThreadName(workload.c_str());
+                setThreadName(ThreadName::TEST_SCHEDULER);
                 {
                     std::unique_lock in_thread_lock{slots_mutex};
                     slots = allocateCPUSlots(type, master_link, worker_link, workload);
@@ -1266,6 +1272,23 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingIndependentPools)
     }
 
     t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, MaxCPUsDerivedFromShare)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    // Only max_cpu_share is set, max_cpus is unset
+    t.query("CREATE WORKLOAD all SETTINGS max_cpu_share = 0.5");
+    ClassifierPtr c = t.manager->acquire("all");
+
+    // The expected hard cap is max_cpu_share * getNumberOfCPUCoresToUse()
+    WorkloadSettings settings = c->getWorkloadSettings("cpu");
+    double expected_cap = 0.5 * getNumberOfCPUCoresToUse();
+    double actual_cap = settings.max_cpus;
+
+    EXPECT_DOUBLE_EQ(actual_cap, expected_cap);
 }
 
 auto getAcquired()

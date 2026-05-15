@@ -1,17 +1,11 @@
 #pragma once
 
-#include <Common/FieldVisitorToString.h>
-#include <DataTypes/FieldToDataType.h>
-#include <base/sort.h>
 #include <base/TypeName.h>
 #include <Core/Field.h>
-#include <Core/DecimalFunctions.h>
 #include <Core/TypeId.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
-#include <Columns/IColumnImpl.h>
-
 
 namespace DB
 {
@@ -88,6 +82,9 @@ public:
 
     void popBack(size_t n) override
     {
+        if (n > size())
+            throwCannotPopBack(n, this->getName(), size());
+
         data.resize_assume_reserved(data.size() - n);
     }
 
@@ -96,16 +93,17 @@ public:
         return {reinterpret_cast<const char*>(data.data()), byteSize()};
     }
 
-    StringRef getDataAt(size_t n) const override
+    std::string_view getDataAt(size_t n) const override
     {
-        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
+        return {reinterpret_cast<const char *>(&data[n]), sizeof(data[n])};
     }
 
     Float64 getFloat64(size_t n) const final;
 
-    const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * skipSerializedInArena(const char * pos) const override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -124,16 +122,14 @@ public:
 
     Field operator[](size_t n) const override { return DecimalField<ValueType>(data[n], scale); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
-    {
-        return {FieldVisitorToString()(data[n], scale), FieldToDataType()(data[n], scale)};
-    }
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const override;
     bool getBool(size_t n) const override { return bool(data[n].value); }
     Int64 getInt(size_t n) const override { return Int64(data[n].value); }
     UInt64 get64(size_t n) const override;
     bool isDefaultAt(size_t n) const override { return data[n].value == 0; }
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
+    void filter(const IColumn::Filter & filt) override;
     void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
@@ -143,7 +139,7 @@ public:
     ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
 
     ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool structureEquals(const IColumn & rhs) const override
     {
