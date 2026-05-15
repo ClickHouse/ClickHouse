@@ -1,11 +1,11 @@
 #pragma once
+#include <memory>
 #include <boost/noncopyable.hpp>
 #include <fmt/format.h>
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Databases/DataLake/ICatalog.h>
-#include <Disks/DiskType.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/ActionsDAG.h>
@@ -16,6 +16,8 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Disks/DiskType.h>
+#include <IO/WriteBuffer.h>
 
 namespace DataLake
 {

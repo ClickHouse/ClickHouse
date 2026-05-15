@@ -77,6 +77,7 @@ public:
     {
         return type_index;
     }
+    size_t getSize() const override { return size; }
     bool isSigned() const { return is_signed; }
     String str() const override
     {
@@ -111,6 +112,7 @@ public:
     {
         return type_index;
     }
+    size_t getSize() const override { return size; }
     String str() const override
     {
         WriteBufferFromOwnString buf;
@@ -151,6 +153,8 @@ class NumpyDataTypeUnicode : public NumpyDataType
 public:
     NumpyDataTypeUnicode(Endianness endianness_, size_t size_) : NumpyDataType(endianness_), size(size_)
     {
+        if (size > std::numeric_limits<size_t>::max() / 4)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Numpy Unicode element size {} is too large", size);
         type_index = NumpyDataTypeIndex::Unicode;
     }
 

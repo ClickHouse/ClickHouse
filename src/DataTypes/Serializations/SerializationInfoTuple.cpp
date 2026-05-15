@@ -3,6 +3,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+#include <IO/WriteHelpers.h>
 
 #include <Poco/JSON/Object.h>
 
@@ -61,14 +62,19 @@ void SerializationInfoTuple::add(const SerializationInfo & other)
 {
     SerializationInfo::add(other);
 
-    const auto & other_info = assert_cast<const SerializationInfoTuple &>(other);
+    const auto * other_info = typeid_cast<const SerializationInfoTuple *>(&other);
+    if (!other_info)
+    {
+        return;
+    }
+
     for (const auto & [name, elem] : name_to_elem)
     {
-        auto it = other_info.name_to_elem.find(name);
-        if (it != other_info.name_to_elem.end())
+        auto it = other_info->name_to_elem.find(name);
+        if (it != other_info->name_to_elem.end())
             elem->add(*it->second);
         else
-            elem->addDefaults(other_info.getData().num_rows);
+            elem->addDefaults(other_info->getData().num_rows);
     }
 }
 
@@ -97,11 +103,16 @@ void SerializationInfoTuple::replaceData(const SerializationInfo & other)
 {
     SerializationInfo::replaceData(other);
 
-    const auto & other_info = assert_cast<const SerializationInfoTuple &>(other);
+    const auto * other_info = typeid_cast<const SerializationInfoTuple *>(&other);
+    if (!other_info)
+    {
+        return;
+    }
+
     for (const auto & [name, elem] : name_to_elem)
     {
-        auto it = other_info.name_to_elem.find(name);
-        if (it != other_info.name_to_elem.end())
+        auto it = other_info->name_to_elem.find(name);
+        if (it != other_info->name_to_elem.end())
             elem->replaceData(*it->second);
     }
 }
@@ -152,6 +163,24 @@ void SerializationInfoTuple::deserializeFromKindsBinary(ReadBuffer & in)
     SerializationInfo::deserializeFromKindsBinary(in);
     for (const auto & elem : elems)
         elem->deserializeFromKindsBinary(in);
+}
+
+void SerializationInfoTuple::writeJSONFields(WriteBuffer & out, const String * name) const
+{
+    SerializationInfo::writeJSONFields(out, name);
+    writeString(R"(,"subcolumns":[)", out);
+
+    bool first = true;
+    for (const auto & elem : elems)
+    {
+        if (!first)
+            writeChar(',', out);
+        first = false;
+
+        elem->writeJSON(out, nullptr);
+    }
+
+    writeChar(']', out);
 }
 
 void SerializationInfoTuple::toJSON(Poco::JSON::Object & object) const

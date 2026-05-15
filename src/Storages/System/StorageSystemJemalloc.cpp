@@ -1,4 +1,6 @@
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -25,7 +27,7 @@ UInt64 getJeMallocValue(const char * name)
 {
     UInt64 value{};
     size_t size = sizeof(value);
-    mallctl(name, &value, &size, nullptr, 0);
+    je_mallctl(name, &value, &size, nullptr, 0);
     /// mallctl() fills the value with 32 bit integer for some queries("arenas.nbins" for example).
     /// In this case variable 'size' will be changed from 8 to 4 and the 64 bit variable 'value' will hold the 32 bit actual value times 2^32 on big-endian machines.
     /// We should right shift the value by 32 on big-endian machines(which is unnecessary on little-endian machines).
@@ -96,12 +98,21 @@ void fillJemallocBins(MutableColumns &)
 
 
 StorageSystemJemallocBins::StorageSystemJemallocBins(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     ColumnsDescription desc;
     storage_metadata.setColumns(getColumnsDescription());
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageSystemJemallocBins::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 ColumnsDescription StorageSystemJemallocBins::getColumnsDescription()
@@ -137,7 +148,7 @@ Pipe StorageSystemJemallocBins::read(
 {
     storage_snapshot->check(column_names);
 
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(getVirtualsList());
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
     MutableColumns res_columns = header.cloneEmptyColumns();
 
     fillJemallocBins(res_columns);

@@ -55,7 +55,7 @@ KafkaSource::KafkaSource(
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
-    , virtual_header(storage.getVirtualsHeader())
+    , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
     , handle_error_mode(storage.getStreamingHandleErrorMode())
 {
 }
@@ -235,18 +235,19 @@ Chunk KafkaSource::generateImpl()
                 }
                 virtual_columns[6]->insert(headers_names);
                 virtual_columns[7]->insert(headers_values);
+                virtual_columns[8]->insert(storage.getStorageID().getTableName());
                 if (handle_error_mode == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
                     {
                         const auto & payload = consumer->currentPayload();
-                        virtual_columns[8]->insertData(reinterpret_cast<const char *>(payload.get_data()), payload.get_size());
-                        virtual_columns[9]->insertData(exception_message->data(), exception_message->size());
+                        virtual_columns[9]->insertData(reinterpret_cast<const char *>(payload.get_data()), payload.get_size());
+                        virtual_columns[10]->insertData(exception_message->data(), exception_message->size());
                     }
                     else
                     {
-                        virtual_columns[8]->insertDefault();
                         virtual_columns[9]->insertDefault();
+                        virtual_columns[10]->insertDefault();
                     }
                 }
             }

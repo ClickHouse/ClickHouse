@@ -3,13 +3,8 @@
 #include <cstddef>
 #include <cstring>
 
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
@@ -150,10 +145,15 @@ public:
         const auto & buckets = Base::data(place)->buckets;
 
         /// Fill the data for missing buckets
-        TimestampType current_timestamp = Base::start_timestamp;
         Bucket last_2_samples; /// Sliding window with last 2 samples
-        for (size_t i = 0; i < Base::bucket_count; ++i, current_timestamp += Base::step)
+        for (size_t i = 0; i < Base::bucket_count; ++i)
         {
+            /// Use `Base::timestampAtIndex` instead of a loop-carried `current_timestamp += Base::step`
+            /// accumulator. The accumulator form performs one final, unused `+=` on the last
+            /// iteration which signed-overflows `TimestampType` on adversarial extremes
+            /// (`start_timestamp` near `INT64_MIN`, `step` near `INT64_MAX`) and trips UBSAN.
+            const TimestampType current_timestamp = Base::timestampAtIndex(i);
+
             values[i] = ValueType{};
             nulls[i] = 1;
 

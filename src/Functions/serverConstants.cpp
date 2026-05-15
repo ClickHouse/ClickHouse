@@ -31,7 +31,7 @@ namespace
         bool isServerConstant() const override { return true; }
     };
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     /// buildId() - returns the compiler build id of the running binary.
     class FunctionBuildId : public FunctionServerConstantBase<FunctionBuildId, String, DataTypeString>
     {
@@ -146,7 +146,7 @@ namespace
     };
 }
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 REGISTER_FUNCTION(BuildId)
 {
     FunctionDocumentation::Description description = R"(

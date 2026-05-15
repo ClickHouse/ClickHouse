@@ -7,8 +7,6 @@ title: 'Array(T)'
 doc_type: 'reference'
 ---
 
-# Array(T)
-
 An array of `T`-type items, with the starting array index as 1. `T` can be any data type, including an array.
 
 ## Creating an Array {#creating-an-array}
@@ -19,7 +17,7 @@ You can use a function to create an array:
 array(T)
 ```
 
-You can also use square brackets.
+You can also use `[]`.
 
 ```sql
 []
