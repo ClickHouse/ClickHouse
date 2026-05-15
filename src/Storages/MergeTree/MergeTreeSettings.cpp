@@ -1875,6 +1875,16 @@ namespace ErrorCodes
     DECLARE(Bool, add_minmax_index_for_temporal_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all Date, Date32, Time, Time64, DateTime and DateTime64 columns of the table
     )", 0) \
+    DECLARE(Bool, add_minmax_index_for_block_number_column, false, R"(
+    When enabled, an implicit min-max (skipping) index is added for the persistent virtual column `_block_number`.
+    Requires `enable_block_number_column = 1` to take effect. The index is built only during merges,
+    not during inserts: at insert time the block number is provisional and would index a constant.
+    )", 0) \
+    DECLARE(Bool, add_minmax_index_for_block_offset_column, false, R"(
+    When enabled, an implicit min-max (skipping) index is added for the persistent virtual column `_block_offset`.
+    Requires `enable_block_offset_column = 1` to take effect. The index is built only during merges,
+    not during inserts.
+    )", 0) \
     DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
     Supported statistics types: tdigest, countmin, minmax, nullcount, uniq.
@@ -2819,6 +2829,8 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "add_minmax_index_for_numeric_columns"
         || name == "add_minmax_index_for_string_columns"
         || name == "add_minmax_index_for_temporal_columns"
+        || name == "add_minmax_index_for_block_number_column"
+        || name == "add_minmax_index_for_block_offset_column"
         || name == "table_disk"
         || name == "share_nested_offsets"
     ;

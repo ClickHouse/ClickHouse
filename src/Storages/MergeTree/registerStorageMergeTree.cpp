@@ -66,6 +66,10 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
     extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
     extern const MergeTreeSettingsBool add_minmax_index_for_temporal_columns;
+    extern const MergeTreeSettingsBool add_minmax_index_for_block_number_column;
+    extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
+    extern const MergeTreeSettingsBool enable_block_number_column;
+    extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
@@ -926,6 +930,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         metadata.add_minmax_index_for_numeric_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns];
         metadata.add_minmax_index_for_string_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns];
         metadata.add_minmax_index_for_temporal_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_temporal_columns];
+        metadata.add_minmax_index_for_block_number_column = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_block_number_column] && (*storage_settings)[MergeTreeSetting::enable_block_number_column];
+        metadata.add_minmax_index_for_block_offset_column = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_block_offset_column] && (*storage_settings)[MergeTreeSetting::enable_block_offset_column];
         metadata.escape_index_filenames = (*storage_settings)[MergeTreeSetting::escape_index_filenames];
         if (args.query.columns_list && args.query.columns_list->indices)
         {
@@ -934,8 +940,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
 
-                auto using_auto_minmax_index = metadata.add_minmax_index_for_numeric_columns || metadata.add_minmax_index_for_string_columns
-                    || metadata.add_minmax_index_for_temporal_columns;
+                auto using_auto_minmax_index =
+                       metadata.add_minmax_index_for_numeric_columns
+                    || metadata.add_minmax_index_for_string_columns
+                    || metadata.add_minmax_index_for_temporal_columns
+                    || metadata.add_minmax_index_for_block_number_column
+                    || metadata.add_minmax_index_for_block_offset_column;
                 if (using_auto_minmax_index && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
                 {
                     if (args.mode <= LoadingStrictnessLevel::CREATE)
@@ -962,6 +972,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             metadata.addImplicitIndicesForColumn(column, context);
         }
+        metadata.addImplicitIndicesForVirtualColumns(context);
 
         String statistics_types_str = (*storage_settings)[MergeTreeSetting::auto_statistics_types];
 
