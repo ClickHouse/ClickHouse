@@ -409,6 +409,12 @@ void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
         column->updateHashWithValue(n, hash);
 }
 
+void ColumnTuple::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    for (const auto & column : columns)
+        column->updateHashWithValueRange(begin, end, hash);
+}
+
 WeakHash32 ColumnTuple::getWeakHash32() const
 {
     auto s = size();
@@ -546,16 +552,16 @@ ColumnPtr ColumnTuple::replicate(const Offsets & offsets) const
     return ColumnTuple::create(new_columns);
 }
 
-MutableColumns ColumnTuple::scatter(size_t num_columns, const Selector & selector) const
+VectorWithMemoryTracking<MutableColumnPtr> ColumnTuple::scatter(size_t num_columns, const Selector & selector) const
 {
     if (columns.empty())
     {
         if (column_length != selector.size())
             throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector doesn't match size of column");
 
-        std::vector<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
+        auto counts = countColumnsSizeInSelector(num_columns, selector);
 
-        MutableColumns res(num_columns);
+        VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
         for (size_t i = 0; i < num_columns; ++i)
             res[i] = cloneResized(counts[i]);
 
@@ -563,12 +569,12 @@ MutableColumns ColumnTuple::scatter(size_t num_columns, const Selector & selecto
     }
 
     const size_t tuple_size = columns.size();
-    std::vector<MutableColumns> scattered_tuple_elements(tuple_size);
+    VectorWithMemoryTracking<VectorWithMemoryTracking<MutableColumnPtr>> scattered_tuple_elements(tuple_size);
 
     for (size_t tuple_element_idx = 0; tuple_element_idx < tuple_size; ++tuple_element_idx)
         scattered_tuple_elements[tuple_element_idx] = columns[tuple_element_idx]->scatter(num_columns, selector);
 
-    MutableColumns res(num_columns);
+    VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
 
     for (size_t scattered_idx = 0; scattered_idx < num_columns; ++scattered_idx)
     {
@@ -717,12 +723,12 @@ size_t ColumnTuple::capacity() const
     return getColumn(0).capacity();
 }
 
-void ColumnTuple::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnTuple::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        Columns nested_columns;
+        VectorWithMemoryTracking<ColumnPtr> nested_columns;
         nested_columns.reserve(source_columns.size() * factor);
         for (const auto & source_column : source_columns)
             nested_columns.push_back(assert_cast<const ColumnTuple &>(*source_column).getColumnPtr(i));
@@ -876,9 +882,9 @@ bool ColumnTuple::dynamicStructureEquals(const IColumn & rhs) const
     }
 }
 
-void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnTuple::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    std::vector<Columns> nested_source_columns;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> nested_source_columns;
     nested_source_columns.resize(columns.size());
     for (size_t i = 0; i != columns.size(); ++i)
         nested_source_columns[i].reserve(source_columns.size());
@@ -891,14 +897,50 @@ void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_c
     }
 
     for (size_t i = 0; i != columns.size(); ++i)
-        columns[i]->takeDynamicStructureFromSourceColumns(nested_source_columns[i], max_dynamic_subcolumns);
+        columns[i]->chooseDynamicStructureForMerge(nested_source_columns[i], max_dynamic_subcolumns);
 }
 
-void ColumnTuple::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+void ColumnTuple::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    const auto & source_elements = assert_cast<const ColumnTuple &>(*source_column).getColumns();
+    const auto & source_tuple = assert_cast<const ColumnTuple &>(source);
     for (size_t i = 0; i != columns.size(); ++i)
-        columns[i]->takeDynamicStructureFromColumn(source_elements[i]);
+        columns[i]->takeExactDynamicStructureFrom(*source_tuple.getColumnPtr(i));
+}
+
+
+bool ColumnTuple::hasStatistics() const
+{
+    for (const auto & column : columns)
+    {
+        if (column->hasStatistics())
+            return true;
+    }
+    return false;
+}
+
+void ColumnTuple::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+{
+    for (size_t i = 0; i != columns.size(); ++i)
+    {
+        VectorWithMemoryTracking<ColumnPtr> elem_source_columns;
+        elem_source_columns.reserve(source_columns.size());
+        for (const auto & source_column : source_columns)
+        {
+            if (!source_column)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
+
+            const auto * source_tuple = typeid_cast<const ColumnTuple *>(source_column.get());
+            if (!source_tuple)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Tuple, but {}", source_column->getName());
+
+            elem_source_columns.push_back(source_tuple->columns[i]);
+        }
+
+        if (!columns[i])
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of tuple is invalid", i);
+
+        columns[i]->takeOrCalculateStatisticsFrom(elem_source_columns);
+    }
 }
 
 void ColumnTuple::fixDynamicStructure()

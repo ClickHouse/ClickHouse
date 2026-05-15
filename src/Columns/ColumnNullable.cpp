@@ -57,6 +57,13 @@ void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
         getNestedColumn().updateHashWithValue(n, hash);
 }
 
+void ColumnNullable::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    const auto & arr = getNullMapData();
+    getNestedColumn().updateHashWithValueRange(begin, end, hash);
+    hash.update(reinterpret_cast<const char *>(&arr[begin]), (end - begin) * sizeof(arr[0]));
+}
+
 WeakHash32 ColumnNullable::getWeakHash32() const
 {
     auto s = size();
@@ -599,9 +606,7 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
 
             /// Invariants:
             ///  write_idx < read_idx
-            ///  write_idx points to NULL
-            ///  read_idx will be incremented to position of next not-NULL
-            ///  there are range of NULLs between write_idx and read_idx - 1,
+            ///  elements at [write_idx, min(read_idx, end_idx)) are all NULL
             /// We are moving elements from end to begin of this range,
             ///  so range will "bubble" towards the end.
             /// Relative order of NULL elements could be changed,
@@ -618,17 +623,18 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
             }
 
             /// We have a range [first, write_idx) of non-NULL values
-            if (first != write_idx)
+            if (first + 1 < write_idx)
                 new_ranges.emplace_back(first, write_idx);
 
             /// We have a range [write_idx, last) of NULL values
-            if (write_idx != last)
+            if (write_idx + 1 < last)
                 null_ranges.emplace_back(write_idx, last);
         }
     }
     else
     {
         /// Shift all NULL values to the beginning.
+        /// This code is an exact mirror image of the is_nulls_last case above.
         for (const auto & [first, last] : equal_ranges)
         {
             /// Current interval is righter than limit.
@@ -637,9 +643,9 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
 
             ssize_t read_idx = last - 1;
             ssize_t write_idx = last - 1;
-            ssize_t begin_idx = first;
+            ssize_t begin_idx = static_cast<ssize_t>(first) - 1;
 
-            while (read_idx >= begin_idx && !isNullAt(res[read_idx]))
+            while (read_idx > begin_idx && !isNullAt(res[read_idx]))
             {
                 --read_idx;
                 --write_idx;
@@ -647,7 +653,7 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
 
             --read_idx;
 
-            while (read_idx >= begin_idx && write_idx >= begin_idx)
+            while (read_idx > begin_idx && write_idx > begin_idx)
             {
                 if (!isNullAt(res[read_idx]))
                 {
@@ -657,12 +663,13 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
                 --read_idx;
             }
 
-            /// We have a range [write_idx+1, last) of non-NULL values
-            if (write_idx != static_cast<ssize_t>(last))
+            /// We have a range [write_idx+1, last) of non-NULL values.
+            /// Only emit ranges with >= 2 elements (single-element ranges are already sorted).
+            if (write_idx + 1 + 1 < static_cast<ssize_t>(last))
                 new_ranges.emplace_back(write_idx + 1, last);
 
-            /// We have a range [first, write_idx+1) of NULL values
-            if (static_cast<ssize_t>(first) != write_idx)
+            /// We have a range [first, write_idx+1) of NULL values.
+            if (static_cast<ssize_t>(first) + 1 < write_idx + 1)
                 null_ranges.emplace_back(first, write_idx + 1);
         }
     }
@@ -752,10 +759,10 @@ size_t ColumnNullable::capacity() const
     return getNullMapData().capacity();
 }
 
-void ColumnNullable::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnNullable::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     size_t new_size = size();
-    Columns nested_source_columns;
+    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
@@ -985,24 +992,33 @@ ColumnPtr ColumnNullable::getNestedColumnWithDefaultOnNull() const
     return res;
 }
 
-void ColumnNullable::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnNullable::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    Columns nested_source_columns;
+    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
-    nested_column->takeDynamicStructureFromSourceColumns(nested_source_columns, max_dynamic_subcolumns);
+    nested_column->chooseDynamicStructureForMerge(nested_source_columns, max_dynamic_subcolumns);
 }
 
-void ColumnNullable::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+void ColumnNullable::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    nested_column->takeDynamicStructureFromColumn(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
+    nested_column->takeExactDynamicStructureFrom(assert_cast<const ColumnNullable &>(source).getNestedColumn());
 }
 
 bool ColumnNullable::dynamicStructureEquals(const IColumn & rhs) const
 {
     const auto & rhs_nested_column = assert_cast<const ColumnNullable &>(rhs).getNestedColumn();
     return nested_column->dynamicStructureEquals(rhs_nested_column);
+}
+
+void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+{
+    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
+    nested_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+        nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
+    nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
 ColumnPtr makeNullable(const ColumnPtr & column)

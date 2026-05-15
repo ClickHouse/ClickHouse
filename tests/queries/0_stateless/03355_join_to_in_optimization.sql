@@ -1,5 +1,7 @@
 SET enable_analyzer = 1;
 SET join_algorithm = 'hash';
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET query_plan_merge_filters = 1; -- Filter nodes must be merged for stable EXPLAIN output
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

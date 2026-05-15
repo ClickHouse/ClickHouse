@@ -3,6 +3,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 
 #include <Common/VectorWithMemoryTracking.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <absl/container/inlined_vector.h>
 
@@ -471,6 +472,19 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
     /// For other arguments it is as usual (at least one is NULL then the result is NULL if possible).
     bool return_type_is_nullable = !properties.returns_default_when_only_null && getResultType()->canBeInsideNullable()
         && std::any_of(arguments.begin(), arguments.end() - 1, [](const auto & element) { return element->isNullable(); });
+
+    /// After `Nullable(Tuple)` was introduced, Tuple's `canBeInsideNullable` now returns
+    /// true, which changed the If-combinator null adapter for Tuple-returning functions:
+    ///   - single-arg (IfNullUnary): from `<false, false>` to `<true, true>` (flag byte added).
+    ///   - multi-arg (IfNullVariadic): from `<false, false>` to `<true, true>` (flag byte added).
+    /// The change below will make sure that the null adapter for Tuple remains `<false, false>` keeping backward compatibility.
+    /// This can lead to some inconsistency because now for Tuple-returning aggregate functions we never
+    /// serialize the flag byte. But the base variadic Null combinator (applied to multi-argument functions
+    /// with at least one Nullable argument) always serializes the flag byte unconditionally.
+    /// For example, `simpleLinearRegressionState` will write the flag byte but `simpleLinearRegressionIfState` will not.
+    /// This inconsistency predates the introduction of `Nullable(Tuple)`.
+    if (return_type_is_nullable && typeid_cast<const DataTypeTuple *>(getResultType().get()))
+        return_type_is_nullable = false;
 
     bool need_to_serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
 

@@ -64,7 +64,6 @@ std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const s
 
 bool UnityCatalog::empty() const
 {
-
     auto all_schemas = getSchemas("");
     for (const auto & schema : all_schemas)
     {
@@ -264,6 +263,9 @@ bool UnityCatalog::tryGetTableMetadata(
             {
                 LOG_DEBUG(log, "Doesn't require schema");
             }
+
+            if (hasValueAndItsNotNone("table_id", object))
+                result.setTableUUID(object->get("table_id").extract<String>());
 
             if (result.isDefaultReadableTable() && result.requiresCredentials())
                 getCredentials(object->get("table_id"), result);
