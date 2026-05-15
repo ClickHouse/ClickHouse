@@ -141,6 +141,12 @@ def _ws_read_frame(sock, timeout=10.0):
 
 def _open_ws(host, port, origin=None):
     sock = socket.create_connection((host, port), timeout=10)
+    # The server now requires a non-empty `Origin` on every upgrade (browser
+    # WebSocket clients always send one). Default to a matching same-origin
+    # header so existing tests exercise the happy path; tests that probe
+    # `Origin` enforcement pass `origin=` explicitly.
+    if origin is None:
+        origin = f"http://{host}:{port}"
     response = _ws_handshake(sock, f"{host}:{port}", origin=origin)
     assert response.startswith(b"HTTP/1.1 101"), response
     return sock
@@ -260,6 +266,19 @@ def test_origin_mismatch_rejected_same_origin():
     `Host` is rejected. This is the browser-facing CSWSH protection.
     """
     response = _attempt_ws(instance.ip_address, 8123, origin="http://evil.example.com")
+    assert response.startswith(b"HTTP/1.1 403"), response
+
+
+def test_missing_origin_rejected():
+    """A WebSocket upgrade without an `Origin` header must be rejected with `403`.
+
+    Browsers always send `Origin` on a WebSocket upgrade, so a missing
+    header is either a non-browser client or a forged upgrade attempt.
+    The web terminal is an interactive PTY, so we reject unattributed
+    upgrades rather than allow them through.
+    """
+    # _attempt_ws with origin=None sends no Origin header.
+    response = _attempt_ws(instance.ip_address, 8123, origin=None)
     assert response.startswith(b"HTTP/1.1 403"), response
 
 
