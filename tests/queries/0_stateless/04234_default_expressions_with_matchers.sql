@@ -58,6 +58,14 @@ CREATE TABLE default_expr_matchers_self
 )
 ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
 
+CREATE TABLE default_expr_matchers_indirect_self
+(
+    a UInt8,
+    b String DEFAULT toJSONString(namedTuple(* EXCEPT b)),
+    c String DEFAULT b
+)
+ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
+
 CREATE TABLE default_expr_matchers_default_except
 (
     a UInt8,
