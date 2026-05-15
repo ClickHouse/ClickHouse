@@ -1044,6 +1044,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
             R.set_success()
             has_error = False
 
+    # Capture whether this run saw any infrastructure problems BEFORE the
+    # clearing block below resets `has_error`. If the answer is yes, the
+    # bugfix-validation inversion path further down must be skipped: we have
+    # no reliable signal about whether the bug reproduces on this arch, and
+    # running the inversion would let an infra `FAIL` be flipped to `OK`
+    # (counted as validation) or rewrite an `ERROR`-only outcome as
+    # `SKIPPED` via the no-`has_failure` branch. See bot review on
+    # ClickHouse/ClickHouse#103541 (2026-05-15).
+    had_infra_or_error = has_error or any(
+        r.has_label(Result.Label.INFRA) for r in test_results
+    )
+
     # If all non-OK results are infrastructure errors, do not treat as a real failure
     if has_error:
         non_ok = [r for r in test_results if not r.is_ok()]
@@ -1061,28 +1073,53 @@ tar -czf ./ci/tmp/logs.tar.gz \
         assert (
             is_llvm_coverage is False
         ), "Bugfix validation with LLVM coverage is not supported"
-        has_failure = False
-        for r in R.results:
-            # invert statuses
-            r.set_label(Result.Label.XFAIL)
-            if r.status == Result.Status.FAIL:
-                r.status = Result.Status.OK
-                has_failure = True
-            elif r.status == Result.Status.OK:
-                r.status = Result.Status.FAIL
-        if not has_failure:
-            # See the matching comment in `ci/jobs/functional_tests.py`. The
-            # bug did not reproduce on this arch, so report SKIPPED instead
-            # of FAIL: `Result.is_ok` includes SKIPPED so the job exits 0,
-            # while `is_success` (used by the post-hook) excludes SKIPPED so
-            # the per-arch job does not count as a validation. Contract:
-            # at least one per-arch job must end up `OK`/`XFAIL` for the
-            # post-hook to consider the bug validated.
-            print("Bug does not reproduce on this arch — bugfix validation N/A")
-            R.set_status(Result.Status.SKIPPED)
-            R.set_info("Bug does not reproduce on this arch — bugfix validation N/A")
+        if had_infra_or_error:
+            # Infrastructure errors or session-level failures were observed
+            # during this run. Skip the inversion path so the per-arch job
+            # cannot be silently counted as a validation. The post-hook in
+            # `new_tests_check.py` uses strict `is_success` (`OK` / `XFAIL`
+            # only); leaving the result in a non-success state is enough to
+            # prevent this arch from contributing a false validation.
+            #
+            # If, after all the upstream handling, the result is still in a
+            # success-equivalent state (e.g. every surviving child is `OK`
+            # because all infra failures were already relabeled to `SKIPPED`
+            # by `_mark_infrastructure_errors`), force `ERROR` here so the
+            # post-hook cannot accidentally treat this arch as validated.
+            print(
+                "Bugfix validation: infrastructure error or session-level "
+                "failure detected — skipping status inversion to avoid "
+                "leaking an infra outcome into validation success."
+            )
+            if R.is_success():
+                R.set_error().set_info(
+                    "Bugfix validation aborted: infrastructure error during "
+                    "the run — no reliable signal about whether the bug "
+                    "reproduces on this arch"
+                )
         else:
-            R.set_success()
+            has_failure = False
+            for r in R.results:
+                # invert statuses
+                r.set_label(Result.Label.XFAIL)
+                if r.status == Result.Status.FAIL:
+                    r.status = Result.Status.OK
+                    has_failure = True
+                elif r.status == Result.Status.OK:
+                    r.status = Result.Status.FAIL
+            if not has_failure:
+                # See the matching comment in `ci/jobs/functional_tests.py`. The
+                # bug did not reproduce on this arch, so report SKIPPED instead
+                # of FAIL: `Result.is_ok` includes SKIPPED so the job exits 0,
+                # while `is_success` (used by the post-hook) excludes SKIPPED so
+                # the per-arch job does not count as a validation. Contract:
+                # at least one per-arch job must end up `OK`/`XFAIL` for the
+                # post-hook to consider the bug validated.
+                print("Bug does not reproduce on this arch — bugfix validation N/A")
+                R.set_status(Result.Status.SKIPPED)
+                R.set_info("Bug does not reproduce on this arch — bugfix validation N/A")
+            else:
+                R.set_success()
 
     force_ok_exit = False
     if is_bugfix_validation:
