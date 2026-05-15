@@ -178,8 +178,10 @@ def start_server(server_dir, port=9000, keeper_port=9181, raft_port=9234):
         time.sleep(2)
 
     print("Server did not become ready")
-    proc.terminate()
-    log_fd.close()
+    # `shell=True` means `proc` is the wrapper shell, not `clickhouse-server`.
+    # Tear down the whole process group via `stop_server` so the server itself
+    # doesn't survive and clash with later stages on the same ports.
+    stop_server(proc, log_fd)
     return None, None
 
 
