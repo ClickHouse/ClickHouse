@@ -17,13 +17,8 @@ RUN apt-get update --yes \
 RUN mkdir /sqlancer && \
 	wget -q -O- https://github.com/ClickHouse/sqlancer/archive/308cb3b7a803c252412c8955790d57ca64b36128.tar.gz | \
 	tar zx -C /sqlancer && \
-	mv /sqlancer/sqlancer-308cb3b7a803c252412c8955790d57ca64b36128 /sqlancer/sqlancer-main
-
-# Overlay ClickHouse-specific oracle sources maintained in this repo on top of
-# the upstream fork before building. See overlay/README.md for the convention.
-COPY overlay/src/ /sqlancer/sqlancer-main/src/
-
-RUN find /sqlancer -type d -exec chmod 777 {} \; && \
+	mv /sqlancer/sqlancer-308cb3b7a803c252412c8955790d57ca64b36128 /sqlancer/sqlancer-main && \
+    find /sqlancer -type d -exec chmod 777 {} \; && \
     find /sqlancer -type f -exec chmod 666 {} \; && \
 	cd /sqlancer/sqlancer-main && \
 	mvn --no-transfer-progress package -Dmaven.test.skip=true && \
