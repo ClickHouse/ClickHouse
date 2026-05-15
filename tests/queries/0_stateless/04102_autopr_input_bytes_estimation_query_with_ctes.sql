@@ -1,4 +1,4 @@
--- Tags: stateful
+-- Tags: stateful, long
 
 SET use_uncompressed_cache=0;
 SET use_query_condition_cache=0;
