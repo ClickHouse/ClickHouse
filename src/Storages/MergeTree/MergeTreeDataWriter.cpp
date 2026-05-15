@@ -23,7 +23,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/DateLUTImpl.h>
