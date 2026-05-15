@@ -391,6 +391,9 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
     finishDelayed(zookeeper);
     delayed_parts = std::move(current_parts);
+    /// Streaming `INSERT` flushes partial blocks on a timeout, so commit the just-written
+    /// part immediately to make its rows visible without waiting for the next consume()
+    /// or onFinish(); the normal write/commit pipelining is preferred otherwise.
     if (settings[Setting::input_format_max_block_wait_ms] != 0)
         finishDelayed(zookeeper);
 
