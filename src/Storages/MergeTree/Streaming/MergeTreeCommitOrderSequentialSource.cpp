@@ -26,6 +26,7 @@
 #include <Core/Settings.h>
 #include <Core/SortDescription.h>
 
+#include <Common/EventFD.h>
 #include <Common/logger_useful.h>
 
 #include <memory>
@@ -82,6 +83,7 @@ std::optional<PipeWithResources> buildPartitionReadingPipeline(
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
     const SelectQueryInfo & query_info,
+    const PrewhereInfoPtr & initial_prewhere_info,
     const ContextPtr & context,
     const Names & inner_columns,
     size_t requested_num_streams,
@@ -89,14 +91,10 @@ std::optional<PipeWithResources> buildPartitionReadingPipeline(
     const SharedHeader & output_header,
     const LoggerPtr & log)
 {
-    /// Clone query_info; the inner read is bounded, not streaming.
-    SelectQueryInfo inner_info = query_info;
-    inner_info.table_expression_modifiers = std::nullopt;
-
     auto sub = MergeTreeDataSelectExecutor(storage).read(
         inner_columns,
         storage_snapshot,
-        inner_info,
+        query_info,
         context,
         max_block_size,
         requested_num_streams,
@@ -108,13 +106,23 @@ std::optional<PipeWithResources> buildPartitionReadingPipeline(
 
     QueryPlan plan = std::move(*sub);
 
-    /// Add cursor filter to read only safe snapshot
-    auto cursor_filter = buildPartitionFilter(partition_id, last_emitted_position, safe_block_number, inner_info);
+    /// Add cursor filter to read only safe snapshot.
+    auto cursor_filter = buildPartitionFilter(partition_id, last_emitted_position, safe_block_number, *plan.getCurrentHeader(), context);
     plan.addStep(std::make_unique<FilterStep>(
         plan.getCurrentHeader(),
         std::move(cursor_filter.actions),
         cursor_filter.column_name,
         cursor_filter.do_remove_column));
+
+    /// Add prewhere built from the outer query analysis.
+    if (initial_prewhere_info)
+    {
+        plan.addStep(std::make_unique<FilterStep>(
+            plan.getCurrentHeader(),
+            initial_prewhere_info->prewhere_actions.clone(),
+            initial_prewhere_info->prewhere_column_name,
+            initial_prewhere_info->remove_prewhere_column));
+    }
 
     /// Add commit-order sorting (_block_number, _block_offset)
     SortDescription sort_desc;
@@ -179,6 +187,7 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
     const MergeTreeCursor & last_emitted_positions,
     const MergeTreeData & storage,
     const SelectQueryInfo & query_info,
+    const PrewhereInfoPtr & initial_prewhere_info,
     const ContextPtr & context,
     const Names & user_requested_columns,
     size_t requested_num_streams,
@@ -213,6 +222,7 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
             storage,
             storage_snapshot,
             query_info,
+            initial_prewhere_info,
             context,
             columns_to_read,
             requested_num_streams,
@@ -247,6 +257,27 @@ ContextPtr makeStreamingContext(ContextPtr context_)
     return copy;
 }
 
+SelectQueryInfo makeStreamingSelectQueryInfo(SelectQueryInfo info)
+{
+    info.table_expression_modifiers = std::nullopt;
+
+    info.prewhere_info.reset();
+    info.filter_actions_dag.reset();
+
+    info.order_optimizer.reset();
+    info.input_order_info.reset();
+
+    info.trivial_limit = 0;
+    info.optimize_trivial_count = false;
+
+    info.has_window = false;
+    info.has_order_by = false;
+    info.need_aggregate = false;
+    info.has_aggregates = false;
+
+    return info;
+}
+
 }
 
 MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
@@ -262,7 +293,8 @@ MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
     : IProcessor({}, {Block(*header_)})
     , header(std::move(header_))
     , storage(storage_)
-    , query_info(query_info_)
+    , query_info(makeStreamingSelectQueryInfo(query_info_))
+    , initial_prewhere_info(query_info_.prewhere_info)
     , context(makeStreamingContext(std::move(context_)))
     , user_requested_columns(std::move(user_requested_columns_))
     , requested_num_streams(requested_num_streams_)
@@ -294,6 +326,7 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleRunningPipeline()
     }
 
     auto chunk = input.pull(/*set_not_needed=*/true);
+    chassert(!chunk.hasRows() || chunk.getChunkInfos().has<StreamingChunkCursorInfo>());
 
     if (auto cursor = chunk.getChunkInfos().get<StreamingChunkCursorInfo>())
     {
@@ -361,6 +394,9 @@ void MergeTreeCommitOrderSequentialSource::work()
 {
     chassert(!pending_snapshot.has_value());
 
+    if (EventFD * fd = subscription->fd())
+        fd->read();
+
     auto safe_block_numbers = subscription->snapshot();
     if (subscription->fd())
     {
@@ -385,6 +421,7 @@ void MergeTreeCommitOrderSequentialSource::work()
         last_emitted_positions,
         storage,
         query_info,
+        initial_prewhere_info,
         context,
         user_requested_columns,
         requested_num_streams,
@@ -401,7 +438,7 @@ void MergeTreeCommitOrderSequentialSource::work()
 
 int MergeTreeCommitOrderSequentialSource::schedule()
 {
-    return subscription->fd().value();
+    return subscription->fd()->fd;
 }
 
 IProcessor::PipelineUpdate MergeTreeCommitOrderSequentialSource::updatePipeline()

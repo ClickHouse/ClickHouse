@@ -31,9 +31,9 @@ public:
     bool isDisabled() const;
     void disable();
 
-    /// Linux: eventfd handle. Other platforms: nullopt
-    std::optional<int> fd() const;
-    void wait() const;
+    /// Linux: eventfd handle. Other platforms: nullptr
+    EventFD * fd();
+    void wait();
 
     const size_t query_subscriptions_count;
     const size_t current_subscription_index;
@@ -44,7 +44,7 @@ private:
     bool is_disabled TSA_GUARDED_BY(mutex) = false;
 
 #if defined(OS_LINUX)
-    EventFD wake;
+    EventFD wake{/*non_blocking=*/true};
 #else
     mutable std::condition_variable wake;
 #endif

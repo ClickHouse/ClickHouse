@@ -824,7 +824,7 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
             {
                 if (scope.context && !scope.context->getSettingsRef()[Setting::enable_streaming_queries])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Streaming queries are an experimental feature. Set `enable_streaming_queries = 1` to enable.");
+                        "Streaming queries are an experimental feature. Set `enable_streaming_queries = 1` to enable");
 
                 if (storage->isSystemStorage())
                     throw Exception(ErrorCodes::ILLEGAL_STREAM,

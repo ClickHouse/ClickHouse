@@ -58,16 +58,16 @@ void MergeTreeBoundsSubscription::disable()
 #endif
 }
 
-std::optional<int> MergeTreeBoundsSubscription::fd() const
+EventFD * MergeTreeBoundsSubscription::fd()
 {
 #if defined(OS_LINUX)
-    return wake.fd;
+    return &wake;
 #else
-    return std::nullopt;
+    return nullptr;
 #endif
 }
 
-void MergeTreeBoundsSubscription::wait() const
+void MergeTreeBoundsSubscription::wait()
 {
 #if defined(OS_LINUX)
     chassert(false);

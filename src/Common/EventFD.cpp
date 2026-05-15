@@ -18,9 +18,9 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_SOCKET;
 }
 
-EventFD::EventFD()
+EventFD::EventFD(bool non_blocking)
 {
-    fd = eventfd(0 /* initval */, 0 /* flags */);
+    fd = eventfd(/*initval=*/0, /*flags=*/non_blocking ? EFD_NONBLOCK : 0);
     if (fd == -1)
         throw ErrnoException(ErrorCodes::CANNOT_PIPE, "Cannot create eventfd");
 }

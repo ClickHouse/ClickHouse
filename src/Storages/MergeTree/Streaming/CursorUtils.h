@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <Core/Streaming/CursorTree_fwd.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 
 #include <compare>
@@ -29,7 +31,8 @@ Names extendWithAuxiliaryColumns(Names columns);
 FilterDAGInfo buildPartitionFilter(
     const String & partition_id,
     const PartitionCursor & last_emitted_position,
-    Int64 safe_block_number,
-    SelectQueryInfo & query_info);
+    const Int64 & safe_block_number,
+    const Block & input_header,
+    const ContextPtr & context);
 
 }

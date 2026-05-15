@@ -45,6 +45,7 @@ private:
     const SharedHeader header;
     const MergeTreeData & storage;
     const SelectQueryInfo query_info;
+    const PrewhereInfoPtr initial_prewhere_info;
     const ContextPtr context;
     const Names user_requested_columns;
     const size_t requested_num_streams;
