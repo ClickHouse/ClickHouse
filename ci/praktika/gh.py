@@ -230,7 +230,7 @@ class GH:
                 temp_file.write(comment_body)
                 temp_file_path = temp_file.name
 
-            cmd = f"gh pr comment {pr} --body-file {temp_file_path}"
+            cmd = f"gh pr comment {pr} --repo {repo} --body-file {temp_file_path}"
             return cls.do_command_with_retries(cmd)
         finally:
             if temp_file_path and os.path.exists(temp_file_path):
@@ -243,14 +243,22 @@ class GH:
     def post_pr_line_comment(
         cls,
         body_file,
-        commit_id,
-        path,
-        line,
+        commit_id=None,
+        path=None,
+        line=None,
         side="RIGHT",
+        in_reply_to=None,
         pr=None,
         repo=None,
     ):
-        """Post an inline review comment on a specific line of a PR diff.
+        """Post an inline review comment on a specific line of a PR diff,
+        or a reply on an existing inline thread.
+
+        When ``in_reply_to`` is set, the comment is posted as a reply on
+        the thread whose parent comment has that database id, and
+        ``commit_id``/``path``/``line``/``side`` are ignored. Otherwise a
+        new top-level inline comment is created at the given location and
+        all four are required.
 
         The body is read from ``body_file`` and passed via ``-F body=@<file>``,
         which avoids two classes of bugs we have hit before:
@@ -269,17 +277,158 @@ class GH:
         if os.path.getsize(body_file) == 0:
             raise ValueError(f"Body file [{body_file}] is empty")
 
-        cmd = (
-            f"gh api -X POST "
-            f'-H "Accept: application/vnd.github.v3+json" '
-            f'"/repos/{repo}/pulls/{pr}/comments" '
-            f"-F body=@{shlex.quote(body_file)} "
-            f"-f commit_id={shlex.quote(commit_id)} "
-            f"-f path={shlex.quote(path)} "
-            f"-F line={int(line)} "
-            f"-f side={shlex.quote(side)}"
-        )
+        if in_reply_to is not None:
+            cmd = (
+                f"gh api -X POST "
+                f'-H "Accept: application/vnd.github.v3+json" '
+                f'"/repos/{repo}/pulls/{pr}/comments/{int(in_reply_to)}/replies" '
+                f"-F body=@{shlex.quote(body_file)}"
+            )
+        else:
+            if commit_id is None or path is None or line is None:
+                raise ValueError(
+                    "post_pr_line_comment requires commit_id, path, and line "
+                    "when in_reply_to is not set"
+                )
+            cmd = (
+                f"gh api -X POST "
+                f'-H "Accept: application/vnd.github.v3+json" '
+                f'"/repos/{repo}/pulls/{pr}/comments" '
+                f"-F body=@{shlex.quote(body_file)} "
+                f"-f commit_id={shlex.quote(commit_id)} "
+                f"-f path={shlex.quote(path)} "
+                f"-F line={int(line)} "
+                f"-f side={shlex.quote(side)}"
+            )
         return cls.do_command_with_retries(cmd)
+
+    @classmethod
+    def _gh_graphql_json(cls, query, variables, verbose=False):
+        """Run a GraphQL query via ``gh api graphql`` and return parsed JSON.
+
+        ``variables`` is a mapping of name to value: ``int`` and ``bool``
+        values use ``-F`` (typed), everything else uses ``-f`` (raw string).
+        Raises ``RuntimeError`` on transport failure (empty output after
+        retries) or if the response cannot be parsed; the caller is
+        responsible for checking GraphQL ``errors`` if any. Failing loud
+        is intentional: a silent empty result is indistinguishable from
+        "no data" and causes the reviewer to lose prior context.
+        """
+        parts = [f"gh api graphql -f query={shlex.quote(query)}"]
+        for k, v in variables.items():
+            if isinstance(v, bool):
+                parts.append(f"-F {k}={'true' if v else 'false'}")
+            elif isinstance(v, int):
+                parts.append(f"-F {k}={int(v)}")
+            else:
+                parts.append(f"-f {k}={shlex.quote(str(v))}")
+        cmd = " ".join(parts)
+        out = cls.get_output_with_retries(cmd, verbose=verbose)
+        if not out:
+            raise RuntimeError(f"gh api graphql failed (no output) for cmd [{cmd}]")
+        try:
+            data = json.loads(out)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"gh api graphql returned non-JSON output [{out[:200]}]: {e}")
+        if "errors" in data and data["errors"]:
+            raise RuntimeError(f"gh api graphql returned errors: {data['errors']}")
+        return data
+
+    @classmethod
+    def list_pr_review_threads(cls, pr=None, repo=None, verbose=False):
+        """Return all review threads on a PR via GraphQL.
+
+        Each thread carries its node ``id`` (the value to pass to the
+        resolve/unresolve mutations), ``isResolved``, ``isOutdated``,
+        ``path``, ``line``, and the full list of comments under it (with
+        ``databaseId`` for use as ``in_reply_to`` when replying, and
+        ``createdAt`` for per-comment timestamps). Both
+        the thread list and each thread's comments are paginated, so
+        long PRs do not silently truncate. Raises ``RuntimeError`` on
+        any transport / parse failure: a failure to read prior
+        discussion must not be confused with "no prior discussion".
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+        owner, name = repo.split("/", 1)
+
+        thread_query = (
+            "query($owner:String!,$name:String!,$pr:Int!,$after:String){"
+            "repository(owner:$owner,name:$name){"
+            "pullRequest(number:$pr){"
+            "reviewThreads(first:100,after:$after){"
+            "pageInfo{hasNextPage endCursor}"
+            "nodes{id isResolved isOutdated path line "
+            "comments(first:50){"
+            "pageInfo{hasNextPage endCursor}"
+            "nodes{databaseId createdAt author{login} body path line originalLine}"
+            "}}}}}}"
+        )
+        comments_query = (
+            "query($id:ID!,$after:String!){"
+            "node(id:$id){... on PullRequestReviewThread{"
+            "comments(first:50,after:$after){"
+            "pageInfo{hasNextPage endCursor}"
+            "nodes{databaseId createdAt author{login} body path line originalLine}"
+            "}}}}"
+        )
+
+        threads = []
+        thread_cursor = None
+        while True:
+            variables = {"owner": owner, "name": name, "pr": int(pr)}
+            if thread_cursor is not None:
+                variables["after"] = thread_cursor
+            data = cls._gh_graphql_json(thread_query, variables, verbose=verbose)
+            page = data["data"]["repository"]["pullRequest"]["reviewThreads"]
+            for thread in page["nodes"]:
+                comments = thread["comments"]
+                while comments["pageInfo"]["hasNextPage"]:
+                    sub = cls._gh_graphql_json(
+                        comments_query,
+                        {"id": thread["id"], "after": comments["pageInfo"]["endCursor"]},
+                        verbose=verbose,
+                    )
+                    next_page = sub["data"]["node"]["comments"]
+                    comments["nodes"].extend(next_page["nodes"])
+                    comments["pageInfo"] = next_page["pageInfo"]
+                threads.append(thread)
+            if not page["pageInfo"]["hasNextPage"]:
+                break
+            thread_cursor = page["pageInfo"]["endCursor"]
+        return threads
+
+    @classmethod
+    def _set_review_thread_resolution(cls, thread_id, resolve, verbose=False):
+        mutation_name = "resolveReviewThread" if resolve else "unresolveReviewThread"
+        query = (
+            f"mutation($threadId:ID!){{"
+            f"{mutation_name}(input:{{threadId:$threadId}}){{thread{{isResolved}}}}"
+            f"}}"
+        )
+        cmd = (
+            f"gh api graphql "
+            f"-f query={shlex.quote(query)} "
+            f"-f threadId={shlex.quote(thread_id)}"
+        )
+        return cls.do_command_with_retries(cmd, verbose=verbose)
+
+    @classmethod
+    def resolve_pr_review_thread(cls, thread_id, verbose=False):
+        """Mark a PR review thread as resolved (GraphQL ``resolveReviewThread``).
+
+        ``thread_id`` is the GraphQL node id from
+        :meth:`list_pr_review_threads`, not the REST comment id.
+        """
+        return cls._set_review_thread_resolution(thread_id, resolve=True, verbose=verbose)
+
+    @classmethod
+    def unresolve_pr_review_thread(cls, thread_id, verbose=False):
+        """Re-open a previously resolved PR review thread
+        (GraphQL ``unresolveReviewThread``)."""
+        return cls._set_review_thread_resolution(thread_id, resolve=False, verbose=verbose)
 
     '''
     TODO: @maxknv
@@ -340,7 +489,9 @@ class GH:
             ) as temp_file:
                 temp_file.write(full_body)
                 temp_file_path = temp_file.name
-            cmd = f"gh pr comment {pr} --body-file {temp_file_path}"
+            # Pass --repo so gh does not probe git remotes (Docker mounts can hit
+            # "detected dubious ownership" and fail comment creation).
+            cmd = f"gh pr comment {pr} --repo {repo} --body-file {temp_file_path}"
             return cls.do_command_with_retries(cmd)
         finally:
             if temp_file_path and os.path.exists(temp_file_path):
@@ -443,7 +594,9 @@ class GH:
             res = cls.do_command_with_retries(cmd)
         else:
             if not only_update:
-                cmd = f"gh pr comment {pr} --body-file {temp_file_path}"
+                # Pass --repo so gh does not probe git remotes (Docker mounts can hit
+                # "detected dubious ownership" and fail comment creation).
+                cmd = f"gh pr comment {pr} --repo {repo} --body-file {temp_file_path}"
                 print(f"Create new comment")
                 res = cls.do_command_with_retries(cmd)
             else:
@@ -973,20 +1126,67 @@ if __name__ == "__main__":
         help="Path to file containing the comment body (read via -F body=@<file>)",
     )
     line_parser.add_argument(
-        "--commit", required=True, help="Commit SHA the comment refers to"
+        "--commit",
+        default=None,
+        help="Commit SHA the comment refers to (required unless --reply-to is set)",
     )
     line_parser.add_argument(
-        "--path", required=True, help="Path of the file to comment on"
+        "--path",
+        default=None,
+        help="Path of the file to comment on (required unless --reply-to is set)",
     )
     line_parser.add_argument(
-        "--line", required=True, type=int, help="Line number in the PR diff"
+        "--line",
+        type=int,
+        default=None,
+        help="Line number in the PR diff (required unless --reply-to is set)",
     )
     line_parser.add_argument(
         "--side", default="RIGHT", choices=["RIGHT", "LEFT"], help="Diff side"
     )
+    line_parser.add_argument(
+        "--reply-to",
+        type=int,
+        default=None,
+        dest="reply_to",
+        help="databaseId of the parent comment to reply to. "
+        "When set, the comment is posted as a reply on the existing thread "
+        "and --commit/--path/--line are ignored.",
+    )
     line_parser.add_argument("--pr", type=int, default=None, help="PR number")
     line_parser.add_argument(
         "--repo", default=None, help="Repository in owner/repo format"
+    )
+
+    threads_parser = subparsers.add_parser(
+        "list-pr-review-threads",
+        help="List PR review threads via GraphQL (prints JSON to stdout)",
+    )
+    threads_parser.add_argument("--pr", type=int, default=None, help="PR number")
+    threads_parser.add_argument(
+        "--repo", default=None, help="Repository in owner/repo format"
+    )
+
+    resolve_parser = subparsers.add_parser(
+        "resolve-pr-review-thread",
+        help="Resolve a PR review thread via GraphQL",
+    )
+    resolve_parser.add_argument(
+        "--thread-id",
+        required=True,
+        dest="thread_id",
+        help="GraphQL node id of the review thread (from list-pr-review-threads)",
+    )
+
+    unresolve_parser = subparsers.add_parser(
+        "unresolve-pr-review-thread",
+        help="Re-open (unresolve) a PR review thread via GraphQL",
+    )
+    unresolve_parser.add_argument(
+        "--thread-id",
+        required=True,
+        dest="thread_id",
+        help="GraphQL node id of the review thread (from list-pr-review-threads)",
     )
 
     args = parser.parse_args()
@@ -1011,12 +1211,28 @@ if __name__ == "__main__":
             path=args.path,
             line=args.line,
             side=args.side,
+            in_reply_to=args.reply_to,
         )
         if args.pr is not None:
             kwargs["pr"] = args.pr
         if args.repo is not None:
             kwargs["repo"] = args.repo
         ok = GH.post_pr_line_comment(**kwargs)
+        sys.exit(0 if ok else 1)
+    elif args.command == "list-pr-review-threads":
+        kwargs = {}
+        if args.pr is not None:
+            kwargs["pr"] = args.pr
+        if args.repo is not None:
+            kwargs["repo"] = args.repo
+        threads = GH.list_pr_review_threads(**kwargs)
+        print(json.dumps(threads, indent=2))
+        sys.exit(0)
+    elif args.command == "resolve-pr-review-thread":
+        ok = GH.resolve_pr_review_thread(args.thread_id)
+        sys.exit(0 if ok else 1)
+    elif args.command == "unresolve-pr-review-thread":
+        ok = GH.unresolve_pr_review_thread(args.thread_id)
         sys.exit(0 if ok else 1)
     else:
         parser.print_help()
