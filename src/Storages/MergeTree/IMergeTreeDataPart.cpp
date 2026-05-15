@@ -1200,7 +1200,7 @@ Estimates IMergeTreeDataPart::getEstimates(const Names & required_columns) const
         if (!load_all && !estimates_fully_loaded)
         {
             for (const auto & column_name : required_columns)
-                if (!estimates.contains(column_name))
+                if (!estimates.contains(column_name) && !estimates_attempted_columns.contains(column_name))
                     missing.push_back(column_name);
         }
 
@@ -1222,7 +1222,23 @@ Estimates IMergeTreeDataPart::getEstimates(const Names & required_columns) const
         estimates.insert_or_assign(column_name, std::move(estimate));
 
     if (load_all)
+    {
         estimates_fully_loaded = true;
+    }
+    else
+    {
+        /// Mark deterministic misses (column has no statistics declared on this part) as
+        /// attempted so we don't re-read the same files on every query. Transient errors
+        /// from `loadStatistics` would have thrown, never reaching this point.
+        for (const auto & column_name : missing)
+        {
+            if (estimates.contains(column_name))
+                continue;
+            const auto * column_desc = columns_description->tryGet(column_name);
+            if (!column_desc || column_desc->statistics.types_to_desc.empty())
+                estimates_attempted_columns.insert(column_name);
+        }
+    }
 
     return buildResult(estimates);
 }

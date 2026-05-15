@@ -759,8 +759,12 @@ private:
 
     /// Per-column estimates cache, populated incrementally by `getEstimates`.
     /// `estimates_fully_loaded` becomes true once a non-filtered load has succeeded.
+    /// `estimates_attempted_columns` tracks columns probed at least once with a deterministic
+    /// miss (no statistics declared on the part); we skip re-probing them. Transient I/O or
+    /// deserialization failures are not recorded so they can recover on the next query.
     mutable std::mutex estimates_mutex;
     mutable Estimates estimates TSA_GUARDED_BY(estimates_mutex);
+    mutable NameSet estimates_attempted_columns TSA_GUARDED_BY(estimates_mutex);
     mutable bool estimates_fully_loaded TSA_GUARDED_BY(estimates_mutex) = false;
 
     /// Reads part unique identifier (if exists) from uuid.txt

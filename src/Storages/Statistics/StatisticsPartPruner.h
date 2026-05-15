@@ -25,15 +25,18 @@ public:
     /// Returns true if no columns with supported statistics are used in the filter, then all parts will match.
     bool isUseless() const { return useless; }
 
-    /// Get the list of column names used in the filter condition that have statistics.
-    /// Returns all filter columns with MinMax statistics (known at construction time).
+    /// Physical column names whose statistics we need to load per part.
+    /// Virtual `.null` keys are remapped to their parent column (statistics are stored
+    /// under the parent name); otherwise `getEstimates` would drop the parent entry.
     Names getUsedColumns() const
     {
-        Names result;
-        result.reserve(stats_column_name_to_type_map.size());
+        NameOrderedSet unique;
         for (const auto & [name, _] : stats_column_name_to_type_map)
-            result.push_back(name);
-        return result;
+        {
+            auto virtual_it = virtual_key_to_parent.find(name);
+            unique.insert(virtual_it != virtual_key_to_parent.end() ? virtual_it->second : name);
+        }
+        return Names(unique.begin(), unique.end());
     }
 
 private:
