@@ -1202,7 +1202,6 @@ ColumnsDescription clearDefaultExpressions(const ColumnsDescription & columns)
     {
         const auto & source_column = columns.get(column_name);
         ColumnDescription column(source_column.name, source_column.type);
-        column.default_desc.kind = source_column.default_desc.kind;
         result.add(std::move(column));
     }
 
