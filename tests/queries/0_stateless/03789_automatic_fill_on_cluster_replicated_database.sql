@@ -1,10 +1,9 @@
 -- Tags: zookeeper, no-parallel, no-replicated-database, no-ordinary-database
--- no-replicated-database: this test explicitly creates a Replicated database to verify auto-fill ON CLUSTER removal
+-- no-replicated-database: this test explicitly creates a Replicated database to verify auto-fill behavior.
 
--- Verify that maybeRemoveOnCluster correctly strips the auto-filled
--- ON CLUSTER clause for Replicated databases, without needing
--- ignore_on_cluster_for_replicated_database = true.
--- This is the regression test for the isAutoFillOnCluster() branch.
+-- Verify that auto-fill does not add ON CLUSTER for Replicated databases,
+-- since such databases coordinate DDL replication themselves and adding
+-- ON CLUSTER would be redundant and would conflict with their machinery.
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE:Identifier}
@@ -15,8 +14,8 @@ USE {CLICKHOUSE_DATABASE:Identifier};
 SET distributed_ddl_output_mode='none';
 SET allow_experimental_automatic_fill_on_cluster_mode = true;
 SET cluster_for_automatic_fill_mode = 'test_shard_localhost';
--- Explicitly keep the default: auto-filled ON CLUSTER must be removed
--- by the isAutoFillOnCluster() path, not by this setting.
+-- Explicitly keep the default: auto-fill must skip Replicated databases on its own,
+-- without relying on this setting.
 SET ignore_on_cluster_for_replicated_database = false;
 
 SELECT 'Test 1: CREATE TABLE in Replicated DB with auto-fill succeeds';

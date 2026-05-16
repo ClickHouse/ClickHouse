@@ -27,6 +27,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
@@ -1427,23 +1428,32 @@ static BlockIO executeQueryImpl(
                     "Cannot execute query because current transaction failed. Expecting ROLLBACK statement");
         }
 
-        /// Reset auto-fill flag to avoid cross-query state leakage when the same
-        /// Context instance is reused (e.g. in tests or embedded/local flows).
-        context->setAutoFillOnCluster(false);
-
         if (settings[Setting::allow_experimental_automatic_fill_on_cluster_mode]
             && !settings[Setting::cluster_for_automatic_fill_mode].toString().empty()
             && context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         {
-            if (auto * query_with_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(out_ast.get()))
+            if (auto * query_with_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(out_ast.get());
+                query_with_on_cluster && query_with_on_cluster->cluster.empty())
             {
-                if (query_with_on_cluster->cluster.empty())
+                /// Skip auto-fill when the target is a `Replicated` database: such databases
+                /// already coordinate DDL replication at the database level, so adding
+                /// `ON CLUSTER` would be redundant and would conflict with their machinery.
+                bool target_is_replicated_database = false;
+                if (const auto * query_with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
+                {
+                    String database_name = query_with_table->getDatabase();
+                    if (database_name.empty())
+                        database_name = context->getCurrentDatabase();
+                    if (auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+                        database && database->getEngineName() == "Replicated")
+                        target_is_replicated_database = true;
+                }
+
+                if (!target_is_replicated_database)
                 {
                     query_with_on_cluster->cluster = settings[Setting::cluster_for_automatic_fill_mode].toString();
                     query_for_logging = out_ast->formatForLogging(log_queries_cut_to_length);
                     normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-
-                    context->setAutoFillOnCluster(true);
                 }
             }
         }

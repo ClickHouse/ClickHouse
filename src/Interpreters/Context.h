@@ -562,9 +562,6 @@ protected:
     bool is_internal_query = false;
     /// A flag, used to detect sub-operations of background operations - in this case we won't need to build another background contexts
     bool is_background_operation = false;
-    /// A flag indicating that the ON CLUSTER clause was automatically filled by the auto-fill feature.
-    /// Used to skip cluster-name validation in maybeRemoveOnCluster without mutating unrelated settings.
-    bool auto_fill_on_cluster = false;
 
     inline static ContextPtr global_context_instance;
     inline static ContextPtr background_context_instance;   /// Global holder to maintain ownership of background_context
@@ -1603,9 +1600,6 @@ public:
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
-
-    bool isAutoFillOnCluster() const { return auto_fill_on_cluster; }
-    void setAutoFillOnCluster(bool value) { auto_fill_on_cluster = value; }
 
     ActionLocksManagerPtr getActionLocksManager() const;
 

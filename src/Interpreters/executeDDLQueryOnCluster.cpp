@@ -233,9 +233,7 @@ bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
     auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
     if (database && database->shouldReplicateQuery(context, query_ptr))
     {
-        if (!context->getSettingsRef()[Setting::ignore_on_cluster_for_replicated_database]
-            && !context->isAutoFillOnCluster()
-            && database_name != query_on_cluster->cluster)
+        if (!context->getSettingsRef()[Setting::ignore_on_cluster_for_replicated_database] && database_name != query_on_cluster->cluster)
             return false;
         /// It's Replicated database and query is replicated on database level,
         /// so ON CLUSTER clause is redundant.

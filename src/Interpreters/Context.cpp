@@ -1236,7 +1236,6 @@ ContextData::ContextData(const ContextData &o) :
     buffer_context(o.buffer_context),
     is_internal_query(o.is_internal_query),
     is_background_operation(o.is_background_operation),
-    auto_fill_on_cluster(o.auto_fill_on_cluster),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
