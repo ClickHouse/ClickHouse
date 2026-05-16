@@ -111,7 +111,10 @@ void populatePartAggregationCache(
 
                         block = std::move(filtered_block);
 
-                        if (block.has(action.filter_column_name))
+                        /// Only erase the filter column if the original FilterStep was configured
+                        /// to remove it. Otherwise downstream steps may still need it (e.g.
+                        /// `SELECT f, sum(v) FROM t WHERE f GROUP BY f`).
+                        if (action.remove_filter_column && block.has(action.filter_column_name))
                             block.erase(action.filter_column_name);
                     }
                 }
@@ -126,13 +129,20 @@ void populatePartAggregationCache(
 
             auto chunks = aggregator.convertToChunks(data_variants, /* final = */ false);
 
-            if (!chunks.empty())
-            {
-                auto intermediate_header = Aggregator::Params::getHeader(
-                    aggregator_header, params.only_merge, params.keys, params.aggregates, /* final = */ false);
+            auto intermediate_header = Aggregator::Params::getHeader(
+                aggregator_header, params.only_merge, params.keys, params.aggregates, /* final = */ false);
 
-                /// Merge all chunks into a single block for caching.
-                Block result_block = intermediate_header.cloneWithColumns(chunks.front().chunk.detachColumns());
+            /// Always cache an entry — even when `chunks` is empty — so that parts that produce
+            /// zero rows after filtering still register as cache hits on subsequent queries.
+            /// Otherwise selective predicates over many historical parts would always re-scan.
+            Block result_block;
+            if (chunks.empty())
+            {
+                result_block = intermediate_header.cloneEmpty();
+            }
+            else
+            {
+                result_block = intermediate_header.cloneWithColumns(chunks.front().chunk.detachColumns());
                 for (auto it = std::next(chunks.begin()); it != chunks.end(); ++it)
                 {
                     auto cols = it->chunk.detachColumns();
@@ -143,13 +153,13 @@ void populatePartAggregationCache(
                         result_block.getByPosition(i).column = std::move(mut_col);
                     }
                 }
-
-                size_t cached_rows = result_block.rows();
-                cache->set(key, std::move(result_block));
-
-                LOG_DEBUG(log, "Cached aggregation state for part {} ({} rows)",
-                    part.data_part->name, cached_rows);
             }
+
+            size_t cached_rows = result_block.rows();
+            cache->set(key, std::move(result_block));
+
+            LOG_DEBUG(log, "Cached aggregation state for part {} ({} rows)",
+                part.data_part->name, cached_rows);
         }
         catch (...)
         {

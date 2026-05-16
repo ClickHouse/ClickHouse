@@ -60,9 +60,10 @@ static std::vector<IntermediateStepAction> collectIntermediateActions(QueryPlan:
             break;
 
         if (auto * expr = typeid_cast<ExpressionStep *>(step))
-            actions.push_back({std::make_shared<ExpressionActions>(expr->getExpression().clone()), {}});
+            actions.push_back({std::make_shared<ExpressionActions>(expr->getExpression().clone()), {}, false});
         else if (auto * filter = typeid_cast<FilterStep *>(step))
-            actions.push_back({std::make_shared<ExpressionActions>(filter->getExpression().clone()), filter->getFilterColumnName()});
+            actions.push_back({std::make_shared<ExpressionActions>(filter->getExpression().clone()),
+                filter->getFilterColumnName(), filter->removesFilterColumn()});
 
         if (current->children.size() != 1)
             break;
@@ -140,7 +141,8 @@ void optimizeUsePartAggregationCache(
         filter_dag_for_hash = &prewhere->prewhere_actions;
         intermediate_actions.insert(intermediate_actions.begin(), IntermediateStepAction{
             std::make_shared<ExpressionActions>(prewhere->prewhere_actions.clone()),
-            prewhere->prewhere_column_name});
+            prewhere->prewhere_column_name,
+            prewhere->remove_prewhere_column});
     }
 
     IASTHash query_hash = PartAggregationCache::calculateQueryHash(

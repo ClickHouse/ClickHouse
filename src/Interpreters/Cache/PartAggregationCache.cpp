@@ -17,21 +17,18 @@ IASTHash PartAggregationCache::calculateQueryHash(
 {
     SipHash hash;
 
-    Names sorted_keys = keys;
-    std::sort(sorted_keys.begin(), sorted_keys.end());
-    for (const auto & key : sorted_keys)
+    /// Hash keys and aggregates in their original order. Canonicalizing the order
+    /// (sorting) would alias cache entries whose column layout differs positionally,
+    /// e.g. `GROUP BY k1, k2` vs `GROUP BY k2, k1`. The cached block layout is fixed
+    /// by `AggregatingStep` column order, so the hash must distinguish these cases.
+    hash.update(keys.size());
+    for (const auto & key : keys)
         hash.update(key);
 
-    std::vector<size_t> agg_indices(aggregates.size());
-    std::iota(agg_indices.begin(), agg_indices.end(), 0);
-    std::sort(agg_indices.begin(), agg_indices.end(), [&](size_t a, size_t b)
+    hash.update(aggregates.size());
+    for (const auto & agg : aggregates)
     {
-        return aggregates[a].column_name < aggregates[b].column_name;
-    });
-
-    for (size_t idx : agg_indices)
-    {
-        const auto & agg = aggregates[idx];
+        hash.update(agg.column_name);
         hash.update(agg.function->getName());
         for (const auto & arg : agg.argument_names)
             hash.update(arg);

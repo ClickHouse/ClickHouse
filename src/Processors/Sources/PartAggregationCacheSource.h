@@ -24,13 +24,18 @@ public:
 protected:
     Chunk generate() override
     {
-        if (current >= entries.size())
-            return {};
+        /// Skip empty cached entries (parts that produced zero rows). An empty Chunk would
+        /// be interpreted as end-of-stream by the pipeline, so advance until we either find
+        /// a non-empty entry or exhaust the list.
+        while (current < entries.size())
+        {
+            const auto & block = entries[current]->block;
+            ++current;
+            if (block.rows() != 0)
+                return Chunk(block.getColumns(), block.rows());
+        }
 
-        const auto & block = entries[current]->block;
-        ++current;
-
-        return Chunk(block.getColumns(), block.rows());
+        return {};
     }
 
 private:

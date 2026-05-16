@@ -19,6 +19,7 @@ struct IntermediateStepAction
 {
     ExpressionActionsPtr actions;
     String filter_column_name; /// non-empty means this is a filter step
+    bool remove_filter_column = false; /// whether the original FilterStep removed the filter column from output
 };
 
 void populatePartAggregationCache(
