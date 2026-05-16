@@ -87,11 +87,15 @@ mkdir -p "$WORK_DIR/docker_runtime" "$WORK_DIR/gvisor_runtime" "$WORK_DIR/unsafe
     cd "$WORK_DIR/docker_runtime" &&
     printf 'return x + y;\n' | CLICKHOUSE_C_DRIVER_COMPILE_LOCAL=1 CLICKHOUSE_C_DRIVER_SKIP_DOCKER_CONTAINER=1 "$DRIVER_DIR/docker_c_create.sh" --name test_docker_runtime --return UInt64 --args 'x UInt64, y UInt64'
 ) > "$WORK_DIR/docker_runtime.xml"
-grep -q 'docker exec -i' "$WORK_DIR/docker_runtime.xml" && echo "docker_exec_runtime_present" || echo "docker_exec_runtime_missing"
+grep -q 'docker_fifo_runner.sh</command>' "$WORK_DIR/docker_runtime.xml" && echo "docker_fifo_runtime_present" || echo "docker_fifo_runtime_missing"
+grep -q 'docker exec -i' "$WORK_DIR/docker_runtime.xml" && echo "docker_exec_runtime_present" || echo "docker_exec_runtime_absent"
 grep -q 'docker run' "$WORK_DIR/docker_runtime.xml" && echo "docker_run_runtime_present" || echo "docker_run_runtime_absent"
 grep -q -- '--runtime=runsc' "$WORK_DIR/docker_runtime.xml" && echo "docker_gvisor_runtime_present" || echo "docker_gvisor_runtime_absent"
 test -s "$WORK_DIR/docker_runtime/docker_container_name" && echo "docker_container_name_present" || echo "docker_container_name_missing"
-grep -q '<execute_direct>0</execute_direct>' "$WORK_DIR/docker_runtime.xml" && echo "docker_execute_shell" || echo "docker_execute_direct"
+test -x "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_runner_present" || echo "docker_fifo_runner_missing"
+grep -q 'mkfifo "$pipe_dir/in" "$pipe_dir/out"' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_mkfifo_present" || echo "docker_fifo_mkfifo_missing"
+grep -q 'docker exec -d' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_detached_exec_present" || echo "docker_fifo_detached_exec_missing"
+grep -q '<execute_direct>1</execute_direct>' "$WORK_DIR/docker_runtime.xml" && echo "docker_execute_direct" || echo "docker_execute_shell"
 
 (
     cd "$WORK_DIR/gvisor_runtime" &&
@@ -119,7 +123,7 @@ echo "-- dynamic config exists after create"
 test -f "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "yes" || echo "no"
 grep -q '<format>Buffers</format>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "buffers_format" || echo "bad_format"
 grep -q '<send_chunk_header>1</send_chunk_header>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "chunk_header_enabled" || echo "chunk_header_disabled"
-grep -q '<command_pipe_capacity>1048576</command_pipe_capacity>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "pipe_capacity_configured" || echo "pipe_capacity_missing"
+grep -q '<command_pipe_capacity>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "pipe_capacity_configured" || echo "pipe_capacity_default"
 
 echo "-- work dir uses uuid name"
 WORK_DIR_NAME=$(cat "$WORK_DIR/dyn/test_udf_drv_add.workdir")

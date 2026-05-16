@@ -1,9 +1,13 @@
 -- driver runtime commands
-docker_exec_runtime_present
+docker_fifo_runtime_present
+docker_exec_runtime_absent
 docker_run_runtime_absent
 docker_gvisor_runtime_absent
 docker_container_name_present
-docker_execute_shell
+docker_fifo_runner_present
+docker_fifo_mkfifo_present
+docker_fifo_detached_exec_present
+docker_execute_direct
 gvisor_runtime_present
 gvisor_docker_absent
 gvisor_execute_shell
@@ -15,7 +19,7 @@ unsafe_docker_absent
 yes
 buffers_format
 chunk_header_enabled
-pipe_capacity_configured
+pipe_capacity_default
 -- work dir uses uuid name
 uuid_workdir_name
 uuid_workdir_present

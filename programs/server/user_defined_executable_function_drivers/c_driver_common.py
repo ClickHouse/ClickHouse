@@ -722,7 +722,7 @@ def pool_size():
 
 
 def pipe_capacity():
-    return int(os.environ.get("CLICKHOUSE_C_DRIVER_PIPE_CAPACITY", str(1 << 20)))
+    return int(os.environ.get("CLICKHOUSE_C_DRIVER_PIPE_CAPACITY", "0"))
 
 
 def docker_user():
@@ -777,6 +777,10 @@ def docker_container_name_path(work_dir):
     return os.path.join(work_dir, "docker_container_name")
 
 
+def docker_fifo_runner_path(work_dir):
+    return os.path.join(work_dir, "docker_fifo_runner.sh")
+
+
 def read_docker_container_name(function_name, work_dir):
     try:
         with open(docker_container_name_path(work_dir)) as f:
@@ -796,10 +800,61 @@ def docker_container_pids_limit():
         return limit
 
 
+def write_docker_fifo_runner(container_name, work_dir):
+    runner_path = docker_fifo_runner_path(work_dir)
+    script = f"""#!/bin/sh
+set -u
+
+container={shell_join([container_name])}
+work_dir={shell_join([work_dir])}
+mount_dir=/work
+
+pipe_dir=$(mktemp -d "${{work_dir}}/fifo.XXXXXX") || exit 1
+cleanup()
+{{
+    if [ "${{writer_pid:-}}" ]; then
+        kill "$writer_pid" 2>/dev/null || true
+    fi
+    if [ "${{reader_pid:-}}" ]; then
+        kill "$reader_pid" 2>/dev/null || true
+    fi
+    rm -rf "$pipe_dir"
+}}
+trap cleanup EXIT INT TERM
+
+mkfifo "$pipe_dir/in" "$pipe_dir/out" || exit 1
+pipe_name=$(basename "$pipe_dir")
+
+docker exec -d -w "$mount_dir" "$container" sh -c 'exec "$1" < "$2" > "$3"' sh \
+    "$mount_dir/user_func" "$mount_dir/$pipe_name/in" "$mount_dir/$pipe_name/out" || exit 1
+
+cat > "$pipe_dir/in" &
+writer_pid=$!
+
+cat "$pipe_dir/out" &
+reader_pid=$!
+
+writer_status=0
+reader_status=0
+wait "$writer_pid" || writer_status=$?
+wait "$reader_pid" || reader_status=$?
+
+if [ "$writer_status" -ne 0 ]; then
+    exit "$writer_status"
+fi
+exit "$reader_status"
+"""
+    with open(runner_path, "w") as f:
+        f.write(script)
+    os.chmod(runner_path, 0o755)
+
+
 def start_docker_container(function_name, work_dir):
     name = docker_container_name(function_name, work_dir)
     with open(docker_container_name_path(work_dir), "w") as f:
         f.write(name + "\n")
+
+    write_docker_fifo_runner(name, work_dir)
 
     if os.environ.get("CLICKHOUSE_C_DRIVER_SKIP_DOCKER_CONTAINER") == "1":
         return
@@ -821,7 +876,7 @@ def start_docker_container(function_name, work_dir):
         f"--memory={limits['memory']}",
         f"--cpus={limits['cpus']}",
         f"--pids-limit={docker_container_pids_limit()}",
-        "-v", f"{work_dir}/user_func:/user_func:ro",
+        "-v", f"{work_dir}:/work:rw",
         image,
         "sleep", "2147483647",
     ]
@@ -854,7 +909,7 @@ def runtime_command(function_name, runtime, work_dir):
             os.path.join(work_dir, "user_func"),
         ]), 0
 
-    return shell_join(["docker", "exec", "-i", read_docker_container_name(function_name, work_dir), "/user_func"]), 0
+    return docker_fifo_runner_path(work_dir), 1
 
 
 def generate_xml_config(function_name, return_type, args, work_dir, runtime):
@@ -864,6 +919,10 @@ def generate_xml_config(function_name, return_type, args, work_dir, runtime):
             xml_escape(name), xml_escape(ty))
         for name, ty in args
     )
+    pipe_capacity_value = pipe_capacity()
+    pipe_capacity_xml = ""
+    if pipe_capacity_value:
+        pipe_capacity_xml = f"        <command_pipe_capacity>{pipe_capacity_value}</command_pipe_capacity>\n"
 
     command, execute_direct = runtime_command(function_name, runtime, work_dir)
 
@@ -879,8 +938,7 @@ def generate_xml_config(function_name, return_type, args, work_dir, runtime):
         <send_chunk_header>1</send_chunk_header>
         <command_read_timeout>10000</command_read_timeout>
         <command_write_timeout>10000</command_write_timeout>
-        <command_pipe_capacity>{pipe_capacity()}</command_pipe_capacity>
-        <command_termination_timeout>10</command_termination_timeout>
+{pipe_capacity_xml}        <command_termination_timeout>10</command_termination_timeout>
     </function>
 </functions>
 """
