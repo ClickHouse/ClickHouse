@@ -1006,6 +1006,21 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     Default value for the per-disk `wait_for_blob_removal` setting.
     When enabled, the server waits for background blob removal to complete before acknowledging the operation.
     )", 0) \
+    DECLARE(UInt64, disk_object_storage_blob_removal_wait_timeout_ms, 30000, R"(
+    Maximum time (in milliseconds) `DiskObjectStorageTransaction::commit` will wait
+    for background blob removal to finish when `wait_for_blob_removal` is enabled
+    for a disk. The deadline is propagated into `BlobKillerThread::waitRound`, so a
+    single slow or stuck removal round can no longer block the caller indefinitely.
+
+    Under sanitizer builds (TSan / MSan) and heavy I/O each blob removal round can
+    take many seconds; without a bound, the commit could block `MergeTreeCleanupThread`
+    long enough that the `DatabaseCatalog` shutdown watchdog reports
+    `Possible deadlock on shutdown`. When the timeout expires, the commit returns
+    with a warning and the remaining blobs are cleaned up asynchronously by the next
+    scheduled `BlobKillerThread` round.
+
+    Set to `0` to wait indefinitely, restoring the strict pre-fix behavior.
+    )", 0) \
     DECLARE(UInt64, max_materialized_views_count_for_table, 0, R"(
     A limit on the number of materialized views attached to a table.
 

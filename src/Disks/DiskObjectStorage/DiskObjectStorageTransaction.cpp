@@ -9,11 +9,13 @@
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/Utils.h>
 #endif
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <Disks/IO/WriteBufferWithFinalizeCallback.h>
 #include <Disks/WriteMode.h>
 #include <Disks/IDisk.h>
+#include <Interpreters/Context.h>
 
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Logger.h>
@@ -24,6 +26,7 @@
 #include <Common/ProfileEvents.h>
 #include <base/defines.h>
 
+#include <chrono>
 #include <cstddef>
 #include <memory>
 #include <ranges>
@@ -36,6 +39,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 disk_object_storage_blob_removal_wait_timeout_ms;
+}
 
 namespace FailPoints
 {
@@ -55,28 +63,36 @@ void DiskObjectStorageTransaction::waitBlobRemoval(const StoredObjects & blobs) 
 {
     try
     {
-        /// Maximum time to spend waiting for blob removal. Under normal conditions,
-        /// blob removal completes in milliseconds. Under sanitizer builds (TSAN/MSAN),
-        /// each BlobKillerThread round can take many seconds due to overhead. Without
-        /// a timeout, the loop below (up to 100 iterations × slow rounds) can block
-        /// MergeTreeCleanupThread for minutes, causing "Possible deadlock on shutdown"
-        /// failures when DatabaseCatalog::shutdown() tries to stop the cleanup thread.
-        /// Blobs not cleaned up here will be removed by the next scheduled blob killer run.
-        static constexpr UInt64 MAX_WAIT_MICROSECONDS = 30'000'000; /// 30 seconds
+        /// Server-configurable bound for how long we wait for synchronous blob
+        /// removal. Under normal conditions blob removal completes in milliseconds,
+        /// but under sanitizer builds (TSan / MSan) and heavy I/O each round can
+        /// take many seconds; without a bound, the loop below (up to 100 iterations
+        /// times slow rounds) can block `MergeTreeCleanupThread` long enough that
+        /// `DatabaseCatalog::shutdown` trips the "Possible deadlock on shutdown"
+        /// watchdog. A value of `0` means "wait indefinitely" and restores the
+        /// strict pre-fix semantics for operators who prefer it. Blobs not cleaned
+        /// up here are removed by the next scheduled `BlobKillerThread` round.
+        const UInt64 timeout_ms = Context::getGlobalContextInstance()
+                                      ->getServerSettings()[ServerSetting::disk_object_storage_blob_removal_wait_timeout_ms];
+        const auto deadline = timeout_ms == 0
+            ? std::chrono::steady_clock::time_point::max()
+            : std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::DiskObjectStorageWaitBlobRemovalMicroseconds);
         for (size_t i = 0; i < 100 && metadata_storage->hasPendingRemovalBlobs(blobs); ++i)
         {
-            blob_killer->triggerAndWait();
-
-            if (watch.elapsed() > MAX_WAIT_MICROSECONDS)
+            /// The deadline is enforced *inside* `waitRound` via the killer's
+            /// condition variable, so a single slow or stuck round cannot block
+            /// the caller past the configured budget.
+            if (!blob_killer->triggerAndWait(deadline))
             {
                 LOG_WARNING(
                     getLogger("DiskObjectStorageTransaction"),
-                    "Waiting for blob removal timed out after {} ms ({} iterations). "
+                    "Waiting for blob removal timed out after {} ms ({} iterations, configured limit {} ms). "
                     "Remaining blobs will be cleaned up asynchronously by the blob killer.",
                     watch.elapsed() / 1000,
-                    i + 1);
+                    i + 1,
+                    timeout_ms);
                 break;
             }
         }

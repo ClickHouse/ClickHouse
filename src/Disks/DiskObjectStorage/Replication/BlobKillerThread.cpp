@@ -242,8 +242,14 @@ void BlobKillerThread::run()
     LOG_TEST(log, "Starting cleanup");
 
     executeBlobsCleanup(metadata_request_batch.load(), max_blobs_in_task.load(), remove_tasks_runner, cluster, metadata_storage, object_storages, log);
-    finished_rounds.fetch_add(1);
-    finished_rounds.notify_all();
+    {
+        /// Take the mutex before incrementing so that waiters blocked inside
+        /// `waitRound` observe the new value through the condition variable
+        /// without missing the wake-up.
+        std::lock_guard lock(finished_rounds_mutex);
+        finished_rounds.fetch_add(1);
+    }
+    finished_rounds_cv.notify_all();
 
     const int64_t interval = reschedule_interval_sec.load();
     const int64_t schedule_after_ms = DelayWithJitter(interval * 1000).getDelayWithJitter(-500, 500);
@@ -286,24 +292,30 @@ int64_t BlobKillerThread::trigger()
     return expected_round;
 }
 
-void BlobKillerThread::waitRound(int64_t expected_round)
+bool BlobKillerThread::waitRound(int64_t expected_round, std::chrono::steady_clock::time_point deadline)
 {
-    int64_t current_round = finished_rounds.load();
-    while (current_round < expected_round)
+    std::unique_lock lock(finished_rounds_mutex);
+    /// `wait_until` returns `true` if the predicate is satisfied on exit, `false`
+    /// if the deadline was reached first. With `deadline = time_point::max()` this
+    /// is equivalent to a plain wait (no timeout), so existing callers keep their
+    /// "wait indefinitely" semantics by default.
+    return finished_rounds_cv.wait_until(lock, deadline, [&]
     {
-        finished_rounds.wait(current_round);
-        current_round = finished_rounds.load();
-    }
+        return finished_rounds.load() >= expected_round;
+    });
 }
 
-void BlobKillerThread::triggerAndWait()
+bool BlobKillerThread::triggerAndWait(std::chrono::steady_clock::time_point deadline)
 {
     int64_t expected_round = trigger();
 
     if (wrapped_blob_killer)
-        wrapped_blob_killer->triggerAndWait();
+    {
+        if (!wrapped_blob_killer->triggerAndWait(deadline))
+            return false;
+    }
 
-    waitRound(expected_round);
+    return waitRound(expected_round, deadline);
 }
 
 void BlobKillerThread::applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
