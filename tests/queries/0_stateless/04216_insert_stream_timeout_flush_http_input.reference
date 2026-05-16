@@ -2,3 +2,5 @@ direct: rows before close: 1024
 direct: final rows: 1028
 input: rows before close: 1024
 input: final rows: 1028
+compressed: rows before close: 1024
+compressed: final rows: 1028

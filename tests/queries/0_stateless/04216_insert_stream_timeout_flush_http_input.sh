@@ -12,6 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TABLE_DIRECT="test_http_stream_timeout_direct"
 TABLE_INPUT="test_http_stream_timeout_input"
+TABLE_COMPRESSED="test_http_stream_timeout_compressed"
 TMP_PREFIX="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 FIRST_BATCH_ROWS=1024
 SECOND_BATCH_ROWS=4
@@ -20,22 +21,26 @@ LINE_PAYLOAD="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd
 cleanup()
 {
     jobs -pr | xargs -r kill 2>/dev/null || true
-    rm -f "${TMP_PREFIX}"_*.data
+    rm -f "${TMP_PREFIX}"_*.data "${TMP_PREFIX}"_*.data.lz4
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE_DIRECT}" >/dev/null 2>&1 || true
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE_INPUT}" >/dev/null 2>&1 || true
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE_COMPRESSED}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE_DIRECT}"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE_INPUT}"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE_COMPRESSED}"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE_DIRECT} (line String) ENGINE = MergeTree ORDER BY tuple()"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE_INPUT} (line String) ENGINE = MergeTree ORDER BY tuple()"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE_COMPRESSED} (line String) ENGINE = MergeTree ORDER BY tuple()"
 
 run_case()
 {
     local label=$1
     local table=$2
     local query=$3
+    local compressed=${4:-0}
 
     local first_batch="${TMP_PREFIX}_${label}_first.data"
     local second_batch="${TMP_PREFIX}_${label}_second.data"
@@ -50,7 +55,21 @@ run_case()
         printf '%s_second_%05d_%s\n' "$label" "$i" "$LINE_PAYLOAD" >> "$second_batch"
     done
 
-    local insert_url="${CLICKHOUSE_URL}&async_insert=0&min_insert_block_size_rows=0&min_insert_block_size_bytes=0&input_format_max_block_wait_ms=500&input_format_connection_handling=1&query=${query}"
+    if [[ "$compressed" == "1" ]]; then
+        local first_batch_compressed="${TMP_PREFIX}_${label}_first.data.lz4"
+        local second_batch_compressed="${TMP_PREFIX}_${label}_second.data.lz4"
+        ${CLICKHOUSE_COMPRESSOR} < "$first_batch" > "$first_batch_compressed"
+        ${CLICKHOUSE_COMPRESSOR} < "$second_batch" > "$second_batch_compressed"
+        first_batch="$first_batch_compressed"
+        second_batch="$second_batch_compressed"
+    fi
+
+    local extra_params=""
+    if [[ "$compressed" == "1" ]]; then
+        extra_params="&decompress=1"
+    fi
+
+    local insert_url="${CLICKHOUSE_URL}&async_insert=0&min_insert_block_size_rows=0&min_insert_block_size_bytes=0&input_format_max_block_wait_ms=500&input_format_connection_handling=1${extra_params}&query=${query}"
     local url_without_scheme="${insert_url#http://}"
     if [[ "$url_without_scheme" == "$insert_url" ]]; then
         echo "Only HTTP URLs are supported by this test"
@@ -125,3 +144,9 @@ run_case \
     input \
     "$TABLE_INPUT" \
     "INSERT%20INTO%20${TABLE_INPUT}%20SELECT%20line%20FROM%20input%28%27line%20String%27%29%20FORMAT%20LineAsString"
+
+run_case \
+    compressed \
+    "$TABLE_COMPRESSED" \
+    "INSERT%20INTO%20${TABLE_COMPRESSED}%20FORMAT%20LineAsString" \
+    1
