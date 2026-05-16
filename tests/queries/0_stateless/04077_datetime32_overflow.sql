@@ -3,10 +3,10 @@
 -- silently wrap. Previously, `day + toIntervalDay(46000)` or `ts + INTERVAL 100 YEAR`
 -- would overflow, corrupt part min/max TTL metadata, and drop entire parts during merge.
 --
--- The fix injects `CAST(col, 'Date32')` / `CAST(col, 'DateTime64(0, tz)')` for narrow
--- temporal source columns at TTL expression build time. The arithmetic now runs in 64-bit
--- domain and cannot wrap; large-interval TTLs evaluate to the correct future timestamp
--- and the data is retained.
+-- The fix widens `Date` -> `Date32` and `DateTime` -> `DateTime64(0, tz)` in the
+-- column list passed to the TTL expression analyzer, so arithmetic runs in the 64-bit
+-- domain. At execution time the narrow block columns are cast to the widened types
+-- before the expression runs.
 
 -- Case 1: rows TTL with a `Date` column and a >100-year interval.
 DROP TABLE IF EXISTS t_ttl_overflow;
@@ -124,11 +124,12 @@ DROP TABLE t_ttl_lc_datetime;
 
 SET allow_suspicious_low_cardinality_types = 0;
 
--- Case 10: lambda parameters that shadow a table column must not be wrapped in CAST.
--- The TTL expression contains `arrayFilter(day -> day != '', arr)` where the lambda's
--- `day` is a String element of `arr`, not the `Date` column `day`. Wrapping the lambda
--- parameter would attempt `CAST(String, 'Date32')` against a string-comparison context
--- and fail expression-build with a type mismatch.
+-- Case 10: a lambda parameter that shadows a table column must keep its lambda-local
+-- type. The TTL expression contains `arrayFilter(day -> day != '', arr)` where the
+-- lambda's `day` is a String element of `arr`, not the `Date` column `day`. Because the
+-- widening happens at column-type level (not AST rewriting), the analyzer's normal name
+-- resolution already binds `day` inside the lambda to the lambda parameter rather than
+-- to the outer column, so this case is handled automatically.
 DROP TABLE IF EXISTS t_ttl_lambda_shadow;
 CREATE TABLE t_ttl_lambda_shadow (day Date, arr Array(String), value UInt64) ENGINE = MergeTree ORDER BY tuple();
 -- Future dates so the resulting TTL is not yet expired — the count assertion below then

@@ -8,13 +8,11 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAssignment.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/Context.h>
@@ -23,13 +21,10 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <Common/logger_useful.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Poco/String.h>
 
 
 namespace DB
@@ -125,86 +120,37 @@ public:
 using FindAggregateFunctionFinderMatcher = OneTypeMatcher<FindAggregateFunctionData>;
 using FindAggregateFunctionVisitor = InDepthNodeVisitor<FindAggregateFunctionFinderMatcher, true>;
 
-/// Replaces bare column references for Date/DateTime columns with CAST(col, 'WidenedType')
-/// so that the TTL expression performs arithmetic in a wider type (Date32 / DateTime64)
-/// and cannot silently 16/32-bit wrap on overflow.
-///
-/// Lambda parameter identifiers are not table columns and must not be wrapped, even when
-/// they happen to share a name with a table column (e.g. `arrayExists(day -> ..., arr)`
-/// where the table also has a `day` column). The matcher tracks names bound by enclosing
-/// lambdas in `private_aliases` and skips identifiers that resolve to those bindings.
-struct InjectWidenCastData
+/// Returns the column list with every `Date` / `DateTime` source column widened to
+/// `Date32` / `DateTime64(0, tz)` (looking through `Nullable` / `LowCardinality`).
+/// The TTL expression is analyzed against this widened view so arithmetic in
+/// `column + INTERVAL ...` is performed in the 64-bit domain and cannot silently
+/// wrap on overflow. The original timezone is preserved so calendar transforms
+/// (`addMonths` / `addYears`) and DST boundaries produce the user-expected results.
+/// At runtime, `ITTLAlgorithm::executeExpressionAndGetColumn` casts the narrow source
+/// columns to these widened types before invoking the expression.
+NamesAndTypesList widenTemporalColumns(const NamesAndTypesList & columns)
 {
-    const std::unordered_map<String, String> & cast_targets;
-    std::unordered_set<String> private_aliases;
-};
-
-class InjectWidenCastMatcher
-{
-public:
-    using Data = InjectWidenCastData;
-    using Visitor = InDepthNodeVisitor<InjectWidenCastMatcher, /*top_to_bottom=*/false>;
-
-    /// Block auto-descent into a lambda's children — its body is visited manually below
-    /// after masking the parameter names. Visiting the parameter tuple itself would also
-    /// be wrong (those identifiers are declarations, not uses).
-    static bool needChildVisit(const ASTPtr & node, const ASTPtr & /*child*/)
+    NamesAndTypesList result;
+    for (const auto & col : columns)
     {
-        if (const auto * f = node->as<ASTFunction>())
-            return Poco::toLower(f->name) != "lambda";
-        return true;
-    }
-
-    static void visit(ASTPtr & ast, Data & data)
-    {
-        if (auto * func = ast->as<ASTFunction>(); func && Poco::toLower(func->name) == "lambda")
+        const auto inner = removeLowCardinalityAndNullable(col.type);
+        if (isDate(inner))
         {
-            visitLambda(*func, data);
-            return;
+            result.emplace_back(col.name, std::make_shared<DataTypeDate32>());
         }
-        if (auto * ident = ast->as<ASTIdentifier>())
-            visitIdentifier(ident, ast, data);
+        else if (isDateTime(inner))
+        {
+            const auto & dt = typeid_cast<const DataTypeDateTime &>(*inner);
+            const String & tz = dt.getTimeZone().getTimeZone();
+            result.emplace_back(col.name, std::make_shared<DataTypeDateTime64>(0, tz));
+        }
+        else
+        {
+            result.emplace_back(col);
+        }
     }
-
-private:
-    static void visitLambda(ASTFunction & node, Data & data)
-    {
-        /// Recurse into the body with each lambda parameter name masked, then restore.
-        std::vector<String> just_added;
-        for (const auto & name : RequiredSourceColumnsMatcher::extractNamesFromLambda(node))
-            if (data.private_aliases.insert(name).second)
-                just_added.push_back(name);
-
-        Visitor(data).visit(node.arguments->children[1]);
-
-        for (const auto & name : just_added)
-            data.private_aliases.erase(name);
-    }
-
-    static void visitIdentifier(const ASTIdentifier * ident, ASTPtr & node, Data & data)
-    {
-        const auto & name = ident->name();
-        const auto & short_name = ident->shortName();
-        if (data.private_aliases.contains(name) || data.private_aliases.contains(short_name))
-            return;
-
-        auto it = data.cast_targets.find(name);
-        if (it == data.cast_targets.end())
-            it = data.cast_targets.find(short_name);
-        if (it == data.cast_targets.end())
-            return;
-
-        ASTs args;
-        args.push_back(node);
-        args.push_back(new ASTLiteral(it->second));
-        node = makeASTFunction("CAST", std::move(args));
-    }
-};
-
-/// Bottom-up traversal prevents the framework from re-descending into the CAST node we
-/// just injected (its first child is the original identifier — visiting it again would
-/// wrap the literal in another CAST).
-using InjectWidenCastVisitor = InjectWidenCastMatcher::Visitor;
+    return result;
+}
 
 }
 
@@ -262,48 +208,11 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
     return * this;
 }
 
-static ExpressionAndSets buildExpressionAndSets(
-    ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context)
+static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context)
 {
-    /// Capture the formatted TTL string from the *un-mutated* AST so the alias and
-    /// downstream `result_column` (visible in `system.parts.*_ttl_info.expression`,
-    /// `SHOW CREATE TABLE`, etc.) keep the user's original form rather than the
-    /// internally widened one.
-    auto ttl_string = ast->formatWithSecretsOneLine();
-
-    /// Replace each `Date`/`DateTime` source-column reference with a CAST to the wider
-    /// counterpart (`Date32` / `DateTime64(0, tz)`) so arithmetic in the TTL expression
-    /// runs in a 64-bit domain and cannot silently 16/32-bit wrap on overflow. The result
-    /// type widens accordingly; downstream code (`extractTimestamp`, `updateTTLInfo`,
-    /// `checkTTLExpression`) already accepts the wider temporal types.
-    std::unordered_map<String, String> cast_targets;
-    for (const auto & col : columns)
-    {
-        /// Strip LowCardinality first, then Nullable: the reverse order misses
-        /// `LowCardinality(Nullable(Date))` because `removeNullable` only touches
-        /// top-level Nullable.
-        const auto inner = removeLowCardinalityAndNullable(col.type);
-        if (isDate(inner))
-        {
-            cast_targets[col.name] = "Date32";
-        }
-        else if (isDateTime(inner))
-        {
-            /// Preserve the original timezone so calendar-based arithmetic (addMonths,
-            /// addYears) and DST boundaries produce identical results.
-            const auto & dt = typeid_cast<const DataTypeDateTime &>(*inner);
-            const String & tz = dt.getTimeZone().getTimeZone();
-            cast_targets[col.name] = tz.empty() ? "DateTime64(0)" : "DateTime64(0, '" + tz + "')";
-        }
-    }
-    if (!cast_targets.empty())
-    {
-        InjectWidenCastData inject_data{cast_targets, {}};
-        InjectWidenCastVisitor(inject_data).visit(ast);
-    }
-
     ExpressionAndSets result;
-    auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, columns);
+    auto ttl_string = ast->formatWithSecretsOneLine();
+    auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, widenTemporalColumns(columns));
     ExpressionAnalyzer analyzer(ast, syntax_analyzer_result, context);
     auto dag = analyzer.getActionsDAG(false);
 
