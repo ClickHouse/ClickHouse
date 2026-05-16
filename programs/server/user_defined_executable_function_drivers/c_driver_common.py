@@ -19,6 +19,7 @@ directory).
 """
 
 import argparse
+import hashlib
 import os
 import shlex
 import subprocess
@@ -702,6 +703,10 @@ def docker_resource_limits():
     }
 
 
+def pool_size():
+    return int(os.environ.get("CLICKHOUSE_C_DRIVER_POOL_SIZE", "64"))
+
+
 def docker_user():
     return os.environ.get("CLICKHOUSE_C_DRIVER_DOCKER_USER", f"{os.getuid()}:{os.getgid()}")
 
@@ -744,6 +749,72 @@ def compile_with_cc(work_dir):
     run(cmd)
 
 
+def docker_container_name(function_name, work_dir):
+    key = os.path.abspath(os.path.dirname(work_dir)) + "\0" + function_name
+    digest = hashlib.sha256(key.encode()).hexdigest()[:32]
+    return f"clickhouse_udf_{digest}"
+
+
+def docker_container_name_path(work_dir):
+    return os.path.join(work_dir, "docker_container_name")
+
+
+def read_docker_container_name(function_name, work_dir):
+    try:
+        with open(docker_container_name_path(work_dir)) as f:
+            name = f.read().strip()
+            if name:
+                return name
+    except OSError:
+        pass
+    return docker_container_name(function_name, work_dir)
+
+
+def docker_container_pids_limit():
+    limit = docker_resource_limits()["pids"]
+    try:
+        return str(max(int(limit), pool_size() + 4))
+    except ValueError:
+        return limit
+
+
+def start_docker_container(function_name, work_dir):
+    name = docker_container_name(function_name, work_dir)
+    with open(docker_container_name_path(work_dir), "w") as f:
+        f.write(name + "\n")
+
+    if os.environ.get("CLICKHOUSE_C_DRIVER_SKIP_DOCKER_CONTAINER") == "1":
+        return
+
+    image = docker_image_for_run()
+    limits = docker_resource_limits()
+    user = docker_user()
+
+    subprocess.run(["docker", "rm", "-f", name], capture_output=True, text=True)
+    cmd = [
+        "docker", "run", "-d",
+        "--name", name,
+        "--log-driver=none",
+        "--network=none",
+        "--read-only",
+        "--tmpfs=/tmp:rw,size=16m",
+        "--cap-drop=ALL",
+        "--user", user,
+        f"--memory={limits['memory']}",
+        f"--cpus={limits['cpus']}",
+        f"--pids-limit={docker_container_pids_limit()}",
+        "-v", f"{work_dir}/user_func:/user_func:ro",
+        image,
+        "sleep", "2147483647",
+    ]
+    run(cmd)
+
+
+def stop_docker_container(function_name, work_dir):
+    name = read_docker_container_name(function_name, work_dir)
+    subprocess.run(["docker", "rm", "-f", name], capture_output=True, text=True)
+
+
 def should_compile_locally(runtime):
     return (
         runtime == "unsafe"
@@ -752,7 +823,7 @@ def should_compile_locally(runtime):
     )
 
 
-def runtime_command(runtime, work_dir):
+def runtime_command(function_name, runtime, work_dir):
     if runtime == "unsafe" or os.environ.get("CLICKHOUSE_C_DRIVER_FORCE_LOCAL") == "1":
         return os.path.join(work_dir, "user_func"), 0
 
@@ -765,25 +836,7 @@ def runtime_command(runtime, work_dir):
             os.path.join(work_dir, "user_func"),
         ]), 0
 
-    docker_image = docker_image_for_run()
-    limits = docker_resource_limits()
-    user = docker_user()
-    # Tmp dir inside container is needed for some libc init even on a static binary.
-    cmd = [
-        "docker", "run", "--rm", "-i",
-        "--log-driver=none",
-        "--network=none",
-        "--read-only",
-        "--tmpfs=/tmp:rw,size=16m",
-        "--cap-drop=ALL",
-        "--user", user,
-        f"--memory={limits['memory']}",
-        f"--cpus={limits['cpus']}",
-        f"--pids-limit={limits['pids']}",
-        "-v", f"{work_dir}/user_func:/user_func:ro",
-    ]
-    cmd.extend([docker_image, "/user_func"])
-    return shell_join(cmd), 0
+    return shell_join(["docker", "exec", "-i", read_docker_container_name(function_name, work_dir), "/user_func"]), 0
 
 
 def generate_xml_config(function_name, return_type, args, work_dir, runtime):
@@ -794,7 +847,7 @@ def generate_xml_config(function_name, return_type, args, work_dir, runtime):
         for name, ty in args
     )
 
-    command, execute_direct = runtime_command(runtime, work_dir)
+    command, execute_direct = runtime_command(function_name, runtime, work_dir)
 
     return f"""<functions>
     <function>
@@ -804,7 +857,7 @@ def generate_xml_config(function_name, return_type, args, work_dir, runtime):
 {arguments_xml}        <format>Buffers</format>
         <command>{xml_escape(command)}</command>
         <execute_direct>{execute_direct}</execute_direct>
-        <pool_size>64</pool_size>
+        <pool_size>{pool_size()}</pool_size>
         <send_chunk_header>1</send_chunk_header>
         <command_read_timeout>10000</command_read_timeout>
         <command_write_timeout>10000</command_write_timeout>
@@ -831,13 +884,20 @@ def cmd_create(args):
     if not os.path.exists(os.path.join(work_dir, "user_func")):
         sys.exit("Compilation produced no binary")
 
+    if args.runtime == "docker" and os.environ.get("CLICKHOUSE_C_DRIVER_FORCE_LOCAL") != "1":
+        start_docker_container(args.name, work_dir)
+
     sys.stdout.write(generate_xml_config(args.name, getattr(args, "return"), parsed_args, work_dir, args.runtime))
 
 
 def cmd_drop(args):
-    """Nothing to do at the driver level - ClickHouse will remove the working directory."""
-    # Best-effort cleanup of any container that may have leaked the function name as a label.
-    pass
+    """Remove driver-owned runtime state before ClickHouse removes the working directory."""
+    if (
+        args.runtime == "docker"
+        and os.environ.get("CLICKHOUSE_C_DRIVER_FORCE_LOCAL") != "1"
+        and os.environ.get("CLICKHOUSE_C_DRIVER_SKIP_DOCKER_CONTAINER") != "1"
+    ):
+        stop_docker_container(args.name, os.getcwd())
 
 
 def main():

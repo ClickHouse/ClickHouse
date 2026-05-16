@@ -85,11 +85,12 @@ echo "-- driver runtime commands"
 mkdir -p "$WORK_DIR/docker_runtime" "$WORK_DIR/gvisor_runtime" "$WORK_DIR/unsafe_runtime"
 (
     cd "$WORK_DIR/docker_runtime" &&
-    printf 'return x + y;\n' | CLICKHOUSE_C_DRIVER_COMPILE_LOCAL=1 "$DRIVER_DIR/docker_c_create.sh" --name test_docker_runtime --return UInt64 --args 'x UInt64, y UInt64'
+    printf 'return x + y;\n' | CLICKHOUSE_C_DRIVER_COMPILE_LOCAL=1 CLICKHOUSE_C_DRIVER_SKIP_DOCKER_CONTAINER=1 "$DRIVER_DIR/docker_c_create.sh" --name test_docker_runtime --return UInt64 --args 'x UInt64, y UInt64'
 ) > "$WORK_DIR/docker_runtime.xml"
-grep -q 'docker run --rm -i' "$WORK_DIR/docker_runtime.xml" && echo "docker_runtime_present" || echo "docker_runtime_missing"
+grep -q 'docker exec -i' "$WORK_DIR/docker_runtime.xml" && echo "docker_exec_runtime_present" || echo "docker_exec_runtime_missing"
+grep -q 'docker run' "$WORK_DIR/docker_runtime.xml" && echo "docker_run_runtime_present" || echo "docker_run_runtime_absent"
 grep -q -- '--runtime=runsc' "$WORK_DIR/docker_runtime.xml" && echo "docker_gvisor_runtime_present" || echo "docker_gvisor_runtime_absent"
-grep -q -- '--log-driver=none' "$WORK_DIR/docker_runtime.xml" && echo "docker_log_driver_disabled" || echo "docker_log_driver_enabled"
+test -s "$WORK_DIR/docker_runtime/docker_container_name" && echo "docker_container_name_present" || echo "docker_container_name_missing"
 grep -q '<execute_direct>0</execute_direct>' "$WORK_DIR/docker_runtime.xml" && echo "docker_execute_shell" || echo "docker_execute_direct"
 
 (
