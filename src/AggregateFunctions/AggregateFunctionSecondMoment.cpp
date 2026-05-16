@@ -211,6 +211,7 @@ SELECT stddevPop(population) AS stddev FROM test_data;
     factory.registerAlias("VAR_POP", "varPop", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("STDDEV_SAMP", "stddevSamp", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("STDDEV_POP", "stddevPop", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("STDDEV", "stddevPop", AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("STD", "stddevPop", AggregateFunctionFactory::Case::Insensitive);
 }
 
