@@ -455,8 +455,6 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     metadata.add_minmax_index_for_numeric_columns = true;
     metadata.add_minmax_index_for_string_columns = true;
     metadata.add_minmax_index_for_temporal_columns = true;
-    metadata.add_minmax_index_for_block_number_column = true;
-    metadata.add_minmax_index_for_block_offset_column = true;
     metadata.addImplicitIndicesForVirtualColumns(query_context);
     for (const auto & column : metadata.columns)
         metadata.addImplicitIndicesForColumn(column, query_context);
