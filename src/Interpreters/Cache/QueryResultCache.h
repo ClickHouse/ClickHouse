@@ -337,7 +337,7 @@ class QueryResultCacheReader
 public:
     using Cache = QueryResultCache::Cache;
 
-    bool hasCacheEntryForKey(bool update_profile_events = true) const;
+    bool hasCacheEntryForKey() const;
 
     /// Must only be called if hasCacheEntryForKey is true
     std::chrono::time_point<std::chrono::system_clock> entryCreatedAt();

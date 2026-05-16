@@ -12,7 +12,7 @@ SELECT * FROM t ORDER BY id
 SETTINGS use_query_cache = true,enable_writes_to_query_cache_disk=true,enable_reads_from_query_cache_disk=true;
 
 SELECT '-- profile event: QueryCacheDiskHits, QueryCacheDiskMisses';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
     ProfileEvents['QueryCacheDiskHits'],
     ProfileEvents['QueryCacheDiskMisses']
@@ -34,7 +34,7 @@ SELECT * FROM t ORDER BY id
 SETTINGS use_query_cache = true,enable_writes_to_query_cache_disk=true,enable_reads_from_query_cache_disk=true;
 
 SELECT '-- profile event: QueryCacheDiskHits, QueryCacheDiskMisses';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
     ProfileEvents['QueryCacheDiskHits'],
     ProfileEvents['QueryCacheDiskMisses']
