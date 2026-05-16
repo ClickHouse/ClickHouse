@@ -12,6 +12,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/noexcept_scope.h>
 #include <Common/StringUtils.h>
 #include <Common/CurrentMetrics.h>
@@ -2234,6 +2235,7 @@ std::shared_ptr<ReplicatedMergeTreeZooKeeperMergePredicate> ReplicatedMergeTreeQ
 
 CursorPromotersMap ReplicatedMergeTreeQueue::buildPromoters(zkutil::ZooKeeperPtr & zookeeper)
 {
+    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeQueue::buildPromoters");
     const Strings partition_ids = zookeeper->getChildren(fs::path(zookeeper_path) / "block_numbers");
 
     std::vector<zkutil::ZooKeeper::FutureGetChildren> futures;
