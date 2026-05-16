@@ -2,10 +2,16 @@
 42
 -- dynamic config exists after create
 yes
+-- work dir uses uuid name
+uuid_workdir_name
+uuid_workdir_present
+function_workdir_absent
 -- if not exists does not invoke driver
 3
 -- attach-style recreate after config loss
 15
 -- drop removes everything
 config_removed
+workdir_metadata_removed
+workdir_removed
 sql_removed

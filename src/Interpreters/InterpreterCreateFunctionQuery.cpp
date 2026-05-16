@@ -10,6 +10,7 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionDriverRegistry.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
+#include <Core/UUID.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
@@ -22,6 +23,8 @@
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/escapeForFileName.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Access/Common/AccessRightsElement.h>
@@ -38,6 +41,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int DIRECTORY_DOESNT_EXIST;
+    extern const int CANNOT_CREATE_DIRECTORY;
     extern const int FUNCTION_ALREADY_EXISTS;
 }
 
@@ -137,12 +141,56 @@ namespace
         return path + escapeForFileName(function_name) + extension;
     }
 
-    String driverWorkingDirectory(const ContextPtr & context, const String & function_name)
+    String driverWorkingDirectoryMetadataPath(const ContextPtr & context, const String & function_name)
+    {
+        return driverDynamicConfigPath(context, function_name, ".workdir");
+    }
+
+    String driverWorkingDirectory(const ContextPtr & context, const String & directory_name)
     {
         String path = context->getDynamicUserDefinedExecutableFunctionsPath();
         if (!path.ends_with('/'))
             path.push_back('/');
-        return path + escapeForFileName(function_name) + ".d";
+        return path + directory_name;
+    }
+
+    void validateDriverWorkingDirectoryName(const String & directory_name, const String & function_name)
+    {
+        UUID uuid;
+        if (!tryParseUUID({reinterpret_cast<const UInt8 *>(directory_name.data()), directory_name.size()}, uuid))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Invalid executable UDF driver working directory name '{}' for function '{}'",
+                directory_name, function_name);
+    }
+
+    String readDriverWorkingDirectory(const ContextPtr & context, const String & function_name)
+    {
+        const String metadata_path = driverWorkingDirectoryMetadataPath(context, function_name);
+        if (!std::filesystem::exists(metadata_path))
+            return {};
+
+        String directory_name;
+        ReadBufferFromFile in(metadata_path);
+        readStringUntilEOF(directory_name, in);
+        if (directory_name.empty())
+            return {};
+
+        validateDriverWorkingDirectoryName(directory_name, function_name);
+        return driverWorkingDirectory(context, directory_name);
+    }
+
+    String createDriverWorkingDirectory(const ContextPtr & context)
+    {
+        /// The RFC requires a random UUID directory for the driver-owned state.
+        for (size_t attempt = 0; attempt != 100; ++attempt)
+        {
+            const String directory_name = toString(UUIDHelpers::generateV4());
+            const String path = driverWorkingDirectory(context, directory_name);
+            if (std::filesystem::create_directory(path))
+                return path;
+        }
+
+        throw Exception(ErrorCodes::CANNOT_CREATE_DIRECTORY, "Cannot create a unique executable UDF driver working directory");
     }
 
     bool shouldRunCreateFunctionWithDriver(
@@ -182,14 +230,23 @@ namespace
     void removeDriverArtifacts(const ContextPtr & context, const String & function_name)
     {
         std::error_code ec;
+        const String working_dir = readDriverWorkingDirectory(context, function_name);
         std::filesystem::remove(driverDynamicConfigPath(context, function_name, ".xml"), ec);
         std::filesystem::remove(driverDynamicConfigPath(context, function_name, ".yaml"), ec);
-        std::filesystem::remove_all(driverWorkingDirectory(context, function_name), ec);
+        std::filesystem::remove(driverWorkingDirectoryMetadataPath(context, function_name), ec);
+        if (!working_dir.empty())
+            std::filesystem::remove_all(working_dir, ec);
     }
+
+    struct DriverCreateResult
+    {
+        String working_dir;
+        String previous_working_dir;
+    };
 
     /// Run the driver's create_command and write the generated config to disk atomically.
     /// `is_attach_mode` skips the driver invocation when the dynamic config already exists.
-    BlockIO executeCreateFunctionWithDriver(
+    DriverCreateResult executeCreateFunctionWithDriver(
         const ASTCreateFunctionWithDriverQuery & query, ContextMutablePtr current_context)
     {
         const String function_name = query.getFunctionName();
@@ -201,8 +258,6 @@ namespace
                 "Server setting `dynamic_user_defined_executable_functions_path` is not set");
         std::filesystem::create_directories(dynamic_dir);
 
-        const String working_dir = driverWorkingDirectory(current_context, function_name);
-
         const String args_signature = formatArgsSignature(query.arguments_ast);
         const String return_type = formatReturnType(query.return_type_ast);
         const auto engine_argument_values = formatEngineArguments(query, *driver);
@@ -211,9 +266,11 @@ namespace
         const String yaml_existing = driverDynamicConfigPath(current_context, function_name, ".yaml");
         const bool config_exists = std::filesystem::exists(xml_existing) || std::filesystem::exists(yaml_existing);
 
+        DriverCreateResult result;
         if (!(query.is_attach && config_exists))
         {
-            std::filesystem::create_directories(working_dir);
+            result.previous_working_dir = readDriverWorkingDirectory(current_context, function_name);
+            result.working_dir = createDriverWorkingDirectory(current_context);
 
             String generated_config;
             try
@@ -224,30 +281,35 @@ namespace
                     return_type,
                     args_signature,
                     query.source_code,
-                    working_dir,
+                    result.working_dir,
                     engine_argument_values);
             }
             catch (...)
             {
                 /// Driver failed - leave no half-baked state behind on disk.
-                if (!config_exists)
-                {
-                    std::error_code ec_cleanup;
-                    std::filesystem::remove_all(working_dir, ec_cleanup);
-                }
+                std::error_code ec_cleanup;
+                std::filesystem::remove_all(result.working_dir, ec_cleanup);
                 throw;
             }
 
             const String extension = pickExtensionForGeneratedConfig(generated_config);
             const String final_path = driverDynamicConfigPath(current_context, function_name, extension);
             const String tmp_path = final_path + ".tmp";
+            const String working_dir_metadata_path = driverWorkingDirectoryMetadataPath(current_context, function_name);
+            const String working_dir_metadata_tmp_path = working_dir_metadata_path + ".tmp";
 
             try
             {
                 WriteBufferFromFile out(tmp_path);
                 writeString(generated_config, out);
                 out.finalize();
+
+                WriteBufferFromFile working_dir_out(working_dir_metadata_tmp_path);
+                writeString(std::filesystem::path(result.working_dir).filename().string(), working_dir_out);
+                working_dir_out.finalize();
+
                 std::filesystem::rename(tmp_path, final_path);
+                std::filesystem::rename(working_dir_metadata_tmp_path, working_dir_metadata_path);
 
                 std::error_code ec_cleanup;
                 if (extension == ".xml")
@@ -259,12 +321,15 @@ namespace
             {
                 std::error_code ec_cleanup;
                 std::filesystem::remove(tmp_path, ec_cleanup);
-                std::filesystem::remove_all(working_dir, ec_cleanup);
+                std::filesystem::remove(working_dir_metadata_tmp_path, ec_cleanup);
+                if (!config_exists)
+                    std::filesystem::remove(final_path, ec_cleanup);
+                std::filesystem::remove_all(result.working_dir, ec_cleanup);
                 throw;
             }
         }
 
-        return BlockIO();
+        return result;
     }
 }
 
@@ -348,7 +413,7 @@ static std::optional<BlockIO> tryExecuteWithDriver(const ASTPtr & query_ptr, Con
         return BlockIO();
 
     /// 1. Invoke driver, write generated config to dynamic_path.
-    executeCreateFunctionWithDriver(*create_function_query, current_context);
+    DriverCreateResult create_result = executeCreateFunctionWithDriver(*create_function_query, current_context);
 
     /// 2. Persist the SQL AST (in ATTACH form) in user-defined SQL objects storage.
     ASTPtr stored_ast = normalizeCreateFunctionQuery(*create_function_query, current_context);
@@ -376,6 +441,12 @@ static std::optional<BlockIO> tryExecuteWithDriver(const ASTPtr & query_ptr, Con
     {
         removeDriverArtifacts(current_context, function_name);
         return BlockIO();
+    }
+
+    if (!create_result.previous_working_dir.empty() && create_result.previous_working_dir != create_result.working_dir)
+    {
+        std::error_code ec_cleanup;
+        std::filesystem::remove_all(create_result.previous_working_dir, ec_cleanup);
     }
 
     if (replace_if_exists)

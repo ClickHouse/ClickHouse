@@ -8,6 +8,7 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionDriverRegistry.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
+#include <Core/UUID.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -20,6 +21,8 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 
 #include <filesystem>
@@ -30,6 +33,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_QUERY;
 }
 
@@ -78,6 +82,47 @@ namespace
         return out.str();
     }
 
+    String driverDynamicConfigPath(const ContextPtr & context, const String & function_name, const String & extension)
+    {
+        String path = context->getDynamicUserDefinedExecutableFunctionsPath();
+        if (!path.ends_with('/'))
+            path.push_back('/');
+        return path + escapeForFileName(function_name) + extension;
+    }
+
+    String driverWorkingDirectoryMetadataPath(const ContextPtr & context, const String & function_name)
+    {
+        return driverDynamicConfigPath(context, function_name, ".workdir");
+    }
+
+    void validateDriverWorkingDirectoryName(const String & directory_name, const String & function_name)
+    {
+        UUID uuid;
+        if (!tryParseUUID({reinterpret_cast<const UInt8 *>(directory_name.data()), directory_name.size()}, uuid))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Invalid executable UDF driver working directory name '{}' for function '{}'",
+                directory_name, function_name);
+    }
+
+    String readDriverWorkingDirectory(const ContextPtr & context, const String & function_name)
+    {
+        const String metadata_path = driverWorkingDirectoryMetadataPath(context, function_name);
+        if (!std::filesystem::exists(metadata_path))
+            return {};
+
+        String directory_name;
+        ReadBufferFromFile in(metadata_path);
+        readStringUntilEOF(directory_name, in);
+        if (directory_name.empty())
+            return {};
+
+        validateDriverWorkingDirectoryName(directory_name, function_name);
+        String dynamic_dir = context->getDynamicUserDefinedExecutableFunctionsPath();
+        if (!dynamic_dir.ends_with('/'))
+            dynamic_dir.push_back('/');
+        return dynamic_dir + directory_name;
+    }
+
     void handleDriverBasedDrop(
         const ASTCreateFunctionWithDriverQuery & create_query,
         const ContextPtr & current_context)
@@ -95,7 +140,7 @@ namespace
             dynamic_dir.push_back('/');
 
         const String escaped = escapeForFileName(function_name);
-        const String working_dir = dynamic_dir.empty() ? String() : dynamic_dir + escaped + ".d";
+        const String working_dir = dynamic_dir.empty() ? String() : readDriverWorkingDirectory(current_context, function_name);
 
         if (driver)
         {
@@ -128,14 +173,16 @@ namespace
             std::error_code ec;
             std::filesystem::remove(dynamic_dir + escaped + ".xml", ec);
             std::filesystem::remove(dynamic_dir + escaped + ".yaml", ec);
-            std::filesystem::remove_all(working_dir, ec);
+            std::filesystem::remove(driverWorkingDirectoryMetadataPath(current_context, function_name), ec);
+            if (!working_dir.empty())
+                std::filesystem::remove_all(working_dir, ec);
         }
 
         /// Tell the executable UDF loader to drop the function now that its config is gone.
         try
         {
             const auto & loader = current_context->getExternalUserDefinedExecutableFunctionsLoader();
-            loader.reloadFunction(function_name);
+            loader.reloadConfig();
         }
         catch (...)
         {

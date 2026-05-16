@@ -76,7 +76,8 @@ else
 fi
 
 # Driver failure must not leave any persisted state behind.
-test -d "$WORK_DIR/dyn/fn_bad.d" && echo "workdir_leaked" || echo "workdir_clean"
+LEFTOVER_WORKDIRS=$(find "$WORK_DIR/dyn" -mindepth 1 -maxdepth 1 -type d ! -name preprocessed_configs | wc -l)
+test "$LEFTOVER_WORKDIRS" -eq 0 && echo "workdir_clean" || echo "workdir_leaked"
 test -f "$WORK_DIR/dyn/fn_bad.xml" && echo "config_leaked" || echo "config_clean"
 test -f "$WORK_DIR/user_defined/function_fn_bad.sql" && echo "sql_leaked" || echo "sql_clean"
 

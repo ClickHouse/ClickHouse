@@ -71,6 +71,15 @@ SELECT test_udf_drv_add(40, 2);
 echo "-- dynamic config exists after create"
 test -f "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "yes" || echo "no"
 
+echo "-- work dir uses uuid name"
+WORK_DIR_NAME=$(cat "$WORK_DIR/dyn/test_udf_drv_add.workdir")
+case "$WORK_DIR_NAME" in
+    ????????-????-????-????-????????????) echo "uuid_workdir_name" ;;
+    *) echo "bad_workdir_name:$WORK_DIR_NAME" ;;
+esac
+test -d "$WORK_DIR/dyn/$WORK_DIR_NAME" && echo "uuid_workdir_present" || echo "uuid_workdir_missing"
+test -d "$WORK_DIR/dyn/test_udf_drv_add.d" && echo "function_workdir_present" || echo "function_workdir_absent"
+
 echo "-- if not exists does not invoke driver"
 run "
 CREATE FUNCTION IF NOT EXISTS test_udf_drv_add ARGUMENTS (x UInt8, y UInt8) RETURNS Int64
@@ -79,10 +88,13 @@ SELECT test_udf_drv_add(1, 2);
 "
 
 echo "-- attach-style recreate after config loss"
-rm -rf "$WORK_DIR/dyn/test_udf_drv_add.xml" "$WORK_DIR/dyn/test_udf_drv_add.yaml" "$WORK_DIR/dyn/test_udf_drv_add.d"
+rm -rf "$WORK_DIR/dyn/test_udf_drv_add.xml" "$WORK_DIR/dyn/test_udf_drv_add.yaml" "$WORK_DIR/dyn/test_udf_drv_add.workdir" "$WORK_DIR/dyn/$WORK_DIR_NAME"
 run "SELECT test_udf_drv_add(10, 5);"
+RECREATED_WORK_DIR_NAME=$(cat "$WORK_DIR/dyn/test_udf_drv_add.workdir")
 
 echo "-- drop removes everything"
 run "DROP FUNCTION test_udf_drv_add;"
 test -f "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "config_still_present" || echo "config_removed"
+test -f "$WORK_DIR/dyn/test_udf_drv_add.workdir" && echo "workdir_metadata_still_present" || echo "workdir_metadata_removed"
+test -d "$WORK_DIR/dyn/$RECREATED_WORK_DIR_NAME" && echo "workdir_still_present" || echo "workdir_removed"
 test -f "$WORK_DIR/user_defined/function_test_udf_drv_add.sql" && echo "sql_still_present" || echo "sql_removed"
