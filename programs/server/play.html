@@ -3678,6 +3678,11 @@ async function getQueryUnderCursor() {
     const cursor_position = query_area.selectionStart;
     let current_query_start = 0;
     let current_offset = 0;
+    /// Track the most recently completed query so that if the cursor is past
+    /// the last `;` with only whitespace/comments after it, we run that query
+    /// instead of returning an empty string.
+    let last_query_start = -1;
+    let last_query_end = -1;
 
     for (const elem of tokens) {
         if (current_query_start == current_offset && !elem.significant) {
@@ -3690,10 +3695,24 @@ async function getQueryUnderCursor() {
                 query_area.focus();
                 return all_queries.substring(current_query_start, current_offset);
             } else {
+                last_query_start = current_query_start;
+                last_query_end = current_offset;
                 current_query_start = current_offset;
             }
         }
 
+    }
+
+    /// The cursor is past the last `;`. If the tail has no significant content
+    /// (only whitespace/comments, which the leading-skip loop above will have
+    /// advanced `current_query_start` past until it equals `current_offset`),
+    /// fall back to the query that ended at the last `;` rather than returning
+    /// an empty string. This is what handles the "single query ending in `;`
+    /// with the cursor placed after it" case.
+    if (current_query_start === current_offset && last_query_end >= 0) {
+        query_area.setSelectionRange(last_query_start, last_query_end);
+        query_area.focus();
+        return all_queries.substring(last_query_start, last_query_end);
     }
 
     /// Cursor is in the last query (no trailing semicolon).
