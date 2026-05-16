@@ -48,9 +48,15 @@ namespace
     ///  - in the shared `Opaque::stored_exception` accessible via every callback — used when
     ///    `unzOpen2_64()` fails: minizip's internal cleanup then invokes `closeFileFunc()`
     ///    which deletes the stream, leaving the in-stream exception unreachable. Storing a
-    ///    copy in `Opaque` (which lives on the caller's stack across `unzOpen2_64()`) keeps
-    ///    the original error available so we can surface it instead of the generic
-    ///    "Couldn't open zip archive" or "Code = -100" messages.
+    ///    copy in `Opaque` keeps the original error available so we can surface it instead
+    ///    of the generic "Couldn't open zip archive" or "Code = -100" messages.
+    ///
+    /// `Opaque` is heap-allocated (via `std::shared_ptr`) and pinned for the entire lifetime
+    /// of the `unzFile` handle. Minizip stores the `opaque` pointer internally during
+    /// `unzOpen2_64` and dereferences it from every later callback (`readFileFunc`,
+    /// `seekFunc`, `tellFunc`); a stack-local `Opaque` would dangle after `open()` returns
+    /// successfully, so the owning shared pointer is propagated through `OpenResult` and
+    /// stored in `RawHandleWithStream::opaque`.
     class StreamFromReadBuffer
     {
     public:
@@ -67,11 +73,14 @@ namespace
             RawHandle handle = nullptr;
             StreamFromReadBuffer * stream = nullptr;
             std::exception_ptr stored_exception;
+            std::shared_ptr<Opaque> opaque;
         };
 
         static OpenResult open(std::unique_ptr<SeekableReadBuffer> archive_read_buffer, UInt64 archive_size)
         {
-            Opaque opaque{std::move(archive_read_buffer), archive_size, nullptr, nullptr};
+            auto opaque = std::make_shared<Opaque>();
+            opaque->read_buffer = std::move(archive_read_buffer);
+            opaque->total_size = archive_size;
 
             zlib_filefunc64_def func_def;
             func_def.zopen64_file = &StreamFromReadBuffer::openFileFunc;
@@ -81,16 +90,16 @@ namespace
             func_def.zseek64_file = &StreamFromReadBuffer::seekFunc;
             func_def.ztell64_file = &StreamFromReadBuffer::tellFunc;
             func_def.zerror_file = &StreamFromReadBuffer::testErrorFunc;
-            func_def.opaque = &opaque;
+            func_def.opaque = opaque.get();
 
             RawHandle handle = unzOpen2_64(/* path= */ nullptr, &func_def);
 
             /// If `unzOpen2_64` failed, minizip already called `closeFileFunc()`, so
-            /// `opaque.created_stream` now points to freed memory. Do NOT propagate it.
+            /// `opaque->created_stream` now points to freed memory. Do NOT propagate it.
             if (!handle)
-                return {nullptr, nullptr, std::move(opaque.stored_exception)};
+                return {nullptr, nullptr, std::move(opaque->stored_exception), nullptr};
 
-            return {handle, opaque.created_stream, nullptr};
+            return {handle, opaque->created_stream, nullptr, opaque};
         }
 
         /// Re-throws a stored exception from a callback, if any.
@@ -240,6 +249,9 @@ public:
         auto handle_info = reader->acquireRawHandle();
         raw_handle = handle_info.handle;
         stream = reinterpret_cast<StreamFromReadBuffer *>(handle_info.stream);
+        /// Pin the heap-allocated `StreamFromReadBuffer::Opaque` while the handle is checked
+        /// out — minizip dereferences the stored opaque pointer from every later callback.
+        opaque = std::move(handle_info.opaque);
     }
 
     ~HandleHolder()
@@ -254,7 +266,7 @@ public:
             {
                 tryLogCurrentException("ZipArchiveReader");
             }
-            reader->releaseRawHandle({raw_handle, stream});
+            reader->releaseRawHandle({raw_handle, stream, std::move(opaque)});
         }
     }
 
@@ -268,6 +280,7 @@ public:
         reader = std::exchange(src.reader, nullptr);
         raw_handle = std::exchange(src.raw_handle, nullptr);
         stream = std::exchange(src.stream, nullptr);
+        opaque = std::exchange(src.opaque, nullptr);
         file_name = std::exchange(src.file_name, {});
         file_info = std::exchange(src.file_info, {});
         return *this;
@@ -448,6 +461,10 @@ private:
     std::shared_ptr<ZipArchiveReader> reader;
     RawHandle raw_handle = nullptr;
     StreamFromReadBuffer * stream = nullptr;
+    /// Pins the heap-allocated `StreamFromReadBuffer::Opaque` for the whole time this handle
+    /// is checked out. Moved back into the free-handle slot in `~HandleHolder` so the cache
+    /// retains ownership across acquire/release cycles.
+    std::shared_ptr<void> opaque;
     mutable std::optional<String> file_name;
     mutable std::optional<FileInfoImpl> file_info;
 };
@@ -760,6 +777,12 @@ ZipArchiveReader::RawHandleWithStream ZipArchiveReader::acquireRawHandle()
         auto open_result = StreamFromReadBuffer::open(archive_read_function(), archive_size);
         result.handle = open_result.handle;
         result.stream = open_result.stream;
+        /// The heap-allocated `Opaque` must outlive the `unzFile` handle: minizip stores
+        /// `&opaque` internally during `unzOpen2_64` and dereferences it from every later
+        /// stream callback. Pinning it via the shared pointer keeps the post-open callbacks
+        /// from touching freed memory; the storage is released only when `unzClose()` runs
+        /// in the destructor of `ZipArchiveReader`.
+        result.opaque = std::move(open_result.opaque);
         stored_exception = std::move(open_result.stored_exception);
     }
     else
