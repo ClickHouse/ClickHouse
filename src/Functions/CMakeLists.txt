@@ -100,6 +100,10 @@ if (TARGET OpenSSL::Crypto)
     list (APPEND PUBLIC_LIBS OpenSSL::Crypto)
 endif()
 
+if (TARGET ch_contrib::isal_crypto)
+    list (APPEND PRIVATE_LIBS ch_contrib::isal_crypto)
+endif()
+
 if (TARGET ch_contrib::icu)
     list (APPEND PRIVATE_LIBS ch_contrib::icu)
 endif ()
