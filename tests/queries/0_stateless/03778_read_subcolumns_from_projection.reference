@@ -10,6 +10,12 @@ Expression ((Project names + Projection))
           Parts: 1/1
           Granules: 2/5
           Search Algorithm: binary search
+        Skip
+          Name: auto_minmax_index_x
+          Description: minmax GRANULARITY 1
+          Condition: (x in [\'x_1\', \'x_1\'])
+          Parts: 1/1
+          Granules: 1/2
         Ranges: 1
 1
 x_1	y_1	z_1

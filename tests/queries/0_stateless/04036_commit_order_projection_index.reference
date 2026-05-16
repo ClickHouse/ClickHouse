@@ -20,4 +20,14 @@ Expression ((Project names + Projection))
         Parts: 1/1
         Granules: 2/40
         Search Algorithm: binary search
+      Skip
+        Name: auto_minmax_index__block_number
+        Description: minmax GRANULARITY 1
+        Parts: 1/1
+        Granules: 2/2
+      Skip
+        Name: auto_minmax_index__block_offset
+        Description: minmax GRANULARITY 1
+        Parts: 1/1
+        Granules: 1/2
       Ranges: 1

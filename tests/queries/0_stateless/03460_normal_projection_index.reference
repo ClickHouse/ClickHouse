@@ -46,9 +46,9 @@ Description: Projection has been analyzed and will be applied during reading
 Condition: (region in [\'europe\', \'europe\'])
 Search Algorithm: binary search
 Parts: 1
-Marks: 2
+Marks: 1
 Ranges: 1
-Rows: 2
+Rows: 1
 Filtered Parts: 0
 Name: user_id_proj
 Description: Projection has been analyzed and will be applied during reading
@@ -88,18 +88,18 @@ Description: Projection has been analyzed and will be applied during reading
 Condition: (region in [\'us_west\', \'us_west\'])
 Search Algorithm: binary search
 Parts: 1
-Marks: 4
+Marks: 3
 Ranges: 1
-Rows: 4
+Rows: 3
 Filtered Parts: 0
 Name: user_id_proj
 Description: Projection has been analyzed and will be applied during reading
 Condition: (user_id in [106, 106])
 Search Algorithm: binary search
 Parts: 1
-Marks: 2
+Marks: 1
 Ranges: 1
-Rows: 2
+Rows: 1
 Filtered Parts: 0
 SELECT * FROM test_simple_projection WHERE region = 'us_west' AND user_id = 106 ORDER BY ALL;
 3	2023-01-02	106	https://example.com/page3	us_west
@@ -217,9 +217,9 @@ Description: Projection has been analyzed and will be applied during reading
 Condition: (region in [\'ru\', \'ru\'])
 Search Algorithm: binary search
 Parts: 1
-Marks: 2
+Marks: 1
 Ranges: 1
-Rows: 2
+Rows: 1
 Filtered Parts: 0
 SELECT * FROM test_partial_projection WHERE region = 'ru' ORDER BY ALL;
 5	ru
@@ -233,9 +233,9 @@ Description: Projection has been analyzed and will be applied during reading
 Condition: (region in [\'cn\', \'cn\'])
 Search Algorithm: binary search
 Parts: 1
-Marks: 2
+Marks: 1
 Ranges: 1
-Rows: 2
+Rows: 1
 Filtered Parts: 0
 SELECT * FROM test_partial_projection WHERE region = 'cn' ORDER BY ALL;
 3	cn
