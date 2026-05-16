@@ -122,16 +122,12 @@ jobs:
                   break
                 fi
 
-                # Require at least one failed sub-result, and all of them must be
-                # "Checkout Submodules". An empty failed-results list is NOT a
-                # checkout-only failure — it means the job failed for some other
-                # reason (no sub-result was marked failed), and should be left for
-                # the infra-pattern fallback below.
-                is_checkout_only=$(echo "$result_json" | jq -r '
-                  [.results[] | select(.status == "failure" or .status == "error") | .name] as $failed |
-                  ($failed | length > 0) and ($failed | all(. == "Checkout Submodules"))
+                # Check: all failed sub-results must be "Checkout Submodules"
+                has_non_checkout_failure=$(echo "$result_json" | jq -r '
+                  [.results[] | select(.status == "failure" or .status == "error") |
+                   .name] | map(select(. != "Checkout Submodules")) | length > 0
                 ')
-                if [ "$is_checkout_only" != "true" ]; then
+                if [ "$has_non_checkout_failure" = "true" ]; then
                   all_checkout_failures=false
                   break
                 fi
