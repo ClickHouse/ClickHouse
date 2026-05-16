@@ -5664,6 +5664,9 @@ Enable independent aggregation of partitions on separate threads when partition 
     DECLARE(Bool, force_aggregate_partitions_independently, false, R"(
 Force the use of optimization when it is applicable, but heuristics decided not to use it
 )", 0) \
+    DECLARE(Bool, allow_limit_by_partitions_independently, true, R"(
+Enable independent `LIMIT BY` evaluation per partition on separate threads when the partition expression is a deterministic function of the `LIMIT BY` columns.
+)", 0) \
     DECLARE(UInt64, max_number_of_partitions_for_independent_aggregation, 128, R"(
 Maximal number of partitions in table to apply optimization
 )", 0) \
