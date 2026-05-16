@@ -4,6 +4,7 @@
 #include <Core/Settings.h>
 
 #include <Core/ParallelReplicasMode.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 
@@ -116,6 +117,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsFloat max_streams_to_max_threads_ratio;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool optimize_trivial_count_query;
     extern const SettingsUInt64 parallel_replicas_count;
@@ -297,6 +299,22 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
     return result;
 }
 
+/// Returns the effective row policy filter for the table, or nullptr if the
+/// table has no row policies for the current user or the combined filter is
+/// always-true. Mirrors the effective-filter check used by
+/// buildRowPolicyFilterIfNeeded.
+RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const ContextPtr & query_context)
+{
+    auto storage_id = storage->getStorageID();
+    if (!storage_id.hasDatabase())
+        return nullptr;
+    auto row_policy_filter = query_context->getRowPolicyFilter(
+        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
+        return nullptr;
+    return row_policy_filter;
+}
+
 bool applyTrivialCountIfPossible(
     QueryPlan & query_plan,
     SelectQueryInfo & select_query_info,
@@ -315,12 +333,8 @@ bool applyTrivialCountIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
-    auto storage_id = storage->getStorageID();
-    auto row_policy_filter = query_context->getRowPolicyFilter(storage_id.getDatabaseName(),
-        storage_id.getTableName(),
-        RowPolicyFilterType::SELECT_FILTER);
-    if (row_policy_filter)
-        return {};
+    if (getEffectiveRowPolicyFilter(storage, query_context))
+        return false;
 
     if (select_query_info.additional_filter_ast)
         return false;
@@ -555,11 +569,10 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
     PlannerContextPtr & planner_context,
     std::set<std::string> & used_row_policies)
 {
-    auto storage_id = storage->getStorageID();
     const auto & query_context = planner_context->getQueryContext();
 
-    auto row_policy_filter = query_context->getRowPolicyFilter(storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-    if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
+    auto row_policy_filter = getEffectiveRowPolicyFilter(storage, query_context);
+    if (!row_policy_filter)
         return {};
 
     for (const auto & row_policy : row_policy_filter->policies)
@@ -606,23 +619,24 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
     return buildFilterInfo(parallel_replicas_custom_filter_ast, table_expression_query_info.table_expression, planner_context);
 }
 
-/// Apply filters from additional_table_filters setting
-std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & storage,
+/// Parse `additional_table_filters` for this table expression and assign the AST into
+/// `table_expression_query_info.additional_filter_ast`. This is the pure, side-effect-free
+/// part of `buildAdditionalFiltersIfNeeded` — no planner-context mutation, no prewhere
+/// touch — so it can be called early (before prewhere / row-policy / trivial-count /
+/// trivial-limit decisions) and later consumers can simply read the parsed AST.
+void parseAdditionalFilterAstIfNeeded(const StoragePtr & storage,
     const String & table_expression_alias,
     SelectQueryInfo & table_expression_query_info,
-    const PrewhereInfoPtr & prewhere_info,
-    PlannerContextPtr & planner_context)
+    const ContextPtr & query_context)
 {
-    const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
     auto const & additional_filters = settings[Setting::additional_table_filters].value;
     if (additional_filters.empty())
-        return {};
+        return;
 
     auto const & storage_id = storage->getStorageID();
 
-    ASTPtr additional_filter_ast;
     for (const auto & additional_filter : additional_filters)
     {
         const auto & tuple = additional_filter.safeGet<Tuple>();
@@ -634,7 +648,7 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & s
             (table == storage_id.getFullNameNotQuoted()))
         {
             ParserExpression parser;
-            additional_filter_ast = parseQuery(
+            table_expression_query_info.additional_filter_ast = parseQuery(
                 parser,
                 filter.data(),
                 filter.data() + filter.size(),
@@ -642,14 +656,23 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & s
                 settings[Setting::max_query_size],
                 settings[Setting::max_parser_depth],
                 settings[Setting::max_parser_backtracks]);
-            break;
+            return;
         }
     }
+}
 
+/// Apply filters from additional_table_filters setting. Expects
+/// `parseAdditionalFilterAstIfNeeded` to have been called earlier so
+/// `table_expression_query_info.additional_filter_ast` is populated.
+std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(
+    SelectQueryInfo & table_expression_query_info,
+    const PrewhereInfoPtr & prewhere_info,
+    PlannerContextPtr & planner_context)
+{
+    const auto & additional_filter_ast = table_expression_query_info.additional_filter_ast;
     if (!additional_filter_ast)
         return {};
 
-    table_expression_query_info.additional_filter_ast = additional_filter_ast;
     auto filter_info = buildFilterInfo(additional_filter_ast, table_expression_query_info.table_expression, planner_context);
     if (prewhere_info)
     {
@@ -779,8 +802,19 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         if (const auto & filter_actions = table_expression_data.getFilterActions())
             table_expression_query_info.filter_actions_dag = std::make_shared<const ActionsDAG>(filter_actions->clone());
 
-        size_t max_streams = settings[Setting::max_threads];
-        size_t max_threads_execute_query = settings[Setting::max_threads];
+        /// Parse additional_table_filters early so that later decisions (trivial-count,
+        /// trivial-limit) can see `additional_filter_ast` before the actual filter DAG
+        /// is built further down
+        ///
+        /// Skip under `only_analyze`, since we may not have the database in case of Distributed.
+        if (!select_query_options.only_analyze)
+            parseAdditionalFilterAstIfNeeded(
+                storage, table_expression->getOriginalAlias(), table_expression_query_info, query_context);
+
+        const size_t memory_limited_max_threads = getMaxThreadsForAvailableMemory(
+            settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
+        size_t max_streams = memory_limited_max_threads;
+        size_t max_threads_execute_query = memory_limited_max_threads;
 
         /**
          * To simultaneously query more remote servers when async_socket_for_remote is off
@@ -803,14 +837,20 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
         UInt64 max_block_size = settings[Setting::max_block_size];
         UInt64 max_block_size_limited = 0;
-        if (is_single_table_expression)
+        if (is_single_table_expression && !select_query_options.only_analyze)
         {
             /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
               * but LIMIT is specified, and limit + offset < max_block_size,
               * then as the block size we will use limit + offset (not to read more from the table than requested),
               * and also set the number of threads to 1.
               */
-            max_block_size_limited = mainQueryNodeBlockSizeByLimit(select_query_info);
+            /// Use the same effective-filter checks as the row-policy / additional-filter
+            /// planning further down: the trivial-LIMIT optimization must be disabled
+            /// whenever those filters actually apply, so the flags must agree.
+            bool has_additional_filters = !!table_expression_query_info.additional_filter_ast
+                || !!getEffectiveRowPolicyFilter(storage, query_context);
+            if (!has_additional_filters)
+                max_block_size_limited = mainQueryNodeBlockSizeByLimit(select_query_info);
             if (max_block_size_limited)
             {
                 if (max_block_size_limited < max_block_size)
@@ -883,7 +923,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
         /// Apply trivial_count optimization if possible
         bool is_trivial_count_applied = !select_query_options.only_analyze && !select_query_options.build_logical_plan && is_single_table_expression
-            && (table_node || table_function_node) && select_query_info.has_aggregates && settings[Setting::additional_table_filters].value.empty()
+            && (table_node || table_function_node) && select_query_info.has_aggregates
             && applyTrivialCountIfPossible(
                 query_plan,
                 table_expression_query_info,
@@ -914,9 +954,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     NameSet columns_needed_by_other_filters;
 
                     /// Pre-build additional table filter to know what columns it needs
-                    const auto & table_expression_alias = table_expression->getOriginalAlias();
                     auto additional_filters_info_temp = buildAdditionalFiltersIfNeeded(
-                        storage, table_expression_alias, table_expression_query_info, prewhere_info, planner_context);
+                        table_expression_query_info, prewhere_info, planner_context);
                     if (additional_filters_info_temp)
                     {
                         for (const auto * input : additional_filters_info_temp->actions.getInputs())
@@ -1000,8 +1039,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                 }
 
-                const auto & table_expression_alias = table_expression->getOriginalAlias();
-                if (auto additional_filters_info = buildAdditionalFiltersIfNeeded(storage, table_expression_alias, table_expression_query_info, prewhere_info, planner_context))
+                if (auto additional_filters_info = buildAdditionalFiltersIfNeeded(table_expression_query_info, prewhere_info, planner_context))
                 {
                     appendSetsFromActionsDAG(additional_filters_info->actions, useful_sets);
                     where_filters.emplace_back(std::move(*additional_filters_info), makeDescription("additional filter"));
@@ -1863,7 +1901,8 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
             settings[Setting::max_block_size],
             settings[Setting::min_joined_block_size_rows],
             settings[Setting::min_joined_block_size_bytes],
-            settings[Setting::max_threads],
+            getMaxThreadsForAvailableMemory(
+                settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]),
             required_columns_after_join,
             false /*optimize_read_in_order*/,
             true /*optimize_skip_unused_shards*/,

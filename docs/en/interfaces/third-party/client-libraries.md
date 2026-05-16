@@ -8,8 +8,6 @@ title: 'Client Libraries from Third-party Developers'
 doc_type: 'reference'
 ---
 
-# Client libraries from third-party developers
-
 :::note
 ClickHouse Inc does **not** maintain the libraries listed below and hasn't done any extensive testing to ensure their quality.
 :::
@@ -34,6 +32,7 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn't done 
 - [kolya7k ClickHouse PHP extension](https://github.com//kolya7k/clickhouse-php)
 - [hyvor/clickhouse-php](https://github.com/hyvor/clickhouse-php)
 - [beeterty/clickhouse-php-client](https://github.com/beeterty-technologies/clickhouse-php-client) 
+- [laravel-clickhouse/laravel-clickhouse](https://github.com/laravel-clickhouse/laravel-clickhouse)
 ### Go {#go}
 - [clickhouse](https://github.com/kshvakov/clickhouse/)
 - [go-clickhouse](https://github.com/roistat/go-clickhouse)

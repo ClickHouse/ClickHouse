@@ -118,9 +118,9 @@ public:
         data(place).add(*columns[0], row_num, arena);
     }
 
-    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t, Arena * arena) const override
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const override
     {
-        data(place).addManyDefaults(*columns[0], 0, arena);
+        data(place).addManyDefaults(*columns[0], length, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override

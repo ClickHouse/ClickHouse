@@ -20,6 +20,9 @@
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+#if USE_AZURE_BLOB_STORAGE
+    extern const int BAD_ARGUMENTS;
+#endif
 }
 
 namespace DB::S3AuthSetting
@@ -187,7 +190,20 @@ public:
                 const auto & auth = std::get<DB::AzureBlobStorage::ConnectionString>(connection_params.auth_method);
                 /// delta-kernel-rs does not support azure_storage_connection_string directly.
                 /// Parse the connection string into individual components instead.
-                auto parsed = Azure::Storage::_internal::ParseConnectionString(auth.toUnderType());
+                /// Translate Azure SDK std::logic_error subtypes (e.g. std::invalid_argument
+                /// from std::stoi for malformed ports inside the connection string's
+                /// BlobEndpoint URL) to DB::Exception so they don't trigger
+                /// abortOnFailedAssertion in debug/sanitizer builds.
+                Azure::Storage::_internal::ConnectionStringParts parsed;
+                try
+                {
+                    parsed = Azure::Storage::_internal::ParseConnectionString(auth.toUnderType());
+                }
+                catch (const std::logic_error & e)
+                {
+                    throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
+                        "Failed to parse Azure connection string: {}", e.what());
+                }
 
                 if (!parsed.AccountName.empty())
                     set_option("azure_storage_account_name", parsed.AccountName);
