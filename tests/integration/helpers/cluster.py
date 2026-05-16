@@ -4267,7 +4267,7 @@ class ClickHouseCluster:
         )
 
     @contextmanager
-    def pause_container(self, instance_name, wait_for_paused=True, wait_timeout=30.0):
+    def pause_container(self, instance_name, wait_for_paused=True, wait_timeout=90.0):
         """Use it as following:
         with cluster.pause_container(name):
             useful_stuff()
@@ -4279,6 +4279,17 @@ class ClickHouseCluster:
         Docker's cgroup freezer takes effect asynchronously with respect
         to in-flight traffic. Set `wait_for_paused=False` to opt out and
         keep the older non-blocking behavior.
+
+        The default `wait_timeout` is 90 seconds. The freeze itself is
+        usually observable within a few seconds even on cold cgroups, but
+        the slowest CI jobs — MSan and ASan+UBSan with the old analyzer —
+        run individual probe iterations (subprocess spawn, sibling-node
+        query, handshake failure path) under heavy sanitizer
+        instrumentation. Empirically a 30-second budget was not enough on
+        those builds, see issue `#103819` and PR `#104268` comment
+        thread; 90 seconds keeps roughly a 3x safety margin while still
+        failing fast enough to be useful when something is genuinely
+        wrong with the pause.
 
         Cleanup: once the container has been paused (whether via
         `docker compose pause` or the `SIGSTOP` fallback), unpausing must
@@ -4310,7 +4321,11 @@ class ClickHouseCluster:
                 self._unpause_container(instance_name)
 
     @contextmanager
-    def pause_container_using_signal(self, instance_name, wait_for_paused=True, wait_timeout=30.0):
+    def pause_container_using_signal(self, instance_name, wait_for_paused=True, wait_timeout=90.0):
+        """Same semantics as `pause_container`, but always uses the
+        `SIGSTOP`/`SIGCONT` mechanism instead of `docker compose pause`.
+        See `pause_container` for the rationale behind the 90s default.
+        """
         self._pause_container_using_signal(instance_name)
         try:
             if wait_for_paused:
