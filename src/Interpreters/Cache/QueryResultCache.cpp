@@ -468,7 +468,8 @@ void QueryResultCache::Key::deserialize(ReadBuffer & buf)
         UUID user_role;
         readUUIDText(user_role, buf);
         roles.push_back(user_role);
-        assertChar(',', buf);
+        /// Comma is a separator, not a terminator: the last UUID is followed by '\n' (handled by the loop condition).
+        checkChar(',', buf);
     }
     if (!roles.empty())
         current_user_roles = roles;
