@@ -488,25 +488,12 @@
            we hide the textarea's own text by setting its color to transparent. What
            the user sees is the backdrop directly. The caret keeps a normal color via
            `caret-color` (the bare `color: transparent` would also make the caret
-           transparent because the caret defaults to `currentColor`).
-
-           While the lexer catches up to fresh input, the textarea also gets the
-           `stale` modifier class: its text becomes visible again so freshly typed
-           characters appear immediately, and the previous-state backdrop is left
-           below as a brief "shadow" of the prior highlighting. */
+           transparent because the caret defaults to `currentColor`). */
         #query.has-backdrop
         {
             background: transparent;
             color: transparent;
             caret-color: var(--text-color-active);
-        }
-        #query.has-backdrop.stale
-        {
-            color: var(--text-color);
-        }
-        #query.has-backdrop.stale:focus
-        {
-            color: var(--text-color-active);
         }
 
         #query-backdrop
@@ -4021,7 +4008,6 @@ function renderQueryBackdrop() {
     if (!text || tokens.length === 0) {
         queryBackdrop.style.display = 'none';
         query_area.classList.remove('has-backdrop');
-        query_area.classList.remove('stale');
         return;
     }
 
@@ -4085,7 +4071,6 @@ function renderQueryBackdrop() {
     queryBackdrop.innerHTML = html;
     queryBackdrop.style.display = 'block';
     query_area.classList.add('has-backdrop');
-    query_area.classList.remove('stale');
 
     /// Match the scrollbar: reserve extra right padding so text wraps identically.
     /// clientWidth excludes borders and scrollbar; offsetWidth includes borders.
@@ -4255,17 +4240,13 @@ async function updateQueryParams()
 let paramDebounceTimer = null;
 query_area.addEventListener('input', () =>
 {
-    /// Make the textarea's own text visible while the lexer catches up: this
-    /// puts the freshly typed characters on screen immediately. The backdrop
-    /// stays visible underneath, so its pre-edit highlighting acts as a brief
-    /// "shadow" until the debounced update replaces it.
-    ///
-    /// Debounce: bursts of input events (holding down a key, pasting the same
-    /// query many times) would otherwise re-tokenize and re-render the
-    /// backdrop on every event and cause visible input lag for large queries.
-    /// 10 ms is long enough to coalesce a fast paste burst into a single
-    /// update while staying imperceptible to a person typing.
-    query_area.classList.add('stale');
+    /// Debounce briefly: bursts of input events (e.g. holding down a key, or
+    /// pasting the same query many times) would otherwise re-tokenize and
+    /// re-render the backdrop on every event and cause visible input lag for
+    /// large queries. 10 ms is short enough that the gap between the textarea
+    /// catching the new text (invisible while `.has-backdrop` is on) and the
+    /// backdrop catching up is imperceptible, but long enough to coalesce a
+    /// fast paste burst into a single update.
     clearTimeout(paramDebounceTimer);
     paramDebounceTimer = setTimeout(updateQueryParams, 10);
 });
