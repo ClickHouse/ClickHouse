@@ -188,8 +188,6 @@ public:
             ColumnWithTypeAndName column_to_cast = {column_with_type.column, column_with_type.type, column_with_type.name};
             column_with_type.column = castColumnAccurate(column_to_cast, argument_type);
             column_with_type.type = argument_type;
-
-            column_with_type = std::move(column_to_cast);
         }
 
         try

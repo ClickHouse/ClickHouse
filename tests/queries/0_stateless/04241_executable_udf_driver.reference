@@ -12,6 +12,8 @@ setvbuf_absent
 stdio_serde_absent
 -- multi-row chunk call
 55
+-- declared argument cast
+3
 -- string args + return
 hello world
 0
@@ -27,6 +29,9 @@ config_removed
 workdir_metadata_removed
 workdir_removed
 sql_removed
+u64_config_removed
+u64_workdir_metadata_removed
+u64_sql_removed
 string_config_removed
 string_workdir_metadata_removed
 string_workdir_removed

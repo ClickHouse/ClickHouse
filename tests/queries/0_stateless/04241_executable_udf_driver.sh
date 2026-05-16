@@ -87,6 +87,13 @@ grep -Eq 'fread|fwrite|fgets|fflush|fputs|scanf|printf|strtoull|setvbuf' "$WORK_
 echo "-- multi-row chunk call"
 run "SELECT sum(test_udf_drv_add(toUInt8(number), toUInt8(1))) FROM numbers(10);"
 
+echo "-- declared argument cast"
+run "
+CREATE FUNCTION test_udf_drv_add_u64 ARGUMENTS (x UInt64, y UInt64) RETURNS UInt64
+    ENGINE = c_function_body() AS 'return x + y;';
+SELECT test_udf_drv_add_u64(1, 2);
+"
+
 echo "-- string args + return"
 run "
 CREATE FUNCTION test_udf_drv_concat ARGUMENTS (x String, y String) RETURNS String
@@ -127,11 +134,14 @@ run "SELECT test_udf_drv_add(10, 5);"
 RECREATED_WORK_DIR_NAME=$(cat "$WORK_DIR/dyn/test_udf_drv_add.workdir")
 
 echo "-- drop removes everything"
-run "DROP FUNCTION test_udf_drv_add; DROP FUNCTION test_udf_drv_concat;"
+run "DROP FUNCTION test_udf_drv_add; DROP FUNCTION test_udf_drv_add_u64; DROP FUNCTION test_udf_drv_concat;"
 test -f "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "config_still_present" || echo "config_removed"
 test -f "$WORK_DIR/dyn/test_udf_drv_add.workdir" && echo "workdir_metadata_still_present" || echo "workdir_metadata_removed"
 test -d "$WORK_DIR/dyn/$RECREATED_WORK_DIR_NAME" && echo "workdir_still_present" || echo "workdir_removed"
 test -f "$WORK_DIR/user_defined/function_test_udf_drv_add.sql" && echo "sql_still_present" || echo "sql_removed"
+test -f "$WORK_DIR/dyn/test_udf_drv_add_u64.xml" && echo "u64_config_still_present" || echo "u64_config_removed"
+test -f "$WORK_DIR/dyn/test_udf_drv_add_u64.workdir" && echo "u64_workdir_metadata_still_present" || echo "u64_workdir_metadata_removed"
+test -f "$WORK_DIR/user_defined/function_test_udf_drv_add_u64.sql" && echo "u64_sql_still_present" || echo "u64_sql_removed"
 test -f "$WORK_DIR/dyn/test_udf_drv_concat.xml" && echo "string_config_still_present" || echo "string_config_removed"
 test -f "$WORK_DIR/dyn/test_udf_drv_concat.workdir" && echo "string_workdir_metadata_still_present" || echo "string_workdir_metadata_removed"
 test -d "$WORK_DIR/dyn/$STRING_WORK_DIR_NAME" && echo "string_workdir_still_present" || echo "string_workdir_removed"
