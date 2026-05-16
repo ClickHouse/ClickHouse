@@ -91,10 +91,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ai_function_throw_on_quota_exceeded", true, true, "New setting"},
             {"variant_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Variant implementation"},
             {"dynamic_throw_on_type_mismatch", true, true, "New setting to control type mismatch behavior in default Dynamic implementation"},
+            {"defer_partition_pruning_after_final", true, true, "Gates the FINAL planner's unconditional skipping of partition pruning when the partition-key column is not in the sorting key. The behavior change itself shipped silently in 26.3 via https://github.com/ClickHouse/ClickHouse/pull/98242; this entry retroactively documents it so `compatibility = '26.2'` restores the pre-regression behavior (0 = prune before FINAL, fast; 1 = defer pruning, correctness-safe)."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
-            {"defer_partition_pruning_after_final", false, true, "Gates the FINAL planner's unconditional skipping of partition pruning when the partition-key column is not in the sorting key. The behavior change itself shipped silently in 26.3 via https://github.com/ClickHouse/ClickHouse/pull/98242; this entry retroactively documents it so `compatibility = '26.2'` restores the pre-regression behavior (0 = prune before FINAL, fast; 1 = defer pruning, correctness-safe)."},
             {"allow_experimental_polyglot_dialect", false, false, "New setting to enable the polyglot SQL transpiler dialect."},
             {"polyglot_dialect", "", "", "New setting to specify the source SQL dialect for the polyglot transpiler."},
             {"output_format_trim_fixed_string", false, false, "New setting to trim trailing zero bytes from FixedString values in text output formats"},
