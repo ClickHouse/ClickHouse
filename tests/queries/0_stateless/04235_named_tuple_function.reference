@@ -1,6 +1,0 @@
-Tuple(\n    a UInt8,\n    b String)
-{"a":1,"b":"x"}
-Tuple(UInt8, String)
-[1,"x"]
-Tuple()
-[]

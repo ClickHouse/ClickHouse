@@ -3,7 +3,6 @@
 #include <Functions/IFunction.h>
 
 #include <Columns/ColumnTuple.h>
-#include <Common/Exception.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context_fwd.h>
@@ -12,11 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 /** tuple(x, y, ...) is a function that allows you to group several columns.
   * tupleElement(tuple, n) is a function that allows you to retrieve a column from tuple.
   */
@@ -24,17 +18,15 @@ class FunctionTuple : public IFunction
 {
     String function_name;
     bool enable_named_columns;
-    bool require_named_columns;
 
 public:
     static constexpr auto name = "tuple";
 
     static FunctionPtr create(ContextPtr context);
 
-    explicit FunctionTuple(String function_name_ = name, bool enable_named_columns_ = false, bool require_named_columns_ = false)
+    explicit FunctionTuple(String function_name_ = name, bool enable_named_columns_ = false)
         : function_name(std::move(function_name_))
         , enable_named_columns(enable_named_columns_)
-        , require_named_columns(require_named_columns_)
     {
     }
 
@@ -74,25 +66,11 @@ public:
             return std::make_shared<DataTypeTuple>(types);
 
         if (name_set.size() != names.size())
-        {
-            if (require_named_columns)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Arguments for function {} must have unique names", getName());
-
             return std::make_shared<DataTypeTuple>(types);
-        }
 
         auto invalid_name = std::find_if_not(names.cbegin(), names.cend(), [](const auto & argument_name) { return isUnquotedIdentifier(argument_name); });
         if (invalid_name != names.cend())
-        {
-            if (require_named_columns)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Argument name {} for function {} must be a valid unquoted identifier",
-                    *invalid_name,
-                    getName());
-
             return std::make_shared<DataTypeTuple>(types);
-        }
 
         return std::make_shared<DataTypeTuple>(types, names);
     }

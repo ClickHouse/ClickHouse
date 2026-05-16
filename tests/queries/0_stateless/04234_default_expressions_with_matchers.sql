@@ -1,3 +1,5 @@
+SET enable_named_columns_in_function_tuple = 1;
+
 DROP TABLE IF EXISTS default_expr_matchers_alias;
 DROP TABLE IF EXISTS default_expr_matchers_alias_apply;
 DROP TABLE IF EXISTS default_expr_matchers_alias_columns;
@@ -28,7 +30,7 @@ CREATE TABLE default_expr_matchers_alias_tuple
 (
     a UInt8,
     c String,
-    b String ALIAS toJSONString(namedTuple(*))
+    b String ALIAS toJSONString(tuple(*))
 )
 ENGINE = Memory;
 
@@ -40,7 +42,7 @@ CREATE TABLE default_expr_matchers_alias_columns
     a UInt8,
     c String,
     d UInt8,
-    b String ALIAS toJSONString(namedTuple(COLUMNS('^(a|c)$')))
+    b String ALIAS toJSONString(tuple(COLUMNS('^(a|c)$')))
 )
 ENGINE = Memory;
 
@@ -52,7 +54,7 @@ CREATE TABLE default_expr_matchers_alias_columns_list
     a UInt8,
     c String,
     d UInt8,
-    b String ALIAS toJSONString(namedTuple(COLUMNS(a, c)))
+    b String ALIAS toJSONString(tuple(COLUMNS(a, c)))
 )
 ENGINE = Memory;
 
@@ -74,7 +76,7 @@ CREATE TABLE default_expr_matchers_alias_replace
 (
     a UInt8,
     c String,
-    b String ALIAS toJSONString(namedTuple(* REPLACE (2 AS a)))
+    b String ALIAS toJSONString(tuple(* REPLACE (2 AS a)))
 )
 ENGINE = Memory;
 
@@ -85,7 +87,7 @@ CREATE TABLE default_expr_matchers_alias_nested_matcher
 (
     a UInt8,
     c String,
-    b String ALIAS toJSONString(namedTuple(* REPLACE (tuple(COLUMNS(a, c)) AS a)))
+    b String ALIAS toJSONString(tuple(* REPLACE (array(COLUMNS(a, c) APPLY toString) AS a)))
 )
 ENGINE = Memory;
 
@@ -95,7 +97,7 @@ SELECT b FROM default_expr_matchers_alias_nested_matcher;
 CREATE TABLE default_expr_matchers_invalid_regexp
 (
     a UInt8,
-    b String ALIAS toJSONString(namedTuple(COLUMNS('(')))
+    b String ALIAS toJSONString(tuple(COLUMNS('(')))
 )
 ENGINE = Memory; -- { serverError CANNOT_COMPILE_REGEXP }
 
@@ -110,14 +112,14 @@ ENGINE = Memory; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 CREATE TABLE default_expr_matchers_self
 (
     a UInt8,
-    b String DEFAULT toJSONString(namedTuple(*))
+    b String DEFAULT toJSONString(tuple(*))
 )
 ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
 
 CREATE TABLE default_expr_matchers_indirect_self
 (
     a UInt8,
-    b String DEFAULT toJSONString(namedTuple(* EXCEPT b)),
+    b String DEFAULT toJSONString(tuple(* EXCEPT b)),
     c String DEFAULT b
 )
 ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
@@ -126,7 +128,7 @@ SET asterisk_include_materialized_columns = 1;
 CREATE TABLE default_expr_matchers_materialized_self
 (
     a UInt8,
-    b String MATERIALIZED toJSONString(namedTuple(*))
+    b String MATERIALIZED toJSONString(tuple(*))
 )
 ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
 SET asterisk_include_materialized_columns = 0;
@@ -135,7 +137,7 @@ SET asterisk_include_alias_columns = 1;
 CREATE TABLE default_expr_matchers_alias_self
 (
     a UInt8,
-    b String ALIAS toJSONString(namedTuple(*))
+    b String ALIAS toJSONString(tuple(*))
 )
 ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
 SET asterisk_include_alias_columns = 0;
@@ -143,7 +145,7 @@ SET asterisk_include_alias_columns = 0;
 CREATE TABLE default_expr_matchers_default_except
 (
     a UInt8,
-    b String DEFAULT toJSONString(namedTuple(* EXCEPT b))
+    b String DEFAULT toJSONString(tuple(* EXCEPT b))
 )
 ENGINE = Memory;
 
@@ -154,7 +156,7 @@ CREATE TABLE default_expr_matchers_include_materialized
 (
     a UInt8,
     m UInt8 MATERIALIZED a + 1,
-    b String DEFAULT toJSONString(namedTuple(* EXCEPT b))
+    b String DEFAULT toJSONString(tuple(* EXCEPT b))
 )
 ENGINE = Memory;
 
@@ -167,7 +169,7 @@ CREATE TABLE default_expr_matchers_include_alias
 (
     a UInt8,
     x UInt8 ALIAS a + 1,
-    b String DEFAULT toJSONString(namedTuple(* EXCEPT b))
+    b String DEFAULT toJSONString(tuple(* EXCEPT b))
 )
 ENGINE = Memory;
 
@@ -179,28 +181,28 @@ SELECT b FROM default_expr_matchers_include_alias;
 CREATE TABLE default_expr_matchers_qualified_asterisk_error
 (
     a UInt8,
-    b String DEFAULT toJSONString(namedTuple(t.*))
+    b String DEFAULT toJSONString(tuple(t.*))
 )
 ENGINE = Memory; -- { serverError UNKNOWN_IDENTIFIER }
 
 CREATE TABLE default_expr_matchers_qualified_columns_error
 (
     a UInt8,
-    b String DEFAULT toJSONString(namedTuple(t.COLUMNS('^a$')))
+    b String DEFAULT toJSONString(tuple(t.COLUMNS('^a$')))
 )
 ENGINE = Memory; -- { serverError UNKNOWN_IDENTIFIER }
 
 CREATE TABLE default_expr_matchers_qualified_columns_list_error
 (
     a UInt8,
-    b String DEFAULT toJSONString(namedTuple(t.COLUMNS(a)))
+    b String DEFAULT toJSONString(tuple(t.COLUMNS(a)))
 )
 ENGINE = Memory; -- { serverError UNKNOWN_IDENTIFIER }
 
 CREATE TABLE default_expr_matchers_ephemeral_asterisk
 (
     a UInt8,
-    b String EPHEMERAL toJSONString(namedTuple(*)),
+    b String EPHEMERAL toJSONString(tuple(*)),
     c String MATERIALIZED b
 )
 ENGINE = Memory;
@@ -213,7 +215,7 @@ CREATE TABLE default_expr_matchers_ephemeral_columns
     a UInt8,
     c String,
     d UInt8,
-    b String EPHEMERAL toJSONString(namedTuple(COLUMNS('^(a|c)$'))),
+    b String EPHEMERAL toJSONString(tuple(COLUMNS('^(a|c)$'))),
     e String MATERIALIZED b
 )
 ENGINE = Memory;
@@ -225,7 +227,7 @@ CREATE TABLE default_expr_matchers_ephemeral_not_matched
 (
     a UInt8,
     b UInt8 EPHEMERAL a + 1,
-    c String DEFAULT toJSONString(namedTuple(COLUMNS('^(a|b)$')))
+    c String DEFAULT toJSONString(tuple(COLUMNS('^(a|b)$')))
 )
 ENGINE = Memory;
 
@@ -253,7 +255,7 @@ CREATE TABLE default_expr_matchers_index_tuple
 (
     a UInt8,
     b UInt8,
-    INDEX idx(toJSONString(namedTuple(*))) TYPE set(0) GRANULARITY 1
+    INDEX idx(toJSONString(tuple(*))) TYPE set(0) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY tuple();

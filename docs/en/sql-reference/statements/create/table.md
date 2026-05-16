@@ -129,13 +129,15 @@ Column `DEFAULT`, `MATERIALIZED`, `EPHEMERAL`, and `ALIAS` expressions can use c
 
 Matchers are expanded before expression validation and execution. By default, `*` does not include `MATERIALIZED` or `ALIAS` columns; this can be changed with the `asterisk_include_materialized_columns` and `asterisk_include_alias_columns` settings. `EPHEMERAL` columns are not included in matcher expansion.
 
-ClickHouse detects and rejects cyclic default-expression dependencies. For example, `b String DEFAULT toJSONString(namedTuple(*))` is rejected because `*` includes `b` itself. Use `EXCEPT` to exclude the column when needed:
+ClickHouse detects and rejects cyclic default-expression dependencies. For example, `b String DEFAULT toJSONString(tuple(*))` is rejected because `*` includes `b` itself. Use `EXCEPT` to exclude the column when needed:
 
 ```sql
+SET enable_named_columns_in_function_tuple = 1;
+
 CREATE OR REPLACE TABLE test
 (
     a UInt8,
-    b String DEFAULT toJSONString(namedTuple(* EXCEPT b))
+    b String DEFAULT toJSONString(tuple(* EXCEPT b))
 )
 ENGINE = Memory;
 
