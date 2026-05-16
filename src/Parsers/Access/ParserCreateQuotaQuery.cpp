@@ -343,7 +343,7 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             }
         }
 
-        if (!ipv4_prefix_bits && !ipv6_prefix_bits)
+        if (!ipv4_prefix_bits || !ipv6_prefix_bits)
         {
             if (parseIpPrefixBits(pos, expected, ipv4_prefix_bits, ipv6_prefix_bits))
                 continue;
