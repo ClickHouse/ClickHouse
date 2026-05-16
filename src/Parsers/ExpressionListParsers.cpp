@@ -1,7 +1,9 @@
 #include <charconv>
 #include <limits>
 #include <optional>
+#include <string>
 #include <string_view>
+#include <unordered_map>
 
 #include <base/scope_guard.h>
 
@@ -31,6 +33,7 @@
 
 #include <Common/logger_useful.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionOperatorPrettyLookup.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -62,7 +65,7 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return true;
     };
 
-    if (!parseUtil(pos, expected, parse_element, *separator_parser, allow_empty))
+    if (!parseUtil(pos, expected, parse_element, *separator_parser, allow_empty, allow_trailing_separator))
         return false;
 
     node = make_intrusive<ASTExpressionList>(result_separator);
@@ -623,6 +626,20 @@ public:
             return OperatorType::None;
 
         return operators.back().type;
+    }
+
+    /// True when any operator of the given type is pending anywhere on the
+    /// operators stack of the current element. Used to detect a pending lambda
+    /// in `SubstringLayer` / `PositionLayer` state-0 closing-bracket handling:
+    /// a lambda body can leave higher-priority binary operators on top of the
+    /// lambda operator (e.g. `[..., Lambda, Plus]` for `x -> x + 1`), so
+    /// inspecting only the stack top via `previousType` would miss the lambda.
+    bool hasPendingOperator(OperatorType type) const
+    {
+        for (const auto & op : operators)
+            if (op.type == type)
+                return true;
+        return false;
     }
 
     int isCurrentElementEmpty() const
@@ -1331,6 +1348,9 @@ public:
                         for (auto & elem : tup)
                             elements.push_back(make_intrusive<ASTLiteral>(std::move(elem)));
                         is_tuple = true;
+                        /// Outer parens were grouping (single inner literal-tuple), not tuple delimiters,
+                        /// so the resulting literal is parenthesized and must round-trip back to `((1, 2))`.
+                        outer_paren_was_grouping = true;
                     }
                 }
 
@@ -1352,6 +1372,7 @@ protected:
         if (!is_tuple && elements.size() == 1)
         {
             node = std::move(elements[0]);
+            node->setParenthesized(true);
         }
         else if (elements.size() >= 2 && allElementsAreCompatibleLiterals(elements, Field::Types::Tuple))
         {
@@ -1363,10 +1384,14 @@ protected:
             for (auto & elem : elements)
                 tup.push_back(elem->as<ASTLiteral &>().value);
             node = make_intrusive<ASTLiteral>(std::move(tup));
+            if (outer_paren_was_grouping)
+                node->setParenthesized(true);
         }
         else
         {
             node = makeASTOperator("tuple", std::move(elements));
+            if (outer_paren_was_grouping)
+                node->setParenthesized(true);
         }
 
         return true;
@@ -1374,6 +1399,7 @@ protected:
 
 private:
     bool is_tuple = false;
+    bool outer_paren_was_grouping = false;
 };
 
 /// Layer for array square brackets operator
@@ -1685,7 +1711,9 @@ public:
     {
         /// Either SUBSTRING(expr FROM start [FOR length]) or SUBSTRING(expr, start, length)
         ///
-        /// 0: Parse first separator: FROM or comma (-> 1)
+        /// 0: Parse first separator: FROM or comma (-> 1), or closing bracket
+        ///    when a lambda is pending (round-trip for the merged-tuple lambda
+        ///    sugar, see issue #104605)
         /// 1: Parse second separator: FOR or comma (-> 2)
         /// 1 or 2: Parse closing bracket (finished)
 
@@ -1700,6 +1728,29 @@ public:
                     return false;
 
                 state = 1;
+            }
+            /// Accept the one-argument form ONLY when a lambda operator is
+            /// pending anywhere on the operators stack. This is the AST shape
+            /// produced by the documented lambda-merging sugar (`mapApply`,
+            /// `arrayFold`, …): the formatter emits `substring((x, y) -> z)`
+            /// for `substring(lambda(tuple(x, y), z))` and the re-parser must
+            /// accept that exact form to keep the AST format/re-parse
+            /// round-trip invariant in `executeQueryImpl`. We must scan the
+            /// whole stack — and not just the top via `previousType` — because
+            /// a lambda body can leave higher-priority binary operators above
+            /// the `lambda` operator (e.g. `[..., Lambda, Plus]` for
+            /// `(x) -> x + 1`); `mergeElement` below drains them in priority
+            /// order before combining the lambda. Bare `substring(x)`
+            /// continues to fail with `SYNTAX_ERROR` at parse time —
+            /// `02154_parser_backtracking` depends on this for
+            /// exponential-backtracking protection. See issue #104605.
+            else if (hasPendingOperator(OperatorType::Lambda)
+                && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            {
+                if (!mergeElement())
+                    return false;
+
+                finished = true;
             }
         }
 
@@ -1739,6 +1790,128 @@ protected:
     }
 };
 
+class OverlayLayer : public Layer
+{
+    String function_name;
+    bool keyword_mode = false; /// true after seeing PLACING, locks to SQL standard syntax
+    bool comma_mode = false;   /// true after seeing a comma, locks to functional syntax
+public:
+    explicit OverlayLayer(String function_name_)
+        : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true)
+        , function_name(std::move(function_name_))
+    {}
+
+    bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
+    {
+        /// Two mutually exclusive forms, locked by the first separator:
+        ///   Keyword mode:  OVERLAY(string PLACING replacement FROM start [FOR length])
+        ///   Comma mode:    overlay(string, replacement, start[, length])
+
+        if (state == 0)
+        {
+            if (!keyword_mode && ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                comma_mode = true;
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 1;
+            }
+            else if (!comma_mode && ParserKeyword(Keyword::PLACING).ignore(pos, expected))
+            {
+                keyword_mode = true;
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 1;
+            }
+        }
+
+        if (state == 1)
+        {
+            if (comma_mode && ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 2;
+            }
+            else if (keyword_mode && ParserKeyword(Keyword::FROM).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 2;
+            }
+        }
+
+        if (state == 2)
+        {
+            if (comma_mode && ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 3;
+            }
+            else if (keyword_mode && ParserKeyword(Keyword::FOR).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 3;
+            }
+        }
+
+        /// In comma mode, accept extra arguments so the function itself
+        /// can report NUMBER_OF_ARGUMENTS_DOESNT_MATCH instead of a syntax error.
+        if (comma_mode && state == 3)
+        {
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+            }
+        }
+
+        /// In comma mode, allow closing bracket in any state so that calls with
+        /// too few arguments are rejected by the function, not the parser.
+        /// In keyword mode, require at least FROM (state >= 2) before closing.
+        if (!finished
+            && ((comma_mode && state >= 0) || (keyword_mode && state >= 2) || state == 0)
+            && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+        {
+            if (!mergeElement())
+                return false;
+
+            finished = true;
+        }
+
+        return true;
+    }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        node = makeASTFunction(function_name, std::move(elements));
+        return true;
+    }
+};
+
 class PositionLayer : public Layer
 {
 public:
@@ -1748,7 +1921,9 @@ public:
     {
         /// position(haystack, needle[, start_pos]) or position(needle IN haystack)
         ///
-        /// 0: Parse separator: comma (-> 1) or IN (-> 2)
+        /// 0: Parse separator: comma (-> 1) or IN (-> 2), or closing bracket
+        ///    when a lambda is pending (round-trip for the merged-tuple lambda
+        ///    sugar, see issue #104605)
         /// 1: Parse second separator: comma
         /// 1 or 2: Parse closing bracket (finished)
 
@@ -1763,7 +1938,7 @@ public:
 
                 state = 1;
             }
-            if (ParserKeyword(Keyword::IN).ignore(pos, expected))
+            else if (ParserKeyword(Keyword::IN).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -1771,6 +1946,27 @@ public:
                     return false;
 
                 state = 2;
+            }
+            /// Accept the one-argument form ONLY when a lambda operator is
+            /// pending anywhere on the operators stack. This is the AST shape
+            /// produced by the documented lambda-merging sugar: the formatter
+            /// emits `position((x, y) -> z)` for `position(lambda(tuple(x, y), z))`
+            /// and the re-parser must accept that exact form to keep the
+            /// round-trip invariant. We must scan the whole stack — and not
+            /// just the top via `previousType` — because a lambda body can
+            /// leave higher-priority binary operators above the `lambda`
+            /// operator (e.g. `[..., Lambda, Plus]` for `(x) -> x + 1`);
+            /// `mergeElement` drains them in priority order before combining
+            /// the lambda. Bare `position(x)` continues to fail with
+            /// `SYNTAX_ERROR` — `02154_parser_backtracking` depends on this.
+            /// See issue #104605.
+            else if (hasPendingOperator(OperatorType::Lambda)
+                && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            {
+                if (!mergeElement())
+                    return false;
+
+                finished = true;
             }
         }
 
@@ -2659,6 +2855,8 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
     /// TRIM(BOTH|LEADING|TRAILING x FROM y)
     /// SUBSTRING(x FROM a)
     /// SUBSTRING(x FROM a FOR b)
+    /// OVERLAY(x PLACING y FROM a)
+    /// OVERLAY(x PLACING y FROM a FOR b)
 
     String function_name = getIdentifierName(identifier);
     String function_name_lowercase = Poco::toLower(function_name);
@@ -2682,6 +2880,10 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
         return std::make_unique<ExtractLayer>();
     if (function_name_lowercase == "substring")
         return std::make_unique<SubstringLayer>();
+    if (function_name_lowercase == "overlay")
+        return std::make_unique<OverlayLayer>("overlay");
+    if (function_name_lowercase == "overlayutf8")
+        return std::make_unique<OverlayLayer>("overlayUTF8");
     if (function_name_lowercase == "position")
         return std::make_unique<PositionLayer>();
     if (function_name_lowercase == "exists")
@@ -2892,6 +3094,55 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::u
 
 const Operator ParserExpressionImpl::finish_between_operator("", 8, 0, OperatorType::FinishBetween);
 
+std::optional<ExpressionOperatorPrettyInfo> tryGetExpressionOperatorPrettyInfo(std::string_view function_name)
+{
+    static const std::unordered_map<std::string, ExpressionOperatorPrettyInfo> map = []
+    {
+        std::unordered_map<std::string, ExpressionOperatorPrettyInfo> result;
+
+        auto consider = [&](std::string_view lexeme, const Operator & op)
+        {
+            if (op.function_name.empty())
+                return;
+            if (op.type == OperatorType::Lambda
+                || op.type == OperatorType::StartIf
+                || op.type == OperatorType::FinishIf
+                || op.type == OperatorType::StartBetween
+                || op.type == OperatorType::StartNotBetween
+                || op.type == OperatorType::Cast)
+                return;
+            if (op.function_name == "match")
+                return;
+
+            result.insert_or_assign(op.function_name, ExpressionOperatorPrettyInfo{lexeme, op.priority});
+        };
+
+        for (const auto & [lexeme, op] : ParserExpressionImpl::operators_table)
+            consider(lexeme, op);
+        for (const auto & [lexeme, op] : ParserExpressionImpl::unary_operators_table)
+            consider(lexeme, op);
+
+        /// Canonical spellings / precedence not achieved by last-wins alone (e.g. `<>` follows `!=` in the table).
+        result.insert_or_assign("equals", ExpressionOperatorPrettyInfo{"=", 9});
+        result.insert_or_assign("notEquals", ExpressionOperatorPrettyInfo{"!=", 9});
+        result.insert_or_assign("isNotDistinctFrom", ExpressionOperatorPrettyInfo{"<=>", 6});
+
+        for (const char * name : {"not", "isNull", "isNotNull", "negate", "tupleElement", "arrayElement"})
+            if (auto it = result.find(name); it != result.end())
+                it->second.symbol = {};
+
+        result.insert_or_assign("nullIn", ExpressionOperatorPrettyInfo{"IN", 9});
+        result.insert_or_assign("globalNullIn", ExpressionOperatorPrettyInfo{"IN", 9});
+        result.insert_or_assign("notNullIn", ExpressionOperatorPrettyInfo{"NOT IN", 9});
+        result.insert_or_assign("globalNotNullIn", ExpressionOperatorPrettyInfo{"NOT IN", 9});
+
+        return result;
+    }();
+
+    if (auto it = map.find(std::string{function_name}); it != map.end())
+        return it->second;
+    return std::nullopt;
+}
 
 bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -3106,7 +3357,6 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         }
         else if (pos->type == TokenType::OpeningRoundBracket)
         {
-
             if (subquery_parser.parse(pos, tmp, expected))
             {
                 layers.back()->pushOperand(std::move(tmp));
