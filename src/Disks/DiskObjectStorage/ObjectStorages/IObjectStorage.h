@@ -298,10 +298,6 @@ public:
 
     virtual bool supportsCache() const { return false; }
 
-    /// Get object storage without cache.
-    /// If supportsCache() return false, return this.
-    virtual const IObjectStorage & getObjectStorageWithoutCache() const { return *this; }
-
     virtual bool isReadOnly() const { return false; }
 
     virtual bool supportParallelWrite() const { return false; }

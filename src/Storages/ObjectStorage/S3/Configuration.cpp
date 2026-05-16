@@ -326,7 +326,8 @@ bool S3StorageParsedArguments::collectCredentials(ASTPtr maybe_credentials, S3::
 
 void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, ContextPtr context, bool with_structure)
 {
-    const auto & s3_object_storage = assert_cast<const S3ObjectStorage &>(disk->getObjectStorage()->getObjectStorageWithoutCache());
+    auto object_storage = disk->getObjectStorage();
+    const auto & s3_object_storage = assert_cast<const S3ObjectStorage &>(*object_storage);
     s3_settings = std::make_unique<S3Settings>();
     *s3_settings = s3_object_storage.getS3Settings();
 

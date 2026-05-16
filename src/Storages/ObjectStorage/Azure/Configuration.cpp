@@ -324,7 +324,7 @@ bool AzureStorageParsedArguments::collectCredentials(
 
 void AzureStorageParsedArguments::fromDisk(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure)
 {
-    const auto & azure_object_storage = assert_cast<const AzureObjectStorage &>(disk->getObjectStorage()->getObjectStorageWithoutCache());
+    const auto & azure_object_storage = assert_cast<const AzureObjectStorage &>(*disk->getObjectStorage());
 
     connection_params = azure_object_storage.getConnectionParameters();
     ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());

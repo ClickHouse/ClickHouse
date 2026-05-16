@@ -91,8 +91,6 @@ public:
 
     bool supportsCache() const override { return true; }
 
-    const IObjectStorage & getObjectStorageWithoutCache() const override;
-
     std::string getUniqueId(const std::string & path) const override { return object_storage->getUniqueId(path); }
 
     bool isReadOnly() const override { return object_storage->isReadOnly(); }
