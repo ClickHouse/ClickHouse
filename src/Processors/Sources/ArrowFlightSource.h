@@ -21,7 +21,7 @@ class ArrowFlightSource : public ISource
     Block fillVirtualColumns(Block result_block);
 
 public:
-    ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, const String & dataset_name_, const Block & sample_block_, const Block & virtual_header_, StorageID storage_id_, ContextPtr context_);
+    ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, const String & dataset_name_, const Block & sample_block_, const Block & virtual_header_, ContextPtr context_);
     ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, std::vector<arrow::flight::FlightEndpoint> endpoints_, const Block & sample_block_, ContextPtr context_);
     ArrowFlightSource(std::unique_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader_, const Block & sample_block_, ContextPtr context_);
 
@@ -34,7 +34,6 @@ private:
 
     Block sample_block;
     Block virtual_header;
-    StorageID storage_id;
     ContextPtr context;
     std::vector<arrow::flight::FlightEndpoint> endpoints;
     size_t current_endpoint = 0;

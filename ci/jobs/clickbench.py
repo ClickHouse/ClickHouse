@@ -18,6 +18,13 @@ def main():
 
         def install():
             res = ch.install_clickbench_config()
+            # The ClickBench `create.sql` attaches `hits` on a cached disk
+            # rooted at `/dev/shm/clickhouse/`; ship the matching server-side
+            # allowed-directory override alongside it.
+            res = res and Shell.check(
+                f"cp ./ci/jobs/scripts/clickbench/filesystem_caches_path.xml {temp_dir}/config.d/",
+                verbose=True,
+            )
             if info.is_local_run:
                 return res
             return res and ch.create_log_export_config()
@@ -77,7 +84,7 @@ def main():
                     query_results.append(
                         Result(
                             name=f"{QUERY_NUM}_{i}",
-                            status=Result.Status.SUCCESS,
+                            status=Result.Status.OK,
                             duration=float(time_err),
                         )
                     )

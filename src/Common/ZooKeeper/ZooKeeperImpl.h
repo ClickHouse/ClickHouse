@@ -132,6 +132,8 @@ public:
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
 
+    WatchesSnapshot getWatchesSnapshot() const;
+
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
         ResponseCallback callback,
@@ -156,6 +158,11 @@ public:
         const String &path,
         uint32_t remove_nodes_limit,
         RemoveRecursiveCallback callback) override;
+
+    void listRecursive(
+        const String & path,
+        uint32_t get_children_recursive_nodes_limit,
+        ListRecursiveCallback callback) override;
 
     void exists(
         const String & path,
@@ -296,7 +303,11 @@ private:
     Operations operations TSA_GUARDED_BY(operations_mutex);
     std::mutex operations_mutex;
 
-    Watches watches TSA_GUARDED_BY(watches_mutex);
+    using WatchCallbacksWithCreateInfo = std::unordered_map<WatchCallbackPtrOrEventPtr, WatchCreateInfo>;
+    using WatchesWithCreateInfo = std::unordered_map<String, WatchCallbacksWithCreateInfo>;
+
+    WatchesWithCreateInfo watches TSA_GUARDED_BY(watches_mutex);
+    WatchesWithCreateInfo list_watches TSA_GUARDED_BY(watches_mutex);
 
     /// A wrapper around ThreadFromGlobalPool that allows to call join() on it from multiple threads.
     class ThreadReference
