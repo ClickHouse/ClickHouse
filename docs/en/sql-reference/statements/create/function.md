@@ -26,16 +26,12 @@ If any restriction is violated then an exception is raised.
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
 SELECT number, linear_equation(number, 2, 1) FROM numbers(3);
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─number─┬─plus(multiply(2, number), 1)─┐
 │      0 │                            1 │
 │      1 │                            3 │
@@ -45,14 +41,12 @@ Result:
 
 A [conditional function](../../../sql-reference/functions/conditional-functions.md) is called in a user defined function in the following query:
 
-```sql
+```sql title="Query"
 CREATE FUNCTION parity_str AS (n) -> if(n % 2, 'odd', 'even');
 SELECT number, parity_str(number) FROM numbers(3);
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─number─┬─if(modulo(number, 2), 'odd', 'even')─┐
 │      0 │ even                                 │
 │      1 │ odd                                  │
@@ -62,16 +56,14 @@ Result:
 
 Replace an existing UDF:
 
-```sql
+```sql title="Query"
 CREATE FUNCTION exampleReplaceFunction AS frame -> frame;
 SELECT create_query FROM system.functions WHERE name = 'exampleReplaceFunction';
 CREATE OR REPLACE FUNCTION exampleReplaceFunction AS frame -> frame + 1;
 SELECT create_query FROM system.functions WHERE name = 'exampleReplaceFunction';
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─create_query─────────────────────────────────────────────┐
 │ CREATE FUNCTION exampleReplaceFunction AS frame -> frame │
 └──────────────────────────────────────────────────────────┘
