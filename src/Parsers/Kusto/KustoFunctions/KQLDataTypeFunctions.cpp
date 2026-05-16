@@ -42,12 +42,18 @@ bool DatatypeDatetime::convertImpl(String & out, IParser::Pos & pos)
     {
         datetime_str = getConvertedArgument(fn_name, pos);
         if (Poco::toUpper(datetime_str) == "NULL")
+        {
             out = "NULL";
+            return true;
+        }
         else
-            out = fmt::format(
+        {
+            auto inner = fmt::format(
                 "if(toTypeName({0}) = 'Int64' OR toTypeName({0}) = 'Int32'OR toTypeName({0}) = 'Float64' OR  toTypeName({0}) = 'UInt32' OR "
                 " toTypeName({0}) = 'UInt64', toDateTime64({0},9,'UTC'), parseDateTime64BestEffortOrNull({0}::String,9,'UTC'))",
                 datetime_str);
+            out = fmt::format("substring(replaceOne(toString({}), ' ', 'T'), 1, 27)", inner);
+        }
         return true;
     }
     else
@@ -62,7 +68,8 @@ bool DatatypeDatetime::convertImpl(String & out, IParser::Pos & pos)
         --pos;
         datetime_str = fmt::format("'{}'", String(start->begin, pos->end));
     }
-    out = fmt::format("parseDateTime64BestEffortOrNull({},9,'UTC')", datetime_str);
+    auto inner = fmt::format("parseDateTime64BestEffortOrNull({},9,'UTC')", datetime_str);
+    out = fmt::format("substring(replaceOne(toString({}), ' ', 'T'), 1, 27)", inner);
     ++pos;
     return true;
 }
@@ -76,8 +83,50 @@ bool DatatypeDynamic::convertImpl(String & out, IParser::Pos & pos)
         return false;
 
     ++pos;
+
+    /// Handle property bags (JSON objects)
     if (pos->type == TokenType::OpeningCurlyBrace)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Property bags are not supported for now in {}", function_name);
+    {
+        /// Build JSON string from tokens
+        int brace_depth = 1;
+        String json_str;
+        json_str += '{';
+        ++pos;
+        while (isValidKQLPos(pos) && brace_depth > 0)
+        {
+            if (pos->type == TokenType::OpeningCurlyBrace)
+                ++brace_depth;
+            if (pos->type == TokenType::ClosingCurlyBrace)
+            {
+                --brace_depth;
+                if (brace_depth == 0)
+                    break;
+            }
+            json_str += String(pos->begin, pos->end);
+            ++pos;
+        }
+        /// Reject malformed property bags where the closing `}` was never seen.
+        /// Otherwise `dynamic({"a":1` would be silently rewritten to a valid JSON object.
+        if (brace_depth != 0 || !isValidKQLPos(pos) || pos->type != TokenType::ClosingCurlyBrace)
+            return false;
+        json_str += '}';
+        /// Cast to JSON type for native member access (o.field)
+        /// Escape single quotes in the JSON string to avoid SQL injection
+        String escaped_json;
+        for (char c : json_str)
+        {
+            if (c == '\'')
+                escaped_json += "\\'";
+            else
+                escaped_json += c;
+        }
+        out = fmt::format("CAST('{}' AS JSON)", escaped_json);
+        ++pos; /// skip past closing brace to closing paren
+        return true;
+    }
+
+    /// Check if this is an array - if so, use CAST to Array(Dynamic) for mixed-type support
+    bool is_array = (pos->type == TokenType::OpeningSquareBracket);
 
     while (isValidKQLPos(pos) && pos->type != TokenType::ClosingRoundBracket)
     {
@@ -101,6 +150,16 @@ bool DatatypeDynamic::convertImpl(String & out, IParser::Pos & pos)
             out.append(pos->begin, pos->end);
             ++pos;
         }
+    }
+
+    /// For arrays, cast to Array(Dynamic) to support mixed types
+    /// But handle empty arrays specially since [] can't be cast to Array(Dynamic)
+    if (is_array)
+    {
+        if (out == "[]")
+            out = "CAST('[]' AS Array(Dynamic))";
+        else
+            out = fmt::format("CAST({} AS Array(Dynamic))", out);
     }
 
     return true;

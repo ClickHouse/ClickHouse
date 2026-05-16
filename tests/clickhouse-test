@@ -42,7 +42,8 @@ from argparse import ArgumentParser, Namespace
 from ast import literal_eval as make_tuple
 from contextlib import contextmanager, redirect_stdout
 from datetime import datetime, timedelta
-from errno import ESRCH
+from errno import EPERM, ESRCH
+from pathlib import Path
 from ssl import SSLEOFError
 from subprocess import PIPE, Popen
 from time import sleep, time
@@ -53,6 +54,27 @@ try:
 except ImportError:
     termcolor = None
 
+
+# Base path for per-process PGID files used by `--cleanup` to locate orphaned
+# test process groups.  Each worker process writes its own file named
+# ``_GROUP_PID_NAME.<pid>`` so no cross-process locking is needed.
+# The CI hook can invoke `clickhouse-test --cleanup` even if the parent was
+# killed with SIGKILL before its cleanup code ran.
+# `__file__` is `{repo}/tests/clickhouse-test`, so this resolves to
+# `{repo}/ci/tmp/clickhouse_test_group_pid`.
+_GROUP_PID_PATH = Path(__file__).resolve().parent.parent / "ci" / "tmp"
+_GROUP_PID_NAME = "clickhouse_test_group_pid"
+
+
+def write_text_atomic(path: Path, text: str) -> None:
+    """Write `text` to `path` atomically via a sibling `.tmp` file and `os.replace`."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(text)
+        os.replace(tmp, path)
+    except Exception as e:
+        print(f"Warning: could not write {path}: {e}", file=sys.stderr)
 
 USE_JINJA = True
 try:
@@ -105,9 +127,29 @@ def detect_cgroup_version():
         return 1
     return None
 
-
 CGROUP_VERSION = detect_cgroup_version()
 
+
+BASH = "/bin/bash"
+
+def shell_get_output(cmd: str, timeout: Optional[float] = None) -> str:
+    try:
+        res = subprocess.run(
+            cmd,
+            shell=True,
+            executable=BASH,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=True,
+            timeout=timeout,
+        )
+        return res.stdout.strip()
+    except Exception as e:
+        print(f"Error running command {cmd!r}: {e}", file=sys.stderr)
+        return ""
 
 class SharedEngineReplacer:
     SPECIALIZED_ENGINES = "Collapsing|VersionedCollapsing|Summing|Replacing|Aggregating|Coalescing"
@@ -585,25 +627,18 @@ CAPTURE_CLIENT_STACKTRACE = False
 
 def kill_process_group(pgid, fatal_log):
     try:
-        print(f"Processes left in process group {pgid}:")
-        print(
-            subprocess.check_output(
-                f"pgrep --pgroup {pgid} -a", shell=True, stderr=subprocess.STDOUT
-            ).decode("utf-8"),
-            end="",
-        )
-
         if SANITIZED:
+            print(f"Processes left in process group {pgid}:")
+            print(
+                '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
+            )
             print("Wait 60 seconds to let sanitizers print the report...")
             sleep(60)
 
         print(f"Killing process group {pgid}")
         print(f"Processes in process group {pgid}:")
         print(
-            subprocess.check_output(
-                f"pgrep --pgroup {pgid} -a", shell=True, stderr=subprocess.STDOUT
-            ).decode("utf-8"),
-            end="",
+            '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(pgid=pgid)),
         )
 
         if CAPTURE_CLIENT_STACKTRACE:
@@ -627,16 +662,7 @@ def kill_process_group(pgid, fatal_log):
                 print(f"Cannot read {fatal_log}. Ignoring.")
 
             if not client_printed_stacktrace:
-                pgrep = subprocess.run(
-                    f"pgrep --pgroup {pgid} clickhouse",
-                    shell=True,
-                    capture_output=True,
-                    text=False,
-                )
-                processes = pgrep.stdout.decode("utf-8").strip().split("\n")
-                processes = map(lambda x: x.strip(), processes)
-                processes = filter(lambda x: len(x) > 0, processes)
-                processes = list(map(lambda x: int(x.strip()), processes))
+                processes = [p[0] for p in pgrep(pgid=pgid, command="clickhouse")]
                 for child in processes:
                     print(get_stacktraces_from_gdb(child))
         # NOTE: this still may leave some processes, that had been
@@ -654,7 +680,17 @@ def kill_process_group(pgid, fatal_log):
         # We need minimal delay to let processes handle SIGTERM - 0.1 (this may
         # not be enough, but at least something)
         sleep(0.1)
-        os.killpg(pgid, signal.SIGKILL)
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except OSError as e:
+            # SIGTERM above succeeded, so we have permission to signal this group.
+            # EPERM here is a macOS-specific behavior: killpg returns EPERM when
+            # the group contains zombie processes (already exited after SIGTERM
+            # but not yet reaped). Linux ignores zombies in killpg instead.
+            if e.errno in (ESRCH, EPERM):
+                print(f"Got {e.strerror} while sending SIGKILL to {pgid}. Ignoring.")
+            else:
+                raise
     except OSError as e:
         if e.errno == ESRCH:
             print(f"Got ESRCH while killing {pgid}. Ignoring.")
@@ -673,21 +709,14 @@ def cleanup_child_processes(pid):
             return
         raise
     print(
-        subprocess.check_output(
-            f"pgrep --parent {pid} -a", shell=True, stderr=subprocess.STDOUT
-        ).decode("utf-8"),
-        end="",
+        '\n'.join(f"{p[0]} {p[3]}" for p in pgrep(ppid=pid)),
     )
     # Due to start_new_session=True, it is not enough to kill by PGID, we need
     # to look at children processes as well.
     # But we are hoping that nobody creates session in the tests (though it is
     # possible via timeout(), but we are assuming that they will be killed by
     # timeout).
-    pgrep = subprocess.check_output(
-        f"pgrep --parent {pid}", shell=True, stderr=subprocess.STDOUT
-    )
-    proc_list = pgrep.decode("utf-8").strip().split("\n")
-    processes = list(map(lambda x: int(x.strip()), proc_list))
+    processes = [p[0] for p in pgrep(ppid=pid)]
     for child in processes:
         try:
             child_pgid = os.getpgid(child)
@@ -914,16 +943,18 @@ def get_transactions_list(args):
 
 # collect server stacktraces using gdb
 def get_stacktraces_from_gdb(pid):
-    try:
-        cmd = f"gdb -batch -ex 'thread apply all backtrace' -p {pid}"
-        return subprocess.check_output(cmd, shell=True).decode("utf-8")
-    except Exception as e:
-        print(f"Error occurred while receiving stack traces from gdb (for {pid}): {e}")
-        return None
+    # 30s ceiling: `thread apply all backtrace` should finish in seconds even
+    # on a debug build with many threads; anything beyond that means gdb
+    # itself is wedged (e.g. signal-handler deadlock on the inferior).
+    # Killing gdb leaves the server process untouched.
+    return shell_get_output(
+        f"gdb -batch -ex 'thread apply all backtrace' -p {pid}",
+        timeout=30,
+    )
 
 
 # collect server stacktraces from system.stack_trace table
-def get_stacktraces_from_clickhouse(args):
+def get_stacktraces_from_clickhouse(args, timeout: float = 30):
     settings_str = " ".join(
         [
             get_additional_client_options(args),
@@ -931,8 +962,6 @@ def get_stacktraces_from_clickhouse(args):
             "--skip_unavailable_shards=1",
         ]
     )
-
-    msg = ""
 
     if args.replicated_database:
         msg = (
@@ -963,39 +992,41 @@ def get_stacktraces_from_clickhouse(args):
             'FROM system.stack_trace FORMAT Vertical"'
         )
 
-    try:
-        return subprocess.check_output(
-            msg,
-            shell=True,
-            stderr=subprocess.STDOUT,
-        ).decode("utf-8")
-    except Exception as e:
-        print(f"Error occurred while receiving stack traces from client: {e}")
-        return None
+    # Bound the dump so timeout_handler / hung-check callers cannot wedge
+    # forever if clickhouse-client itself blocks (e.g. the server accepted
+    # the connection but is not making progress on system.stack_trace).
+    return shell_get_output(msg, timeout=timeout)
 
+def pgrep(ppid: int = None, pgid: int = None, command: str = None) -> List[List[str]]:
+    # -ww disables line-width truncation of the command column.  Without it,
+    # ps cuts the cmdline at 80 chars when stdout is not a TTY, which can hide
+    # the "clickhouse-server" substring when the binary lives deep in the
+    # filesystem (e.g. /home/ubuntu/actions-runner/_work/.../ci/tmp/...).
+    ps = shell_get_output("ps -ww -eo pid,ppid,pgid,command").splitlines()[1:]
+    ps = [p.split(None, 3) for p in ps]
+    ps = [[int(p[0]), int(p[1]), int(p[2]), p[3]] for p in ps]
+
+    if ppid is not None:
+        ps = [p for p in ps if p[1] == ppid]
+    if pgid is not None:
+        ps = [p for p in ps if p[2] == pgid]
+    if command is not None:
+        ps = [p for p in ps if command in p[3]]
+    return ps
 
 def get_all_server_pids():
-    """Get PIDs of clickhouse-server processes belonging to the current process group.
+    """Get PIDs of all clickhouse-server processes visible to the current user.
 
-    Scoping to the process group avoids attaching gdb to unrelated servers on
-    shared runners where multiple test jobs may run concurrently.
+    No pgid scoping: in every real scenario where this helper is useful the
+    server lives outside `clickhouse-test`'s process group (CI harnesses,
+    Docker, systemd, and the `ClickHouseService` test fixture all spawn the
+    server with `start_new_session=True` or equivalent).  A pgid filter
+    silently filters out everything we are meant to find.
     """
-    try:
-        pgid = os.getpgrp()
-        output = subprocess.check_output(
-            f"pgrep -g {pgid} -x clickhouse-server",
-            shell=True,
-            stderr=subprocess.DEVNULL,
-            universal_newlines=True,
-        ).strip()
-        if output:
-            return [int(p) for p in output.split()]
-    except Exception:
-        pass
-    return []
+    return [p[0] for p in pgrep(command="clickhouse-server")]
 
 
-def is_asan_build():
+def is_asan_build(args):
     """Check if the server is an ASan build — gdb disables LeakSanitizer detections."""
     try:
         result = clickhouse_execute(
@@ -1008,67 +1039,85 @@ def is_asan_build():
         return bool(os.environ.get("ASAN_OPTIONS"))
 
 
-def print_stacktraces() -> None:
-    server_pid = get_server_pid()
+def print_c_stacktraces(args) -> None:
+    """C++-side backtraces via gdb.  Works whenever the server process
+    exists and is debuggable, independent of whether SQL is reachable.
 
-    bt = None
+    Every call site is one of two situations: we're aborting the whole
+    run (SERVER_DIED, hung-check, check_server_started) or terminating
+    the one wedged test (timeout_handler).  gdb's "thread apply all
+    backtrace" pause is on the order of seconds — acceptable in both
+    cases against the diagnostic value.
 
-    # Collect gdb stacktraces from all server processes (main + replicas).
-    # Skip gdb under ASan — it disables LeakSanitizer detections.
-    if not is_asan_build():
-        all_pids = get_all_server_pids()
-        if all_pids:
-            parts = []
-            for pid in all_pids:
-                label = "main server" if pid == server_pid else "replica"
-                print(f"\nCollecting stacktraces from {label} process {pid} with gdb:")
-                one_bt = get_stacktraces_from_gdb(pid)
-                if one_bt and len(one_bt) >= 1000:
-                    parts.append(f"=== PID {pid} ({label}) ===\n{one_bt}")
-                else:
-                    print(f"Got suspiciously small stacktraces from {pid}: {one_bt}")
-            if parts:
-                bt = "\n\n".join(parts)
-
-    if bt is None:
-        print("\nCollecting stacktraces from system.stacktraces table:")
-
-        bt = get_stacktraces_from_clickhouse(args)
-
-    if bt is not None:
-        print(bt)
+    Skipped under ASan, where gdb attach disables LeakSanitizer
+    detections.
+    """
+    if is_asan_build(args):
+        print(
+            colored(
+                "\nCannot collect C stacktraces under ASan: gdb attach is disabled.",
+                args,
+                "red",
+                attrs=["bold"],
+            )
+        )
         return
 
-    print(
-        colored(
-            f"\nUnable to locate ClickHouse server process listening at TCP port "
-            f"{args.tcp_port}. It must have crashed or exited prematurely!",
-            args,
-            "red",
-            attrs=["bold"],
+    server_pid = get_server_pid()
+    all_pids = get_all_server_pids()
+    if not all_pids:
+        print(
+            colored(
+                "\nUnable to locate any ClickHouse server process. "
+                "It must have crashed or exited prematurely!",
+                args,
+                "red",
+                attrs=["bold"],
+            )
         )
-    )
+        return
+
+    for pid in all_pids:
+        label = "main server" if pid == server_pid else "replica"
+        print(f"\nCollecting C stacktraces from {label} process {pid} with gdb:")
+        bt = get_stacktraces_from_gdb(pid)
+        if bt and len(bt) >= 1000:
+            print(f"=== PID {pid} ({label}) ===\n{bt}")
+        else:
+            print(f"Got suspiciously small stacktraces from {pid}: {bt}")
+
+
+def print_sql_stacktraces(args) -> None:
+    """ClickHouse-internal stack view from system.stack_trace.
+
+    Adds thread_name and query_id to the C-side picture, which is the
+    only way to map a stuck thread to the query it was running.
+
+    Self-skips when the server is not answering queries — the SQL dump
+    would hit the same dead socket as the liveness check.  This keeps
+    callers honest: they can invoke this from any context (per-test
+    timeout, end-of-run hung-check) without first checking whether the
+    server still responds.
+    """
+    if not check_server_liveness(args, max_retries=1):
+        print("Skipping system.stack_trace query: server is unreachable.")
+        return
+    print("\nCollecting stacktraces from system.stack_trace table:")
+    bt = get_stacktraces_from_clickhouse(args)
+    if bt:
+        print(bt)
 
 
 def get_server_pid():
-    # lsof does not work in stress tests for some reason
-    cmd_lsof = f"lsof -i tcp:{args.tcp_port} -s tcp:LISTEN -Fp | sed 's/^p//p;d'"
-    cmd_pidof = "pidof -s clickhouse-server"
-
-    commands = [cmd_lsof, cmd_pidof]
-    output = None
-
-    for cmd in commands:
-        try:
-            output = subprocess.check_output(
-                cmd, shell=True, stderr=subprocess.STDOUT, universal_newlines=True
-            )
-            if output:
-                return int(output)
-        except Exception as e:
-            print(f"Cannot get server pid with {cmd}, got {output}: {e}")
-
-    return None  # most likely server is dead
+    # Use the portable pgrep helper (built on `ps -eo pid,ppid,pgid,command`)
+    # so this works on both Linux and macOS — `pidof` does not exist on
+    # macOS, and `lsof -i tcp:PORT` would require knowing the port (only
+    # available on `args`, which is undefined in multiprocessing children
+    # spawned with the `spawn` start method).
+    procs = pgrep(command="clickhouse-server")
+    if not procs:
+        return None  # most likely server is dead
+    return procs[0][0]
 
 
 def colored(text, args, color=None, on_color=None, attrs=None):
@@ -1133,6 +1182,8 @@ class FailureReason(enum.Enum):
     NO_STATEFUL = "no-stateful"
     NO_OPENSSL_FIPS = "no-openssl-fips"
     ENCRYPTED_STORAGE = "encrypted-storage"
+    NOT_SUPPORTED_ON_DARWIN = "not supported on Darwin"
+    LINUX_ONLY = "supported only on Linux"
 
     # UNKNOWN reasons
     NO_REFERENCE = "no reference file"
@@ -1163,7 +1214,7 @@ def auto_statistics_generator():
         if random.random() < 0.3:
             return ""
 
-        all_statistic_types = ["minmax", "uniq", "tdigest", 'countmin']
+        all_statistic_types = ["minmax", "uniq", "tdigest", 'countmin', 'nullcount']
         return ",".join(random.sample(all_statistic_types, random.randint(0, len(all_statistic_types))))
 
     return gen
@@ -1384,8 +1435,6 @@ class SettingsRandomizer:
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
-        # Use the new reader most of the time.
-        "input_format_parquet_use_native_reader_v3": lambda: min(1, random.randint(0, 5)),
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
         "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
         "use_skip_indexes_for_top_k": lambda: random.randint(0, 1),
@@ -1399,6 +1448,7 @@ class SettingsRandomizer:
         # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
         # That is why we use it with fallback to 'greedy'.
         "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
+        "max_bytes_before_external_join": lambda: random.choice([0, 1000000000]),
         "query_plan_optimize_join_order_randomize": lambda: 1 if random.random() < 0.1 else random.randint(2, 1_000_000),
         # changing grace_hash_join_initial_buckets is giving wrong results in a test
         # "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8, 16, 32, 64, 128]),
@@ -1653,6 +1703,69 @@ def load_settings_from_file(path: str, *, kind: str) -> Dict[str, object]:
                 "put only the inner space-separated --key value pairs."
             )
     return parse_settings_cli_blob(content)
+
+
+RANDOM_SETTINGS_DIAGNOSTICS_DEFAULT_DIR = "/tmp/clickhouse-random-settings-diagnostics"
+RANDOM_SETTINGS_DIAGNOSTICS_FILE = "random_settings_failures.jsonl"
+RANDOM_SETTINGS_DIAGNOSTICS_RESULTS_FILE = "random_settings_diagnostics_results.jsonl"
+
+
+def get_random_settings_diagnostics_path(args):
+    return os.path.join(
+        args.random_settings_diagnostics_dir, RANDOM_SETTINGS_DIAGNOSTICS_FILE
+    )
+
+
+def get_random_settings_diagnostics_results_path(args):
+    return os.path.join(
+        args.random_settings_diagnostics_dir, RANDOM_SETTINGS_DIAGNOSTICS_RESULTS_FILE
+    )
+
+
+def save_random_settings_artifact(args, test_name, settings, mt_settings):
+    """Append a failed test's random settings to the diagnostics JSONL file."""
+    entry = {
+        "test_name": test_name,
+        "settings": {k: str(v) for k, v in settings.items()},
+        "merge_tree_settings": {k: str(v) for k, v in mt_settings.items()},
+    }
+    path = get_random_settings_diagnostics_path(args)
+    line = json.dumps(entry, ensure_ascii=False)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+def load_random_settings_artifacts(args):
+    """Read all entries from the diagnostics JSONL file, keeping only the first per test."""
+    path = get_random_settings_diagnostics_path(args)
+    if not os.path.isfile(path):
+        return []
+    seen = set()
+    entries = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                entry = json.loads(line)
+                if entry["test_name"] not in seen:
+                    seen.add(entry["test_name"])
+                    entries.append(entry)
+    return entries
+
+
+def load_diagnostics_results(diagnostics_dir):
+    """Read diagnosis results JSONL. Returns dict: test_name -> diagnosis text."""
+    path = os.path.join(diagnostics_dir, RANDOM_SETTINGS_DIAGNOSTICS_RESULTS_FILE)
+    if not os.path.isfile(path):
+        return {}
+    results = {}
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                entry = json.loads(line)
+                results[entry["test_name"]] = entry.get("diagnosis", "")
+    return results
 
 
 # unlike functools.cache() ignore args
@@ -1925,6 +2038,345 @@ class TestCase:
 
         return description + "\n"
 
+    def _run_with_settings(self, args, suite, client_options, settings, mt_settings):
+        """Re-run this test with specific effective settings, returning the TestResult."""
+        saved_settings = self.effective_settings
+        saved_mt_settings = self.effective_merge_tree_settings
+        saved_runs_count = self.runs_count
+        self.effective_settings = settings
+        self.effective_merge_tree_settings = mt_settings
+        try:
+            result = self.run(args, suite, client_options)
+            # Don't let diagnosis reruns trigger further retries
+            result.need_retry = False
+            return result
+        finally:
+            self.effective_settings = saved_settings
+            self.effective_merge_tree_settings = saved_mt_settings
+            self.runs_count = saved_runs_count
+
+    def _run_within_budget(self, args, suite, client_options, settings, mt_settings):
+        """Run the test repeatedly within the step time budget.
+
+        Respects both the per-step budget and the global stop_time limit.
+        Returns (fail_count, ok_count, other_count, total_runs, timed_out).
+        timed_out is True if the global stop_time was reached.
+        """
+        budget = args.diagnose_random_settings_step_time_budget
+        deadline = time() + budget
+        if args.stop_time:
+            deadline = min(deadline, args.stop_time)
+
+        fail_count = 0
+        ok_count = 0
+        other_count = 0
+        timed_out = False
+        while time() < deadline:
+            result = self._run_with_settings(
+                args, suite, client_options, settings, mt_settings
+            )
+            if result.status == TestStatus.FAIL:
+                fail_count += 1
+            elif result.status == TestStatus.OK:
+                ok_count += 1
+            else:
+                other_count += 1
+            if args.stop_time and time() > args.stop_time:
+                timed_out = True
+                break
+        total = fail_count + ok_count + other_count
+        return fail_count, ok_count, other_count, total, timed_out
+
+    def _is_global_deadline_reached(self, args):
+        return args.stop_time and time() > args.stop_time
+
+    def diagnose_random_settings(self, args, suite, client_options):
+        """Diagnose which randomized settings caused a test failure.
+
+        Uses a time-budget approach: each step runs the test as many times as
+        possible within a configurable time budget to handle sporadic failures
+        reliably. Respects the global stop_time limit.
+
+        Algorithm:
+        1. Re-run with the same settings to confirm reproducibility.
+        2. Re-run without any randomization to confirm the failure is settings-related.
+        3. If step 1 has failures and step 2 does not, minimize the settings via
+           ddmin (delta debugging) to find the minimal set that triggers the failure.
+
+        Returns a diagnosis string to append to the test description.
+        """
+        failed_settings = dict(self.effective_settings)
+        failed_mt_settings = dict(self.effective_merge_tree_settings)
+
+        step_budget = args.diagnose_random_settings_step_time_budget
+
+        # No randomized settings — rerun up to 3 times to check reproducibility.
+        if not failed_settings and not failed_mt_settings:
+            max_reruns = 3
+            fail_count = 0
+            for i in range(max_reruns):
+                result = self._run_with_settings(args, suite, client_options, {}, {})
+                if result.status == TestStatus.FAIL:
+                    fail_count += 1
+            return (
+                f"--- Failure reproducibility check ---\n"
+                f"Failed {fail_count} out of {max_reruns} reruns.\n"
+            )
+
+        diagnosis_lines = ["--- Randomized settings diagnosis ---"]
+
+        # Step 1: Re-run with the same settings within the time budget
+        diagnosis_lines.append(
+            f"Step 1: Re-running with the same randomized settings (budget: {step_budget}s)..."
+        )
+        fail1, ok1, other1, total1, timed_out = self._run_within_budget(
+            args, suite, client_options, failed_settings, failed_mt_settings
+        )
+        diagnosis_lines.append(
+            f"  Runs: {total1}, Failed: {fail1}, Passed: {ok1}, Other: {other1}"
+        )
+        if timed_out:
+            diagnosis_lines.append("Result: Inconclusive (global time limit reached).")
+            return "\n".join(diagnosis_lines) + "\n"
+        if fail1 == 0:
+            if ok1 > 0:
+                diagnosis_lines.append(
+                    "Result: All reruns passed. The failure is not reproducible (likely a transient issue)."
+                )
+            else:
+                diagnosis_lines.append(
+                    "Result: No failures, but no clean passes either. Inconclusive."
+                )
+            return "\n".join(diagnosis_lines) + "\n"
+        if ok1 > 0:
+            diagnosis_lines.append(
+                f"Result: Failure is flaky ({fail1}/{total1} reruns failed)."
+            )
+            return "\n".join(diagnosis_lines) + "\n"
+
+        diagnosis_lines.append("Result: Failure is reproducible.")
+
+        if self._is_global_deadline_reached(args):
+            diagnosis_lines.append("Stopping diagnosis: global time limit reached.")
+            return "\n".join(diagnosis_lines) + "\n"
+
+        # Step 2: Re-run without any randomization within the time budget
+        diagnosis_lines.append(
+            f"Step 2: Re-running without randomized settings (budget: {step_budget}s)..."
+        )
+        fail2, ok2, other2, total2, timed_out = self._run_within_budget(
+            args, suite, client_options, {}, {}
+        )
+        diagnosis_lines.append(
+            f"  Runs: {total2}, Failed: {fail2}, Passed: {ok2}, Other: {other2}"
+        )
+        if timed_out:
+            diagnosis_lines.append("Result: Inconclusive (global time limit reached).")
+            return "\n".join(diagnosis_lines) + "\n"
+        if fail2 > 0:
+            diagnosis_lines.append(
+                "Result: Test also fails without randomized settings (not a randomization issue)."
+            )
+            return "\n".join(diagnosis_lines) + "\n"
+        if ok2 == 0:
+            diagnosis_lines.append(
+                "Result: No failures, but no clean passes either. Inconclusive."
+            )
+            return "\n".join(diagnosis_lines) + "\n"
+
+        diagnosis_lines.append(
+            "Result: Passes without randomization. Confirmed: the failure is caused by randomized settings."
+        )
+
+        if self._is_global_deadline_reached(args):
+            diagnosis_lines.append("Stopping diagnosis: global time limit reached.")
+            return "\n".join(diagnosis_lines) + "\n"
+
+        # Step 3: Minimize settings via ddmin (delta debugging)
+        minimize_budget = args.diagnose_random_settings_minimize_budget
+        diagnosis_lines.append(
+            f"Step 3: Minimizing settings to find the culprit(s) (budget: {minimize_budget}s)..."
+        )
+        minimize_deadline = time() + minimize_budget
+        if args.stop_time:
+            minimize_deadline = min(minimize_deadline, args.stop_time)
+
+        culprit_settings = {}
+        culprit_mt_settings = {}
+        minimize_hit_limit = False
+
+        # Determine which category(ies) actually cause the failure before
+        # minimizing, to avoid reporting false culprits from the other category.
+        minimize_regular = bool(failed_settings)
+        minimize_mt = bool(failed_mt_settings)
+
+        if failed_settings and failed_mt_settings:
+            # Test regular settings alone (no MergeTree settings)
+            result_regular_only = self._run_with_settings(
+                args, suite, client_options, failed_settings, {}
+            )
+            # Test MergeTree settings alone (no regular settings)
+            result_mt_only = self._run_with_settings(
+                args, suite, client_options, {}, failed_mt_settings
+            )
+
+            regular_alone_fails = result_regular_only.status == TestStatus.FAIL
+            mt_alone_fails = result_mt_only.status == TestStatus.FAIL
+
+            if regular_alone_fails and not mt_alone_fails:
+                diagnosis_lines.append(
+                    "  Regular settings alone reproduce the failure; skipping MergeTree minimization."
+                )
+                minimize_mt = False
+            elif mt_alone_fails and not regular_alone_fails:
+                diagnosis_lines.append(
+                    "  MergeTree settings alone reproduce the failure; skipping regular minimization."
+                )
+                minimize_regular = False
+            # else: neither alone or both — minimize both categories
+
+        # Minimize regular settings (keep all MT settings active during minimization)
+        if minimize_regular:
+            culprit_settings, hit_limit = self._minimize_settings(
+                args, suite, client_options,
+                failed_settings, failed_mt_settings if minimize_mt else {},
+                is_merge_tree=False,
+                deadline=minimize_deadline,
+            )
+            minimize_hit_limit = minimize_hit_limit or hit_limit
+
+        # Minimize MergeTree settings (keep full regular settings to preserve
+        # cross-category interactions)
+        if minimize_mt and not minimize_hit_limit:
+            culprit_mt_settings, hit_limit = self._minimize_settings(
+                args, suite, client_options,
+                failed_settings if minimize_regular else {}, failed_mt_settings,
+                is_merge_tree=True,
+                deadline=minimize_deadline,
+            )
+            minimize_hit_limit = minimize_hit_limit or hit_limit
+
+        if minimize_hit_limit:
+            diagnosis_lines.append(
+                "Note: minimization time limit reached, result may not be fully minimized."
+            )
+
+        if culprit_settings or culprit_mt_settings:
+            if culprit_settings:
+                diagnosis_lines.append(
+                    f"Culprit settings: {self.cli_format_settings(culprit_settings)}"
+                )
+            if culprit_mt_settings:
+                diagnosis_lines.append(
+                    f"Culprit MergeTree settings: {self.cli_format_settings(culprit_mt_settings)}"
+                )
+        else:
+            # Could not isolate — the failure requires the full combination
+            diagnosis_lines.append(
+                "Could not isolate individual culprit settings — the failure may require "
+                "the full combination of randomized settings."
+            )
+            if failed_settings:
+                diagnosis_lines.append(
+                    f"All randomized settings: {self.cli_format_settings(failed_settings)}"
+                )
+            if failed_mt_settings:
+                diagnosis_lines.append(
+                    f"All randomized MergeTree settings: {self.cli_format_settings(failed_mt_settings)}"
+                )
+
+        return "\n".join(diagnosis_lines) + "\n"
+
+    def _minimize_settings(
+        self, args, suite, client_options,
+        all_settings, all_mt_settings, is_merge_tree,
+        deadline,
+    ):
+        """Delta-debugging (ddmin) minimization for one settings category.
+
+        Implements the ddmin algorithm by Andreas Zeller: tests subsets and their
+        complements at increasing granularity to find the minimal failing
+        combination — including cases where multiple settings interact.
+
+        The other category's settings are kept intact during minimization so that
+        cross-category interactions are preserved.
+
+        Returns (culprit_dict, hit_limit). If deadline is reached, returns the
+        last known failing combination and hit_limit=True.
+        """
+        target = dict(all_mt_settings if is_merge_tree else all_settings)
+        other_settings = all_settings if is_merge_tree else {}
+        other_mt_settings = all_mt_settings if not is_merge_tree else {}
+
+        if not target:
+            return {}, False
+
+        def run_with_subset(subset_dict):
+            if is_merge_tree:
+                return self._run_with_settings(
+                    args, suite, client_options, other_settings, subset_dict
+                )
+            else:
+                return self._run_with_settings(
+                    args, suite, client_options, subset_dict, other_mt_settings
+                )
+
+        def is_deadline_reached():
+            return time() > deadline
+
+        # ddmin: start with the full failing set, reduce it
+        failing_keys = list(target.keys())
+        n = 2  # initial granularity
+
+        while len(failing_keys) >= 2:
+            if is_deadline_reached():
+                return {k: target[k] for k in failing_keys}, True
+
+            chunk_size = max(1, len(failing_keys) // n)
+            chunks = []
+            for i in range(0, len(failing_keys), chunk_size):
+                chunks.append(failing_keys[i : i + chunk_size])
+
+            found_reduction = False
+
+            # Test each chunk (subset): does this small piece alone cause failure?
+            for chunk in chunks:
+                if is_deadline_reached():
+                    return {k: target[k] for k in failing_keys}, True
+                subset = {k: target[k] for k in chunk}
+                result = run_with_subset(subset)
+                if result.status == TestStatus.FAIL:
+                    # This chunk alone fails — recurse into it
+                    failing_keys = chunk
+                    n = 2
+                    found_reduction = True
+                    break
+
+            if found_reduction:
+                continue
+
+            # Test each complement: does removing this chunk still fail?
+            for i, chunk in enumerate(chunks):
+                if is_deadline_reached():
+                    return {k: target[k] for k in failing_keys}, True
+                complement = [k for j, c in enumerate(chunks) for k in c if j != i]
+                subset = {k: target[k] for k in complement}
+                result = run_with_subset(subset)
+                if result.status == TestStatus.FAIL:
+                    # Failing without this chunk — the chunk is not needed
+                    failing_keys = complement
+                    n = max(n - 1, 2)
+                    found_reduction = True
+                    break
+
+            if not found_reduction:
+                if n >= len(failing_keys):
+                    # Already at maximum granularity — result is 1-minimal
+                    break
+                n = min(n * 2, len(failing_keys))
+
+        return {k: target[k] for k in failing_keys}, False
+
     def apply_random_settings_limits(self, random_settings):
         for setting in random_settings:
             if setting in self.random_settings_limits:
@@ -2070,6 +2522,12 @@ class TestCase:
         if "no-async-insert" in tags and args.no_async_insert:
             return FailureReason.NO_ASYNC_INSERT
 
+        if "no-darwin" in tags and platform.system() == "Darwin":
+            return FailureReason.NOT_SUPPORTED_ON_DARWIN
+
+        if "linux" in tags and platform.system() != "Linux":
+            return FailureReason.LINUX_ONLY
+
         # Do not run *Log and Memory engine-specific tests
         if (
             "memory-engine" in tags or "log-engine" in tags
@@ -2114,8 +2572,15 @@ class TestCase:
             tags
             and ("no-llvm-coverage" in tags)
             and args.llvm_coverage
+            and not args.excluded_from_llvm
         ):
             # Skip tests that are incompatible with LLVM coverage
+            return FailureReason.NO_LLVM_COVERAGE
+
+        if args.excluded_from_llvm and (
+            not tags or "no-llvm-coverage" not in tags
+        ):
+            # Run only tests that are normally disabled under LLVM coverage
             return FailureReason.NO_LLVM_COVERAGE
 
         if tags and ("no-replicated-database" in tags) and args.replicated_database:
@@ -2201,10 +2666,7 @@ class TestCase:
             return FailureReason.SKIP
 
         if "no-flaky-check" in tags and args.flaky_check:
-            # In flaky check mode, no-flaky-check tests run sequentially (like no-parallel)
-            # with --sequential-test-runs runs instead of being skipped entirely.
-            # They are still excluded from parallel execution — see is_sequential_test().
-            pass
+            return FailureReason.SKIP
         if "stateful" in tags and args.no_stateful:
             return FailureReason.NO_STATEFUL
         if "stateful" not in tags and args.no_stateless:
@@ -2794,7 +3256,11 @@ class TestCase:
             preexec_fn = setup_cgroup_with_memory_limit_cb(cgroup_name, self.memory_limit)
 
         # pylint:disable-next=consider-using-with; TODO: fix
-        proc = Popen(command, shell=True, env=tests_env, start_new_session=True, preexec_fn=preexec_fn)
+        proc = Popen(command, shell=True, executable=BASH, env=tests_env, start_new_session=True, preexec_fn=preexec_fn)
+        # proc.pid == PGID after start_new_session=True; write it atomically so
+        # `clickhouse-test --cleanup` can find it even if we are killed with SIGKILL.
+        _gpid_file = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}"
+        write_text_atomic(_gpid_file, f"{proc.pid}\n")
 
         try:
             proc.wait(args.timeout)
@@ -2804,6 +3270,7 @@ class TestCase:
         finally:
             if cgroup_name:
                 cleanup_cgroup(cgroup_name)
+            _gpid_file.unlink(missing_ok=True)
 
         total_time = (datetime.now() - start_time).total_seconds()
 
@@ -3104,7 +3571,25 @@ class TestCase:
         time_passed = (datetime.now() - args.testcase_start_time).total_seconds()
         timeout = max(args.timeout - time_passed, 20)
 
-        self._cleanup_database(args, timeout)
+        try:
+            self._cleanup_database(args, timeout)
+        except (ConnectionError, http.client.ImproperConnectionState) as e:
+            # Cleanup is best-effort only when the server is actually dead.
+            # If the server is still alive, this was a real cleanup failure
+            # (leftover state, unfinished DROP) and must propagate so the
+            # outer handler in run() classifies it as CONNECTION_ERROR — a
+            # silent swallow would let a test stay OK while leaving its
+            # database behind, hiding the bug.
+            if check_server_liveness(args):
+                raise
+            # Server died between the test finishing and cleanup running.
+            # The test's database is moot; the hung-check or the next test
+            # will detect the dead server and stop the run.
+            print(
+                f"WARNING: cleanup skipped for {self.name}: "
+                f"{type(e).__name__}: {e}",
+                file=sys.stderr,
+            )
         shutil.rmtree(args.test_tmp_dir)
 
     def _cleanup_database(self, args, timeout):
@@ -3493,8 +3978,6 @@ class TestSuite:
         tags = self.all_tags[test_name]
         if "no-parallel" in tags or "sequential" in tags:
             return True
-        if "no-flaky-check" in tags and args.flaky_check:
-            return True
         return False
 
     def get_selected_tests(self, filter_func):
@@ -3577,6 +4060,133 @@ class GlobalTimeout(Exception):
     pass
 
 
+def run_diagnose_from_artifacts(args, stop_testing):
+    """Read saved randomized settings artifacts and run diagnosis for each entry."""
+    entries = load_random_settings_artifacts(args)
+    if not entries:
+        path = get_random_settings_diagnostics_path(args)
+        print(f"No randomized settings artifacts found in {path}")
+        return 0
+
+    # Filter by test selector if provided
+    if args.test:
+        entries = [
+            e
+            for e in entries
+            if any(re.search(pattern, e["test_name"]) for pattern in args.test)
+        ]
+        if not entries:
+            print(
+                f"No artifacts match the test selector: {args.test}"
+            )
+            return 0
+
+    print(f"Found {len(entries)} test(s) to diagnose.")
+
+    base_dir = os.path.abspath(args.queries)
+    results_path = get_random_settings_diagnostics_results_path(args)
+    # Non-zero exit code is reserved for unexpected script termination
+    # (e.g. uncaught exception in the diagnosis machinery). Environmental
+    # conditions like stop_testing are not script failures — they are
+    # already surfaced by the main test stage, so the diagnostics stage
+    # should exit cleanly when interrupted by them.
+    exit_code = 0
+
+    with open(results_path, "w", encoding="utf-8") as results_file:
+        for entry in entries:
+            test_name = entry["test_name"]
+            settings = entry.get("settings", {})
+            mt_settings = entry.get("merge_tree_settings", {})
+
+            # Testing stopped — stop diagnosing further tests but exit cleanly:
+            # the main test stage has already reported the failure.
+            if stop_testing.is_set():
+                break
+
+            # Find the test case file across suites
+            case = None
+            suite_dir_name = None
+            for suite_candidate in sorted(os.listdir(base_dir)):
+                suite_path = os.path.join(base_dir, suite_candidate)
+                if not os.path.isdir(suite_path):
+                    continue
+                for fname in os.listdir(suite_path):
+                    name_without_ext = os.path.splitext(fname)[0]
+                    if name_without_ext == test_name and is_test_from_dir(suite_path, fname):
+                        case = fname
+                        suite_dir_name = suite_candidate
+                        break
+                if case:
+                    break
+
+            if not case:
+                print(f"WARNING: test file for '{test_name}' not found, skipping.")
+                continue
+
+            test_suite = TestSuite.read_test_suite(args, suite_dir_name)
+            if test_suite is None:
+                print(f"WARNING: could not load suite for '{test_name}', skipping.")
+                continue
+
+            test_case = TestCase(test_suite, case, args, False)
+
+            # Override settings with the saved artifact values (disable randomization)
+            test_case.effective_settings = settings
+            test_case.effective_merge_tree_settings = mt_settings
+
+            client_options = get_additional_client_options(args)
+
+            print(f"\n{'='*70}")
+            print(f"Diagnosing: {test_name}")
+            if settings:
+                print(f"  Settings: {TestCase.cli_format_settings(settings)}")
+            if mt_settings:
+                print(f"  MergeTree settings: {TestCase.cli_format_settings(mt_settings)}")
+            print(f"{'='*70}")
+
+            try:
+                diagnosis = test_case.diagnose_random_settings(args, test_suite, client_options)
+            except Exception as e:
+                print(f"ERROR: Diagnosis failed for {test_name}: {e}")
+                traceback.print_exc()
+                exit_code = 1
+                continue
+            if diagnosis:
+                print(diagnosis)
+            else:
+                diagnosis = ""
+
+            # Classify the diagnosis for CI labeling. Leave label empty for
+            # inconclusive/unrecognized outcomes so they don't get mislabeled.
+            label = ""
+            if "Inconclusive" in diagnosis:
+                label = ""
+            elif "Culprit settings:" in diagnosis or "Culprit MergeTree settings:" in diagnosis:
+                label = "setting"
+            elif "Failure is flaky" in diagnosis or "not reproducible" in diagnosis.lower():
+                label = "flaky"
+            elif (
+                "not a randomization issue" in diagnosis
+                or "Could not isolate" in diagnosis
+            ):
+                label = "reproducible"
+            else:
+                # Match "Failed N out of M reruns." for the no-random-settings path
+                m = re.search(r"Failed (\d+) out of (\d+) reruns", diagnosis)
+                if m:
+                    fail_n, total_n = int(m.group(1)), int(m.group(2))
+                    if fail_n < total_n:
+                        label = "flaky"
+                    else:
+                        label = "reproducible"
+
+            result_entry = {"test_name": test_name, "diagnosis": diagnosis, "label": label}
+            results_file.write(json.dumps(result_entry, ensure_ascii=False) + "\n")
+            results_file.flush()
+
+    return exit_code
+
+
 def run_tests_array(
     all_tests_with_params: Tuple[
         List[str],
@@ -3599,7 +4209,7 @@ def run_tests_array(
         is_concurrent,
         args,
         exit_code,
-        server_died,
+        stop_testing,
         workers_to_shed,
         restarted_tests,
         process_index,
@@ -3675,7 +4285,7 @@ def run_tests_array(
         else:
             break
 
-        if server_died.is_set():
+        if stop_testing.is_set():
             stop_tests()
             raise ServerDied("Server died")
 
@@ -3707,6 +4317,16 @@ def run_tests_array(
                 # It helps with completely frozen processes, like in case of gdb errors
                 def timeout_handler(_signum, _frame):
                     with redirect_stdout(cleanup_output):
+                        # Dump stacktraces *before* stop_tests() kills the
+                        # client connections.  This is the only moment
+                        # the offending user query is still wedged on the
+                        # server with its query_id — once the TCP
+                        # connection drops, the server typically cancels
+                        # the query and its threads go away.  BG threads
+                        # stay around either way and can be captured at
+                        # end-of-run.
+                        print_sql_stacktraces(args)
+                        print_c_stacktraces(args)
                         stop_tests()
                     raise TimeoutError("Test execution timed out")
 
@@ -3724,6 +4344,20 @@ def run_tests_array(
                 if not test_result or not test_result.need_retry:
                     break
                 restarted_tests.append(test_result)
+
+            # Save failed test info so that diagnostics can be run later
+            # via --diagnose-random-settings.
+            if (
+                test_result
+                and test_result.status == TestStatus.FAIL
+                and test_result.reason != FailureReason.SERVER_DIED
+            ):
+                save_random_settings_artifact(
+                    args,
+                    test_case.name,
+                    test_case.effective_settings,
+                    test_case.effective_merge_tree_settings,
+                )
 
             # First print the description, then invoke the check result logic
             description += test_result.description
@@ -3746,14 +4380,16 @@ def run_tests_array(
                 failures_total += 1
                 failures_chain += 1
                 if test_result.reason == FailureReason.SERVER_DIED:
+                    print_c_stacktraces(args)
                     stop_tests()
-                    server_died.set()
+                    stop_testing.set()
                     raise ServerDied("Server died")
                 if args.max_failures > 0:
                     with total_failures_shared.get_lock():
                         total_failures_shared.value += 1
                         if total_failures_shared.value >= args.max_failures:
                             stop_tests()
+                            stop_testing.set()
                             raise ServerDied(f"Reached --max-failures limit ({args.max_failures})")
             elif test_result.status == TestStatus.SKIPPED:
                 skipped_total += 1
@@ -3765,6 +4401,7 @@ def run_tests_array(
 
         if failures_chain >= args.max_failures_chain:
             stop_tests()
+            stop_testing.set()
             raise ServerDied("Max failures chain")
 
     if failures_total > 0:
@@ -4084,7 +4721,7 @@ def do_run_tests(
     args,
     exit_code,
     restarted_tests,
-    server_died,
+    stop_testing,
     runner_process_killed,
 ):
     print(
@@ -4113,26 +4750,43 @@ def do_run_tests(
         if jobs > 1:
             random.shuffle(test_suite.parallel_tests)
 
-        batch_size = len(test_suite.parallel_tests) // jobs
-        manager = multiprocessing.Manager()
-        parallel_tests = manager.list()
-        parallel_tests.extend(test_suite.parallel_tests)
         workers_to_shed = multiprocessing.Value('i', 0)
         total_failures_shared = multiprocessing.Value('i', 0)
 
+        if args.no_self_parallel:
+            # Partition tests so that all copies of the same test go to the
+            # same worker.  This prevents the same test from running
+            # concurrently on multiple workers, avoiding conflicts when tests
+            # use shared resources (tables with fixed names, files, etc.).
+            worker_queues: List[List[str]] = [[] for _ in range(jobs)]
+            for test in test_suite.parallel_tests:
+                worker_queues[stringhash(test) % jobs].append(test)
+        else:
+            manager = multiprocessing.Manager()
+            shared_queue = manager.list()
+            shared_queue.extend(test_suite.parallel_tests)
+
+        batch_size = len(test_suite.parallel_tests) // jobs
+
         processes = []
         for i in range(jobs):
+            if args.no_self_parallel:
+                queue = worker_queues[i]
+                queue_size = len(queue)
+            else:
+                queue = shared_queue
+                queue_size = batch_size
             process = multiprocessing.Process(
                 target=run_tests_process,
                 args=(
                     (
-                        parallel_tests,
-                        batch_size,
+                        queue,
+                        queue_size,
                         test_suite,
                         True,
                         args,
                         exit_code,
-                        server_died,
+                        stop_testing,
                         workers_to_shed,
                         restarted_tests,
                         i,  # process index
@@ -4157,9 +4811,10 @@ def do_run_tests(
             sys.stdout.flush()
 
             # Periodically check memory pressure and reduce concurrency if needed.
-            # All workers share the same parallel_tests queue, so stopping one
-            # from picking up new tests reduces future concurrency without losing
-            # any already-queued work.
+            # In normal mode workers share a single queue, so shedding one
+            # does not lose work.  In --flaky-check mode each worker has its
+            # own queue, so its remaining tests will not run — acceptable under
+            # memory pressure.
             now = time()
             if now - last_memory_check >= MEMORY_CHECK_INTERVAL and len(processes) > 1:
                 last_memory_check = now
@@ -4185,10 +4840,11 @@ def do_run_tests(
             if args.hung_check:
                 if not check_server_liveness(args):
                     print("Hung check failed: server is not responding")
-                    server_died.set()
+                    print_c_stacktraces(args)
+                    stop_testing.set()
 
-            if server_died.is_set():
-                print("Server died, terminating all processes...")
+            if stop_testing.is_set():
+                print("Stopping tests, terminating all processes...")
                 # Wait briefly for test results to be written
                 sleep(5)
                 for p in processes:
@@ -4226,7 +4882,7 @@ def do_run_tests(
                 False,
                 args,
                 exit_code,
-                server_died,
+                stop_testing,
                 multiprocessing.Value('i', 0),  # sequential runner is never shed
                 restarted_tests,
                 jobs + 1,
@@ -4477,7 +5133,7 @@ def try_get_skip_list(base_dir, name, remove_comment=True):
 
 def main(args):
     exit_code = multiprocessing.Value("i", 0)
-    server_died = multiprocessing.Event()
+    stop_testing = multiprocessing.Event()
     runner_process_killed = multiprocessing.Event()
     multiprocessing_manager = multiprocessing.Manager()
     restarted_tests = multiprocessing_manager.list()
@@ -4487,9 +5143,7 @@ def main(args):
         msg = "Server is not responding. Cannot execute 'SELECT 1' query."
         if args.hung_check:
             print(msg)
-            pid = get_server_pid()
-            print("Got server pid", pid)
-            print_stacktraces()
+            print_c_stacktraces(args)
         raise TestException(msg)
 
     if args.cloud:
@@ -4623,7 +5277,7 @@ def main(args):
             create_common_database(args, "test")
     except Exception as e:
         print(f"Failed to create databases for tests: {e}")
-        server_died.set()
+        stop_testing.set()
         raise
 
     if (
@@ -4786,30 +5440,44 @@ ORDER BY (test_name, callee_offset)
         # https://github.com/ClickHouse/clickhouse-private/issues/23651
         cloud_skip_errors_list += ["Cannot attach table with UUID"]
 
-    for suite in sorted(os.listdir(base_dir), key=suite_key_func):
-        if server_died.is_set():
-            break
+    if args.diagnose_random_settings:
+        diag_exit_code = run_diagnose_from_artifacts(args, stop_testing)
+        # Exit immediately: post-run checks below (hung check, coverage export,
+        # log stats, etc.) assume a completed test run and would surface spurious
+        # failures in diagnose mode. Any real diagnostics error is already in
+        # diag_exit_code.
+        sys.exit(diag_exit_code)
+    else:
+        diagnostics_dir = args.random_settings_diagnostics_dir
+        os.makedirs(diagnostics_dir, exist_ok=True)
+        diagnostics_path = get_random_settings_diagnostics_path(args)
+        with open(diagnostics_path, "w", encoding="utf-8"):
+            pass
 
-        test_suite = TestSuite.read_test_suite(args, suite)
-        if test_suite is None:
-            continue
+        for suite in sorted(os.listdir(base_dir), key=suite_key_func):
+            if stop_testing.is_set():
+                break
 
-        test_suite.skip_list = skip_list
-        test_suite.cloud_skip_list = cloud_skip_list
-        test_suite.private_skip_list = private_skip_list
-        test_suite.cloud_skip_errors_list = cloud_skip_errors_list
-        test_suite.blacklist_check = blacklist_check
-        total_tests_run += do_run_tests(
-            args.jobs,
-            test_suite,
-            args,
-            exit_code,
-            restarted_tests,
-            server_died,
-            runner_process_killed,
-        )
+            test_suite = TestSuite.read_test_suite(args, suite)
+            if test_suite is None:
+                continue
 
-    if server_died.is_set():
+            test_suite.skip_list = skip_list
+            test_suite.cloud_skip_list = cloud_skip_list
+            test_suite.private_skip_list = private_skip_list
+            test_suite.cloud_skip_errors_list = cloud_skip_errors_list
+            test_suite.blacklist_check = blacklist_check
+            total_tests_run += do_run_tests(
+                args.jobs,
+                test_suite,
+                args,
+                exit_code,
+                restarted_tests,
+                stop_testing,
+                runner_process_killed,
+            )
+
+    if stop_testing.is_set():
         exit_code.value = 1
 
     if runner_process_killed.is_set():
@@ -4878,7 +5546,15 @@ ORDER BY (test_name, callee_offset)
             print(processlist.decode())
             print(get_transactions_list(args))
 
-            print_stacktraces()
+            # `processlist` above already shows per-thread stacks for
+            # every user query still running (system.processes JOIN
+            # system.stack_trace by query_id).  print_sql_stacktraces
+            # here dumps the rest of system.stack_trace — BG threads
+            # with no query_id (merges, replication, schedule pool),
+            # which are the typical lock-holders when a user query is
+            # wedged but looks idle.
+            print_sql_stacktraces(args)
+            print_c_stacktraces(args)
             exit_code.value = 1
         elif not hung_check_failed:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
@@ -4973,7 +5649,7 @@ ORDER BY (test_name, callee_offset)
                 FORMAT Vertical
 
                 See also at
-                - MemoryTrackerDebugBlockerInThread
+                - MemoryTrackerUntrackedAllocationsBlockerInThread
                 - AllocatorWithMemoryTracking
                 """)
         except Exception as e:
@@ -5261,10 +5937,41 @@ def parse_args():
         help="Disable MergeTree settings randomization",
     )
     parser.add_argument(
+        "--random-settings-diagnostics-dir",
+        type=str,
+        default=RANDOM_SETTINGS_DIAGNOSTICS_DEFAULT_DIR,
+        help="Directory for saving/reading randomized settings diagnostics artifacts "
+        f"(default: {RANDOM_SETTINGS_DIAGNOSTICS_DEFAULT_DIR})",
+    )
+    parser.add_argument(
+        "--diagnose-random-settings",
+        action="store_true",
+        default=False,
+        help="Read saved randomized settings artifacts and diagnose which specific settings caused each failure",
+    )
+    parser.add_argument(
+        "--diagnose-random-settings-step-time-budget",
+        type=int,
+        default=60,
+        help="Time budget in seconds for each diagnosis step (default: 60)",
+    )
+    parser.add_argument(
+        "--diagnose-random-settings-minimize-budget",
+        type=int,
+        default=300,
+        help="Time budget in seconds for the settings minimization phase (default: 300)",
+    )
+    parser.add_argument(
         "--llvm-coverage",
         action="store_true",
         default=False,
         help="This run will be used to collect code coverage with llvm-cov",
+    )
+    parser.add_argument(
+        "--excluded-from-llvm",
+        action="store_true",
+        default=False,
+        help="Run only tests that are normally disabled under LLVM coverage (tagged no-llvm-coverage)",
     )
     # Explicit, non-random settings (copy-paste friendly)
     parser.add_argument(
@@ -5396,6 +6103,11 @@ def parse_args():
         help="Enables CI flakiness detection by running new tests multiple times. This mode adds specific checks for the flaky-check job and requires the --test-runs argument.",
     )
     parser.add_argument(
+        "--no-self-parallel",
+        action="store_true",
+        help="Partition tests by name so the same test never runs concurrently on multiple workers. Use with --test-runs to avoid conflicts on shared resources.",
+    )
+    parser.add_argument(
         "--stress-tests",
         action="store_true",
         help="A CI test configuration that runs all possible test combinations without validating results. This is used to bypass specific test restrictions.",
@@ -5524,7 +6236,29 @@ def parse_args():
         help="Do not retry failed tests",
     )
 
+    parser.add_argument(
+        "--cleanup",
+        action="store_true",
+        help="Kill all processes from the group pid file and exit (used by CI hooks for orphan cleanup)",
+    )
+
     return parser.parse_args()
+
+
+def cleanup_test_groups():
+    """Kill all process groups recorded in per-worker PGID files.
+    """
+    for _pgid_file in _GROUP_PID_PATH.glob(f"{_GROUP_PID_NAME}.*"):
+        if _pgid_file.name.endswith(".tmp"):
+            continue
+        try:
+            pgid = int(_pgid_file.read_text())
+            kill_process_group(pgid, None)
+        except Exception as e:
+            print(f"Warning: could not read {_pgid_file}: {e}", file=sys.stderr)
+            continue
+        finally:
+            _pgid_file.unlink(missing_ok=True)
 
 
 class Terminated(KeyboardInterrupt):
@@ -5537,10 +6271,25 @@ def signal_handler(signal, frame):
 
 
 if __name__ == "__main__":
-    # Move to a new process group and kill it at exit so that we don't have any
-    # infinite tests processes left
-    # (new process group is required to avoid killing some parent processes)
-    os.setpgid(0, 0)
+    try:
+        args = parse_args()
+    except Exception as e:
+        print(e, file=sys.stderr)
+        sys.exit(1)
+
+    if args.cleanup:
+        cleanup_test_groups()
+        sys.exit(0)
+
+    # Move to a new process group so that signals from the controlling terminal
+    # (e.g. Ctrl+C) do not accidentally reach our caller.  If the caller already
+    # used start_new_session=True (as run_test() does), we are already a process
+    # group leader and setpgid would raise PermissionError — that is fine.
+    if os.getpid() != os.getpgid(0):
+        try:
+            os.setpgid(0, 0)
+        except PermissionError:
+            pass  # already a session/process-group leader
 
     check_name = os.environ.get("CHECK_NAME")
     if check_name and "aarch" in check_name:
@@ -5553,12 +6302,6 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGHUP, signal_handler)
-
-    try:
-        args = parse_args()
-    except Exception as e:
-        print(e, file=sys.stderr)
-        sys.exit(1)
 
     # When using --record, disable engine replacement to ensure we record
     # the original test's output, not a modified version
@@ -5777,6 +6520,7 @@ if __name__ == "__main__":
         main(args)
     except ServerDied as e:
         print(f"{e}", file=sys.stderr)
+        traceback.print_exc()
         sys.exit(1)
     except Terminated as e:
         print(f"Terminated with {e.signal} signal", file=sys.stderr)

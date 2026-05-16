@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -71,7 +72,7 @@ void ArrayJoinStep::describeActions(FormatSettings & settings) const
         first = false;
 
 
-        settings.out << column;
+        settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(column, settings.pretty_names) : column);
     }
     settings.out << '\n';
 }
