@@ -56,9 +56,9 @@ void DataTypeFixedString::updateHashImpl(SipHash & hash) const
     hash.update(n);
 }
 
-SerializationPtr DataTypeFixedString::doGetDefaultSerialization() const
+SerializationPtr DataTypeFixedString::doGetSerialization(const SerializationInfoSettings &) const
 {
-    return std::make_shared<SerializationFixedString>(n);
+    return SerializationFixedString::create(n);
 }
 
 

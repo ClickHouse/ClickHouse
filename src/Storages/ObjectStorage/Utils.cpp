@@ -1,23 +1,23 @@
 #include <Core/Settings.h>
-#include <Common/Exception.h>
-#include <Common/Logger.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/Macros.h>
+#include <Core/UUID.h>
+#include <Databases/DatabaseReplicatedHelpers.h>
 #include <Core/LogsLevel.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Poco/UUIDGenerator.h>
-#include <fmt/format.h>
 
 namespace DB
 {
@@ -27,6 +27,13 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+namespace DataLakeStorageSetting
+{
+    extern const DataLakeStorageSettingsBool paimon_incremental_read;
+    extern const DataLakeStorageSettingsString paimon_keeper_path;
+    extern const DataLakeStorageSettingsString paimon_replica_name;
 }
 
 std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
@@ -110,69 +117,19 @@ void resolveSchemaAndFormat(
         format = StorageObjectStorage::resolveFormatFromData(object_storage, configuration, format_settings, sample_path, context);
     }
 
-    validateColumns(columns, configuration);
+    validateSupportedColumns(columns, *configuration);
 }
 
-void validateColumns(
-    const ColumnsDescription & columns,
-    StorageObjectStorageConfigurationPtr configuration,
-    bool validate_schema_with_remote,
-    ObjectStoragePtr object_storage,
-    const std::optional<FormatSettings> * format_settings,
-    const std::string * sample_path,
-    ContextPtr context,
-    const NamesAndTypesList * hive_partition_columns_to_read_from_file_path,
-    const ColumnsDescription * columns_in_table_or_function_definition,
-    LoggerPtr log)
+void validateSupportedColumns(
+    ColumnsDescription & columns,
+    const StorageObjectStorageConfiguration & configuration)
 {
     if (!columns.hasOnlyOrdinary())
     {
         /// We don't allow special columns.
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported for {} storage.",
-            configuration ? configuration->getTypeName() : "object storage");
-    }
-
-    /// If schema validation parameters are not provided, skip schema consistency check.
-    /// validateColumns is only called with full arguments from StorageObjectStorage when
-    /// resolveSchemaAndFormat was not used (validate_schema_with_remote == true).
-    if (!object_storage || !configuration || !format_settings || !sample_path || !context
-        || !hive_partition_columns_to_read_from_file_path || !columns_in_table_or_function_definition || !log)
-        return;
-
-    /// We don't check csv and tsv formats because they change column names.
-    if (!validate_schema_with_remote
-        || configuration->format == "CSV"
-        || configuration->format == "TSV")
-        return;
-
-    /// Verify that explicitly specified columns exist in the schema inferred from data.
-    String sample_path_schema = *sample_path;
-    std::optional<ColumnsDescription> schema_file;
-    try
-    {
-        schema_file = StorageObjectStorage::resolveSchemaFromData(
-            object_storage,
-            configuration,
-            *format_settings,
-            sample_path_schema,
-            context);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "while verifying schema consistency", LogsLevel::debug);
-    }
-    if (schema_file)
-    {
-        auto hive_partitioning_columns = hive_partition_columns_to_read_from_file_path->getNameSet();
-        for (const auto & column : *columns_in_table_or_function_definition)
-            if (!schema_file->tryGet(column.name) && !hive_partitioning_columns.contains(column.name))
-            {
-                String hive_columns;
-                for (const auto & hive_column : hive_partitioning_columns)
-                    hive_columns += hive_column + ";";
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find column {} in schema {}, hive columns {}", column.name, schema_file->toString(false), hive_columns);
-            }
+            configuration.getTypeName());
     }
 }
 
@@ -301,6 +258,88 @@ ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr con
         result.compression_method = compression_method_value.value();
     }
     return result;
+}
+
+void expandPaimonKeeperMacrosIfNeeded(
+    const StorageFactory::Arguments & args,
+    const DataLakeStorageSettingsPtr & storage_settings)
+{
+    if (!storage_settings)
+        return;
+
+    const auto incremental_read_enabled = (*storage_settings)[DataLakeStorageSetting::paimon_incremental_read].changed
+        && (*storage_settings)[DataLakeStorageSetting::paimon_incremental_read].value;
+
+    const auto has_keeper_path = (*storage_settings)[DataLakeStorageSetting::paimon_keeper_path].changed
+        && !(*storage_settings)[DataLakeStorageSetting::paimon_keeper_path].value.empty();
+    const auto has_replica_name = (*storage_settings)[DataLakeStorageSetting::paimon_replica_name].changed
+        && !(*storage_settings)[DataLakeStorageSetting::paimon_replica_name].value.empty();
+
+    if (!incremental_read_enabled)
+        return;
+
+    auto * settings_query = args.storage_def->settings;
+    if (!settings_query)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Paimon incremental read requires SETTINGS with paimon_keeper_path and paimon_replica_name");
+
+    if (!has_keeper_path || !has_replica_name)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "To use Paimon incremental read both paimon_keeper_path and paimon_replica_name must be specified");
+
+    auto keeper_path = (*storage_settings)[DataLakeStorageSetting::paimon_keeper_path].value;
+    auto replica_name = (*storage_settings)[DataLakeStorageSetting::paimon_replica_name].value;
+
+    auto context = args.getContext();
+    const auto is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    const auto is_replicated_database = is_on_cluster
+        && DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
+    /// Unlike ReplicatedMergeTree (which uses the stricter is_on_cluster || is_replicated_database ||
+    /// query.attach || query.has_uuid pattern in TableZnodeInfo::resolve), Paimon's keeper_path stores
+    /// per-table incremental read state and does not require cross-replica path consistency.
+    /// Using hasUUID() allows {uuid} expansion in Atomic databases, which is essential to guarantee
+    /// unique keeper paths — especially after DROP + re-CREATE of the same table name.
+    const auto allow_uuid_macro = args.table_id.hasUUID();
+
+    if (args.mode < LoadingStrictnessLevel::ATTACH)
+    {
+        Macros::MacroExpansionInfo info;
+        info.expand_special_macros_only = true;
+        info.table_id = args.table_id;
+        info.table_id.uuid = UUIDHelpers::Nil;
+
+        keeper_path = context->getMacros()->expand(keeper_path, info);
+        info.level = 0;
+        replica_name = context->getMacros()->expand(replica_name, info);
+
+        settings_query->changes.setSetting("paimon_keeper_path", keeper_path);
+        settings_query->changes.setSetting("paimon_replica_name", replica_name);
+    }
+
+    Macros::MacroExpansionInfo info;
+    info.table_id = args.table_id;
+    if (is_replicated_database)
+    {
+        auto database = DatabaseCatalog::instance().getDatabase(args.table_id.database_name);
+        info.replica = getReplicatedDatabaseReplicaName(database);
+    }
+    if (!allow_uuid_macro)
+        info.table_id.uuid = UUIDHelpers::Nil;
+    keeper_path = context->getMacros()->expand(keeper_path, info);
+
+    info.level = 0;
+    info.table_id.uuid = UUIDHelpers::Nil;
+    replica_name = context->getMacros()->expand(replica_name, info);
+
+    // Keep DataLakeStorageSettings in sync so DataLakeConfiguration consumers
+    // (e.g. PaimonMetadata) see the expanded values.
+    (*storage_settings)[DataLakeStorageSetting::paimon_keeper_path].value = keeper_path;
+    (*storage_settings)[DataLakeStorageSetting::paimon_replica_name].value = replica_name;
+
+    settings_query->changes.setSetting("paimon_keeper_path", keeper_path);
+    settings_query->changes.setSetting("paimon_replica_name", replica_name);
 }
 
 namespace Setting

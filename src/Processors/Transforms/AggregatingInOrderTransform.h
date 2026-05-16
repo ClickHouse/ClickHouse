@@ -25,16 +25,25 @@ struct ChunkInfoWithAllocatedBytes : public ChunkInfoCloneable<ChunkInfoWithAllo
 class AggregatingInOrderTransform : public IProcessor
 {
 public:
-    AggregatingInOrderTransform(SharedHeader header, AggregatingTransformParamsPtr params,
-                                const SortDescription & sort_description_for_merging,
-                                const SortDescription & group_by_description_,
-                                size_t max_block_size_, size_t max_block_bytes_,
-                                ManyAggregatedDataPtr many_data, size_t current_variant);
+    AggregatingInOrderTransform(
+        SharedHeader header,
+        AggregatingTransformParamsPtr params,
+        const SortDescription & sort_description_for_merging,
+        const SortDescription & group_by_description_,
+        size_t max_block_size_,
+        size_t max_block_bytes_,
+        ManyAggregatedDataPtr many_data,
+        size_t current_variant,
+        RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_);
 
-    AggregatingInOrderTransform(SharedHeader header, AggregatingTransformParamsPtr params,
-                                const SortDescription & sort_description_for_merging,
-                                const SortDescription & group_by_description_,
-                                size_t max_block_size_, size_t max_block_bytes_);
+    AggregatingInOrderTransform(
+        SharedHeader header,
+        AggregatingTransformParamsPtr params,
+        const SortDescription & sort_description_for_merging,
+        const SortDescription & group_by_description_,
+        size_t max_block_size_,
+        size_t max_block_bytes_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_);
 
     ~AggregatingInOrderTransform() override;
 
@@ -66,7 +75,7 @@ private:
     SortDescription sort_description;
     SortDescriptionWithPositions group_by_description;
     bool group_by_key = false;
-    Block group_by_block;
+    Chunk group_by_chunk;
     ColumnRawPtrs key_columns_raw;
 
     Aggregator::AggregateColumns aggregate_columns;
@@ -88,6 +97,8 @@ private:
     Chunk to_push_chunk;
 
     RowsBeforeStepCounterPtr rows_before_aggregation;
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
 
     LoggerPtr log = getLogger("AggregatingInOrderTransform");
 };

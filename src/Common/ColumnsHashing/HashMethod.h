@@ -6,6 +6,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/AggregationCommon.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -43,6 +44,7 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
     static constexpr bool has_cheap_key_calculation = true;
+    static constexpr bool has_pre_computed_hashes = false;
 
     const char * vec;
 
@@ -94,6 +96,65 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
 };
 
 
+/// Like HashMethodOneNumber, but subtracts min_key from each key and validates if the key is in range.
+/// Used for hash join's fixed-range optimization, where the hash table stores keys shifted to [0, max_key - min_key].
+template <typename Value, typename Mapped, typename FieldType, bool use_cache = true, bool need_offset = false, bool nullable = false>
+struct HashMethodOneNumberInRange : public columns_hashing_impl::HashMethodBase<
+                                            HashMethodOneNumberInRange<Value, Mapped, FieldType, use_cache, need_offset, nullable>,
+                                            Value,
+                                            Mapped,
+                                            use_cache,
+                                            need_offset,
+                                            nullable>
+{
+    using Self = HashMethodOneNumberInRange<Value, Mapped, FieldType, use_cache, need_offset, nullable>;
+    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
+
+    static constexpr bool has_range_check = true;
+    static constexpr bool has_cheap_key_calculation = true;
+
+    const char * vec;
+    FieldType min_key{};
+    FieldType range_size{};
+
+    HashMethodOneNumberInRange(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
+        : HashMethodOneNumberInRange(key_columns[0])
+    {
+    }
+
+    explicit HashMethodOneNumberInRange(const IColumn * column) : Base(column)
+    {
+        if constexpr (nullable)
+            vec = checkAndGetColumn<ColumnNullable>(*column).getNestedColumnPtr()->getRawData().data();
+        else
+            vec = column->getRawData().data();
+    }
+
+    using Base::createContext;
+    using Base::emplaceKey;
+    using Base::findKey;
+    using Base::getHash;
+
+    FieldType getKeyHolder(size_t row, Arena &) const
+    {
+        return unalignedLoad<FieldType>(vec + row * sizeof(FieldType)) - min_key;
+    }
+
+    std::pair<FieldType, bool> getKeyHolderInRange(size_t row, Arena &) const
+    {
+        FieldType shifted_key = unalignedLoad<FieldType>(vec + row * sizeof(FieldType)) - min_key;
+        return {shifted_key, shifted_key < range_size};
+    }
+};
+
+
+template <typename T>
+struct IsHashMethodInRange : std::false_type {};
+
+template <typename Value, typename Mapped, typename FieldType, bool use_cache, bool need_offset, bool nullable>
+struct IsHashMethodInRange<HashMethodOneNumberInRange<Value, Mapped, FieldType, use_cache, need_offset, nullable>> : std::true_type {};
+
+
 /// For the case when there is one string key.
 template <
     typename Value,
@@ -114,6 +175,7 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
     static constexpr bool has_cheap_key_calculation = false;
+    static constexpr bool has_pre_computed_hashes = false;
 
     const IColumn::Offset * offsets;
     const UInt8 * chars;
@@ -173,6 +235,7 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
     static constexpr bool has_cheap_key_calculation = false;
+    static constexpr bool has_pre_computed_hashes = false;
 
     size_t n;
     const ColumnFixedString::Chars * chars;
@@ -244,6 +307,7 @@ struct HashMethodKeysFixed
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
     static constexpr bool has_cheap_key_calculation = true;
+    static constexpr bool has_pre_computed_hashes = false;
 
     LowCardinalityKeys<has_low_cardinality> low_cardinality_keys;
     Sizes key_sizes;
@@ -417,6 +481,7 @@ struct HashMethodHashed
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
 
     static constexpr bool has_cheap_key_calculation = false;
+    static constexpr bool has_pre_computed_hashes = false;
 
     ColumnRawPtrs key_columns;
 

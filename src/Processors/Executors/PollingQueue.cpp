@@ -3,6 +3,7 @@
 #if defined(OS_LINUX)
 
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <base/defines.h>
 #include <sys/epoll.h>
 #include <unistd.h>

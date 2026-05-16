@@ -15,11 +15,20 @@ namespace DB
 
 using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>>;
 
-struct KeeperConfigurationAndSettings;
-using KeeperConfigurationAndSettingsPtr = std::shared_ptr<KeeperConfigurationAndSettings>;
+struct KeeperConfiguration;
+using KeeperConfigurationPtr = std::shared_ptr<KeeperConfiguration>;
 
 class KeeperServer
 {
+public:
+    struct RespondingCounts
+    {
+        uint64_t learners = 0;
+        uint64_t followers = 0;
+        uint64_t synced_followers = 0;
+        uint64_t synced_non_voting_followers = 0;
+    };
+
 private:
     const int server_id;
 
@@ -71,7 +80,7 @@ private:
     const bool enable_reconfiguration;
 public:
     KeeperServer(
-        const KeeperConfigurationAndSettingsPtr & settings_,
+        const KeeperConfigurationPtr & server_config,
         const Poco::Util::AbstractConfiguration & config_,
         ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
@@ -82,9 +91,8 @@ public:
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
     void startup(const Poco::Util::AbstractConfiguration & config, bool enable_ipv6 = true);
 
-    /// Put local read request and execute in state machine directly and response into
-    /// responses queue
-    void putLocalReadRequest(const KeeperRequestForSession & request);
+    /// Execute read requests directly in the local state machine. Put response into responses queue.
+    void putLocalReadRequests(const KeeperRequestsForSessions & requests);
 
     bool isRecovering() const { return is_recovering; }
     bool reconfigEnabled() const { return enable_reconfiguration; }
@@ -114,11 +122,8 @@ public:
 
     Keeper4LWInfo getPartiallyFilled4LWInfo() const;
 
-    /// @return follower count if node is not leader return 0
-    uint64_t getFollowerCount() const;
-
-    /// @return synced follower count if node is not leader return 0
-    uint64_t getSyncedFollowerCount() const;
+    /// @return responding learners/followers/synced followers; all zero when node is not leader
+    RespondingCounts getRespondingCounts() const;
 
     /// Wait server initialization (see callbackFunc)
     void waitInit();

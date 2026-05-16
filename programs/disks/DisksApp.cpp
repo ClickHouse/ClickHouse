@@ -2,7 +2,9 @@
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/SignalHandlers.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Macros.h>
@@ -136,7 +138,7 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
         {
             command = getCommandByName(arguments[0]);
         }
-        catch (...)
+        catch (const std::exception &)
         {
             return {arguments.back()};
         }
@@ -154,7 +156,7 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
     {
         command = getCommandByName(arguments[0]);
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return {last_token};
     }
@@ -243,7 +245,7 @@ bool DisksApp::processQueryText(const String & text)
         {
             error_string = err.what();
         }
-        catch (...)
+        catch (...) // Ok: report unknown exception
         {
             error_string = "Unknown exception";
         }
@@ -468,6 +470,7 @@ String DisksApp::getDefaultConfigFileName()
 
 int DisksApp::main(const std::vector<String> & /*args*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("DisksApp");
     std::vector<std::string> keys;
     config().keys(keys);
     if (config().has("config-file") || fs::exists(getDefaultConfigFileName()))

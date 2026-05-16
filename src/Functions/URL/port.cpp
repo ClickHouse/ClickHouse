@@ -99,10 +99,12 @@ private:
             return default_port;
 
         p = host.data() + host.size();
-        if (*p++ != ':')
+        if (p >= end || *p != ':')
             return default_port;
+        ++p;
 
-        Int64 port = default_port;
+        Int64 port = 0;
+        bool saw_digit = false;
         while (p < end)
         {
             if (*p == '/')
@@ -110,12 +112,13 @@ private:
             if (!isNumericASCII(*p))
                 return default_port;
 
+            saw_digit = true;
             port = (port * 10) + (*p - '0');
             if (port < 0 || port > static_cast<UInt16>(-1))
                 return default_port;
             ++p;
         }
-        return static_cast<UInt16>(port);
+        return saw_digit ? static_cast<UInt16>(port) : default_port;
     }
 };
 

@@ -67,11 +67,13 @@ class WriteBuffer;
     M(CLASS_NAME, IcebergMetadataLogLevel) \
     M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
+    M(CLASS_NAME, InputFormatColumnMatchingCaseSensitivity) \
     M(CLASS_NAME, Int32) \
     M(CLASS_NAME, Int64) \
     M(CLASS_NAME, IntervalOutputFormat) \
     M(CLASS_NAME, JoinAlgorithm) \
     M(CLASS_NAME, JoinStrictness) \
+    M(CLASS_NAME, JemallocProfileFormat) \
     M(CLASS_NAME, LightweightMutationProjectionMode) \
     M(CLASS_NAME, LightweightDeleteMode) \
     M(CLASS_NAME, AlterUpdateMode) \
@@ -99,6 +101,7 @@ class WriteBuffer;
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, SetOperationMode) \
     M(CLASS_NAME, ShortCircuitFunctionEvaluation) \
+    M(CLASS_NAME, S3UriStyle) \
     M(CLASS_NAME, SQLSecurityType) \
     M(CLASS_NAME, StreamingHandleErrorMode) \
     M(CLASS_NAME, String) \
@@ -118,6 +121,7 @@ class WriteBuffer;
 
 
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_TRAIT)
+
 struct Settings
 {
     Settings();

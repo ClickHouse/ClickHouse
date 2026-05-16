@@ -285,7 +285,7 @@ FROM (SELECT number AS timestamp, [0, 4, 8, 3, 0, 0, 0, 1, 3, 5][number] AS valu
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
 
-    factory.registerFunction("deltaSumTimestamp", { createAggregateFunctionDeltaSumTimestamp, properties, documentation });
+    factory.registerFunction("deltaSumTimestamp", { createAggregateFunctionDeltaSumTimestamp, documentation, properties });
 }
 
 }

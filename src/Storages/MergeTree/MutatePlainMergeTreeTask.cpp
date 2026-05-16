@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 #include <Core/Settings.h>
 
@@ -50,7 +51,7 @@ void MutatePlainMergeTreeTask::prepare()
 
     storage.writePartLog(
         PartLogElement::MUTATE_PART_START, {}, 0,
-        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {}, mutation_ids);
+        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {}, mutation_ids, {});
 
     write_part_log = [this, mutation_ids] (const ExecutionStatus & execution_status)
     {
@@ -64,7 +65,7 @@ void MutatePlainMergeTreeTask::prepare()
             future_part->parts,
             merge_list_entry.get(),
             std::move(profile_counters_snapshot),
-            mutation_ids);
+            mutation_ids, {});
     };
 
     if (task_context->getSettingsRef()[Setting::enable_sharing_sets_for_mutations])
@@ -88,6 +89,7 @@ void MutatePlainMergeTreeTask::finish()
 
 bool MutatePlainMergeTreeTask::executeStep()
 {
+    auto component_guard = Coordination::setCurrentComponent("MutatePlainMergeTreeTask::executeStep");
     /// Metrics will be saved in the local profile_counters.
     ProfileEventsScope profile_events_scope(&profile_counters);
 
@@ -113,6 +115,9 @@ bool MutatePlainMergeTreeTask::executeStep()
 
                 new_part = mutate_task->getFuture().get();
                 auto & data_part_storage = new_part->getDataPartStorage();
+#if CLICKHOUSE_CLOUD
+                data_part_storage.setPreferredFileOrder(new_part->getPreferredFileOrder());
+#endif
                 if (data_part_storage.hasActiveTransaction())
                     data_part_storage.precommitTransaction();
 
@@ -169,6 +174,7 @@ bool MutatePlainMergeTreeTask::executeStep()
 
 void MutatePlainMergeTreeTask::cancel() noexcept
 {
+    auto component_guard = Coordination::setCurrentComponent("MutatePlainMergeTreeTask::cancel");
     if (mutate_task)
         mutate_task->cancel();
 
