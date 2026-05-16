@@ -185,6 +185,38 @@ PrometheusQueryTree(INSTANT_VECTOR):
         {job!="demo"}
         )"), DB::Exception);
 
+    /// Behavior: Prometheus accepts a negated equality matcher against empty string because it cannot match the empty string.
+    EXPECT_EQ(parse(R"(
+        {job!=""}
+        )"), R"(
+{job!=""}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        job NE ''
+)");
+
+    /// Behavior: Prometheus accepts a negated regex matcher that rejects the empty string because the matcher itself cannot match empty.
+    EXPECT_EQ(parse(R"(
+        {job!~".*"}
+        )"), R"(
+{job!~".*"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        job NRE '.*'
+)");
+
+    /// Behavior: Prometheus rejects selectors where every matcher can match the empty string.
+    EXPECT_THROW(parse(R"(
+        {job=""}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus treats `!~ ".+"` as matching the empty string, so it is not a non-empty matcher.
+    EXPECT_THROW(parse(R"(
+        {job!~".+"}
+        )"), DB::Exception);
+
     EXPECT_EQ(parse(R"(
         {__name__=~".+"}
         )"), R"(
@@ -216,6 +248,31 @@ PrometheusQueryTree(INSTANT_VECTOR):
 
     EXPECT_THROW(parse(R"(
         {job=~"(.*", __name__=~".+"}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus validates later regex matchers even when an earlier equality matcher is already non-empty.
+    EXPECT_THROW(parse(R"(
+        {__name__="demo_memory_usage_bytes", instance=~"(.*"}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus validates earlier regex matchers before observing a later non-empty matcher.
+    EXPECT_THROW(parse(R"(
+        {instance=~"(.*", __name__="demo_memory_usage_bytes"}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus rejects an outside metric name combined with any in-brace `__name__` equality matcher.
+    EXPECT_THROW(parse(R"(
+        foo{__name__="foo"}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus rejects conflicting outside and in-brace metric names at parse/type-check time.
+    EXPECT_THROW(parse(R"(
+        foo{__name__="bar"}
+        )"), DB::Exception);
+
+    /// Behavior: Prometheus rejects an outside metric name combined with an in-brace regex metric-name matcher.
+    EXPECT_THROW(parse(R"(
+        foo{__name__=~"foo"}
         )"), DB::Exception);
 
     /// Aggregation operators.
