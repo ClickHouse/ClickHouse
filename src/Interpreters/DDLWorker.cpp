@@ -560,11 +560,10 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
 
     ReadBufferFromString istr(query_to_execute);
     QueryScope query_scope;
-    ContextMutablePtr query_context;
 
     try
     {
-        query_context = task.makeQueryContext(context, zookeeper);
+        auto query_context = task.makeQueryContext(context, zookeeper);
 
         chassert(!query_context->getCurrentTransaction());
         if (query_context->getSettingsRef()[Setting::implicit_transaction])
@@ -602,6 +601,9 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
         /// However, for the majority of exceptions there is no sense to retry, because most likely we will just
         /// get the same exception again. So we return false only for several special exception codes,
         /// and consider query as executed with status "failed" and return true in other cases.
+        /// `TABLE_IS_READ_ONLY` is retriable: it usually comes from a temporary ZooKeeper disconnect
+        /// on `ReplicatedMergeTree`. `TABLE_IS_PERMANENTLY_READ_ONLY` is not retriable: it is raised
+        /// by the `table_readonly` setting or static storage, where retrying would loop forever.
         bool no_sense_to_retry = e.code() != ErrorCodes::KEEPER_EXCEPTION &&
                                  e.code() != ErrorCodes::UNFINISHED &&
                                  e.code() != ErrorCodes::NOT_A_LEADER &&
@@ -610,19 +612,6 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
                                  e.code() != ErrorCodes::CANNOT_ALLOCATE_MEMORY &&
                                  e.code() != ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES &&
                                  e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED;
-
-        /// TABLE_IS_READ_ONLY is retriable for ReplicatedMergeTree (temporary ZooKeeper disconnect),
-        /// but not for plain MergeTree where it comes from the permanent `table_readonly` setting.
-        if (e.code() == ErrorCodes::TABLE_IS_READ_ONLY && query_context)
-        {
-            if (auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(task.query.get()))
-            {
-                auto table_id = query_context->tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
-                if (auto storage = DatabaseCatalog::instance().tryGetTable(table_id, query_context);
-                    storage && !storage->supportsReplication())
-                    no_sense_to_retry = true;
-            }
-        }
 
         tryLogCurrentException(
             log, String(fmt::format("Query {} wasn't finished successfully, retriable {}", query_to_show_in_logs, !no_sense_to_retry)));
