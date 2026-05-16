@@ -436,9 +436,9 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
-            parameter=BuildTypes.ARM_FUZZERS,
+            parameter=BuildTypes.AMD_FUZZERS,
             provides=[],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.AMD_LARGE,
         ),
     )
     install_check_jobs = Job.Config(
@@ -1464,9 +1464,9 @@ class JobConfigs:
     )
     libfuzzer_job = Job.Config(
         name=JobNames.LIBFUZZER_TEST,
-        runs_on=RunnerLabels.ARM_MEDIUM,
+        runs_on=RunnerLabels.AMD_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
-        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        requires=[ArtifactNames.AMD_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/libfuzzer_test_check.py"],
         ),

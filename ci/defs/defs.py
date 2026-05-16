@@ -330,7 +330,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     RISCV64 = "riscv64"
     S390X = "s390x"
     LOONGARCH64 = "loongarch64"
-    ARM_FUZZERS = "arm_fuzzers"
+    AMD_FUZZERS = "amd_fuzzers"
 
 
 class JobNames:
@@ -441,7 +441,7 @@ class ArtifactNames:
     TGZ_AMD_RELEASE = "TGZ_AMD_RELEASE"
     TGZ_ARM_RELEASE = "TGZ_ARM_RELEASE"
 
-    ARM_FUZZERS = "ARM_FUZZERS"
+    AMD_FUZZERS = "AMD_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
 
     TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
@@ -596,7 +596,7 @@ class ArtifactConfigs:
         ]
     )
     fuzzers = Artifact.Config(
-        name=ArtifactNames.ARM_FUZZERS,
+        name=ArtifactNames.AMD_FUZZERS,
         type=Artifact.Type.S3,
         path=[
             f"{TEMP_DIR}/build/programs/*_fuzzer",

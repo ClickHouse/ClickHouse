@@ -64,7 +64,7 @@ workflow = Workflow.Config(
         ],
         *[
             (
-                job.set_provides([ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS])
+                job.set_provides([ArtifactNames.AMD_FUZZERS, ArtifactNames.FUZZERS_CORPUS])
                 if "fuzzers" in job.name
                 else job
             ).set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
