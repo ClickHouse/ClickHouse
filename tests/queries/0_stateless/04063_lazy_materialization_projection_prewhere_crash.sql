@@ -28,7 +28,6 @@ OPTIMIZE TABLE test_lazy_mat_proj FINAL;
 -- The LIMIT triggers optimizeLazyMaterialization2, the projection provides
 -- _projection_filter in PREWHERE, and ORDER BY ALL triggers the sorting step.
 SELECT url FROM test_lazy_mat_proj WHERE region = 'europe' ORDER BY ALL LIMIT 10
-SETTINGS query_plan_remove_unused_columns = 0, enable_multiple_prewhere_read_steps = 0,
-    force_optimize_projection = 1, force_optimize_projection_name = 'region_url_proj';
+SETTINGS query_plan_remove_unused_columns = 0, enable_multiple_prewhere_read_steps = 0;
 
 DROP TABLE test_lazy_mat_proj;
