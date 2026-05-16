@@ -2274,6 +2274,10 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
 
 void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
 {
+    /// Streaming queries do index analysis in MergeTreeCommitOrderSequentialSource.
+    if (query_info.isStream())
+        return;
+
     if (!indexes)
     {
         auto node_name_to_input = query_info.buildNodeNameToInputNodeColumn();
@@ -2442,6 +2446,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         NamesAndTypesList available_real_columns = metadata_snapshot->getColumns().getAllPhysical();
         result.column_names_to_read.push_back(ExpressionActions::getSmallestColumn(available_real_columns).name);
     }
+
+    /// Streaming queries do index analysis in MergeTreeCommitOrderSequentialSource.
+    if (query_info_.isStream())
+        return std::make_shared<AnalysisResult>(std::move(result));
 
     // Build and check if primary key is used when necessary
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
@@ -3469,7 +3477,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     logPredicateStatistics(result);
 
-    if (enable_remove_parts_from_snapshot_optimization)
+    if (enable_remove_parts_from_snapshot_optimization || query_info.isStream())
     {
         /// Do not keep data parts in snapshot.
         /// They are stored separately, and some could be released after PK analysis.
