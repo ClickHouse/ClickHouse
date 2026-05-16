@@ -18,7 +18,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
 #include <Common/QueryScope.h>
-#include <Common/StringUtils.h>
 #include <IO/SnappyReadBuffer.h>
 #include <IO/SnappyWriteBuffer.h>
 #include <IO/Protobuf/ProtobufZeroCopyInputStreamFromReadBuffer.h>
