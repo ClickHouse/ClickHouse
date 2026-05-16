@@ -69,7 +69,8 @@ def is_cgroupv2_enabled(instance):
         # "test -f" exits non-zero if file doesn't exist - this is expected for cgroup v1
         # But distinguish from real infrastructure errors by checking the error message
         error_str = str(e).lower()
-        if "non-zero exit" in error_str or "exit code" in error_str or "returned 1" in error_str:
+        # exec_in_container raises with message "return non-zero code {code}:"
+        if "non-zero code 1" in error_str:
             # Command executed but file doesn't exist - cgroup v1 environment
             return False
         # Real infrastructure error (Docker failure, permission denied, etc.)
