@@ -4,18 +4,17 @@ CREATE TABLE t (x LowCardinality(String)) ENGINE=Memory;
 INSERT INTO t VALUES ('a');
 SELECT x IS NULL, x FROM t GROUP BY x WITH ROLLUP SETTINGS group_by_use_nulls=1;
 
--- See https://github.com/ClickHouse/ClickHouse/issues/95299
--- Reproduce CI failures: GROUPING SETS and CUBE with LowCardinality keys.
+-- https://github.com/ClickHouse/ClickHouse/issues/95299
+-- These previously crashed with `Block structure mismatch ... LowCardinality(UInt16) vs LowCardinality(Nullable(UInt16))`
+-- in `AggregatingStep::transformPipeline` (GROUPING SETS path, missing-keys DAG)
+-- and `CubeStep::transformPipeline` (`addGroupingSetForTotals`).
 SELECT '---';
-SELECT x IS NULL, x FROM t GROUP BY GROUPING SETS ((x), ()) ORDER BY ALL SETTINGS group_by_use_nulls=1;
-SELECT '---';
-SELECT x IS NULL, x FROM t GROUP BY x WITH CUBE ORDER BY ALL SETTINGS group_by_use_nulls=1;
+SET allow_suspicious_low_cardinality_types = 1;
 
-CREATE TABLE t_uint (k LowCardinality(UInt16)) ENGINE=Memory;
-INSERT INTO t_uint VALUES (1024);
+CREATE TABLE t2 (a LowCardinality(UInt16), b LowCardinality(UInt16)) ENGINE = Memory;
+INSERT INTO t2 VALUES (1024, 2048);
+SELECT a, b FROM t2 GROUP BY GROUPING SETS ((a, b), (a)) ORDER BY ALL SETTINGS group_by_use_nulls = 1;
 SELECT '---';
-SELECT k IS NULL, k FROM t_uint GROUP BY k WITH ROLLUP ORDER BY ALL SETTINGS group_by_use_nulls=1;
+SELECT a, b FROM t2 GROUP BY a, b WITH CUBE ORDER BY ALL SETTINGS group_by_use_nulls = 1;
 SELECT '---';
-SELECT k IS NULL, k FROM t_uint GROUP BY GROUPING SETS ((k), ()) ORDER BY ALL SETTINGS group_by_use_nulls=1;
-SELECT '---';
-SELECT k IS NULL, k FROM t_uint GROUP BY k WITH CUBE ORDER BY ALL SETTINGS group_by_use_nulls=1;
+SELECT a, b FROM t2 GROUP BY a, b WITH ROLLUP ORDER BY ALL SETTINGS group_by_use_nulls = 1;
