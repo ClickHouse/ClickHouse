@@ -1,4 +1,4 @@
--- Tags: no-old-analyzer, no-replicated-database
+-- Tags: no-replicated-database
 -- Regression test for subqueries in ALIAS/DEFAULT column expressions.
 -- Previously, the server would crash with LOGICAL_ERROR when reading from a table
 -- whose ALIAS column expression contained a correlated subquery nested inside
