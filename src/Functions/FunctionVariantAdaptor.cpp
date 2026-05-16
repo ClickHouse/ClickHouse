@@ -746,7 +746,8 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
         String alt_names;
         for (const auto & alt : variant_alternatives)
         {
-            if (!alt_names.empty()) alt_names += ", ";
+            if (!alt_names.empty())
+                alt_names += ", ";
             alt_names += alt->getName();
         }
         throw Exception(
