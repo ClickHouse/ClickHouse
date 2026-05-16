@@ -5291,6 +5291,14 @@ void MergeTreeData::changeSettings(
 
         setInMemoryMetadata(new_metadata);
 
+        /// Lookup-index caches are derived from table metadata and data parts, so
+        /// metadata changes must drop stale in-memory snapshots eagerly.
+        {
+            std::lock_guard lock(table_lookup_indices_mutex);
+            lookup_sets_cache.clear();
+            lookup_joins_cache.clear();
+        }
+
         if (has_storage_policy_changed)
             startBackgroundMovesIfNeeded();
 
