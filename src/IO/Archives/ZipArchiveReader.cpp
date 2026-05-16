@@ -41,18 +41,37 @@ namespace
     ///
     /// C++ exceptions must not propagate through the minizip C library (undefined behavior).
     /// All callbacks catch exceptions and store them for later re-throwing in C++ code.
+    ///
+    /// Exception capture happens at two levels:
+    ///  - in `StreamFromReadBuffer::stored_exception` — used during normal operation,
+    ///    rethrown by `rethrowIfNeeded()`.
+    ///  - in the shared `Opaque::stored_exception` accessible via every callback — used when
+    ///    `unzOpen2_64()` fails: minizip's internal cleanup then invokes `closeFileFunc()`
+    ///    which deletes the stream, leaving the in-stream exception unreachable. Storing a
+    ///    copy in `Opaque` (which lives on the caller's stack across `unzOpen2_64()`) keeps
+    ///    the original error available so we can surface it instead of the generic
+    ///    "Couldn't open zip archive" or "Code = -100" messages.
     class StreamFromReadBuffer
     {
     public:
+        struct Opaque
+        {
+            std::unique_ptr<SeekableReadBuffer> read_buffer;
+            UInt64 total_size = 0;
+            StreamFromReadBuffer * created_stream = nullptr;
+            std::exception_ptr stored_exception;
+        };
+
         struct OpenResult
         {
             RawHandle handle = nullptr;
             StreamFromReadBuffer * stream = nullptr;
+            std::exception_ptr stored_exception;
         };
 
         static OpenResult open(std::unique_ptr<SeekableReadBuffer> archive_read_buffer, UInt64 archive_size)
         {
-            StreamFromReadBuffer::Opaque opaque{std::move(archive_read_buffer), archive_size, nullptr};
+            Opaque opaque{std::move(archive_read_buffer), archive_size, nullptr, nullptr};
 
             zlib_filefunc64_def func_def;
             func_def.zopen64_file = &StreamFromReadBuffer::openFileFunc;
@@ -65,11 +84,17 @@ namespace
             func_def.opaque = &opaque;
 
             RawHandle handle = unzOpen2_64(/* path= */ nullptr, &func_def);
-            return {handle, opaque.created_stream};
+
+            /// If `unzOpen2_64` failed, minizip already called `closeFileFunc()`, so
+            /// `opaque.created_stream` now points to freed memory. Do NOT propagate it.
+            if (!handle)
+                return {nullptr, nullptr, std::move(opaque.stored_exception)};
+
+            return {handle, opaque.created_stream, nullptr};
         }
 
         /// Re-throws a stored exception from a callback, if any.
-        void rethrowIfNeeded()
+        void rethrowIfNeeded() const
         {
             if (stored_exception)
             {
@@ -80,24 +105,26 @@ namespace
         }
 
     private:
-        void storeException()
+        static void storeException(StreamFromReadBuffer & strm, void * opaque)
         {
-            if (!stored_exception)
-                stored_exception = std::current_exception();
+            auto ex = std::current_exception();
+            if (!strm.stored_exception)
+                strm.stored_exception = ex;
+            /// Also save it in the shared `Opaque` so we can recover the original
+            /// exception even when minizip destroys the stream during a failed open.
+            if (opaque)
+            {
+                auto & opq = *reinterpret_cast<Opaque *>(opaque);
+                if (!opq.stored_exception)
+                    opq.stored_exception = ex;
+            }
         }
 
         std::unique_ptr<SeekableReadBuffer> read_buffer;
         UInt64 start_offset = 0;
         UInt64 total_size = 0;
         bool at_end = false;
-        std::exception_ptr stored_exception;
-
-        struct Opaque
-        {
-            std::unique_ptr<SeekableReadBuffer> read_buffer;
-            UInt64 total_size = 0;
-            StreamFromReadBuffer * created_stream = nullptr;
-        };
+        mutable std::exception_ptr stored_exception;
 
         static void * openFileFunc(void * opaque, const void *, int)
         {
@@ -127,7 +154,7 @@ namespace
             return strm.stored_exception ? ZIP_ERRNO : ZIP_OK;
         }
 
-        static unsigned long readFileFunc(void *, void * stream, void * buf, unsigned long size) // NOLINT(google-runtime-int)
+        static unsigned long readFileFunc(void * opaque, void * stream, void * buf, unsigned long size) // NOLINT(google-runtime-int)
         {
             auto & strm = get(stream);
             if (strm.stored_exception)
@@ -140,12 +167,12 @@ namespace
             }
             catch (...)
             {
-                strm.storeException();
+                storeException(strm, opaque);
                 return 0;
             }
         }
 
-        static ZPOS64_T tellFunc(void *, void * stream)
+        static ZPOS64_T tellFunc(void * opaque, void * stream)
         {
             auto & strm = get(stream);
             if (strm.stored_exception)
@@ -158,12 +185,12 @@ namespace
             }
             catch (...)
             {
-                strm.storeException();
+                storeException(strm, opaque);
                 return static_cast<ZPOS64_T>(-1);
             }
         }
 
-        static long seekFunc(void *, void * stream, ZPOS64_T offset, int origin) // NOLINT(google-runtime-int)
+        static long seekFunc(void * opaque, void * stream, ZPOS64_T offset, int origin) // NOLINT(google-runtime-int)
         {
             auto & strm = get(stream);
             if (strm.stored_exception)
@@ -185,7 +212,7 @@ namespace
             }
             catch (...)
             {
-                strm.storeException();
+                storeException(strm, opaque);
                 return -1;
             }
         }
@@ -364,11 +391,23 @@ public:
             checkResult(err);
     }
 
-    void checkResult(int code) const { reader->checkResult(code); }
-    [[noreturn]] void showError(const String & message) const { reader->showError(message); }
+    /// Re-throw a stored callback exception first so the user sees the real cause
+    /// of the failure (e.g. a network error or `CANNOT_SEEK_THROUGH_FILE`) instead
+    /// of the cryptic minizip error code formatted by `ZipArchiveReader::checkResult`.
+    void checkResult(int code) const
+    {
+        rethrowStreamException();
+        reader->checkResult(code);
+    }
+
+    [[noreturn]] void showError(const String & message) const
+    {
+        rethrowStreamException();
+        reader->showError(message);
+    }
 
     /// Re-throws a stored exception from the stream's C callback, if any.
-    void rethrowStreamException()
+    void rethrowStreamException() const
     {
         if (stream)
             stream->rethrowIfNeeded();
@@ -715,11 +754,13 @@ ZipArchiveReader::RawHandleWithStream ZipArchiveReader::acquireRawHandle()
     }
 
     RawHandleWithStream result;
+    std::exception_ptr stored_exception;
     if (archive_read_function)
     {
         auto open_result = StreamFromReadBuffer::open(archive_read_function(), archive_size);
         result.handle = open_result.handle;
         result.stream = open_result.stream;
+        stored_exception = std::move(open_result.stored_exception);
     }
     else
     {
@@ -727,7 +768,26 @@ ZipArchiveReader::RawHandleWithStream ZipArchiveReader::acquireRawHandle()
     }
 
     if (!result.handle)
+    {
+        /// If a callback threw while reading the underlying buffer (e.g. an S3 seek
+        /// error during EOCD lookup), surface that original exception instead of the
+        /// generic `Couldn't open zip archive` message. Otherwise minizip's internal
+        /// error code (frequently `MZ_END_OF_LIST`) bubbles up as the unhelpful
+        /// `Code = -100` reported in issue #104681.
+        if (stored_exception)
+        {
+            try
+            {
+                std::rethrow_exception(stored_exception);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("while opening zip archive {}", quoteString(path_to_archive));
+                throw;
+            }
+        }
         throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't open zip archive {}", quoteString(path_to_archive));
+    }
 
     return result;
 }

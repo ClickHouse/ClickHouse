@@ -11,6 +11,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -24,6 +25,7 @@ namespace DB::ErrorCodes
 {
     extern const int CANNOT_PACK_ARCHIVE;
     extern const int CANNOT_UNPACK_ARCHIVE;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
@@ -916,6 +918,117 @@ TEST_P(ArchiveReaderAndWriterTest, WriteErrorProducesException)
     out.reset();
     writer->cancel();
 }
+
+
+#if USE_MINIZIP
+
+/// A `SeekableReadBuffer` that wraps another buffer but raises `CANNOT_SEEK_THROUGH_FILE`
+/// on the second seek. This mimics `ReadBufferFromS3` with `restricted_seek = true`,
+/// which throws once a GET stream has been started and a subsequent backward seek is needed.
+class SeekFailingReadBuffer : public SeekableReadBuffer
+{
+public:
+    explicit SeekFailingReadBuffer(const String & data_)
+        : SeekableReadBuffer(nullptr, 0)
+        , data(data_)
+    {
+    }
+
+    off_t seek(off_t off, int whence) override
+    {
+        if (whence != SEEK_SET)
+            throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Only SEEK_SET allowed");
+
+        ++seek_count;
+        /// Allow the first seek (which precedes any read), then refuse the EOCD-search
+        /// backward seek that follows the first nextImpl().
+        if (seek_count > 1 && read_count > 0)
+            throw Exception(
+                ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
+                "Seek is allowed only before first read attempt from the buffer");
+
+        if (off < 0 || static_cast<size_t>(off) > data.size())
+            throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Seek out of bounds");
+
+        pos = nullptr;
+        working_buffer = Buffer(nullptr, nullptr);
+        position_in_file = off;
+        return off;
+    }
+
+    off_t getPosition() override
+    {
+        return static_cast<off_t>(position_in_file) - available();
+    }
+
+    bool nextImpl() override
+    {
+        if (position_in_file >= data.size())
+            return false;
+        ++read_count;
+        size_t avail = data.size() - position_in_file;
+        size_t to_read = std::min<size_t>(avail, 1024);
+        buf.resize(to_read);
+        std::copy(data.begin() + position_in_file, data.begin() + position_in_file + to_read, buf.begin());
+        BufferBase::set(buf.data(), to_read, 0);
+        position_in_file += to_read;
+        return true;
+    }
+
+private:
+    const String & data;
+    std::vector<char> buf;
+    size_t position_in_file = 0;
+    size_t seek_count = 0;
+    size_t read_count = 0;
+};
+
+
+/// Reproducer for https://github.com/ClickHouse/ClickHouse/issues/104681.
+///
+/// Before the fix, when a callback throws (here: a backward seek into S3 with
+/// `restricted_seek = true`), `ZipArchiveReader` swallowed the C++ exception inside
+/// the C stream callback, let minizip report `MZ_END_OF_LIST` (-100), and surfaced
+/// the unhelpful `Couldn't unpack zip archive ...: Code = -100` error. After the
+/// fix the original exception (`CANNOT_SEEK_THROUGH_FILE`) is rethrown unchanged.
+TEST(ZipArchiveReaderTest, RethrowsCallbackExceptionOnOpen)
+{
+    /// Build a valid zip in memory. `ManyFilesInMemory` shows this works; we use a
+    /// small number of files here so the EOCD search has to look back further than
+    /// a single read's worth of data.
+    String archive_in_memory;
+    {
+        auto writer = createArchiveWriter("archive.zip", std::make_unique<WriteBufferFromString>(archive_in_memory));
+        for (int i = 0; i < 4; ++i)
+        {
+            auto out = writer->writeFile(fmt::format("file{}.txt", i));
+            writeString(getRandomASCIIString(64), *out);
+            out->finalize();
+        }
+        writer->finalize();
+    }
+
+    auto read_archive_func
+        = [&]() -> std::unique_ptr<SeekableReadBuffer> { return std::make_unique<SeekFailingReadBuffer>(archive_in_memory); };
+
+    try
+    {
+        auto reader = createArchiveReader("archive.zip", read_archive_func, archive_in_memory.size());
+        /// If creation succeeded we must still trigger a failing seek; the EOCD lookup
+        /// is performed lazily on the first `fileExists` / `getFileInfo` call.
+        (void)reader->getAllFiles();
+        FAIL() << "Expected exception was not thrown";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE)
+            << "Underlying CANNOT_SEEK_THROUGH_FILE must surface unchanged, got: " << e.displayText();
+        EXPECT_EQ(e.message().find("Code = -100"), String::npos)
+            << "Cryptic minizip code must not appear in user-visible message: " << e.message();
+    }
+}
+
+#endif
 
 
 namespace
