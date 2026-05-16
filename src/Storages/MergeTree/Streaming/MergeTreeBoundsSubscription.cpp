@@ -22,17 +22,9 @@ void MergeTreeBoundsSubscription::advance(const String & partition_id, Int64 new
             chassert(new_cursor > it->second);
             it->second = new_cursor;
         }
-
-#if !defined(OS_LINUX)
-        has_pending_update = true;
-#endif
     }
 
-#if defined(OS_LINUX)
-    wake.write(1);
-#else
-    wake.notify_one();
-#endif
+    wake.notify();
 }
 
 std::map<String, Int64> MergeTreeBoundsSubscription::snapshot() const
@@ -54,31 +46,7 @@ void MergeTreeBoundsSubscription::disable()
         is_disabled = true;
     }
 
-#if defined(OS_LINUX)
-    wake.write(1);
-#else
-    wake.notify_all();
-#endif
-}
-
-EventFD * MergeTreeBoundsSubscription::fd()
-{
-#if defined(OS_LINUX)
-    return &wake;
-#else
-    return nullptr;
-#endif
-}
-
-void MergeTreeBoundsSubscription::wait()
-{
-#if defined(OS_LINUX)
-    chassert(false);
-#else
-    std::unique_lock guard(mutex);
-    wake.wait(guard, [this] { return has_pending_update || is_disabled; });
-    has_pending_update = false;
-#endif
+    wake.notify();
 }
 
 }

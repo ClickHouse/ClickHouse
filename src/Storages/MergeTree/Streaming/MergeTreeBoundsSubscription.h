@@ -2,14 +2,10 @@
 
 #include <Storages/Streaming/IStreamSubscription.h>
 
+#include <Common/WakeupFd.h>
+
 #include <base/defines.h>
 #include <base/types.h>
-
-#if defined(OS_LINUX)
-#    include <Common/EventFD.h>
-#else
-#    include <condition_variable>
-#endif
 
 #include <map>
 #include <mutex>
@@ -17,7 +13,7 @@
 namespace DB
 {
 
-/// Per-coordinator subscription holding the per-partition table cursor
+/// Per-coordinator subscription holding the per-partition table cursor.
 class MergeTreeBoundsSubscription : public IStreamSubscription
 {
 public:
@@ -30,9 +26,9 @@ public:
     bool isDisabled() const;
     void disable();
 
-    /// Linux: eventfd handle. Other platforms: nullptr
-    EventFD * fd();
-    void wait();
+    /// Read end of the wakeup pipe;
+    int fd() const { return wake.fd(); }
+    void drain() { wake.drain(); }
 
     const size_t query_subscriptions_count;
     const size_t current_subscription_index;
@@ -42,12 +38,7 @@ private:
     std::map<String, Int64> safe_block_numbers TSA_GUARDED_BY(mutex);
     bool is_disabled TSA_GUARDED_BY(mutex) = false;
 
-#if defined(OS_LINUX)
-    EventFD wake{/*non_blocking=*/true};
-#else
-    bool has_pending_update TSA_GUARDED_BY(mutex) = false;
-    mutable std::condition_variable wake;
-#endif
+    WakeupFd wake;
 };
 
 using MergeTreeBoundsSubscriptionPtr = std::shared_ptr<MergeTreeBoundsSubscription>;

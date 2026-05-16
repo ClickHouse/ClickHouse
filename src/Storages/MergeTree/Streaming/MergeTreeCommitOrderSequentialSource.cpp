@@ -26,7 +26,6 @@
 #include <Core/Settings.h>
 #include <Core/SortDescription.h>
 
-#include <Common/EventFD.h>
 #include <Common/logger_useful.h>
 
 #include <memory>
@@ -342,10 +341,7 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
     if (canConstructReadingPipeline(subscription->snapshot(), last_emitted_positions))
         return Status::Ready;
 
-    if (subscription->fd())
-        return Status::Async;
-
-    return Status::Ready;
+    return Status::Async;
 }
 
 void MergeTreeCommitOrderSequentialSource::handlePipelineEnd()
@@ -377,28 +373,15 @@ void MergeTreeCommitOrderSequentialSource::work()
 {
     chassert(!pending_snapshot.has_value());
 
-    std::map<String, Int64> safe_block_numbers;
-    if (subscription->fd())
-    {
-        subscription->fd()->read();
-        safe_block_numbers = subscription->snapshot();
-        if (!canConstructReadingPipeline(safe_block_numbers, last_emitted_positions))
-            return;
-    }
-    else
-    {
-        safe_block_numbers = subscription->snapshot();
-        while (!canConstructReadingPipeline(safe_block_numbers, last_emitted_positions) && !subscription->isDisabled())
-        {
-            subscription->wait();
-            safe_block_numbers = subscription->snapshot();
-        }
-    }
+    subscription->drain();
+    auto safe_block_numbers = subscription->snapshot();
 
     if (subscription->isDisabled())
         return;
 
-    chassert(canConstructReadingPipeline(safe_block_numbers, last_emitted_positions));
+    if (!canConstructReadingPipeline(safe_block_numbers, last_emitted_positions))
+        return;
+
     const auto partitions_to_read = getPartitionsCanBeRead(safe_block_numbers, last_emitted_positions);
     for (const auto & partition_id : partitions_to_read)
         reading_up_to_block_numbers[partition_id] = safe_block_numbers.at(partition_id);
@@ -425,7 +408,7 @@ void MergeTreeCommitOrderSequentialSource::work()
 
 int MergeTreeCommitOrderSequentialSource::schedule()
 {
-    return subscription->fd()->fd;
+    return subscription->fd();
 }
 
 IProcessor::PipelineUpdate MergeTreeCommitOrderSequentialSource::updatePipeline()

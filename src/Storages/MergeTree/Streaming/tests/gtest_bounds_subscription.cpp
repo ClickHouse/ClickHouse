@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <poll.h>
+
 using namespace DB;
 
 TEST(MergeTreeBoundsSubscription, AdvanceMonotonic)
@@ -44,66 +46,38 @@ TEST(MergeTreeBoundsSubscription, DisablePreventsAdvance)
     ASSERT_EQ(snap.at("p1"), 5);
 }
 
-#if defined(OS_LINUX)
-TEST(MergeTreeBoundsSubscription, FdIsExposedOnLinux)
+TEST(MergeTreeBoundsSubscription, FdIsExposed)
 {
     MergeTreeBoundsSubscription sub(1, 0);
-    auto * fd = sub.fd();
-    ASSERT_TRUE(fd != nullptr);
-    ASSERT_GE(fd->fd, 0);
+    ASSERT_GE(sub.fd(), 0);
 }
 
-TEST(MergeTreeBoundsSubscription, FsIsNonBlocking)
+TEST(MergeTreeBoundsSubscription, FdReadableAfterAdvance)
 {
     MergeTreeBoundsSubscription sub(1, 0);
+
+    /// Before any advance, fd is not readable.
+    pollfd p{.fd = sub.fd(), .events = POLLIN, .revents = 0};
+    ASSERT_EQ(::poll(&p, 1, /*timeout_ms=*/0), 0);
 
     sub.advance("p1", 1);
-    sub.advance("p1", 2);
-    sub.advance("p1", 3);
 
-    /// fd is ready after each advance.
-    ASSERT_EQ(sub.fd()->read(), 3);
+    p = {.fd = sub.fd(), .events = POLLIN, .revents = 0};
+    ASSERT_EQ(::poll(&p, 1, /*timeout_ms=*/1000), 1);
+    ASSERT_TRUE(p.revents & POLLIN);
 
-    /// fd is non-blocking
-    ASSERT_EQ(sub.fd()->read(), 0);
-    ASSERT_EQ(sub.fd()->read(), 0);
-    ASSERT_EQ(sub.fd()->read(), 0);
-    ASSERT_EQ(sub.fd()->read(), 0);
-}
-#else
-TEST(MergeTreeBoundsSubscription, FdAbsentOnNonLinux)
-{
-    MergeTreeBoundsSubscription sub(1, 0);
-    ASSERT_EQ(sub.fd(), nullptr);
+    /// After drain, fd is not readable again.
+    sub.drain();
+    p = {.fd = sub.fd(), .events = POLLIN, .revents = 0};
+    ASSERT_EQ(::poll(&p, 1, /*timeout_ms=*/0), 0);
 }
 
-TEST(MergeTreeBoundsSubscription, WaitWakesOnAdvance)
+TEST(MergeTreeBoundsSubscription, FdReadableAfterDisable)
 {
     MergeTreeBoundsSubscription sub(1, 0);
-
-    std::thread waiter([&] { sub.wait(); });
-    /// Give the waiter time to enter wait. Not a synchronisation primitive — the test
-    /// just needs to observe that a delayed advance unblocks an in-flight wait.
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-    sub.advance("p1", 1);
-    waiter.join();
-
-    ASSERT_FALSE(sub.isDisabled());
-    auto snap = sub.snapshot();
-    ASSERT_EQ(snap.at("p1"), 1);
-}
-
-TEST(MergeTreeBoundsSubscription, WaitWakesOnDisable)
-{
-    MergeTreeBoundsSubscription sub(1, 0);
-
-    std::thread waiter([&] { sub.wait(); });
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
     sub.disable();
-    waiter.join();
 
-    ASSERT_TRUE(sub.isDisabled());
+    pollfd p{.fd = sub.fd(), .events = POLLIN, .revents = 0};
+    ASSERT_EQ(::poll(&p, 1, /*timeout_ms=*/1000), 1);
+    ASSERT_TRUE(p.revents & POLLIN);
 }
-#endif
