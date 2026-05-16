@@ -96,10 +96,17 @@ int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 int mainEntryClickHouseZooKeeperDumpTree(int argc, char ** argv);
 int mainEntryClickHouseZooKeeperRemoveByList(int argc, char ** argv);
 
-int mainEntryClickHouseHashBinary(int, char **)
+int mainEntryClickHouseHashBinary(int argc, char ** argv)
 {
-    /// Intentionally without newline. So you can run:
-    /// objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse
+    if (argc > 1 && (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0))
+    {
+        std::cout << "Usage: clickhouse hash-binary\n"
+                     "Prints hash of ClickHouse binary.\n"
+                     "  -h, --help   Print this message\n"
+                     "Result is intentionally without newline. So you can run:\n"
+                     "objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse\n\n"
+                     "Current binary hash: ";
+    }
     std::cout << getHashOfLoadedBinaryHex();
     return 0;
 }
@@ -140,6 +147,21 @@ namespace
 {
 
 using MainFunc = int (*)(int, char**);
+
+/// Forward declaration, since clickhouse_applications is defined after this function.
+void printHelp(std::ostream & out);
+
+int mainEntryHelp(int, char **)
+{
+    printHelp(std::cout);
+    return 0;
+}
+
+int printHelpOnError(int, char **)
+{
+    printHelp(std::cerr);
+    return -1;
+}
 
 /// Add an item here to register new application.
 /// This list has a "priority" - e.g. we need to disambiguate clickhouse --format being
@@ -193,14 +215,15 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"stop", mainEntryClickHouseStop},
     {"status", mainEntryClickHouseStatus},
     {"restart", mainEntryClickHouseRestart},
+    // help
+    {"help", mainEntryHelp},
 };
 
-int printHelp(int, char **)
+void printHelp(std::ostream & out)
 {
-    std::cerr << "Use one of the following commands:" << std::endl;
-    for (auto & application : clickhouse_applications)
-        std::cerr << "clickhouse " << application.first << " [args] " << std::endl;
-    return -1;
+    out << "Use one of the following commands:" << std::endl;
+    for (const auto & application : clickhouse_applications)
+        out << "clickhouse " << application.first << " [args] " << std::endl;
 }
 
 /// Add an item here to register a new short name
@@ -345,7 +368,7 @@ int main(int argc_, char ** argv_)
     std::vector<char *> argv(argv_, argv_ + argc_);
 
     /// Print a basic help if nothing was matched
-    MainFunc main_func = printHelp;
+    MainFunc main_func = printHelpOnError;
 
     for (auto & application : clickhouse_applications)
     {
@@ -356,9 +379,21 @@ int main(int argc_, char ** argv_)
         }
     }
 
+    /// Top-level --help / -h / -? (as the sole argument) should show the dispatcher
+    /// help listing all subcommands and exit with code 0. Without this carve-out,
+    /// `--help` would match the `startsWith(argv[i], "-h")` rule below and be routed
+    /// into clickhouse-client, which treats anything starting with "-h" as a --host
+    /// specification and fails.
+    if (main_func == printHelpOnError && argv.size() == 2)
+    {
+        std::string_view arg(argv[1]);
+        if (arg == "--help" || arg == "-h" || arg == "-?")
+            main_func = mainEntryHelp;
+    }
+
     /// If host/port arguments are passed to clickhouse/ch shortcuts,
     /// interpret it as clickhouse-client invocation for usability.
-    if (main_func == printHelp && argv.size() >= 2)
+    if (main_func == printHelpOnError && argv.size() >= 2)
     {
         for (size_t i = 1, num_args = argv.size(); i < num_args; ++i)
         {
@@ -383,7 +418,7 @@ int main(int argc_, char ** argv_)
     ///     clickhouse /tmp/repro --enable-analyzer
     ///
     std::error_code ec;
-    if (main_func == printHelp && !argv.empty()
+    if (main_func == printHelpOnError && !argv.empty()
         && (argv.size() < 2 || argv[1] != std::string_view("--help"))
         && (argv.size() == 1 || argv[1][0] == '-' || std::string_view(argv[1]).contains(' ')
             || std::filesystem::is_regular_file(std::filesystem::path{argv[1]}, ec)))
@@ -400,7 +435,7 @@ int main(int argc_, char ** argv_)
     /// We detect file-like arguments by the presence of `/` (path separator)
     /// or `.` (file extension), which distinguishes them from mistyped subcommand
     /// names like "clickhouse sever" where the generic help is appropriate.
-    if (main_func == printHelp && argv.size() >= 2)
+    if (main_func == printHelpOnError && argv.size() >= 2)
     {
         std::string_view arg(argv[1]);
         if (arg.contains('/') || arg.contains('.'))

@@ -23,31 +23,32 @@ KeeperLogStore::KeeperLogStore(LogFileSettings log_file_settings, FlushSettings 
 
 uint64_t KeeperLogStore::start_index() const
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     return changelog.getStartIndex();
 }
 
 void KeeperLogStore::init(uint64_t last_commited_log_index, uint64_t logs_to_keep)
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledExclusiveLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     changelog.readChangelogAndInitWriter(last_commited_log_index, logs_to_keep);
 }
 
 uint64_t KeeperLogStore::next_slot() const
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     return changelog.getNextEntryIndex();
 }
 
 nuraft::ptr<nuraft::log_entry> KeeperLogStore::last_entry() const
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    /// Exclusive: getLastEntry -> getEntry may mutate LogEntryStorage::first_log_entry.
+    ProfiledExclusiveLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     return changelog.getLastEntry();
 }
 
 uint64_t KeeperLogStore::append(nuraft::ptr<nuraft::log_entry> & entry)
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledExclusiveLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     uint64_t idx = changelog.getNextEntryIndex();
     changelog.appendEntry(idx, entry);
     return idx;
@@ -56,93 +57,95 @@ uint64_t KeeperLogStore::append(nuraft::ptr<nuraft::log_entry> & entry)
 
 void KeeperLogStore::write_at(uint64_t index, nuraft::ptr<nuraft::log_entry> & entry)
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledExclusiveLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     changelog.writeAt(index, entry);
 }
 
 nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> KeeperLogStore::log_entries(uint64_t start, uint64_t end)
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     return changelog.getLogEntriesBetween(start, end);
 }
 
 nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>
 KeeperLogStore::log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size_hint_in_bytes)
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     return changelog.getLogEntriesBetween(start, end, batch_size_hint_in_bytes);
 }
 
 nuraft::ptr<nuraft::log_entry> KeeperLogStore::entry_at(uint64_t index)
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    /// Exclusive: entryAt -> getEntry may mutate LogEntryStorage::first_log_entry.
+    ProfiledExclusiveLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     return changelog.entryAt(index);
 }
 
 bool KeeperLogStore::is_conf(uint64_t index)
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     return changelog.isConfigLog(index);
 }
 
 uint64_t KeeperLogStore::term_at(uint64_t index)
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     return changelog.termAt(index);
 }
 
 nuraft::ptr<nuraft::buffer> KeeperLogStore::pack(uint64_t index, int32_t cnt)
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    /// Exclusive: serializeEntriesToBuffer -> getEntry may mutate LogEntryStorage::first_log_entry.
+    ProfiledExclusiveLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     return changelog.serializeEntriesToBuffer(index, cnt);
 }
 
 bool KeeperLogStore::compact(uint64_t last_log_index)
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledExclusiveLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     changelog.compact(last_log_index);
     return true;
 }
 
 bool KeeperLogStore::flush()
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledExclusiveLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     return changelog.flush();
 }
 
 void KeeperLogStore::apply_pack(uint64_t index, nuraft::buffer & pack)
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledExclusiveLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     changelog.applyEntriesFromBuffer(index, pack);
 }
 
 uint64_t KeeperLogStore::size() const
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     return changelog.size();
 }
 
 void KeeperLogStore::end_of_append_batch(uint64_t /*start_index*/, uint64_t /*count*/)
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledExclusiveLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     changelog.flushAsync();
 }
 
 nuraft::ptr<nuraft::log_entry> KeeperLogStore::getLatestConfigChange() const
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     return changelog.getLatestConfigChange();
 }
 
 void KeeperLogStore::shutdownChangelog()
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledExclusiveLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     changelog.shutdown();
 }
 
 bool KeeperLogStore::flushChangelogAndShutdown()
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledExclusiveLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     if (changelog.isInitialized())
         changelog.flush();
     changelog.shutdown();
@@ -151,19 +154,19 @@ bool KeeperLogStore::flushChangelogAndShutdown()
 
 uint64_t KeeperLogStore::last_durable_index()
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     return changelog.lastDurableIndex();
 }
 
 void KeeperLogStore::setRaftServer(const nuraft::ptr<nuraft::raft_server> & raft_server)
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledExclusiveLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     changelog.setRaftServer(raft_server);
 }
 
 void KeeperLogStore::getKeeperLogInfo(KeeperLogInfo & log_info) const
 {
-    ProfiledMutexLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     changelog.getKeeperLogInfo(log_info);
 }
 
