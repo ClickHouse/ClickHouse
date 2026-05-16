@@ -10,9 +10,7 @@
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 #include <Common/SharedMutex.h>
 #include <Common/ThreadPool.h>
-#include <Common/filesystemHelpers.h>
 #include <memory>
-#include <optional>
 
 namespace DB
 {
@@ -250,8 +248,10 @@ private:
     const CleanupQueuePtr cleanup_queue;
     const DownloadQueuePtr download_queue;
     const bool write_cache_per_user_directory;
-    std::optional<struct statvfs> path_stat = std::nullopt;
-    bool use_real_disk_size;
+    /// Filesystem block size of `path` populated by `fillStatVFS` at startup.
+    /// Used to align file sizes when `use_real_disk_size` is enabled.
+    std::atomic<size_t> fs_block_size{0};
+    const bool use_real_disk_size;
 
     LoggerPtr log;
     mutable SharedMutex key_prefix_directory_mutex;

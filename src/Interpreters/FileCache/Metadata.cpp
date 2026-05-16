@@ -217,11 +217,10 @@ CacheMetadata::CacheMetadata(
 
 size_t CacheMetadata::alignFileSize(size_t file_size) const
 {
-    if (!path_stat.has_value())
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to align file size with empty statvfs of path {}", path);
-    }
-    return FileCacheUtils::roundUpToMultiple(file_size, path_stat->f_bsize);
+    const size_t block_size = fs_block_size.load(std::memory_order_acquire);
+    if (block_size == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Filesystem block size is not initialized for cache path {}", path);
+    return FileCacheUtils::roundUpToMultiple(file_size, block_size);
 }
 
 bool CacheMetadata::useRealDiskSize() const
@@ -231,7 +230,8 @@ bool CacheMetadata::useRealDiskSize() const
 
 void CacheMetadata::fillStatVFS()
 {
-    path_stat = getStatVFS(path);
+    const auto stat = getStatVFS(path);
+    fs_block_size.store(stat.f_bsize, std::memory_order_release);
 }
 
 
