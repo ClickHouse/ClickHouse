@@ -133,10 +133,8 @@ namespace
         ASTPtr grid_values;
     };
 
-    const PQT::Offset * getAtModifierRawRangeArgument(const SQLQueryPiece & range_argument)
+    const PQT::Offset * getAtModifierRangeArgument(const SQLQueryPiece & range_argument)
     {
-        if (range_argument.store_method != StoreMethod::RAW_DATA)
-            return nullptr;
         if (!range_argument.node || range_argument.node->node_type != NodeType::Offset)
             return nullptr;
 
@@ -435,13 +433,13 @@ SQLQueryPiece applyFunctionOverRange(
         }
     }
 
-    const auto * at_modifier_raw_argument = getAtModifierRawRangeArgument(argument);
+    const auto * at_modifier_range_argument = getAtModifierRangeArgument(argument);
     auto aggregate_start_time = start_time;
     auto aggregate_end_time = end_time;
     auto aggregate_step = step;
-    if (at_modifier_raw_argument)
+    if (at_modifier_range_argument)
     {
-        const auto & expression_range = context.node_range_getter.get(at_modifier_raw_argument->getExpression());
+        const auto & expression_range = context.node_range_getter.get(at_modifier_range_argument->getExpression());
         aggregate_start_time = expression_range.start_time;
         aggregate_end_time = expression_range.end_time;
         aggregate_step = 0;
@@ -580,7 +578,7 @@ SQLQueryPiece applyFunctionOverRange(
             timeSeriesDurationToAST(aggregate_step, context.timestamp_data_type),
             timeSeriesDurationToAST(window, context.timestamp_data_type));
 
-        if (at_modifier_raw_argument)
+        if (at_modifier_range_argument)
         {
             intercept_values = expandSingleValueToGrid(std::move(intercept_values), start_time, end_time, step);
             slope_values = expandSingleValueToGrid(std::move(slope_values), start_time, end_time, step);
@@ -643,7 +641,7 @@ SQLQueryPiece applyFunctionOverRange(
             std::move(result_values));
     }
 
-    if (at_modifier_raw_argument && !is_predict_linear)
+    if (at_modifier_range_argument && !is_predict_linear)
         result_values = expandSingleValueToGrid(std::move(result_values), start_time, end_time, step);
 
     builder.select_list.push_back(std::move(result_values));
