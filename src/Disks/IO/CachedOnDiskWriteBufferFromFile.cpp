@@ -3,8 +3,8 @@
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/ErrnoException.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/Context.h>
 #include <IO/SwapHelper.h>
@@ -319,6 +319,8 @@ void FileSegmentRangeWriter::completeFileSegment()
 
     LOG_TEST(log, "Completing file segment {}:{}", file_segment.key(), file_segment.offset());
 
+    appendFilesystemCacheLog(file_segment);
+
     /// We do not always force shrink file segment in case of distributed cache,
     /// because it is possible that we reconnected and
     /// used a different connection to continue writing to cache,
@@ -327,8 +329,6 @@ void FileSegmentRangeWriter::completeFileSegment()
     file_segments->completeAndPopFront(
         /*allow_background_download=*/false,
         /*force_shrink_to_downloaded_size=*/force_shrink_file_segment);
-
-    appendFilesystemCacheLog(file_segment);
 }
 
 void FileSegmentRangeWriter::jumpToPosition(size_t position)
