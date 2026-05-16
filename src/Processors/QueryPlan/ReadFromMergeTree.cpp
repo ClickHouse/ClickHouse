@@ -125,17 +125,37 @@ bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting
 bool isNodeDeterministic(const ActionsDAG::Node * node)
 {
     if (node->type == ActionsDAG::ActionType::FUNCTION
-        && node->function_base && !node->function_base->isDeterministic()
-        /// `__topKFilter` is non-deterministic at runtime, but the QCC cache key is salted with
-        /// the TopK plan parameters, and the threshold trajectory only tightens during execution,
-        /// so a granule that the outer filter zeroes out under `__topKFilter` is one whose rows
-        /// could not have reached the final result under any threshold trajectory. See the
-        /// comment on `isDeterministicAllowingTopKFilter` in `updateQueryConditionCache.cpp`.
-        && node->function_base->getName() != "__topKFilter")
+        && node->function_base && !node->function_base->isDeterministic())
         return false;
     for (const auto * child : node->children)
         if (!isNodeDeterministic(child))
             return false;
+    return true;
+}
+
+/// Like `VirtualColumnUtils::isDeterministic`, but treats `__topKFilter` as deterministic.
+/// Mirrors `isDeterministicAllowingTopKFilter` in `updateQueryConditionCache.cpp` — both
+/// gates must agree, otherwise QCC writes and reads diverge on TopK plans.
+///
+/// Unlike `isNodeDeterministic`, this also rejects non-deterministic `COLUMN` nodes (such
+/// as query-time constants `now()` / `today()`). Without that check, queries whose filter
+/// captures such constants could write QCC entries and reuse them later when the constant's
+/// value has changed.
+bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node)
+{
+    for (const auto * child : node->children)
+        if (!isDeterministicAllowingTopKFilter(child))
+            return false;
+
+    if (node->type == ActionsDAG::ActionType::COLUMN)
+        return node->isDeterministic();
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return true;
+
+    if (!node->function_base->isDeterministic())
+        return node->function_base->getName() == "__topKFilter";
+
     return true;
 }
 
@@ -2707,9 +2727,12 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal())
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
-            /// `isNodeDeterministic` allows `__topKFilter`'s non-determinism (it's gated by the
-            /// TopK plan salt below, mirroring `updateQueryConditionCache`'s write path).
-            if (outputs.size() == 1 && isNodeDeterministic(outputs.front()))
+            /// `isDeterministicAllowingTopKFilter` keeps the previous `COLUMN`-node strictness
+            /// of `VirtualColumnUtils::isDeterministic` (rejects non-deterministic constants like
+            /// `now()` / `today()`) while admitting `__topKFilter` — its non-determinism is gated
+            /// by the TopK plan salt combined into `condition_hash` below, mirroring the write
+            /// path in `updateQueryConditionCache`.
+            if (outputs.size() == 1 && isDeterministicAllowingTopKFilter(outputs.front()))
             {
                 size_t hash = outputs.front()->getHash();
                 /// Match the salting done on the read side in `filterPartsByQueryConditionCache` and
