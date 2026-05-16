@@ -251,6 +251,10 @@ void ReadBufferFromFileDescriptor::rewind()
     working_buffer.resize(0);
     pos = working_buffer.begin();
     file_offset_of_buffer_end = 0;
+
+    /// A previous read cycle may have failed, leaving the buffer in a canceled state.
+    /// Reset so the next read cycle can proceed normally after rewind.
+    canceled = false;
 }
 
 std::optional<size_t> ReadBufferFromFileDescriptor::tryGetFileSize()

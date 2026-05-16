@@ -1,3 +1,6 @@
+# local CI environment overrides (see ci/local.env.example)
+ci/local.env
+
 # emacs files
 *~
 *\#
@@ -12,6 +15,11 @@
 /build
 /build_*
 /build-*
+
+# e2e test credentials (copy from .env.example and fill in)
+.env
+/tests/integration/.env
+/ci/tmp
 /tests/venv
 /obj-x86_64-linux-gnu/
 
@@ -185,3 +193,8 @@ tests/casa_del_dolor/_instances*
 
 # Claude preferences
 .claude/*.local.*
+
+# praktika test-mode HTML deploy artifacts (regenerated from json.html by infrastructure --test)
+ci/praktika/json_test.html
+ci/praktika/json_test.html.gz
+ci/praktika/json.html.gz

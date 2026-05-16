@@ -54,19 +54,19 @@ def send_big_data(metric_name="big_data", start_time=1724112000, end_time=172411
 # Executes a query in the "prometheus_reader" service. This service uses the RemoteRead protocol to get data from ClickHouse.
 def execute_query_in_prometheus_reader(query, timestamp):
     return execute_query_via_http_api(
-        cluster.prometheus_reader_ip,
-        cluster.prometheus_reader_port,
+        cluster.prometheus_ip["reader"],
+        cluster.prometheus_port["reader"],
         "/api/v1/query",
         query,
         timestamp,
     )
 
 
-# Executes a query in the "prometheus_receiver" service. We send data to this service via the RemoteWrite protocol.
+# Executes a query in the "prometheus_writer" service. This service sends data to ClickHouse via the RemoteWrite protocol.
 def execute_query_in_prometheus_writer(query, timestamp):
     return execute_query_via_http_api(
-        cluster.prometheus_writer_ip,
-        cluster.prometheus_writer_port,
+        cluster.prometheus_ip["writer"],
+        cluster.prometheus_port["writer"],
         "/api/v1/query",
         query,
         timestamp,
