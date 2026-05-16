@@ -75,6 +75,15 @@ public:
         ContextPtr context_,
         Settings settings_);
 
+    /// Same but with explicit list of available columns
+    MutationsInterpreter(
+        StoragePtr storage_,
+        StorageMetadataPtr metadata_snapshot_,
+        MutationCommands commands_,
+        Names available_columns_,
+        ContextPtr context_,
+        Settings settings_);
+
     /// Special case for *MergeTree
     MutationsInterpreter(
         MergeTreeData & storage_,

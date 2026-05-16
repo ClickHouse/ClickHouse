@@ -81,7 +81,9 @@ def started_cluster():
         prepare_s3_bucket(cluster)
         start_metadata_server(cluster)
 
-        cluster.spark_session = ResilientSparkSession(get_spark)
+        cluster.spark_session = ResilientSparkSession(
+            lambda: get_spark(cluster.instances_dir)
+        )
         start_metadata_server(cluster)
 
         yield cluster

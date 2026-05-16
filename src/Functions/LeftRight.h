@@ -11,8 +11,8 @@
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Algorithms.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -24,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 enum class SubstringDirection : uint8_t
@@ -99,11 +100,45 @@ public:
                 // According to the docs, if length_value < 0, we need to take a suffix of the string starting from the position abs(length_value)
                 else
                 {
-                    sliceFromLeftConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), -length_value);
+                    Int64 abs_length_value;
+                    if (common::subOverflow(Int64(0), length_value, abs_length_value))
+                        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                            "Argument of function {} is out of bound: {}", getName(), length_value);
+                    sliceFromLeftConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), static_cast<size_t>(abs_length_value));
                 }
             }
             else
-                sliceFromRightDynamicLength(source, StringSink(*col_res, input_rows_count), *column_length);
+            {
+                /// Per-row handling so that negative lengths use the same code path as the
+                /// constant-length case: `getSliceFromLeft(|length|)` (unbounded). The
+                /// previous `sliceFromRightDynamicLength` reformulated `right(s, -k)` as
+                /// `getSliceFromRight(elemSize - k, elemSize - k)`, which on a UTF-8 source
+                /// trips an internal inconsistency for invalid UTF-8 input: `countCodePoints`
+                /// (used for `elemSize`) skips lone continuation bytes while
+                /// `skipCodePointsForward/Backward` treats them as 1-byte code points, so
+                /// the result silently lost trailing bytes.
+                StringSink sink(*col_res, input_rows_count);
+                while (!source.isEnd())
+                {
+                    const size_t row = source.rowNum();
+                    const Int64 length = column_length->getInt(row);
+                    typename std::decay_t<decltype(source)>::Slice slice;
+                    if (length > 0)
+                        slice = source.getSliceFromRight(static_cast<UInt64>(length), static_cast<UInt64>(length));
+                    else if (length < 0)
+                    {
+                        Int64 abs_length;
+                        if (common::subOverflow(Int64(0), length, abs_length))
+                            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                "Argument of function {} is out of bound: {}", getName(), length);
+                        slice = source.getSliceFromLeft(static_cast<size_t>(abs_length));
+                    }
+                    if (length != 0)
+                        writeSlice(slice, sink);
+                    sink.next();
+                    source.next();
+                }
+            }
         }
 
         return col_res;

@@ -1,4 +1,4 @@
--- Test the table_readonly MergeTree setting.
+-- Test the `table_readonly` MergeTree setting.
 
 DROP TABLE IF EXISTS t_readonly;
 

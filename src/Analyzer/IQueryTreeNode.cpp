@@ -9,6 +9,7 @@
 #include <IO/Operators.h>
 
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/IAST.h>
 
 #include <boost/functional/hash.hpp>
 
@@ -281,6 +282,7 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
 
         node_clone->original_ast = node_to_clone->original_ast;
         node_clone->setAlias(node_to_clone->alias);
+        node_clone->parenthesized = node_to_clone->parenthesized;
         node_clone->children = node_to_clone->children;
         node_clone->weak_pointers = node_to_clone->weak_pointers;
 
@@ -297,6 +299,15 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
             weak_pointers_to_update_after_clone.push_back(&weak_pointer);
         }
     }
+
+    /** Ensure all replacement_map entries are in old_pointer_to_new_pointer.
+      * When a node is replaced, its children are not traversed and thus not added
+      * to old_pointer_to_new_pointer. If those children are also in the replacement_map
+      * (e.g., inner column sources of an ARRAY_JOIN being replaced), their entries
+      * must be available for weak pointer updates below.
+      */
+    for (const auto & [old_ptr, new_ptr] : replacement_map)
+        old_pointer_to_new_pointer.emplace(old_ptr, new_ptr);
 
     /** Update weak pointers to new pointers if they were changed during clone.
       * To do this we check old pointer to new pointer map, if weak pointer
@@ -339,6 +350,8 @@ ASTPtr IQueryTreeNode::toAST(const ConvertToASTOptions & options) const
 
     if (auto * /*ast_with_alias*/ _ = dynamic_cast<ASTWithAlias *>(converted_node.get()))
         converted_node->setAlias(alias);
+
+    converted_node->setParenthesized(parenthesized);
 
     return converted_node;
 }

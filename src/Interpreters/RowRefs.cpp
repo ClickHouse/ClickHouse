@@ -1,6 +1,7 @@
 #include <Interpreters/RowRefs.h>
 
 #include <Columns/ColumnDecimal.h>
+#include <Common/Exception.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
@@ -221,6 +222,11 @@ private:
 }
 
 ColumnsInfo::ColumnsInfo(Columns && columns_) : columns(std::move(columns_))
+{
+    rebuildReplicatedColumns();
+}
+
+void ColumnsInfo::rebuildReplicatedColumns()
 {
     replicated_columns.resize(columns.size());
     for (size_t i = 0; i != columns.size(); ++i)

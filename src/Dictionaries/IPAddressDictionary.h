@@ -3,15 +3,14 @@
 #include <atomic>
 #include <memory>
 #include <variant>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
-#include <Poco/Net/IPAddress.h>
+#include <Dictionaries/DictionaryHelpers.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/DictionaryHelpers.h>
+#include <Poco/Net/IPAddress.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/MapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -89,7 +88,7 @@ public:
 private:
 
     template <typename Value>
-    using ContainerType = std::vector<Value>;
+    using ContainerType = VectorWithMemoryTracking<Value>;
 
     using IPAddress = Poco::Net::IPAddress;
 
@@ -124,7 +123,9 @@ private:
             IPv4,
             IPv6,
             String,
-            Array>
+            Array,
+            Map,
+            Object>
             null_values;
         std::variant<
             ContainerType<UInt8>,
@@ -150,7 +151,9 @@ private:
             ContainerType<IPv4>,
             ContainerType<IPv6>,
             ContainerType<std::string_view>,
-            ContainerType<Array>>
+            ContainerType<Array>,
+            ContainerType<Map>,
+            ContainerType<Object>>
             maps;
         std::unique_ptr<Arena> string_arena;
         AttributeUnderlyingType type;
@@ -234,8 +237,8 @@ private:
     /// Contains corresponding indices in attributes array.
     ContainerType<size_t> row_idx;
 
-    std::map<std::string, size_t> attribute_index_by_name;
-    std::vector<Attribute> attributes;
+    MapWithMemoryTracking<std::string, size_t> attribute_index_by_name;
+    VectorWithMemoryTracking<Attribute> attributes;
 
     size_t bytes_allocated = 0;
     size_t element_count = 0;

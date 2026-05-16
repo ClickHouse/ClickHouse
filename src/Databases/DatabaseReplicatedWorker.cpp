@@ -1,4 +1,5 @@
 #include <Databases/DatabaseReplicatedWorker.h>
+#include <base/sleep.h>
 
 #include <filesystem>
 #include <Core/ServerUUID.h>
@@ -11,6 +12,7 @@
 #include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTRenameQuery.h>
 
@@ -58,6 +60,7 @@ DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db
           context_,
           nullptr,
           {},
+          db->zookeeper_name,
           fmt::format("DDLWorker({})", db->getDatabaseName()))
     , database(db)
 {
@@ -139,6 +142,24 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
 void DatabaseReplicatedDDLWorker::shutdown()
 {
     DDLWorker::shutdown();
+
+    /// Explicitly remove the active node before the destructor runs.
+    /// The EphemeralNodeHolder destructor also calls tryRemove, but if it fails
+    /// (e.g. due to a transient ZK connection issue), the exception is silently caught
+    /// and the ephemeral node persists until the shared ZK session expires.
+    /// This can cause SYSTEM DROP DATABASE REPLICA to spuriously fail with "is active".
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicatedDDLWorker::shutdown");
+    if (active_node_holder_zookeeper && !active_node_holder_zookeeper->expired())
+    {
+        String active_path = fs::path(database->replica_path) / "active";
+        active_node_holder_zookeeper->tryRemove(active_path);
+    }
+
+    if (active_node_holder)
+        active_node_holder->setAlreadyRemoved();
+    active_node_holder.reset();
+    active_node_holder_zookeeper.reset();
+
     wait_current_task_change.notify_all();
 }
 
@@ -306,13 +327,14 @@ void DatabaseReplicatedDDLWorker::markReplicasActive(bool reinitialized)
 
 String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &)
 {
-    auto zookeeper = context->getZooKeeper();
+    auto zookeeper = getZooKeeperFromContext();
     return enqueueQueryImpl(zookeeper, entry, database);
 }
 
 bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeout_ms)
 {
-    auto zookeeper = context->getZooKeeper();
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries");
+    auto zookeeper = getZooKeeperFromContext();
     const auto our_log_ptr_path = database->replica_path + "/log_ptr";
     const auto max_log_ptr_path = database->zookeeper_path + "/max_log_ptr";
     UInt32 our_log_ptr = parse<UInt32>(zookeeper->get(our_log_ptr_path));
@@ -421,7 +443,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     span.addAttribute("clickhouse.cluster", database->getDatabaseName());
     entry.tracing_context = OpenTelemetry::CurrentContext();
 
-    auto zookeeper = context->getZooKeeper();
+    auto zookeeper = getZooKeeperFromContext();
     UInt32 our_log_ptr = getLogPointer();
 
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
@@ -496,7 +518,8 @@ static bool getRMVCoordinationInfo(
     const ZooKeeperPtr & zookeeper,
     UUID parent_uuid,
     Coordination::Stat & stats,
-    RefreshTask::CoordinationZnode & coordination_znode)
+    RefreshTask::CoordinationZnode & coordination_znode,
+    ContextPtr context)
 {
     if (parent_uuid == UUIDHelpers::Nil)
         return false;
@@ -504,7 +527,7 @@ static bool getRMVCoordinationInfo(
     const auto storage = DatabaseCatalog::instance().tryGetByUUID(parent_uuid).second;
     if (!storage)
         return false;
-    auto in_memory_metadata = storage->getInMemoryMetadataPtr();
+    auto in_memory_metadata = storage->getInMemoryMetadataPtr(context, false);
     const auto * refresh = in_memory_metadata->refresh->as<ASTRefreshStrategy>();
     if (!refresh || refresh->append)
         return false;
@@ -521,7 +544,7 @@ static bool getRMVCoordinationInfo(
         String data;
         if (!zookeeper->tryGet(*coordination_path, data, &stats))
             return false;
-        coordination_znode.parse(data);
+        coordination_znode.parse(data, /*running_znode_exists=*/ false, log);
         return true;
     }
     catch (...)
@@ -540,7 +563,7 @@ bool DatabaseReplicatedDDLWorker::shouldSkipCreatingRMVTempTable(
     Coordination::Stat stats;
     RefreshTask::CoordinationZnode coordination_znode;
 
-    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode))
+    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode, context))
         return false;
 
     LOG_TEST(log, "MV {}, coordination info: {}", parent_uuid, coordination_znode.toString());
@@ -548,7 +571,7 @@ bool DatabaseReplicatedDDLWorker::shouldSkipCreatingRMVTempTable(
         return false;
 
     LOG_TEST(log, "ddl_log_ctime {}, stats.mtime {}", ddl_log_ctime, stats.mtime);
-    // It is possible the the temporary table is created and replicated before the coordiation info is updated.
+    // It is possible the temporary table is created and replicated before the coordination info is updated.
     // So if ddl_log_ctime >= stats.mtime, the table is new and should not be skip.
     return ddl_log_ctime < stats.mtime;
 }
@@ -559,7 +582,7 @@ bool DatabaseReplicatedDDLWorker::shouldSkipRenamingRMVTempTable(
     Coordination::Stat stats;
     RefreshTask::CoordinationZnode coordination_znode;
 
-    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode))
+    if (!getRMVCoordinationInfo(log, zookeeper, parent_uuid, stats, coordination_znode, context))
         return false;
 
     StorageID storage_id{rename_from_table};

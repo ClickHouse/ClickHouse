@@ -5,6 +5,7 @@
 #include <Core/ColumnNumbers.h>
 
 #if USE_EMBEDDED_COMPILER
+#include <llvm/IR/IRBuilder.h>
 #include <DataTypes/Native.h>
 #endif
 

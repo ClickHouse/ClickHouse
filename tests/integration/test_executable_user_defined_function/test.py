@@ -395,7 +395,7 @@ def test_executable_function_query_cache(started_cluster):
     node.query("SYSTEM CLEAR QUERY CACHE");
 
 def test_executable_function_python_exception_in_query_log(started_cluster):
-    '''Test that Python exceptions with tracebacks appear in query_log when stderr_reaction defaults to throw'''
+    '''Test that Python exceptions with tracebacks appear in query_log when stderr_reaction is configured as throw'''
     skip_test_msan(node)
 
     # Clear query log
@@ -440,3 +440,57 @@ def test_executable_function_python_exception_in_query_log(started_cluster):
 
     for component in required_components:
         assert component in exception_text, f"Missing required component: {component}"
+
+
+@pytest.mark.parametrize("func_name", [
+    "test_function_stderr_log_last_reaction",
+    "test_function_stderr_log_first_reaction",
+    "test_function_stderr_none_reaction",
+])
+def test_executable_function_stderr_no_throw_on_success(started_cluster, func_name):
+    '''Test that UDFs writing to stderr succeed under log_last/log_first/none when exit code is 0'''
+    skip_test_msan(node)
+
+    assert node.query(f"SELECT {func_name}('abc')") == "Key abc\n"
+
+
+@pytest.mark.parametrize("func_name,mode", [
+    ("test_function_python_exception_log_last", "log_last"),
+    ("test_function_python_exception_log_first", "log_first"),
+])
+def test_executable_function_stderr_in_exception_on_failure(started_cluster, func_name, mode):
+    '''Test that stderr content appears in exception when exit code != 0 under log_last/log_first'''
+    skip_test_msan(node)
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    query_id = uuid.uuid4().hex
+
+    try:
+        node.query(f"SELECT {func_name}(1)", query_id=query_id)
+        assert False, "Exception should have been thrown"
+    except Exception as ex:
+        assert "DB::Exception" in str(ex)
+        assert "Child process was exited with return code 1" in str(ex)
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    result = node.query(f"""
+        SELECT exception
+        FROM system.query_log
+        WHERE query_id = '{query_id}'
+          AND type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing')
+        FORMAT TabSeparated
+    """)
+
+    exception_text = TSV(result).lines[0]
+
+    required_components = [
+        "Stderr:",
+        "in process_data",
+        "result = int(value) / 0",
+        "ZeroDivisionError: division by zero",
+    ]
+
+    for component in required_components:
+        assert component in exception_text, f"Missing required component in {mode}: {component}"

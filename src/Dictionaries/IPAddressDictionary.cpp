@@ -1,4 +1,5 @@
 #include <Dictionaries/IPAddressDictionary.h>
+#include <Columns/ColumnFixedString.h>
 
 #include <Common/assert_cast.h>
 #include <Common/IPv6ToBinary.h>
@@ -159,7 +160,7 @@ static void validateKeyTypes(const DataTypes & key_types)
 }
 
 template <typename T, typename Comp>
-size_t sortAndUnique(std::vector<T> & vec, Comp comp)
+size_t sortAndUnique(VectorWithMemoryTracking<T> & vec, Comp comp)
 {
     ::sort(vec.begin(), vec.end(),
               [&](const auto & a, const auto & b) { return comp(a, b) < 0; });
@@ -267,6 +268,20 @@ ColumnPtr IPAddressDictionary::getColumn(
                 getItemsShortCircuitImpl<ValueType>(
                     attribute, key_columns, [&](const size_t, const Array & value) { out->insert(value); }, default_mask);
             }
+            else if constexpr (std::is_same_v<ValueType, Map>)
+            {
+                auto * out = column.get();
+
+                getItemsShortCircuitImpl<ValueType>(
+                    attribute, key_columns, [&](const size_t, const Map & value) { out->insert(value); }, default_mask);
+            }
+            else if constexpr (std::is_same_v<ValueType, Object>)
+            {
+                auto * out = column.get();
+
+                getItemsShortCircuitImpl<ValueType>(
+                    attribute, key_columns, [&](const size_t, const Object & value) { out->insert(value); }, default_mask);
+            }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
                 auto * out = column.get();
@@ -300,6 +315,26 @@ ColumnPtr IPAddressDictionary::getColumn(
                     attribute,
                     key_columns,
                     [&](const size_t, const Array & value) { out->insert(value); },
+                    default_value_extractor);
+            }
+            else if constexpr (std::is_same_v<ValueType, Map>)
+            {
+                auto * out = column.get();
+
+                getItemsImpl<ValueType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t, const Map & value) { out->insert(value); },
+                    default_value_extractor);
+            }
+            else if constexpr (std::is_same_v<ValueType, Object>)
+            {
+                auto * out = column.get();
+
+                getItemsImpl<ValueType>(
+                    attribute,
+                    key_columns,
+                    [&](const size_t, const Object & value) { out->insert(value); },
                     default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
@@ -380,7 +415,7 @@ ColumnUInt8::Ptr IPAddressDictionary::hasKeys(const Columns & key_columns, const
 
 void IPAddressDictionary::createAttributes()
 {
-    auto create_attributes_from_dictionary_attributes = [this](const std::vector<DictionaryAttribute> & dict_attrs)
+    auto create_attributes_from_dictionary_attributes = [this](const VectorWithMemoryTracking<DictionaryAttribute> & dict_attrs)
     {
         attributes.reserve(attributes.size() + dict_attrs.size());
 
@@ -410,7 +445,7 @@ void IPAddressDictionary::createAttributes()
 
 void IPAddressDictionary::loadData()
 {
-    std::vector<IPRecord> ip_records;
+    VectorWithMemoryTracking<IPRecord> ip_records;
     bool has_ipv6 = false;
     {
         BlockIO io = source_ptr->loadAll();
@@ -1047,8 +1082,9 @@ Columns IPAddressDictionary::getKeyColumns() const
 template <typename KeyColumnType, bool IsIPv4>
 static auto keyViewGetter()
 {
-    return [](const Columns & columns, const std::vector<DictionaryAttribute> & dictonary_key_attributes)
+    return [](const Columns & columns, const VectorWithMemoryTracking<DictionaryAttribute> & dictonary_key_attributes)
     {
+        const auto & key_attribute = dictonary_key_attributes.front();
         auto column = ColumnString::create();
         const auto & key_ip_column = assert_cast<const KeyColumnType &>(*columns.front());
         const auto & key_mask_column = assert_cast<const ColumnVector<UInt8> &>(*columns.back());
@@ -1065,7 +1101,7 @@ static auto keyViewGetter()
             column->insertData(buffer, str_len);
         }
         return ColumnsWithTypeAndName{
-            ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), dictonary_key_attributes.front().name)};
+            ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), key_attribute.name)};
     };
 }
 
@@ -1198,6 +1234,12 @@ void registerDictionaryTrie(DictionaryFactory & factory)
     {
         if (!dict_struct.key || dict_struct.key->size() != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary of layout 'ip_trie' has to have one 'key'");
+
+        const auto & key_type = dict_struct.key->front().type;
+        if (!isString(key_type))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Key attribute of ip_trie dictionary must be of type String, got {}",
+                key_type->getName());
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
