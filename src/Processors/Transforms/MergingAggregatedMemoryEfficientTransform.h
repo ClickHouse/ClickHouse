@@ -9,6 +9,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Common/HashTable/HashSet.h>
 
+#include <unordered_map>
 #include <unordered_set>
 
 namespace DB
@@ -69,7 +70,7 @@ public:
     String getName() const override { return "GroupingAggregatedTransform"; }
 
 protected:
-    Status prepare(const PortNumbers & updated_input_ports, const PortNumbers &) override;
+    Status prepare(const UpdatedInputPorts & updated_input_ports, const UpdatedOutputPorts &) override;
     void work() override;
 
 private:
@@ -92,6 +93,7 @@ private:
     bool all_inputs_finished = false;
     bool initialized_index_to_input = false;
     std::vector<InputPorts::iterator> index_to_input;
+    std::unordered_map<const InputPort *, uint64_t> input_port_to_index;
     HashSet<uint64_t> wait_input_ports_numbers;
 
     /// Add chunk read from input to chunks_map, overflow_chunks or single_level_chunks according to it's chunk info.
@@ -111,7 +113,9 @@ class MergingAggregatedBucketTransform : public ISimpleTransform
 {
 public:
     explicit MergingAggregatedBucketTransform(
-        AggregatingTransformParamsPtr params, const SortDescription & required_sort_description_ = {});
+        AggregatingTransformParamsPtr params,
+        const SortDescription & required_sort_description_ = {},
+        RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_ = nullptr);
     String getName() const override { return "MergingAggregatedBucketTransform"; }
 
 protected:
@@ -120,6 +124,7 @@ protected:
 private:
     AggregatingTransformParamsPtr params;
     const SortDescription required_sort_description;
+    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
 };
 
 /// Has several inputs and single output.
