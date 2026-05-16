@@ -7,8 +7,6 @@ title: 'Query cache'
 doc_type: 'guide'
 ---
 
-# Query cache
-
 The query cache allows to compute `SELECT` queries just once and to serve further executions of the same query directly from the cache.
 Depending on the type of the queries, this can dramatically reduce latency and resource consumption of the ClickHouse server.
 

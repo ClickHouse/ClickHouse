@@ -179,8 +179,8 @@ void KeeperDispatcher::requestThread()
     {
         const auto handle_opentelemetry_spans = [this](const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
         {
-            ZooKeeperOpentelemetrySpans::maybeFinalize(
-                request->spans.dispatcher_requests_queue,
+            request->spans.maybeFinalize(
+                KeeperSpan::DispatcherRequestsQueue,
                 [&]
                 {
                     return std::vector<OpenTelemetry::SpanAttribute>{
@@ -253,8 +253,8 @@ void KeeperDispatcher::requestThread()
                         /// Finalize the dispatcher_requests_queue span that was initialized
                         /// when the request was enqueued. Without this the span leaks because
                         /// handle_opentelemetry_spans (which normally finalizes it) is skipped.
-                        ZooKeeperOpentelemetrySpans::maybeFinalize(
-                            req.request->spans.dispatcher_requests_queue,
+                        req.request->spans.maybeFinalize(
+                            KeeperSpan::DispatcherRequestsQueue,
                             [&]
                             {
                                 return std::vector<OpenTelemetry::SpanAttribute>{
@@ -328,7 +328,7 @@ void KeeperDispatcher::requestThread()
                         if (!quorum_reads && request.request->isReadRequest())
                         {
                             const auto & last_request = current_batch.back();
-                            ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->tracing_context);
+                            request.request->spans.maybeInitialize(KeeperSpan::ReadWaitForWrite, request.request->tracing_context.get());
                             ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds);
                             reads_count += 1;
                             reads_bytes_size += request.request->bytesSize();
@@ -423,8 +423,8 @@ void KeeperDispatcher::requestThread()
 
                 LOG_TEST(log, "Processing requests batch, size: {}, bytes: {}", current_batch.size(), current_batch_bytes_size);
 
-                HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeElements, current_batch.size());
-                HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeBytes, current_batch_bytes_size);
+                HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeElements, static_cast<HistogramMetrics::Value>(current_batch.size()));
+                HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeBytes, static_cast<HistogramMetrics::Value>(current_batch_bytes_size));
 
                 auto result = server->putRequestBatch(current_batch);
 
@@ -553,8 +553,8 @@ void KeeperDispatcher::responseThread()
 
             if (response_was_sent && response_for_session.request)
             {
-                ZooKeeperOpentelemetrySpans::maybeFinalize(
-                    response_for_session.request->spans.dispatcher_responses_queue,
+                response_for_session.request->spans.maybeFinalize(
+                    KeeperSpan::DispatcherResponsesQueue,
                     [&]
                     {
                         return std::vector<OpenTelemetry::SpanAttribute>{
@@ -674,7 +674,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     if (keeper_context->isShutdownCalled())
         return false;
 
-    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
+    request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, request->tracing_context.get());
 
     /// Put close requests without timeouts
     if (request->getOpNum() == Coordination::OpNum::Close)
@@ -747,8 +747,8 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                     if (!last_checked_session_live)
                     {
                         ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
-                        ZooKeeperOpentelemetrySpans::maybeFinalize(
-                            read_request.request->spans.read_wait_for_write,
+                        read_request.request->spans.maybeFinalize(
+                            KeeperSpan::ReadWaitForWrite,
                             [&]
                             {
                                 return std::vector<OpenTelemetry::SpanAttribute>{
@@ -771,8 +771,8 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
             {
                 for (auto & read_request : pending_reads)
                 {
-                    ZooKeeperOpentelemetrySpans::maybeFinalize(
-                        read_request.request->spans.read_wait_for_write,
+                    read_request.request->spans.maybeFinalize(
+                        KeeperSpan::ReadWaitForWrite,
                         [&]
                         {
                             return std::vector<OpenTelemetry::SpanAttribute>{
@@ -1021,7 +1021,7 @@ void KeeperDispatcher::sessionCleanerTask()
                     auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
                     request->xid = Coordination::CLOSE_XID;
 
-                    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
+                    request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, request->tracing_context.get());
 
                     using namespace std::chrono;
                     KeeperRequestForSession request_info
@@ -1214,7 +1214,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
         };
     }
 
-    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
+    request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, request->tracing_context.get());
 
     /// Push new session request to queue
     if (!requests_queue->tryPush(std::move(request_info), session_timeout_ms))

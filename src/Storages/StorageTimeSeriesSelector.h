@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Logger.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
@@ -48,6 +49,7 @@ public:
 
 private:
     Configuration config;
+    LoggerPtr log;
 };
 
 }

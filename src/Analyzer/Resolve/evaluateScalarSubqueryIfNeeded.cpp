@@ -1,4 +1,6 @@
 #include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnTuple.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>

@@ -292,7 +292,7 @@ if __name__ == "__main__":
             print(msg)
             print_res = Result.create_from(
                 name="Print Uncovered Code",
-                status=Result.Status.SUCCESS,
+                status=Result.Status.OK,
                 info=msg,
             )
             print_res.set_comment(msg)
