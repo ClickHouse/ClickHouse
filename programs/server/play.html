@@ -4243,9 +4243,9 @@ query_area.addEventListener('input', () =>
     /// (WASM tokenize, building backdrop HTML) is fast, and the await chain inside
     /// `updateQueryParams` runs in microtasks — i.e. it finishes before the browser
     /// paints the next frame. If we deferred this with `setTimeout`, the browser
-    /// would render one frame with the new textarea text against the stale backdrop,
-    /// and `mix-blend-mode: difference` would turn the freshly typed characters
-    /// invisible (e.g. `diff(black, white) = white` in light theme).
+    /// would render one frame with the textarea's own text hidden (`color:
+    /// transparent` from `.has-backdrop`) and the backdrop still showing the
+    /// pre-edit contents, so the freshly typed characters would be invisible.
     updateQueryParams();
 });
 
