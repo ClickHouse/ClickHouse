@@ -4,6 +4,7 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
+#include <Storages/ColumnsDescription.h>
 
 #include <memory>
 #include <fmt/format.h>
@@ -56,6 +57,8 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -67,7 +70,7 @@
 #endif
 
 #if CLICKHOUSE_CLOUD
-    #include <Interpreters/Cache/FileCacheFactory.h>
+    #include <Interpreters/FileCache/FileCacheFactory.h>
     #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
     #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
     #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
@@ -337,9 +340,12 @@ void MergeTask::GlobalRuntimeContext::checkOperationIsNotCanceled() const
     }
 }
 
-static String getColumnNameInStorage(const String & column_name, const NameSet & storage_columns)
+static String getColumnNameInStorage(const String & column_name, const NameSet & storage_columns, const NameSet & virtual_columns)
 {
     if (storage_columns.contains(column_name))
+        return column_name;
+
+    if (virtual_columns.contains(column_name))
         return column_name;
 
     /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
@@ -354,9 +360,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
     /// Collect columns used in the sorting key expressions.
     NameSet key_columns;
-    auto storage_columns = global_ctx->storage_columns.getNameSet();
+    const auto storage_columns = global_ctx->storage_columns.getNameSet();
+    const auto virtual_columns = global_ctx->virtual_columns.getNameSet();
     for (const auto & name : sort_key_columns_vec)
-        key_columns.insert(getColumnNameInStorage(name, storage_columns));
+        key_columns.insert(getColumnNameInStorage(name, storage_columns, virtual_columns));
 
     /// Force sign column for Collapsing mode and VersionedCollapsing mode
     if (!global_ctx->merging_params.sign_column.empty())
@@ -412,12 +419,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             if (index_columns.size() > 1)
             {
                 for (const auto & index_column : index_columns)
-                    key_columns.insert(getColumnNameInStorage(index_column, storage_columns));
+                    key_columns.insert(getColumnNameInStorage(index_column, storage_columns, virtual_columns));
             }
         }
         else if (index_columns.size() == 1)
         {
-            auto column_name = getColumnNameInStorage(index_columns.front(), storage_columns);
+            auto column_name = getColumnNameInStorage(index_columns.front(), storage_columns, virtual_columns);
             global_ctx->skip_indexes_by_column[column_name].push_back(index);
         }
         else
@@ -425,30 +432,13 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             global_ctx->merging_skip_indexes.push_back(index);
 
             for (const auto & index_column : index_columns)
-                key_columns.insert(getColumnNameInStorage(index_column, storage_columns));
+                key_columns.insert(getColumnNameInStorage(index_column, storage_columns, virtual_columns));
         }
     }
 
     for (const auto * projection : global_ctx->projections_to_rebuild)
-    {
         for (const auto & column : projection->getRequiredColumns())
-        {
-            if (projection->with_parent_part_offset && column == "_part_offset")
-                continue;
-
-            if (projection->with_block_number && column == BlockNumberColumn::name)
-                continue;
-
-            if (projection->with_block_offset && column == BlockOffsetColumn::name)
-                continue;
-
-            key_columns.insert(getColumnNameInStorage(column, storage_columns));
-        }
-
-        /// Track whether any projection needs _block_number/_block_offset in the horizontal phase.
-        global_ctx->need_block_number_in_merge |= projection->with_block_number;
-        global_ctx->need_block_offset_in_merge |= projection->with_block_offset;
-    }
+            key_columns.insert(getColumnNameInStorage(column, storage_columns, virtual_columns));
 
     /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
 
@@ -459,9 +449,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         auto add_ttl_expression_columns = [&](const TTLDescription & ttl_descr)
         {
             for (const auto & col : ttl_descr.expression_columns)
-                key_columns.insert(getColumnNameInStorage(col.name, storage_columns));
+                key_columns.insert(getColumnNameInStorage(col.name, storage_columns, virtual_columns));
             for (const auto & col : ttl_descr.where_expression_columns)
-                key_columns.insert(getColumnNameInStorage(col.name, storage_columns));
+                key_columns.insert(getColumnNameInStorage(col.name, storage_columns, virtual_columns));
         };
 
         if (global_ctx->metadata_snapshot->hasRowsTTL())
@@ -471,27 +461,35 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             add_ttl_expression_columns(where_ttl);
     }
 
+    for (auto it = global_ctx->skip_indexes_by_column.begin(); it != global_ctx->skip_indexes_by_column.end();)
+    {
+        auto & [column_name, indexes] = *it;
+
+        if (!key_columns.contains(column_name))
+        {
+            ++it;
+            continue;
+        }
+
+        for (auto & index : indexes)
+            global_ctx->merging_skip_indexes.push_back(std::move(index));
+
+        it = global_ctx->skip_indexes_by_column.erase(it);
+    }
+
     for (const auto & column : global_ctx->storage_columns)
     {
         if (key_columns.contains(column.name))
-        {
             global_ctx->merging_columns.emplace_back(column);
-
-            /// If column is in horizontal stage we need to calculate its indexes on horizontal stage as well
-            auto it = global_ctx->skip_indexes_by_column.find(column.name);
-            if (it != global_ctx->skip_indexes_by_column.end())
-            {
-                for (auto & index : it->second)
-                    global_ctx->merging_skip_indexes.push_back(std::move(index));
-
-                global_ctx->skip_indexes_by_column.erase(it);
-            }
-        }
         else
-        {
             global_ctx->gathering_columns.emplace_back(column);
-        }
     }
+
+    /// If any skip index references the persistent virtual columns _block_number / _block_offset,
+    /// they must be available in the horizontal merge block. Otherwise the index aggregator would
+    /// not see them and would skip writing the granule.
+    global_ctx->need_block_number_in_merge |= key_columns.contains(BlockNumberColumn::name);
+    global_ctx->need_block_offset_in_merge |= key_columns.contains(BlockOffsetColumn::name);
 }
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
@@ -534,6 +532,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->disk = global_ctx->space_reservation->getDisk();
     auto local_tmp_part_basename = local_tmp_prefix + global_ctx->future_part->name + local_tmp_suffix;
 
+    /// Same rationale as `MergeTreeData::loadDataPart`: the per-part `SingleDiskVolume` and
+    /// the resulting `IMergeTreeDataPart` constructed below live for the merged part's lifetime.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     std::optional<MergeTreeDataPartBuilder> builder;
     if (global_ctx->parent_part)
     {
@@ -565,6 +567,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
 
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
+    global_ctx->virtual_columns = global_ctx->metadata_snapshot->virtuals.getSampleBlock(
+        VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
 
     ctx->need_remove_expired_values = false;
@@ -707,15 +711,18 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
     }
 
+    auto parts_info = MergeTreeData::getPartsSnapshotInfo(global_ctx->future_part->parts);
+
     MergeTreeData::IMutationsSnapshot::Params params
     {
         .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
-        .min_part_metadata_version = MergeTreeData::getMinMetadataVersion(global_ctx->future_part->parts),
+        .min_part_metadata_version = parts_info.min_metadata_version,
         .min_part_data_versions = nullptr,
         .max_mutation_versions = nullptr,
         .need_data_mutations = false,
         .need_alter_mutations = !patch_parts.empty(),
         .need_patch_parts = false,
+        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
     };
 
     auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
@@ -913,9 +920,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         MergeTreeIndexFactory::instance().getMany(global_ctx->merging_skip_indexes),
         global_ctx->compression_codec,
         std::move(index_granularity_ptr),
-        global_ctx->txn ? global_ctx->txn->tid : Tx::PrehistoricTID,
+        global_ctx->txn ? global_ctx->txn->tid : Tx::NonTransactionalTID,
         global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
-        /*reset_columns=*/ true,
+        /*reset_columns=*/true,
         ctx->blocks_are_granules_size,
         global_ctx->context->getWriteSettings(),
         &global_ctx->written_offset_substreams);
@@ -2556,7 +2563,13 @@ private:
 
 void MergeTask::addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx)
 {
-    auto indices_expression = indices_description.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext());
+    /// Virtual columns are needed for implicit indices created for virtual columns.
+    auto columns_for_indices = global_ctx->metadata_snapshot->getColumns();
+    for (const auto & vc : global_ctx->metadata_snapshot->virtuals.toColumnsDescription(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader))
+        if (!columns_for_indices.has(vc.name))
+            columns_for_indices.add(vc);
+
+    auto indices_expression = indices_description.getSingleExpressionForIndices(columns_for_indices, global_ctx->data->getContext());
     auto indices_expression_dag = indices_expression->getActionsDAG().clone();
     auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(*plan.getCurrentHeader(), indices_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
     indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.
@@ -2578,7 +2591,8 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
 
     IndicesDescription description_to_build;
     std::vector<MergeTreeIndexPtr> indexes_to_build;
-    auto storage_columns = global_ctx->storage_columns.getNameSet();
+    const auto storage_columns = global_ctx->storage_columns.getNameSet();
+    const auto virtual_columns = global_ctx->virtual_columns.getNameSet();
 
     for (const auto & index : global_ctx->text_indexes_to_merge)
     {
@@ -2586,7 +2600,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
 
         bool read_any_required_column = std::ranges::any_of(required_columns, [&](const auto & column_name)
         {
-            return read_column_names.contains(getColumnNameInStorage(column_name, storage_columns));
+            return read_column_names.contains(getColumnNameInStorage(column_name, storage_columns, virtual_columns));
         });
 
         if (!read_any_required_column)
@@ -2898,7 +2912,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
     if (global_ctx->deduplicate)
     {
-        const auto & virtuals = *global_ctx->data->getVirtualsPtr();
+        const auto & virtuals = global_ctx->metadata_snapshot->virtuals;
 
         /// We don't want to deduplicate by virtual persistent column.
         /// If deduplicate_by_columns is empty, add all columns except virtuals.
@@ -2906,7 +2920,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         {
             for (const auto & column : global_ctx->merging_columns)
             {
-                if (virtuals.tryGet(column.name, VirtualsKind::Persistent))
+                if (virtuals.tryGet(column.name, VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader))
                     continue;
 
                 global_ctx->deduplicate_by_columns.emplace_back(column.name);
