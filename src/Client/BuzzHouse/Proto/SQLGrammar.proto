@@ -1942,6 +1942,7 @@ message JSONColumn {
     oneof jcol_oneof {
         bool jcol = 2;
         uint32 jarray = 3;
+        bool jcombined = 4;
     }
 }
 
@@ -2666,6 +2667,7 @@ message TableOrFunction {
         ExprSchemaTable est = 1;
         TableFunction tfunc = 2;
         ExplainQuery select = 3;
+        ValuesStatement values_standard = 4;
     }
 }
 
@@ -3324,7 +3326,9 @@ enum IndexType {
     IDX_ngrambf_v1 = 5;
     IDX_tokenbf_v1 = 6;
     IDX_text = 7;
+    /// Indexes for projections
     IDX_basic = 8;
+    IDX_commit_order = 9;
 }
 
 message IndexDef {
@@ -3886,6 +3890,9 @@ message DictionarySourceDetails {
         POSTGRESQL = 3;
         MONGODB = 4;
         REDIS = 5;
+        HTTP = 6;
+        FILE = 7;
+        YAMLRegExpTree = 8;
     }
     enum RedisStorageType {
         simple = 1;
@@ -3898,6 +3905,12 @@ message DictionarySourceDetails {
     optional string user = 5;
     optional string password = 6;
     optional RedisStorageType redis_storage = 7;
+    optional string invalidate_query = 8;
+    optional ColumnPath update_field = 9;
+    optional uint32 update_lag = 10;
+    optional string url = 11;
+    optional string path = 12;
+    optional string format = 13;
 }
 
 message DictionarySource {
@@ -3924,6 +3937,7 @@ enum DictionaryLayouts {
     RANGE_HASHED = 14;
     SPARSE_HASHED = 15;
     SSD_CACHE = 16;
+    REGEXP_TREE = 17;
 }
 
 message DictionaryLayout {
@@ -3996,9 +4010,16 @@ message ExpireSnapshots {
     optional bool dry_run = 6;
 }
 
+message RemoveOrphanFiles {
+    optional string older_than = 1;
+    optional string location = 2;
+    optional bool dry_run = 3;
+}
+
 message ExecuteCommand {
     oneof command {
         ExpireSnapshots expire_snapshots = 1;
+        RemoveOrphanFiles remove_orphan_files = 2;
     }
 }
 
@@ -4151,6 +4172,11 @@ enum DeltaKernelTraceLevel {
     TRACE = 5;
 }
 
+message UnlockSnapshot {
+    required string name = 1;
+    optional BackupOut from = 2;
+}
+
 message SystemCommand {
     optional Cluster cluster = 1;
     oneof system_cmd_oneof {
@@ -4252,8 +4278,19 @@ message SystemCommand {
         bool start_thread_fuzzer = 96;
         bool stop_thread_fuzzer = 97;
         bool drop_distributed_cache = 98;
-        string unlock_snapshot = 99;
+        UnlockSnapshot unlock_snapshot = 99;
+        FlushObjectStorageQueue flush_object_storage_queue = 100;
+        ExprSchemaTable stop_virtual_parts_update = 101;
+        ExprSchemaTable start_virtual_parts_update = 102;
+        ExprSchemaTable stop_reduce_blocking_parts = 103;
+        ExprSchemaTable start_reduce_blocking_parts = 104;
+        string wait_blobs_cleanup = 105;
     }
+}
+
+message FlushObjectStorageQueue {
+    required ExprSchemaTable table = 1;
+    required string path = 2;
 }
 
 message BackupRestoreObject {
@@ -4278,20 +4315,29 @@ message BackupRestore {
         RESTORE = 2;
     }
     required BackupCommand command = 1;
-    required BackupRestoreElement backup_element = 2;
-    repeated BackupRestoreElement other_elements = 3;
-    optional Cluster cluster = 4;
-    required BackupOut out = 5;
-    optional SettingValues setting_values = 6;
+    oneof backup_source {
+        BackupRestoreElement backup_element = 2;
+        /// BACKUP FROM SNAPSHOT {snapshot_source} TO {out}
+        BackupOut from_snapshot = 3;
+    }
+    repeated BackupRestoreElement other_elements = 4;
+    optional Cluster cluster = 5;
+    required BackupOut out = 6;
+    optional SettingValues setting_values = 7;
     enum SyncOrAsync {
         SYNC = 1;
         ASYNC = 2;
     }
-    optional SyncOrAsync sync = 7;
+    optional SyncOrAsync sync = 8;
     oneof backup_format_oneof {
-        InFormat informat = 8;
-        OutFormat outformat = 9;
+        InFormat informat = 9;
+        OutFormat outformat = 10;
     }
+}
+
+message SnapshotQuery {
+    required BackupRestoreElement element = 1;
+    required BackupOut out = 2;
 }
 
 message Rename {
@@ -4428,6 +4474,7 @@ message SQLQueryInner {
         Kill kill = 23;
         ShowStatement show = 24;
         CreatePolicy create_policy = 25;
+        SnapshotQuery snapshot_query = 26;
     }
 }
 

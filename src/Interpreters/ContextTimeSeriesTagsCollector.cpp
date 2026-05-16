@@ -9,6 +9,7 @@
 #include <IO/Operators.h>
 
 #include <boost/container_hash/hash.hpp>
+#include <city.h>
 
 
 namespace DB
@@ -647,22 +648,21 @@ String ContextTimeSeriesTagsCollector::toString(const TagNamesAndValuesPtr & tag
 }
 
 
-bool ContextTimeSeriesTagsCollector::Equal::operator()(const TagNamesAndValuesPtr & left, const TagNamesAndValuesPtr & right) const
+ContextTimeSeriesTagsCollector::TagsKey::TagsKey(TagNamesAndValuesPtr tags_)
+    : tags(std::move(tags_))
 {
-    return *left == *right;
-}
-
-
-size_t ContextTimeSeriesTagsCollector::Hash::operator ()(const TagNamesAndValuesPtr & ptr) const
-{
-    const auto & tags = *ptr;
-    UInt64 hash = 0;
-    for (const auto & [tag_name, tag_value] : tags)
+    hash = 0;
+    for (const auto & [tag_name, tag_value] : *tags)
     {
         hash = CityHash_v1_0_2::CityHash64WithSeed(tag_name.data(), tag_name.length(), hash);
         hash = CityHash_v1_0_2::CityHash64WithSeed(tag_value.data(), tag_value.length(), hash);
     }
-    return hash;
+}
+
+
+bool ContextTimeSeriesTagsCollector::Equal::operator()(const TagsKey & left, const TagsKey & right) const
+{
+    return *left.tags == *right.tags;
 }
 
 
@@ -680,16 +680,17 @@ ContextTimeSeriesTagsCollector::~ContextTimeSeriesTagsCollector() = default;
 
 Group ContextTimeSeriesTagsCollector::getGroupForTags(const TagNamesAndValuesPtr & tags)
 {
+    TagsKey key{tags};
     {
         SharedLockGuard lock{mutex};
-        auto it = groups_for_tags.find(tags);
+        auto it = groups_for_tags.find(key);
         if (it != groups_for_tags.end())
             return it->second;
     }
 
     {
         std::lock_guard lock{mutex};
-        return tryAddGroupUnlocked(tags);
+        return tryAddGroupUnlocked(std::move(key));
     }
 }
 
@@ -700,12 +701,16 @@ std::vector<Group> ContextTimeSeriesTagsCollector::getGroupForTags(const std::ve
     res.resize(tags_vector.size(), INVALID_GROUP);
     size_t num_found = 0;
 
+    std::vector<TagsKey> keys;
+    keys.reserve(tags_vector.size());
+    for (const auto & tags : tags_vector)
+        keys.emplace_back(tags);
+
     {
         SharedLockGuard lock{mutex};
         for (size_t i = 0; i != tags_vector.size(); ++i)
         {
-            const auto & tags = tags_vector[i];
-            auto it = groups_for_tags.find(tags);
+            auto it = groups_for_tags.find(keys[i]);
             if (it != groups_for_tags.end())
             {
                 res[i] = it->second;
@@ -721,8 +726,7 @@ std::vector<Group> ContextTimeSeriesTagsCollector::getGroupForTags(const std::ve
         {
             if (res[i] != INVALID_GROUP)
                 continue;
-            const auto & tags = tags_vector[i];
-            res[i] = tryAddGroupUnlocked(tags);
+            res[i] = tryAddGroupUnlocked(std::move(keys[i]));
             if (++num_found == tags_vector.size())
                 break;
         }
@@ -732,12 +736,23 @@ std::vector<Group> ContextTimeSeriesTagsCollector::getGroupForTags(const std::ve
 }
 
 
+Group ContextTimeSeriesTagsCollector::tryAddGroupUnlocked(TagsKey && key)
+{
+    UInt64 hash = key.hash;
+    TagNamesAndValuesPtr tags = key.tags;
+    auto [it, inserted] = groups_for_tags.try_emplace(std::move(key), groups.size());
+    if (inserted)
+    {
+        groups.push_back(std::move(tags));
+        sampling_keys.push_back(hash);
+    }
+    return it->second;
+}
+
+
 Group ContextTimeSeriesTagsCollector::tryAddGroupUnlocked(const TagNamesAndValuesPtr & tags)
 {
-    auto [it, inserted] = groups_for_tags.try_emplace(tags, groups.size());
-    if (inserted)
-        groups.push_back(tags);
-    return it->second;
+    return tryAddGroupUnlocked(TagsKey{tags});
 }
 
 
@@ -761,6 +776,31 @@ std::vector<TagNamesAndValuesPtr> ContextTimeSeriesTagsCollector::getTagsByGroup
         if (group >= groups.size())
             throwGroupOutOfBound(group, groups.size());
         res[i] = groups[group];
+    }
+    return res;
+}
+
+
+UInt64 ContextTimeSeriesTagsCollector::getSamplingKeyByGroup(Group group) const
+{
+    SharedLockGuard lock{mutex};
+    if (group >= sampling_keys.size())
+        throwGroupOutOfBound(group, sampling_keys.size());
+    return sampling_keys[group];
+}
+
+
+std::vector<UInt64> ContextTimeSeriesTagsCollector::getSamplingKeyByGroup(const std::vector<Group> & groups_) const
+{
+    std::vector<UInt64> res;
+    res.resize(groups_.size());
+    SharedLockGuard lock{mutex};
+    for (size_t i = 0; i != groups_.size(); ++i)
+    {
+        Group group = groups_[i];
+        if (group >= sampling_keys.size())
+            throwGroupOutOfBound(group, sampling_keys.size());
+        res[i] = sampling_keys[group];
     }
     return res;
 }

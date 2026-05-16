@@ -11,6 +11,7 @@ namespace DB
 
 class ColumnsDescription;
 
+struct KeyDescription;
 struct ProjectionDescription;
 
 using IColumnPermutation = PaddedPODArray<size_t>;
@@ -26,7 +27,11 @@ public:
     virtual String getName() const = 0;
 
     virtual void fillProjectionDescription(
-        ProjectionDescription & result, const IAST * index_expr, const ColumnsDescription & columns, ContextPtr query_context) const
+        ProjectionDescription & result,
+        const IAST * index_expr,
+        const ColumnsDescription & columns,
+        const KeyDescription * partition_key,
+        const ContextPtr & query_context) const
         = 0;
 
     virtual Block calculate(
