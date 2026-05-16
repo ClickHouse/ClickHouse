@@ -1737,11 +1737,15 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
     /// Per-partition minmax info for sequential partition ordering.
     /// Collected for all minmax columns during the loop below.
-    /// partition_minmax[partition_index][minmax_col] = {min, max}.
+    /// partition_minmax[partition_index][minmax_col] = {min, max, initialized}.
+    /// `initialized` is false when none of the parts in this partition had a valid
+    /// minmax index for this column, in which case `min_value`/`max_value` are
+    /// default-constructed and must not be used for ordering decisions.
     struct PartitionMinMax
     {
         Field min_value;
         Field max_value;
+        bool initialized = false;
     };
     std::vector<std::vector<PartitionMinMax>> partition_minmax;
 
@@ -1923,7 +1927,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         if (num_minmax_columns > 0)
         {
             std::vector<PartitionMinMax> per_col(num_minmax_columns);
-            std::vector<bool> initialized(num_minmax_columns, false);
             for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)
             {
                 const auto & part = part_it->data_part;
@@ -1932,11 +1935,11 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 for (size_t mm = 0; mm < num_minmax_columns && mm < part->minmax_idx->hyperrectangle.size(); ++mm)
                 {
                     const auto & range = part->minmax_idx->hyperrectangle[mm];
-                    if (!initialized[mm])
+                    if (!per_col[mm].initialized)
                     {
                         per_col[mm].min_value = range.left;
                         per_col[mm].max_value = range.right;
-                        initialized[mm] = true;
+                        per_col[mm].initialized = true;
                     }
                     else
                     {
@@ -2066,6 +2069,28 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         /// The partition-related column found above must satisfy:
         /// 1) All columns before it are fixed (guaranteed by the search starting at num_fixed)
         /// 2) It's within the read-in-order prefix (guaranteed by the search stopping at used_prefix)
+        /// 3) The minmax bounds for this column were collected from a valid minmax index
+        ///    in every partition. If any partition lacks the index (or its hyperrectangle
+        ///    is shorter than `mm_idx`), the bounds stay default-constructed, which would
+        ///    let ordering and overlap checks below run on bogus Field values.
+        if (minmax_col_index)
+        {
+            const size_t mm_idx = *minmax_col_index;
+
+            bool all_initialized = true;
+            for (const auto & per_col : partition_minmax)
+            {
+                if (mm_idx >= per_col.size() || !per_col[mm_idx].initialized)
+                {
+                    all_initialized = false;
+                    break;
+                }
+            }
+
+            if (!all_initialized)
+                minmax_col_index.reset();
+        }
+
         if (minmax_col_index)
         {
             /// Create sort permutation of partitions by their min values.
