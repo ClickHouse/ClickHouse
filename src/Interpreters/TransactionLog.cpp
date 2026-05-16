@@ -31,6 +31,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char transaction_force_unknown_state_after_commit[];
+    extern const char transaction_before_csn_publish[];
 }
 
 static void tryWriteEventToSystemLog(LoggerPtr log, ContextPtr context,
@@ -436,6 +437,13 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
             Coordination::SimpleFaultInjection fault(fault_probability_before_commit, fault_probability_after_commit, "commit");
 
             requests.push_back(zkutil::makeCreateRequest(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential));
+
+            /// Test-only pause point. Widens the window in which the new part is already
+            /// `Active` (because the storage `Transaction::commit` has returned) but the
+            /// CSN znode below has not yet been created in Keeper -- so
+            /// `TransactionLog::getCSN(creation_tid)` still returns 0. Used by regression
+            /// tests for races between in-flight tx creators and non-tx removers.
+            FailPointInjection::pauseFailPoint(FailPoints::transaction_before_csn_publish);
 
             /// Commit point
             auto res = current_zookeeper->multi(requests, /* check_session_valid */ true);
