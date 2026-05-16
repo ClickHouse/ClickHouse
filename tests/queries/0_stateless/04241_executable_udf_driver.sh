@@ -104,6 +104,7 @@ grep -q '<execute_direct>1</execute_direct>' "$WORK_DIR/docker_runtime.xml" && e
 grep -q 'runsc --rootless --network=none do' "$WORK_DIR/gvisor_runtime.xml" && echo "gvisor_runtime_present" || echo "gvisor_runtime_missing"
 grep -q 'docker run' "$WORK_DIR/gvisor_runtime.xml" && echo "gvisor_docker_present" || echo "gvisor_docker_absent"
 grep -q '<execute_direct>0</execute_direct>' "$WORK_DIR/gvisor_runtime.xml" && echo "gvisor_execute_shell" || echo "gvisor_execute_direct"
+grep -q '<command_pipe_capacity>1048576</command_pipe_capacity>' "$WORK_DIR/gvisor_runtime.xml" && echo "gvisor_pipe_capacity_configured" || echo "gvisor_pipe_capacity_missing"
 
 (
     cd "$WORK_DIR/unsafe_runtime" &&

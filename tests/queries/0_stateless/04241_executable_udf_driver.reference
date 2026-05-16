@@ -11,6 +11,7 @@ docker_execute_direct
 gvisor_runtime_present
 gvisor_docker_absent
 gvisor_execute_shell
+gvisor_pipe_capacity_configured
 unsafe_runtime_direct
 unsafe_docker_absent
 -- create + call

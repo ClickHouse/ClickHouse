@@ -721,8 +721,13 @@ def pool_size():
     return int(os.environ.get("CLICKHOUSE_C_DRIVER_POOL_SIZE", "64"))
 
 
-def pipe_capacity():
-    return int(os.environ.get("CLICKHOUSE_C_DRIVER_PIPE_CAPACITY", "0"))
+def pipe_capacity(runtime):
+    override = os.environ.get("CLICKHOUSE_C_DRIVER_PIPE_CAPACITY")
+    if override is not None:
+        return int(override)
+    if runtime == "gvisor":
+        return 1 << 20
+    return 0
 
 
 def docker_user():
@@ -919,7 +924,7 @@ def generate_xml_config(function_name, return_type, args, work_dir, runtime):
             xml_escape(name), xml_escape(ty))
         for name, ty in args
     )
-    pipe_capacity_value = pipe_capacity()
+    pipe_capacity_value = pipe_capacity(runtime)
     pipe_capacity_xml = ""
     if pipe_capacity_value:
         pipe_capacity_xml = f"        <command_pipe_capacity>{pipe_capacity_value}</command_pipe_capacity>\n"
