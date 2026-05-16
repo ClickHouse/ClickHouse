@@ -444,9 +444,6 @@ void StorageMergeTree::alter(
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
-    if (!query_settings[Setting::allow_suspicious_primary_key])
-        MergeTreeData::verifySortingKey(new_metadata.sorting_key);
-
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
     {
@@ -466,6 +463,13 @@ void StorageMergeTree::alter(
     }
     else
     {
+        /// The sorting key is only relevant when something other than settings or comments is being altered.
+        /// Otherwise verification would reject unrelated ALTERs on tables that were originally created with
+        /// `allow_suspicious_primary_key = 1` once that setting is no longer in effect.
+        /// `StorageReplicatedMergeTree::alter` checks `verifySortingKey` in the same position.
+        if (!query_settings[Setting::allow_suspicious_primary_key])
+            MergeTreeData::verifySortingKey(new_metadata.sorting_key);
+
         if (!maybe_mutation_commands.empty() && maybe_mutation_commands.containBarrierCommand())
         {
             int64_t prev_mutation = 0;
