@@ -82,6 +82,7 @@ esac
 test -d "$WORK_DIR/dyn/$WORK_DIR_NAME" && echo "uuid_workdir_present" || echo "uuid_workdir_missing"
 test -d "$WORK_DIR/dyn/test_udf_drv_add.d" && echo "function_workdir_present" || echo "function_workdir_absent"
 grep -q 'setvbuf' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "setvbuf_present" || echo "setvbuf_absent"
+grep -Eq 'fread|fwrite|fgets|fflush|fputs|scanf|printf|strtoull|setvbuf' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "stdio_serde_present" || echo "stdio_serde_absent"
 
 echo "-- multi-row chunk call"
 run "SELECT sum(test_udf_drv_add(toUInt8(number), toUInt8(1))) FROM numbers(10);"

@@ -9,6 +9,7 @@ uuid_workdir_name
 uuid_workdir_present
 function_workdir_absent
 setvbuf_absent
+stdio_serde_absent
 -- multi-row chunk call
 55
 -- if not exists does not invoke driver

@@ -75,7 +75,7 @@ def generate_wrapper_c(function_name, return_type, args, user_body):
     for name, ty in args:
         c_type, reader, _ = TYPE_MAP[ty]
         arg_c_decls.append(f"            {c_type} {name};")
-        arg_reads.append(f'        if ({reader}(&{name}) != 1) {{ fputs("read error\\n", stderr); return 2; }}')
+        arg_reads.append(f'            if ({reader}(&{name}) != 1) {{ ch_error("read error\\n"); return 2; }}')
         user_func_params.append(f"{c_type} {name}")
         user_call_args.append(name)
 
@@ -91,38 +91,132 @@ def generate_wrapper_c(function_name, return_type, args, user_body):
 #include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
+#include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <unistd.h>
 
 static {ret_c_type} user_function({user_params_str})
 {{
 {user_body}
 }}
 
-static int ch_read_exact(void * ptr, size_t size)
+#define CH_BUFFER_SIZE (1U << 20)
+
+static unsigned char ch_input_buffer[CH_BUFFER_SIZE];
+static size_t ch_input_pos = 0;
+static size_t ch_input_size = 0;
+
+static unsigned char ch_output_buffer[CH_BUFFER_SIZE];
+static size_t ch_output_pos = 0;
+
+static ssize_t ch_read_retry(int fd, void * data, size_t size)
+{{
+    for (;;)
+    {{
+        ssize_t res = read(fd, data, size);
+        if (res < 0 && errno == EINTR)
+            continue;
+        return res;
+    }}
+}}
+
+static ssize_t ch_write_retry(int fd, const void * data, size_t size)
+{{
+    for (;;)
+    {{
+        ssize_t res = write(fd, data, size);
+        if (res < 0 && errno == EINTR)
+            continue;
+        return res;
+    }}
+}}
+
+static void ch_error(const char * message)
+{{
+    for (const char * end = message; *end; ++end)
+    {{
+        if (end[1] == '\\0')
+        {{
+            (void)ch_write_retry(STDERR_FILENO, message, (size_t)(end + 1 - message));
+            return;
+        }}
+    }}
+}}
+
+static int ch_refill_input(void)
+{{
+    ssize_t bytes = ch_read_retry(STDIN_FILENO, ch_input_buffer, sizeof(ch_input_buffer));
+    if (bytes < 0)
+        return -1;
+
+    ch_input_pos = 0;
+    ch_input_size = (size_t)bytes;
+    return bytes == 0 ? 0 : 1;
+}}
+
+static inline int ch_read_byte(unsigned char * value)
+{{
+    if (ch_input_pos == ch_input_size)
+    {{
+        int status = ch_refill_input();
+        if (status <= 0)
+            return status;
+    }}
+
+    *value = ch_input_buffer[ch_input_pos++];
+    return 1;
+}}
+
+static inline int ch_read_exact(void * ptr, size_t size)
 {{
     unsigned char * out = (unsigned char *)ptr;
     while (size != 0)
     {{
-        size_t bytes = fread(out, 1, size, stdin);
-        if (bytes == 0)
-            return ferror(stdin) ? -1 : 0;
+        if (ch_input_pos == ch_input_size)
+        {{
+            int status = ch_refill_input();
+            if (status <= 0)
+                return status;
+        }}
+
+        size_t available = ch_input_size - ch_input_pos;
+        size_t bytes = available < size ? available : size;
+        __builtin_memcpy(out, ch_input_buffer + ch_input_pos, bytes);
+        ch_input_pos += bytes;
         out += bytes;
         size -= bytes;
     }}
     return 1;
 }}
 
-static int ch_write_exact(const void * ptr, size_t size)
+static int ch_flush_output(void)
+{{
+    size_t written = 0;
+    while (written != ch_output_pos)
+    {{
+        ssize_t bytes = ch_write_retry(STDOUT_FILENO, ch_output_buffer + written, ch_output_pos - written);
+        if (bytes <= 0)
+            return -1;
+        written += (size_t)bytes;
+    }}
+
+    ch_output_pos = 0;
+    return 1;
+}}
+
+static inline int ch_write_exact(const void * ptr, size_t size)
 {{
     const unsigned char * in = (const unsigned char *)ptr;
     while (size != 0)
     {{
-        size_t bytes = fwrite(in, 1, size, stdout);
-        if (bytes == 0)
-            return ferror(stdout) ? -1 : 0;
+        if (ch_output_pos == sizeof(ch_output_buffer) && ch_flush_output() != 1)
+            return -1;
+
+        size_t available = sizeof(ch_output_buffer) - ch_output_pos;
+        size_t bytes = available < size ? available : size;
+        __builtin_memcpy(ch_output_buffer + ch_output_pos, in, bytes);
+        ch_output_pos += bytes;
         in += bytes;
         size -= bytes;
     }}
@@ -130,8 +224,27 @@ static int ch_write_exact(const void * ptr, size_t size)
 }}
 
 #define CH_DEFINE_RW(name, type) \\
-    static int ch_read_##name(type * value) {{ return ch_read_exact(value, sizeof(*value)); }} \\
-    static int ch_write_##name(const type * value) {{ return ch_write_exact(value, sizeof(*value)); }}
+    static inline int ch_read_##name(type * value) \\
+    {{ \\
+        size_t size = sizeof(*value); \\
+        if (ch_input_size - ch_input_pos < size) \\
+            return ch_read_exact(value, size); \\
+        __builtin_memcpy(value, ch_input_buffer + ch_input_pos, size); \\
+        ch_input_pos += size; \\
+        return 1; \\
+    }} \\
+    static inline int ch_write_##name(const type * value) \\
+    {{ \\
+        size_t size = sizeof(*value); \\
+        if (sizeof(ch_output_buffer) - ch_output_pos < size) \\
+        {{ \\
+            if (ch_flush_output() != 1) \\
+                return -1; \\
+        }} \\
+        __builtin_memcpy(ch_output_buffer + ch_output_pos, value, size); \\
+        ch_output_pos += size; \\
+        return 1; \\
+    }}
 
 CH_DEFINE_RW(uint8, uint8_t)
 CH_DEFINE_RW(uint16, uint16_t)
@@ -146,15 +259,29 @@ CH_DEFINE_RW(double, double)
 
 static int ch_read_chunk_header(uint64_t * rows)
 {{
-    char buf[64];
-    if (!fgets(buf, sizeof(buf), stdin))
-        return feof(stdin) ? 0 : -1;
+    uint64_t value = 0;
+    unsigned char c = 0;
+    int status = ch_read_byte(&c);
+    if (status <= 0)
+        return status;
 
-    errno = 0;
-    char * end = NULL;
-    unsigned long long value = strtoull(buf, &end, 10);
-    if (errno != 0 || end == buf || value > UINT64_MAX || (*end != '\\n' && *end != '\\0'))
+    if (c < '0' || c > '9')
         return -1;
+
+    while (c != '\\n')
+    {{
+        if (c < '0' || c > '9')
+            return -1;
+
+        uint64_t digit = (uint64_t)(c - '0');
+        if (value > (UINT64_MAX - digit) / 10)
+            return -1;
+        value = value * 10 + digit;
+
+        status = ch_read_byte(&c);
+        if (status <= 0)
+            return -1;
+    }}
 
     *rows = (uint64_t)value;
     return 1;
@@ -170,7 +297,7 @@ int main(void)
             break;
         if (header_status < 0)
         {{
-            fputs("chunk header read error\\n", stderr);
+            ch_error("chunk header read error\\n");
             return 2;
         }}
 
@@ -181,14 +308,14 @@ int main(void)
             {ret_c_type} result = user_function({user_call_args_str});
             if ({ret_writer}(&result) != 1)
             {{
-                fputs("write error\\n", stderr);
+                ch_error("write error\\n");
                 return 3;
             }}
         }}
 
-        if (fflush(stdout) != 0)
+        if (ch_flush_output() != 1)
         {{
-            fputs("flush error\\n", stderr);
+            ch_error("flush error\\n");
             return 3;
         }}
     }}
