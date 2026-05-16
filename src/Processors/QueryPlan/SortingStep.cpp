@@ -634,7 +634,7 @@ void SortingStep::describeActions(FormatSettings & settings) const
     if (limit)
         settings.out << prefix << "Limit " << limit << '\n';
 
-    if (!limit_by_columns.empty())
+    if (!limit_by_columns.empty() && !(type == Type::FinishSorting && prefix_description.size() < result_description.size()))
     {
         settings.out << prefix << "Per-stream LIMIT BY columns: ";
 
@@ -666,7 +666,7 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
     if (limit)
         map.add("Limit", limit);
 
-    if (!limit_by_columns.empty())
+    if (!limit_by_columns.empty() && !(type == Type::FinishSorting && prefix_description.size() < result_description.size()))
     {
         auto columns_array = std::make_unique<JSONBuilder::JSONArray>();
         for (const auto & column : limit_by_columns)
