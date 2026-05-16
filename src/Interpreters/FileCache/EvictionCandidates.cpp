@@ -397,19 +397,9 @@ void EvictionCandidates::evict()
                 ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
                 ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
 
-                /// Queue the iterator for invalidation BEFORE running the metric
-                /// emission below: removeFileSegment above has already removed the
-                /// segment from metadata + filesystem, so the corresponding queue
-                /// entry MUST be invalidated regardless of what happens next.
-                /// Otherwise a throw from the metrics path (e.g. allocation inside
-                /// withLabels) would leave a stale queue entry and desync cache
-                /// accounting.
                 if (iterator)
                     queue_entries_to_invalidate.push_back(iterator);
 
-                /// Metrics are best-effort: any failure (allocation, contention)
-                /// must not break the eviction invariants above. Swallow exceptions
-                /// here so the eviction is reported as successful.
                 if (emit_aggregate_metrics)
                 {
                     try
@@ -417,8 +407,6 @@ void EvictionCandidates::evict()
                         FileCacheQueueEntryType queue_type = FileCacheQueueEntryType::None;
                         if (iterator)
                         {
-                            /// Use the nested iterator so SLRU reports protected/probationary,
-                            /// not the wrapping SplitCache type.
                             queue_type = iterator->getNestedOrThis()->getType();
                         }
                         else
