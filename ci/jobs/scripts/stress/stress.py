@@ -19,6 +19,10 @@ class ServerDied(Exception):
     pass
 
 
+def escape_tsv_info(text: str) -> str:
+    return text.replace("\0", "\\0").replace("\t", "\\t").replace("\n", "\\n")
+
+
 class RandomQueryKiller:
     """Background thread that randomly kills queries and client processes during stress tests.
 
@@ -641,14 +645,63 @@ def main():
                     tee.stdin.close()
             if res != 0 and have_long_running_queries:
                 logging.info("Hung check failed with exit code %d", res)
+
+                # Embed a tail of the captured hung-check output in
+                # test_results.tsv so the processlist and thread stacktraces
+                # are visible in CIDB. The full log is also kept as a CI
+                # artifact (see process_results in stress_job.py), giving
+                # investigators access to the complete diagnostic output.
+                #
+                # Read only the last 32 KiB rather than the whole file: on
+                # deadlock failures `hung_check.log` can be very large (a
+                # full processlist plus a `gdb` backtrace for every server
+                # process), and the stress-test machine is already under
+                # memory pressure. The diagnostic content we need
+                # (`Found hung queries`, the processlist with stacktraces,
+                # the `gdb` backtraces) is printed at the end of the log,
+                # so the tail is exactly the relevant region.
+                info_field = ""
+                try:
+                    tail_bytes_size = 32 * 1024
+                    with open(hung_check_log, "rb") as f:
+                        f.seek(0, os.SEEK_END)
+                        size = f.tell()
+                        offset = max(0, size - tail_bytes_size)
+                        f.seek(offset)
+                        tail_bytes = f.read()
+                    log_text = tail_bytes.decode("utf-8", errors="replace")
+                    if offset > 0:
+                        # Drop the (likely partial) first line so the tail
+                        # always starts on a line boundary.
+                        nl = log_text.find("\n")
+                        if nl >= 0:
+                            log_text = log_text[nl + 1 :]
+                        log_text = (
+                            "(truncated; see hung_check.log artifact for"
+                            " the full output; showing last 32 KiB)\n...\n"
+                            + log_text
+                        )
+                    # Escape so NUL, tab, and newline survive the TSV encoding,
+                    # matching the decoder in read_test_results().
+                    info_field = escape_tsv_info(log_text)
+                except OSError as ex:
+                    logging.warning(
+                        "Failed to read hung_check.log to embed in"
+                        " test_results.tsv: %s",
+                        ex,
+                    )
+
                 hung_check_status = (
-                    "Hung check failed, possible deadlock found\tFAIL\t\\N\t\n"
+                    "Hung check failed, possible deadlock found\tFAIL\t\\N\t"
+                    f"{info_field}\n"
                 )
                 with open(
                     args.output_folder / "test_results.tsv", "w+", encoding="utf-8"
                 ) as results:
                     results.write(hung_check_status)
-                    hung_check_log.unlink()
+                # Keep hung_check.log on disk so the CI artifact upload picks
+                # it up. Without it, deadlock investigations have no evidence
+                # to work with — see ClickHouse/ClickHouse#100941.
             else:
                 logging.info("No queries hung")
 

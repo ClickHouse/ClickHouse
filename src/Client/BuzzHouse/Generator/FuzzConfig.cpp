@@ -427,6 +427,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
          { time_to_sleep_between_reconnects = std::max(UINT32_C(1000), static_cast<uint32_t>(value.getUInt64())); }},
         {"enable_fault_injection_settings", [&](const JSONObjectType & value) { enable_fault_injection_settings = value.getBool(); }},
         {"enable_force_settings", [&](const JSONObjectType & value) { enable_force_settings = value.getBool(); }},
+        {"enable_time_settings", [&](const JSONObjectType & value) { enable_time_settings = value.getBool(); }},
         {"enable_overflow_settings", [&](const JSONObjectType & value) { enable_overflow_settings = value.getBool(); }},
         {"enable_memory_settings", [&](const JSONObjectType & value) { enable_memory_settings = value.getBool(); }},
         {"enable_sync_settings", [&](const JSONObjectType & value) { enable_sync_settings = value.getBool(); }},
