@@ -39,6 +39,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
@@ -61,6 +62,17 @@ namespace Setting
 
 extern const SettingsBool enable_positional_arguments_for_projections;
 
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
+    extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
+    extern const MergeTreeSettingsBool add_minmax_index_for_temporal_columns;
+    extern const MergeTreeSettingsBool add_minmax_index_for_block_number_column;
+    extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
+    extern const MergeTreeSettingsBool enable_block_number_column;
+    extern const MergeTreeSettingsBool enable_block_offset_column;
 }
 
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
@@ -255,7 +267,8 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
     const KeyDescription * partition_key,
-    const ContextPtr & query_context)
+    const ContextPtr & query_context,
+    const MergeTreeSettings * merge_tree_settings)
 {
     const auto * projection_definition = definition_ast->as<ASTProjectionDeclaration>();
 
@@ -282,7 +295,7 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     if (projection_definition->with_settings)
         result.loadSettings(projection_definition->with_settings->changes);
 
-    fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, partition_key, query_context);
+    fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, partition_key, query_context, merge_tree_settings);
     return result;
 }
 
@@ -291,7 +304,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     const ASTProjectionSelectQuery & query,
     const ColumnsDescription & columns,
     const KeyDescription * partition_key,
-    const ContextPtr & query_context)
+    const ContextPtr & query_context,
+    const MergeTreeSettings * merge_tree_settings)
 {
     auto projection_order_by = query.orderBy();
     result.query_ast = query.cloneToASTSelect();
@@ -452,12 +466,21 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     metadata.setColumns(ColumnsDescription(metadata_columns));
     metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));
 
-    metadata.add_minmax_index_for_numeric_columns = true;
-    metadata.add_minmax_index_for_string_columns = true;
-    metadata.add_minmax_index_for_temporal_columns = true;
-    metadata.addImplicitIndicesForVirtualColumns(query_context);
-    for (const auto & column : metadata.columns)
-        metadata.addImplicitIndicesForColumn(column, query_context);
+    /// Initialize skip indices based on parent table settings.
+    if (merge_tree_settings)
+    {
+        const auto & settings = *merge_tree_settings;
+
+        metadata.add_minmax_index_for_numeric_columns = settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
+        metadata.add_minmax_index_for_string_columns = settings[MergeTreeSetting::add_minmax_index_for_string_columns];
+        metadata.add_minmax_index_for_temporal_columns = settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
+        metadata.add_minmax_index_for_block_number_column = settings[MergeTreeSetting::add_minmax_index_for_block_number_column] && settings[MergeTreeSetting::enable_block_number_column];
+        metadata.add_minmax_index_for_block_offset_column = settings[MergeTreeSetting::add_minmax_index_for_block_offset_column] && settings[MergeTreeSetting::enable_block_offset_column];
+
+        metadata.addImplicitIndicesForVirtualColumns(query_context);
+        for (const auto & column : metadata.columns)
+            metadata.addImplicitIndicesForColumn(column, query_context);
+    }
 
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
 }

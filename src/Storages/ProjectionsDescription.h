@@ -23,6 +23,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 using IColumnPermutation = PaddedPODArray<size_t>;
 
 struct KeyDescription;
+struct MergeTreeSettings;
 
 class ASTProjectionSelectQuery;
 
@@ -86,14 +87,16 @@ struct ProjectionDescription
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
         const KeyDescription * partition_key,
-        const ContextPtr & query_context);
+        const ContextPtr & query_context,
+        const MergeTreeSettings * merge_tree_settings = nullptr);
 
     static void fillProjectionDescriptionByQuery(
         ProjectionDescription & result,
         const ASTProjectionSelectQuery & query,
         const ColumnsDescription & columns,
         const KeyDescription * partition_key,
-        const ContextPtr & query_context);
+        const ContextPtr & query_context,
+        const MergeTreeSettings * merge_tree_settings = nullptr);
 
     static ProjectionDescription getMinMaxCountProjection(
         const ColumnsDescription & columns,
