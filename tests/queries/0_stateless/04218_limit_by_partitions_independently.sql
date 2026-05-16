@@ -1,4 +1,5 @@
 -- Tags: long, no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: Explain output may differ
 
 SET max_threads = 16;
 
