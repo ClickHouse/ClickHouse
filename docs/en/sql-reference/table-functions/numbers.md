@@ -7,6 +7,8 @@ description: 'Returns a table with a single `number` column that contains a sequ
 doc_type: 'reference'
 ---
 
+# numbers Table Function
+
 - `numbers()` – Returns an infinite table with a single `number` column (UInt64) that contains integers in ascending order, starting from 0. Use `LIMIT` (and optionally `OFFSET`) to restrict the number of rows.
 
 - `numbers(N)` – Returns a table with a single `number` column (UInt64) that contains integers from 0 to `N - 1`.
@@ -77,7 +79,7 @@ Find the first `UInt64` `>= 10^15` whose `sipHash64(number)` has 20 trailing zer
 ```sql
 SELECT number
 FROM numbers()
-WHERE number >= 1e15
+WHERE number >= toUInt64(1e15)
   AND bitAnd(sipHash64(number), 0xFFFFF) = 0
 LIMIT 1;
 ```
