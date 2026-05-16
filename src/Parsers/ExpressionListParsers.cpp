@@ -3256,17 +3256,49 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
     {
         auto old_pos = pos;
         SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
+        bool is_subquery = true;
 
-        /// ANY and SOME are semantically identical
-        if ((any_parser.ignore(pos, expected) || some_parser.ignore(pos, expected)) && subquery_parser.parse(pos, tmp, expected))
-            subquery_function_type = SubqueryFunctionType::ANY;
-        else if (all_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
-            subquery_function_type = SubqueryFunctionType::ALL;
+        /// ANY/SOME/ALL accept either a subquery (existing behavior, rewritten to
+        /// `IN`/`NOT IN` via `modifyAST`) or a non-subquery array expression
+        /// (PostgreSQL-style, rewritten here to `arrayExists`/`arrayAll`, or to
+        /// `has`/`NOT has` for the `=`/`<>` special cases that already have an
+        /// optimized implementation).
+        const bool any_kw = any_parser.ignore(pos, expected) || some_parser.ignore(pos, expected);
+        const bool all_kw = !any_kw && all_parser.ignore(pos, expected);
+
+        if (any_kw || all_kw)
+        {
+            subquery_function_type = any_kw ? SubqueryFunctionType::ANY : SubqueryFunctionType::ALL;
+
+            if (subquery_parser.parse(pos, tmp, expected))
+            {
+                /// Existing subquery path: leave `is_subquery = true`.
+            }
+            else if (pos->type == TokenType::OpeningRoundBracket)
+            {
+                auto pos_at_open = pos;
+                ++pos;
+                ParserExpression expr_parser;
+                if (expr_parser.parse(pos, tmp, expected) && pos->type == TokenType::ClosingRoundBracket)
+                {
+                    ++pos;
+                    is_subquery = false;
+                }
+                else
+                {
+                    pos = pos_at_open;
+                    subquery_function_type = SubqueryFunctionType::NONE;
+                }
+            }
+            else
+            {
+                subquery_function_type = SubqueryFunctionType::NONE;
+            }
+        }
 
         if (subquery_function_type != SubqueryFunctionType::NONE)
         {
             Operator prev_op;
-            ASTPtr function;
             ASTPtr argument;
 
             if (!layers.back()->popOperator(prev_op))
@@ -3274,10 +3306,44 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
             if (!layers.back()->popOperand(argument))
                 return Action::NONE;
 
-            function = makeASTFunction(prev_op, argument, tmp);
+            ASTPtr function;
+            if (is_subquery)
+            {
+                function = makeASTFunction(prev_op, argument, tmp);
 
-            if (!modifyAST(function, subquery_function_type))
-                return Action::NONE;
+                if (!modifyAST(function, subquery_function_type))
+                    return Action::NONE;
+            }
+            else
+            {
+                /// `expr = ANY(arr)` and `expr <> ALL(arr)` map to the optimized
+                /// `has`/`NOT has` (this is what `IN`/`NOT IN` already lowers to
+                /// for non-subquery RHS, but spelled directly here so we don't
+                /// depend on the analyzer recognising the lambda form).
+                const bool is_equals = prev_op.function_name == "equals";
+                const bool is_not_equals = prev_op.function_name == "notEquals";
+
+                if (any_kw && is_equals)
+                {
+                    function = makeASTFunction("has", tmp, argument);
+                }
+                else if (all_kw && is_not_equals)
+                {
+                    function = makeASTFunction("not", makeASTFunction("has", tmp, argument));
+                }
+                else
+                {
+                    /// General form: lambda `_a -> argument OP _a` wrapped in
+                    /// `arrayExists` (for ANY) or `arrayAll` (for ALL). The
+                    /// lambda variable name is chosen to be unlikely to collide
+                    /// with user identifiers in `argument`.
+                    static constexpr std::string_view lambda_var = "_a";
+                    auto body = makeASTOperator(prev_op.function_name, argument, make_intrusive<ASTIdentifier>(String(lambda_var)));
+                    auto lambda = makeASTLambda({String(lambda_var)}, std::move(body));
+                    const char * fn_name = any_kw ? "arrayExists" : "arrayAll";
+                    function = makeASTFunction(fn_name, std::move(lambda), tmp);
+                }
+            }
 
             layers.back()->pushOperand(std::move(function));
             return Action::OPERATOR;
