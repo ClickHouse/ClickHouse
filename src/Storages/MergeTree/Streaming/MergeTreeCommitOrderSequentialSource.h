@@ -10,6 +10,8 @@
 
 #include <Processors/IProcessor.h>
 
+#include <memory>
+
 namespace DB
 {
 
@@ -57,11 +59,11 @@ private:
     MergeTreeCursor last_emitted_positions;
 
     Processors current_sub_pipeline;
+    std::unique_ptr<QueryPlanResourceHolder> current_resources;
     std::map<String, Int64> reading_up_to_block_numbers;
 
     std::optional<Pipe> pending_snapshot;
-    QueryPlanResourceHolder resources;
-
+    std::unique_ptr<QueryPlanResourceHolder> pending_resources;
 };
 
 }

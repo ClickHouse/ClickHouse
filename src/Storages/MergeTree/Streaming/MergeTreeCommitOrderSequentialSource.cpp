@@ -419,7 +419,7 @@ void MergeTreeCommitOrderSequentialSource::work()
     if (result)
     {
         pending_snapshot = std::move(result->pipe);
-        resources.append(result->resources);
+        pending_resources = std::make_unique<QueryPlanResourceHolder>(std::move(result->resources));
     }
 }
 
@@ -444,6 +444,7 @@ IProcessor::PipelineUpdate MergeTreeCommitOrderSequentialSource::updatePipeline(
         disconnect(input.getOutputPort(), input);
 
         update.to_remove = std::exchange(current_sub_pipeline, {});
+        current_resources.reset();
     }
 
     /// Take next snapshot reading plan
@@ -464,6 +465,7 @@ IProcessor::PipelineUpdate MergeTreeCommitOrderSequentialSource::updatePipeline(
 
     /// Register next reading plan in pipeline extension
     current_sub_pipeline = sub_processors;
+    current_resources = std::move(pending_resources);
     update.to_add = std::move(sub_processors);
     return update;
 }
