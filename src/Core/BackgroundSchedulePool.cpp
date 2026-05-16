@@ -272,7 +272,10 @@ BackgroundSchedulePoolPtr BackgroundSchedulePool::create(size_t size, size_t ini
 BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, ThreadName thread_name_)
     : logger(getLogger(fmt::format("BackgroundSchedulePool/{}", toString(thread_name_))))
     , tasks_metric(tasks_metric_)
-    , size_metric(size_metric_, 0)
+    /// The metric reports the configured cap (so `system.server_settings` displays
+    /// `background_*_schedule_pool_size` consistently with the user-facing setting),
+    /// not the number of currently spawned workers — that is tracked separately by `threads.size()`.
+    , size_metric(size_metric_, size_)
     , thread_name(thread_name_)
     , max_parallel_tasks_per_type(max_parallel_tasks_per_type_ ? max_parallel_tasks_per_type_ : size_)
 {
@@ -309,7 +312,6 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size
 void BackgroundSchedulePool::spawnThreadLocked()
 {
     threads.emplace_back(ThreadFromGlobalPoolNoTracingContextPropagation([this] { threadFunction(); }));
-    size_metric.changeTo(threads.size());
 }
 
 
@@ -328,6 +330,7 @@ void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
     }
 
     max_size = new_threads_count;
+    size_metric.changeTo(new_threads_count);
     /// Threads above the current count are spawned lazily on demand.
 }
 
