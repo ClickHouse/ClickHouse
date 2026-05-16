@@ -138,10 +138,29 @@ void VersionMetadata::setAndStoreRemovalTID(const TransactionID & tid)
 {
     LOG_DEBUG(log, "Object {}, setAndStoreRemovalTID {}", getObjectName(), tid);
 
-    auto update_function = [tid](VersionInfo & info)
+    auto update_function = [tid, this](VersionInfo & info)
     {
         if (info.removal_tid == tid)
             return false;
+
+        /// Refuse to write a non-transactional removal over a part whose creating
+        /// transaction has not yet committed. The resulting shape (`creation_csn == 0`
+        /// together with `removal_csn == NonTransactionalCSN`) is rejected by
+        /// `validateInfo`: a removed part with no committed creation point is
+        /// unrecoverable on restart. Returning `SERIALIZATION_ERROR` here lets the
+        /// caller retry once the in-flight creation finalizes (either to a real CSN
+        /// or to `Tx::RolledBackCSN`).
+        ///
+        /// The guard inspects only `info`, so it is correct regardless of which
+        /// replica the creating transaction is running on.
+        if (tid.isNonTransactional()
+            && !info.creation_csn
+            && !info.creation_tid.isNonTransactional())
+        {
+            throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                "Cannot non-transactionally remove object {} whose creation_tid {} has not committed yet",
+                getObjectName(), info.creation_tid);
+        }
 
         chassert(info.removal_tid.isEmpty() || tid == Tx::EmptyTID, fmt::format("removal_tid {}, tid {}", info.removal_tid, tid));
         info.removal_tid = tid;
