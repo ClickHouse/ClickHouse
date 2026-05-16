@@ -1,9 +1,8 @@
 #pragma once
 
-#include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeDynamic.h>
 #include <Core/Field.h>
-#include <Common/re2.h>
+#include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/IDataType.h>
 
 
 namespace DB
@@ -23,6 +22,11 @@ public:
     static constexpr size_t DEFAULT_MAX_DYNAMIC_PATHS = 1024;
     static constexpr const char * SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION = "__special_subcolumn_name_for_distinct_paths_calculation";
 
+    /// Prefix character for sub-object subcolumns, e.g. "^`some`.path.path".
+    static constexpr char SUB_OBJECT_SUBCOLUMN_PREFIX = '^';
+    /// Prefix character for combined literal+sub-object subcolumns, e.g. "@`some`.path.path".
+    static constexpr char COMBINED_SUBCOLUMN_PREFIX = '@';
+
     explicit DataTypeObject(
         const SchemaFormat & schema_format_,
         std::unordered_map<String, DataTypePtr> typed_paths_ = {},
@@ -41,6 +45,8 @@ public:
 
     Field getDefault() const override { return Object(); }
 
+    void insertDefaultInto(IColumn & column) const override;
+
     bool isParametric() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
     bool supportsSparseSerialization() const override { return false; }
@@ -56,11 +62,13 @@ public:
     void forEachChild(const ChildCallback &) const override;
 
     bool hasDynamicSubcolumnsData() const override { return true; }
-    std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
+    bool hasDynamicStructure() const override { return true; }
+    std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
 
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     const SchemaFormat & getSchemaFormat() const { return schema_format; }
+    String getSchemaFormatString() const;
     const std::unordered_map<String, DataTypePtr> & getTypedPaths() const { return typed_paths; }
     const std::unordered_set<String> & getPathsToSkip() const { return paths_to_skip; }
     const std::vector<String> & getPathRegexpsToSkip() const { return path_regexps_to_skip; }

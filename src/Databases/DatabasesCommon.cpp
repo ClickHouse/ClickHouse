@@ -8,6 +8,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -20,6 +21,7 @@
 #include <Storages/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -53,7 +55,7 @@ namespace ErrorCodes
 }
 namespace
 {
-void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
+void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescription & virtuals, ContextPtr context)
 {
     /// First validate that the query can be parsed
     const auto serialized_query = query.formatWithSecretsOneLine();
@@ -81,14 +83,14 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
 
     /// Default expressions are only validated in level CREATE, so let's check them now
-    DefaultExpressionsInfo default_expr_info{std::make_shared<ASTExpressionList>()};
+    DefaultExpressionsInfo default_expr_info{make_intrusive<ASTExpressionList>()};
 
     for (const auto & ast : columns.columns->children)
     {
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
         /// There might be some special columns for which `columns_desc.get` would throw, e.g. Nested column when flatten_nested is enabled.
         /// At the time of writing I am not aware of anything else, but my knowledge is limited and new types might be added, so let's be safe.
-        if (!col_decl.default_expression)
+        if (!col_decl.getDefaultExpression())
             continue;
 
         /// If no column description for the name, let's skip the validation of default expressions, but let's log the fact that something went wrong
@@ -101,10 +103,12 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     if (default_expr_info.expr_list)
         validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, columns_desc.getAll(), context);
 
+    constexpr bool escape_index_filenames = true; /// We don't care, we are only doing validation and discarding the result
+    bool is_implicitly_created = false; /// Same
     if (columns.indices)
     {
         for (const auto & child : columns.indices->children)
-            IndexDescription::getIndexFromAST(child, columns_desc, /* is_implicitly_created */ false, context);
+            IndexDescription::getIndexFromAST(child, columns_desc, is_implicitly_created, escape_index_filenames, context);
     }
     if (columns.constraints)
     {
@@ -113,7 +117,7 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     if (columns.projections)
     {
         for (const auto & child : columns.projections->children)
-            ProjectionDescription::getProjectionFromAST(child, columns_desc, context);
+            ProjectionDescription::getProjectionFromAST(child, columns_desc, nullptr, context);
     }
     if (!new_query.storage)
         return;
@@ -122,13 +126,13 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     std::optional<KeyDescription> primary_key;
     /// First get the key description from order by, so if there is no primary key we will use that
     if (storage.order_by)
-        primary_key = KeyDescription::getKeyFromAST(storage.order_by->ptr(), columns_desc, context);
+        primary_key = KeyDescription::getKeyFromAST(storage.order_by->ptr(), columns_desc, virtuals, context);
     if (storage.primary_key)
-        primary_key = KeyDescription::getKeyFromAST(storage.primary_key->ptr(), columns_desc, context);
+        primary_key = KeyDescription::getKeyFromAST(storage.primary_key->ptr(), columns_desc, virtuals, context);
     if (storage.partition_by)
-        KeyDescription::getKeyFromAST(storage.partition_by->ptr(), columns_desc, context);
+        KeyDescription::getKeyFromAST(storage.partition_by->ptr(), columns_desc, virtuals, context);
     if (storage.sample_by)
-        KeyDescription::getKeyFromAST(storage.sample_by->ptr(), columns_desc, context);
+        KeyDescription::getKeyFromAST(storage.sample_by->ptr(), columns_desc, virtuals, context);
     if (storage.ttl_table && primary_key.has_value())
         TTLTableDescription::getTTLForTableFromAST(storage.ttl_table->ptr(), columns_desc, context, *primary_key, true);
 }
@@ -173,13 +177,13 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
 
     if (metadata.sql_security_type)
     {
-        auto new_sql_security = std::make_shared<ASTSQLSecurity>();
+        auto new_sql_security = make_intrusive<ASTSQLSecurity>();
         new_sql_security->type = metadata.sql_security_type;
 
         if (metadata.definer)
-            new_sql_security->definer = std::make_shared<ASTUserNameWithHost>(*metadata.definer);
+            new_sql_security->definer = make_intrusive<ASTUserNameWithHost>(*metadata.definer);
 
-        ast_create_query.sql_security = std::move(new_sql_security);
+        ast_create_query.set(ast_create_query.sql_security, new_sql_security);
     }
 
     /// MaterializedView, Dictionary are types of CREATE query without storage.
@@ -188,7 +192,7 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
         ASTStorage & storage_ast = *ast_create_query.storage;
 
         bool is_extended_storage_def
-            = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.sample_by || storage_ast.settings;
+            = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.unique_key || storage_ast.sample_by || storage_ast.settings;
 
         if (is_extended_storage_def)
         {
@@ -201,12 +205,17 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
             if (metadata.sampling_key.definition_ast)
                 storage_ast.set(storage_ast.sample_by, metadata.sampling_key.definition_ast);
             else if (storage_ast.sample_by != nullptr) /// SAMPLE BY was removed
-                storage_ast.sample_by = nullptr;
+                storage_ast.reset(storage_ast.sample_by);
+
+            if (metadata.unique_key.definition_ast)
+                storage_ast.set(storage_ast.unique_key, metadata.unique_key.definition_ast);
+            else if (storage_ast.unique_key != nullptr) /// UNIQUE KEY was removed
+                storage_ast.reset(storage_ast.unique_key);
 
             if (metadata.table_ttl.definition_ast)
                 storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);
             else if (storage_ast.ttl_table != nullptr) /// TTL was removed
-                storage_ast.ttl_table = nullptr;
+                storage_ast.reset(storage_ast.ttl_table);
 
             if (metadata.settings_changes)
                 storage_ast.set(storage_ast.settings, metadata.settings_changes);
@@ -222,18 +231,18 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     if (metadata.comment.empty())
         ast_create_query.reset(ast_create_query.comment);
     else
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(metadata.comment));
+        ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(metadata.comment));
 
     if (validate_new_create_query)
-        validateCreateQuery(ast_create_query, context);
+        validateCreateQuery(ast_create_query, metadata.virtuals, context);
 }
 
 
 ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary,
-    uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error)
+    uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error, ContextPtr context)
 {
     auto table_id = storage->getStorageID();
-    auto metadata_ptr = storage->getInMemoryMetadataPtr();
+    auto metadata_ptr = storage->getInMemoryMetadataPtr(context, false);
     if (metadata_ptr == nullptr)
     {
         if (throw_on_error)
@@ -242,7 +251,7 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
         return nullptr;
     }
 
-    auto create_table_query = std::make_shared<ASTCreateQuery>();
+    auto create_table_query = make_intrusive<ASTCreateQuery>();
     create_table_query->attach = false;
     create_table_query->setTable(table_id.table_name);
     create_table_query->setDatabase(table_id.database_name);
@@ -250,8 +259,8 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
 
     /// setup create table query columns info.
     {
-        auto ast_columns_list = std::make_shared<ASTColumns>();
-        auto ast_expression_list = std::make_shared<ASTExpressionList>();
+        auto ast_columns_list = make_intrusive<ASTColumns>();
+        auto ast_expression_list = make_intrusive<ASTExpressionList>();
         NamesAndTypesList columns;
         if (only_ordinary)
             columns = metadata_ptr->columns.getOrdinary();
@@ -259,7 +268,7 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
             columns = metadata_ptr->columns.getAll();
         for (const auto & column_name_and_type: columns)
         {
-            const auto ast_column_declaration = std::make_shared<ASTColumnDeclaration>();
+            const auto ast_column_declaration = make_intrusive<ASTColumnDeclaration>();
             ast_column_declaration->name = column_name_and_type.name;
             /// parser typename
             {
@@ -278,12 +287,12 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
                                         backQuote(table_id.database_name), backQuote(table_id.table_name));
                     return nullptr;
                 }
-                ast_column_declaration->type = ast_type;
+                ast_column_declaration->setType(std::move(ast_type));
 
                 if (auto column_default = metadata_ptr->columns.getDefault(column_name_and_type.name))
                 {
-                    ast_column_declaration->default_specifier = toString(column_default->kind);
-                    ast_column_declaration->default_expression = column_default->expression;
+                    ast_column_declaration->default_specifier = toColumnDefaultSpecifier(column_default->kind);
+                    ast_column_declaration->setDefaultExpression(column_default->expression->clone());
                 }
             }
             ast_expression_list->children.emplace_back(ast_column_declaration);
@@ -309,10 +318,10 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
 
     /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
     if (!query.isView())
-        query.select = nullptr;
+        query.reset(query.select);
 
-    query.format_ast = nullptr;
-    query.out_file = nullptr;
+    query.reset(query.format_ast);
+    query.reset(query.out_file);
 }
 
 String readMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path)
@@ -341,6 +350,7 @@ void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & com
     if (!command.comment)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to obtain database comment from query");
 
+    auto component_guard = Coordination::setCurrentComponent("DatabaseWithAltersOnDiskBase::alterDatabaseComment");
     std::lock_guard lock{mutex};
 
     const String old_comment = comment;

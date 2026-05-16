@@ -35,6 +35,9 @@
   * But in this test, there was something similar to the old scenario of using hash tables in the aggregation.
   */
 
+namespace
+{
+
 struct AlternativeHash
 {
     size_t operator() (UInt64 x) const
@@ -62,8 +65,9 @@ struct CRC32HashTest
 
 #endif
 
+}
 
-int main(int argc, char ** argv)
+int mainEntryExampleHashMap(int argc, char ** argv)
 {
     using namespace DB;
 
@@ -120,7 +124,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "Vector. Size: " << n
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 
@@ -147,7 +151,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "HashMap. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
             << ", collisions: " << map.getCollisions()
 #endif
@@ -178,7 +182,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "HashMap, AlternativeHash. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
             << ", collisions: " << map.getCollisions()
 #endif
@@ -210,7 +214,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "HashMap, CRC32Hash. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
             << ", collisions: " << map.getCollisions()
 #endif
@@ -234,7 +238,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "std::unordered_map. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 
@@ -255,7 +259,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "google::dense_hash_map. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 
@@ -275,7 +279,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "google::sparse_hash_map. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 

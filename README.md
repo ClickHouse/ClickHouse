@@ -35,7 +35,7 @@ curl https://clickhouse.com/ | sh
 
 ## Monthly Release & Community Call
 
-ClickHouse release 25.12, 2025-12-18. [Presentation](https://presentations.clickhouse.com/2025-release-25.12/), [Video](https://www.youtube.com/watch?v=UdxLygnjsRY)
+Join us for the [ClickHouse **26.2** Release Call](https://clickhouse.com/company/events/v26-2-community-release-call) on February 26, 2026.
 
 Watch all release presentations and videos at [ClickHouse Theater](https://presentations.clickhouse.com/) and [YouTube Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jAlSy1JxyP8zluvXaN3nxU).
 
@@ -47,23 +47,24 @@ Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com.
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [Tel Aviv Meetup](https://www.meetup.com/clickhouse-meetup-israel/events/311868191) - December 29, 2025
-* [Iceberg Meetup Menlo Park](https://luma.com/abggijbh) - January 21st, 2026
-* [Data & AI Paris Meetup](https://luma.com/3szhmv9h) - January 22nd, 2026
-* [Iceberg Meetup New York](https://luma.com/ifxnj82q) - January 23rd, 2026
-* [Iceberg Meetup Brussels](https://luma.com/yx3lhqu9) - January 30th, 2026
+* [Boston Meetup](https://luma.com/0f3asaol) - May 6th, 2026
+* [ClickHouse + Cast AI Meetup (Singapore)](https://luma.com/awssummitsg26party) - May 6th, 2026
+* [Long Beach Pycon Party](https://luma.com/hs289p7w) - May 15th, 2026
+* [Agentic AI Unplugged: Bengaluru Edition](https://luma.com/AgenticAI-BLR2026) - May 15th, 2026
+* [Chicago Meetup](https://luma.com/c5evgnbc) - May 19th, 2026
+* [AI Demo Night NY](https://luma.com/zi2360cm) - May 21st, 2026
+* [Toronto Meetup](https://luma.com/d5sytpvo) - June 3rd, 2026
 
 Recent meetups
-* [Tokyo Meetup](https://www.meetup.com/clickhouse-tokyo-user-group/events/311974739/) - December 15, 2025
-* [Jakarta Meetup](https://www.meetup.com/clickhouse-indonesia-user-group/events/311988089/) - December 9, 2025
-* [San Francisco Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/312075592) - December 8, 2025
-* [New York Meetup](https://www.meetup.com/clickhouse-new-york-user-group/events/312080179/) - December 8, 2025
-* [Warsaw Meetup](https://www.meetup.com/clickhouse-poland-user-group/events/311309076) - November 26, 2025
-* [Bangkok Meetup](https://www.meetup.com/clickhouse-thailand-meetup-group/events/311852739/) - November 25, 2025
-* [Mumbai Meetup](https://www.meetup.com/clickhouse-mumbai-user-group/events/311852373/) - November 22, 2025
-* [Seoul Meetup](https://www.meetup.com/clickhouse-seoul-user-group/events/311633023/) - November 18, 2025
-* [Bogota Meetup](https://www.meetup.com/clickhouse-latinoamerica/events/311069048) - November 13, 2025
-* [Stockholm Meetup](https://www.meetup.com/clickhouse-stockholm-user-group/events/311630931/) - Nov 3, 2025
+* [Taipei Open Source Night](https://luma.com/kt3xtz3a) - April 16th, 2026
+* [San Jose Meetup](https://luma.com/f3bdyaup) - April 16th, 2026
+* [AI Demo Night SF](https://luma.com/jyzlu78v) - April 9th, 2026
+* [Seattle Observability Meetup](https://luma.com/vph3jbkm) - March 26th, 2026
+* [Milan Meetup](https://www.meetup.com/clickhouse-italy-user-group/events/313586581/) - March 26th, 2026
+* [RSA Iceberg Meetup SF](https://luma.com/rsa-iceberg) - March 24th, 2026 
+
+
+
 
 
 ## Recent Recordings

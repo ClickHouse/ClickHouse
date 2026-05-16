@@ -44,7 +44,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_statistics_optimize;
     extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsUInt64 query_plan_max_step_description_length;
 }
@@ -262,6 +261,7 @@ struct QueryPlanSettings
             {"description", query_plan_options.description},
             {"actions", query_plan_options.actions},
             {"indexes", query_plan_options.indexes},
+            {"indices", query_plan_options.indexes},
             {"projections", query_plan_options.projections},
             {"optimize", optimize},
             {"json", json},
@@ -270,6 +270,9 @@ struct QueryPlanSettings
             {"keep_logical_steps", keep_logical_steps},
             {"input_headers", query_plan_options.input_headers},
             {"column_structure", query_plan_options.column_structure},
+            {"compact", query_plan_options.compact},
+            {"pretty", query_plan_options.pretty},
+
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -288,6 +291,7 @@ struct QueryPipelineSettings
             {"header", query_pipeline_options.header},
             {"graph", graph},
             {"compact", compact},
+            {"distributed", query_pipeline_options.distributed},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -546,7 +550,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         {
             if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "EXPLAIN QUERY TREE is only supported with a new analyzer. SET enable_analyzer = 1.");
+                    "EXPLAIN QUERY TREE is only supported with the analyzer. SET enable_analyzer = 1.");
 
             auto settings = checkAndGetSettings<QueryTreeSettings>(ast.getSettings());
             if (!settings.dump_tree && !settings.dump_ast)
@@ -642,6 +646,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
                 if (settings.graph)
                 {
+                    if (settings.query_pipeline_options.distributed)
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'distributed' is not supported with option 'graph'");
+
                     /// Pipe holds QueryPlan, should not go out-of-scope
                     QueryPlanResourceHolder resources;
                     auto pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline), resources);
@@ -714,7 +721,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "EXPLAIN TABLE OVERRIDE is not supported for the {}() table function", table_function->name);
             }
             auto storage = query_context->getQueryContext()->executeTableFunction(ast.getTableFunction());
-            auto metadata_snapshot = storage->getInMemoryMetadata();
+            StorageInMemoryMetadata metadata_snapshot = *storage->getInMemoryMetadataPtr(query_context, false);
             TableOverrideAnalyzer::Result override_info;
             TableOverrideAnalyzer override_analyzer(ast.getTableOverride());
             override_analyzer.analyze(metadata_snapshot, override_info);

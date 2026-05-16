@@ -12,7 +12,6 @@
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 
-#include <Poco/String.h>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
@@ -53,6 +52,20 @@ private:
                     (*algos_map)[primary_name].insert(alias);
             },
             &algorithms_map);
+
+        /// Filter out algorithms that cannot actually be fetched
+        /// (e.g., non-approved algorithms when running in FIPS mode)
+        for (auto it = algorithms_map.begin(); it != algorithms_map.end();)
+        {
+            EVP_MD * md = EVP_MD_fetch(nullptr, it->first.c_str(), nullptr);
+            if (md == nullptr)
+                it = algorithms_map.erase(it);
+            else
+            {
+                EVP_MD_free(md);
+                ++it;
+            }
+        }
 
         grouped_algorithms = std::move(algorithms_map);
     }

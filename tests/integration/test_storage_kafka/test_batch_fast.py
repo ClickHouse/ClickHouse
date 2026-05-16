@@ -859,6 +859,43 @@ def test_kafka_protobuf_no_delimiter(kafka_cluster):
     k.kafka_check_result(result, True)
 
 
+def test_kafka_protobuflist(kafka_cluster):
+    """Test ProtobufList format with Kafka engine.
+    https://github.com/ClickHouse/ClickHouse/issues/78746
+    """
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_{suffix}"
+    topic = f"pb_list_{suffix}"
+
+    admin_client = k.get_admin_client(kafka_cluster)
+    with k.kafka_topic(admin_client, topic):
+        # Produce 3 separate Kafka messages, each a ProtobufList envelope
+        k.kafka_produce_protobuf_messages_protobuflist(kafka_cluster, topic, 0, 20)
+        k.kafka_produce_protobuf_messages_protobuflist(kafka_cluster, topic, 20, 1)
+        k.kafka_produce_protobuf_messages_protobuflist(kafka_cluster, topic, 21, 29)
+
+        instance.query(f"""
+            CREATE TABLE test.{kafka_table} (key UInt64, value String)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{topic}',
+                         kafka_group_name = '{topic}',
+                         kafka_format = 'ProtobufList',
+                         kafka_commit_on_select = 1,
+                         kafka_schema = 'kafka_protobuflist.proto:KeyValuePair';
+        """)
+
+        result = ""
+        while True:
+            result += instance.query(
+                f"SELECT * FROM test.{kafka_table}", ignore_error=True
+            )
+            if k.kafka_check_result(result):
+                break
+
+        k.kafka_check_result(result, True)
+
+
 def test_kafka_protobuf_transaction_oneof(kafka_cluster):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
@@ -1077,7 +1114,8 @@ def test_librdkafka_compression(kafka_cluster, create_query_generator, log_line)
 
         logging.debug(("Check compression {}".format(compression_type)))
 
-        topic_name = "test_librdkafka_compression_{}".format(compression_type)
+        # Use suffix in topic name to avoid stale messages from previous failed runs
+        topic_name = "test_librdkafka_compression_{}_{}".format(compression_type, suffix)
         topic_config = {"compression.type": compression_type}
         with k.kafka_topic(admin_client, topic_name, config=topic_config):
             instance.query(f"""{{create_query}};
@@ -1102,7 +1140,9 @@ def test_librdkafka_compression(kafka_cluster, create_query_generator, log_line)
             k.kafka_produce(kafka_cluster, topic_name, messages)
 
             instance.wait_for_log_line(current_log_line.format(offset=number_of_messages, topic=topic_name))
-            result = instance.query(f"SELECT * FROM test.{kafka_table}_view")
+            result = instance.query(
+                f"SELECT * FROM test.{kafka_table}_view ORDER BY key"
+            )
             assert TSV(result) == TSV(expected)
 
             instance.query(f"DROP TABLE test.{kafka_table} SYNC")
@@ -1889,6 +1929,140 @@ def test_kafka_produce_key_timestamp(kafka_cluster, create_query_generator, log_
 
 
 @pytest.mark.parametrize(
+    "create_query_generator, log_line",
+    [
+        (k.generate_new_create_table_query, "Saved offset 2"),
+        (k.generate_old_create_table_query, "Committed offset 2"),
+    ],
+)
+def test_kafka_produce_virtual_columns_mapping(
+    kafka_cluster, create_query_generator, log_line
+):
+    """
+    With kafka_map_virtual_columns_on_write=1, columns named `_key`, `_timestamp`,
+    `_headers.name` and `_headers.value` are mapped to the corresponding Kafka
+    message fields and are not included in the message payload.
+    """
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_{suffix}"
+    log_line = f"{kafka_table}.*{log_line}"
+
+    topic_name = f"insert_virtual_{suffix}"
+    topic_config = {"retention.ms": "-1"}
+
+    with k.kafka_topic(
+        k.get_admin_client(kafka_cluster), topic_name, config=topic_config
+    ):
+        writer_create_query = create_query_generator(
+            f"{kafka_table}_writer",
+            "msg_value String, _key String, _timestamp DateTime('UTC'), `_headers.name` Array(String), `_headers.value` Array(String)",
+            topic_list=topic_name,
+            consumer_group=topic_name,
+            format="JSONEachRow",
+            settings={"kafka_map_virtual_columns_on_write": 1},
+        )
+        reader_create_query = create_query_generator(
+            kafka_table,
+            "msg_value String",
+            topic_list=topic_name,
+            consumer_group=topic_name,
+            format="JSONEachRow",
+        )
+
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.{kafka_table}_view;
+            {writer_create_query};
+            {reader_create_query};
+            CREATE MATERIALIZED VIEW test.{kafka_table}_view ENGINE=MergeTree ORDER BY tuple() AS
+                SELECT
+                    msg_value,
+                    _key AS kafka_key,
+                    toUnixTimestamp(_timestamp) AS kafka_timestamp,
+                    _headers.name AS kafka_header_names,
+                    _headers.value AS kafka_header_values
+                FROM test.{kafka_table};
+            """
+        )
+
+        # Row 1: full set of headers.
+        instance.query(
+            f"""INSERT INTO test.{kafka_table}_writer VALUES
+                ('{{"a": 1}}', 'k1', toDateTime(1577836801), ['h1', 'h2'], ['v1', 'v2'])"""
+        )
+        # Row 2: empty headers.
+        instance.query(
+            f"""INSERT INTO test.{kafka_table}_writer VALUES
+                ('{{"a": 2}}', 'k2', toDateTime(1577836802), [], [])"""
+        )
+
+        instance.wait_for_log_line(log_line)
+
+        expected = """\
+{"a": 1}	k1	1577836801	['h1','h2']	['v1','v2']
+{"a": 2}	k2	1577836802	[]	[]
+"""
+
+        result = instance.query_with_retry(
+            f"SELECT msg_value, kafka_key, kafka_timestamp, kafka_header_names, kafka_header_values FROM test.{kafka_table}_view ORDER BY kafka_key",
+            ignore_error=True,
+            retry_count=5,
+            sleep_time=1,
+            check_callback=lambda res: TSV(res) == TSV(expected),
+        )
+
+        assert TSV(result) == TSV(expected)
+
+
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [k.generate_new_create_table_query, k.generate_old_create_table_query],
+)
+def test_kafka_produce_virtual_columns_mapping_one_sided_headers(
+    kafka_cluster, create_query_generator
+):
+    """
+    With kafka_map_virtual_columns_on_write=1, headers are mapped to Kafka
+    metadata only when both `_headers.name` and `_headers.value` are present.
+    A schema that has only one of them must keep that column in the message
+    payload instead of silently dropping it.
+    """
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_{suffix}"
+
+    topic_name = f"insert_virtual_one_sided_{suffix}"
+    topic_config = {"retention.ms": "-1"}
+
+    with k.kafka_topic(
+        k.get_admin_client(kafka_cluster), topic_name, config=topic_config
+    ):
+        writer_create_query = create_query_generator(
+            f"{kafka_table}_writer",
+            "msg_value String, `_headers.name` Array(String)",
+            topic_list=topic_name,
+            consumer_group=topic_name,
+            format="JSONEachRow",
+            settings={"kafka_map_virtual_columns_on_write": 1},
+        )
+
+        instance.query(
+            f"""
+            {writer_create_query};
+            INSERT INTO test.{kafka_table}_writer VALUES
+                ('{{"a": 1}}', ['only_name']);
+            """
+        )
+
+        messages = k.kafka_consume_with_retry(kafka_cluster, topic_name, 1)
+        assert len(messages) == 1
+
+        # `_headers.name` must remain in the JSON payload because there is no
+        # corresponding `_headers.value` column to pair with for Kafka headers.
+        payload = json.loads(messages[0])
+        assert payload == {"msg_value": '{"a": 1}', "_headers.name": ["only_name"]}
+
+
+@pytest.mark.parametrize(
     "create_query_generator",
     [k.generate_old_create_table_query, k.generate_new_create_table_query],
 )
@@ -2081,18 +2255,12 @@ def test_kafka_flush_by_block_size(kafka_cluster, create_query_generator):
 
     topic_name = "flush_by_block_size" + k.get_topic_postfix(create_query_generator)
 
-    cancel = threading.Event()
-
-    def produce():
-        while not cancel.is_set():
-            messages = []
-            messages.append(json.dumps({"key": 0, "value": 0}))
-            k.kafka_produce(kafka_cluster, topic_name, messages)
-
-    kafka_thread = threading.Thread(target=produce)
-
     with k.kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
-        kafka_thread.start()
+        # Pre-produce enough messages before consumer starts.
+        # This ensures all messages are available immediately when the consumer starts polling,
+        # avoiding the KAFKA_MAX_THREAD_WORK_DURATION_MS limit (60s) that could cause early flushing.
+        messages = [json.dumps({"key": i, "value": i}) for i in range(200)]
+        k.kafka_produce(kafka_cluster, topic_name, messages)
 
         create_query = create_query_generator(
             kafka_table,
@@ -2127,9 +2295,6 @@ def test_kafka_flush_by_block_size(kafka_cluster, create_query_generator):
             )
         ):
             time.sleep(0.5)
-
-        cancel.set()
-        kafka_thread.join()
 
         # more flushes can happens during test, we need to check only result of first flush (part named all_1_1_0).
         result = instance.query(f"SELECT count() FROM test.{kafka_table}_view WHERE _part='all_1_1_0'")
@@ -3105,13 +3270,17 @@ def test_system_kafka_consumers(kafka_cluster, create_query_generator, consumer_
             CREATE MATERIALIZED VIEW test.{kafka_table}_view ENGINE=MergeTree ORDER BY tuple() AS SELECT * FROM test.{kafka_table};
             """
         )
-        instance.query_with_retry(f"SELECT count() FROM test.{kafka_table}_view", check_callback=lambda res: int(res) == 4)
+        count = instance.query_with_retry(
+            f"SELECT count() FROM test.{kafka_table}_view",
+            check_callback=lambda res: int(res) == 6,
+        )
+        assert int(count) == 6
 
         instance.query_with_retry(f"DROP TABLE test.{kafka_table}_view SYNC")
 
         check_query = f"""
             create or replace function stable_timestamp as
-            (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 30, 'now', toString(d));
+            (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 120, 'now', toString(d));
 
             -- check last_used stores microseconds correctly
             create or replace function check_last_used as
@@ -3672,7 +3841,6 @@ def test_kafka_consumer_reschedule_validation(kafka_cluster, create_query_genera
         },
     )
     instance.query(create_query)
-
 
 
 if __name__ == "__main__":

@@ -23,8 +23,7 @@ namespace ProfileEvents
     using Count = size_t;
     using Increment = Int64;
 
-    /// Avoid false sharing when multiple threads increment different counters close to each other.
-    struct alignas(64) Counter : public std::atomic<Count>
+    struct Counter : public std::atomic<Count>
     {
         using std::atomic<Count>::atomic;
         /// When we should send it to system.trace_log
@@ -80,8 +79,9 @@ namespace ProfileEvents
         /// By default, any instance have to increment global counters
         explicit Counters(VariableContext level_ = VariableContext::Thread, Counters * parent_ = &global_counters);
 
-        /// Global level static initializer
-        explicit Counters(Counter * allocated_counters) noexcept
+        /// Global level static initializer (constexpr to enable constant initialization
+        /// before any dynamic initializer can allocate memory and call ProfileEvents::increment)
+        constexpr explicit Counters(Counter * allocated_counters) noexcept
             : counters(allocated_counters), parent(nullptr), level(VariableContext::Global) {}
 
         Counters(Counters && src) noexcept;
@@ -129,6 +129,21 @@ namespace ProfileEvents
         Counters * getParent()
         {
             return parent.load(std::memory_order_relaxed);
+        }
+
+        /// Set parent (thread unsafe)
+        void setUserCounters(Counters * user)
+        {
+            auto * current_val = this;
+            auto * parent_val = this->parent.load(std::memory_order_relaxed);
+
+            while (parent_val != nullptr && parent_val->level != VariableContext::Global && parent_val->level != VariableContext::User)
+            {
+                current_val = parent_val;
+                parent_val = current_val->parent.load(std::memory_order_relaxed);
+            }
+
+            current_val->parent.store(user, std::memory_order_relaxed);
         }
 
         /// Set parent (thread unsafe)

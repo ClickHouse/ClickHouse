@@ -147,8 +147,8 @@ private:
             Float64 q1;
             Float64 q2;
 
-            Float64 p1 = len * min_percentile;
-            if (p1 == static_cast<Int64>(p1))
+            Float64 p1 = static_cast<Float64>(len) * min_percentile;
+            if (p1 == static_cast<Float64>(static_cast<Int64>(p1)))
             {
                 size_t index = static_cast<size_t>(p1) - 1;
                 q1 = (src_sorted[index] + src_sorted[index + 1]) / 2;
@@ -159,8 +159,8 @@ private:
                 q1 = src_sorted[index];
             }
 
-            Float64 p2 = len * max_percentile;
-            if (p2 == static_cast<Int64>(p2))
+            Float64 p2 = static_cast<Float64>(len) * max_percentile;
+            if (p2 == static_cast<Float64>(static_cast<Int64>(p2)))
             {
                 size_t index = static_cast<size_t>(p2) - 1;
                 q2 = (src_sorted[index] + src_sorted[index + 1]) / 2;
@@ -178,7 +178,7 @@ private:
 
             for (ColumnArray::Offset j = prev_src_offset; j < src_offset; ++j)
             {
-                auto score = std::min((src_vec[j] - lower_fence), 0.0) + std::max((src_vec[j] - upper_fence), 0.0);
+                auto score = std::min((static_cast<Float64>(src_vec[j]) - lower_fence), 0.0) + std::max((static_cast<Float64>(src_vec[j]) - upper_fence), 0.0);
                 outlier_data.push_back(score);
             }
             res_offsets_data.push_back(outlier_data.size());

@@ -6,9 +6,12 @@
 
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <Common/ObjectStorageKeyGenerator.h>
+#include <Common/Stopwatch.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/BlobStorageLog.h>
 
 
 #if USE_HDFS
@@ -78,13 +81,24 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLIN
 {
     initializeHDFSFS();
     auto path = extractObjectKeyFromURL(object);
+
+    BlobStorageLogWriterPtr blob_storage_log;
+    if (read_settings.enable_blob_storage_log_for_read_operations)
+    {
+        blob_storage_log = BlobStorageLogWriter::create(disk_name);
+        if (blob_storage_log)
+            blob_storage_log->local_path = object.local_path;
+    }
+
     return std::make_unique<ReadBufferFromHDFS>(
         fs::path(url_without_path) / "",
         fs::path(data_directory) / path,
         config,
         patchSettings(read_settings),
         /* read_until_position */0,
-        read_settings.remote_read_buffer_use_external_buffer);
+        read_settings.remote_read_buffer_use_external_buffer,
+        object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt,
+        std::move(blob_storage_log));
 }
 
 std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOLINT
@@ -101,6 +115,11 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
             "HDFS API doesn't support custom attributes/metadata for stored objects");
 
     auto path = extractObjectKeyFromURL(object);
+
+    auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
+    if (blob_storage_log)
+        blob_storage_log->local_path = object.local_path;
+
     /// Single O_WRONLY in libhdfs adds O_TRUNC
     return std::make_unique<WriteBufferFromHDFS>(
         url_without_path,
@@ -109,7 +128,8 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
         settings->replication,
         patchSettings(write_settings),
         buf_size,
-        mode == WriteMode::Rewrite ? O_WRONLY : O_WRONLY | O_APPEND);
+        mode == WriteMode::Rewrite ? O_WRONLY : O_WRONLY | O_APPEND,
+        std::move(blob_storage_log));
 }
 
 
@@ -121,11 +141,35 @@ void HDFSObjectStorage::removeObject(const StoredObject & object)
     if (path.starts_with(url_without_path))
         path = path.substr(url_without_path.size());
 
+    auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
+
+    Stopwatch watch;
+    Int32 error_code = 0;
+    String error_message;
+
     /// Add path from root to file name
     int res = wrapErr<int>(hdfsDelete, hdfs_fs.get(), path.c_str(), 0);
     if (res == -1)
-        throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: {}", path);
+    {
+        error_code = errno;
+        error_message = hdfsGetLastError();
+    }
 
+    auto elapsed = watch.elapsedMicroseconds();
+
+    if (blob_storage_log)
+        blob_storage_log->addEvent(
+            BlobStorageLogElement::EventType::Delete,
+            /* bucket */ url_without_path,
+            /* remote_path */ path,
+            /* local_path */ object.local_path,
+            /* data_size */ object.bytes_size,
+            elapsed,
+            error_code,
+            error_message);
+
+    if (res == -1)
+        throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: {}", path);
 }
 
 void HDFSObjectStorage::removeObjects(const StoredObjects & objects)
@@ -218,11 +262,12 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 String(file_path),
                 ObjectMetadata{
-                    static_cast<uint64_t>(ls.file_info[i].mSize),
-                    Poco::Timestamp::fromEpochTime(ls.file_info[i].mLastMod),
-                    "",
-                    {},
-                    {}}));
+                    .size_bytes = static_cast<uint64_t>(ls.file_info[i].mSize),
+                    .last_modified = Poco::Timestamp::fromEpochTime(ls.file_info[i].mLastMod),
+                    .etag = {},
+                    .tags = {},
+                    .attributes = {},
+                }));
         }
 
         if (max_keys && children.size() >= max_keys)

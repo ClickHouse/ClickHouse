@@ -188,7 +188,8 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
     {{"clickhouse", Dialect::clickhouse},
      {"kusto", Dialect::kusto},
      {"prql", Dialect::prql},
-     {"promql", Dialect::promql}})
+     {"promql", Dialect::promql},
+     {"polyglot", Dialect::polyglot}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
@@ -271,6 +272,20 @@ IMPLEMENT_SETTING_ENUM(ObjectStorageQueueAction, ErrorCodes::BAD_ARGUMENTS,
                         {"move", ObjectStorageQueueAction::MOVE},
                         {"tag", ObjectStorageQueueAction::TAG}})
 
+IMPLEMENT_SETTING_ENUM(ObjectStorageQueuePartitioningMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"none", ObjectStorageQueuePartitioningMode::NONE},
+     {"NONE", ObjectStorageQueuePartitioningMode::NONE},
+     {"hive", ObjectStorageQueuePartitioningMode::HIVE},
+     {"HIVE", ObjectStorageQueuePartitioningMode::HIVE},
+     {"regex", ObjectStorageQueuePartitioningMode::REGEX},
+     {"REGEX", ObjectStorageQueuePartitioningMode::REGEX}})
+
+IMPLEMENT_SETTING_ENUM(ObjectStorageQueueBucketingMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"path", ObjectStorageQueueBucketingMode::PATH},
+     {"PATH", ObjectStorageQueueBucketingMode::PATH},
+     {"partition", ObjectStorageQueueBucketingMode::PARTITION},
+     {"PARTITION", ObjectStorageQueueBucketingMode::PARTITION}})
+
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
      {"log", ExternalCommandStderrReaction::LOG},
@@ -286,6 +301,11 @@ IMPLEMENT_SETTING_ENUM(DateTimeOverflowBehavior, ErrorCodes::BAD_ARGUMENTS,
     {{"throw", FormatSettings::DateTimeOverflowBehavior::Throw},
      {"ignore", FormatSettings::DateTimeOverflowBehavior::Ignore},
      {"saturate", FormatSettings::DateTimeOverflowBehavior::Saturate}})
+
+IMPLEMENT_SETTING_ENUM(InputFormatColumnMatchingCaseSensitivity, ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", FormatSettings::InputFormatColumnMatchingCaseSensitivity::AUTO},
+     {"ignore_case", FormatSettings::InputFormatColumnMatchingCaseSensitivity::IGNORE_CASE},
+     {"match_case", FormatSettings::InputFormatColumnMatchingCaseSensitivity::MATCH_CASE}})
 
 IMPLEMENT_SETTING_ENUM(SQLSecurityType, ErrorCodes::BAD_ARGUMENTS,
     {{"DEFINER", SQLSecurityType::DEFINER},
@@ -316,7 +336,8 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"Simple", MergeSelectorAlgorithm::SIMPLE},
      {"StochasticSimple", MergeSelectorAlgorithm::STOCHASTIC_SIMPLE},
-     {"Trivial", MergeSelectorAlgorithm::TRIVIAL}})
+     {"Trivial", MergeSelectorAlgorithm::TRIVIAL},
+     {"Manual", MergeSelectorAlgorithm::MANUAL}})
 
 IMPLEMENT_SETTING_ENUM(
     DatabaseDataLakeCatalogType,
@@ -325,7 +346,9 @@ IMPLEMENT_SETTING_ENUM(
      {"unity", DatabaseDataLakeCatalogType::UNITY},
      {"glue", DatabaseDataLakeCatalogType::GLUE},
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE},
-     {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE}})
+     {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
+     {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
+     {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
@@ -333,7 +356,11 @@ IMPLEMENT_SETTING_ENUM(
     {{"lru", FileCachePolicy::LRU},
      {"LRU", FileCachePolicy::LRU},
      {"slru", FileCachePolicy::SLRU},
-     {"SLRU", FileCachePolicy::SLRU}})
+     {"SLRU", FileCachePolicy::SLRU},
+     {"lru_overcommit", FileCachePolicy::LRU_OVERCOMMIT},
+     {"LRU_OVERCOMMIT", FileCachePolicy::LRU_OVERCOMMIT},
+     {"slru_overcommit", FileCachePolicy::SLRU_OVERCOMMIT},
+     {"SLRU_OVERCOMMIT", FileCachePolicy::SLRU_OVERCOMMIT}})
 
 IMPLEMENT_SETTING_ENUM(
     VectorSearchFilterStrategy,
@@ -372,6 +399,19 @@ IMPLEMENT_SETTING_ENUM(
     {{"v1", MergeTreeObjectSerializationVersion::V1},
      {"v2", MergeTreeObjectSerializationVersion::V2},
      {"v3", MergeTreeObjectSerializationVersion::V3}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeMapSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"basic", MergeTreeMapSerializationVersion::BASIC},
+     {"with_buckets", MergeTreeMapSerializationVersion::WITH_BUCKETS}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeMapBucketsStrategy,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"constant", MergeTreeMapBucketsStrategy::CONSTANT},
+     {"sqrt", MergeTreeMapBucketsStrategy::SQRT},
+     {"linear", MergeTreeMapBucketsStrategy::LINEAR}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeObjectSharedDataSerializationVersion,
@@ -419,5 +459,31 @@ IMPLEMENT_SETTING_ENUM(
 IMPLEMENT_SETTING_ENUM(ArrowFlightDescriptorType, ErrorCodes::BAD_ARGUMENTS,
     {{"path", ArrowFlightDescriptorType::Path},
      {"command", ArrowFlightDescriptorType::Command}})
-}
 
+IMPLEMENT_SETTING_ENUM(DeduplicateInsertSelectMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"enable_when_possible", DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE},
+     {"force_enable", DeduplicateInsertSelectMode::FORCE_ENABLE},
+     {"disable", DeduplicateInsertSelectMode::DISABLE},
+     {"enable_even_for_bad_queries", DeduplicateInsertSelectMode::ENABLE_EVEN_FOR_BAD_QUERIES}})
+
+IMPLEMENT_SETTING_ENUM(DeduplicateInsertMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"backward_compatible_choice", DeduplicateInsertMode::BACKWARD_COMPATIBLE_CHOICE},
+     {"enable", DeduplicateInsertMode::ENABLE},
+     {"disable", DeduplicateInsertMode::DISABLE}})
+
+IMPLEMENT_SETTING_ENUM(InsertDeduplicationVersions, ErrorCodes::BAD_ARGUMENTS,
+    {{"old_separate_hashes", InsertDeduplicationVersions::OLD_SEPARATE_HASHES},
+     {"compatible_double_hashes", InsertDeduplicationVersions::COMPATIBLE_DOUBLE_HASHES},
+     {"new_unified_hash", InsertDeduplicationVersions::NEW_UNIFIED_HASHES}})
+
+IMPLEMENT_SETTING_ENUM(JemallocProfileFormat, ErrorCodes::BAD_ARGUMENTS,
+    {{"raw", JemallocProfileFormat::Raw},
+     {"symbolized", JemallocProfileFormat::Symbolized},
+     {"collapsed", JemallocProfileFormat::Collapsed}})
+
+IMPLEMENT_SETTING_ENUM(S3UriStyle, ErrorCodes::BAD_ARGUMENTS,
+    {{"auto", S3UriStyle::AUTO},
+     {"path", S3UriStyle::PATH},
+     {"virtual_hosted", S3UriStyle::VIRTUAL_HOSTED}})
+
+}

@@ -67,6 +67,7 @@ struct JoinSettings
     UInt64 min_joined_block_size_rows;
     UInt64 min_joined_block_size_bytes;
     bool joined_block_split_single_row;
+    bool parallel_non_joined_rows_processing;
 
     OverflowMode join_overflow_mode;
     bool join_any_take_last_row;
@@ -83,6 +84,10 @@ struct JoinSettings
     /* Grace hash join settings */
     UInt64 grace_hash_join_initial_buckets;
     UInt64 grace_hash_join_max_buckets;
+
+    /* Spilling hash join settings */
+    UInt64 max_bytes_before_external_join = 0;
+    double max_bytes_ratio_before_external_join = 0;
 
     /* Full sorting merge join settings */
     UInt64 max_rows_in_set_to_optimize_join;
@@ -101,11 +106,26 @@ struct JoinSettings
 
     bool use_join_disjunctions_push_down;
     bool enable_lazy_columns_replication;
+    bool use_hash_table_stats_for_join_reordering;
+
+    bool enable_join_fixed_hash_table_conversion;
 
     explicit JoinSettings(const Settings & query_settings);
     explicit JoinSettings(const QueryPlanSerializationSettings & settings);
 
     void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
+
+    /// Returns the effective threshold for converting a hash join into a grace hash join (spilling to disk),
+    /// combining the absolute `max_bytes_before_external_join` and the ratio `max_bytes_ratio_before_external_join`
+    /// (the smaller of the two applies). Returns 0 if neither is set, meaning no automatic spilling.
+    static UInt64 getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join);
+
+    /// Combines the stored raw absolute and ratio settings using local memory limits.
+    /// Recomputed on every executor so distributed queries pick up per-node memory.
+    UInt64 getEffectiveMaxBytesBeforeExternalJoin() const
+    {
+        return getMaxBytesBeforeExternalJoin(max_bytes_before_external_join, max_bytes_ratio_before_external_join);
+    }
 
     bool operator==(const JoinSettings & other) const = default;
 };

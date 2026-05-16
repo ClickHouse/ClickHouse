@@ -23,6 +23,7 @@
 #include <Storages/IStorage.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/config_version.h>
@@ -459,7 +460,7 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     const auto session_context = session->sessionContext();
     String database = session_context->getCurrentDatabase();
     StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, session_context);
-    auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr();
+    auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr(session_context, false);
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
         ColumnDefinition column_definition(
@@ -532,7 +533,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         socket().setReceiveTimeout(settings[Setting::receive_timeout]);
         socket().setSendTimeout(settings[Setting::send_timeout]);
 
-        CurrentThread::QueryScope query_scope{query_context};
+        QueryScope query_scope = QueryScope::create(query_context);
 
         std::atomic<size_t> affected_rows {0};
         auto prev = query_context->getProgressCallback();

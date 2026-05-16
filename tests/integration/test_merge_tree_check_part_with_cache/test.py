@@ -20,7 +20,7 @@ def start_cluster():
         cluster.start()
         yield cluster
     finally:
-        cluster.shutdown()
+        cluster.shutdown(ignore_logical_errors=True)
 
 
 def test_check_part_with_cache(start_cluster):

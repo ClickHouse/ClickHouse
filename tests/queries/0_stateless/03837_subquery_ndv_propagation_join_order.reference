@@ -1,0 +1,14 @@
+  JoinLogical
+  Join: sq ⋈ rs[200] ⋈ pc[300]
+  ResultRows: unknown
+    JoinLogical
+    Join: sq ⋈ rs[200]
+    ResultRows: unknown
+        Aggregating
+            JoinLogical
+            Join: s[50000] ⋈ p[10000]
+            ResultRows: 50000
+                ReadFromMergeTree (default.test_sales)
+                ReadFromMergeTree (default.test_partners)
+        ReadFromMergeTree (default.test_region_subsidies)
+      ReadFromMergeTree (default.test_product_catalog)

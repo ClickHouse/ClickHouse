@@ -2,7 +2,6 @@
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
@@ -189,7 +188,7 @@ private:
 
                     case IProcessor::Status::NeedData: break;
                     case IProcessor::Status::Async: break;
-                    case IProcessor::Status::ExpandPipeline:
+                    case IProcessor::Status::UpdatePipeline:
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "One of the parsers returned status {} during parallel parsing",
                                              IProcessor::statusToName(status));
                 }

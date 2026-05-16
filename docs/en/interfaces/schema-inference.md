@@ -238,7 +238,7 @@ For this reason, the schema inference cache identifies the schema by file source
 Note: some files accessed by url in `url` table function may not contain information about the last modification time; for this case, there is a special setting
 `schema_inference_cache_require_modification_time_for_url`. Disabling this setting allows the use of the schema from cache without the last modification time for such files.
 
-There is also a system table [schema_inference_cache](../operations/system-tables/schema_inference_cache.md) with all current schemas in cache and system query `SYSTEM DROP SCHEMA CACHE [FOR File/S3/URL/HDFS]`
+There is also a system table [schema_inference_cache](../operations/system-tables/schema_inference_cache.md) with all current schemas in cache and system query `SYSTEM CLEAR SCHEMA CACHE [FOR File/S3/URL/HDFS]`
 that allows cleaning the schema cache for all sources, or for a specific source.
 
 **Examples:**
@@ -363,8 +363,9 @@ SELECT schema, format, source FROM system.schema_inference_cache WHERE storage='
 As you can see, there are two different schemas for the same file.
 
 We can clear the schema cache using a system query:
+
 ```sql
-SYSTEM DROP SCHEMA CACHE FOR S3
+SYSTEM CLEAR SCHEMA CACHE FOR S3
 ```
 ```response
 Ok.
@@ -574,27 +575,23 @@ This setting is enabled by default.
 
 **Example**
 
-```sql
+```sql title="Query"
 SET input_format_json_try_infer_named_tuples_from_objects = 1;
 DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 43, "c" : [1, 2, 3]}}, {"obj" : {"d" : {"e" : 42}}}')
 ```
 
-Result:
-
-```response
+```response title="Response"
 ┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ obj  │ Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Tuple(e Nullable(Int64))) │              │                    │         │                  │                │
 └──────┴────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-```sql
+```sql title="Query"
 SET input_format_json_try_infer_named_tuples_from_objects = 1;
 DESC format(JSONEachRow, '{"array" : [{"a" : 42, "b" : "Hello"}, {}, {"c" : [1,2,3]}, {"d" : "2020-01-01"}]}')
 ```
 
-Result:
-
-```markdown
+```markdown title="Response"
 ┌─name──┬─type────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ array │ Array(Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Nullable(Date))) │              │                    │         │                  │                │
 └───────┴─────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -610,29 +607,27 @@ Disabled by default.
 **Examples**
 
 With disabled setting:
-```sql
+```sql title="Query"
 SET input_format_json_try_infer_named_tuples_from_objects = 1;
 SET input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = 0;
 DESC format(JSONEachRow, '{"obj" : {"a" : 42}}, {"obj" : {"a" : {"b" : "Hello"}}}');
 ```
-Result:
 
-```response
+```response title="Response"
 Code: 636. DB::Exception: The table structure cannot be extracted from a JSONEachRow format file. Error:
 Code: 117. DB::Exception: JSON objects have ambiguous data: in some objects path 'a' has type 'Int64' and in some - 'Tuple(b String)'. You can enable setting input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects to use String type for path 'a'. (INCORRECT_DATA) (version 24.3.1.1).
 You can specify the structure manually. (CANNOT_EXTRACT_TABLE_STRUCTURE)
 ```
 
 With enabled setting:
-```sql
+```sql title="Query"
 SET input_format_json_try_infer_named_tuples_from_objects = 1;
 SET input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = 1;
 DESC format(JSONEachRow, '{"obj" : "a" : 42}, {"obj" : {"a" : {"b" : "Hello"}}}');
 SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : 42}}, {"obj" : {"a" : {"b" : "Hello"}}}');
 ```
 
-Result:
-```response
+```response title="Response"
 ┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ obj  │ Tuple(a Nullable(String))     │              │                    │         │                  │                │
 └──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -752,14 +747,13 @@ by using String type for keys with unknown types.
 
 Example:
 
-```sql
+```sql title="Query"
 SET input_format_json_infer_incomplete_types_as_strings = 1, input_format_json_try_infer_named_tuples_from_objects = 1;
 DESCRIBE format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" : null, "d" : {}, "e" : []}}');
 SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" : null, "d" : {}, "e" : []}}');
 ```
 
-Result:
-```markdown
+```markdown title="Response"
 ┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ obj  │ Tuple(a Array(Nullable(Int64)), b Nullable(String), c Nullable(String), d Nullable(String), e Array(Nullable(String))) │              │                    │         │                  │                │
 └──────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -2070,13 +2064,11 @@ Let's say we have 3 files `data1.jsonl`, `data2.jsonl` and `data3.jsonl` with th
 ```
 
 Let's try to use schema inference on these 3 files:
-```sql
+```sql title="Query"
 :) DESCRIBE file('data{1,2,3}.jsonl') SETTINGS schema_inference_mode='default'
 ```
 
-Result:
-
-```response
+```response title="Response"
 ┌─name───┬─type─────────────┐
 │ field1 │ Nullable(Int64)  │
 │ field2 │ Nullable(String) │
@@ -2115,13 +2107,11 @@ Let's say we have 3 files `data1.jsonl`, `data2.jsonl` and `data3.jsonl` with th
 ```
 
 Let's try to use schema inference on these 3 files:
-```sql
+```sql title="Query"
 :) DESCRIBE file('data{1,2,3}.jsonl') SETTINGS schema_inference_mode='union'
 ```
 
-Result:
-
-```response
+```response title="Response"
 ┌─name───┬─type───────────────────┐
 │ field1 │ Nullable(Int64)        │
 │ field2 │ Nullable(String)       │

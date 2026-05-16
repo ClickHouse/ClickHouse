@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
 #include <base/range.h>
@@ -53,26 +54,15 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        for (size_t index = 0; index < getNumberOfArguments(); ++index)
-        {
-            const auto * arg = arguments[index].get();
-            if (index == 1 || index == 3)
-            {
-                if (!WhichDataType(arg).isFloat64())
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Illegal type {} of argument {} of function {}. Must be Float64",
-                        arg->getName(), index + 1, getName());
-            }
-            else if (!WhichDataType(arg).isUInt64())
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}. Must be UInt64",
-                    arg->getName(), index + 1, getName()
-                    );
-        }
+        FunctionArgumentDescriptors mandatory_args{
+            {"center1", &isUInt64, nullptr, "UInt64"},
+            {"radius1", &isFloat, nullptr, "Float64"},
+            {"center2", &isUInt64, nullptr, "UInt64"},
+            {"radius2", &isFloat, nullptr, "Float64"}
+        };
+        validateFunctionArguments(*this, arguments, mandatory_args);
 
         DataTypePtr center = std::make_shared<DataTypeUInt64>();
         DataTypePtr radius = std::make_shared<DataTypeFloat64>();
@@ -171,7 +161,23 @@ public:
 
 REGISTER_FUNCTION(S2CapUnion)
 {
-    factory.registerFunction<FunctionS2CapUnion>();
+    FunctionDocumentation::Description description = R"(
+Returns the smallest cap that contains both of the input S2 caps. A cap represents a portion of the sphere that has been cut off by a plane, defined by a center point and a radius in degrees.
+    )";
+    FunctionDocumentation::Syntax syntax = "s2CapUnion(center1, radius1, center2, radius2)";
+    FunctionDocumentation::Arguments arguments = {
+        {"center1", "S2 cell identifier of the first cap center.", {"UInt64"}},
+        {"radius1", "Radius of the first cap in degrees.", {"Float64"}},
+        {"center2", "S2 cell identifier of the second cap center.", {"UInt64"}},
+        {"radius2", "Radius of the second cap in degrees.", {"Float64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple (center, radius) representing the smallest cap containing both input caps.", {"Tuple(UInt64, Float64)"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2CapUnion(1157339245694594829, 1.0, 1157347770437378819, 1.0)", "(1157339245694594829,1.0049841409301968)"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionS2CapUnion>(documentation);
 }
 
 }
