@@ -29,25 +29,25 @@ SET allow_experimental_ts_to_grid_aggregate_function = 1;
 
 WITH
     1734955380 AS start, 1734955680 AS end, 15 AS step, 0 AS staleness,
-    range(start, end + 1, step) as grid
+    timeSeriesRange(start, end, step) as grid
 SELECT arrayZip(grid, timeSeriesResampleToGridWithStaleness(start, end, step, staleness)(timestamp, value)) FROM ts_raw_data;
 
 WITH
     1734955380 AS start, 1734955680 AS end, 15 AS step, 300 AS window,
-    range(start, end + 1, step) as grid
+    timeSeriesRange(start, end, step) as grid
 SELECT
+    arrayZip(grid, timeSeriesLastToGrid(start, end, step, window)(timestamp, value)) as last_5m,
     arrayZip(grid, timeSeriesRateToGrid(start, end, step, window)(timestamp, value)) as rate_5m,
     arrayZip(grid, timeSeriesDeltaToGrid(start, end, step, window)(timestamp, value)) as delta_5m
 FROM ts_raw_data FORMAT Vertical;
 
 WITH
     1734955380 AS start, 1734955680 AS end, 15 AS step,
-    range(start, end + 1, step) as grid
+    timeSeriesRange(start, end, step) as grid
 SELECT
     arrayZip(grid, timeSeriesInstantRateToGrid(start, end, step, 30)(timestamp, value)) as irate_30s, -- previous timestamp is within the window
     arrayZip(grid, timeSeriesInstantRateToGrid(start, end, step, 19)(timestamp, value)) as irate_19s, -- previous timestamp is still within the window
     arrayZip(grid, timeSeriesInstantRateToGrid(start, end, step, 18)(timestamp, value)) as irate_18s -- previous timestamp is outside the window
 FROM ts_raw_data FORMAT Vertical;
-
 
 DROP TABLE ts_raw_data;

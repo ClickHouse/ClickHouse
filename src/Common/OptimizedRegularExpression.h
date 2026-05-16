@@ -1,13 +1,13 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
-#include <memory>
-#include <optional>
-#include <Common/StringSearcher.h>
 #include <Common/re2.h>
 #include "config.h"
 
+namespace DB
+{
 /** Uses two ways to optimize a regular expression:
   * 1. If the regular expression is trivial (reduces to finding a substring in a string),
   *     then replaces the search with strstr or strcasestr.
@@ -26,14 +26,34 @@
   * NOTE: Multi-character metasymbols such as \Pl are handled incorrectly.
   */
 
+
+namespace impl
+{
+template <bool CaseSensitive, bool ASCII>
+class StringSearcher;
+}
+
+using ASCIICaseSensitiveStringSearcher = impl::StringSearcher<true, true>;
+using ASCIICaseInsensitiveStringSearcher = impl::StringSearcher<false, true>;
+
+
 namespace OptimizedRegularExpressionDetails
 {
-    struct Match
-    {
-        std::string::size_type offset;
-        std::string::size_type length;
-    };
+struct Match
+{
+    std::string::size_type offset;
+    std::string::size_type length;
+};
 }
+
+struct RegexpAnalysisResult
+{
+    std::string required_substring;
+    bool is_trivial = false;
+    bool has_capture = false;
+    bool required_substring_is_prefix = false;
+    std::vector<std::string> alternatives;
+};
 
 class OptimizedRegularExpression
 {
@@ -52,6 +72,7 @@ public:
     /// StringSearcher store pointers to required_substring, it must be updated on move.
     OptimizedRegularExpression(OptimizedRegularExpression && rhs) noexcept;
     OptimizedRegularExpression(const OptimizedRegularExpression & rhs) = delete;
+    ~OptimizedRegularExpression();
 
     bool match(const std::string & subject) const
     {
@@ -91,20 +112,17 @@ public:
 
     /// analyze function will extract the longest string literal or multiple alternative string literals from regexp for pre-checking if
     /// a string contains the string literal(s). If not, we can tell this string can never match the regexp.
-    static void analyze(
-        std::string_view regexp_,
-        std::string & required_substring,
-        bool & is_trivial,
-        bool & required_substring_is_prefix,
-        std::vector<std::string> & alternatives);
+    static RegexpAnalysisResult analyze(std::string_view regexp_);
 
 private:
+    std::string required_substring;
     bool is_trivial;
+    bool has_capture;
     bool required_substring_is_prefix;
     bool is_case_insensitive;
-    std::string required_substring;
-    std::optional<DB::ASCIICaseSensitiveStringSearcher> case_sensitive_substring_searcher;
-    std::optional<DB::ASCIICaseInsensitiveStringSearcher> case_insensitive_substring_searcher;
+    std::unique_ptr<ASCIICaseSensitiveStringSearcher> case_sensitive_substring_searcher;
+    std::unique_ptr<ASCIICaseInsensitiveStringSearcher> case_insensitive_substring_searcher;
     std::unique_ptr<re2::RE2> re2;
     unsigned number_of_subpatterns;
 };
+}

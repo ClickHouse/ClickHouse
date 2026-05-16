@@ -1,7 +1,6 @@
 #pragma once
 
-#include <vector>
-#include <stdexcept>
+#include <base/types.h>
 
 /**
   * An encoded DDSketch comprises multiple contiguous blocks (sequences of bytes).
@@ -36,7 +35,10 @@ public:
     {
     public:
         UInt8 byte;
-        Flag(UInt8 t, UInt8 s) : byte(t | s) { }
+        Flag(UInt8 t, UInt8 s)
+            : byte(t | s)
+        {
+        }
         [[maybe_unused]] UInt8 Type() const { return byte & flagTypeMask; }
         [[maybe_unused]] UInt8 SubFlag() const { return byte & subFlagMask; }
     };

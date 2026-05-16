@@ -6,9 +6,8 @@ sidebar_label: 'Constraints on settings'
 sidebar_position: 62
 slug: /operations/settings/constraints-on-settings
 title: 'Constraints on settings'
+doc_type: 'reference'
 ---
-
-# Constraints on settings
 
 ## Overview {#overview}
 
@@ -115,7 +114,6 @@ with the `readonly` constraint type:
    unless `changeable_in_readonly` is set.
 - `readonly=2`: Only read queries are allowed, but settings can be changed, 
   except for `readonly` setting itself.
-
 
 ### Example {#example-read-only}
 

@@ -33,6 +33,7 @@ public:
 
         auto num_rows = chunk.getNumRows();
         const auto & columns = chunk.getColumns();
+        Base::updateSerializationsIfNeeded(columns);
 
         for (size_t row = 0; row < num_rows; ++row)
         {

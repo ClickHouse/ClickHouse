@@ -1,9 +1,12 @@
 #pragma once
 
-#include <Common/CurrentThread.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <string_view>
+#include <variant>
+#include <list>
 
 namespace DB
 {
@@ -14,7 +17,10 @@ using QueryPipelineBuilders = std::vector<QueryPipelineBuilderPtr>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::vector<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>;
+
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 namespace JSONBuilder { class JSONMap; }
 
@@ -27,6 +33,8 @@ struct ExplainPlanOptions;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
+
+struct ExplainFormatSettings;
 
 /// Single step of query plan.
 class IQueryPlanStep
@@ -56,8 +64,12 @@ public:
     const SharedHeader & getOutputHeader() const;
 
     /// Methods to describe what this step is needed for.
-    const std::string & getStepDescription() const { return step_description; }
-    void setStepDescription(std::string description) { step_description = std::move(description); }
+    std::string_view getStepDescription() const;
+    void setStepDescription(std::string description, size_t limit);
+    void setStepDescription(const IQueryPlanStep & step);
+
+    template <size_t size>
+    ALWAYS_INLINE void setStepDescription(const char (&description)[size]) { step_description = std::string_view(description, size - 1); }
 
     struct Serialization;
     struct Deserialization;
@@ -70,14 +82,7 @@ public:
 
     virtual const SortDescription & getSortDescription() const;
 
-    struct FormatSettings
-    {
-        WriteBuffer & out;
-        size_t offset = 0;
-        const size_t indent = 2;
-        const char indent_char = ' ';
-        const bool write_header = false;
-    };
+    using FormatSettings = ExplainFormatSettings;
 
     /// Get detailed description of step actions. This is shown in EXPLAIN query with options `actions = 1`.
     virtual void describeActions(JSONBuilder::JSONMap & /*map*/) const {}
@@ -91,8 +96,11 @@ public:
     virtual void describeProjections(JSONBuilder::JSONMap & /*map*/) const {}
     virtual void describeProjections(FormatSettings & /*settings*/) const {}
 
-    /// Get description of the distributed plan. Shown in with options `distributed = 1
+    /// Get description of the distributed plan. Shown with option `distributed = 1`.
     virtual void describeDistributedPlan(FormatSettings & /*settings*/, const ExplainPlanOptions & /*options*/) {}
+
+    /// Get description of the distributed pipeline. Shown with option `distributed = 1` in EXPLAIN PIPELINE.
+    virtual void describeDistributedPipeline(FormatSettings & /*settings*/, bool /*distributed*/) {}
 
     /// Get description of processors added in current step. Should be called after updatePipeline().
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
@@ -111,7 +119,39 @@ public:
     void updateInputHeaders(SharedHeaders input_headers_);
     void updateInputHeader(SharedHeader input_header, size_t idx = 0);
 
+    /// Returns true if this step's expressions contain correlated columns (`PLACEHOLDER` action nodes).
+    /// Such plans cannot be executed standalone and require decorrelation first.
+    /// The default returns false; every subclass that stores an `ActionsDAG` (or any
+    /// other container of expression actions that may hold `PLACEHOLDER` nodes) MUST
+    /// override this to check its expressions. Otherwise correlated subqueries may
+    /// silently bypass the guards in `FutureSetFromSubquery::buildSetInplace` and
+    /// `buildOrderedSetInplace`, and trigger `Trying to execute PLACEHOLDER action`.
     virtual bool hasCorrelatedExpressions() const;
+
+    virtual bool supportsDataflowStatisticsCollection() const { return false; }
+
+    void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater);
+
+    /// Returns true if the step has implemented removeUnusedColumns.
+    virtual bool canRemoveUnusedColumns() const { return false; }
+
+    enum class RemovedUnusedColumns
+    {
+        None,
+        OutputOnly,
+        OutputAndInput
+    };
+
+    /// Removes the unnecessary inputs and outputs from the step based on required_outputs.
+    /// required_outputs must be a maybe empty subset of the current outputs of the step.
+    /// It is guaranteed that the output header of the step will contain all columns from
+    /// required_outputs and might contain some other columns too.
+    /// Can be used only if canRemoveUnusedColumns returns true.
+    /// The order of the remaining outputs must be preserved.
+    virtual RemovedUnusedColumns removeUnusedColumns(NameMultiSet /*required_outputs*/, bool /*remove_inputs*/);
+
+    /// Returns true if the step can remove any columns from the output using removeUnusedColumns.
+    virtual bool canRemoveColumnsFromOutput() const;
 
 protected:
     virtual void updateOutputHeader() = 0;
@@ -120,11 +160,15 @@ protected:
     SharedHeader output_header;
 
     /// Text description about what current step does.
-    std::string step_description;
+    std::variant<std::string, std::string_view> step_description;
+
+    friend class DescriptionHolder;
 
     /// This field is used to store added processors from this step.
     /// It is used only for introspection (EXPLAIN PIPELINE).
     Processors processors;
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
 
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 

@@ -1,6 +1,8 @@
 #include <Storages/StorageFuzzQuery.h>
 
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
@@ -49,12 +51,11 @@ ColumnPtr FuzzQuerySource::createColumn()
             continue;
         }
 
-        IColumn::Offset next_offset = offset + fuzzed_text.size() + 1;
+        IColumn::Offset next_offset = offset + fuzzed_text.size();
         data_to.resize(next_offset);
 
         std::copy(fuzzed_text.begin(), fuzzed_text.end(), &data_to[offset]);
 
-        data_to[offset + fuzzed_text.size()] = 0;
         offsets_to[row_num] = next_offset;
 
         offset = next_offset;
@@ -67,12 +68,21 @@ ColumnPtr FuzzQuerySource::createColumn()
 
 StorageFuzzQuery::StorageFuzzQuery(
     const StorageID & table_id_, const ColumnsDescription & columns_, const String & comment_, const Configuration & config_)
-    : IStorage(table_id_), config(config_)
+    : StorageWithCommonVirtualColumns(table_id_), config(config_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment_);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageFuzzQuery::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 Pipe StorageFuzzQuery::read(

@@ -141,7 +141,7 @@ public:
                         day_num = days_since_epoch;
                 }
 
-                result_data[i] = day_num;
+                result_data[i] = static_cast<Traits::ReturnDataType::FieldType>(day_num);
             }
         }
         else
@@ -164,7 +164,7 @@ public:
                         day_num = days_since_epoch;
                 }
 
-                result_data[i] = day_num;
+                result_data[i] = static_cast<Traits::ReturnDataType::FieldType>(day_num);
             }
         }
 
@@ -233,7 +233,7 @@ public:
                     day_num = days_since_epoch;
             }
 
-            result_data[i] = day_num;
+            result_data[i] = static_cast<Traits::ReturnDataType::FieldType>(day_num);
         }
 
         return res_column;
@@ -303,7 +303,7 @@ protected:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Argument 'timezone' for function {} must be const string", getName());
 
-        String timezone = timezone_argument.column->getDataAt(0).toString();
+        String timezone{timezone_argument.column->getDataAt(0)};
 
         return timezone;
     }
@@ -330,7 +330,7 @@ protected:
     static constexpr std::array mandatory_argument_names = {"year", "month", "day", "hour", "minute", "second"};
 };
 
-/// makeDateTime(year, month, day, hour, minute, second, [timezone])
+/// makeDateTime(year, month, day, hour, minute, second[, timezone])
 class FunctionMakeDateTime : public FunctionMakeDateTimeBase
 {
 private:
@@ -500,7 +500,7 @@ public:
 
         const auto & date_lut = DateLUT::instance(timezone);
 
-        const auto max_fraction = pow(10, precision) - 1;
+        const auto max_fraction = std::pow(10, precision) - 1;
         const auto min_date_time = minDateTime(date_lut);
         const auto max_date_time = maxDateTime(date_lut);
 
@@ -534,7 +534,7 @@ public:
                     fraction = max_fraction;
             }
 
-            result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(
+            result_data[i] = DecimalUtils::dateTimeFromComponents(
                 date_time,
                 static_cast<Int64>(fraction),
                 static_cast<UInt32>(precision));
@@ -701,7 +701,7 @@ public:
             const auto yyyymmdd = yyyymmddhhmmss / 1'000'000;
             const auto hhmmss = yyyymmddhhmmss % 1'000'000;
 
-            const auto decimal = float_date - yyyymmddhhmmss;
+            const auto decimal = float_date - static_cast<double>(yyyymmddhhmmss);
 
             const auto year = yyyymmdd / 10'000;
             const auto month = yyyymmdd / 100 % 100;
@@ -762,7 +762,7 @@ SELECT makeDate(2023, 42) AS date;
     };
     FunctionDocumentation::IntroducedIn introduced_in_makeDate = {22, 6};
     FunctionDocumentation::Category category_makeDate = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_makeDate = {description_makeDate, syntax_makeDate, arguments_makeDate, returned_value_makeDate, examples_makeDate, introduced_in_makeDate, category_makeDate};
+    FunctionDocumentation documentation_makeDate = {description_makeDate, syntax_makeDate, arguments_makeDate, {}, returned_value_makeDate, examples_makeDate, introduced_in_makeDate, category_makeDate};
 
     factory.registerFunction<FunctionMakeDate<DateTraits>>(documentation_makeDate, FunctionFactory::Case::Insensitive);
 
@@ -803,7 +803,7 @@ SELECT makeDate(2023, 42) AS date;
     };
     FunctionDocumentation::IntroducedIn introduced_in_makeDate32 = {22, 6};
     FunctionDocumentation::Category category_makeDate32 = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_makeDate32 = {description_makeDate32, syntax_makeDate32, arguments_makeDate32, returned_value_makeDate32, examples_makeDate32, introduced_in_makeDate32, category_makeDate32};
+    FunctionDocumentation documentation_makeDate32 = {description_makeDate32, syntax_makeDate32, arguments_makeDate32, {}, returned_value_makeDate32, examples_makeDate32, introduced_in_makeDate32, category_makeDate32};
 
     factory.registerFunction<FunctionMakeDate<Date32Traits>>(documentation_makeDate32, FunctionFactory::Case::Insensitive);
 
@@ -836,7 +836,7 @@ SELECT makeDateTime(2023, 2, 28, 17, 12, 33) AS DateTime;
     };
     FunctionDocumentation::IntroducedIn introduced_in_makeDateTime = {22, 6};
     FunctionDocumentation::Category category_makeDateTime = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_makeDateTime = {description_makeDateTime, syntax_makeDateTime, arguments_makeDateTime, returned_value_makeDateTime, examples_makeDateTime, introduced_in_makeDateTime, category_makeDateTime};
+    FunctionDocumentation documentation_makeDateTime = {description_makeDateTime, syntax_makeDateTime, arguments_makeDateTime, {}, returned_value_makeDateTime, examples_makeDateTime, introduced_in_makeDateTime, category_makeDateTime};
 
     factory.registerFunction<FunctionMakeDateTime>(documentation_makeDateTime, FunctionFactory::Case::Insensitive);
 
@@ -870,7 +870,7 @@ SELECT makeDateTime64(2023, 5, 15, 10, 30, 45, 779, 5);
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in_makeDateTime64 = {22, 6};
     FunctionDocumentation::Category category_makeDateTime64 = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_makeDateTime64 = {description_makeDateTime64, syntax_makeDateTime64, arguments_makeDateTime64, returned_value_makeDateTime64, examples_makeDateTime64, introduced_in_makeDateTime64, category_makeDateTime64};
+    FunctionDocumentation documentation_makeDateTime64 = {description_makeDateTime64, syntax_makeDateTime64, arguments_makeDateTime64, {}, returned_value_makeDateTime64, examples_makeDateTime64, introduced_in_makeDateTime64, category_makeDateTime64};
 
     factory.registerFunction<FunctionMakeDateTime64>(documentation_makeDateTime64, FunctionFactory::Case::Insensitive);
 
@@ -899,7 +899,7 @@ SELECT YYYYMMDDToDate(20230911);
     };
     FunctionDocumentation::IntroducedIn introduced_in_yyyymmddtodate = {23, 9};
     FunctionDocumentation::Category category_yyyymmddtodate = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_yyyymmddtodate = {description_yyyymmddtodate, syntax_yyyymmddtodate, arguments_yyyymmddtodate, returned_value_yyyymmddtodate, examples_yyyymmddtodate, introduced_in_yyyymmddtodate, category_yyyymmddtodate};
+    FunctionDocumentation documentation_yyyymmddtodate = {description_yyyymmddtodate, syntax_yyyymmddtodate, arguments_yyyymmddtodate, {}, returned_value_yyyymmddtodate, examples_yyyymmddtodate, introduced_in_yyyymmddtodate, category_yyyymmddtodate};
 
     factory.registerFunction<FunctionYYYYYMMDDToDate<DateTraits>>(documentation_yyyymmddtodate, FunctionFactory::Case::Insensitive);
 
@@ -927,7 +927,7 @@ SELECT YYYYMMDDToDate32(20000507);
     };
     FunctionDocumentation::IntroducedIn introduced_in_yyyymmddtodate32 = {23, 9};
     FunctionDocumentation::Category category_yyyymmddtodate32 = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_yyyymmddtodate32 = {description_yyyymmddtodate32, syntax_yyyymmddtodate32, arguments_yyyymmddtodate32, returned_value_yyyymmddtodate32, examples_yyyymmddtodate32, introduced_in_yyyymmddtodate32, category_yyyymmddtodate32};
+    FunctionDocumentation documentation_yyyymmddtodate32 = {description_yyyymmddtodate32, syntax_yyyymmddtodate32, arguments_yyyymmddtodate32, {}, returned_value_yyyymmddtodate32, examples_yyyymmddtodate32, introduced_in_yyyymmddtodate32, category_yyyymmddtodate32};
 
     factory.registerFunction<FunctionYYYYYMMDDToDate<Date32Traits>>(documentation_yyyymmddtodate32, FunctionFactory::Case::Insensitive);
 
@@ -957,7 +957,7 @@ SELECT YYYYMMDDToDateTime(20230911131415);
     };
     FunctionDocumentation::IntroducedIn introduced_in_yyyymmddhhmmsstodatetime = {23, 9};
     FunctionDocumentation::Category category_yyyymmddhhmmsstodatetime = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_yyyymmddhhmmsstodatetime = {description_yyyymmddhhmmsstodatetime, syntax_yyyymmddhhmmsstodatetime, arguments_yyyymmddhhmmsstodatetime, returned_value_yyyymmddhhmmsstodatetime, examples_yyyymmddhhmmsstodatetime, introduced_in_yyyymmddhhmmsstodatetime, category_yyyymmddhhmmsstodatetime};
+    FunctionDocumentation documentation_yyyymmddhhmmsstodatetime = {description_yyyymmddhhmmsstodatetime, syntax_yyyymmddhhmmsstodatetime, arguments_yyyymmddhhmmsstodatetime, {}, returned_value_yyyymmddhhmmsstodatetime, examples_yyyymmddhhmmsstodatetime, introduced_in_yyyymmddhhmmsstodatetime, category_yyyymmddhhmmsstodatetime};
 
     factory.registerFunction<FunctionYYYYMMDDhhmmssToDateTime>(documentation_yyyymmddhhmmsstodatetime, FunctionFactory::Case::Insensitive);
 
@@ -988,7 +988,7 @@ SELECT YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul');
     };
     FunctionDocumentation::IntroducedIn introduced_in_yyyymmddhhmmsstodatetime64 = {23, 9};
     FunctionDocumentation::Category category_yyyymmddhhmmsstodatetime64 = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_yyyymmddhhmmsstodatetime64 = {description_yyyymmddhhmmsstodatetime64, syntax_yyyymmddhhmmsstodatetime64, arguments_yyyymmddhhmmsstodatetime64, returned_value_yyyymmddhhmmsstodatetime64, examples_yyyymmddhhmmsstodatetime64, introduced_in_yyyymmddhhmmsstodatetime64, category_yyyymmddhhmmsstodatetime64};
+    FunctionDocumentation documentation_yyyymmddhhmmsstodatetime64 = {description_yyyymmddhhmmsstodatetime64, syntax_yyyymmddhhmmsstodatetime64, arguments_yyyymmddhhmmsstodatetime64, {}, returned_value_yyyymmddhhmmsstodatetime64, examples_yyyymmddhhmmsstodatetime64, introduced_in_yyyymmddhhmmsstodatetime64, category_yyyymmddhhmmsstodatetime64};
 
     factory.registerFunction<FunctionYYYYMMDDhhmmssToDateTime64>(documentation_yyyymmddhhmmsstodatetime64);
 }

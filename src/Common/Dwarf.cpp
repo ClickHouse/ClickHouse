@@ -1,4 +1,4 @@
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 
 /*
  * Copyright 2012-present Facebook, Inc.
@@ -24,6 +24,10 @@
 #include <Common/Elf.h>
 #include <Common/Dwarf.h>
 #include <Common/Exception.h>
+
+#if defined(OS_DARWIN)
+#include <Common/MachO.h>
+#endif
 
 #define DW_CHILDREN_no 0
 
@@ -167,6 +171,29 @@ Dwarf::Dwarf(const std::shared_ptr<Elf> & elf)
     }
 }
 
+#if defined(OS_DARWIN)
+Dwarf::Dwarf(const std::shared_ptr<MachO> & macho)
+    : elf_(nullptr)
+    , macho_(macho)
+    , abbrev_(getSection(".debug_abbrev"))
+    , addr_(getSection(".debug_addr"))
+    , aranges_(getSection(".debug_aranges"))
+    , info_(getSection(".debug_info"))
+    , line_(getSection(".debug_line"))
+    , line_str_(getSection(".debug_line_str"))
+    , loclists_(getSection(".debug_loclists"))
+    , ranges_(getSection(".debug_ranges"))
+    , rnglists_(getSection(".debug_rnglists"))
+    , str_(getSection(".debug_str"))
+    , str_offsets_(getSection(".debug_str_offsets"))
+{
+    if (info_.empty() || abbrev_.empty() || line_.empty() || str_.empty())
+    {
+        macho_ = nullptr;
+    }
+}
+#endif
+
 Dwarf::Section::Section(std::string_view d) : is64_bit(false), data(d)
 {
 }
@@ -256,7 +283,7 @@ uint64_t readOffset(std::string_view & sp, bool is64_bit)
 std::string_view readBytes(std::string_view & sp, uint64_t len)
 {
     SAFE_CHECK(len <= sp.size(), "invalid string length: {} vs. {}", len, sp.size());
-    std::string_view ret(sp.data(), len);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    std::string_view ret(sp.data(), len); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     sp.remove_prefix(len);
     return ret;
 }
@@ -266,7 +293,7 @@ std::string_view readNullTerminated(std::string_view & sp)
 {
     const char * p = static_cast<const char *>(memchr(sp.data(), 0, sp.size()));
     SAFE_CHECK(p, "invalid null-terminated string");
-    std::string_view ret(sp.data(), p - sp.data());  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    std::string_view ret(sp.data(), p - sp.data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     sp = std::string_view(p + 1, sp.size());
     return ret;
 }
@@ -442,13 +469,26 @@ bool Dwarf::Section::next(std::string_view & chunk)
     is64_bit = (initial_length == uint32_t(-1));
     auto length = is64_bit ? read<uint64_t>(chunk) : initial_length;
     SAFE_CHECK(length <= chunk.size(), "invalid DWARF section");
-    chunk = std::string_view(chunk.data(), length);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    chunk = std::string_view(chunk.data(), length); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     data = std::string_view(chunk.data() + chunk.size(), data.end() - chunk.end());
     return true;
 }
 
 std::string_view Dwarf::getSection(const char * name) const
 {
+#if defined(OS_DARWIN)
+    if (macho_)
+    {
+        auto section = macho_->findSectionByName(name);
+        if (!section)
+            return {};
+        return {section->begin(), section->size()};
+    }
+#endif
+
+    if (!elf_)
+        return {};
+
     std::optional<Elf::Section> elf_section = elf_->findSectionByName(name);
     if (!elf_section)
         return {};
@@ -746,7 +786,7 @@ Dwarf::CompilationUnit Dwarf::getCompilationUnit(uint64_t offset) const
     cu.size += cu.is64Bit ? 12 : 4;
 
     // 2) version
-    cu.version = read<uint16_t>(chunk);
+    cu.version = static_cast<uint8_t>(read<uint16_t>(chunk));
     SAFE_CHECK(cu.version >= 2 && cu.version <= 5, "invalid info version");
 
     if (cu.version == 5)
@@ -935,7 +975,7 @@ bool Dwarf::findDebugInfoOffset(uintptr_t address, std::string_view aranges, uin
         // Padded to a multiple of 2 addresses.
         // Strangely enough, this is the only place in the DWARF spec that requires
         // padding.
-        skipPadding(chunk, aranges.data(), 2 * sizeof(uintptr_t));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        skipPadding(chunk, aranges.data(), 2 * sizeof(uintptr_t)); /// NOLINT(bugprone-suspicious-stringview-data-usage)
         for (;;)
         {
             auto start = read<uintptr_t>(chunk);
@@ -965,7 +1005,7 @@ Dwarf::Die Dwarf::getDieAtOffset(const CompilationUnit & cu, uint64_t offset) co
     {
         return die;
     }
-    die.attr_offset = sp.data() - info_.data() - offset;
+    die.attr_offset = static_cast<uint8_t>(sp.data() - info_.data() - offset);
     die.abbr = !cu.abbr_cache.empty() && die.code < kMaxAbbreviationEntries ? cu.abbr_cache[die.code - 1]
                                                                             : getAbbreviation(die.code, cu.abbrev_offset);
 
@@ -1119,7 +1159,7 @@ bool Dwarf::findLocation(
     LineNumberVM line_vm(line_section, compilation_directory, str_, line_str_);
 
     // Execute line number VM program to find file and line
-    info.has_file_and_line = line_vm.findAddress(address, info.file, info.line);
+    info.has_file_and_line = line_vm.findAddress(address, info.file, info.line, info.column);
 
     bool check_inline = (mode == LocationInfoMode::FULL_WITH_INLINE);
 
@@ -1388,19 +1428,22 @@ void Dwarf::findInlinedSubroutineDieForAddress(
             // and line info.
             // DW_AT_specification: Incomplete, non-defining, or separate declaration
             // corresponding to a declaration
+            std::optional<CompilationUnit> spec_cu;
             auto def = getReferenceAttribute(srcu, die_to_look_for_name, DW_AT_specification);
             if (def.has_value())
             {
                 auto [def_cu, def_offset] = std::move(def.value());
-                const CompilationUnit & def_cu_ref = def_cu.has_value() ? def_cu.value() : srcu;
-                die_to_look_for_name = getDieAtOffset(def_cu_ref, def_offset);
+                if (def_cu.has_value())
+                    spec_cu = std::move(def_cu.value());
+                die_to_look_for_name = getDieAtOffset(spec_cu.has_value() ? spec_cu.value() : srcu, def_offset);
             }
 
+            const CompilationUnit & die_cu = spec_cu.has_value() ? spec_cu.value() : srcu;
             std::string_view name;
 
             // The file and line will be set in the next inline subroutine based on
             // its DW_AT_call_file and DW_AT_call_line.
-            forEachAttribute(srcu, die_to_look_for_name, [&](const Attribute & attr)
+            forEachAttribute(die_cu, die_to_look_for_name, [&](const Attribute & attr)
             {
                 switch (attr.spec.name) // NOLINT(bugprone-switch-missing-default-case)
                 {
@@ -1457,10 +1500,14 @@ bool Dwarf::findAddress(
         return false;
     }
 
-    if (!elf_)
-    { // No file.
+    bool has_debug_info = static_cast<bool>(elf_)
+#if defined(OS_DARWIN)
+        || static_cast<bool>(macho_)
+#endif
+        ;
+
+    if (!has_debug_info)
         return false;
-    }
 
     if (!aranges_.empty())
     {
@@ -1815,7 +1862,7 @@ void Dwarf::LineNumberVM::init()
     }
     uint64_t header_length = readOffset(data_, is64Bit_);
     SAFE_CHECK(header_length <= data_.size(), "invalid line number VM header length");
-    std::string_view header(data_.data(), header_length);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    std::string_view header(data_.data(), header_length); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     data_ = std::string_view(header.data() + header.size(), data_.end() - header.end());
 
     minLength_ = read<uint8_t>(header);
@@ -1844,7 +1891,7 @@ void Dwarf::LineNumberVM::init()
         {
             ++v4_.includeDirectoryCount;
         }
-        v4_.includeDirectories = {tmp, header.data()};  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        v4_.includeDirectories = {tmp, header.data()}; /// NOLINT(bugprone-suspicious-stringview-data-usage)
 
         tmp = header.data();
         FileName fn;
@@ -1853,7 +1900,7 @@ void Dwarf::LineNumberVM::init()
         {
             ++v4_.fileNameCount;
         }
-        v4_.fileNames = {tmp, header.data()};  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        v4_.fileNames = {tmp, header.data()}; /// NOLINT(bugprone-suspicious-stringview-data-usage)
     }
     else if (version_ == 5)
     {
@@ -1866,7 +1913,7 @@ void Dwarf::LineNumberVM::init()
             readULEB(header); // A content type code
             readULEB(header); // A form code using the attribute form codes
         }
-        v5_.directoryEntryFormat = {tmp, header.data()};  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        v5_.directoryEntryFormat = {tmp, header.data()}; /// NOLINT(bugprone-suspicious-stringview-data-usage)
         v5_.directoriesCount = readULEB(header);
         tmp = header.data();
         for (uint64_t i = 0; i < v5_.directoriesCount; i++)
@@ -1877,7 +1924,7 @@ void Dwarf::LineNumberVM::init()
                 readLineNumberAttribute(is64Bit_, format, header, debugStr_, debugLineStr_);
             }
         }
-        v5_.directories = {tmp, header.data()};  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        v5_.directories = {tmp, header.data()}; /// NOLINT(bugprone-suspicious-stringview-data-usage)
 
         v5_.fileNameEntryFormatCount = read<uint8_t>(header);
         tmp = header.data();
@@ -1888,7 +1935,7 @@ void Dwarf::LineNumberVM::init()
             readULEB(header); // A content type code
             readULEB(header); // A form code using the attribute form codes
         }
-        v5_.fileNameEntryFormat = {tmp, header.data()};  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        v5_.fileNameEntryFormat = {tmp, header.data()}; /// NOLINT(bugprone-suspicious-stringview-data-usage)
         v5_.fileNamesCount = readULEB(header);
         tmp = header.data();
         for (uint64_t i = 0; i < v5_.fileNamesCount; i++)
@@ -1899,7 +1946,7 @@ void Dwarf::LineNumberVM::init()
                 readLineNumberAttribute(is64Bit_, format, header, debugStr_, debugLineStr_);
             }
         }
-        v5_.fileNames = {tmp, header.data()};  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        v5_.fileNames = {tmp, header.data()}; /// NOLINT(bugprone-suspicious-stringview-data-usage)
     }
 }
 
@@ -2200,10 +2247,12 @@ Dwarf::Path Dwarf::LineNumberVM::getFullFileName(uint64_t index) const
     // Program Header and relies on the CU's DW_AT_comp_dir.
     // DWARF 5: the current directory is explicitly present.
     const std::string_view base_dir = version_ == 5 ? "" : compilationDirectory_;
-    return Path(base_dir, getIncludeDirectory(fn.directoryIndex), fn.relativeName);
+    const std::string_view include_dir = getIncludeDirectory(fn.directoryIndex);
+    // A directory entry of "." is the current directory and adds no meaningful prefix.
+    return Path(base_dir, include_dir == "." ? std::string_view{} : include_dir, fn.relativeName);
 }
 
-bool Dwarf::LineNumberVM::findAddress(uintptr_t target, Path & file, uint64_t & line)
+bool Dwarf::LineNumberVM::findAddress(uintptr_t target, Path & file, uint64_t & line, uint64_t & column)
 {
     std::string_view program = data_;
 
@@ -2223,6 +2272,7 @@ bool Dwarf::LineNumberVM::findAddress(uintptr_t target, Path & file, uint64_t & 
 
     uint64_t prev_file = 0;
     uint64_t prev_line = 0;
+    uint64_t prev_column = 0;
     while (!program.empty())
     {
         bool seq_end = !next(program);
@@ -2255,10 +2305,12 @@ bool Dwarf::LineNumberVM::findAddress(uintptr_t target, Path & file, uint64_t & 
                 }
                 file = getFullFileName(prev_file);
                 line = prev_line;
+                column = prev_column;
                 return true;
             }
             prev_file = file_;
             prev_line = line_;
+            prev_column = column_;
         }
 
         if (seq_end)

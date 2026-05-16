@@ -19,12 +19,12 @@ using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasRe
 
 /** Interprets the INSERT query.
   */
-class InterpreterInsertQuery : public IInterpreter, WithContext
+class InterpreterInsertQuery : public IInterpreter, WithMutableContext
 {
 public:
     InterpreterInsertQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        ContextMutablePtr context_,
         bool allow_materialized_,
         bool no_squash_,
         bool no_destination,
@@ -38,10 +38,6 @@ public:
     BlockIO execute() override;
 
     StorageID getDatabaseTable() const;
-
-    /// Return explicitly specified column names to insert.
-    /// If none explicit names were specified, returns nullopt.
-    std::optional<Names> getInsertColumnNames() const;
 
     static void extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_);
 
@@ -59,9 +55,9 @@ public:
 
     bool supportsTransactions() const override { return true; }
 
-    void addBuffer(std::unique_ptr<ReadBuffer> buffer);
-
     static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
+
+    static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);
 
 private:
     static Block getSampleBlock(
@@ -77,11 +73,10 @@ private:
     bool no_squash = false;
     bool no_destination = false;
     const bool async_insert;
+    bool select_query_sorted = false;
 
     size_t max_threads = 0;
     size_t max_insert_threads = 0;
-
-    std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 
     QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table);
     QueryPipeline addInsertToSelectPipeline(ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline_builder);
@@ -89,10 +84,11 @@ private:
 
     std::optional<QueryPipeline> buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table);
     std::pair<QueryPipeline, ParallelReplicasReadingCoordinatorPtr>
-    buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table);
+    buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table, ContextPtr select_context);
 
     // if applicable, build pipeline for replicated MergeTree from cluster storage
-    std::optional<QueryPipeline> distributedWriteIntoReplicatedMergeTreeFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context);
+    std::optional<QueryPipeline>
+    distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context);
 };
 
 }

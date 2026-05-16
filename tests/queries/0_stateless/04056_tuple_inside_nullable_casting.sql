@@ -1,0 +1,418 @@
+-- { echo }
+
+SET allow_experimental_nullable_tuple_type = 1;
+
+-- accurateCastOrNull: Array and Map inside Tuple are rejected.
+SELECT accurateCastOrNull(([1,2], 1)::Tuple(Array(UInt8), Int32), 'Tuple(Array(UInt16), UInt8)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT accurateCastOrNull((map(1, 2),)::Tuple(Map(UInt8, UInt8)), 'Tuple(Map(UInt16, UInt16))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- Nested: Array inside nested Tuple.
+SELECT accurateCastOrNull((([1],),)::Tuple(Tuple(Array(UInt8))), 'Tuple(Tuple(Array(UInt16)))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- Tuple(Nullable(Array)) is also rejected.
+SELECT accurateCastOrNull(([1],)::Tuple(Array(UInt8)), 'Tuple(Nullable(Array(UInt16)))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- accurateCastOrDefault: same rejections (uses accurateOrNull internally).
+SELECT accurateCastOrDefault(([1,2], 1)::Tuple(Array(UInt8), Int32), 'Tuple(Array(UInt16), UInt8)'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT accurateCastOrDefault((map(1, 2),)::Tuple(Map(UInt8, UInt8)), 'Tuple(Map(UInt16, UInt16))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT accurateCastOrDefault((([1],),)::Tuple(Tuple(Array(UInt8))), 'Tuple(Tuple(Array(UInt16)))'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- CAST and accurateCast: Array/Map inside Tuple work fine (no accurateOrNull mode).
+SELECT CAST(([1,2], 1)::Tuple(Array(UInt8), Int32), 'Tuple(Array(UInt16), UInt8)') AS r, toTypeName(r);
+SELECT CAST((map(1, 2),)::Tuple(Map(UInt8, UInt8)), 'Tuple(Map(UInt16, UInt16))') AS r, toTypeName(r);
+SELECT CAST((([1],),)::Tuple(Tuple(Array(UInt8))), 'Tuple(Tuple(Array(UInt16)))') AS r, toTypeName(r);
+SELECT accurateCast(([1,2], 1)::Tuple(Array(UInt8), Int32), 'Tuple(Array(UInt16), UInt8)') AS r, toTypeName(r);
+SELECT accurateCast((map(1, 2),)::Tuple(Map(UInt8, UInt8)), 'Tuple(Map(UInt16, UInt16))') AS r, toTypeName(r);
+SELECT accurateCast((([1],),)::Tuple(Tuple(Array(UInt8))), 'Tuple(Tuple(Array(UInt16)))') AS r, toTypeName(r);
+
+-- =====================
+-- accurateCastOrNull
+-- =====================
+
+-- Basic successful conversions.
+SELECT accurateCastOrNull((1,)::Tuple(Int32), 'Tuple(Float32)') AS r, toTypeName(r);
+SELECT accurateCastOrNull((1, 2)::Tuple(Int32, Int32), 'Tuple(Float32, Float64)') AS r, toTypeName(r);
+SELECT accurateCastOrNull((1, 2)::Tuple(a Int32, b Int32), 'Tuple(a Float32, b Float64)') AS r, toTypeName(r);
+SELECT accurateCastOrNull(()::Tuple(), 'Tuple()') AS r, toTypeName(r);
+
+-- Element overflow: entire Tuple becomes NULL.
+SELECT accurateCastOrNull((256,)::Tuple(Int32), 'Tuple(UInt8)') AS r, toTypeName(r);
+SELECT accurateCastOrNull((1, 256)::Tuple(Int32, Int32), 'Tuple(UInt8, UInt8)') AS r, toTypeName(r);
+SELECT accurateCastOrNull((256, 256)::Tuple(Int32, Int32), 'Tuple(UInt8, UInt8)') AS r, toTypeName(r);
+SELECT accurateCastOrNull((127,)::Tuple(Int32), 'Tuple(Int8)') AS r, toTypeName(r);
+SELECT accurateCastOrNull((128,)::Tuple(Int32), 'Tuple(Int8)') AS r, toTypeName(r);
+
+-- Float/special value conversions.
+SELECT accurateCastOrNull((1.5,)::Tuple(Float64), 'Tuple(Int32)') AS r, toTypeName(r);
+SELECT accurateCastOrNull((1.0,)::Tuple(Float64), 'Tuple(Int32)') AS r, toTypeName(r);
+SELECT accurateCastOrNull((inf,)::Tuple(Float64), 'Tuple(Int64)') AS r, toTypeName(r);
+SELECT accurateCastOrNull((nan,)::Tuple(Float64), 'Tuple(Int64)') AS r, toTypeName(r);
+
+-- Decimal conversions.
+SELECT accurateCastOrNull((10,)::Tuple(Int32), 'Tuple(Decimal32(9))') AS r, toTypeName(r);
+SELECT accurateCastOrNull((1,)::Tuple(Int32), 'Tuple(Decimal32(9))') AS r, toTypeName(r);
+
+-- String element passthrough.
+SELECT accurateCastOrNull(('hello', 1)::Tuple(String, Int32), 'Tuple(String, Float32)') AS r, toTypeName(r);
+
+-- Nested tuple.
+SELECT accurateCastOrNull(((1, 2),)::Tuple(Tuple(Int32, Int32)), 'Tuple(Tuple(Float32, Float64))') AS r, toTypeName(r);
+
+-- Named tuples: matched by name, different order.
+SELECT accurateCastOrNull((1, 2)::Tuple(a Int32, b Int32), 'Tuple(b Float32, a Float64)') AS r, toTypeName(r);
+-- Named tuples: source has extra element (ignored).
+SELECT accurateCastOrNull((1, 2, 3)::Tuple(a Int32, b Int32, c Int32), 'Tuple(b Float32, a Float64)') AS r, toTypeName(r);
+-- Named tuples: target has extra element (filled with default).
+SELECT accurateCastOrNull((1, 2)::Tuple(a Int32, b Int32), 'Tuple(a Float32, b Float64, c UInt8)') AS r, toTypeName(r);
+-- Named tuples: overflow in one named element.
+SELECT accurateCastOrNull((1, 256)::Tuple(a Int32, b Int32), 'Tuple(b UInt8, a Float64)') AS r, toTypeName(r);
+-- Named tuples: Nullable target element with source NULL.
+SELECT accurateCastOrNull((NULL, 1)::Tuple(a Nullable(Int32), b Int32), 'Tuple(a Nullable(UInt8), b UInt8)') AS r, toTypeName(r);
+-- Named tuples: Nullable target element with conversion failure (new NULL).
+SELECT accurateCastOrNull((256, 1)::Tuple(a Int32, b Int32), 'Tuple(a Nullable(UInt8), b UInt8)') AS r, toTypeName(r);
+-- Named tuples: target has extra Nullable element (filled with default NULL, not a failure).
+SELECT accurateCastOrNull((1,)::Tuple(a Int32), 'Tuple(a Float32, b Nullable(UInt8))') AS r, toTypeName(r);
+
+-- Nullable source tuple.
+SELECT accurateCastOrNull(NULL::Nullable(Tuple(Int32)), 'Tuple(Float32)') AS r, toTypeName(r);
+
+-- Multi-row: mix of success and NULL.
+SELECT number, accurateCastOrNull((number, number + 1)::Tuple(UInt64, UInt64), 'Tuple(UInt8, UInt8)') AS r, toTypeName(r) FROM numbers(254, 4);
+
+-- Nullable target elements: inaccurate cast makes the entire tuple NULL, not just the element.
+SELECT accurateCastOrNull((1,)::Tuple(Int32), 'Tuple(Nullable(Float32))') AS r, toTypeName(r);
+SELECT accurateCastOrNull((256,)::Tuple(Int32), 'Tuple(Nullable(UInt8))') AS r, toTypeName(r);
+SELECT accurateCastOrNull((1, 256)::Tuple(Int32, Int32), 'Tuple(Nullable(UInt8), UInt8)') AS r, toTypeName(r);
+
+-- Nullable source with Nullable target: conversion failure (new NULL) -> whole tuple NULL.
+SELECT accurateCastOrNull((1.5,)::Tuple(Nullable(Float32)), 'Tuple(Nullable(Int32))') AS r, toTypeName(r);
+-- Nullable source with Nullable target: success.
+SELECT accurateCastOrNull((1.0,)::Tuple(Nullable(Float32)), 'Tuple(Nullable(Int32))') AS r, toTypeName(r);
+-- Nullable source NULL -> legitimate element NULL, tuple is valid.
+SELECT accurateCastOrNull((NULL,)::Tuple(Nullable(Int32)), 'Tuple(Nullable(UInt8))') AS r, toTypeName(r);
+-- Nullable source non-NULL, conversion fails -> whole tuple NULL.
+SELECT accurateCastOrNull((256,)::Tuple(Nullable(Int32)), 'Tuple(Nullable(UInt8))') AS r, toTypeName(r);
+-- Mixed: source NULL preserved + non-Nullable element succeeds -> valid tuple.
+SELECT accurateCastOrNull((NULL, 1)::Tuple(Nullable(Int32), Int32), 'Tuple(Nullable(UInt8), UInt8)') AS r, toTypeName(r);
+-- Mixed: source NULL + non-Nullable element fails -> whole tuple NULL.
+SELECT accurateCastOrNull((NULL, 256)::Tuple(Nullable(Int32), Int32), 'Tuple(Nullable(UInt8), UInt8)') AS r, toTypeName(r);
+
+-- Three levels of nesting: inaccurate leaf element makes the entire tuple NULL.
+SELECT accurateCastOrNull((((1,),),)::Tuple(Tuple(Tuple(Int32))), 'Tuple(Tuple(Tuple(UInt8)))') AS r, toTypeName(r);
+SELECT accurateCastOrNull((((256,),),)::Tuple(Tuple(Tuple(Int32))), 'Tuple(Tuple(Tuple(UInt8)))') AS r, toTypeName(r);
+SELECT accurateCastOrNull(((1, (256,)),)::Tuple(Tuple(Int32, Tuple(Int32))), 'Tuple(Tuple(UInt8, Tuple(UInt8)))') AS r, toTypeName(r);
+SELECT accurateCastOrNull(((1, (2,)),)::Tuple(Tuple(Int32, Tuple(Int32))), 'Tuple(Tuple(UInt8, Tuple(UInt8)))') AS r, toTypeName(r);
+
+-- Multi-row with overflow at boundary.
+SELECT number, accurateCastOrNull((number * 100,)::Tuple(UInt64), 'Tuple(UInt8)') AS r, toTypeName(r) FROM numbers(5);
+
+-- Multi-row: mix of source NULLs, conversion failures, and successes.
+SELECT number, accurateCastOrNull(
+    (if(number % 3 = 0, NULL, number * 100), number)::Tuple(Nullable(UInt64), UInt64),
+    'Tuple(Nullable(UInt8), UInt8)') AS r, toTypeName(r)
+FROM numbers(6);
+
+-- Nullable source to non-Nullable target: NULL source -> whole tuple NULL (not an exception).
+SELECT accurateCastOrNull((NULL,)::Tuple(Nullable(Int32)), 'Tuple(UInt8)') AS r, toTypeName(r);
+-- Nullable source to non-Nullable target: non-NULL, conversion fails.
+SELECT accurateCastOrNull((256,)::Tuple(Nullable(Int32)), 'Tuple(UInt8)') AS r, toTypeName(r);
+-- Nullable source to non-Nullable target: non-NULL, conversion succeeds.
+SELECT accurateCastOrNull((1,)::Tuple(Nullable(Int32)), 'Tuple(UInt8)') AS r, toTypeName(r);
+-- Mixed: NULL source to non-Nullable + successful element.
+SELECT accurateCastOrNull((NULL, 1)::Tuple(Nullable(Int32), Int32), 'Tuple(UInt8, UInt8)') AS r, toTypeName(r);
+-- Mixed: NULL source to non-Nullable + failing element.
+SELECT accurateCastOrNull((NULL, 256)::Tuple(Nullable(Int32), Int32), 'Tuple(UInt8, UInt8)') AS r, toTypeName(r);
+-- Nested: Nullable source in nested tuple to non-Nullable target.
+SELECT accurateCastOrNull(((NULL,),)::Tuple(Tuple(Nullable(Int32))), 'Tuple(Tuple(UInt8))') AS r, toTypeName(r);
+-- Multi-row: mix of NULL source, conversion failure, success (non-Nullable target).
+SELECT number, accurateCastOrNull(
+    (if(number % 2 = 0, NULL, number * 100)::Nullable(UInt64),)::Tuple(Nullable(UInt64)),
+    'Tuple(UInt8)') AS r, toTypeName(r)
+FROM numbers(5);
+
+-- Nullable source with same-type/widening conversion (inner returns plain column, not ColumnNullable).
+-- Source NULLs must still propagate to make the whole Tuple NULL.
+SELECT accurateCastOrNull((NULL,)::Tuple(Nullable(String)), 'Tuple(String)') AS r, toTypeName(r);
+SELECT accurateCastOrNull(('hello',)::Tuple(Nullable(String)), 'Tuple(String)') AS r, toTypeName(r);
+SELECT accurateCastOrNull((NULL,)::Tuple(Nullable(UInt8)), 'Tuple(UInt64)') AS r, toTypeName(r);
+SELECT accurateCastOrNull((1,)::Tuple(Nullable(UInt8)), 'Tuple(UInt64)') AS r, toTypeName(r);
+-- Multi-row: mix of NULL and non-NULL with same-type passthrough.
+SELECT number, accurateCastOrNull(
+    (if(number % 2 = 0, NULL, toString(number)),)::Tuple(Nullable(String)),
+    'Tuple(String)') AS r, toTypeName(r)
+FROM numbers(4);
+
+-- =====================
+-- accurateCast
+-- =====================
+
+-- Basic successful conversions.
+SELECT accurateCast((1,)::Tuple(Int32), 'Tuple(Float32)') AS r, toTypeName(r);
+SELECT accurateCast((1, 2)::Tuple(Int32, Int32), 'Tuple(Float32, Float64)') AS r, toTypeName(r);
+SELECT accurateCast((1, 2)::Tuple(a Int32, b Int32), 'Tuple(a Float32, b Float64)') AS r, toTypeName(r);
+SELECT accurateCast(()::Tuple(), 'Tuple()') AS r, toTypeName(r);
+SELECT accurateCast((127,)::Tuple(Int32), 'Tuple(Int8)') AS r, toTypeName(r);
+
+-- Overflow throws exception.
+SELECT accurateCast((256,)::Tuple(Int32), 'Tuple(UInt8)'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast((128,)::Tuple(Int32), 'Tuple(Int8)'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast((1, 256)::Tuple(Int32, Int32), 'Tuple(UInt8, UInt8)'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast((256, 256)::Tuple(Int32, Int32), 'Tuple(UInt8, UInt8)'); -- { serverError CANNOT_CONVERT_TYPE }
+
+-- Float/special values throw exception.
+SELECT accurateCast((1.5,)::Tuple(Float64), 'Tuple(Int32)'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast((inf,)::Tuple(Float64), 'Tuple(Int64)'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCast((nan,)::Tuple(Float64), 'Tuple(Int64)'); -- { serverError CANNOT_CONVERT_TYPE }
+
+-- Float exact is fine.
+SELECT accurateCast((1.0,)::Tuple(Float64), 'Tuple(Int32)') AS r, toTypeName(r);
+
+-- Decimal overflow throws.
+SELECT accurateCast((10,)::Tuple(Int32), 'Tuple(Decimal32(9))'); -- { serverError DECIMAL_OVERFLOW }
+
+-- Decimal success.
+SELECT accurateCast((1,)::Tuple(Int32), 'Tuple(Decimal32(9))') AS r, toTypeName(r);
+
+-- String element passthrough.
+SELECT accurateCast(('hello', 1)::Tuple(String, Int32), 'Tuple(String, Float32)') AS r, toTypeName(r);
+
+-- Nested tuple.
+SELECT accurateCast(((1, 2),)::Tuple(Tuple(Int32, Int32)), 'Tuple(Tuple(Float32, Float64))') AS r, toTypeName(r);
+
+-- Named tuples: matched by name, different order.
+SELECT accurateCast((1, 2)::Tuple(a Int32, b Int32), 'Tuple(b Float32, a Float64)') AS r, toTypeName(r);
+-- Named tuples: source has extra element (ignored).
+SELECT accurateCast((1, 2, 3)::Tuple(a Int32, b Int32, c Int32), 'Tuple(b Float32, a Float64)') AS r, toTypeName(r);
+-- Named tuples: target has extra element (filled with default).
+SELECT accurateCast((1, 2)::Tuple(a Int32, b Int32), 'Tuple(a Float32, b Float64, c UInt8)') AS r, toTypeName(r);
+-- Named tuples: overflow in one named element.
+SELECT accurateCast((1, 256)::Tuple(a Int32, b Int32), 'Tuple(b UInt8, a Float64)'); -- { serverError CANNOT_CONVERT_TYPE }
+
+-- Three levels of nesting.
+SELECT accurateCast((((1,),),)::Tuple(Tuple(Tuple(Int32))), 'Tuple(Tuple(Tuple(UInt8)))') AS r, toTypeName(r);
+SELECT accurateCast((((256,),),)::Tuple(Tuple(Tuple(Int32))), 'Tuple(Tuple(Tuple(UInt8)))'); -- { serverError CANNOT_CONVERT_TYPE }
+
+-- Nullable target element: success.
+SELECT accurateCast((1,)::Tuple(Int32), 'Tuple(Nullable(Float32))') AS r, toTypeName(r);
+-- Nullable target element: overflow throws (even though target element is Nullable).
+SELECT accurateCast((256,)::Tuple(Int32), 'Tuple(Nullable(UInt8))'); -- { serverError CANNOT_CONVERT_TYPE }
+-- Nullable source to non-Nullable target: throws.
+SELECT accurateCast((NULL,)::Tuple(Nullable(Int32)), 'Tuple(UInt8)'); -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+-- Nullable source NULL preserved in Nullable target.
+SELECT accurateCast((NULL, 1)::Tuple(Nullable(Int32), Int32), 'Tuple(Nullable(UInt8), UInt8)') AS r, toTypeName(r);
+-- Nullable source with same-type passthrough.
+SELECT accurateCast(('hello',)::Tuple(Nullable(String)), 'Tuple(String)') AS r, toTypeName(r);
+
+-- Multi-row: all succeed (overflow throws, so only safe range).
+SELECT number, accurateCast((number,)::Tuple(UInt64), 'Tuple(UInt8)') AS r, toTypeName(r) FROM numbers(5);
+
+-- Multi-row: overflow throws.
+SELECT number, accurateCast((number * 100,)::Tuple(UInt64), 'Tuple(UInt8)') FROM numbers(5); -- { serverError CANNOT_CONVERT_TYPE }
+
+-- =====================
+-- accurateCastOrDefault
+-- =====================
+
+-- Basic successful conversions.
+SELECT accurateCastOrDefault((1,)::Tuple(Int32), 'Tuple(Float32)') AS r, toTypeName(r);
+SELECT accurateCastOrDefault((1, 2)::Tuple(Int32, Int32), 'Tuple(Float32, Float64)') AS r, toTypeName(r);
+SELECT accurateCastOrDefault((1, 2)::Tuple(a Int32, b Int32), 'Tuple(a Float32, b Float64)') AS r, toTypeName(r);
+SELECT accurateCastOrDefault(()::Tuple(), 'Tuple()') AS r, toTypeName(r);
+
+-- Overflow returns zero-initialized default.
+SELECT accurateCastOrDefault((256,)::Tuple(Int32), 'Tuple(UInt8)') AS r, toTypeName(r);
+SELECT accurateCastOrDefault((1, 256)::Tuple(Int32, Int32), 'Tuple(UInt8, UInt8)') AS r, toTypeName(r);
+SELECT accurateCastOrDefault((256, 256)::Tuple(Int32, Int32), 'Tuple(UInt8, UInt8)') AS r, toTypeName(r);
+SELECT accurateCastOrDefault((127,)::Tuple(Int32), 'Tuple(Int8)') AS r, toTypeName(r);
+SELECT accurateCastOrDefault((128,)::Tuple(Int32), 'Tuple(Int8)') AS r, toTypeName(r);
+
+-- Float/special values return default.
+SELECT accurateCastOrDefault((1.5,)::Tuple(Float64), 'Tuple(Int32)') AS r, toTypeName(r);
+SELECT accurateCastOrDefault((1.0,)::Tuple(Float64), 'Tuple(Int32)') AS r, toTypeName(r);
+SELECT accurateCastOrDefault((inf,)::Tuple(Float64), 'Tuple(Int64)') AS r, toTypeName(r);
+SELECT accurateCastOrDefault((nan,)::Tuple(Float64), 'Tuple(Int64)') AS r, toTypeName(r);
+
+-- Decimal overflow returns default.
+SELECT accurateCastOrDefault((10,)::Tuple(Int32), 'Tuple(Decimal32(9))') AS r, toTypeName(r);
+SELECT accurateCastOrDefault((1,)::Tuple(Int32), 'Tuple(Decimal32(9))') AS r, toTypeName(r);
+
+-- String element passthrough.
+SELECT accurateCastOrDefault(('hello', 1)::Tuple(String, Int32), 'Tuple(String, Float32)') AS r, toTypeName(r);
+
+-- Nested tuple.
+SELECT accurateCastOrDefault(((1, 2),)::Tuple(Tuple(Int32, Int32)), 'Tuple(Tuple(Float32, Float64))') AS r, toTypeName(r);
+
+-- Named tuples: matched by name, different order.
+SELECT accurateCastOrDefault((1, 2)::Tuple(a Int32, b Int32), 'Tuple(b Float32, a Float64)') AS r, toTypeName(r);
+-- Named tuples: source has extra element (ignored).
+SELECT accurateCastOrDefault((1, 2, 3)::Tuple(a Int32, b Int32, c Int32), 'Tuple(b Float32, a Float64)') AS r, toTypeName(r);
+-- Named tuples: target has extra element (filled with default).
+SELECT accurateCastOrDefault((1, 2)::Tuple(a Int32, b Int32), 'Tuple(a Float32, b Float64, c UInt8)') AS r, toTypeName(r);
+-- Named tuples: overflow in one named element returns default.
+SELECT accurateCastOrDefault((1, 256)::Tuple(a Int32, b Int32), 'Tuple(b UInt8, a Float64)') AS r, toTypeName(r);
+
+-- Three levels of nesting.
+SELECT accurateCastOrDefault((((1,),),)::Tuple(Tuple(Tuple(Int32))), 'Tuple(Tuple(Tuple(UInt8)))') AS r, toTypeName(r);
+SELECT accurateCastOrDefault((((256,),),)::Tuple(Tuple(Tuple(Int32))), 'Tuple(Tuple(Tuple(UInt8)))') AS r, toTypeName(r);
+
+-- Return type (not Nullable).
+SELECT toTypeName(accurateCastOrDefault((1,)::Tuple(Int32), 'Tuple(Float32)'));
+
+-- Custom default on overflow.
+SELECT accurateCastOrDefault((256,)::Tuple(Int32), 'Tuple(UInt8)', (42,)::Tuple(UInt8)) AS r, toTypeName(r);
+
+-- Nullable target element: success.
+SELECT accurateCastOrDefault((1,)::Tuple(Int32), 'Tuple(Nullable(Float32))') AS r, toTypeName(r);
+-- Nullable target element: overflow returns default (element becomes NULL in default).
+SELECT accurateCastOrDefault((256,)::Tuple(Int32), 'Tuple(Nullable(UInt8))') AS r, toTypeName(r);
+-- Nullable source to non-Nullable target: NULL source returns default.
+SELECT accurateCastOrDefault((NULL,)::Tuple(Nullable(Int32)), 'Tuple(UInt8)') AS r, toTypeName(r);
+-- Nullable source NULL preserved in Nullable target.
+SELECT accurateCastOrDefault((NULL, 1)::Tuple(Nullable(Int32), Int32), 'Tuple(Nullable(UInt8), UInt8)') AS r, toTypeName(r);
+-- Nullable source with same-type passthrough.
+SELECT accurateCastOrDefault(('hello',)::Tuple(Nullable(String)), 'Tuple(String)') AS r, toTypeName(r);
+
+-- Multi-row: overflow returns default.
+SELECT number, accurateCastOrDefault((number * 100,)::Tuple(UInt64), 'Tuple(UInt8)') AS r, toTypeName(r) FROM numbers(5);
+
+-- Multi-row: overflow returns custom default.
+SELECT number, accurateCastOrDefault((number * 100,)::Tuple(UInt64), 'Tuple(UInt8)', (42,)::Tuple(UInt8)) AS r, toTypeName(r) FROM numbers(5);
+
+-- =====================
+-- CAST (non-accurate)
+-- =====================
+
+-- Basic successful conversions.
+SELECT CAST((1,)::Tuple(Int32), 'Tuple(Float32)') AS r, toTypeName(r);
+SELECT CAST((1, 2)::Tuple(Int32, Int32), 'Tuple(Float32, Float64)') AS r, toTypeName(r);
+SELECT CAST((1, 2)::Tuple(a Int32, b Int32), 'Tuple(a Float32, b Float64)') AS r, toTypeName(r);
+SELECT CAST(()::Tuple(), 'Tuple()') AS r, toTypeName(r);
+
+-- Overflow wraps around silently.
+SELECT CAST((256,)::Tuple(Int32), 'Tuple(UInt8)') AS r, toTypeName(r);
+SELECT CAST((1, 256)::Tuple(Int32, Int32), 'Tuple(UInt8, UInt8)') AS r, toTypeName(r);
+SELECT CAST((256, 256)::Tuple(Int32, Int32), 'Tuple(UInt8, UInt8)') AS r, toTypeName(r);
+SELECT CAST((127,)::Tuple(Int32), 'Tuple(Int8)') AS r, toTypeName(r);
+SELECT CAST((128,)::Tuple(Int32), 'Tuple(Int8)') AS r, toTypeName(r);
+
+-- Float to Int truncates.
+SELECT CAST((1.5,)::Tuple(Float64), 'Tuple(Int32)') AS r, toTypeName(r);
+SELECT CAST((1.0,)::Tuple(Float64), 'Tuple(Int32)') AS r, toTypeName(r);
+
+-- Decimal overflow throws.
+SELECT CAST((10,)::Tuple(Int32), 'Tuple(Decimal32(9))'); -- { serverError DECIMAL_OVERFLOW }
+
+-- Decimal success.
+SELECT CAST((1,)::Tuple(Int32), 'Tuple(Decimal32(9))') AS r, toTypeName(r);
+
+-- String element passthrough.
+SELECT CAST(('hello', 1)::Tuple(String, Int32), 'Tuple(String, Float32)') AS r, toTypeName(r);
+
+-- Nested tuple.
+SELECT CAST(((1, 2),)::Tuple(Tuple(Int32, Int32)), 'Tuple(Tuple(Float32, Float64))') AS r, toTypeName(r);
+
+-- Named tuples: matched by name, different order.
+SELECT CAST((1, 2)::Tuple(a Int32, b Int32), 'Tuple(b Float32, a Float64)') AS r, toTypeName(r);
+-- Named tuples: source has extra element (ignored).
+SELECT CAST((1, 2, 3)::Tuple(a Int32, b Int32, c Int32), 'Tuple(b Float32, a Float64)') AS r, toTypeName(r);
+-- Named tuples: target has extra element (filled with default).
+SELECT CAST((1, 2)::Tuple(a Int32, b Int32), 'Tuple(a Float32, b Float64, c UInt8)') AS r, toTypeName(r);
+-- Named tuples: overflow wraps around.
+SELECT CAST((1, 256)::Tuple(a Int32, b Int32), 'Tuple(b UInt8, a Float64)') AS r, toTypeName(r);
+
+-- Three levels of nesting.
+SELECT CAST((((1,),),)::Tuple(Tuple(Tuple(Int32))), 'Tuple(Tuple(Tuple(UInt8)))') AS r, toTypeName(r);
+SELECT CAST((((256,),),)::Tuple(Tuple(Tuple(Int32))), 'Tuple(Tuple(Tuple(UInt8)))') AS r, toTypeName(r);
+
+-- Nullable target element: success.
+SELECT CAST((1,)::Tuple(Int32), 'Tuple(Nullable(Float32))') AS r, toTypeName(r);
+-- Nullable target element: overflow wraps around (element gets wrapped value, not NULL).
+SELECT CAST((256,)::Tuple(Int32), 'Tuple(Nullable(UInt8))') AS r, toTypeName(r);
+-- Nullable source to non-Nullable target: NULL source throws.
+SELECT CAST((NULL,)::Tuple(Nullable(Int32)), 'Tuple(UInt8)'); -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+-- Nullable source NULL preserved in Nullable target.
+SELECT CAST((NULL, 1)::Tuple(Nullable(Int32), Int32), 'Tuple(Nullable(UInt8), UInt8)') AS r, toTypeName(r);
+-- Nullable source with same-type passthrough.
+SELECT CAST(('hello',)::Tuple(Nullable(String)), 'Tuple(String)') AS r, toTypeName(r);
+
+-- Multi-row: overflow wraps around.
+SELECT number, CAST((number * 100,)::Tuple(UInt64), 'Tuple(UInt8)') AS r, toTypeName(r) FROM numbers(5);
+SELECT number, CAST((number, number + 1)::Tuple(UInt64, UInt64), 'Tuple(UInt8, UInt8)') AS r, toTypeName(r) FROM numbers(254, 4);
+
+-- =====================
+-- Table-based tests: cast from actual table columns with mix of values.
+-- =====================
+
+DROP TABLE IF EXISTS test_cast_tuple;
+CREATE TABLE test_cast_tuple (a Int32, b Nullable(Int32), s Nullable(String)) ENGINE = Memory;
+INSERT INTO test_cast_tuple VALUES (1, 2, 'hello'), (256, NULL, 'world'), (127, 128, NULL), (0, 0, 'test'), (-1, 300, 'x');
+
+SELECT a, b, accurateCastOrNull((a, b)::Tuple(Int32, Nullable(Int32)), 'Tuple(UInt8, Nullable(UInt8))') AS r, toTypeName(r) FROM test_cast_tuple;
+SELECT a, accurateCast((a,)::Tuple(Int32), 'Tuple(UInt8)') AS r, toTypeName(r) FROM test_cast_tuple WHERE a >= 0 AND a <= 255;
+SELECT a, b, accurateCastOrDefault((a, b)::Tuple(Int32, Nullable(Int32)), 'Tuple(UInt8, Nullable(UInt8))') AS r, toTypeName(r) FROM test_cast_tuple;
+SELECT a, b, CAST((a, b)::Tuple(Int32, Nullable(Int32)), 'Tuple(UInt8, Nullable(UInt8))') AS r, toTypeName(r) FROM test_cast_tuple;
+
+DROP TABLE test_cast_tuple;
+
+-- =====================
+-- Point type (alias for Tuple(Float64, Float64)).
+-- =====================
+
+-- Basic: non-null tuple to Point.
+SELECT accurateCastOrNull(tuple(1, 2), 'Point') AS r, toTypeName(r);
+-- Tuple with NULL element: whole tuple becomes NULL.
+SELECT accurateCastOrNull(tuple(NULL, 1), 'Point') AS r, toTypeName(r);
+-- NULL input.
+SELECT accurateCastOrNull(NULL, 'Point') AS r, toTypeName(r);
+-- Verify result type.
+SELECT toTypeName(accurateCastOrNull(tuple(1.5, 2.5), 'Point'));
+-- Verify non-null result is accessible.
+SELECT tupleElement(accurateCastOrNull(tuple(3, 4), 'Point'), 1), tupleElement(accurateCastOrNull(tuple(3, 4), 'Point'), 2);
+-- Nullable target elements inside Tuple.
+SELECT accurateCastOrNull(tuple(1, 2), 'Tuple(Nullable(Float64), Nullable(Float64))') AS r, toTypeName(r);
+SELECT toTypeName(accurateCastOrNull(tuple(1, 2), 'Tuple(Nullable(Float64), Nullable(Float64))'));
+SELECT accurateCastOrNull((SELECT modulo(intDiv(intDiv(plus((SELECT DISTINCT toInt128(2147483646) QUALIFY minus(256, -1) LIMIT 100, 7), accurateCastOrNull('\'', 'Int8')), (SELECT 1023 GROUP BY 1)), intDiv(-2147483648, 100)), NULL), -9223372036854775808 LIMIT -2147483647), 'Point') AS r, toTypeName(r) SETTINGS enable_analyzer = 1;
+
+-- =====================
+-- LowCardinality inside Tuple.
+-- =====================
+
+SET allow_suspicious_low_cardinality_types = 1;
+
+-- LC source NULL preserved as element NULL.
+SELECT accurateCastOrNull((NULL,)::Tuple(LowCardinality(Nullable(Int32))), 'Tuple(Nullable(UInt8))') AS r, toTypeName(r);
+-- LC source non-NULL, conversion succeeds.
+SELECT accurateCastOrNull((1,)::Tuple(LowCardinality(Nullable(Int32))), 'Tuple(Nullable(UInt8))') AS r, toTypeName(r);
+-- LC source non-NULL, conversion fails (overflow) -> whole tuple NULL.
+SELECT accurateCastOrNull((256,)::Tuple(LowCardinality(Nullable(Int32))), 'Tuple(Nullable(UInt8))') AS r, toTypeName(r);
+-- LC source to non-Nullable target: non-NULL, success.
+SELECT accurateCastOrNull((1,)::Tuple(LowCardinality(Nullable(Int32))), 'Tuple(UInt8)') AS r, toTypeName(r);
+-- LC source to non-Nullable target: non-NULL, overflow.
+SELECT accurateCastOrNull((256,)::Tuple(LowCardinality(Nullable(Int32))), 'Tuple(UInt8)') AS r, toTypeName(r);
+-- Mixed: LC Nullable source NULL + regular source succeeds -> element NULL preserved.
+SELECT accurateCastOrNull((NULL, 1)::Tuple(LowCardinality(Nullable(Int32)), Int32), 'Tuple(Nullable(UInt8), UInt8)') AS r, toTypeName(r);
+-- Mixed: LC Nullable source NULL + regular source overflow -> whole tuple NULL.
+SELECT accurateCastOrNull((NULL, 256)::Tuple(LowCardinality(Nullable(Int32)), Int32), 'Tuple(Nullable(UInt8), UInt8)') AS r, toTypeName(r);
+-- LC target element type: LowCardinality(Nullable) can represent NULL, so it is accepted.
+SELECT accurateCastOrNull((1,)::Tuple(Int32), 'Tuple(LowCardinality(Nullable(UInt8)))') AS r, toTypeName(r);
+-- LC target element: overflow propagates to whole Tuple NULL.
+SELECT accurateCastOrNull((256,)::Tuple(Int32), 'Tuple(LowCardinality(Nullable(UInt8)))') AS r, toTypeName(r);
+-- LC on both source and target: accepted.
+SELECT accurateCastOrNull((1,)::Tuple(LowCardinality(Nullable(Int32))), 'Tuple(LowCardinality(Nullable(UInt8)))') AS r, toTypeName(r);
+-- LC on both: overflow propagates to whole Tuple NULL.
+SELECT accurateCastOrNull((256,)::Tuple(LowCardinality(Nullable(Int32))), 'Tuple(LowCardinality(Nullable(UInt8)))') AS r, toTypeName(r);
+-- LC on both: source NULL preserved in element, Tuple not NULL.
+SELECT accurateCastOrNull((NULL,)::Tuple(LowCardinality(Nullable(Int32))), 'Tuple(LowCardinality(Nullable(UInt8)))') AS r, toTypeName(r);
+-- LC on both: conversion failure produces new NULL -> whole Tuple NULL (not just element).
+SELECT accurateCastOrNull((1.5,)::Tuple(Nullable(Float32)), 'Tuple(LowCardinality(Nullable(Int32)))') AS r, toTypeName(r);
+-- Multi-row with LC target: mix of success and overflow.
+SELECT number, accurateCastOrNull((number * 100,)::Tuple(UInt64), 'Tuple(LowCardinality(Nullable(UInt8)))') AS r, toTypeName(r) FROM numbers(4);
+-- Multi-row with LC source: mix of NULL, success, and overflow.
+SELECT number, accurateCastOrNull(
+    (if(number % 3 = 0, NULL, number * 100)::LowCardinality(Nullable(UInt64)),)::Tuple(LowCardinality(Nullable(UInt64))),
+    'Tuple(Nullable(UInt8))') AS r, toTypeName(r)
+FROM numbers(6);
+-- Nested tuple with LC element: NULL preserved.
+SELECT accurateCastOrNull(((NULL,),)::Tuple(Tuple(LowCardinality(Nullable(Int32)))), 'Tuple(Tuple(Nullable(UInt8)))') AS r, toTypeName(r);
+-- Nested tuple with LC element: success.
+SELECT accurateCastOrNull(((1,),)::Tuple(Tuple(LowCardinality(Nullable(Int32)))), 'Tuple(Tuple(Nullable(UInt8)))') AS r, toTypeName(r);
+-- Nested tuple with LC element: overflow -> whole tuple NULL.
+SELECT accurateCastOrNull(((256,),)::Tuple(Tuple(LowCardinality(Nullable(Int32)))), 'Tuple(Tuple(Nullable(UInt8)))') AS r, toTypeName(r);

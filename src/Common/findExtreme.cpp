@@ -1,5 +1,6 @@
 #include <DataTypes/IDataType.h>
 #include <base/Decimal.h>
+#include <Common/NaNUtils.h>
 #include <Common/TargetSpecific.h>
 #include <Common/findExtreme.h>
 
@@ -32,7 +33,7 @@ template <underlying_has_find_extreme_implementation T> struct NativeComparatorT
 template <class Comparator> using NativeComparator = typename NativeComparatorT<Comparator>::Type;
 }
 
-MULTITARGET_FUNCTION_AVX2_SSE42(
+MULTITARGET_FUNCTION_X86_V3(
     MULTITARGET_FUNCTION_HEADER(
         template <has_find_extreme_implementation T, typename ComparatorClass, bool add_all_elements, bool add_if_cond_zero>
         static std::optional<T> NO_INLINE),
@@ -51,11 +52,28 @@ MULTITARGET_FUNCTION_AVX2_SSE42(
             if (add_all_elements || !condition_map[i] == add_if_cond_zero)
             {
                 ret = ptr[i];
-                break;
+                /// For floats, skip NaN during initialisation so the accumulator starts with a non-NaN value.
+                /// std::min/max never replace a NaN accumulator (NaN < x is always false), so a NaN start would stick through the loop.
+                /// If all valid values are NaN, ret will hold the last NaN seen, which is correct.
+                if constexpr (is_floating_point<T>)
+                {
+                    if (!isNaN(ret))
+                        break;
+                }
+                else
+                    break;
             }
         }
         if (i >= count)
+        {
+            /// For floats: if scanned all elements without finding a non-NaN, ret holds the last valid NaN. Return it (all values are NaN).
+            if constexpr (is_floating_point<T>)
+            {
+                if (isNaN(ret))
+                    return ret;
+            }
             return std::nullopt;
+        }
 
         /// Unroll the loop manually for floating point, since the compiler doesn't do it without fastmath
         /// as it might change the return value
@@ -133,11 +151,8 @@ findExtreme(const T * __restrict ptr, const UInt8 * __restrict condition_map [[m
     /// In some cases the compiler if able to apply the condition and still generate SIMD, so we still build both
     /// conditional and unconditional functions with multiple architectures
     /// We see no benefit from using AVX512BW or AVX512F (over AVX2), so we only declare SSE and AVX2
-    if (isArchSupported(TargetArch::AVX2))
-        return findExtremeImplAVX2<T, ComparatorClass, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
-
-    if (isArchSupported(TargetArch::SSE42))
-        return findExtremeImplSSE42<T, ComparatorClass, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
+    if (isArchSupported(TargetArch::x86_64_v3))
+        return findExtremeImpl_x86_64_v3<T, ComparatorClass, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
 #endif
     return findExtremeImpl<T, ComparatorClass, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
 }
@@ -213,7 +228,7 @@ std::optional<size_t> findExtremeMinIndex(const T * __restrict ptr, size_t start
     if constexpr (is_floating_point<T>)
     {
         /// We search for the exact byte representation, not the default floating point equal, otherwise we might not find the value (NaN)
-        static_assert(std::is_pod_v<T>);
+        static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
         if (std::memcmp(&ptr[start], &value, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
             return {start};
         for (size_t i = end - 1; i > start; i--)
@@ -244,7 +259,7 @@ std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start
     if constexpr (is_floating_point<T>)
     {
         /// We search for the exact byte representation, not the default floating point equal, otherwise we might not find the value (NaN)
-        static_assert(std::is_pod_v<T>);
+        static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
         if (std::memcmp(&ptr[start], &value, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
             return {start};
         for (size_t i = end - 1; i > start; i--)

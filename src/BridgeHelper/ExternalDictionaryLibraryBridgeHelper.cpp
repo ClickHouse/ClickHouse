@@ -1,22 +1,23 @@
 #include <BridgeHelper/ExternalDictionaryLibraryBridgeHelper.h>
 
 #include <Core/Block.h>
-#include <Formats/formatBlock.h>
+#include <Core/Field.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
-#include <QueryPipeline/Pipe.h>
-#include <Processors/Formats/IInputFormat.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/formatBlock.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Formats/FormatFactory.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <QueryPipeline/Pipe.h>
+#include <base/range.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
-#include <Common/logger_useful.h>
-#include <base/range.h>
-#include <Core/Field.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -45,7 +46,7 @@ Poco::URI ExternalDictionaryLibraryBridgeHelper::getPingURI() const
 {
     auto uri = createBaseURI();
     uri.setPath(PING_HANDLER);
-    uri.addQueryParameter("dictionary_id", toString(dictionary_id));
+    uri.addQueryParameter("dictionary_id", fieldToString(dictionary_id));
     return uri;
 }
 
@@ -62,7 +63,7 @@ Poco::URI ExternalDictionaryLibraryBridgeHelper::createRequestURI(const String &
 {
     auto uri = getMainURI();
     uri.addQueryParameter("version", std::to_string(LIBRARY_BRIDGE_PROTOCOL_VERSION));
-    uri.addQueryParameter("dictionary_id", toString(dictionary_id));
+    uri.addQueryParameter("dictionary_id", fieldToString(dictionary_id));
     uri.addQueryParameter("method", method);
     return uri;
 }
@@ -106,7 +107,7 @@ bool ExternalDictionaryLibraryBridgeHelper::bridgeHandShake()
                         result, parsed ? toString(dictionary_id_exists) : "failed to parse");
 
     LOG_TRACE(log, "dictionary_id: {}, dictionary_id_exists on bridge side: {}, library confirmed to be initialized on server side: {}",
-              toString(dictionary_id), toString(dictionary_id_exists), library_initialized);
+        fieldToString(dictionary_id), toString(dictionary_id_exists), library_initialized);
 
     if (dictionary_id_exists && !library_initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -171,7 +172,7 @@ bool ExternalDictionaryLibraryBridgeHelper::cloneLibrary(const Field & other_dic
 {
     startBridgeSync();
     auto uri = createRequestURI(EXT_DICT_LIB_CLONE_METHOD);
-    uri.addQueryParameter("from_dictionary_id", toString(other_dictionary_id));
+    uri.addQueryParameter("from_dictionary_id", fieldToString(other_dictionary_id));
     /// We also pass initialization settings in order to create a library handler
     /// in case from_dictionary_id does not exist in bridge side (possible in case of bridge crash).
     library_initialized = executeRequest(uri, getInitLibraryCallback());
@@ -216,7 +217,7 @@ QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadAll()
 }
 
 
-static String getDictIdsString(const std::vector<UInt64> & ids)
+static String getDictIdsString(const VectorWithMemoryTracking<UInt64> & ids)
 {
     WriteBufferFromOwnString out;
     writeVectorBinary(ids, out);
@@ -224,7 +225,7 @@ static String getDictIdsString(const std::vector<UInt64> & ids)
 }
 
 
-QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadIds(const std::vector<uint64_t> & ids)
+QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadIds(const VectorWithMemoryTracking<uint64_t> & ids)
 {
     startBridgeSync();
     auto uri = createRequestURI(EXT_DICT_LOAD_IDS_METHOD);

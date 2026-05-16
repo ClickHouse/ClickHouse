@@ -254,7 +254,8 @@ void registerOutputFormatXML(FormatFactory & factory)
     factory.registerOutputFormat("XML", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings)
+        const FormatSettings & settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
         return std::make_shared<XMLRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });

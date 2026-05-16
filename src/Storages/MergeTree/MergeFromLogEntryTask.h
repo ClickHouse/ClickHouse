@@ -28,6 +28,9 @@ public:
     {
         if (merge_task)
             merge_task->cancel();
+
+        if (part)
+            part->removeIfNeeded();
     }
 
 protected:
@@ -54,6 +57,8 @@ private:
     Priority priority;
 
     MergeTaskPtr merge_task;
+
+    std::map<String, UInt64> projections_merge_time;
 };
 
 

@@ -3,6 +3,7 @@ import os
 import time
 
 import pytest
+from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob import BlobServiceClient
 
 from helpers.cluster import ClickHouseCluster
@@ -393,7 +394,7 @@ def test_table_manipulations(cluster):
     )
 
     azure_query(node, f"RENAME TABLE {renamed_table} TO {TABLE_NAME}")
-    assert azure_query(node, f"CHECK TABLE {TABLE_NAME} FORMAT Values") == "(1)"
+    assert azure_query(node, f"CHECK TABLE {TABLE_NAME} FORMAT Values SETTINGS check_query_single_value_result = 1") == "(1)"
 
     node.query(f"DETACH TABLE {TABLE_NAME}")
     node.query(f"ATTACH TABLE {TABLE_NAME}")
@@ -608,6 +609,10 @@ def test_endpoint(cluster):
     port = cluster.azurite_port
 
     container_client = cluster.blob_service_client.get_container_client(container_name)
+    try:
+        container_client.delete_container()
+    except ResourceNotFoundError:
+        pass
     container_client.create_container()
 
     azure_query(

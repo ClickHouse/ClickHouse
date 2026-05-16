@@ -164,6 +164,8 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
                     scheme = true;
                 break;
             }
+            case AuthenticationType::NO_AUTHENTICATION:
+                break;
             case AuthenticationType::NO_PASSWORD: [[fallthrough]];
             case AuthenticationType::MAX:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "AST: Unexpected authentication type {}", toString(*type));

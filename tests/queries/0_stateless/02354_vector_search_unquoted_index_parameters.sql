@@ -1,7 +1,5 @@
 -- Tags: no-fasttest, no-ordinary-database
 
-SET enable_vector_similarity_index = 1;
-
 -- Tests that quoted and unquoted parameters can be passed to vector search indexes.
 
 DROP TABLE IF EXISTS tab1;

@@ -479,7 +479,7 @@ TEST(ConcurrencyControl, MultipleThreads)
         // NOTE: No races: all concurrent spawn_threads() calls are done from `threads`, but they're already joined.
     };
 
-    for (String scheduler : {"round_robin", "fair_round_robin"})
+    for (String scheduler : {"round_robin", "fair_round_robin", "max_min_fair"})
     {
         t.cc.setScheduler(scheduler);
         pcg64 rng(randomSeed());
@@ -506,3 +506,261 @@ TEST(ConcurrencyControl, MultipleThreads)
             query.join();
     }
 }
+
+TEST(ConcurrencyControl, MaxMinFairUnlimited)
+{
+    ConcurrencyControlTest t; // unlimited number of slots
+    t.cc.setScheduler("max_min_fair");
+    ASSERT_TRUE(t.cc.getScheduler() == "max_min_fair");
+    auto slots = t.cc.allocate(0, 100500);
+    std::vector<AcquiredSlotPtr> acquired;
+    while (auto slot = slots->tryAcquire())
+        acquired.emplace_back(std::move(slot));
+    ASSERT_TRUE(acquired.size() == 100500);
+}
+
+TEST(ConcurrencyControl, MaxMinFairFifo)
+{
+    ConcurrencyControlTest t(1); // use single slot
+    t.cc.setScheduler("max_min_fair");
+    std::vector<SlotAllocationPtr> allocations;
+    constexpr int count = 42;
+    allocations.reserve(count);
+    for (int i = 0; i < count; i++)
+        allocations.emplace_back(t.cc.allocate(0, 1));
+
+    // With max_min_fair, when all allocations have equal allocated counts,
+    // order is determined by sequence_number which guarantees FIFO.
+    for (int i = 0; i < count; i++)
+    {
+        AcquiredSlotPtr holder;
+        for (int j = 0; j < count; j++)
+        {
+            auto slot = allocations[j]->tryAcquire();
+            if (i == j) // check fifo order of allocations
+            {
+                ASSERT_TRUE(slot);
+                holder = std::move(slot);
+            }
+            else
+                ASSERT_TRUE(!slot);
+        }
+        holder.reset(); // release slot -- leads to the next allocation
+    }
+}
+
+TEST(ConcurrencyControl, MaxMinFairNoOversubscription)
+{
+    ConcurrencyControlTest t(5);
+    t.cc.setScheduler("max_min_fair");
+    std::vector<SlotAllocationPtr> allocations;
+    allocations.reserve(10);
+    for (int i = 0; i < 10; i++)
+        allocations.emplace_back(t.cc.allocate(1, 2));
+    std::vector<AcquiredSlotPtr> slots;
+    // Normal allocation using maximum amount of slots, note that min:1 is not considered as competing and does not count towards limit
+    for (int i = 0; i < 5; i++)
+    {
+        auto slot1 = allocations[i]->tryAcquire();
+        ASSERT_TRUE(slot1);
+        slots.emplace_back(std::move(slot1));
+        auto slot2 = allocations[i]->tryAcquire();
+        ASSERT_TRUE(slot2);
+        slots.emplace_back(std::move(slot2));
+        ASSERT_TRUE(!allocations[i]->tryAcquire());
+    }
+    // No oversubscription: only minimum amount of slots are allocated
+    for (int i = 5; i < 10; i++)
+    {
+        auto slot1 = allocations[i]->tryAcquire();
+        ASSERT_TRUE(slot1);
+        slots.emplace_back(std::move(slot1));
+        ASSERT_TRUE(!allocations[i]->tryAcquire());
+    }
+}
+
+TEST(ConcurrencyControl, MaxMinFairReleaseUnacquiredSlots)
+{
+    ConcurrencyControlTest t(10);
+    t.cc.setScheduler("max_min_fair");
+    {
+        std::vector<SlotAllocationPtr> allocations;
+        allocations.reserve(10);
+        for (int i = 0; i < 10; i++)
+            allocations.emplace_back(t.cc.allocate(1, 2));
+        // Do not acquire - just destroy allocations with granted slots
+    }
+    // Check that slots were actually released
+    auto allocation = t.cc.allocate(0, 20);
+    std::vector<AcquiredSlotPtr> acquired;
+    while (auto slot = allocation->tryAcquire())
+        acquired.emplace_back(std::move(slot));
+    ASSERT_TRUE(acquired.size() == 10);
+}
+
+
+TEST(ConcurrencyControl, MaxMinFairDestroyNotFullyAllocatedAllocation)
+{
+    ConcurrencyControlTest t(10);
+    t.cc.setScheduler("max_min_fair");
+    for (int i = 0; i < 3; i++)
+    {
+        auto allocation = t.cc.allocate(5, 20);
+        std::vector<AcquiredSlotPtr> acquired;
+        while (auto slot = allocation->tryAcquire())
+            acquired.emplace_back(std::move(slot));
+        ASSERT_TRUE(acquired.size() == 15);
+    }
+}
+
+TEST(ConcurrencyControl, MaxMinFairDestroyAllocationBeforeSlots)
+{
+    ConcurrencyControlTest t(10);
+    t.cc.setScheduler("max_min_fair");
+    for (int i = 0; i < 3; i++)
+    {
+        std::vector<AcquiredSlotPtr> acquired;
+        auto allocation = t.cc.allocate(5, 20);
+        while (auto slot = allocation->tryAcquire())
+            acquired.emplace_back(std::move(slot));
+        ASSERT_TRUE(acquired.size() == 15);
+        allocation.reset(); // slots are still acquired (they should actually hold allocation)
+    }
+}
+
+TEST(ConcurrencyControl, MaxMinFairGrantReleasedToTheSameAllocation)
+{
+    ConcurrencyControlTest t(3);
+    t.cc.setScheduler("max_min_fair");
+    auto allocation = t.cc.allocate(1, 11);
+    std::list<AcquiredSlotPtr> acquired;
+    while (auto slot = allocation->tryAcquire())
+        acquired.emplace_back(std::move(slot));
+    ASSERT_TRUE(acquired.size() == 4); // X 0 1 2
+    acquired.clear();
+    while (auto slot = allocation->tryAcquire())
+        acquired.emplace_back(std::move(slot));
+    ASSERT_TRUE(acquired.size() == 3); // 3 4 5
+    acquired.pop_back();
+    while (auto slot = allocation->tryAcquire())
+        acquired.emplace_back(std::move(slot));
+    ASSERT_TRUE(acquired.size() == 3); // 3 4 6
+    acquired.pop_front();
+    while (auto slot = allocation->tryAcquire())
+        acquired.emplace_back(std::move(slot));
+    ASSERT_TRUE(acquired.size() == 3); // 4 6 7
+    acquired.clear();
+    while (auto slot = allocation->tryAcquire())
+        acquired.emplace_back(std::move(slot));
+    ASSERT_TRUE(acquired.size() == 2); // 8 9
+}
+
+TEST(ConcurrencyControl, MaxMinFairFairGranting)
+{
+    ConcurrencyControlTest t(3);
+    t.cc.setScheduler("max_min_fair");
+    auto start_busy_period = t.cc.allocate(0, 3);
+    auto a1 = t.cc.allocate(1, 10);
+    auto a2 = t.cc.allocate(1, 10);
+    auto a3 = t.cc.allocate(1, 10);
+    start_busy_period.reset();
+
+    // The first slot in each allocation is not counted into limit
+    {
+        auto s1 = a1->tryAcquire();
+        ASSERT_TRUE(s1);
+        auto s2 = a2->tryAcquire();
+        ASSERT_TRUE(s2);
+        auto s3 = a3->tryAcquire();
+        ASSERT_TRUE(s3);
+    }
+
+    for (int i = 1; i < 10; i++)
+    {
+        auto s1 = a1->tryAcquire();
+        ASSERT_TRUE(s1);
+        ASSERT_TRUE(!a1->tryAcquire());
+        auto s2 = a2->tryAcquire();
+        ASSERT_TRUE(s2);
+        ASSERT_TRUE(!a2->tryAcquire());
+        auto s3 = a3->tryAcquire();
+        ASSERT_TRUE(s3);
+        ASSERT_TRUE(!a3->tryAcquire());
+    }
+}
+
+TEST(ConcurrencyControl, MaxMinFairSetSlotCount)
+{
+    ConcurrencyControlTest t(10);
+    t.cc.setScheduler("max_min_fair");
+    auto allocation = t.cc.allocate(5, 30);
+    std::vector<AcquiredSlotPtr> acquired;
+    while (auto slot = allocation->tryAcquire())
+        acquired.emplace_back(std::move(slot));
+    ASSERT_TRUE(acquired.size() == 15);
+
+    t.cc.setMaxConcurrency(15);
+    while (auto slot = allocation->tryAcquire())
+        acquired.emplace_back(std::move(slot));
+    ASSERT_TRUE(acquired.size() == 20);
+
+    t.cc.setMaxConcurrency(5);
+    acquired.clear();
+    while (auto slot = allocation->tryAcquire())
+        acquired.emplace_back(std::move(slot));
+    ASSERT_TRUE(acquired.size() == 5);
+
+    // Check that newly added slots are distributed to allocation with fewer slots (max-min fair)
+    std::vector<AcquiredSlotPtr> acquired2;
+    auto allocation2 = t.cc.allocate(0, 30);
+    ASSERT_TRUE(!allocation->tryAcquire());
+    t.cc.setMaxConcurrency(15); // 10 slots added: should go to allocation2 first as it has 0 allocated
+    while (auto slot = allocation->tryAcquire())
+        acquired.emplace_back(std::move(slot));
+    while (auto slot = allocation2->tryAcquire())
+        acquired2.emplace_back(std::move(slot));
+    // allocation has 5 allocated, allocation2 has 0; with max-min fair, allocation2 gets slots until equal
+    // Then they alternate. With 10 new slots: allocation2 gets 5 to catch up, then 5 more are split
+    ASSERT_TRUE(acquired.size() + acquired2.size() == 15); // total 15 slots
+}
+
+// This test demonstrates the key difference between round-robin and max-min fair:
+// max-min fair always grants to the allocation with the minimum number of slots
+TEST(ConcurrencyControl, MaxMinFairPrioritizesMinimumAllocation)
+{
+    ConcurrencyControlTest t(6);
+    t.cc.setScheduler("max_min_fair");
+
+    // Create three allocations, but give one of them a head start
+    auto a1 = t.cc.allocate(0, 10); // will get 6 slots initially
+    std::vector<AcquiredSlotPtr> a1_slots;
+    while (auto slot = a1->tryAcquire())
+        a1_slots.emplace_back(std::move(slot));
+    ASSERT_TRUE(a1_slots.size() == 6); // a1 has 6 slots
+
+    // Now create two more allocations - they start waiting
+    auto a2 = t.cc.allocate(0, 10);
+    auto a3 = t.cc.allocate(0, 10);
+
+    // Release 4 slots from a1
+    a1_slots.pop_back();
+    a1_slots.pop_back();
+    a1_slots.pop_back();
+    a1_slots.pop_back();
+
+    // With max-min fair, released slots should go to a2 and a3 (they have 0 allocated)
+    // rather than back to a1 (which has 6 allocated, now 2 after releasing 4)
+    std::vector<AcquiredSlotPtr> a2_slots;
+    std::vector<AcquiredSlotPtr> a3_slots;
+    while (auto slot = a2->tryAcquire())
+        a2_slots.emplace_back(std::move(slot));
+    while (auto slot = a3->tryAcquire())
+        a3_slots.emplace_back(std::move(slot));
+
+    // a2 and a3 should get 2 slots each (4 released, distributed to the ones with min allocation)
+    ASSERT_TRUE(a2_slots.size() == 2);
+    ASSERT_TRUE(a3_slots.size() == 2);
+    // a1 should not get any more (it still has 2, which is >= a2 and a3's count)
+    ASSERT_TRUE(!a1->tryAcquire());
+}
+

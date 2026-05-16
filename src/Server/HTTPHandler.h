@@ -8,7 +8,7 @@
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <IO/CascadeWriteBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Common/re2.h>
@@ -59,6 +59,9 @@ public:
     virtual bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) = 0;
 
     virtual std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) = 0;
+
+protected:
+    LoggerPtr log;
 
 private:
     struct Output
@@ -118,7 +121,6 @@ private:
     };
 
     IServer & server;
-    LoggerPtr log;
 
     /// It is the name of the server that will be sent in an http-header X-ClickHouse-Server-Display-Name.
     String server_display_name;
@@ -147,7 +149,7 @@ private:
         HTMLForm & params,
         HTTPServerResponse & response,
         Output & used_output,
-        std::optional<CurrentThread::QueryScope> & query_scope,
+        QueryScope & query_scope,
         const ProfileEvents::Event & write_event);
 
     bool trySendExceptionToClient(

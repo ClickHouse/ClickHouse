@@ -5,6 +5,7 @@
 
 #include <Common/Throttler.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
@@ -75,7 +76,7 @@ void WriteBufferFromFileDescriptor::nextImpl()
         {
             bytes_written += res;
             if (throttler)
-                throttler->add(res);
+                throttler->throttle(res);
         }
     }
 

@@ -53,6 +53,9 @@ struct ASTTableExpression : public IAST
     ASTPtr sample_size;
     ASTPtr sample_offset;
 
+    /// Column aliases for the table expression (AS t(a, b))
+    ASTPtr column_aliases;
+
     using IAST::IAST;
     String getID(char) const override { return "TableExpression"; }
     ASTPtr clone() const override;
@@ -70,6 +73,9 @@ struct ASTTableJoin : public IAST
     JoinStrictness strictness = JoinStrictness::Unspecified;
     JoinKind kind = JoinKind::Inner;
 
+    /// Set for NATURAL JOIN — the USING columns are derived automatically from the common columns.
+    bool is_natural = false;
+
     /// Condition. One of fields is non-nullptr.
     ASTPtr using_expression_list;
     ASTPtr on_expression;
@@ -84,7 +90,7 @@ struct ASTTableJoin : public IAST
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-    void forEachPointerToChild(std::function<void(void **)> f) override;
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
 };
 
 /// Specification of ARRAY JOIN.

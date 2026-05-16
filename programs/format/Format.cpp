@@ -22,6 +22,7 @@
 
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/registerDatabases.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -34,6 +35,11 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
+#include <Compression/CompressionFactory.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/registerDictionaries.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
 #include <boost/algorithm/string/split.hpp>
@@ -73,15 +79,17 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("query", po::value<std::string>(), "query to format")
             ("help,h", "produce help message")
             ("comments", "keep comments in the output")
-            ("hilite", "add syntax highlight with ANSI terminal escape sequences")
+            ("hilite,highlight", "add syntax highlight with ANSI terminal escape sequences (can also use --highlight)")
             ("oneline", "format in single line")
             ("max_line_length", po::value<size_t>()->default_value(0), "format in single line queries with length less than specified")
             ("quiet,q", "just check syntax, no output on success")
             ("multiquery,n", "allow multiple queries in the same file")
             ("obfuscate", "obfuscate instead of formatting")
             ("backslash", "add a backslash at the end of each line of the formatted query")
-            ("allow_settings_after_format_in_insert", "Allow SETTINGS after FORMAT, but note, that this is not always safe")
+            ("allow_settings_after_format_in_insert", "allow SETTINGS after FORMAT, but note, that this is not always safe")
             ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
+            ("show_secrets", po::bool_switch()->default_value(false), "show secret values like passwords, API keys, etc.")
+            ("semicolons_inline", "In multiquery mode put semicolon on last line of query instead of a new line")
         ;
 
         Settings cmd_settings;
@@ -92,24 +100,26 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
         po::notify(options);
 
-        if (options.count("help"))
+        if (options.contains("help"))
         {
-            std::cout << "Usage: " << argv[0] << " [options] < query" << std::endl;
+            std::cout << "Usage: clickhouse format [options] < query" << std::endl;
             std::cout << desc << std::endl;
-            return 1;
+            return 0;
         }
 
-        bool hilite = options.count("hilite");
-        bool oneline = options.count("oneline");
-        bool quiet = options.count("quiet");
-        bool multiple = options.count("multiquery");
+        bool hilite = options.contains("hilite");
+        bool oneline = options.contains("oneline");
+        bool quiet = options.contains("quiet");
+        bool multiple = options.contains("multiquery");
         size_t max_line_length = options["max_line_length"].as<size_t>();
-        bool obfuscate = options.count("obfuscate");
-        bool backslash = options.count("backslash");
-        bool allow_settings_after_format_in_insert = options.count("allow_settings_after_format_in_insert");
+        bool obfuscate = options.contains("obfuscate");
+        bool backslash = options.contains("backslash");
+        bool allow_settings_after_format_in_insert = options.contains("allow_settings_after_format_in_insert");
+        bool show_secrets = options["show_secrets"].as<bool>();
+        bool semicolon_inline = options.contains("semicolons_inline");
 
         std::function<void(std::string_view)> comments_callback;
-        if (options.count("comments"))
+        if (options.contains("comments"))
             comments_callback = [](const std::string_view comment) { std::cout << comment << '\n'; };
 
         SharedContextHolder shared_context = Context::createShared();
@@ -151,7 +161,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
         String query;
 
-        if (options.count("query"))
+        if (options.contains("query"))
         {
             query = options["query"].as<std::string>();
         }
@@ -167,7 +177,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             WordSet used_nouns;
             SipHash hash_func;
 
-            if (options.count("seed"))
+            if (options.contains("seed"))
             {
                 hash_func.update(options["seed"].as<std::string>());
             }
@@ -179,6 +189,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             registerDatabases();
             registerStorages();
             registerFormats();
+            registerDictionaries();
 
             std::unordered_set<std::string> additional_names;
 
@@ -186,11 +197,21 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             auto all_known_data_type_names = DataTypeFactory::instance().getAllRegisteredNames();
             auto all_known_settings = Settings().getAllRegisteredNames();
             auto all_known_merge_tree_settings = MergeTreeSettings().getAllRegisteredNames();
+            auto all_known_index_types = MergeTreeIndexFactory::instance().getAllRegisteredNames();
+            auto all_known_codecs = CompressionCodecFactory::instance().getAllRegisteredNames();
+            auto all_known_database_engines = DatabaseFactory::instance().getAllRegisteredNames();
+            auto all_known_dict_layouts = DictionaryFactory::instance().getAllRegisteredNames();
+            auto all_known_dict_sources = DictionarySourceFactory::instance().getAllRegisteredNames();
 
             additional_names.insert(all_known_storage_names.begin(), all_known_storage_names.end());
             additional_names.insert(all_known_data_type_names.begin(), all_known_data_type_names.end());
             additional_names.insert(all_known_settings.begin(), all_known_settings.end());
             additional_names.insert(all_known_merge_tree_settings.begin(), all_known_merge_tree_settings.end());
+            additional_names.insert(all_known_index_types.begin(), all_known_index_types.end());
+            additional_names.insert(all_known_codecs.begin(), all_known_codecs.end());
+            additional_names.insert(all_known_database_engines.begin(), all_known_database_engines.end());
+            additional_names.insert(all_known_dict_layouts.begin(), all_known_dict_layouts.end());
+            additional_names.insert(all_known_dict_sources.begin(), all_known_dict_sources.end());
 
             for (auto * it = auto_time_zones; *it; ++it)
             {
@@ -204,16 +225,25 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         additional_names.insert(word);
             }
 
+            /// Add lowercased versions of all additional names for case-insensitive matching.
+            std::unordered_set<std::string> additional_names_lowercase;
+            for (const auto & name : additional_names)
+                additional_names_lowercase.insert(Poco::toLower(name));
+
             KnownIdentifierFunc is_known_identifier = [&](std::string_view name)
             {
                 std::string what(name);
 
-                return FunctionFactory::instance().has(what)
+                if (FunctionFactory::instance().has(what)
                     || AggregateFunctionFactory::instance().isAggregateFunctionName(what)
                     || TableFunctionFactory::instance().isTableFunctionName(what)
                     || FormatFactory::instance().isOutputFormat(what)
                     || FormatFactory::instance().isInputFormat(what)
-                    || additional_names.contains(what);
+                    || additional_names.contains(what))
+                    return true;
+
+                /// Case-insensitive fallback for additional names (storage names, data types, settings, etc.)
+                return additional_names_lowercase.contains(Poco::toLower(what));
             };
 
             WriteBufferFromFileDescriptor out(STDOUT_FILENO);
@@ -267,7 +297,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         WriteBufferFromOwnString query_buf;
                         bool oneline_current_query = oneline || approx_query_length < max_line_length;
                         IAST::FormatSettings settings(oneline_current_query);
-                        settings.show_secrets = true;
+                        settings.show_secrets = show_secrets;
                         settings.print_pretty_type_names = !oneline_current_query;
                         res->format(query_buf, settings);
                         String formatted_query = query_buf.str();
@@ -303,7 +333,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
                         if (multiple && !insert_query_payload)
                         {
-                            if (oneline || !has_multiple_lines)
+                            if (oneline || !has_multiple_lines || semicolon_inline)
                                 std::cout << ";\n";
                             else
                                 std::cout << "\n;\n";
@@ -320,7 +350,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         WriteBufferFromOwnString str_buf;
                         bool oneline_current_query = oneline || approx_query_length < max_line_length;
                         IAST::FormatSettings settings(oneline_current_query);
-                        settings.show_secrets = true;
+                        settings.show_secrets = show_secrets;
                         settings.print_pretty_type_names = !oneline_current_query;
                         res->format(str_buf, settings);
 

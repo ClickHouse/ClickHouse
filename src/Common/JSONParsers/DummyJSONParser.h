@@ -82,6 +82,7 @@ struct DummyJSONParser
         static Iterator end() { return {}; }
         static size_t size() { return 0; }
         bool find(std::string_view, Element &) const { return false; } /// NOLINT
+        bool findCaseInsensitive(std::string_view, Element &) const { return false; } /// NOLINT
 
 #if 0
         /// Optional: Provides access to an object's element by index.

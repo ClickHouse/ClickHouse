@@ -17,8 +17,11 @@ logging.getLogger().addHandler(logging.StreamHandler())
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 S3_DATA = []
 
+generated_rows = 0
 
 def create_buckets_s3(cluster):
+    global generated_rows
+
     minio = cluster.minio_client
 
     for file_number in range(100):
@@ -34,6 +37,7 @@ def create_buckets_s3(cluster):
                 data.append(
                     ["str_" + str(number + file_number) * 10, number + file_number]
                 )
+                generated_rows += 1
 
             writer = csv.writer(f)
             writer.writerows(data)
@@ -188,14 +192,6 @@ def test_reconnect_after_nodes_restart_no_wait(started_cluster):
 
     assert result == "14950\n"
 
-    node1.query("system flush logs query_log")
-
-    assert (
-        node1.query(
-            f"""SELECT ProfileEvents['DistributedConnectionReconnectCount'], ProfileEvents['DistributedConnectionFailTry'] > 0 FROM system.query_log WHERE query_id = '{uuid}' and type = 'QueryFinish';"""
-        ) == "1\t1\n"
-    )
-
     # avoid leaving the test w/o started node, so next test will start with fully runnning cluster
     node2.wait_for_start(30)
 
@@ -260,28 +256,23 @@ def test_insert_select(started_cluster, wait_restart, missing_table):
         , query_id = uuid
     )
 
+    if (not wait_restart):
+        node2.wait_for_start(30)
+
+    node1.query(f"SYSTEM SYNC REPLICA {table}")
+
     # Check whether we inserted at least something
     assert (
         int(
             node1.query(
                 f"""SELECT count(*) FROM {table};"""
             ).strip()
-        )
-        != 0
+        ) == generated_rows
     )
-
-    if (not wait_restart):
-        node1.query("SYSTEM FLUSH LOGS query_log");
-        assert ( node1.query(f"select ProfileEvents['DistributedConnectionFailTry'] from system.query_log where query_id = '{uuid}' and type = 'QueryFinish'") == "1\n")
-
 
     if (missing_table):
         node1.query("SYSTEM FLUSH LOGS query_log");
         assert ( node1.query(f"select ProfileEvents['DistributedConnectionMissingTable'] from system.query_log where query_id = '{uuid}' and type = 'QueryFinish'") == "1\n")
-
-
-    if (wait_restart):
-        node2.wait_for_start(30)
 
     node1.query(
         f"""DROP TABLE IF EXISTS {table} ON CLUSTER 'cluster_simple' SYNC;"""

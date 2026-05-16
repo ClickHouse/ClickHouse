@@ -12,7 +12,7 @@ namespace DB
 {
 bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto select_query = std::make_shared<ASTProjectionSelectQuery>();
+    auto select_query = make_intrusive<ASTProjectionSelectQuery>();
     node = select_query;
 
     ParserKeyword s_with(Keyword::WITH);
@@ -68,7 +68,7 @@ bool ParserProjectionSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
         }
         else
         {
-            auto function_node = std::make_shared<ASTFunction>();
+            auto function_node = make_intrusive<ASTFunction>();
             function_node->name = "tuple";
             function_node->arguments = expr_list;
             function_node->children.push_back(expr_list);

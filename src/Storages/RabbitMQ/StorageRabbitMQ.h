@@ -35,10 +35,14 @@ public:
 
     std::string getName() const override { return RabbitMQ::TABLE_ENGINE_NAME; }
 
+    bool isMessageQueue() const override { return true; }
+
     bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
+
+    void renameInMemory(const StorageID & new_table_id) override;
 
     /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
     /// to be done only when table is dropped (not when detached). Also connection must be closed only in shutdown, but those
@@ -81,7 +85,7 @@ public:
     void incrementReader();
     void decrementReader();
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
 
 private:
@@ -205,7 +209,7 @@ private:
         std::uniform_int_distribution<int> distribution('a', 'z');
         String random_str(32, ' ');
         for (auto & c : random_str)
-            c = distribution(thread_local_rng);
+            c = static_cast<char>(distribution(thread_local_rng));
         return random_str;
     }
 };

@@ -1,5 +1,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Common/typeid_cast.h>
@@ -7,11 +8,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
 namespace
 {
 
@@ -29,14 +25,18 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto * type = typeid_cast<const DataTypeLowCardinality *>(arguments[0].get());
-        if (!type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "First first argument of function lowCardinalityKeys must be ColumnLowCardinality, "
-                            "but got {}", arguments[0]->getName());
+        FunctionArgumentDescriptors mandatory_args{
+            {"col", &isLowCardinalityType, nullptr, "LowCardinality"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        const auto * type = typeid_cast<const DataTypeLowCardinality *>(arguments[0].type.get());
 
         return type->getDictionaryType();
     }
@@ -54,7 +54,53 @@ public:
 
 REGISTER_FUNCTION(LowCardinalityKeys)
 {
-    factory.registerFunction<FunctionLowCardinalityKeys>();
+    FunctionDocumentation::Description description = R"(
+Returns the dictionary values of a [LowCardinality](../data-types/lowcardinality.md) column.
+If the block is smaller or larger than the dictionary size, the result will be truncated or extended with default values.
+Since LowCardinality have per-part dictionaries, this function may return different dictionary values in different parts.
+    )";
+    FunctionDocumentation::Syntax syntax = "lowCardinalityKeys(col)";
+    FunctionDocumentation::Arguments arguments = {
+        {"col", "A low cardinality column.", {"LowCardinality"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the dictionary keys.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "lowCardinalityKeys",
+        R"(
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (s LowCardinality(String)) ENGINE = Memory;
+
+-- create two parts:
+
+INSERT INTO test VALUES ('ab'), ('cd'), ('ab'), ('ab'), ('df');
+INSERT INTO test VALUES ('ef'), ('cd'), ('ab'), ('cd'), ('ef');
+
+SELECT s, lowCardinalityKeys(s) FROM test;
+        )",
+        R"(
+┌─s──┬─lowCardinalityKeys(s)─┐
+│ ef │                       │
+│ cd │ ef                    │
+│ ab │ cd                    │
+│ cd │ ab                    │
+│ ef │                       │
+└────┴───────────────────────┘
+┌─s──┬─lowCardinalityKeys(s)─┐
+│ ab │                       │
+│ cd │ ab                    │
+│ ab │ cd                    │
+│ ab │ df                    │
+│ df │                       │
+└────┴───────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {18, 12};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionLowCardinalityKeys>(documentation);
 }
 
 }

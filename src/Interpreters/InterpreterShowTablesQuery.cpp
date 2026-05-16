@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -14,6 +14,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Common/Macros.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -229,8 +230,18 @@ BlockIO InterpreterShowTablesQuery::execute()
 
         return res;
     }
-
-    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
+    auto rewritten_query = getRewrittenQuery();
+    String database = getContext()->resolveDatabase(query.getFrom());
+    auto query_context = Context::createCopy(getContext());
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("");
+    if (DatabaseCatalog::instance().isDatalakeCatalog(database))
+    {
+        /// HACK: force the setting so that system.tables includes tables from the requested data lake catalog.
+        /// system.databases already shows all catalogs unconditionally, so no override is needed for SHOW DATABASES.
+        query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
+    }
+    return executeQuery(rewritten_query, std::move(query_context), QueryFlags{ .internal = true }).second;
 }
 
 /// (*) Sorting is strictly speaking not necessary but 1. it is convenient for users, 2. SQL currently does not allow to

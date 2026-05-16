@@ -9,7 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/Stopwatch.h>
 
-int main(int, char **)
+int mainEntryExampleLzmaBuffers(int, char **)
 try
 {
     std::cout << std::fixed << std::setprecision(2);
@@ -33,7 +33,7 @@ try
         stopwatch.stop();
 
         std::cout << "Writing done. Elapsed: " << stopwatch.elapsedSeconds() << " s."
-                  << ", " << (lzma_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s" << std::endl;
+                  << ", " << (static_cast<double>(lzma_buf.count()) / stopwatch.elapsedSeconds() / 1000000) << " MB/s" << std::endl;
     }
 
     {
@@ -52,7 +52,7 @@ try
         }
         stopwatch.stop();
         std::cout << "Reading done. Elapsed: " << stopwatch.elapsedSeconds() << " s."
-                  << ", " << (lzma_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s" << std::endl;
+                  << ", " << (static_cast<double>(lzma_buf.count()) / stopwatch.elapsedSeconds() / 1000000) << " MB/s" << std::endl;
     }
 
     return 0;

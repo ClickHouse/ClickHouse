@@ -126,7 +126,7 @@ public:
         {
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                std::string_view sqid = col_non_const->getDataAt(i).toView();
+                std::string_view sqid = col_non_const->getDataAt(i);
                 std::vector<UInt64> integers = sqids.decode(String(sqid));
                 if (!integers.empty())
                     res_nested_data.insert(integers.begin(), integers.end());
@@ -145,42 +145,52 @@ private:
 
 REGISTER_FUNCTION(Sqid)
 {
-    factory.registerFunction<FunctionSqidEncode>(FunctionDocumentation{
-        .description=R"(
-Transforms numbers into a [Sqid](https://sqids.org/) which is a Youtube-like ID string.)",
-        .syntax="sqidEncode(number1, ...)",
-        .arguments={{"number1, ...", "Arbitrarily many numbers.", {"UInt8/16/32/64"}}},
-        .returned_value={"A hash id", {"String"}},
-        .examples={
-            {"simple",
-            "SELECT sqidEncode(1, 2, 3, 4, 5);",
-            R"(
+    FunctionDocumentation::Description description_sqidEncode = R"(
+Transforms numbers into a [sqid](https://sqids.org/), a Youtube-like ID string.
+    )";
+    FunctionDocumentation::Syntax syntax_sqidEncode = "sqidEncode(n1[, n2, ...])";
+    FunctionDocumentation::Arguments arguments_sqidEncode = {{"n1[, n2, ...]", "Arbitrarily many numbers.", {"UInt8/16/32/64"}}};
+    FunctionDocumentation::ReturnedValue returned_value_sqidEncode = {"Returns a hash ID", {"String"}};
+    FunctionDocumentation::Examples examples_sqidEncode = {
+    {
+        "Usage example",
+        "SELECT sqidEncode(1, 2, 3, 4, 5);",
+        R"(
 ┌─sqidEncode(1, 2, 3, 4, 5)─┐
 │ gXHfJ1C6dN                │
 └───────────────────────────┘
-            )"
-            }},
-        .category = FunctionDocumentation::Category::Encoding
-    });
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_sqidEncode = {24, 1};
+    FunctionDocumentation::Category category_sqidEncode = FunctionDocumentation::Category::Encoding;
+    FunctionDocumentation documentation_sqidEncode = {description_sqidEncode, syntax_sqidEncode, arguments_sqidEncode, {}, returned_value_sqidEncode, examples_sqidEncode, introduced_in_sqidEncode, category_sqidEncode};
+
+    factory.registerFunction<FunctionSqidEncode>(documentation_sqidEncode);
     factory.registerAlias("sqid", FunctionSqidEncode::name);
 
-    factory.registerFunction<FunctionSqidDecode>(FunctionDocumentation{
-        .description=R"(
-Transforms a [Sqid](https://sqids.org/) back into an array of numbers.)",
-        .syntax="sqidDecode(number1, ...)",
-        .arguments={{"sqid", "A sqid"}},
-        .returned_value={"An array of numbers", {"Array(UInt64)"}},
-        .examples={
-            {"simple",
-            "SELECT sqidDecode('gXHfJ1C6dN');",
-            R"(
-┌─sqidDecode('gXHfJ1C6dN')─┐
-│ [1,2,3,4,5]              │
-└──────────────────────────┘
-            )"
-            }},
-        .category = FunctionDocumentation::Category::Encoding
-    });
+    FunctionDocumentation::Description description_sqidDecode = R"(
+Transforms a [sqid](https://sqids.org/) back into an array of numbers.
+    )";
+    FunctionDocumentation::Syntax syntax_sqidDecode = "sqidDecode(sqid)";
+    FunctionDocumentation::Arguments arguments_sqidDecode = {{"sqid", "The sqid to decode.", {"String"}}};
+    FunctionDocumentation::ReturnedValue returned_value_sqidDecode = {"Returns an array of numbers from `sqid`.", {"Array(UInt64)"}};
+    FunctionDocumentation::Examples examples_sqidDecode = {
+    {
+        "Usage example",
+        "SELECT sqidDecode('gXHfJ1C6dN');",
+        R"(
+┌─sqidDecode('gXHfJ1C6dN')─────┐
+│ [1, 2, 3, 4, 5]              │
+└──────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_sqidDecode = {24, 1};
+    FunctionDocumentation::Category category_sqidDecode = FunctionDocumentation::Category::Encoding;
+    FunctionDocumentation documentation_sqidDecode = {description_sqidDecode, syntax_sqidDecode, arguments_sqidDecode, {}, returned_value_sqidDecode, examples_sqidDecode, introduced_in_sqidDecode, category_sqidDecode};
+
+    factory.registerFunction<FunctionSqidDecode>(documentation_sqidDecode);
 }
 
 }

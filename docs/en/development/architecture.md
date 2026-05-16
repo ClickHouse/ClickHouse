@@ -5,9 +5,8 @@ sidebar_label: 'Architecture Overview'
 sidebar_position: 50
 slug: /development/architecture
 title: 'Architecture Overview'
+doc_type: 'reference'
 ---
-
-# Architecture Overview
 
 ClickHouse is a true column-oriented DBMS. Data is stored by columns, and during the execution of arrays (vectors or chunks of columns).
 Whenever possible, operations are dispatched on arrays, rather than on individual values.
@@ -132,7 +131,7 @@ There are ordinary functions and aggregate functions. For aggregate functions, s
 
 Ordinary functions do not change the number of rows – they work as if they are processing each row independently. In fact, functions are not called for individual rows, but for `Block`'s of data to implement vectorized query execution.
 
-There are some miscellaneous functions, like [blockSize](/sql-reference/functions/other-functions#blockSize), [rowNumberInBlock](/sql-reference/functions/other-functions#rowNumberInBlock), and [runningAccumulate](/sql-reference/functions/other-functions#runningaccumulate), that exploit block processing and violate the independence of rows.
+There are some miscellaneous functions, like [blockSize](/sql-reference/functions/other-functions#blockSize), [rowNumberInBlock](/sql-reference/functions/other-functions#rowNumberInBlock), and [runningAccumulate](/sql-reference/functions/other-functions#runningAccumulate), that exploit block processing and violate the independence of rows.
 
 ClickHouse has strong typing, so there's no implicit type conversion. If a function does not support a specific combination of types, it throws an exception. But functions can work (be overloaded) for many different combinations of types. For example, the `plus` function (to implement the `+` operator) works for any combination of numeric types: `UInt8` + `Float32`, `UInt16` + `Int8`, and so on. Also, some variadic functions can accept any number of arguments, such as the `concat` function.
 
@@ -178,21 +177,41 @@ Config is read from multiple files (in XML or YAML format) and merged into singl
 
 For queries and subsystems other than `Server` config is accessible using `Context::getConfigRef()` method. Every subsystem that is capable of reloading its config without server restart should register itself in reload callback in `Server::main()` method. Note that if newer config has an error, most subsystems will ignore new config, log warning messages and keep working with previously loaded config. Due to the nature of `AbstractConfiguration` it is not possible to pass reference to specific section, so `String config_prefix` is usually used instead.
 
+### Context {#context}
+
+ClickHouse manages settings through the hierarchy of contexts:
+* **Global context** - server-wide settings defined via config files
+* **Session context** - user session settings from profiles, user configuration and SET commands
+* **Query context** - query-level settings from SETTINGS clause
+* **Background context** - server-wide settings for background operations (Mutate, Merge) defined via 'background' profile
+
+When scheduling an operation (queries, mutations, etc.) server builds the specific context by merging settings in the following order (later sections override earlier ones):
+1. Global defaults
+2. Global configuration
+3. Profile settings (from `<profiles>` section)
+4. User settings (from `<users>` section)
+5. Session settings (from SET command)
+6. Query settings (from SETTINGS clause)
+
+:::note
+Background operations can be configured via global and 'background' profile settings; session and query settings have no effect in this case. If no explicit configuration given, the configuration will inherit from global context. The default profile name for such operations is 'background', which can be overridden via `background_profile` server setting.
+:::
+
 ## Threads and jobs {#threads-and-jobs}
 
 To execute queries and do side activities ClickHouse allocates threads from one of thread pools to avoid frequent thread creation and destruction. There are a few thread pools, which are selected depending on a purpose and structure of a job:
-  * Server pool for incoming client sessions.
-  * Global thread pool for general purpose jobs, background activities and standalone threads.
-  * IO thread pool for jobs that are mostly blocked on some IO and are not CPU-intensive.
-  * Background pools for periodic tasks.
-  * Pools for preemptable tasks that can be split into steps.
+* Server pool for incoming client sessions.
+* Global thread pool for general purpose jobs, background activities and standalone threads.
+* IO thread pool for jobs that are mostly blocked on some IO and are not CPU-intensive.
+* Background pools for periodic tasks.
+* Pools for preemptable tasks that can be split into steps.
 
 Server pool is a `Poco::ThreadPool` class instance defined in `Server::main()` method. It can have at most `max_connection` threads. Every thread is dedicated to a single active connection.
 
 Global thread pool is `GlobalThreadPool` singleton class. To allocate thread from it `ThreadFromGlobalPool` is used. It has an interface similar to `std::thread`, but pulls thread from the global pool and does all necessary initialization. It is configured with the following settings:
-  * `max_thread_pool_size` - limit on thread count in pool.
-  * `max_thread_pool_free_size` - limit on idle thread count waiting for new jobs.
-  * `thread_pool_queue_size` - limit on scheduled job count.
+* `max_thread_pool_size` - limit on thread count in pool.
+* `max_thread_pool_free_size` - limit on idle thread count waiting for new jobs.
+* `thread_pool_queue_size` - limit on scheduled job count.
 
 Global pool is universal and all pools described below are implemented on top of it. This can be thought of as a hierarchy of pools. Any specialized pool takes its threads from the global pool using `ThreadPool` class. So the main purpose of any specialized pool is to apply limit on the number of simultaneous jobs and do job scheduling. If there are more jobs scheduled than threads in a pool, `ThreadPool` accumulates jobs in a queue with priorities. Each job has an integer priority. Default priority is zero. All jobs with higher priority values are started before any job with lower priority value. But there is no difference between already executing jobs, thus priority matters only when the pool in overloaded.
 
@@ -212,9 +231,9 @@ Query that can be parallelized uses `max_threads` setting to limit itself. Defau
 Notion of CPU `slot` is introduced. Slot is a unit of concurrency: to run a thread query has to acquire a slot in advance and release it when thread stops. The number of slots is globally limited in a server. Multiple concurrent queries are competing for CPU slots if the total demand exceeds the total number of slots. `ConcurrencyControl` is responsible to resolve this competition by doing CPU slot scheduling in a fair manner.
 
 Each slot can be seen as an independent state machine with the following states:
- * `free`: slot is available to be allocated by any query.
- * `granted`: slot is `allocated` by specific query, but not yet acquired by any thread.
- * `acquired`: slot is `allocated` by specific query and acquired by a thread.
+* `free`: slot is available to be allocated by any query.
+* `granted`: slot is `allocated` by specific query, but not yet acquired by any thread.
+* `acquired`: slot is `allocated` by specific query and acquired by a thread.
 
 Note that `allocated` slot can be in two different states: `granted` and `acquired`. The former is a transitional state, that actually should be short (from the instant when a slot is allocated to a query till the moment when the up-scaling procedure is run by any thread of that query).
 

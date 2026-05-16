@@ -1,26 +1,33 @@
 #pragma once
 
+#include "config.h"
+
 #include <Interpreters/StorageID.h>
 #include <Common/SystemLogBase.h>
+#include <Common/Exception.h>
 #include <Parsers/IAST.h>
+#include <Parsers/IParserBase.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/CommonParsers.h>
 
+#include <Interpreters/SystemLogFlushPolicy.h>
 #include <boost/noncopyable.hpp>
 
 #define LIST_OF_ALL_SYSTEM_LOGS(M) \
     M(QueryLog,              query_log,            "Contains information about executed queries, for example, start time, duration of processing, error messages.") \
     M(QueryThreadLog,        query_thread_log,     "Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.") \
     M(PartLog,               part_log,             "This table contains information about events that occurred with data parts in the MergeTree family tables, such as adding or merging data.") \
+    M(BackgroundSchedulePoolLog, background_schedule_pool_log, "Contains history of background schedule pool task executions.") \
     M(TraceLog,              trace_log,            "Contains stack traces collected by the sampling query profiler.") \
     M(CrashLog,              crash_log,            "Contains information about stack traces for fatal errors. The table does not exist in the database by default, it is created only when fatal errors occur.") \
     M(TextLog,               text_log,             "Contains logging entries which are normally written to a log file or to stdout.") \
     M(MetricLog,             metric_log,           "Contains history of metrics values from tables system.metrics and system.events, periodically flushed to disk.") \
     M(TransposedMetricLog,   transposed_metric_log,"Contains history of metrics values from tables system.metrics and system.events. Periodically flushed to disk. Transposed form of system.metric_log.") \
-    M(LatencyLog,            latency_log,          "Contains history of all latency buckets, periodically flushed to disk.") \
     M(ErrorLog,              error_log,            "Contains history of error values from table system.errors, periodically flushed to disk.") \
     M(FilesystemCacheLog,    filesystem_cache_log, "Contains a history of all events occurred with filesystem cache for objects on a remote filesystem.") \
-    M(FilesystemReadPrefetchesLog, filesystem_read_prefetches_log, "Contains a history of all prefetches done during reading from MergeTables backed by a remote filesystem.") \
-    M(ObjectStorageQueueLog, s3queue_log,          "Contains logging entries with the information files processes by S3Queue engine.") \
-    M(ObjectStorageQueueLog, azure_queue_log,      "Contains logging entries with the information files processes by S3Queue engine.") \
+    M(FilesystemReadPrefetchesLog, filesystem_read_prefetches_log, "Contains a history of all prefetches done during reading from MergeTree tables backed by a remote filesystem.") \
+    M(ObjectStorageQueueLog, s3queue_log,          "Contains log entries with information about files processed by the S3Queue engine.") \
+    M(ObjectStorageQueueLog, azure_queue_log,      "Contains log entries with information about files processed by the AzureQueue engine.") \
     M(AsynchronousMetricLog, asynchronous_metric_log, "Contains the historical values for system.asynchronous_metrics, once per time interval (one second by default).") \
     M(OpenTelemetrySpanLog,  opentelemetry_span_log, "Contains information about trace spans for executed queries.") \
     M(QueryViewsLog,         query_views_log,      "Contains information about the dependent views executed when running a query, for example, the view type or the execution time.") \
@@ -33,10 +40,74 @@
     M(BlobStorageLog,        blob_storage_log,     "Contains logging entries with information about various blob storage operations such as uploads and deletes.") \
     M(QueryMetricLog,        query_metric_log,     "Contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk.") \
     M(DeadLetterQueue,       dead_letter_queue,    "Contains messages that came from a streaming engine (e.g. Kafka) and were parsed unsuccessfully.") \
+    M(ZooKeeperConnectionLog, zookeeper_connection_log, "Contains history of ZooKeeper connections.") \
+    M(AggregatedZooKeeperLog, aggregated_zookeeper_log, "Contains statistics (number of operations, latencies, errors) of ZooKeeper operations grouped by session_id, parent_path and operation. Periodically flushed to disk.") \
+    M(IcebergMetadataLog,    iceberg_metadata_log, "Contains content of Iceberg metadata files.") \
+    M(DeltaMetadataLog,    delta_lake_metadata_log, "Contains content of Delta metadata files.") \
+    M(PredicateStatisticsLog, predicate_statistics_log, "Contains sampled per-predicate selectivity statistics collected during query execution. Sampling is controlled by predicate_statistics_sample_rate; lower values increase overhead and should be tuned with care.") \
+
+#define LIST_OF_CLOUD_SYSTEM_LOGS(M) \
+    M(DistributedCacheLog, distributed_cache_log, "Contains the history of all interactions with distributed cache.") \
+    M(DistributedCacheServerLog, distributed_cache_server_log, "Contains the history of all interactions with distributed cache client.") \
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+
+class StorageWithComment : public IAST
+{
+public:
+    ASTPtr storage;
+    ASTPtr comment;
+
+    String getID(char) const override { return "Storage with comment definition"; }
+
+    ASTPtr clone() const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method clone is not supported");
+    }
+
+protected:
+    void formatImpl(WriteBuffer &, const FormatSettings &, FormatState &, FormatStateStacked) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported");
+    }
+};
+
+class ParserStorageWithComment : public IParserBase
+{
+protected:
+    const char * getName() const override { return "storage definition with comment"; }
+
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
+        ASTPtr storage;
+
+        if (!storage_p.parse(pos, storage, expected))
+            return false;
+
+        ParserKeyword s_comment(Keyword::COMMENT);
+        ParserStringLiteral string_literal_parser;
+        ASTPtr comment;
+
+        if (s_comment.ignore(pos, expected))
+            string_literal_parser.parse(pos, comment, expected);
+
+        auto storage_with_comment = make_intrusive<StorageWithComment>();
+        storage_with_comment->storage = std::move(storage);
+        storage_with_comment->comment = std::move(comment);
+
+        node = storage_with_comment;
+        return true;
+    }
+};
 
 /** Allow to store structured log in system table.
   *
@@ -68,8 +139,15 @@ namespace DB
     class log_type; \
 
 LIST_OF_ALL_SYSTEM_LOGS(FORWARD_DECLARATION)
+#if CLICKHOUSE_CLOUD
+    LIST_OF_CLOUD_SYSTEM_LOGS(FORWARD_DECLARATION)
+#endif
 #undef FORWARD_DECLARATION
 /// NOLINTEND(bugprone-macro-parentheses)
+
+/// Returns `true` if the configuration contains any system log section
+/// (e.g. `query_log`, `processors_profile_log`).
+bool hasAnySystemLogConfigured(const Poco::Util::AbstractConfiguration & config);
 
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
@@ -80,7 +158,7 @@ public:
     SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config);
     SystemLogs(const SystemLogs & other) = default;
 
-    void flush(bool should_prepare_tables_anyway, const Strings & names);
+    void flush(const std::vector<std::pair<String, String>> & names);
     void flushAndShutdown();
     void shutdown();
     void handleCrash();
@@ -89,10 +167,15 @@ public:
     std::shared_ptr<log_type> member; \
 
     LIST_OF_ALL_SYSTEM_LOGS(DECLARE_PUBLIC_MEMBERS)
+    #if CLICKHOUSE_CLOUD
+        LIST_OF_CLOUD_SYSTEM_LOGS(DECLARE_PUBLIC_MEMBERS)
+    #endif
 #undef DECLARE_PUBLIC_MEMBERS
 
 private:
     std::vector<ISystemLog *> getAllLogs() const;
+
+    void flushImpl(const std::vector<std::pair<String, String>>  & names, bool should_prepare_tables_anyway, bool ignore_errors);
 };
 
 struct SystemLogSettings
@@ -101,7 +184,6 @@ struct SystemLogSettings
 
     String engine;
     bool symbolize_traces = false;
-    std::string view_name_for_transposed_metric_log;
 };
 
 template <typename LogElement>
@@ -110,6 +192,7 @@ class SystemLog : public SystemLogBase<LogElement>, private boost::noncopyable, 
 public:
     using Self = SystemLog;
     using Base = SystemLogBase<LogElement>;
+    using Element = LogElement;
 
     /** Parameter: table name where to write log.
       * If table is not exists, then it get created with specified engine.
@@ -123,6 +206,13 @@ public:
               const SystemLogSettings & settings_,
               std::shared_ptr<SystemLogQueue<LogElement>> queue_ = nullptr);
 
+    /// Join the saving thread before any derived state (`log`, `flush_policy`, `table_id`, ...)
+    /// is destroyed. `savingThreadFunction` is overridden here and reads those members, so the
+    /// join must happen at this level rather than in `~SystemLogBase`. Required for paths that
+    /// bypass `shutdown` (for example, when an exception escaped `flushAndShutdown` and left
+    /// the saving threads running until `~ContextSharedPart`).
+    ~SystemLog() override;
+
     /** Append a record into log.
       * Writing to table will be done asynchronously and in case of failure, record could be lost.
       */
@@ -135,7 +225,14 @@ public:
       */
     void prepareTable() override;
 
-    const StorageID & getTableID() { return table_id; }
+    const StorageID & getTableID() const { return table_id; }
+
+    ISystemLogFlushPolicy & getFlushPolicy() { return *flush_policy; }
+
+    void setManualFlushTargetIndex(ISystemLog::Index target_index) override
+    {
+        flush_policy->prepareManualFlush(target_index);
+    }
 
 protected:
     LoggerPtr log;
@@ -151,7 +248,8 @@ private:
     /* Saving thread data */
     const StorageID table_id;
     const String storage_def;
-    const String create_query;
+    std::unique_ptr<ISystemLogFlushPolicy> flush_policy;
+    String create_query;
     String old_create_query;
     bool is_prepared = false;
 

@@ -7,7 +7,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
-#include <base/StringRef.h>
 #include <Common/FunctionDocumentation.h>
 
 namespace DB
@@ -117,15 +116,12 @@ private:
         if (match_index < matches.size() && matches[match_index].offset != std::string::npos)
         {
             const auto & match = matches[match_index];
-            res_data.resize(res_offset + match.length + 1);
+            res_data.resize(res_offset + match.length);
             memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], &data[data_offset + match.offset], match.length);
             res_offset += match.length;
         }
         else
-            res_data.resize(res_offset + 1);
-
-        res_data[res_offset] = 0;
-        ++res_offset;
+            res_data.resize(res_offset);
         res_offsets.push_back(res_offset);
     }
 
@@ -159,7 +155,7 @@ private:
         {
             regexp.match(
                 reinterpret_cast<const char *>(&data[prev_offset]),
-                cur_offset - prev_offset - 1,
+                cur_offset - prev_offset,
                 matches,
                 static_cast<unsigned>(index + 1));
 
@@ -202,7 +198,7 @@ private:
 
             regexp.match(
                 reinterpret_cast<const char *>(&data[prev_offset]),
-                cur_offset - prev_offset - 1,
+                cur_offset - prev_offset,
                 matches,
                 static_cast<unsigned>(index + 1));
 
@@ -254,8 +250,42 @@ private:
 
 REGISTER_FUNCTION(RegexpExtract)
 {
-    factory.registerFunction<FunctionRegexpExtract>(
-        FunctionDocumentation{.description="Extracts the first string in haystack that matches the regexp pattern and corresponds to the regex group index.", .category = FunctionDocumentation::Category::StringSearch});
+    FunctionDocumentation::Description description = R"(
+Extracts the first string in `haystack` that matches the regexp pattern and corresponds to the regex group index.
+    )";
+    FunctionDocumentation::Syntax syntax = "regexpExtract(haystack, pattern[, index])";
+    FunctionDocumentation::Arguments arguments = {
+        {"haystack", "String, in which regexp pattern will be matched.", {"String"}},
+        {"pattern", "String, regexp expression. `pattern` may contain multiple regexp groups, `index` indicates which regex group to extract. An index of 0 means matching the entire regular expression.", {"const String"}},
+        {"index", "Optional. An integer number greater or equal 0 with default 1. It represents which regex group to extract.", {"(U)Int*"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns a string match",
+        {"String"}
+    };
+    FunctionDocumentation::Examples examples =
+    {
+    {
+        "Usage example",
+        R"(
+SELECT
+    regexpExtract('100-200', '(\\d+)-(\\d+)', 1),
+    regexpExtract('100-200', '(\\d+)-(\\d+)', 2),
+    regexpExtract('100-200', '(\\d+)-(\\d+)', 0),
+    regexpExtract('100-200', '(\\d+)-(\\d+)');
+        )",
+        R"(
+┌─regexpExtract('100-200', '(\\d+)-(\\d+)', 1)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)', 2)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)', 0)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)')─┐
+│ 100                                          │ 200                                          │ 100-200                                      │ 100                                       │
+└──────────────────────────────────────────────┴──────────────────────────────────────────────┴──────────────────────────────────────────────┴───────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionRegexpExtract>(documentation);
 
     /// For Spark compatibility.
     factory.registerAlias("REGEXP_EXTRACT", "regexpExtract", FunctionFactory::Case::Insensitive);

@@ -40,7 +40,7 @@ namespace DB
             auto col_to = ColumnString::create();
             ColumnString::Chars & data_to = col_to->getChars();
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
-            data_to.resize(input_rows_count * strlen("YYYY-MM-DD") + 1);
+            data_to.resize(input_rows_count * strlen("YYYY-MM-DD"));
             offsets_to.resize(input_rows_count);
 
             ColumnUInt8::MutablePtr col_null_map_to;
@@ -57,15 +57,13 @@ namespace DB
                 if constexpr (nullOnErrors)
                 {
                     GregorianDate gd;
-                    (*vec_null_map_to)[i] = !(gd.tryInit(vec_from[i]) && gd.tryWrite(write_buffer));
-                    writeChar(0, write_buffer);
+                    (*vec_null_map_to)[i] = !(gd.tryInit(static_cast<int64_t>(vec_from[i])) && gd.tryWrite(write_buffer));
                     offsets_to[i] = write_buffer.count();
                 }
                 else
                 {
-                    GregorianDate gd(vec_from[i]);
+                    GregorianDate gd(static_cast<int64_t>(vec_from[i]));
                     gd.write(write_buffer);
-                    writeChar(0, write_buffer);
                     offsets_to[i] = write_buffer.count();
                 }
             }
@@ -113,7 +111,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return true;
+            return !nullOnErrors;
         }
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
@@ -128,6 +126,17 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
+            /// The OrNull variant maps multiple out-of-range inputs to NULL, breaking monotonicity.
+            if constexpr (nullOnErrors)
+                return {};
+            /// The input is cast to int64_t internally; for types that don't fully fit,
+            /// large values overflow, breaking monotonicity.
+            using T = typename FromDataType::FieldType;
+            constexpr bool fits_in_int64 =
+                (is_signed_v<T> && sizeof(T) <= sizeof(Int64))
+                || (is_unsigned_v<T> && sizeof(T) < sizeof(Int64));
+            if constexpr (!fits_in_int64)
+                return {};
             return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true, };
         }
 
@@ -204,7 +213,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return true;
+            return !nullOnErrors;
         }
     };
 
@@ -241,12 +250,12 @@ SELECT fromModifiedJulianDay(58849)
         };
         FunctionDocumentation::IntroducedIn introduced_in_fromModifiedJulianDay = {21, 1};
         FunctionDocumentation::Category category_fromModifiedJulianDay = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation_fromModifiedJulianDay = {description_fromModifiedJulianDay, syntax_fromModifiedJulianDay, arguments_fromModifiedJulianDay, returned_value_fromModifiedJulianDay, examples_fromModifiedJulianDay, introduced_in_fromModifiedJulianDay, category_fromModifiedJulianDay};
+        FunctionDocumentation documentation_fromModifiedJulianDay = {description_fromModifiedJulianDay, syntax_fromModifiedJulianDay, arguments_fromModifiedJulianDay, {}, returned_value_fromModifiedJulianDay, examples_fromModifiedJulianDay, introduced_in_fromModifiedJulianDay, category_fromModifiedJulianDay};
 
         factory.registerFunction<FromModifiedJulianDayOverloadResolver<NameFromModifiedJulianDay, false>>(documentation_fromModifiedJulianDay);
 
         FunctionDocumentation::Description description_fromModifiedJulianDayOrNull = R"(
-Similar to [`fromModifiedJulianDay()`](#frommodifiedjulianday), but instead of raising exceptions it returns `NULL`.
+Similar to [`fromModifiedJulianDay()`](#fromModifiedJulianDay), but instead of raising exceptions it returns `NULL`.
     )";
         FunctionDocumentation::Syntax syntax_fromModifiedJulianDayOrNull = R"(
 fromModifiedJulianDayOrNull(day)
@@ -270,7 +279,7 @@ SELECT fromModifiedJulianDayOrNull(60000000); -- invalid argument, returns NULL
         };
         FunctionDocumentation::IntroducedIn introduced_in_fromModifiedJulianDayOrNull = {21, 1};
         FunctionDocumentation::Category category_fromModifiedJulianDayOrNull = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation documentation_fromModifiedJulianDayOrNull = {description_fromModifiedJulianDayOrNull, syntax_fromModifiedJulianDayOrNull, arguments_fromModifiedJulianDayOrNull, returned_value_fromModifiedJulianDayOrNull, examples_fromModifiedJulianDayOrNull, introduced_in_fromModifiedJulianDayOrNull, category_fromModifiedJulianDayOrNull};
+        FunctionDocumentation documentation_fromModifiedJulianDayOrNull = {description_fromModifiedJulianDayOrNull, syntax_fromModifiedJulianDayOrNull, arguments_fromModifiedJulianDayOrNull, {}, returned_value_fromModifiedJulianDayOrNull, examples_fromModifiedJulianDayOrNull, introduced_in_fromModifiedJulianDayOrNull, category_fromModifiedJulianDayOrNull};
 
         factory.registerFunction<FromModifiedJulianDayOverloadResolver<NameFromModifiedJulianDayOrNull, true>>(documentation_fromModifiedJulianDayOrNull);
     }

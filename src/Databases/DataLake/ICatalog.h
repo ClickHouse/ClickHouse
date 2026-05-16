@@ -1,10 +1,14 @@
 #pragma once
+#include <optional>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
+#include <Common/SettingsChanges.h>
+#include <Interpreters/StorageID.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Databases/DataLake/DatabaseDataLakeStorageType.h>
+#include <Poco/JSON/Object.h>
 
 namespace DataLake
 {
@@ -29,6 +33,7 @@ public:
     TableMetadata & withSchema() { with_schema = true; return *this; }
     TableMetadata & withStorageCredentials() { with_storage_credentials = true; return *this; }
     TableMetadata & withDataLakeSpecificProperties() { with_datalake_specific_metadata = true; return *this; }
+    TableMetadata & withForceAddBucket() { force_add_bucket = true; return *this; }
 
     bool hasLocation() const;
     bool hasSchema() const;
@@ -37,7 +42,7 @@ public:
 
     void setLocation(const std::string & location_);
     std::string getLocation() const;
-    std::string getLocationWithEndpoint(const std::string & endpoint_) const;
+    std::string getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style = DB::S3UriStyle::AUTO) const;
     std::string getMetadataLocation(const std::string & iceberg_metadata_file_location) const;
 
     void setEndpoint(const std::string & endpoint_);
@@ -51,6 +56,9 @@ public:
 
     void setDataLakeSpecificProperties(std::optional<DataLakeSpecificProperties> && metadata);
     std::optional<DataLakeSpecificProperties> getDataLakeSpecificProperties() const;
+
+    void setTableUUID(const std::string & uuid_) { table_uuid = uuid_; }
+    std::optional<std::string> getTableUUID() const { return table_uuid; }
 
     bool requiresLocation() const { return with_location; }
     bool requiresSchema() const { return with_schema; }
@@ -86,6 +94,10 @@ private:
     std::string storage_type_str;
 
     std::string bucket;
+    /// For Azure ABFSS URLs: stores the account with suffix (e.g., "account.dfs.core.windows.net")
+    /// This is extracted from URLs like: abfss://container@account.dfs.core.windows.net/path
+    std::string azure_account_with_suffix;
+    bool force_add_bucket = false;
     /// Endpoint is set and used in case we have non-AWS storage implementation, for example, Minio.
     /// Also not all catalogs support non-AWS storages.
     std::string endpoint;
@@ -97,6 +109,7 @@ private:
     std::optional<DataLakeSpecificProperties> data_lake_specific_metadata;
 
     std::string reason_why_table_is_not_readable;
+    std::optional<std::string> table_uuid;
 
     bool is_default_readable_table = true;
 
@@ -105,9 +118,21 @@ private:
     bool with_storage_credentials = false;
     bool with_datalake_specific_metadata = false;
 
-    std::string constructLocation(const std::string & endpoint_) const;
+    std::string constructLocation(const std::string & endpoint_, DB::S3UriStyle uri_style) const;
 };
 
+
+struct CatalogSettings
+{
+    String storage_endpoint;
+    String aws_access_key_id;
+    String aws_secret_access_key;
+    String region;
+    String aws_role_arn;
+    String aws_role_session_name;
+
+    DB::SettingsChanges allChanged() const;
+};
 
 /// Base class for catalog implementation.
 /// Used for communication with the catalog.
@@ -115,6 +140,7 @@ class ICatalog
 {
 public:
     using Namespaces = std::vector<std::string>;
+    using CredentialsRefreshCallback = std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>>;
 
     explicit ICatalog(const std::string & warehouse_) : warehouse(warehouse_) {}
 
@@ -150,6 +176,26 @@ public:
     /// Get storage type, where Iceberg tables' data is stored.
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
+
+    /// Creates new table in catalog.
+    virtual void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const;
+
+    /// Updates metadata in catalog.
+    virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
+
+    /// Drop table from catalog.
+    virtual void dropTable(const String & namespace_name, const String & table_name) const;
+
+    /// Does the catalog support transactions or anything like that?
+    /// For example, the Iceberg REST catalog supports atomic operations "compare if snapshot X is equal to" and "add new snapshot Y".
+    /// So the REST catalog is transactional.
+    /// The Glue catalog does not support such operation.
+    virtual bool isTransactional() const { return false; }
+
+    virtual CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & /*storage_id*/)
+    {
+        return std::nullopt;
+    }
 
 protected:
     /// Name of the warehouse,

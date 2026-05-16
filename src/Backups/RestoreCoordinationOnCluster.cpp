@@ -47,6 +47,7 @@ RestoreCoordinationOnCluster::~RestoreCoordinationOnCluster() = default;
 
 void RestoreCoordinationOnCluster::startup()
 {
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::startup");
     stage_sync.startup();
     createRootNodes();
 }
@@ -67,6 +68,8 @@ void RestoreCoordinationOnCluster::createRootNodes()
             zk->createIfNotExists(zookeeper_path + "/repl_sql_objects_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/keeper_map_tables", "");
             zk->createIfNotExists(zookeeper_path + "/table_uuids", "");
+
+            zk->createIfNotExists(zookeeper_path + "/shared_databases_acquired", "");
         });
 }
 
@@ -82,6 +85,7 @@ bool RestoreCoordinationOnCluster::isRestoreQuerySentToOtherHosts() const
 
 Strings RestoreCoordinationOnCluster::setStage(const String & new_stage, const String & message, bool sync)
 {
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::setStage");
     stage_sync.setStage(new_stage, message);
     if (sync)
         return stage_sync.waitHostsReachStage(all_hosts_without_initiator, new_stage);
@@ -90,6 +94,7 @@ Strings RestoreCoordinationOnCluster::setStage(const String & new_stage, const S
 
 void RestoreCoordinationOnCluster::setError(std::exception_ptr exception, bool throw_if_error)
 {
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::setError");
     stage_sync.setError(exception, throw_if_error);
 }
 
@@ -129,6 +134,32 @@ ZooKeeperRetriesInfo RestoreCoordinationOnCluster::getOnClusterInitializationKee
                                 static_cast<UInt64>(keeper_settings.retry_initial_backoff_ms.count()),
                                 static_cast<UInt64>(keeper_settings.retry_max_backoff_ms.count()),
                                 process_list_element};
+}
+
+bool RestoreCoordinationOnCluster::acquireCreatingSharedDatabase(const String & database_name)
+{
+    bool result = false;
+    auto holder = with_retries.createRetriesControlHolder("acquireCreatingTableInReplicatedDatabase");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zk);
+
+            String path = fs::path(zookeeper_path) / "shared_databases_acquired" / escapeForFileName(database_name);
+            auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
+            if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
+                throw zkutil::KeeperException::fromPath(code, path);
+
+            if (code == Coordination::Error::ZOK)
+            {
+                result = true;
+                return;
+            }
+
+            /// We need to check who created that node
+            result = zk->get(path) == toString(current_host_index);
+        });
+    return result;
 }
 
 bool RestoreCoordinationOnCluster::acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name)
@@ -188,6 +219,7 @@ bool RestoreCoordinationOnCluster::acquireInsertingDataIntoReplicatedTable(const
 
 bool RestoreCoordinationOnCluster::acquireReplicatedAccessStorage(const String & access_storage_zk_path)
 {
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::acquireReplicatedAccessStorage");
     bool result = false;
     auto holder = with_retries.createRetriesControlHolder("acquireReplicatedAccessStorage");
     holder.retries_ctl.retryLoop(
@@ -214,6 +246,7 @@ bool RestoreCoordinationOnCluster::acquireReplicatedAccessStorage(const String &
 
 bool RestoreCoordinationOnCluster::acquireReplicatedSQLObjects(const String & loader_zk_path, UserDefinedSQLObjectType object_type)
 {
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::acquireReplicatedSQLObjects");
     bool result = false;
     auto holder = with_retries.createRetriesControlHolder("acquireReplicatedSQLObjects");
     holder.retries_ctl.retryLoop(
@@ -279,6 +312,7 @@ bool RestoreCoordinationOnCluster::acquireInsertingDataForKeeperMap(const String
 
 void RestoreCoordinationOnCluster::generateUUIDForTable(ASTCreateQuery & create_query)
 {
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::generateUUIDForTable");
     String query_str = create_query.formatWithSecretsOneLine();
     CreateQueryUUIDs new_uuids{create_query, /* generate_random= */ true, /* force_random= */ true};
     String new_uuids_str = new_uuids.toString();

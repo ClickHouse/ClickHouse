@@ -3,6 +3,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/HivePartitioningUtils.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
@@ -10,6 +11,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/WriteBufferFromHTTP.h>
@@ -29,20 +31,18 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Common/ThreadStatus.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
-#include <Common/re2.h>
 
 #include <TableFunctions/TableFunctionURL.h>
 
 #include <Formats/SchemaInferenceUtils.h>
-#include <Core/FormatFactorySettings.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
@@ -54,6 +54,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Poco/Timestamp.h>
 
 namespace ProfileEvents
 {
@@ -79,6 +80,9 @@ namespace Setting
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
+    extern const SettingsBool use_hive_partitioning;
+    extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
+    extern const SettingsString url_base;
 }
 
 namespace ErrorCodes
@@ -182,11 +186,28 @@ IStorageURLBase::IStorageURLBase(
         storage_metadata.setColumns(columns_);
     }
 
+    supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, context_, format_settings);
+
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
 
+    auto & storage_columns = storage_metadata.columns;
+
+    const auto sample_path = getSampleURI(uri, context_);
+    std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
+        storage_columns,
+        sample_path,
+        columns_.empty(),
+        format_settings,
+        context_);
+
     auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(
-        storage_metadata.columns, context_, getSampleURI(uri, context_), format_settings);
+        storage_metadata.columns,
+        context_,
+        format_settings,
+        PartitionStrategyFactory::StrategyType::NONE,
+        sample_path);
+
     if (!storage_metadata.getColumns().has("_headers"))
     {
         virtual_columns_desc.addEphemeral(
@@ -194,10 +215,11 @@ IStorageURLBase::IStorageURLBase(
             std::make_shared<DataTypeMap>(
                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
-            "");
+            "",
+            VirtualsMaterializationPlace::Reader);
     }
 
-    setVirtuals(virtual_columns_desc);
+    storage_metadata.setVirtuals(virtual_columns_desc);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -232,13 +254,13 @@ namespace
 class StorageURLSource::DisclosedGlobIterator::Impl
 {
 public:
-    Impl(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
+    Impl(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
     {
         uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses);
 
         std::optional<ActionsDAG> filter_dag;
         if (!uris.empty())
-            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
+            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context, hive_columns);
 
         if (filter_dag)
         {
@@ -249,7 +271,7 @@ public:
 
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-            VirtualColumnUtils::filterByPathOrFile(uris, paths, actions, virtual_columns, context);
+            VirtualColumnUtils::filterByPathOrFile(uris, paths, actions, virtual_columns, hive_columns, context);
         }
     }
 
@@ -272,8 +294,8 @@ private:
     std::atomic_size_t index = 0;
 };
 
-StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
-    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, max_addresses, predicate, virtual_columns, context)) {}
+StorageURLSource::DisclosedGlobIterator::DisclosedGlobIterator(const String & uri, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
+    : pimpl(std::make_shared<StorageURLSource::DisclosedGlobIterator::Impl>(uri, max_addresses, predicate, virtual_columns, hive_columns, context)) {}
 
 String StorageURLSource::DisclosedGlobIterator::next()
 {
@@ -311,11 +333,13 @@ StorageURLSource::StorageURLSource(
     UInt64 max_block_size,
     const ConnectionTimeouts & timeouts,
     CompressionMethod compression_method,
-    FormatParserGroupPtr parser_group_,
+    FormatParserSharedResourcesPtr parser_shared_resources_,
+    FormatFilterInfoPtr format_filter_info_,
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
     bool glob_url,
-    bool need_only_count_)
+    bool need_only_count_,
+    StorageID storage_id_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , WithContext(context_)
     , name(std::move(name_))
@@ -327,9 +351,12 @@ StorageURLSource::StorageURLSource(
     , uri_iterator(uri_iterator_)
     , format(format_)
     , format_settings(format_settings_)
-    , parser_group(std::move(parser_group_))
+    , parser_shared_resources(std::move(parser_shared_resources_))
+    , format_filter_info(std::move(format_filter_info_))
     , headers(getHeaders(headers_))
     , need_only_count(need_only_count_)
+    , storage_id(std::move(storage_id_))
+    , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
 {
     /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
     initialize = [=, this]()
@@ -361,7 +388,7 @@ StorageURLSource::StorageURLSource(
         while (getContext()->getSettingsRef()[Setting::engine_url_skip_empty_files] && uri_and_buf.second->eof());
 
         curr_uri = uri_and_buf.first;
-        auto last_mod_time = uri_and_buf.second->tryGetLastModificationTime();
+        current_file_last_modified = uri_and_buf.second->tryGetLastModificationTime();
         read_buf = std::move(uri_and_buf.second);
         current_file_size = tryGetFileSizeFromReadBuffer(*read_buf);
 
@@ -371,7 +398,7 @@ StorageURLSource::StorageURLSource(
         QueryPipelineBuilder builder;
         std::optional<size_t> num_rows_from_cache = std::nullopt;
         if (need_only_count && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
-            num_rows_from_cache = tryGetNumRowsFromCache(curr_uri.toString(), last_mod_time);
+            num_rows_from_cache = tryGetNumRowsFromCache(curr_uri.toString(), current_file_last_modified);
 
         if (num_rows_from_cache)
         {
@@ -393,7 +420,8 @@ StorageURLSource::StorageURLSource(
                 getContext(),
                 max_block_size,
                 format_settings,
-                parser_group,
+                parser_shared_resources,
+                format_filter_info,
                 /* is_remote_ fs */ true,
                 compression_method,
                 need_only_count);
@@ -455,14 +483,31 @@ Chunk StorageURLSource::generate()
                 chunk_size = input_format->getApproxBytesReadForChunk();
 
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
+
+            /// The order is important, hive partition columns must be added before virtual columns
+            /// because they are part of the schema
+            if (!hive_partition_columns_to_read_from_file_path.empty())
+            {
+                const auto path = curr_uri.getPath();
+                HivePartitioningUtils::addPartitionColumnsToChunk(
+                    chunk,
+                    hive_partition_columns_to_read_from_file_path,
+                    path);
+            }
+
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 requested_virtual_columns,
                 {
                     .path = curr_uri.getPath(),
+                    .storage_id = storage_id,
                     .size = current_file_size,
+                    .last_modified = current_file_last_modified
+                        ? std::optional<Poco::Timestamp>(Poco::Timestamp::fromEpochTime(*current_file_last_modified))
+                        : std::nullopt,
                 },
                 getContext());
+
             chassert(dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()));
             if (need_headers_virtual_column)
             {
@@ -481,11 +526,11 @@ Chunk StorageURLSource::generate()
             return chunk;
         }
 
-        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files] &&
-            !parser_group->hasFilter())
+        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
+            && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
-        pipeline->reset();
+        (*pipeline).reset();
         reader.reset();
         input_format.reset();
         read_buf.reset();
@@ -676,6 +721,7 @@ void StorageURLSink::finalizeBuffers()
     catch (...)
     {
         /// Stop ParallelFormattingOutputFormat correctly.
+        cancelBuffers();
         releaseBuffers();
         throw;
     }
@@ -701,7 +747,7 @@ class PartitionedStorageURLSink : public PartitionedSink
 {
 public:
     PartitionedStorageURLSink(
-        const ASTPtr & partition_by,
+        std::shared_ptr<IPartitionStrategy> partition_strategy_,
         const String & uri_,
         const String & format_,
         const std::optional<FormatSettings> & format_settings_,
@@ -711,7 +757,7 @@ public:
         const CompressionMethod compression_method_,
         const HTTPHeaderEntries & headers_,
         const String & http_method_)
-        : PartitionedSink(partition_by, context_, std::make_shared<const Block>(sample_block_))
+        : PartitionedSink(partition_strategy_, context_, std::make_shared<const Block>(sample_block_))
         , uri(uri_)
         , format(format_)
         , format_settings(format_settings_)
@@ -726,7 +772,8 @@ public:
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
-        auto partition_path = PartitionedSink::replaceWildcards(uri, partition_id);
+        std::string partition_path = partition_strategy->getPathForWrite(uri, partition_id);
+
         context->getRemoteHostFilter().checkURL(Poco::URI(partition_path));
         return std::make_shared<StorageURLSink>(
             partition_path, format, format_settings, sample_block, context, timeouts, compression_method, headers, http_method);
@@ -894,25 +941,11 @@ namespace
 
         void setSchemaToLastFile(const ColumnsDescription & columns) override
         {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::UNION)
+            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url])
                 return;
 
             auto key = getKeyForSchemaCache(current_url_option, *format, format_settings, getContext());
             StorageURL::getSchemaCache(getContext()).addColumns(key, columns);
-        }
-
-        void setResultingSchema(const ColumnsDescription & columns) override
-        {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::DEFAULT)
-                return;
-
-            for (const auto & options : url_options_to_check)
-            {
-                auto keys = getKeysForSchemaCache(options, *format, format_settings, getContext());
-                StorageURL::getSchemaCache(getContext()).addManyColumns(keys, columns);
-            }
         }
 
         void setFormatName(const String & format_name) override
@@ -1053,6 +1086,26 @@ bool IStorageURLBase::supportsSubsetOfColumns(const ContextPtr & context) const
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
 }
 
+bool IStorageURLBase::supportsPrewhere() const
+{
+    return supports_prewhere;
+}
+
+bool IStorageURLBase::canMoveConditionsToPrewhere() const
+{
+    return supports_prewhere;
+}
+
+std::optional<NameSet> IStorageURLBase::supportedPrewhereColumns() const
+{
+    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+}
+
+IStorage::ColumnSizeByName IStorageURLBase::getColumnSizes() const
+{
+    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getFakeColumnSizes();
+}
+
 bool IStorageURLBase::prefersLargeBlocks() const
 {
     return FormatFactory::instance().checkIfOutputFormatPrefersLargeBlocks(format_name);
@@ -1069,6 +1122,7 @@ public:
     std::string getName() const override { return "ReadFromURL"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
+    void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
 
     ReadFromURL(
         const Names & column_names_,
@@ -1128,6 +1182,13 @@ void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
     createIterator(predicate);
 }
 
+void ReadFromURL::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
+{
+    info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
+    query_info.prewhere_info = prewhere_info_value;
+    output_header = std::make_shared<const Block>(info.source_header);
+}
+
 void IStorageURLBase::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -1138,11 +1199,24 @@ void IStorageURLBase::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
+    if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
+        num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
 
-    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
-        && local_context->getSettingsRef()[Setting::optimize_count_from_files];
+    auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
+    auto read_from_format_info = prepareReadingFromFormat(
+        column_names,
+        storage_snapshot,
+        local_context,
+        supportsSubsetOfColumns(local_context),
+        /*supports_tuple_elements=*/ supports_prewhere,
+        PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
+
+    if (query_info.prewhere_info || query_info.row_level_filter)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
+        && local_context->getSettingsRef()[Setting::optimize_count_from_files]
+        && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
     auto read_post_data_callback = getReadPOSTDataCallback(
         read_from_format_info.columns_description.getNamesOfPhysical(),
@@ -1207,7 +1281,7 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
     else if (is_url_with_globs)
     {
         /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, max_addresses, predicate, storage->getVirtualsList(), context);
+        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context);
 
         /// check if we filtered out all the paths
         if (glob_iterator->size() == 0)
@@ -1253,7 +1327,8 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    auto parser_group = std::make_shared<FormatParserGroup>(settings, num_streams, filter_actions_dag, context);
+    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1269,11 +1344,13 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
             max_block_size,
             getHTTPTimeouts(context),
             storage->compression_method,
-            parser_group,
+            parser_shared_resources,
+            format_filter_info,
             storage->headers,
             read_uri_params,
             is_url_with_globs,
-            need_only_count);
+            need_only_count,
+            storage->getStorageID());
 
         pipes.emplace_back(std::move(source));
     }
@@ -1308,10 +1385,20 @@ void StorageURLWithFailover::read(
     size_t num_streams)
 {
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(
+        column_names,
+        storage_snapshot,
+        local_context,
+        supportsSubsetOfColumns(local_context),
+        /*supports_tuple_elements=*/ supports_prewhere,
+        PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
-    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
-        && local_context->getSettingsRef()[Setting::optimize_count_from_files];
+    if (query_info.prewhere_info || query_info.row_level_filter)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
+        && local_context->getSettingsRef()[Setting::optimize_count_from_files]
+        && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
     auto read_post_data_callback = getReadPOSTDataCallback(
         read_from_format_info.columns_description.getNamesOfPhysical(),
@@ -1354,8 +1441,18 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
 
     if (is_partitioned_implementation)
     {
-        return std::make_shared<PartitionedStorageURLSink>(
+        auto partition_strategy = PartitionStrategyFactory::get(
+            PartitionStrategyFactory::StrategyType::WILDCARD,
             partition_by_ast,
+            metadata_snapshot->getColumns().getAll(),
+            context,
+            format_name,
+            urlWithGlobs(uri),
+            has_wildcards,
+            /* partition_columns_in_data_file */true);
+
+        return std::make_shared<PartitionedStorageURLSink>(
+            partition_strategy,
             uri,
             format_name,
             format_settings,
@@ -1438,7 +1535,7 @@ StorageURL::StorageURL(
         distributed_processing_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
-    context_->getHTTPHeaderFilter().checkHeaders(headers);
+    context_->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
 }
 
 
@@ -1496,7 +1593,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
 {
     ASTs::iterator headers_it = url_function_args.end();
 
-    for (auto * arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
+    for (auto arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
     {
         const auto * headers_ast_function = (*arg_it)->as<ASTFunction>();
         if (headers_ast_function && headers_ast_function->name == "headers")
@@ -1585,16 +1682,266 @@ void StorageURL::processNamedCollectionResult(Configuration & configuration, con
     configuration.structure = collection.getOrDefault<String>("structure", "auto");
 }
 
+/// RFC 3986 Section 5.2.4: Remove dot segments ("." and "..") from an absolute path.
+/// E.g. "/dir/../a.csv" → "/a.csv", "/dir/./a.csv" → "/dir/a.csv".
+static String removeDotSegments(const String & path)
+{
+    /// Fast path: no dot segments present.
+    if (path.find("/.") == String::npos)
+        return path;
+
+    /// Split the path into segments and process each one.
+    std::vector<String> segments;
+    size_t pos = 0;
+
+    while (pos < path.size())
+    {
+        /// Each segment runs from a '/' to the next '/' (exclusive) or end of string.
+        size_t next = path.find('/', pos + 1);
+        if (next == String::npos)
+            next = path.size();
+
+        String segment = path.substr(pos, next - pos);
+        pos = next;
+
+        if (segment == "/.")
+        {
+            /// Current-directory segment: skip, but preserve trailing slash at end of path.
+            if (pos == path.size())
+                segments.emplace_back("/");
+        }
+        else if (segment == "/..")
+        {
+            /// Parent-directory segment: go up one level.
+            if (!segments.empty())
+                segments.pop_back();
+            /// At end of path, preserve trailing slash.
+            if (pos == path.size())
+                segments.emplace_back("/");
+        }
+        else
+        {
+            segments.push_back(std::move(segment));
+        }
+    }
+
+    if (segments.empty())
+        return "/";
+
+    String result;
+    for (const auto & seg : segments)
+        result += seg;
+    return result;
+}
+
+/// Apply dot-segment normalization to the path portion of a full URL.
+/// The authority_start parameter is the position right after "://".
+static String normalizeDotSegmentsInURL(const String & url, size_t authority_start)
+{
+    /// Find where the path starts (first '/' after the authority).
+    auto path_start = url.find('/', authority_start);
+    if (path_start == String::npos)
+        return url;
+
+    /// Find where the path ends (before '?' or '#').
+    size_t path_end = url.size();
+    for (size_t i = path_start; i < url.size(); ++i)
+    {
+        if (url[i] == '?' || url[i] == '#')
+        {
+            path_end = i;
+            break;
+        }
+    }
+
+    String path = url.substr(path_start, path_end - path_start);
+
+    /// Fast check: no dot segments.
+    if (path.find("/.") == String::npos)
+        return url;
+
+    String normalized = removeDotSegments(path);
+    return url.substr(0, path_start) + normalized + url.substr(path_end);
+}
+
+/// Returns true if the URL has a userinfo component (`user[:password]@`) in its authority part.
+/// Used to avoid persisting credentials into the CREATE TABLE AST when materializing a URL
+/// resolved through `url_base`.
+static bool urlHasUserInfo(const String & url)
+{
+    auto scheme_end = url.find("://");
+    if (scheme_end == String::npos)
+        return false;
+    auto authority_start = scheme_end + 3;
+    auto authority_end = url.find_first_of("/?#", authority_start);
+    auto at_pos = url.find('@', authority_start);
+    if (at_pos == String::npos)
+        return false;
+    return authority_end == String::npos || at_pos < authority_end;
+}
+
+String StorageURL::resolveURLBase(const String & url, const String & base)
+{
+    if (base.empty())
+        return url;
+
+    /// Empty relative reference per RFC 3986: return the base URI without the fragment.
+    if (url.empty())
+    {
+        auto fragment_pos = base.find('#');
+        return (fragment_pos == String::npos) ? base : base.substr(0, fragment_pos);
+    }
+
+    /// If the URL already contains a scheme at the beginning, return as-is.
+    /// A scheme is [A-Za-z][A-Za-z0-9+.-]*: per RFC 3986.
+    /// We check that the colon appears before any '/', '?', or '#' to avoid false positives
+    /// from embedded URLs in query parameters (e.g. "data.csv?next=https://other/a").
+    if (!url.empty() && std::isalpha(static_cast<unsigned char>(url[0])))
+    {
+        auto colon_pos = url.find(':');
+        auto first_special = url.find_first_of("/?#");
+        if (colon_pos != String::npos && (first_special == String::npos || colon_pos < first_special))
+        {
+            /// Verify all characters before the colon are valid scheme characters.
+            bool valid_scheme = true;
+            for (size_t i = 1; i < colon_pos; ++i)
+            {
+                char c = url[i];
+                if (!std::isalnum(static_cast<unsigned char>(c)) && c != '+' && c != '-' && c != '.')
+                {
+                    valid_scheme = false;
+                    break;
+                }
+            }
+            if (valid_scheme)
+                return url;
+        }
+    }
+
+    auto scheme_end = base.find("://");
+    if (scheme_end == String::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `url_base` setting must contain a scheme (e.g. https://), got: {}", base);
+
+    /// Find the boundary of the path component in the base URL (before '?' or '#').
+    auto authority_start = scheme_end + 3; /// skip "://"
+    auto query_or_fragment = base.find_first_of("?#", authority_start);
+    /// The part of the base URL up to (but not including) the query/fragment.
+    auto base_before_query = (query_or_fragment == String::npos) ? base : base.substr(0, query_or_fragment);
+
+    /// Scheme-relative URL: //host/path → prepend scheme from base.
+    /// Dot segments in the path are normalized per RFC 3986.
+    if (url.starts_with("//"))
+    {
+        String merged = base.substr(0, scheme_end + 1) + url;
+        return normalizeDotSegmentsInURL(merged, scheme_end + 3);
+    }
+
+    /// Host-relative URL: /path → use scheme and authority from base.
+    /// Dot segments in the path are normalized per RFC 3986.
+    if (url.starts_with("/"))
+    {
+        auto authority_end = base_before_query.find('/', authority_start);
+        String merged = (authority_end == String::npos)
+            ? base_before_query + url
+            : base_before_query.substr(0, authority_end) + url;
+        return normalizeDotSegmentsInURL(merged, authority_start);
+    }
+
+    /// Query-only relative reference: ?query → append to full base path (before any existing query/fragment).
+    if (url.starts_with("?"))
+        return base_before_query + url;
+
+    /// Fragment-only relative reference: #frag → append to base URL preserving the query string.
+    /// Only strip any existing fragment from the base, keep everything else.
+    if (url.starts_with("#"))
+    {
+        auto existing_fragment = base.find('#', authority_start);
+        auto base_without_fragment = (existing_fragment == String::npos) ? base : base.substr(0, existing_fragment);
+        return base_without_fragment + url;
+    }
+
+    /// Path-relative URL: merge with the base path per RFC 3986.
+    /// Replace everything after the last '/' in the path portion of the base URL,
+    /// then normalize dot segments ("." and "..") in the resulting path.
+    auto authority_end = base_before_query.find('/', authority_start);
+    String merged;
+    if (authority_end == String::npos)
+        merged = base_before_query + "/" + url;
+    else
+    {
+        auto last_slash = base_before_query.rfind('/');
+        merged = base_before_query.substr(0, last_slash + 1) + url;
+    }
+    return normalizeDotSegmentsInURL(merged, authority_start);
+}
+
 void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(args, "", format_name, context, /*with_structure=*/false);
+
+    /// Materialize the resolved URL into engine args so that DETACH/ATTACH and server restart
+    /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
+    /// `uri` is the URL after `url_base` resolution (computed by `getConfiguration`).
+    if (args.empty())
+        return;
+
+    /// Skip materialization when the resolved URL contains userinfo (`user:pass@host`).
+    /// Credentials may originate from `url_base` (e.g. `SET url_base = 'http://user:pass@base/dir/'`)
+    /// rather than from the user-written engine arguments, and persisting them into the
+    /// CREATE TABLE AST would expose secrets via `SHOW CREATE TABLE`. Persistence in this case
+    /// relies on `url_base` being set with the same value at attach/restart time.
+    if (urlHasUserInfo(uri))
+        return;
+
+    /// Positional form: `URL('url', ...)` — replace the first literal argument.
+    if (const auto * existing_literal = args[0]->as<ASTLiteral>();
+        existing_literal && existing_literal->value.getType() == Field::Types::String)
+    {
+        const auto & current_url = existing_literal->value.safeGet<String>();
+        if (current_url != uri)
+            args[0] = make_intrusive<ASTLiteral>(uri);
+        return;
+    }
+
+    /// Named-collection or key-value form: `URL(nc)`, `URL(nc, url='...')`, or `URL(url='...', ...)`.
+    /// Only materialize when `url_base` actually changed the URL — otherwise we would copy
+    /// fields from the named collection (e.g. credentials in `user:pass@host`) into the
+    /// stored CREATE TABLE query, which is visible via `SHOW CREATE TABLE`.
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context, /*throw_unknown_collection=*/false))
+    {
+        Configuration unresolved;
+        StorageURL::processNamedCollectionResult(unresolved, *named_collection);
+        if (unresolved.url == uri)
+            return;
+    }
+
+    /// If a `url='...'` key-value override is already present, update its literal in place.
+    /// Otherwise, append a `url='<resolved>'` override so that named-collection resolution
+    /// picks up the resolved URL at restart time.
+    for (auto & arg : args)
+    {
+        auto * func = arg->as<ASTFunction>();
+        if (!func || func->name != "equals" || !func->arguments)
+            continue;
+        auto * func_args = func->arguments->as<ASTExpressionList>();
+        if (!func_args || func_args->children.size() != 2)
+            continue;
+        const auto * key_ast = func_args->children[0]->as<ASTIdentifier>();
+        if (!key_ast || key_ast->name() != "url")
+            continue;
+        func_args->children[1] = make_intrusive<ASTLiteral>(uri);
+        return;
+    }
+
+    ASTs key_value_args = {make_intrusive<ASTIdentifier>("url"), make_intrusive<ASTLiteral>(uri)};
+    args.push_back(makeASTOperator("equals", std::move(key_value_args)));
 }
 
-StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context)
+StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context, const StorageID * table_id)
 {
     StorageURL::Configuration configuration;
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, local_context))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, local_context, true, nullptr, table_id))
     {
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
         evalArgsAndCollectHeaders(args, configuration.headers, local_context, false);
@@ -1613,8 +1960,25 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const Contex
             configuration.compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
     }
 
+    /// Resolve relative URLs against the url_base setting.
+    /// For the URL engine, the resolved URL is later materialized into the engine args
+    /// AST by `addInferredEngineArgsToCreateQuery`, so DETACH/ATTACH and server restart
+    /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
+    const auto & url_base = local_context->getSettingsRef()[Setting::url_base].value;
+    configuration.url = resolveURLBase(configuration.url, url_base);
+
     if (configuration.format == "auto")
-        configuration.format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(configuration.url).getPath()).value_or("auto");
+    {
+        /// `resolveURLBase` tolerates malformed inputs via string manipulation, so the resolved URL
+        /// may contain characters that `Poco::URI` rejects. Fall back to "auto" instead of throwing.
+        try
+        {
+            configuration.format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(configuration.url).getPath()).value_or("auto");
+        }
+        catch (const Poco::Exception &) // NOLINT(bugprone-empty-catch)
+        {
+        }
+    }
 
     for (const auto & [header, value] : configuration.headers)
     {
@@ -1633,8 +1997,9 @@ void registerStorageURL(StorageFactory & factory)
         [](const StorageFactory::Arguments & args)
         {
             ASTs & engine_args = args.engine_args;
-            auto configuration = StorageURL::getConfiguration(engine_args, args.getLocalContext());
+            auto configuration = StorageURL::getConfiguration(engine_args, args.getLocalContext(), &args.table_id);
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
+            auto context = args.getLocalContext();
 
             ASTPtr partition_by;
             if (args.storage_def->partition_by)
@@ -1648,7 +2013,7 @@ void registerStorageURL(StorageFactory & factory)
                 args.columns,
                 args.constraints,
                 args.comment,
-                args.getContext(),
+                context,
                 configuration.compression_method,
                 configuration.headers,
                 configuration.http_method,

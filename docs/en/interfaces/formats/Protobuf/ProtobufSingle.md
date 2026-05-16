@@ -6,6 +6,7 @@ keywords: ['ProtobufSingle']
 output_format: true
 slug: /interfaces/formats/ProtobufSingle
 title: 'ProtobufSingle'
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -23,4 +24,3 @@ The `ProtobufSingle` format is the same as the [`Protobuf`](./Protobuf.md) forma
 ## Example usage {#example-usage}
 
 ## Format settings {#format-settings}
-

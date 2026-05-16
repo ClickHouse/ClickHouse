@@ -29,7 +29,6 @@ node = cluster.add_instance(
         "configs/server.key",
     ],
     user_configs=["configs/users.xml"],
-    env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
     with_mysql_client=True,
 )
 
@@ -43,8 +42,8 @@ node_secure = cluster.add_instance(
         "configs/server.key",
     ],
     user_configs=["configs/users.xml"],
-    env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
     with_mysql_client=True,
+    with_mysql_dotnet_client=True
 )
 
 server_port = 9001
@@ -227,6 +226,7 @@ def test_mysql_client(started_cluster):
         -e "INSERT INTO table1 VALUES (0), (1), (5);"
         -e "SELECT * FROM table1 ORDER BY column;"
         -e "DROP DATABASE x;"
+        -e "USE default;"
         -e "CREATE TEMPORARY TABLE tmp (tmp_column UInt32);"
         -e "INSERT INTO tmp VALUES (0), (1);"
         -e "SELECT * FROM tmp ORDER BY tmp_column;"
@@ -946,3 +946,21 @@ def setup_java_client(started_cluster, binary: Literal["true", "false"]):
     ).format(
         host=started_cluster.get_instance_ip("node"), port=server_port, binary=binary
     )
+
+
+def test_mysql_dotnet_client(started_cluster):
+    node = cluster.instances["node"]
+
+    with open(os.path.join(SCRIPT_DIR, "dotnet.reference")) as fp:
+        reference = fp.read()
+
+    res = started_cluster.exec_in_container(
+        started_cluster.mysql_dotnet_client_docker_id,
+        [
+            "bash",
+            "-c",
+            f"dotnet run -- --host {node.hostname} --port {server_port} --username default --password 123",
+        ],
+    )
+    # there is some thrash at the beggining of output, so it's better to use `in` instead of `==``
+    assert reference in res

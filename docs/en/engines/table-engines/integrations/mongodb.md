@@ -4,10 +4,9 @@ description: 'MongoDB engine is read-only table engine which allows to read data
 sidebar_label: 'MongoDB'
 sidebar_position: 135
 slug: /engines/table-engines/integrations/mongodb
-title: 'MongoDB'
+title: 'MongoDB table engine'
+doc_type: 'reference'
 ---
-
-# MongoDB
 
 MongoDB engine is read-only table engine which allows to read data from a remote [MongoDB](https://www.mongodb.com/) collection.
 
@@ -151,15 +150,13 @@ This applied for `Date`, `Date32`, `DateTime`, `Bool`, `UUID`.
 
 :::
 
-
 ## Usage example {#usage-example}
-
 
 Assuming MongoDB has [sample_mflix](https://www.mongodb.com/docs/atlas/sample-data/sample-mflix) dataset loaded
 
 Create a table in ClickHouse which allows to read data from MongoDB collection:
 
-```sql
+```sql title="Query"
 CREATE TABLE sample_mflix_table
 (
     _id String,
@@ -174,19 +171,17 @@ CREATE TABLE sample_mflix_table
 ) ENGINE = MongoDB('mongodb://<USERNAME>:<PASSWORD>@atlas-sql-6634be87cefd3876070caf96-98lxs.a.query.mongodb.net/sample_mflix?ssl=true&authSource=admin', 'movies');
 ```
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT count() FROM sample_mflix_table
 ```
 
-```text
+```text title="Response"
    ┌─count()─┐
 1. │   21349 │
    └─────────┘
 ```
 
-```sql
+```sql title="Query"
 -- JSONExtractString cannot be pushed down to MongoDB
 SET mongodb_throw_on_unsupported_query = 0;
 
@@ -198,7 +193,7 @@ ORDER BY year
 FORMAT Vertical;
 ```
 
-```text
+```text title="Response"
 Row 1:
 ──────
 title:     Back to the Future
@@ -216,7 +211,7 @@ directors: ['Robert Zemeckis']
 released:  1989-11-22
 ```
 
-```sql
+```sql title="Query"
 -- Find top 3 movies based on Cormac McCarthy's books
 SELECT title, toFloat32(JSONExtractString(imdb, 'rating')) AS rating
 FROM sample_mflix_table
@@ -225,7 +220,7 @@ ORDER BY rating DESC
 LIMIT 3;
 ```
 
-```text
+```text title="Response"
    ┌─title──────────────────┬─rating─┐
 1. │ No Country for Old Men │    8.1 │
 2. │ The Sunset Limited     │    7.4 │

@@ -3,6 +3,8 @@
 #include <Columns/IColumn.h>
 #include <Processors/Port.h>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 namespace DB
 {
 
@@ -12,13 +14,21 @@ namespace ErrorCodes
 }
 
 LimitTransform::LimitTransform(
-    SharedHeader header_, UInt64 limit_, UInt64 offset_, size_t num_streams,
-    bool always_read_till_end_, bool with_ties_,
-    SortDescription description_)
+    SharedHeader header_,
+    UInt64 limit_,
+    UInt64 offset_,
+    size_t num_streams,
+    bool always_read_till_end_,
+    bool with_ties_,
+    SortDescription description_,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
-    , limit(limit_), offset(offset_)
+    , limit(limit_)
+    , offset(offset_)
     , always_read_till_end(always_read_till_end_)
-    , with_ties(with_ties_), description(std::move(description_))
+    , with_ties(with_ties_)
+    , description(std::move(description_))
+    , updater(std::move(updater_))
 {
     if (num_streams != 1 && with_ties)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot use LimitTransform with multiple ports and ties");
@@ -29,6 +39,7 @@ LimitTransform::LimitTransform(
     for (auto & input : inputs)
     {
         ports_data[cur_stream].input_port = &input;
+        input_port_to_data[&input] = cur_stream;
         ++cur_stream;
     }
 
@@ -36,6 +47,7 @@ LimitTransform::LimitTransform(
     for (auto & output : outputs)
     {
         ports_data[cur_stream].output_port = &output;
+        output_port_to_data[&output] = cur_stream;
         ++cur_stream;
     }
 
@@ -58,22 +70,22 @@ Chunk LimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, UInt64 row) 
 
 
 IProcessor::Status LimitTransform::prepare(
-        const PortNumbers & updated_input_ports,
-        const PortNumbers & updated_output_ports)
+        const UpdatedInputPorts & updated_input_ports,
+        const UpdatedOutputPorts & updated_output_ports)
 {
     bool has_full_port = false;
 
-    auto process_pair = [&](size_t pos)
+    auto process_pair = [&](PortsData & data)
     {
-        auto status = preparePair(ports_data[pos]);
+        auto status = preparePair(data);
 
         switch (status)
         {
             case IProcessor::Status::Finished:
             {
-                if (!ports_data[pos].is_finished)
+                if (!data.is_finished)
                 {
-                    ports_data[pos].is_finished = true;
+                    data.is_finished = true;
                     ++num_finished_port_pairs;
                 }
 
@@ -92,11 +104,11 @@ IProcessor::Status LimitTransform::prepare(
         }
     };
 
-    for (auto pos : updated_input_ports)
-        process_pair(pos);
+    for (const auto * port : updated_input_ports)
+        process_pair(ports_data[input_port_to_data.at(port)]);
 
-    for (auto pos : updated_output_ports)
-        process_pair(pos);
+    for (const auto * port : updated_output_ports)
+        process_pair(ports_data[output_port_to_data.at(port)]);
 
     /// All ports are finished. It may happen even before we reached the limit (has less data then limit).
     if (num_finished_port_pairs == ports_data.size())
@@ -129,7 +141,7 @@ LimitTransform::Status LimitTransform::prepare()
     if (ports_data.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "prepare without arguments is not supported for multi-port LimitTransform");
 
-    return prepare({0}, {0});
+    return prepare({ports_data.front().input_port}, {ports_data.front().output_port});
 }
 
 LimitTransform::Status LimitTransform::preparePair(PortsData & data)
@@ -142,8 +154,10 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
     if (output.isFinished())
     {
         output_finished = true;
-        if (!always_read_till_end)
+        if (!always_read_till_end || rows_read == 0)
         {
+            /// The rows_read == 0 is a corner case. If no rows were read before the output is closed,
+            /// do not read data even with always_read_till_end to avoid Not-ready Set (sets might not be built).
             input.close();
             return Status::Finished;
         }
@@ -240,6 +254,8 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
     if (!always_read_till_end && !limit_is_unreachable && rows_read >= offset + limit && !may_need_more_data_for_ties)
         input.close();
 
+    if (updater)
+        updater->recordOutputChunk(data.current_chunk, output.getHeader());
     output.push(std::move(data.current_chunk));
 
     return Status::PortFull;

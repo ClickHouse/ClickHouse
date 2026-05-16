@@ -2,6 +2,7 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntry.h>
 #include <Common/CurrentThread.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
@@ -124,6 +125,12 @@ BackupFileInfo buildFileInfoForBackupEntry(
     info.size = backup_entry->getSize();
     info.encrypted_by_disk = backup_entry->isEncryptedByDisk();
 
+    if (backup_entry->isFromRemoteFile())
+    {
+        info.object_key = backup_entry->getRemotePath();
+        return info;
+    }
+
     /// We don't set `info.data_file_name` and `info.data_file_index` in this function because they're set during backup coordination
     /// (see the class BackupCoordinationFileInfos).
 
@@ -222,16 +229,20 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
 
     std::atomic_bool failed = false;
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "BackupWorker");
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::BACKUP_WORKER);
     for (size_t i = 0; i != backup_entries.size(); ++i)
     {
         if (failed)
             break;
 
-        runner([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log, &failed]()
+        /// Passing references here is fine. All the objects are created **before** runner so they will be destroyed after it in case
+        /// of an exception
+        runner.enqueueAndKeepTrack([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log, &failed, current_component = Coordination::getCurrentComponent()]()
         {
             if (failed)
                 return;
+
+            auto component_guard = Coordination::setCurrentComponent(current_component);
             try
             {
                 const auto & name = backup_entries[i].first;

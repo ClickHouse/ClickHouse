@@ -1,5 +1,4 @@
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBufferValidUTF8.h>
 #include <Processors/Formats/Impl/JSONEachRowRowOutputFormat.h>
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
@@ -105,7 +104,8 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory)
         factory.registerOutputFormat(format, [serialize_as_strings, pretty_json](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & _format_settings)
+            const FormatSettings & _format_settings,
+            FormatFilterInfoPtr /*format_filter_info*/)
         {
             FormatSettings settings = _format_settings;
             settings.json.serialize_as_strings = serialize_as_strings;

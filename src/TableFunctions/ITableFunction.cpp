@@ -1,3 +1,4 @@
+#include <Access/ContextAccess.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableFunction.h>
@@ -12,12 +13,43 @@ namespace ProfileEvents
     extern const Event TableFunctionExecute;
 }
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;;
+}
+
 namespace DB
 {
 
+const char * ITableFunction::getNonClusteredStorageEngineName() const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+}
+
 std::optional<AccessTypeObjects::Source> ITableFunction::getSourceAccessObject() const
 {
-    return StorageFactory::instance().getSourceAccessObject(getStorageTypeName());
+    if (isClusterFunction())
+        return StorageFactory::instance().getSourceAccessObject(getNonClusteredStorageEngineName());
+    return StorageFactory::instance().getSourceAccessObject(getStorageEngineName());
+}
+
+void ITableFunction::checkSourceAccess(ContextPtr context, bool is_insert_query) const
+{
+    if (const auto access_object = getSourceAccessObject())
+    {
+        AccessType type_to_check = AccessType::READ;
+        if (is_insert_query)
+            type_to_check = AccessType::WRITE;
+
+        context->getAccess()->checkAccessWithFilter(type_to_check, toStringSource(*access_object), getFunctionURINormalized());
+    }
+}
+
+ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const
+{
+    /// Resolving table structure is always a read operation.
+    checkSourceAccess(context, /*is_insert_query*/ false);
+    return getActualTableStructure(context, is_insert_query);
 }
 
 StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name,
@@ -25,13 +57,7 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
 {
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
 
-    if (const auto access_object = getSourceAccessObject())
-    {
-        if (is_insert_query)
-            context->checkAccess(AccessType::WRITE, toStringSource(*access_object));
-        else
-            context->checkAccess(AccessType::READ, toStringSource(*access_object));
-    }
+    checkSourceAccess(context, is_insert_query);
 
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());
     if (is_insert_query || !(table_function_properties && table_function_properties->allow_readonly))
@@ -54,6 +80,20 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
     /// It will request actual table structure and create underlying storage lazily
     return std::make_shared<StorageTableFunctionProxy>(StorageID(getDatabaseName(), table_name), std::move(get_storage),
                                                        std::move(cached_columns), needStructureConversion());
+}
+
+String ITableFunction::getFunctionURINormalized() const
+{
+    try
+    {
+        Poco::URI uri(getFunctionURI());
+        uri.normalize();
+        return uri.toString();
+    }
+    catch (const Poco::Exception &)
+    {
+        return "";
+    }
 }
 
 }
