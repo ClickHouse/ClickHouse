@@ -867,6 +867,10 @@ catch (...)
         out_file_buf->cancel();
     out_file_buf.reset();
 
+    if (std_out_wrapper)
+        std_out_wrapper->cancel();
+    std_out_wrapper.reset();
+
     throw LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
 }
 
@@ -1782,15 +1786,27 @@ void ClientBase::resetOutput()
     output_format.reset();
     pending_progress.reset();
 
+    /// out_file_buf wraps std_out_wrapper (via a raw pointer), so it must be finalized
+    /// first to flush remaining data (e.g. the gzip footer) into std_out_wrapper.
+    if (out_file_buf)
+    {
+        if (out_file_buf->isCanceled())
+            out_file_buf.reset();
+        else
+            out_file_buf->finalize();
+    }
+    out_file_buf.reset();
+
     if (std_out_wrapper)
-        std_out_wrapper->finalize();
+    {
+        if (std_out_wrapper->isCanceled())
+            std_out_wrapper.reset();
+        else
+            std_out_wrapper->finalize();
+    }
     std_out_wrapper.reset();
 
     logs_out_stream.reset();
-
-    if (out_file_buf)
-        out_file_buf->finalize();
-    out_file_buf.reset();
 
     out_logs_buf.reset();
 
