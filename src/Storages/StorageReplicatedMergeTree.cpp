@@ -6724,6 +6724,24 @@ void StorageReplicatedMergeTree::alter(
         return;
     }
 
+    if (commands.areNonReplicatedAlterCommands())
+    {
+        /// Mixed `MODIFY SETTING` + `MODIFY COMMENT` / `COMMENT COLUMN` / `RESET SETTING` is still
+        /// a metadata-only ALTER: neither subcommand can change the sorting key, so the suspicious
+        /// primary key check must not run. `commands.isSettingsAlter` and `commands.isCommentAlter`
+        /// are both `all_of` checks and therefore both return false for mixed statements; this branch
+        /// closes that gap so they are handled the same way as the pure-settings / pure-comment cases.
+        merge_strategy_picker.refreshState();
+        changeSettings(future_metadata.settings_changes, table_lock_holder);
+
+        setInMemoryMetadata(future_metadata);
+
+        /// It is safe to ignore exceptions here as only settings and comments are changed,
+        /// neither of which is validated in `alterTable`.
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        return;
+    }
+
     if (!query_settings[Setting::allow_suspicious_primary_key])
     {
         MergeTreeData::verifySortingKey(future_metadata.sorting_key);

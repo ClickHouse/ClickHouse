@@ -51,11 +51,36 @@ ALTER TABLE t_104463_amt MODIFY COMMENT 'table comment';
 ALTER TABLE t_104463_mt  COMMENT COLUMN value 'column comment';
 ALTER TABLE t_104463_amt COMMENT COLUMN value 'column comment';
 
+-- Mixed `MODIFY COMMENT` / `COMMENT COLUMN` / `RESET SETTING` + `MODIFY SETTING`
+-- statements must also not re-validate the sorting key.
+-- `AlterCommands::isSettingsAlter` and `AlterCommands::isCommentAlter` are both
+-- `all_of` checks and return false for these statements even though neither
+-- subcommand can affect ORDER BY. The dedicated
+-- `AlterCommands::areNonReplicatedAlterCommands` branch in `StorageMergeTree::alter`
+-- and `StorageReplicatedMergeTree::alter` keeps them on the metadata-only path.
+-- Note: `MODIFY SETTING` consumes a comma-separated setting list, so it must
+-- appear last when combined with other subcommands in a single ALTER.
+ALTER TABLE t_104463_mt  MODIFY COMMENT 'mixed table comment', MODIFY SETTING merge_with_ttl_timeout = 60;
+ALTER TABLE t_104463_amt MODIFY COMMENT 'mixed table comment', MODIFY SETTING merge_with_ttl_timeout = 60;
+
+ALTER TABLE t_104463_mt  COMMENT COLUMN value 'mixed column comment', MODIFY SETTING merge_with_ttl_timeout = 45;
+ALTER TABLE t_104463_amt COMMENT COLUMN value 'mixed column comment', MODIFY SETTING merge_with_ttl_timeout = 45;
+
+ALTER TABLE t_104463_mt  MODIFY COMMENT 'mixed reset comment', RESET SETTING merge_with_ttl_timeout;
+ALTER TABLE t_104463_amt MODIFY COMMENT 'mixed reset comment', RESET SETTING merge_with_ttl_timeout;
+
 -- ALTERs that could change the sorting key (e.g. ADD COLUMN) must still be
 -- rejected because the existing key contains a suspicious type and the user
 -- has not re-enabled `allow_suspicious_primary_key`.
 ALTER TABLE t_104463_mt  ADD COLUMN extra Int; -- { serverError DATA_TYPE_CANNOT_BE_USED_IN_KEY }
 ALTER TABLE t_104463_amt ADD COLUMN extra Int; -- { serverError DATA_TYPE_CANNOT_BE_USED_IN_KEY }
+
+-- Mixing a settings/comment change with a sorting-key-relevant command (e.g. ADD COLUMN)
+-- must still be rejected, because `AlterCommands::areNonReplicatedAlterCommands` is
+-- `all_of (isSettingsAlter || isCommentAlter)` and so returns false as soon as a
+-- non-settings, non-comment subcommand appears.
+ALTER TABLE t_104463_mt  MODIFY COMMENT 'cmt', ADD COLUMN extra2 Int; -- { serverError DATA_TYPE_CANNOT_BE_USED_IN_KEY }
+ALTER TABLE t_104463_amt MODIFY COMMENT 'cmt', ADD COLUMN extra2 Int; -- { serverError DATA_TYPE_CANNOT_BE_USED_IN_KEY }
 
 -- Re-enabling the setting allows the same ALTER to go through, exactly as
 -- it does for ReplicatedMergeTree.

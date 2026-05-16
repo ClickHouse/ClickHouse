@@ -461,6 +461,21 @@ void StorageMergeTree::alter(
         /// It is safe to ignore exceptions here as only the comment changed, which is not validated in `alterTable`
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     }
+    else if (commands.areNonReplicatedAlterCommands())
+    {
+        /// Mixed `MODIFY SETTING` + `MODIFY COMMENT` / `COMMENT COLUMN` / `RESET SETTING` is still
+        /// a metadata-only ALTER: neither subcommand can change the sorting key, so the suspicious
+        /// primary key check must not run. `commands.isSettingsAlter` and `commands.isCommentAlter`
+        /// are both `all_of` checks and therefore both return false for mixed statements; this branch
+        /// closes that gap so they are handled the same way as the pure-settings / pure-comment cases.
+        changeSettings(new_metadata.settings_changes, table_lock_holder);
+
+        setInMemoryMetadata(new_metadata);
+
+        /// It is safe to ignore exceptions here as only settings and comments are changed,
+        /// neither of which is validated in `alterTable`.
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+    }
     else
     {
         /// The sorting key is only relevant when something other than settings or comments is being altered.
