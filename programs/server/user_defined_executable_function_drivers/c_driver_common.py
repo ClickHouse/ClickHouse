@@ -823,6 +823,9 @@ cleanup()
     if [ "${{reader_pid:-}}" ]; then
         kill "$reader_pid" 2>/dev/null || true
     fi
+    if [ "${{docker_pid:-}}" ]; then
+        kill "$docker_pid" 2>/dev/null || true
+    fi
     rm -rf "$pipe_dir"
 }}
 trap cleanup EXIT INT TERM
@@ -830,22 +833,30 @@ trap cleanup EXIT INT TERM
 mkfifo "$pipe_dir/in" "$pipe_dir/out" || exit 1
 pipe_name=$(basename "$pipe_dir")
 
-docker exec -d -w "$mount_dir" "$container" sh -c 'exec "$1" < "$2" > "$3"' sh \
-    "$mount_dir/user_func" "$mount_dir/$pipe_name/in" "$mount_dir/$pipe_name/out" || exit 1
+docker exec -w "$mount_dir" "$container" sh -c 'exec "$1" < "$2" > "$3"' sh \
+    "$mount_dir/user_func" "$mount_dir/$pipe_name/in" "$mount_dir/$pipe_name/out" < /dev/null &
+docker_pid=$!
 
-cat > "$pipe_dir/in" &
+exec 5<&0
+cat <&5 > "$pipe_dir/in" &
 writer_pid=$!
+exec 5<&-
 
 cat "$pipe_dir/out" &
 reader_pid=$!
 
 writer_status=0
 reader_status=0
+docker_status=0
 wait "$writer_pid" || writer_status=$?
 wait "$reader_pid" || reader_status=$?
+wait "$docker_pid" || docker_status=$?
 
 if [ "$writer_status" -ne 0 ]; then
     exit "$writer_status"
+fi
+if [ "$docker_status" -ne 0 ]; then
+    exit "$docker_status"
 fi
 exit "$reader_status"
 """

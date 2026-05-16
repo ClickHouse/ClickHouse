@@ -94,7 +94,10 @@ grep -q -- '--runtime=runsc' "$WORK_DIR/docker_runtime.xml" && echo "docker_gvis
 test -s "$WORK_DIR/docker_runtime/docker_container_name" && echo "docker_container_name_present" || echo "docker_container_name_missing"
 test -x "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_runner_present" || echo "docker_fifo_runner_missing"
 grep -q 'mkfifo "$pipe_dir/in" "$pipe_dir/out"' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_mkfifo_present" || echo "docker_fifo_mkfifo_missing"
-grep -q 'docker exec -d' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_detached_exec_present" || echo "docker_fifo_detached_exec_missing"
+grep -q 'docker exec -d' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_detached_exec_present" || echo "docker_fifo_detached_exec_absent"
+grep -q 'docker exec -w' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_attached_exec_present" || echo "docker_fifo_attached_exec_missing"
+grep -q '< /dev/null &' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_docker_stdin_closed" || echo "docker_fifo_docker_stdin_open"
+grep -q 'cat <&5 > "$pipe_dir/in"' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_writer_stdin_present" || echo "docker_fifo_writer_stdin_missing"
 grep -q '<execute_direct>0</execute_direct>' "$WORK_DIR/docker_runtime.xml" && echo "docker_execute_shell" || echo "docker_execute_direct"
 
 (
