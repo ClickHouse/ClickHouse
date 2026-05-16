@@ -48,9 +48,9 @@ TEST(MergeTreeBoundsSubscription, DisablePreventsAdvance)
 TEST(MergeTreeBoundsSubscription, FdIsExposedOnLinux)
 {
     MergeTreeBoundsSubscription sub(1, 0);
-    auto fd = sub.fd();
-    ASSERT_TRUE(fd.has_value());
-    ASSERT_GE(fd.value(), 0);
+    auto * fd = sub.fd();
+    ASSERT_TRUE(fd != nullptr);
+    ASSERT_GE(fd->fd, 0);
 }
 
 TEST(MergeTreeBoundsSubscription, FsIsNonBlocking)
@@ -58,12 +58,17 @@ TEST(MergeTreeBoundsSubscription, FsIsNonBlocking)
     MergeTreeBoundsSubscription sub(1, 0);
 
     sub.advance("p1", 1);
+    sub.advance("p1", 2);
+    sub.advance("p1", 3);
 
     /// fd is ready after each advance.
-    int64_t buf;
-    auto read_bytes = ::read(sub.fd().value(), &buf, 8);
-    ASSERT_EQ(read_bytes, 8);
-    ASSERT_EQ(buf, 1);
+    ASSERT_EQ(sub.fd()->read(), 3);
+
+    /// fd is non-blocking
+    ASSERT_EQ(sub.fd()->read(), 0);
+    ASSERT_EQ(sub.fd()->read(), 0);
+    ASSERT_EQ(sub.fd()->read(), 0);
+    ASSERT_EQ(sub.fd()->read(), 0);
 }
 #else
 TEST(MergeTreeBoundsSubscription, FdAbsentOnNonLinux)
