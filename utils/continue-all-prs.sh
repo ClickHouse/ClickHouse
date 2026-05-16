@@ -71,11 +71,19 @@ while true; do
     # an accepted tradeoff that keeps the candidate set ~hundreds instead of
     # ~thousands.
     echo "${S}Fetching open PRs in ${REPO} involving ${AUTHOR}...${R}"
+    INVOLVES_RAW="$ROUND_TMP/involves_raw.json"
     INVOLVES_FILE="$ROUND_TMP/involves.json"
     gh search prs --repo "$REPO" --state open --involves "$AUTHOR" --limit 1000 \
-        --json number,title,author,assignees,updatedAt > "$INVOLVES_FILE"
+        --json number,title,author,assignees,updatedAt,baseRefName > "$INVOLVES_RAW"
+    RAW_COUNT=$(jq 'length' "$INVOLVES_RAW")
+
+    # Drop backport PRs: any PR whose base branch is not `master` is targeting
+    # a release branch (`25.3`, `26.2`, etc.). Those should be skipped because
+    # they shouldn't be advanced by the generic `/continue-pr` flow.
+    jq '[.[] | select(.baseRefName == "master")]' "$INVOLVES_RAW" > "$INVOLVES_FILE"
     INVOLVES_COUNT=$(jq 'length' "$INVOLVES_FILE")
-    echo "${S}Found ${INVOLVES_COUNT} PR(s) involving ${AUTHOR}.${R}"
+    SKIPPED_BACKPORTS=$((RAW_COUNT - INVOLVES_COUNT))
+    echo "${S}Found ${INVOLVES_COUNT} PR(s) involving ${AUTHOR} (skipped ${SKIPPED_BACKPORTS} backport PR(s) targeting non-master branches).${R}"
 
     # Filter 1: PRs authored by me.
     AUTHORED_FILE="$ROUND_TMP/authored.json"
