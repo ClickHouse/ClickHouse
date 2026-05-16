@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <fmt/format.h>
 #include <algorithm>
+#include <unordered_map>
 
 namespace DB
 {
@@ -215,14 +216,16 @@ static bool areProcessorsSimilarForExplain(const IProcessor & lhs, const IProces
         && lhs.getDescription() == rhs.getDescription();
 }
 
-static bool areRepeatedProcessorRangesEqual(
+static bool areProcessorChainsSimilar(
     const std::vector<const IProcessor *> & processors,
-    size_t lhs_begin,
-    size_t rhs_begin,
-    size_t length)
+    size_t first_chain_begin,
+    size_t second_chain_begin,
+    size_t chain_size)
 {
-    for (size_t i = 0; i < length; ++i)
-        if (!areProcessorsSimilarForExplain(*processors[lhs_begin + i], *processors[rhs_begin + i]))
+    for (size_t processor_offset = 0; processor_offset < chain_size; ++processor_offset)
+        if (!areProcessorsSimilarForExplain(
+                *processors[first_chain_begin + processor_offset],
+                *processors[second_chain_begin + processor_offset]))
             return false;
 
     return true;
@@ -237,52 +240,94 @@ static bool hasConnectionTo(const IProcessor & from, const IProcessor & to)
     return false;
 }
 
-static bool isProcessorRangeChain(const std::vector<const IProcessor *> & processors, size_t begin, size_t length)
+static bool isProcessorChain(const std::vector<const IProcessor *> & processors, size_t chain_begin, size_t chain_size)
 {
-    for (size_t i = 0; i + 1 < length; ++i)
+    for (size_t processor_offset = 0; processor_offset + 1 < chain_size; ++processor_offset)
     {
-        const auto & current = *processors[begin + i];
-        const auto & next = *processors[begin + i + 1];
-        if (!hasConnectionTo(next, current))
+        const auto & consumer = *processors[chain_begin + processor_offset];
+        const auto & producer = *processors[chain_begin + processor_offset + 1];
+        if (!hasConnectionTo(producer, consumer))
             return false;
     }
 
     return true;
 }
 
-static bool hasConnectionBetweenProcessorRanges(
+using ProcessorChainIndexes = std::unordered_map<const IProcessor *, size_t>;
+
+static ProcessorChainIndexes collectProcessorChainIndexes(
     const std::vector<const IProcessor *> & processors,
-    size_t lhs_begin,
-    size_t rhs_begin,
-    size_t length)
+    size_t repeated_chains_begin,
+    size_t chain_size,
+    size_t chain_count)
 {
-    for (size_t lhs_pos = lhs_begin; lhs_pos < lhs_begin + length; ++lhs_pos)
-        for (size_t rhs_pos = rhs_begin; rhs_pos < rhs_begin + length; ++rhs_pos)
-            if (hasConnectionTo(*processors[lhs_pos], *processors[rhs_pos]) || hasConnectionTo(*processors[rhs_pos], *processors[lhs_pos]))
-                return true;
+    ProcessorChainIndexes processor_chain_indexes;
+    processor_chain_indexes.reserve(chain_size * chain_count);
+
+    for (size_t chain_index = 0; chain_index < chain_count; ++chain_index)
+    {
+        const size_t chain_begin = repeated_chains_begin + chain_index * chain_size;
+        for (size_t processor_offset = 0; processor_offset < chain_size; ++processor_offset)
+            processor_chain_indexes.emplace(processors[chain_begin + processor_offset], chain_index);
+    }
+
+    return processor_chain_indexes;
+}
+
+static bool hasConnectionToDifferentProcessorChain(
+    const IProcessor & processor,
+    size_t source_chain_index,
+    const ProcessorChainIndexes & processor_chain_indexes)
+{
+    for (const auto & output : processor.getOutputs())
+    {
+        if (!output.isConnected())
+            continue;
+
+        const auto target_processor = &output.getInputPort().getProcessor();
+        auto target_chain = processor_chain_indexes.find(target_processor);
+        if (target_chain != processor_chain_indexes.end() && target_chain->second != source_chain_index)
+            return true;
+    }
 
     return false;
 }
 
-static bool isRepeatedProcessorRangeIndependentChain(
+static bool hasConnectionBetweenRepeatedProcessorChains(
     const std::vector<const IProcessor *> & processors,
-    size_t begin,
-    size_t length,
-    size_t count)
+    size_t repeated_chains_begin,
+    size_t chain_size,
+    size_t chain_count)
 {
-    for (size_t item = 0; item < count; ++item)
+    const ProcessorChainIndexes processor_chain_indexes = collectProcessorChainIndexes(processors, repeated_chains_begin, chain_size, chain_count);
+
+    for (size_t chain_index = 0; chain_index < chain_count; ++chain_index)
     {
-        const size_t item_begin = begin + item * length;
-        if (!isProcessorRangeChain(processors, item_begin, length))
+        const size_t chain_begin = repeated_chains_begin + chain_index * chain_size;
+        for (size_t processor_offset = 0; processor_offset < chain_size; ++processor_offset)
+        {
+            if (hasConnectionToDifferentProcessorChain(*processors[chain_begin + processor_offset], chain_index, processor_chain_indexes))
+                return true;
+        }
+    }
+
+    return false;
+}
+
+static bool isRepeatedProcessorChainIndependent(
+    const std::vector<const IProcessor *> & processors,
+    size_t repeated_chains_begin,
+    size_t chain_size,
+    size_t chain_count)
+{
+    for (size_t chain_index = 0; chain_index < chain_count; ++chain_index)
+    {
+        const size_t chain_begin = repeated_chains_begin + chain_index * chain_size;
+        if (!isProcessorChain(processors, chain_begin, chain_size))
             return false;
     }
 
-    for (size_t lhs_item = 0; lhs_item < count; ++lhs_item)
-        for (size_t rhs_item = lhs_item + 1; rhs_item < count; ++rhs_item)
-            if (hasConnectionBetweenProcessorRanges(processors, begin + lhs_item * length, begin + rhs_item * length, length))
-                return false;
-
-    return true;
+    return !hasConnectionBetweenRepeatedProcessorChains(processors, repeated_chains_begin, chain_size, chain_count);
 }
 
 static std::pair<size_t, size_t> findRepeatedProcessorChainRange(const std::vector<const IProcessor *> & processors, size_t begin)
@@ -297,12 +342,12 @@ static std::pair<size_t, size_t> findRepeatedProcessorChainRange(const std::vect
     {
         size_t count = 1;
         while (begin + (count + 1) * period <= processors.size()
-            && areRepeatedProcessorRangesEqual(processors, begin, begin + count * period, period))
+            && areProcessorChainsSimilar(processors, begin, begin + count * period, period))
         {
             ++count;
         }
 
-        if (count > 1 && isRepeatedProcessorRangeIndependentChain(processors, begin, period, count))
+        if (count > 1 && isRepeatedProcessorChainIndependent(processors, begin, period, count))
             return {period, count};
     }
 
@@ -347,31 +392,32 @@ static void doDescribeRepeatedProcessorChains(
     settings.offset += settings.base_indent * length;
 }
 
-void IQueryPlanStep::describePipeline(const Processors & processors, FormatSettings & settings)
+static void doDescribePipeline(const Processors & processors, IQueryPlanStep::FormatSettings & settings)
 {
-    if (!settings.compact_repeated_processor_chains)
+    const IProcessor * prev = nullptr;
+    size_t count = 0;
+
+    for (auto it = processors.rbegin(); it != processors.rend(); ++it)
     {
-        const IProcessor * prev = nullptr;
-        size_t count = 0;
-
-        for (auto it = processors.rbegin(); it != processors.rend(); ++it)
+        if (prev && prev->getName() != (*it)->getName())
         {
-            if (prev && prev->getName() != (*it)->getName())
-            {
-                doDescribeProcessor(*prev, count, settings);
-                count = 0;
-            }
-
-            ++count;
-            prev = it->get();
+            doDescribeProcessor(*prev, count, settings);
+            count = 0;
         }
 
-        if (prev)
-            doDescribeProcessor(*prev, count, settings);
-
-        return;
+        ++count;
+        prev = it->get();
     }
 
+    if (prev)
+        doDescribeProcessor(*prev, count, settings);
+}
+
+static void doDescribePipelineWithRepeatedProcessorChainCompaction(
+    const Processors & processors,
+    IQueryPlanStep::FormatSettings & settings)
+{
+    /// Scan processors in display order.
     std::vector<const IProcessor *> ordered_processors;
     ordered_processors.reserve(processors.size());
     for (auto it = processors.rbegin(); it != processors.rend(); ++it)
@@ -380,6 +426,7 @@ void IQueryPlanStep::describePipeline(const Processors & processors, FormatSetti
     size_t position = 0;
     while (position < ordered_processors.size())
     {
+        /// Compact adjacent similar processors first.
         size_t equal_processors_count = 1;
         while (position + equal_processors_count < ordered_processors.size()
             && areProcessorsSimilarForExplain(*ordered_processors[position], *ordered_processors[position + equal_processors_count]))
@@ -394,6 +441,7 @@ void IQueryPlanStep::describePipeline(const Processors & processors, FormatSetti
             continue;
         }
 
+        /// Compact repeated processor chains when adjacent processors are not similar.
         const auto [repeated_period, repeated_count] = findRepeatedProcessorChainRange(ordered_processors, position);
         if (repeated_count > 1)
         {
@@ -402,9 +450,18 @@ void IQueryPlanStep::describePipeline(const Processors & processors, FormatSetti
             continue;
         }
 
+        /// Describe a single processor when no compaction applies.
         doDescribeProcessor(*ordered_processors[position], 1, settings);
         ++position;
     }
+}
+
+void IQueryPlanStep::describePipeline(const Processors & processors, FormatSettings & settings)
+{
+    if (settings.compact_repeated_processor_chains)
+        doDescribePipelineWithRepeatedProcessorChainCompaction(processors, settings);
+    else
+        doDescribePipeline(processors, settings);
 }
 
 void IQueryPlanStep::appendExtraProcessors(const Processors & extra_processors)
