@@ -314,18 +314,83 @@ String KQLOperators::genHaystackOpExpr(
 
     ++token_pos;
 
-    if (!tokens.empty() && ((token_pos)->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier))
-        new_expr = ch_op + "(" + tokens.back() + ", '" + left_wildcards + left_space + String(token_pos->begin + 1, token_pos->end - 1)
-            + right_space + right_wildcards + "')";
-    else if (!tokens.empty() && ((token_pos)->type == TokenType::BareWord))
+    String needle;
+    String raw_needle; /// needle without wildcards for position-based fallback
+    bool needle_is_literal = false;
+    if ((token_pos)->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier)
+    {
+        raw_needle = "'" + IParserKQLFunction::escapeSingleQuotes(String(token_pos->begin + 1, token_pos->end - 1)) + "'";
+        needle = "'" + left_wildcards + left_space + String(token_pos->begin + 1, token_pos->end - 1)
+            + right_space + right_wildcards + "'";
+        needle_is_literal = true;
+    }
+    else if ((token_pos)->type == TokenType::BareWord)
     {
         auto tmp_arg = IParserKQLFunction::getExpression(token_pos);
-        new_expr = ch_op + "(" + tokens.back() + ", concat('" + left_wildcards + left_space + "', " + tmp_arg + ", '" + right_space
-            + right_wildcards + "'))";
+        raw_needle = tmp_arg;
+        needle = "concat('" + left_wildcards + left_space + "', " + tmp_arg + ", '" + right_space
+            + right_wildcards + "')";
     }
     else
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
+
+    if (tokens.empty())
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", kql_op);
+
+    auto haystack = tokens.back();
     tokens.pop_back();
+
+    /// If the haystack is a literal string and needle is a column expression,
+    /// ilike/like doesn't work. Use position-based approach instead.
+    bool haystack_is_literal = !haystack.empty() && haystack.front() == '\'' && haystack.back() == '\'';
+    if (haystack_is_literal && !needle_is_literal)
+    {
+        /// Wrap nullable column in ifNull to avoid type errors
+        /// Use materialize() on the constant haystack to allow non-constant needle matching
+        auto safe_needle = fmt::format("ifNull(toString({}), '')", raw_needle);
+        auto mat_haystack = fmt::format("materialize({})", haystack);
+        if (ch_op == "ilike" || ch_op == "not ilike")
+        {
+            bool negated = (ch_op == "not ilike");
+            if (wildcards_pos == WildcardsPos::both)
+                new_expr = fmt::format("toBool({}(positionCaseInsensitive({}, {}) > 0))", negated ? "not " : "", haystack, safe_needle);
+            else if (wildcards_pos == WildcardsPos::right)
+                new_expr = fmt::format("toBool({}(startsWith(lower({}), lower({}))))", negated ? "not " : "", haystack, safe_needle);
+            else if (wildcards_pos == WildcardsPos::left)
+                new_expr = fmt::format("toBool({}(endsWith(lower({}), lower({}))))", negated ? "not " : "", haystack, safe_needle);
+            else
+                new_expr = fmt::format("toBool({}(lower({}) = lower({})))", negated ? "not " : "", haystack, safe_needle);
+        }
+        else if (ch_op == "like" || ch_op == "not like")
+        {
+            bool negated = (ch_op == "not like");
+            if (wildcards_pos == WildcardsPos::both)
+                new_expr = fmt::format("toBool({}(position({}, {}) > 0))", negated ? "not " : "", haystack, safe_needle);
+            else if (wildcards_pos == WildcardsPos::right)
+                new_expr = fmt::format("toBool({}(startsWith({}, {})))", negated ? "not " : "", haystack, safe_needle);
+            else if (wildcards_pos == WildcardsPos::left)
+                new_expr = fmt::format("toBool({}(endsWith({}, {})))", negated ? "not " : "", haystack, safe_needle);
+            else
+                new_expr = fmt::format("toBool({}({} = {}))", negated ? "not " : "", haystack, safe_needle);
+        }
+        else if (ch_op == "startsWith" || ch_op == "not startsWith")
+        {
+            bool negated = ch_op.find("not") != String::npos;
+            new_expr = fmt::format("toBool({}startsWith({}, {}))", negated ? "not " : "", haystack, safe_needle);
+        }
+        else if (ch_op == "endsWith" || ch_op == "not endsWith")
+        {
+            bool negated = ch_op.find("not") != String::npos;
+            new_expr = fmt::format("toBool({}endsWith({}, {}))", negated ? "not " : "", haystack, safe_needle);
+        }
+        else if (ch_op == "match")
+            new_expr = fmt::format("toBool(match({}, {}))", mat_haystack, safe_needle);
+        else
+            new_expr = "toBool(" + ch_op + "(" + haystack + ", " + needle + "))";
+    }
+    else
+        new_expr = "toBool(" + ch_op + "(" + haystack + ", " + needle + "))";
+
     return new_expr;
 }
 
@@ -396,6 +461,40 @@ bool KQLOperators::convert(std::vector<String> & tokens, IParser::Pos & pos)
 
             switch (op_value)
             {
+                case KQLOperatorValue::between:
+                case KQLOperatorValue::not_between:
+                {
+                    /// between (low .. high) or !between (low .. high)
+                    ++pos;
+                    if (!isValidKQLPos(pos) || pos->type != TokenType::OpeningRoundBracket)
+                        throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}", op);
+                    ++pos;
+
+                    String low = IParserKQLFunction::getExpression(pos);
+                    ++pos;
+
+                    /// Require ".." (Dot Dot) between low and high
+                    if (!isValidKQLPos(pos) || String(pos->begin, pos->end) != ".")
+                        throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}: expected `..`", op);
+                    ++pos;
+                    if (!isValidKQLPos(pos) || String(pos->begin, pos->end) != ".")
+                        throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}: expected `..`", op);
+                    ++pos;
+
+                    String high = IParserKQLFunction::getExpression(pos);
+                    ++pos;
+                    /// Require the closing bracket
+                    if (!isValidKQLPos(pos) || pos->type != TokenType::ClosingRoundBracket)
+                        throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near {}: expected `)`", op);
+
+                    if (op_value == KQLOperatorValue::between)
+                        new_expr = fmt::format("toBool({0} >= {1} and {0} <= {2})", tokens.back(), low, high);
+                    else
+                        new_expr = fmt::format("toBool({0} < {1} or {0} > {2})", tokens.back(), low, high);
+                    tokens.pop_back();
+                    break;
+                }
+
                 case KQLOperatorValue::contains:
                     new_expr = genHaystackOpExpr(tokens, pos, op, "ilike", WildcardsPos::both);
                     break;

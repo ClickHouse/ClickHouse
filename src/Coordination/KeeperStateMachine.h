@@ -93,7 +93,7 @@ public:
 
     ClusterConfigPtr getClusterConfig() const;
 
-    virtual void processReadRequest(const KeeperRequestForSession & request_for_session) = 0;
+    virtual void processReadRequests(const KeeperRequestsForSessions & requests) = 0;
 
     virtual std::vector<int64_t> getDeadSessions() = 0;
 
@@ -163,7 +163,7 @@ protected:
     /// Lock for the storage
     /// Storage works in thread-safe way ONLY for preprocessing/processing
     /// In any other case, unique storage lock needs to be taken
-    mutable SharedMutex storage_mutex;
+    mutable SharedMutex state_machine_storage_mutex;
     /// Lock for processing and responses_queue. It's important to process requests
     /// and push them to the responses queue while holding this lock. Otherwise
     /// we can get strange cases when, for example client send read request with
@@ -244,8 +244,8 @@ public:
 
     void shutdownStorage() override;
 
-    /// Process local read request
-    void processReadRequest(const KeeperRequestForSession & request_for_session) override;
+    /// Process local read requests
+    void processReadRequests(const KeeperRequestsForSessions & requests) override;
 
     std::vector<int64_t> getDeadSessions() override;
 

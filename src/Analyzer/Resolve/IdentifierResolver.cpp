@@ -234,6 +234,9 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
         if (database)
             storage = database->tryGetTable(table_name, context);
+        /// Adopt the replacement's identity so TableNode stays resolvable by UUID.
+        if (storage)
+            storage_id = storage->getStorageID();
     }
     if (!storage)
         return {};
@@ -242,8 +245,11 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     storage->updateExternalDynamicMetadataIfExists(context);
-    auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
-    auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
+    auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(context, false), context);
+    /// Pass the user-requested storage_id explicitly instead of letting the
+    /// TableNode ctor read storage->getStorageID(), which can be mutated by
+    /// a concurrent renameInMemory between tryGetTable and this point.
+    auto result = std::make_shared<TableNode>(std::move(storage), storage_id, std::move(storage_lock), std::move(storage_snapshot));
     if (is_temporary_table)
         result->setTemporaryTableName(table_name);
 

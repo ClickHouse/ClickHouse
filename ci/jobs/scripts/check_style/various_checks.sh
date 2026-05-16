@@ -102,51 +102,24 @@ find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -nam
 # ContextPtr holds lots of different stuff, including some caches, so prefer to
 # use weak_ptr or copy relevant info from Context, to avoid extending lifetime
 # of other objects.
-#
-# NOTE: most of the excludes here needs context to call another function, which
-# is easy to fix.
 FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
-    -e /trap.cpp
-    -e /toInterval.cpp
-    -e /structureToFormatSchema.cpp
-    -e /splitByRegexp.cpp
-    -e /reverse.cpp
-    -e /nullIf.cpp
-    -e /midpoint.h
-    -e /ifNull.cpp
-    -e /ifNotFinite.cpp
-    -e /generateSerialID.cpp
-    -e /formatRow.cpp
-    -e /filesystem.cpp
-    -e /evalMLMethod.cpp
-    -e /date_trunc.cpp
-    -e /currentRoles.cpp
-    -e /currentProfiles.cpp
-    -e /concat.cpp
-    -e /caseWithExpression.cpp
-    -e /CastOverloadResolver.cpp
-    -e /array/arrayRemove.h
-    -e /array/arrayJaccardIndex.cpp
-    -e /array/arrayIntersect.cpp
-    -e /array/arrayElement.cpp
-    -e /UserDefined/
-    -e /LeastGreatestGeneric.h
-    -e /Kusto/KqlArraySort.cpp
-    -e /FunctionsOpDate.cpp
-    -e /FunctionUnaryArithmetic.h
-    -e /FunctionNaiveBayesClassifier.cpp
-    -e /FunctionBinaryArithmetic.h
-    -e /ITupleFunction.h
-
-    -e /FunctionJoinGet.cpp
-    -e /FunctionsExternalDictionaries.cpp
+    # These functions genuinely need live context at execution time
+    # (dictionary loading, join access, ZooKeeper, ML prediction,
+    # complex type resolution for DateTime/Interval/Tuple arithmetic)
+    # and cannot use WithContext (weak_ptr) because the context may expire
+    # in deferred execution paths (default expressions, async inserts).
     -e /FunctionsExternalDictionaries.h
-    -e /FunctionDictGetKeys.cpp
-
-    -e /TimeSeries/timeSeriesIdToTagsGroup.cpp
-    -e /TimeSeries/timeSeriesIdToTags.cpp
-    -e /TimeSeries/timeSeriesTagsGroupToTags.cpp
-    -e /TimeSeries/timeSeriesStoreTags.cpp
+    -e /FunctionJoinGet.cpp
+    -e /generateSerialID.cpp
+    -e /evalMLMethod.cpp
+    -e /FunctionBinaryArithmetic.h
+    -e /FunctionUnaryArithmetic.h
+    -e /ITupleFunction.h
+    -e /LeastGreatestGeneric.h
+    -e /midpoint.h
+    -e /formatRow.cpp
+    -e /structureToFormatSchema.cpp
+    -e /UserDefined/
 )
 find $ROOT_PATH/src/Functions -type f | xargs grep -l 'ContextPtr [a-z_]*;' | grep -v "${FUNCTIONS_CONTEXT_PTR_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid holding a copy of ContextPtr in Functions"
 
@@ -154,8 +127,12 @@ find $ROOT_PATH/src/Functions -type f | xargs grep -l 'ContextPtr [a-z_]*;' | gr
 FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
     # It is OK to have WithContext for derived classes from IFunctionOverloadResolver
     -e /FunctionJoinGet.cpp
+    -e /CastOverloadResolver.cpp
+    -e /reverse.cpp
+    -e /formatRow.cpp
     # Store global context
     -e /ExternalUserDefinedExecutableFunctionsLoader.cpp
+    -e /UserDefined/
     # Used only in getReturnTypeImpl()
     -e /array/arrayReduce.cpp
     -e /array/arrayReduceInRanges.cpp
@@ -171,6 +148,9 @@ FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
     -e /getSetting.cpp
     -e /hasColumnInTable.cpp
     -e /initializeAggregation.cpp
+    # Diagnostic helper, the file is disabled via `#if 0` in production builds;
+    # `WithContext` is required so `trap('access context')` exercises runtime context access.
+    -e /trap.cpp
 )
 find $ROOT_PATH/src/Functions -type f | xargs grep -l 'WithContext(' | grep -v "${FUNCTIONS_WITH_CONTEXT_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid using WithContext in Functions"
 
@@ -246,3 +226,36 @@ done
 
 # CLICKHOUSE_URL already includes "?"
 git grep -P 'CLICKHOUSE_URL(|_HTTPS)(}|}/|/|)\?' $ROOT_PATH/tests/queries/0_stateless/*.sh && echo "CLICKHOUSE_URL already includes '?', use '&' to append query parameters"
+
+# Large files checked into git.
+# Every byte committed is cloned by every contributor forever and cannot be removed without history rewriting.
+# Binary blobs (JARs, archives, .so, datasets) should be downloaded at test time or built from source.
+MAX_FILE_SIZE=$((5 * 1024 * 1024))  # 5 MB
+LARGE_FILE_WHITELIST=(
+    # Legitimate test data that is hard to generate at runtime
+    -e multi_column_bf.gz.parquet
+    -e ghdata_sample.json
+    -e libcatboostmodel.so_aarch64
+    -e libcatboostmodel.so_x86_64
+    -e test_01946.zstd
+    -e e60db19f11f94175ac682c5898cce0f77cc508ea.tar.gz
+    -e npy_big.npy
+    -e string_int_list_inconsistent_offset_multiple_batches.parquet
+    -e known_failures.txt
+    -e keeper-java-client-test.jar
+)
+# GNU stat (Linux) uses -c, BSD stat (macOS) uses -f — detect once instead of failing per file.
+if stat -c '%s %n' /dev/null >/dev/null 2>&1; then
+    STAT_FMT_FLAG='-c'
+    STAT_FMT='%s %n'
+else
+    STAT_FMT_FLAG='-f'
+    STAT_FMT='%z %N'
+fi
+# Bulk stat all tracked files via xargs (avoids fork-per-file which takes minutes on large repos).
+git ls-files -z "$ROOT_PATH" | xargs -0 stat "$STAT_FMT_FLAG" "$STAT_FMT" 2>/dev/null \
+    | awk -v limit="$MAX_FILE_SIZE" '$1 > limit { print substr($0, index($0, $2)) }' \
+    | grep -v "${LARGE_FILE_WHITELIST[@]}" \
+    | while IFS= read -r file; do
+        echo "File $file is larger than 5 MB. Large files should not be committed to git — download them at test time or build from source instead."
+    done
