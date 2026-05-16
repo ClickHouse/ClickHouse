@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 
+# Most likely merge tree tables using for streaming queries will override some subset of this settings.
+STREAMING_TABLE_SETTINGS="\
+    enable_block_number_column = 1, \
+    enable_block_offset_column = 1, \
+    add_minmax_index_for_block_number_column = 1, \
+    add_minmax_index_for_block_offset_column = 1"
+
 spawn()
 {
     # Create a unique name for the FIFO using mktemp
