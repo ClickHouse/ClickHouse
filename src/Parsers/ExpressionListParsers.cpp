@@ -628,6 +628,20 @@ public:
         return operators.back().type;
     }
 
+    /// True when any operator of the given type is pending anywhere on the
+    /// operators stack of the current element. Used to detect a pending lambda
+    /// in `SubstringLayer` / `PositionLayer` state-0 closing-bracket handling:
+    /// a lambda body can leave higher-priority binary operators on top of the
+    /// lambda operator (e.g. `[..., Lambda, Plus]` for `x -> x + 1`), so
+    /// inspecting only the stack top via `previousType` would miss the lambda.
+    bool hasPendingOperator(OperatorType type) const
+    {
+        for (const auto & op : operators)
+            if (op.type == type)
+                return true;
+        return false;
+    }
+
     int isCurrentElementEmpty() const
     {
         return operators.empty() && operands.empty();
@@ -1334,6 +1348,9 @@ public:
                         for (auto & elem : tup)
                             elements.push_back(make_intrusive<ASTLiteral>(std::move(elem)));
                         is_tuple = true;
+                        /// Outer parens were grouping (single inner literal-tuple), not tuple delimiters,
+                        /// so the resulting literal is parenthesized and must round-trip back to `((1, 2))`.
+                        outer_paren_was_grouping = true;
                     }
                 }
 
@@ -1355,6 +1372,7 @@ protected:
         if (!is_tuple && elements.size() == 1)
         {
             node = std::move(elements[0]);
+            node->setParenthesized(true);
         }
         else if (elements.size() >= 2 && allElementsAreCompatibleLiterals(elements, Field::Types::Tuple))
         {
@@ -1366,10 +1384,14 @@ protected:
             for (auto & elem : elements)
                 tup.push_back(elem->as<ASTLiteral &>().value);
             node = make_intrusive<ASTLiteral>(std::move(tup));
+            if (outer_paren_was_grouping)
+                node->setParenthesized(true);
         }
         else
         {
             node = makeASTOperator("tuple", std::move(elements));
+            if (outer_paren_was_grouping)
+                node->setParenthesized(true);
         }
 
         return true;
@@ -1377,6 +1399,7 @@ protected:
 
 private:
     bool is_tuple = false;
+    bool outer_paren_was_grouping = false;
 };
 
 /// Layer for array square brackets operator
@@ -1688,7 +1711,9 @@ public:
     {
         /// Either SUBSTRING(expr FROM start [FOR length]) or SUBSTRING(expr, start, length)
         ///
-        /// 0: Parse first separator: FROM or comma (-> 1)
+        /// 0: Parse first separator: FROM or comma (-> 1), or closing bracket
+        ///    when a lambda is pending (round-trip for the merged-tuple lambda
+        ///    sugar, see issue #104605)
         /// 1: Parse second separator: FOR or comma (-> 2)
         /// 1 or 2: Parse closing bracket (finished)
 
@@ -1703,6 +1728,29 @@ public:
                     return false;
 
                 state = 1;
+            }
+            /// Accept the one-argument form ONLY when a lambda operator is
+            /// pending anywhere on the operators stack. This is the AST shape
+            /// produced by the documented lambda-merging sugar (`mapApply`,
+            /// `arrayFold`, …): the formatter emits `substring((x, y) -> z)`
+            /// for `substring(lambda(tuple(x, y), z))` and the re-parser must
+            /// accept that exact form to keep the AST format/re-parse
+            /// round-trip invariant in `executeQueryImpl`. We must scan the
+            /// whole stack — and not just the top via `previousType` — because
+            /// a lambda body can leave higher-priority binary operators above
+            /// the `lambda` operator (e.g. `[..., Lambda, Plus]` for
+            /// `(x) -> x + 1`); `mergeElement` below drains them in priority
+            /// order before combining the lambda. Bare `substring(x)`
+            /// continues to fail with `SYNTAX_ERROR` at parse time —
+            /// `02154_parser_backtracking` depends on this for
+            /// exponential-backtracking protection. See issue #104605.
+            else if (hasPendingOperator(OperatorType::Lambda)
+                && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            {
+                if (!mergeElement())
+                    return false;
+
+                finished = true;
             }
         }
 
@@ -1873,7 +1921,9 @@ public:
     {
         /// position(haystack, needle[, start_pos]) or position(needle IN haystack)
         ///
-        /// 0: Parse separator: comma (-> 1) or IN (-> 2)
+        /// 0: Parse separator: comma (-> 1) or IN (-> 2), or closing bracket
+        ///    when a lambda is pending (round-trip for the merged-tuple lambda
+        ///    sugar, see issue #104605)
         /// 1: Parse second separator: comma
         /// 1 or 2: Parse closing bracket (finished)
 
@@ -1888,7 +1938,7 @@ public:
 
                 state = 1;
             }
-            if (ParserKeyword(Keyword::IN).ignore(pos, expected))
+            else if (ParserKeyword(Keyword::IN).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -1896,6 +1946,27 @@ public:
                     return false;
 
                 state = 2;
+            }
+            /// Accept the one-argument form ONLY when a lambda operator is
+            /// pending anywhere on the operators stack. This is the AST shape
+            /// produced by the documented lambda-merging sugar: the formatter
+            /// emits `position((x, y) -> z)` for `position(lambda(tuple(x, y), z))`
+            /// and the re-parser must accept that exact form to keep the
+            /// round-trip invariant. We must scan the whole stack — and not
+            /// just the top via `previousType` — because a lambda body can
+            /// leave higher-priority binary operators above the `lambda`
+            /// operator (e.g. `[..., Lambda, Plus]` for `(x) -> x + 1`);
+            /// `mergeElement` drains them in priority order before combining
+            /// the lambda. Bare `position(x)` continues to fail with
+            /// `SYNTAX_ERROR` — `02154_parser_backtracking` depends on this.
+            /// See issue #104605.
+            else if (hasPendingOperator(OperatorType::Lambda)
+                && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            {
+                if (!mergeElement())
+                    return false;
+
+                finished = true;
             }
         }
 
@@ -3286,7 +3357,6 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         }
         else if (pos->type == TokenType::OpeningRoundBracket)
         {
-
             if (subquery_parser.parse(pos, tmp, expected))
             {
                 layers.back()->pushOperand(std::move(tmp));

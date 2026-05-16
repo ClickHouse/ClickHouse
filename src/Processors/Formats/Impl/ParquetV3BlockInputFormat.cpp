@@ -147,6 +147,32 @@ Chunk ParquetV3BlockInputFormat::read()
     return std::move(res.chunk);
 }
 
+std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat::getMatchedBuckets() const
+{
+    if (!reader)
+        return std::nullopt;
+    std::vector<size_t> matched;
+    for (const auto & row_group : reader->reader.row_groups)
+    {
+        if (!row_group.need_to_process)
+            continue;
+
+        bool produced_rows = false;
+        for (const auto & subgroup : row_group.subgroups)
+        {
+            if (subgroup.filter.rows_pass > 0)
+            {
+                produced_rows = true;
+                break;
+            }
+        }
+
+        if (produced_rows)
+            matched.push_back(row_group.row_group_idx);
+    }
+    return std::make_pair(std::move(matched), reader->reader.file_metadata.row_groups.size());
+}
+
 void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
 {
     if (reader)
@@ -239,6 +265,22 @@ ParquetFileBucketInfo::ParquetFileBucketInfo(const std::vector<size_t> & row_gro
 {
 }
 
+std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const
+{
+    if (matching_row_groups.empty())
+        return nullptr;
+    if (row_group_ids.empty())
+        return std::make_shared<ParquetFileBucketInfo>(matching_row_groups);
+    std::unordered_set<size_t> matching_set(matching_row_groups.begin(), matching_row_groups.end());
+    std::vector<size_t> filtered;
+    for (size_t rg : row_group_ids)
+        if (matching_set.contains(rg))
+            filtered.push_back(rg);
+    if (filtered.empty())
+        return nullptr;
+    return std::make_shared<ParquetFileBucketInfo>(std::move(filtered));
+}
+
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances)
 {
     instances.emplace("Parquet", std::make_shared<ParquetFileBucketInfo>());
@@ -304,7 +346,11 @@ void registerInputFormatParquet(FormatFactory & factory)
         {
             size_t min_bytes_for_seek
                 = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
-            ParquetMetadataCachePtr metadata_cache = context->getParquetMetadataCache();
+            /// `tryGet` keeps the metadata-aware creator usable from contexts that don't
+            /// initialise the cache (e.g. the client side of `INSERT ... FROM INFILE`).
+            /// In such contexts we just don't memoise the footer — the format itself works
+            /// correctly with a null cache.
+            ParquetMetadataCachePtr metadata_cache = context->tryGetParquetMetadataCache();
             return std::make_shared<ParquetV3BlockInputFormat>(
                 buf,
                 std::make_shared<const Block>(sample),
