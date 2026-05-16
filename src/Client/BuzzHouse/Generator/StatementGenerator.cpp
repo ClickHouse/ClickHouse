@@ -496,7 +496,8 @@ void StatementGenerator::generateNextRefreshableView(RandomGenerator & rg, Refre
     const bool has_views = collectionHas<SQLView>(attached_views);
     const bool has_dictionaries = collectionHas<SQLDictionary>(attached_dictionaries);
 
-    if ((has_tables || !systemTables.empty() || has_views || has_dictionaries) && rg.nextBool())
+    if (pol == RefreshableView_RefreshPolicy::RefreshableView_RefreshPolicy_EVERY
+        && (has_tables || !systemTables.empty() || has_views || has_dictionaries) && rg.nextBool())
     {
         const uint32_t depend_table = 20 * static_cast<uint32_t>(has_tables);
         const uint32_t depend_system_table = 3 * static_cast<uint32_t>(!systemTables.empty());
@@ -538,6 +539,10 @@ void StatementGenerator::generateNextRefreshableView(RandomGenerator & rg, Refre
         SetViewInterval(rg, rv->mutable_randomize());
     }
     rv->set_append(rg.nextBool());
+    if (rg.nextSmallNumber() < 4)
+    {
+        generateSettingValues(rg, refreshSettings, rv->mutable_setting_values());
+    }
 }
 
 static void matchQueryAliases(const SQLView & v, Select * osel, Select * nsel)
@@ -2136,7 +2141,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                          rg, 0, rg.nextSmallNumber() < 3, false, t, ope->mutable_single_partition()->mutable_partition());
              }},
             /// Expire snapshots (Iceberg-specific)
-            {4,
+            {4 * static_cast<uint32_t>(t.isAnyIcebergEngine()),
              [&]
              {
                  ExpireSnapshots * es = ati->mutable_execute_command()->mutable_expire_snapshots();
@@ -2155,6 +2160,25 @@ std::optional<String> StatementGenerator::alterSingleTable(
                          es->add_snapshot_ids(fc.getRandomIcebergHistoryValue("\"snapshot_id\""));
                  if (rg.nextSmallNumber() < 4)
                      es->set_dry_run(rg.nextBool());
+             }},
+            /// Remove orphan files (Iceberg-specific)
+            {4 * static_cast<uint32_t>(t.isAnyIcebergEngine()),
+             [&]
+             {
+                 RemoveOrphanFiles * ro = ati->mutable_execute_command()->mutable_remove_orphan_files();
+
+                 if (rg.nextSmallNumber() < 4)
+                     ro->set_older_than(getNextIcebergExpireTimestamp(rg, fc));
+                 if (rg.nextSmallNumber() < 4)
+                 {
+                     String loc = t.getTablePath(rg, this->allow_not_deterministic);
+
+                     while (!loc.empty() && loc.back() == '/')
+                         loc.pop_back();
+                     ro->set_location(loc);
+                 }
+                 if (rg.nextSmallNumber() < 4)
+                     ro->set_dry_run(rg.nextBool());
              }},
         });
     }
@@ -2448,6 +2472,8 @@ static const std::function<bool(const std::shared_ptr<SQLDatabase> &)> db_has_re
 static const std::function<bool(const SQLTable &)> table_has_replicas
     = [](const SQLTable & t) { return t.isAttached() && t.replica_counter > 0; };
 
+static const auto has_queue_func = [](const SQLTable & t) { return t.isAttached() && t.isAnyQueueEngine(); };
+
 void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const bool allow_table_statements, SystemCommand * sc)
 {
     const uint32_t has_merge_tree = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(has_merge_tree_func));
@@ -2458,6 +2484,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLView>(has_refreshable_view_func));
     const uint32_t has_table = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(attached_tables));
     const uint32_t has_replicated_table = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(table_has_replicas));
+    const uint32_t has_queue_table = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(has_queue_func));
     const uint32_t has_replicated_database
         = static_cast<uint32_t>(allow_table_statements && collectionHas<std::shared_ptr<SQLDatabase>>(db_has_replicas));
     const uint32_t has_database
@@ -2498,6 +2525,15 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         {8 * has_merge_tree, [&] { cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_moves()); }},
         {8 * has_merge_tree,
          [&] { cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_wait_loading_parts()); }},
+        {4 * static_cast<uint32_t>(!fc.disks.empty()), [&] { sc->set_wait_blobs_cleanup(rg.pickRandomly(fc.disks).name); }},
+        {4 * has_merge_tree * static_cast<uint32_t>(supports_cloud_features),
+         [&] { cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_virtual_parts_update()); }},
+        {4 * has_merge_tree * static_cast<uint32_t>(supports_cloud_features),
+         [&] { cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_virtual_parts_update()); }},
+        {4 * has_merge_tree * static_cast<uint32_t>(supports_cloud_features),
+         [&] { cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_reduce_blocking_parts()); }},
+        {4 * has_merge_tree * static_cast<uint32_t>(supports_cloud_features),
+         [&] { cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_reduce_blocking_parts()); }},
         /// Replicated MergeTree
         {8 * has_merge_tree, [&] { cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_fetches()); }},
         {8 * has_merge_tree, [&] { cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_start_fetches()); }},
@@ -2581,6 +2617,15 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
          [&] { cluster = setTableSystemStatement<SQLDictionary>(rg, attached_dictionaries, sc->mutable_reload_dictionary()); }},
         /// Distributed
         {3 * has_table, [&] { cluster = setTableSystemStatement<SQLTable>(rg, attached_tables, sc->mutable_flush_distributed()); }},
+        /// Object storage queue
+        {3 * has_queue_table,
+         [&]
+         {
+             auto * foq = sc->mutable_flush_object_storage_queue();
+             const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(has_queue_func));
+             t.setName(foq->mutable_table(), false);
+             foq->set_path(t.getTablePath(rg, this->allow_not_deterministic));
+         }},
         {3 * has_table, [&] { cluster = setTableSystemStatement<SQLTable>(rg, attached_tables, sc->mutable_stop_distributed_sends()); }},
         {3 * has_table, [&] { cluster = setTableSystemStatement<SQLTable>(rg, attached_tables, sc->mutable_start_distributed_sends()); }},
         {3, [&] { sc->set_drop_query_condition_cache(true); }},
@@ -3411,7 +3456,7 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
                     this->ids.insert(this->ids.end(), {1, 8, 9, 10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22});
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PIPELINE:
-                    this->ids.insert(this->ids.end(), {0, 15, 16});
+                    this->ids.insert(this->ids.end(), {0, 8, 15, 16});
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_CURRENT_TRANSACTION:
                     break;
