@@ -55,6 +55,9 @@ public:
         /// Timeout for writing data to command stdin
         size_t command_write_timeout_milliseconds = 10000;
 
+        /// Requested capacity for command stdin/stdout pipes. Zero keeps the OS default.
+        size_t command_pipe_capacity = 0;
+
         /// Reaction when external command outputs data to its stderr.
         ExternalCommandStderrReaction stderr_reaction = ExternalCommandStderrReaction::NONE;
 

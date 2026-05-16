@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 #include <csignal>
+#include <limits>
 
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
@@ -45,6 +46,7 @@ namespace ErrorCodes
     extern const int CANNOT_WAITPID;
     extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
     extern const int CANNOT_CREATE_CHILD_PROCESS;
+    extern const int BAD_ARGUMENTS;
 }
 
 ShellCommand::ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const ShellCommand::Config & config_)
@@ -167,6 +169,32 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 
     for (size_t i = 0; i < config.write_fds.size(); ++i)
         write_pipe_fds.emplace_back(std::make_unique<PipeFDs>());
+
+    if (config.pipe_capacity)
+    {
+        if (config.pipe_capacity > static_cast<size_t>(std::numeric_limits<int>::max()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Pipe capacity {} exceeds maximum supported value {}",
+                config.pipe_capacity,
+                std::numeric_limits<int>::max());
+
+        int pipe_capacity = static_cast<int>(config.pipe_capacity);
+
+        pipe_stdin.tryIncreaseSize(pipe_capacity);
+
+        if (!config.pipe_stdin_only)
+        {
+            pipe_stdout.tryIncreaseSize(pipe_capacity);
+            pipe_stderr.tryIncreaseSize(pipe_capacity);
+        }
+
+        for (const auto & fds : read_pipe_fds)
+            fds->tryIncreaseSize(pipe_capacity);
+
+        for (const auto & fds : write_pipe_fds)
+            fds->tryIncreaseSize(pipe_capacity);
+    }
 
     pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
 

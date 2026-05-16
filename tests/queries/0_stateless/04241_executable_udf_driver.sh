@@ -119,6 +119,7 @@ echo "-- dynamic config exists after create"
 test -f "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "yes" || echo "no"
 grep -q '<format>Buffers</format>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "buffers_format" || echo "bad_format"
 grep -q '<send_chunk_header>1</send_chunk_header>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "chunk_header_enabled" || echo "chunk_header_disabled"
+grep -q '<command_pipe_capacity>1048576</command_pipe_capacity>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "pipe_capacity_configured" || echo "pipe_capacity_missing"
 
 echo "-- work dir uses uuid name"
 WORK_DIR_NAME=$(cat "$WORK_DIR/dyn/test_udf_drv_add.workdir")
@@ -133,6 +134,7 @@ grep -Eq 'fread|fwrite|fgets|fflush|fputs|scanf|printf|strtoull|setvbuf' "$WORK_
 grep -q 'ch_arg_0_values\[row\]' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "numeric_arg_view_present" || echo "numeric_arg_view_missing"
 grep -q 'ch_result_values\[row\] = user_function' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "numeric_result_view_present" || echo "numeric_result_view_missing"
 grep -q 'static CH_ALWAYS_INLINE int ch_process_chunk' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "chunk_loop_function_present" || echo "chunk_loop_function_missing"
+grep -q 'ch_try_set_pipe_capacity(STDIN_FILENO)' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "wrapper_pipe_capacity_present" || echo "wrapper_pipe_capacity_missing"
 grep -q 'ch_input_buffer' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "input_staging_present" || echo "input_staging_absent"
 
 echo "-- multi-row chunk call"

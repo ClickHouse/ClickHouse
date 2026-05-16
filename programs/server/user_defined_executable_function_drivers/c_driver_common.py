@@ -13,9 +13,8 @@ When called with `create`, reads the C function body from stdin and:
   3. Prints to stdout an XML configuration for an `executable_pool` UDF whose
      command runs the compiled binary using the selected runtime.
 
-When called with `drop`, this driver has no extra work to do besides what
-ClickHouse does itself (delete the dynamic config file and remove the working
-directory).
+When called with `drop`, the driver removes runtime state it created outside
+ClickHouse's dynamic configuration and work directory.
 """
 
 import argparse
@@ -144,7 +143,9 @@ static CH_ALWAYS_INLINE int ch_process_chunk({process_params_str})
 
     return f"""\
 /* Auto-generated wrapper for executable UDF '{safe_function_name}'. */
+#define _GNU_SOURCE
 #include <errno.h>
+#include <fcntl.h>
 #include <inttypes.h>
 #include <limits.h>
 #include <stddef.h>
@@ -172,6 +173,7 @@ static CH_ALWAYS_INLINE {ret_c_type} user_function({user_params_str})
 }}
 
 #define CH_BUFFER_SIZE (1U << 16)
+#define CH_PIPE_CAPACITY (1U << 20)
 
 static unsigned char ch_output_buffer[CH_BUFFER_SIZE];
 static size_t ch_output_pos = 0;
@@ -298,6 +300,15 @@ static void ch_error(const char * message)
             return;
         }}
     }}
+}}
+
+static inline void ch_try_set_pipe_capacity(int fd)
+{{
+#if defined(__linux__) && defined(F_SETPIPE_SZ)
+    (void)fcntl(fd, F_SETPIPE_SZ, CH_PIPE_CAPACITY);
+#else
+    (void)fd;
+#endif
 }}
 
 static inline int ch_read_byte(unsigned char * value)
@@ -631,6 +642,9 @@ static int ch_read_chunk_header(uint64_t * rows)
 {process_function_str}
 int main(void)
 {{
+    ch_try_set_pipe_capacity(STDIN_FILENO);
+    ch_try_set_pipe_capacity(STDOUT_FILENO);
+
 {arg_column_decls_str}
     struct ch_buffer ch_result = {{0}};
 
@@ -705,6 +719,10 @@ def docker_resource_limits():
 
 def pool_size():
     return int(os.environ.get("CLICKHOUSE_C_DRIVER_POOL_SIZE", "64"))
+
+
+def pipe_capacity():
+    return int(os.environ.get("CLICKHOUSE_C_DRIVER_PIPE_CAPACITY", str(1 << 20)))
 
 
 def docker_user():
@@ -861,6 +879,7 @@ def generate_xml_config(function_name, return_type, args, work_dir, runtime):
         <send_chunk_header>1</send_chunk_header>
         <command_read_timeout>10000</command_read_timeout>
         <command_write_timeout>10000</command_write_timeout>
+        <command_pipe_capacity>{pipe_capacity()}</command_pipe_capacity>
         <command_termination_timeout>10</command_termination_timeout>
     </function>
 </functions>

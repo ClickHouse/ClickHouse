@@ -65,6 +65,8 @@ public:
 
         bool pipe_stdin_only = false;
 
+        size_t pipe_capacity = 0;
+
         DestructorStrategy terminate_in_destructor_strategy = DestructorStrategy(false, 0);
     };
 

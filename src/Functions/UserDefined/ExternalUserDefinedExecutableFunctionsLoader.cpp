@@ -181,6 +181,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
     size_t command_termination_timeout_seconds = config.getUInt64(key_in_config + ".command_termination_timeout", 10);
     size_t command_read_timeout_milliseconds = config.getUInt64(key_in_config + ".command_read_timeout", 10000);
     size_t command_write_timeout_milliseconds = config.getUInt64(key_in_config + ".command_write_timeout", 10000);
+    size_t command_pipe_capacity = config.getUInt64(key_in_config + ".command_pipe_capacity", 0);
     ExternalCommandStderrReaction stderr_reaction
         = parseExternalCommandStderrReaction(config.getString(key_in_config + ".stderr_reaction", "log_last"));
     bool check_exit_code = config.getBool(key_in_config + ".check_exit_code", true);
@@ -252,6 +253,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
         .command_termination_timeout_seconds = command_termination_timeout_seconds,
         .command_read_timeout_milliseconds = command_read_timeout_milliseconds,
         .command_write_timeout_milliseconds = command_write_timeout_milliseconds,
+        .command_pipe_capacity = command_pipe_capacity,
         .stderr_reaction = stderr_reaction,
         .check_exit_code = check_exit_code,
         .pool_size = pool_size,

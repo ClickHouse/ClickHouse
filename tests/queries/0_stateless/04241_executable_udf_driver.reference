@@ -15,6 +15,7 @@ unsafe_docker_absent
 yes
 buffers_format
 chunk_header_enabled
+pipe_capacity_configured
 -- work dir uses uuid name
 uuid_workdir_name
 uuid_workdir_present
@@ -24,6 +25,7 @@ stdio_serde_absent
 numeric_arg_view_present
 numeric_result_view_present
 chunk_loop_function_present
+wrapper_pipe_capacity_present
 input_staging_absent
 -- multi-row chunk call
 55

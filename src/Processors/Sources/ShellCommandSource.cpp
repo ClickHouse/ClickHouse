@@ -712,6 +712,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 {
     ShellCommand::Config command_config(command);
     command_config.arguments = arguments;
+    command_config.pipe_capacity = configuration.command_pipe_capacity;
     for (size_t i = 1; i < input_pipes.size(); ++i)
         command_config.write_fds.emplace_back(i + 2);
 
