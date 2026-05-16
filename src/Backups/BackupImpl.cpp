@@ -4,8 +4,10 @@
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupIO_S3.h>
+#include <Backups/getBackupDataFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StackTrace.h>
 #include <Common/StringUtils.h>
 #include <base/hex.h>
 #include <Common/logger_useful.h>
@@ -25,6 +27,8 @@
 #include <IO/copyData.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMParser.h>
+
+#include <filesystem>
 
 
 namespace ProfileEvents
@@ -54,7 +58,10 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TO_NONENCRYPTED_DISK;
     extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
     extern const int LOGICAL_ERROR;
+    extern const int INSECURE_PATH;
 }
+
+namespace fs = std::filesystem;
 
 namespace
 {
@@ -88,6 +95,43 @@ namespace
         if (path.starts_with('/'))
             return path.substr(1);
         return path;
+    }
+
+    /// Validate that a file name from a backup does not contain path traversal sequences.
+    /// This prevents a corrupted or tampered backup from accessing files outside the intended directories during restore.
+    void validateFileNameFromBackup(const String & file_name, const String & field_name, const String & backup_name_for_logging)
+    {
+        fs::path path(file_name);
+
+        /// Reject absolute or rooted paths.
+        if (path.is_absolute() || path.has_root_name() || path.has_root_directory())
+            throw Exception(
+                ErrorCodes::INSECURE_PATH,
+                "Backup {}: <{}> {} is an absolute path, which is not allowed",
+                backup_name_for_logging,
+                field_name,
+                quoteString(file_name));
+
+        /// Normalize the path and check that it does not escape the backup root.
+        auto normalized = path.lexically_normal();
+
+        /// Reject empty or degenerate paths.
+        if (normalized.empty() || normalized == fs::path("."))
+            throw Exception(
+                ErrorCodes::BACKUP_DAMAGED,
+                "Backup {}: <{}> {} is empty or invalid",
+                backup_name_for_logging,
+                field_name,
+                quoteString(file_name));
+
+        /// After normalization, a path that escapes the root starts with "..".
+        if (*normalized.begin() == "..")
+            throw Exception(
+                ErrorCodes::INSECURE_PATH,
+                "Backup {}: <{}> {} resolves to a path outside the backup, which is not allowed",
+                backup_name_for_logging,
+                field_name,
+                quoteString(file_name));
     }
 }
 
@@ -124,6 +168,8 @@ BackupImpl::BackupImpl(
     , archive_params(archive_params_)
     , open_mode(OpenMode::WRITE)
     , writer(std::move(writer_))
+    , data_file_name_generator(params.data_file_name_generator)
+    , data_file_name_prefix_length(params.data_file_name_prefix_length)
     , coordination(params.backup_coordination)
     , uuid(params.backup_uuid)
     , version(CURRENT_BACKUP_VERSION)
@@ -136,15 +182,13 @@ BackupImpl::BackupImpl(
 BackupImpl::BackupImpl(
     const BackupInfo & backup_info_,
     const ArchiveParams & archive_params_,
-    std::shared_ptr<IBackupReader> reader_,
-    std::shared_ptr<IBackupWriter> lightweight_snapshot_writer_)
+    std::shared_ptr<IBackupReader> reader_)
     : backup_info(backup_info_)
     , backup_name_for_logging(backup_info.toStringForLogging())
     , use_archive(!archive_params_.archive_name.empty())
     , archive_params(archive_params_)
     , open_mode(OpenMode::UNLOCK)
     , reader(reader_)
-    , lightweight_snapshot_writer(lightweight_snapshot_writer_)
     , log(getLogger("BackupImpl"))
 {
     open();
@@ -235,7 +279,8 @@ void BackupImpl::openArchive()
     }
     else
     {
-        archive_writer = createArchiveWriter(archive_name, writer->writeFile(archive_name));
+        archive_writer = createArchiveWriter(
+            archive_name, writer->writeFile(archive_name), DBMS_DEFAULT_BUFFER_SIZE, archive_params.adaptive_buffer_max_size);
         archive_writer->setPassword(archive_params.password);
         archive_writer->setCompression(archive_params.compression_method, archive_params.compression_level);
     }
@@ -354,6 +399,9 @@ void BackupImpl::writeBackupMetadata()
     *out << "<deduplicate_files>" << params.deduplicate_files << "</deduplicate_files>";
     *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
+    if (data_file_name_generator != BackupDataFileNameGeneratorType::FirstFileName)
+        *out << "<data_file_name_generator>" << SettingFieldBackupDataFileNameGeneratorTypeTraits::toString(data_file_name_generator)
+             << "</data_file_name_generator>";
 
     auto all_file_infos = coordination->getFileInfosForAllHosts();
 
@@ -421,7 +469,10 @@ void BackupImpl::writeBackupMetadata()
         }
 
         total_size += info.size;
-        bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
+        bool has_entry = !params.deduplicate_files
+            || (info.size && (info.size != info.base_size)
+                && (info.data_file_name.empty()
+                    || info.data_file_name == getBackupDataFileName(info, data_file_name_generator, data_file_name_prefix_length)));
         if (has_entry)
         {
             ++num_entries;
@@ -501,6 +552,7 @@ void BackupImpl::readBackupMetadata()
             const Poco::XML::Node * file_config = child;
             BackupFileInfo info;
             info.file_name = getString(file_config, "name");
+            validateFileNameFromBackup(info.file_name, "name", backup_name_for_logging);
             info.object_key = getString(file_config, "object_key", "");
             info.size = getUInt64(file_config, "size");
             if (info.size)
@@ -532,6 +584,8 @@ void BackupImpl::readBackupMetadata()
                 if (info.size > info.base_size)
                 {
                     info.data_file_name = getString(file_config, "data_file", info.file_name);
+                    if (info.data_file_name != info.file_name)
+                        validateFileNameFromBackup(info.data_file_name, "data_file", backup_name_for_logging);
                 }
                 info.encrypted_by_disk = getBool(file_config, "encrypted_by_disk", false);
             }
@@ -553,7 +607,7 @@ void BackupImpl::readBackupMetadata()
 
             ++num_files;
             total_size += info.size;
-            bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
+            bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == info.file_name));
             if (has_entry)
             {
                 ++num_entries;
@@ -1180,29 +1234,5 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
     }
 }
 
-bool BackupImpl::tryRemoveAllFilesUnderDirectory(const String & directory) const noexcept
-{
-    try
-    {
-        LOG_INFO(log, "Removing all files of under directory {}", directory);
-
-        Strings files_to_remove = listFiles(directory, true);
-        Strings objects_to_remove;
-        for (const String & file_name : files_to_remove)
-        {
-            std::lock_guard<std::mutex> lock(mutex);
-            String file_object_key = file_object_keys.at(fs::path(removeLeadingSlash(directory)) / file_name);
-            objects_to_remove.push_back(file_object_key);
-        }
-
-        lightweight_snapshot_writer->removeFiles(objects_to_remove);
-        return true;
-    }
-    catch (...)
-    {
-        DB::tryLogCurrentException(log, "Caught exception while removing files of a corrupted backup");
-        return false;
-    }
 }
 
-}

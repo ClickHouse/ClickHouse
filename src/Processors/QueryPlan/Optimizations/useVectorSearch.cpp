@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -23,7 +24,7 @@ namespace DB::QueryPlanOptimizations
 ///     ORDER BY distance_function(vec, reference_vec), [...]
 ///     LIMIT N
 /// where
-/// - distance_function is function 'L2Distance' or 'cosineDistance',
+/// - distance_function is function 'L2Distance', 'cosineDistance', or 'dotProduct',
 /// - vec is a column of tab (*),
 /// - reference_vec is a literal of type Array(Float32/Float64)
 ///
@@ -32,7 +33,8 @@ namespace DB::QueryPlanOptimizations
 /// to speed up the search.
 ///
 /// (*) Vector search only makes sense if a vector similarity index exists on vec. In the scope of this
-///     function, we don't care. That check is left to query runtime, ReadFromMergeTree specifically.
+///     function, we check that the table has a vector similarity index built on vec or an expression based
+///     on vec. Other checks are left to query runtime, ReadFromMergeTree specifically.
 size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     QueryPlan::Node * node = parent_node;
@@ -129,9 +131,18 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     /// Extract distance_function
     const String & function_name = sort_column_node->function_base->getName();
     String distance_function;
-    if (function_name == "L2Distance" || function_name == "cosineDistance")
+    if (function_name == "L2Distance" || function_name == "cosineDistance" || function_name == "dotProduct")
         distance_function = function_name;
     else
+        return no_layers_updated;
+
+    /// Validate sort direction:
+    /// - L2Distance and cosineDistance require ascending sort order (smaller means more similar)
+    /// - dotProduct requires descending sort order (larger means more similar)
+    const int sort_direction = sort_description.front().direction;
+    if ((distance_function == "L2Distance" || distance_function == "cosineDistance") && sort_direction != 1)
+        return no_layers_updated;
+    if (distance_function == "dotProduct" && sort_direction != -1)
         return no_layers_updated;
 
     /// Extract stuff from the ORDER BY clause. It is expected to look like this: ORDER BY cosineDistance(vec1, [1.0, 2.0 ...])
@@ -143,7 +154,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
 
     for (const auto * child : sort_column_node_children)
     {
-        if (child->type == ActionsDAG::ActionType::ALIAS) /// new analyzer
+        if (child->type == ActionsDAG::ActionType::ALIAS) /// the analyzer
         {
             const auto * search_column_node = child->children.at(0);
             if (search_column_node->type == ActionsDAG::ActionType::INPUT)
@@ -192,6 +203,27 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     }
 
     if (search_column.empty() || reference_vector.empty())
+        return no_layers_updated;
+
+    /// Check if a vector similarity index exists on top of the search column.
+    /// Multi-column indexes cannot be used
+    const auto & indexes = read_from_mergetree_step->getStorageMetadata()->getSecondaryIndices();
+    bool has_vector_similarity_index = false;
+    for (const auto & index : indexes)
+    {
+        if (index.type != "vector_similarity")
+            continue;
+
+        chassert(index.expression);
+        auto required_columns = index.expression->getRequiredColumns();
+        if (required_columns.size() == 1 && required_columns[0] == search_column)
+        {
+            has_vector_similarity_index = true;
+            break;
+        }
+    }
+
+    if (!has_vector_similarity_index)
         return no_layers_updated;
 
     /// All set for 2nd pass
@@ -386,7 +418,7 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
             const auto * distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
 
             if (need_cast)
-                distance_node = &expression.addCast(*distance_node, result_type, "_CAST_distance");
+                distance_node = &expression.addCast(*distance_node, result_type, "_CAST_distance", nullptr);
 
             const auto * new_output = &expression.addAlias(*distance_node, sort_column);
             expression.getOutputs().push_back(new_output);
@@ -425,6 +457,10 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
             filter_or_prewhere_node ? filter_or_prewhere_node->step.get()->getOutputHeader() : read_from_mergetree_step->getOutputHeader(), std::move(expression));
         new_step->setStepDescription(*expression_node->step);
         expression_node->step = std::move(new_step);
+
+        /// The SortingStep's input header must reflect the new ExpressionStep output header
+        /// (which now has _distance consumed and L2Distance(...) produced via ALIAS).
+        sorting_step->updateInputHeader(expression_node->step->getOutputHeader());
     }
 
     return true;

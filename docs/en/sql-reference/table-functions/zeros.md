@@ -8,8 +8,6 @@ title: 'zeros'
 doc_type: 'reference'
 ---
 
-# zeros Table Function
-
 * `zeros(N)` – Returns a table with the single 'zero' column (UInt8) that contains the integer 0 `N` times
 * `zeros_mt(N)` – The same as `zeros`, but uses multiple threads.
 

@@ -11,6 +11,7 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/callOnce.h>
+#include <base/scope_guard.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -33,6 +34,7 @@ namespace ErrorCodes
     extern const int ACCESS_ENTITY_NOT_FOUND;
     extern const int ACCESS_STORAGE_READONLY;
     extern const int ACCESS_STORAGE_DOESNT_ALLOW_BACKUP;
+    extern const int REQUIRED_SECOND_FACTOR;
     extern const int WRONG_PASSWORD;
     extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int LOGICAL_ERROR;
@@ -46,6 +48,14 @@ namespace
     {
         return "ID(" + toString(id) + ")";
     }
+
+    /// Tracks how deep we are inside `IAccessStorage::remove`. Concrete storages (e.g.
+    /// `DiskAccessStorage`) call `remove` on their internal in-memory cache, and
+    /// `MultipleAccessStorage::removeImpl` delegates to a sub-storage's `remove`. We
+    /// only want to cascade dependency cleanup once — at the outermost user-facing call —
+    /// otherwise an inner cascade can update the in-memory state without writing it to
+    /// disk, and the outer cascade then sees no work to do.
+    thread_local size_t remove_depth = 0;
 }
 
 
@@ -314,7 +324,12 @@ bool IAccessStorage::insertImpl(const UUID &, const AccessEntityPtr & entity, bo
 
 bool IAccessStorage::remove(const UUID & id, bool throw_if_not_exists)
 {
-    return removeImpl(id, throw_if_not_exists);
+    ++remove_depth;
+    SCOPE_EXIT(--remove_depth);
+    bool removed = removeImpl(id, throw_if_not_exists);
+    if (removed && remove_depth == 1)
+        removeReferencesToRemovedIDs({id});
+    return removed;
 }
 
 
@@ -325,13 +340,18 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
     if (ids.size() == 1)
         return remove(ids[0], throw_if_not_exists) ? ids : std::vector<UUID>{};
 
+    ++remove_depth;
+    SCOPE_EXIT(--remove_depth);
+
     Strings removed_names;
+    std::vector<UUID> removed_ids;
     try
     {
-        std::vector<UUID> removed_ids;
         std::vector<UUID> readonly_ids;
 
-        /// First we call remove() for non-readonly entities.
+        /// First we call removeImpl() for non-readonly entities. We bypass remove() here
+        /// to defer the dependency cleanup until after every entity has been removed —
+        /// otherwise we'd run the cascade once per id and waste work.
         for (const auto & id : ids)
         {
             if (isReadOnly(id))
@@ -339,7 +359,7 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
             else
             {
                 auto name = tryReadName(id);
-                if (remove(id, throw_if_not_exists))
+                if (removeImpl(id, throw_if_not_exists))
                 {
                     removed_ids.push_back(id);
                     if (name)
@@ -348,24 +368,30 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
             }
         }
 
-        /// For readonly entities we're still going to call remove() because
+        /// For readonly entities we're still going to call removeImpl() because
         /// isReadOnly(id) could change and even if it's not then a storage-specific
         /// implementation of removeImpl() will probably generate a better error message.
         for (const auto & id : readonly_ids)
         {
             auto name = tryReadName(id);
-            if (remove(id, throw_if_not_exists))
+            if (removeImpl(id, throw_if_not_exists))
             {
                 removed_ids.push_back(id);
                 if (name)
                     removed_names.push_back(std::move(name).value());
             }
         }
-
-        return removed_ids;
     }
     catch (Exception & e)
     {
+        /// Even on failure, clean up references for the entities we did remove so the
+        /// access state on disk does not retain dangling UUIDs.
+        if (!removed_ids.empty() && remove_depth == 1)
+        {
+            std::unordered_set<UUID> removed_set(removed_ids.begin(), removed_ids.end());
+            removeReferencesToRemovedIDs(removed_set);
+        }
+
         /// Try to add more information to the error message.
         if (!removed_names.empty())
         {
@@ -379,6 +405,82 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
             e.addMessage("After successfully removing {}/{}: {}", removed_names.size(), ids.size(), removed_names_str);
         }
         throw;
+    }
+
+    if (!removed_ids.empty() && remove_depth == 1)
+    {
+        std::unordered_set<UUID> removed_set(removed_ids.begin(), removed_ids.end());
+        removeReferencesToRemovedIDs(removed_set);
+    }
+    return removed_ids;
+}
+
+
+void IAccessStorage::removeReferencesToRemovedIDs(const std::unordered_set<UUID> & removed_ids)
+{
+    if (removed_ids.empty())
+        return;
+
+    auto update_func = [&removed_ids](const AccessEntityPtr & old, const UUID &) -> AccessEntityPtr
+    {
+        auto new_entity = old->clone();
+        new_entity->removeDependencies(removed_ids);
+        return new_entity;
+    };
+
+    /// Any access entity type can reference any other (e.g. a user references roles, a
+    /// settings profile references roles/users, a row policy references roles/users, etc.),
+    /// so we walk every type. Iteration is O(N) where N is the total number of access
+    /// entities — typically small.
+    for (auto type : collections::range(AccessEntityType::MAX))
+    {
+        std::vector<UUID> dependent_ids;
+        try
+        {
+            dependent_ids = findAllImpl(type);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLogger(), "while listing access entities for dependency cleanup");
+            continue;
+        }
+
+        for (const auto & dependent_id : dependent_ids)
+        {
+            /// An entity can never depend on itself in the relevant sense, and we just
+            /// removed entities in `removed_ids` — there is nothing to update for them.
+            if (removed_ids.contains(dependent_id))
+                continue;
+
+            try
+            {
+                auto entity = readImpl(dependent_id, /* throw_if_not_exists= */ false);
+                if (!entity)
+                    continue;
+                if (!entity->hasDependencies(removed_ids))
+                    continue;
+
+                /// `update()` will dispatch to the same storage that owns the entity,
+                /// so for `MultipleAccessStorage` this naturally crosses sub-storages.
+                /// `throw_if_not_exists=false` covers concurrent removals.
+                update(dependent_id, update_func, /* throw_if_not_exists= */ false);
+            }
+            catch (Exception & e)
+            {
+                /// A read-only sub-storage (e.g. `users.xml`) cannot be updated. That is
+                /// expected — its content is reloaded from the config so any references
+                /// will be reconciled on the next reload. Don't fail the whole cascade.
+                if (e.code() == ErrorCodes::ACCESS_STORAGE_READONLY)
+                    continue;
+                tryLogCurrentException(getLogger(),
+                    "while removing references to dropped access entities from " + outputID(dependent_id));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(getLogger(),
+                    "while removing references to dropped access entities from " + outputID(dependent_id));
+            }
+        }
     }
 }
 
@@ -528,6 +630,13 @@ std::optional<AuthResult> IAccessStorage::authenticate(
     return authenticateImpl(credentials, address, external_authenticators, client_info, throw_if_user_not_exists, allow_no_password, allow_plaintext_password);
 }
 
+Authentication::CredentialsCheckResult areCredentialsValid(
+    const std::string & user_name,
+    const AuthenticationData & authentication_method,
+    const Credentials & credentials,
+    const ExternalAuthenticators & external_authenticators,
+    const ClientInfo & client_info,
+    SettingsChanges & settings);
 
 std::optional<AuthResult> IAccessStorage::authenticateImpl(
     const Credentials & credentials,
@@ -542,12 +651,13 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
     {
         if (auto user = tryRead<User>(*id))
         {
-            AuthResult auth_result { .user_id = *id };
+            AuthResult auth_result { .user_id = *id, .user_name = credentials.getUserName() };
             if (!isAddressAllowed(*user, address))
                 throwAddressNotAllowed(address);
 
             bool skipped_not_allowed_authentication_methods = false;
 
+            bool need_second_factor = false;
             for (const auto & auth_method : user->authentication_methods)
             {
                 auto auth_type = auth_method.getType();
@@ -558,11 +668,14 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                     continue;
                 }
 
-                if (areCredentialsValid(user->getName(), auth_method, credentials, external_authenticators, client_info, auth_result.settings))
+                auto cred_check_result = areCredentialsValid(user->getName(), auth_method, credentials, external_authenticators, client_info, auth_result.settings);
+                if (cred_check_result == Authentication::CredentialsCheckResult::Success)
                 {
                     auth_result.authentication_data = auth_method;
                     return auth_result;
                 }
+                if (cred_check_result == Authentication::CredentialsCheckResult::NeedSecondFactor)
+                    need_second_factor = true;
             }
 
             if (skipped_not_allowed_authentication_methods)
@@ -571,7 +684,9 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                               "check allow_no_password and allow_plaintext_password settings in the server configuration");
             }
 
-            throwInvalidCredentials();
+            if (need_second_factor)
+                throw Exception(ErrorCodes::REQUIRED_SECOND_FACTOR, "Authentication requires second factor");
+            throw Exception(ErrorCodes::WRONG_PASSWORD, "Invalid credentials");
         }
     }
 
@@ -581,19 +696,19 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
         return std::nullopt;
 }
 
-bool IAccessStorage::areCredentialsValid(
+Authentication::CredentialsCheckResult areCredentialsValid(
     const std::string & user_name,
     const AuthenticationData & authentication_method,
     const Credentials & credentials,
     const ExternalAuthenticators & external_authenticators,
     const ClientInfo & client_info,
-    SettingsChanges & settings) const
+    SettingsChanges & settings)
 {
     if (!credentials.isReady())
-        return false;
+        return Authentication::CredentialsCheckResult::Fail;
 
     if (credentials.getUserName() != user_name)
-        return false;
+        return Authentication::CredentialsCheckResult::Fail;
 
     auto valid_until = authentication_method.getValidUntil();
     if (valid_until)
@@ -601,7 +716,7 @@ bool IAccessStorage::areCredentialsValid(
         const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
         if (now > valid_until)
-            return false;
+            return Authentication::CredentialsCheckResult::Fail;
     }
 
     return Authentication::areCredentialsValid(credentials, authentication_method, external_authenticators, client_info, settings);
@@ -810,11 +925,6 @@ void IAccessStorage::throwReadonlyCannotRemove(AccessEntityType type, const Stri
 void IAccessStorage::throwAddressNotAllowed(const Poco::Net::IPAddress & address)
 {
     throw Exception(ErrorCodes::IP_ADDRESS_NOT_ALLOWED, "Connections from {} are not allowed", address.toString());
-}
-
-void IAccessStorage::throwInvalidCredentials()
-{
-    throw Exception(ErrorCodes::WRONG_PASSWORD, "Invalid credentials");
 }
 
 void IAccessStorage::throwBackupNotAllowed() const

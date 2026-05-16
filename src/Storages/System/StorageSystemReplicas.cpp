@@ -2,7 +2,9 @@
 #include <memory>
 
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -36,13 +38,14 @@ using TFuture = typename StorageSystemReplicas::TPools::StatusPool::TFuture;
 using TStatus = typename StorageSystemReplicas::TPools::StatusPool::TStatus;
 
 StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , pools(std::make_shared<TPools>(128))
 {
 
     ColumnsDescription description = {
         { "database",                             std::make_shared<DataTypeString>(),   "Database name."},
         { "table",                                std::make_shared<DataTypeString>(),   "Table name."},
+        { "uuid",                                 std::make_shared<DataTypeUUID>(),     "Table UUID."},
         { "engine",                               std::make_shared<DataTypeString>(),   "Table engine name."},
         { "is_leader",                            std::make_shared<DataTypeUInt8>(),    "Whether the replica is the leader. Multiple replicas can be leaders at the same time. "
                                                                                           "A replica can be prevented from becoming a leader using the merge_tree setting replicated_can_become_leader. "
@@ -55,7 +58,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
         { "is_session_expired",                   std::make_shared<DataTypeUInt8>(),    "Whether the session with ClickHouse Keeper has expired. Basically the same as `is_readonly`."},
         { "future_parts",                         std::make_shared<DataTypeUInt32>(),   "The number of data parts that will appear as the result of INSERTs or merges that haven't been done yet."},
         { "parts_to_check",                       std::make_shared<DataTypeUInt32>(),   "The number of data parts in the queue for verification. A part is put in the verification queue if there is suspicion that it might be damaged."},
-        { "zookeeper_name",                       std::make_shared<DataTypeString>(),   "The name of the the [Zoo]Keeper cluster (possibly auxiliary one) where the table's metadata is stored"},
+        { "zookeeper_name",                       std::make_shared<DataTypeString>(),   "The name of the [Zoo]Keeper cluster (possibly auxiliary one) where the table's metadata is stored"},
         { "zookeeper_path",                       std::make_shared<DataTypeString>(),   "Path to table data in ClickHouse Keeper."},
         { "replica_name",                         std::make_shared<DataTypeString>(),   "Replica name in ClickHouse Keeper. Different replicas of the same table have different names."},
         { "replica_path",                         std::make_shared<DataTypeString>(),   "Path to replica data in ClickHouse Keeper. The same as concatenating 'zookeeper_path/replicas/replica_path'."},
@@ -72,7 +75,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
         { "oldest_part_to_get",                   std::make_shared<DataTypeString>(),   "The name of the part to fetch from other replicas obtained from the oldest GET_PARTS entry in the replication queue."},
         { "oldest_part_to_merge_to",              std::make_shared<DataTypeString>(),   "The result part name to merge to obtained from the oldest MERGE_PARTS entry in the replication queue."},
         { "oldest_part_to_mutate_to",             std::make_shared<DataTypeString>(),   "The result part name to mutate to obtained from the oldest MUTATE_PARTS entry in the replication queue."},
-        { "log_max_index",                        std::make_shared<DataTypeUInt64>(),   "Maximum entry number in the log of general activity."},
+        { "log_max_index",                        std::make_shared<DataTypeUInt64>(),   "Maximum entry number in the log of general activity. This column and the next three (`log_pointer`, `total_replicas`, `active_replicas`) have a non-zero value only where there is an active session with ClickHouse Keeper."},
         { "log_pointer",                          std::make_shared<DataTypeUInt64>(),   "Maximum entry number in the log of general activity that the replica copied to its execution queue, plus one. "
                                                                                              "If log_pointer is much smaller than log_max_index, something is wrong."},
         { "last_queue_update",                    std::make_shared<DataTypeDateTime>(), "When the queue was updated last time."},
@@ -91,7 +94,16 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(description);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageSystemReplicas::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 StorageSystemReplicas::~StorageSystemReplicas() = default;
@@ -145,16 +157,17 @@ void ReadFromSystemReplicas::applyFilters(ActionDAGNodes added_filter_nodes)
         {
             { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
             { ColumnString::create(), std::make_shared<DataTypeString>(), "table" },
+            { ColumnString::create(), std::make_shared<DataTypeUUID>(), "uuid" },
             { ColumnString::create(), std::make_shared<DataTypeString>(), "engine" },
         };
 
-        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
+        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
         if (dag)
             virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
     }
 }
 
-void StorageSystemReplicas::read(
+void StorageSystemReplicas::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -225,6 +238,7 @@ public:
         size_t max_block_size_,
         ColumnPtr col_database_,
         ColumnPtr col_table_,
+        ColumnPtr col_uuid_,
         ColumnPtr col_engine_,
         std::vector<TFuture> futures_,
         ContextPtr context_)
@@ -232,6 +246,7 @@ public:
         , max_block_size(max_block_size_)
         , col_database(std::move(col_database_))
         , col_table(std::move(col_table_))
+        , col_uuid(std::move(col_uuid_))
         , col_engine(std::move(col_engine_))
         , futures(std::move(futures_))
         , context(std::move(context_))
@@ -248,6 +263,7 @@ private:
     /// Columns with table metadata.
     ColumnPtr col_database;
     ColumnPtr col_table;
+    ColumnPtr col_uuid;
     ColumnPtr col_engine;
     /// Futures for the status of each table.
     std::vector<TFuture> futures;
@@ -263,6 +279,7 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
 
     MutableColumnPtr col_database_mut = ColumnString::create();
     MutableColumnPtr col_table_mut = ColumnString::create();
+    MutableColumnPtr col_uuid_mut = ColumnUUID::create();
     MutableColumnPtr col_engine_mut = ColumnString::create();
 
     for (auto & db : replicated_tables)
@@ -271,12 +288,14 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
         {
             col_database_mut->insert(db.first);
             col_table_mut->insert(table.first);
+            col_uuid_mut->insert(table.second->getStorageID().uuid);
             col_engine_mut->insert(table.second->getName());
         }
     }
 
     ColumnPtr col_database = std::move(col_database_mut);
     ColumnPtr col_table = std::move(col_table_mut);
+    ColumnPtr col_uuid = std::move(col_uuid_mut);
     ColumnPtr col_engine = std::move(col_engine_mut);
 
     /// Determine what tables are needed by the conditions in the query.
@@ -285,6 +304,7 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
         {
             { col_database, std::make_shared<DataTypeString>(), "database" },
             { col_table, std::make_shared<DataTypeString>(), "table" },
+            { col_uuid, std::make_shared<DataTypeUUID>(), "uuid" },
             { col_engine, std::make_shared<DataTypeString>(), "engine" },
         };
 
@@ -300,6 +320,7 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
 
         col_database = filtered_block.getByName("database").column;
         col_table = filtered_block.getByName("table").column;
+        col_uuid = filtered_block.getByName("uuid").column;
         col_engine = filtered_block.getByName("engine").column;
     }
 
@@ -329,7 +350,7 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
     /// If there are more requests, they will be scheduled by the query that needs them.
     get_status_requests.scheduleRequests(max_request_id, query_status);
 
-    pipeline.init(Pipe(std::make_shared<SystemReplicasSource>(header, max_block_size, col_database, col_table, col_engine, std::move(futures), context)));
+    pipeline.init(Pipe(std::make_shared<SystemReplicasSource>(header, max_block_size, col_database, col_table, col_uuid, col_engine, std::move(futures), context)));
 }
 
 Chunk SystemReplicasSource::generate()
@@ -382,11 +403,12 @@ Chunk SystemReplicasSource::generate()
             throw;
         }
 
-        res_columns[0]->insert((*col_database)[i]);
-        res_columns[1]->insert((*col_table)[i]);
-        res_columns[2]->insert((*col_engine)[i]);
+        size_t col_num = 0;
+        res_columns[col_num++]->insert((*col_database)[i]);
+        res_columns[col_num++]->insert((*col_table)[i]);
+        res_columns[col_num++]->insert((*col_uuid)[i]);
+        res_columns[col_num++]->insert((*col_engine)[i]);
 
-        size_t col_num = 3;
         res_columns[col_num++]->insert(status->is_leader);
         res_columns[col_num++]->insert(status->can_become_leader);
         res_columns[col_num++]->insert(status->is_readonly);

@@ -7,10 +7,9 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
+#include <IO/WriteHelpers.h>
 
 #include <QueryPipeline/Pipe.h>
-#include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -25,6 +24,7 @@
 #include <Common/logger_useful.h>
 #include <Poco/Net/MessageHeader.h>
 
+
 namespace DB
 {
 namespace Setting
@@ -36,20 +36,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
-
-/// Parsing a list of types with `,` as separator. For example, `Int, Enum('foo'=1,'bar'=2), Double`
-/// Used in `parseStructureFromTypesField`
-class ParserTypeList : public IParserBase
-{
-protected:
-    const char * getName() const override { return "type pair list"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        return ParserList(std::make_unique<ParserDataType>(), std::make_unique<ParserToken>(TokenType::Comma), false)
-        .parse(pos, node, expected);
-    }
-};
-
 ExternalTableDataPtr BaseExternalTable::getData(ContextPtr context)
 {
     initReadBuffer();
@@ -154,24 +140,24 @@ void ExternalTable::initReadBuffer()
 
 ExternalTable::ExternalTable(const boost::program_options::variables_map & external_options)
 {
-    if (external_options.count("file"))
+    if (external_options.contains("file"))
         file = external_options["file"].as<std::string>();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "--file field have not been provided for external table");
 
-    if (external_options.count("name"))
+    if (external_options.contains("name"))
         name = external_options["name"].as<std::string>();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "--name field have not been provided for external table");
 
-    if (external_options.count("format"))
+    if (external_options.contains("format"))
         format = external_options["format"].as<std::string>();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "--format field have not been provided for external table");
 
-    if (external_options.count("structure"))
+    if (external_options.contains("structure"))
         parseStructureFromStructureField(external_options["structure"].as<std::string>());
-    else if (external_options.count("types"))
+    else if (external_options.contains("types"))
         parseStructureFromTypesField(external_options["types"].as<std::string>());
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Neither --structure nor --types have not been provided for external table");
@@ -237,7 +223,7 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
         getContext()->addExternalTable(temporary_id.table_name, std::move(temporary_table));
     }
 
-    auto sink = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext(), /*async_insert=*/false);
+    auto sink = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(getContext(), false), getContext(), /*async_insert=*/false);
 
     /// Write data
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*data->pipe));

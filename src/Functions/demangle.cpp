@@ -1,3 +1,5 @@
+#include <DataTypes/IDataType.h>
+#include <Functions/FunctionHelpers.h>
 #include <base/demangle.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
@@ -14,8 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -48,15 +48,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs exactly one argument; passed {}.",
-                getName(), arguments.size());
+        FunctionArgumentDescriptors mandatory_args{
+            {"symbol", &isString, nullptr, "String"}
+        };
 
-        const auto & type = arguments[0].type;
-
-        if (!WhichDataType(type.get()).isString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The only argument for function {} must be String. "
-                "Found {} instead.", getName(), type->getName());
+        validateFunctionArguments(*this, arguments, mandatory_args);
 
         return std::make_shared<DataTypeString>();
     }
@@ -78,7 +74,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            String source = column_concrete->getDataAt(i).toString();
+            String source{column_concrete->getDataAt(i)};
             auto demangled = tryDemangle(source.c_str());
             if (demangled)
             {
@@ -179,7 +175,7 @@ clone
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Introspection;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDemangle>(documentation);
 }

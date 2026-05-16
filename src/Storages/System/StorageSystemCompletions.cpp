@@ -23,6 +23,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/System/StorageSystemCompletions.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Common/Exception.h>
 #include <Common/Macros.h>
 
 
@@ -68,11 +69,12 @@ void fillDataWithTableColumns(
     const String & table_name,
     const StoragePtr & table,
     MutableColumns & res_columns,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    bool check_access_for_tables,
+    bool check_access_for_columns)
 {
     const auto & access = context->getAccess();
-    if (!access->isGranted(AccessType::SHOW_TABLES) || !access->isGranted(AccessType::SHOW_TABLES, database_name)
-        || !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
+    if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
         return;
 
     if (!table)
@@ -82,18 +84,15 @@ void fillDataWithTableColumns(
     res_columns[1]->insert(TABLE_CONTEXT);
     res_columns[2]->insert(database_name);
 
-    if (!access->isGranted(AccessType::SHOW_COLUMNS) || !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name))
-        return;
-
     auto table_lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
     if (table_lock == nullptr)
         return; // table was dropped while acquiring the lock
 
-    const auto & snapshot = table->getInMemoryMetadataPtr();
+    StorageMetadataPtr snapshot = table->getInMemoryMetadataPtr(context, false);
     const auto & columns = snapshot->getColumns();
     for (const auto & column : columns)
     {
-        if (!access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
+        if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
             continue;
 
         res_columns[0]->insert(column.name);
@@ -105,11 +104,15 @@ void fillDataWithTableColumns(
 void fillDataWithDatabasesTablesColumns(MutableColumns & res_columns, const ContextPtr & context)
 {
     const auto & access = context->getAccess();
+    const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
+    const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
+    const bool check_access_for_columns = !access->isGranted(AccessType::SHOW_COLUMNS);
+
     const auto & settings = context->getSettingsRef();
     const auto & databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
     for (const auto & [database_name, database_ptr] : databases)
     {
-        if (!access->isGranted(AccessType::SHOW_DATABASES) || !access->isGranted(AccessType::SHOW_DATABASES, database_name))
+        if (check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
             continue;
 
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
@@ -119,15 +122,17 @@ void fillDataWithDatabasesTablesColumns(MutableColumns & res_columns, const Cont
         res_columns[1]->insert(DATABASE_CONTEXT);
         res_columns[2]->insertDefault();
 
-        /// We are skipping "Lazy" database because we cannot afford initialization of all its tables.
-        if (database_ptr->getEngineName() == "Lazy")
-            continue;
+        const bool check_access_for_tables_in_db = check_access_for_tables
+            && !access->isGranted(AccessType::SHOW_TABLES, database_name);
+        const bool check_access_for_columns_in_db = check_access_for_columns
+            && !access->isGranted(AccessType::SHOW_COLUMNS, database_name);
 
-        for (auto iterator = database_ptr->getLightweightTablesIterator(context); iterator->isValid(); iterator->next())
+        for (auto iterator = database_ptr->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
             const auto & table_name = iterator->name();
             const auto & table = iterator->table();
-            fillDataWithTableColumns(database_name, table_name, table, res_columns, context);
+            fillDataWithTableColumns(database_name, table_name, table, res_columns, context,
+                check_access_for_tables_in_db, check_access_for_columns_in_db);
         }
     }
 
@@ -137,7 +142,8 @@ void fillDataWithDatabasesTablesColumns(MutableColumns & res_columns, const Cont
         for (auto & [table_name, table] : external_tables)
         {
             const String database_name(1, '\0');
-            fillDataWithTableColumns(database_name, table_name, table, res_columns, context);
+            fillDataWithTableColumns(database_name, table_name, table, res_columns, context,
+                check_access_for_tables, check_access_for_columns);
         }
     }
 }
@@ -244,13 +250,19 @@ void fillDataWithMergeTreeSettings(MutableColumns & res_columns, const ContextPt
 void fillDataWithSettings(MutableColumns & res_columns, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
-    const auto & setting_names = settings.getAllRegisteredNames();
-    for (const auto & setting_name : setting_names)
+    const auto & setting_registered_names = settings.getAllRegisteredNames();
+    const auto & setting_alias_names = settings.getAllAliasNames();
+    auto insertNames = [&](const auto & names)
     {
-        res_columns[0]->insert(setting_name);
-        res_columns[1]->insert(SETTING_CONTEXT);
-        res_columns[2]->insertDefault();
-    }
+        for (const auto & name : names)
+        {
+            res_columns[0]->insert(name);
+            res_columns[1]->insert(SETTING_CONTEXT);
+            res_columns[2]->insertDefault();
+        }
+    };
+    insertNames(setting_registered_names);
+    insertNames(setting_alias_names);
 }
 
 void fillDataWithKeywords(MutableColumns & res_columns)

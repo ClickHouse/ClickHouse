@@ -27,6 +27,9 @@
 
 using namespace DB;
 
+namespace
+{
+
 using Float = Float32;
 
 struct State
@@ -78,7 +81,7 @@ struct State
 
     Float result() const
     {
-        return sum / count;
+        return sum / static_cast<Float>(count);
     }
 
     bool operator!() const
@@ -197,7 +200,7 @@ Float NO_INLINE init_out_of_the_loop(const PODArray<UInt8> & keys, const PODArra
     FixedImplicitZeroHashMapWithCalculatedSize<UInt8, StatePtr> map;
 
     for (size_t i = 0; i < 256; ++i)
-        map[i] = new (arena.alloc<State>()) State();
+        map[static_cast<UInt8>(i)] = new (arena.alloc<State>()) State();
 
     size_t size = keys.size();
     for (size_t i = 0; i < size; ++i)
@@ -513,7 +516,7 @@ struct State4
 
     Float result() const
     {
-        return (sum[0] + sum[1] + sum[2] + sum[3]) / (count[0] + count[1] + count[2] + count[3]);
+        return (sum[0] + sum[1] + sum[2] + sum[3]) / static_cast<Float>(count[0] + count[1] + count[2] + count[3]);
     }
 };
 
@@ -549,7 +552,9 @@ Float NO_INLINE another_unrolled_x4(const PODArray<UInt8> & keys, const PODArray
     return map[0].result();
 }
 
-int main(int argc, char ** argv)
+}
+
+int mainEntryExampleAverage(int argc, char ** argv)
 {
     size_t size = argc > 1 ? std::stoull(argv[1]) : 1000000000;
     size_t variant = argc > 2 ? std::stoull(argv[2]) : 1;
@@ -560,7 +565,7 @@ int main(int argc, char ** argv)
     /// Fill source data
     for (size_t i = 0; i < size; ++i)
     {
-        keys[i] = std::countr_zero(i + 1); /// Make keys to have just slightly more realistic distribution.
+        keys[i] = static_cast<UInt8>(std::countr_zero(i + 1)); /// Make keys to have just slightly more realistic distribution.
         values[i] = 1234.5; /// The distribution of values does not affect execution speed.
     }
 
@@ -629,8 +634,8 @@ int main(int argc, char ** argv)
     fmt::print("Aggregated (res = {}) in {} sec., {} million rows/sec., {} MiB/sec.\n",
         res,
         watch.elapsedSeconds(),
-        size_t(size / watch.elapsedSeconds() / 1000000),
-        size_t(size * (sizeof(Float) + sizeof(UInt8)) / watch.elapsedSeconds() / 1000000));
+        size_t(static_cast<double>(size) / watch.elapsedSeconds() / 1000000),
+        size_t(static_cast<double>(size) * (sizeof(Float) + sizeof(UInt8)) / watch.elapsedSeconds() / 1000000));
 
     return 0;
 }

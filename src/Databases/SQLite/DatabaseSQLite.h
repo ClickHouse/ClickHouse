@@ -5,7 +5,6 @@
 #if USE_SQLITE
 #include <Core/Names.h>
 #include <Databases/DatabasesCommon.h>
-#include <Parsers/ASTCreateQuery.h>
 
 #include <sqlite3.h>
 
@@ -13,8 +12,9 @@
 namespace DB
 {
 struct AlterCommand;
+class ASTStorage;
 
-class DatabaseSQLite final : public IDatabase, WithContext
+class DatabaseSQLite final : public DatabaseWithAltersOnDiskBase, WithContext
 {
 public:
     using SQLitePtr = std::shared_ptr<sqlite3>;
@@ -34,13 +34,10 @@ public:
 
     bool empty() const override;
 
-    ASTPtr getCreateDatabaseQuery() const override;
-
     void shutdown() override {}
 
-    void alterDatabaseComment(const AlterCommand & command) override;
-
 protected:
+    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
 
 private:

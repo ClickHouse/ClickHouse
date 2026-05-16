@@ -50,7 +50,7 @@ REGISTER_FUNCTION(FQDN)
     FunctionDocumentation::Description description = R"(
 Returns the fully qualified domain name of the ClickHouse server.
     )";
-    FunctionDocumentation::Syntax syntax = "fqdn()";
+    FunctionDocumentation::Syntax syntax = "FQDN()";
     FunctionDocumentation::Arguments arguments = {};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the fully qualified domain name of the ClickHouse server.", {"String"}};
     FunctionDocumentation::Examples examples = {
@@ -68,7 +68,7 @@ SELECT fqdn()
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionFQDN>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("fullHostName", "FQDN");

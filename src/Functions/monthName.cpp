@@ -2,14 +2,20 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <DataTypes/IDataType.h>
+#include <Functions/FunctionHelpers.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
+namespace
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+
+bool isDateOrDateTime(const IDataType & type)
+{
+    return isDate(type) || isDateTime(type) || isDateTime64(type);
+}
+
 }
 
 class FunctionMonthName : public IFunction
@@ -35,20 +41,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 1)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1",
-                getName(),
-                arguments.size());
+        FunctionArgumentDescriptors mandatory_args{
+            {"datetime", isDateOrDateTime, nullptr, "Date or DateTime"}
+        };
 
-        WhichDataType argument_type(arguments[0].type);
-        if (!argument_type.isDate() && !argument_type.isDateTime() && !argument_type.isDateTime64())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type of argument of function {}, should be Date, DateTime or DateTime64",
-                getName());
-
+        validateFunctionArguments(*this, arguments, mandatory_args);
         return std::make_shared<DataTypeString>();
     }
 
@@ -102,7 +99,7 @@ SELECT monthName(date_value)
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMonthName>(documentation, FunctionFactory::Case::Insensitive);
 }

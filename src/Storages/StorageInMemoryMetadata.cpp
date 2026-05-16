@@ -1,3 +1,4 @@
+#include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <Access/AccessControl.h>
@@ -7,19 +8,19 @@
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
-#include <Common/quoteString.h>
-#include <Common/StringUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Storages/IndicesDescription.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/VirtualColumnsDescription.h>
 
 
 namespace DB
@@ -34,10 +35,19 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_QUERY;
 }
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
     : columns(other.columns)
+    , virtuals(other.virtuals)
+    , add_minmax_index_for_numeric_columns(other.add_minmax_index_for_numeric_columns)
+    , add_minmax_index_for_string_columns(other.add_minmax_index_for_string_columns)
+    , add_minmax_index_for_temporal_columns(other.add_minmax_index_for_temporal_columns)
+    , add_minmax_index_for_block_number_column(other.add_minmax_index_for_block_number_column)
+    , add_minmax_index_for_block_offset_column(other.add_minmax_index_for_block_offset_column)
+    , escape_index_filenames(other.escape_index_filenames)
     , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
     , projections(other.projections.clone())
@@ -47,6 +57,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , primary_key(other.primary_key)
     , sorting_key(other.sorting_key)
     , sampling_key(other.sampling_key)
+    , unique_key(other.unique_key)
     , column_ttls_by_name(other.column_ttls_by_name)
     , table_ttl(other.table_ttl)
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
@@ -66,6 +77,13 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
         return *this;
 
     columns = other.columns;
+    virtuals = other.virtuals;
+    add_minmax_index_for_numeric_columns = other.add_minmax_index_for_numeric_columns;
+    add_minmax_index_for_string_columns = other.add_minmax_index_for_string_columns;
+    add_minmax_index_for_temporal_columns = other.add_minmax_index_for_temporal_columns;
+    add_minmax_index_for_block_number_column = other.add_minmax_index_for_block_number_column;
+    add_minmax_index_for_block_offset_column = other.add_minmax_index_for_block_offset_column;
+    escape_index_filenames = other.escape_index_filenames;
     secondary_indices = other.secondary_indices;
     constraints = other.constraints;
     projections = other.projections.clone();
@@ -77,6 +95,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     primary_key = other.primary_key;
     sorting_key = other.sorting_key;
     sampling_key = other.sampling_key;
+    unique_key = other.unique_key;
     column_ttls_by_name = other.column_ttls_by_name;
     table_ttl = other.table_ttl;
     if (other.settings_changes)
@@ -152,6 +171,14 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     if (context->getZooKeeperMetadataTransaction())
         new_context->initZooKeeperMetadataTransaction(context->getZooKeeperMetadataTransaction());
 
+    // parallel replicas related
+    if (context->canUseTaskBasedParallelReplicas() && context->hasMergeTreeAllRangesCallback())
+    {
+        new_context->setMergeTreeAllRangesCallback(context->getMergeTreeAllRangesCallback());
+        new_context->setMergeTreeReadTaskCallback(context->getMergeTreeReadTaskCallback());
+        new_context->setBlockMarshallingCallback(context->getBlockMarshallingCallback());
+    }
+
     if (sql_security_type == SQLSecurityType::NONE)
     {
         new_context->applySettingsChanges(context->getSettingsRef().changes());
@@ -173,6 +200,11 @@ void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
     if (columns_.getAllPhysical().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Empty list of columns passed");
     columns = std::move(columns_);
+}
+
+void StorageInMemoryMetadata::setVirtuals(VirtualColumnsDescription virtuals_)
+{
+    virtuals = std::move(virtuals_);
 }
 
 void StorageInMemoryMetadata::setSecondaryIndices(IndicesDescription secondary_indices_)
@@ -232,6 +264,13 @@ StorageInMemoryMetadata StorageInMemoryMetadata::withMetadataVersion(int32_t met
 {
     StorageInMemoryMetadata copy(*this);
     copy.setMetadataVersion(metadata_version_);
+    return copy;
+}
+
+StorageInMemoryMetadata StorageInMemoryMetadata::withVirtuals(VirtualColumnsDescription virtual_columns_) const
+{
+    StorageInMemoryMetadata copy(*this);
+    copy.setVirtuals(std::move(virtual_columns_));
     return copy;
 }
 
@@ -454,13 +493,18 @@ Block StorageInMemoryMetadata::getSampleBlockNonMaterialized() const
     return res;
 }
 
-Block StorageInMemoryMetadata::getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const
+bool StorageInMemoryMetadata::isVirtualColumn(const String & column_name) const
+{
+    /// Virtual column may be overridden by real column
+    return !columns.has(column_name) && virtuals.has(column_name);
+}
+
+Block StorageInMemoryMetadata::getSampleBlockWithVirtuals(VirtualsKind kind, VirtualsMaterializationPlace place) const
 {
     auto res = getSampleBlock();
 
-    /// Virtual columns must be appended after ordinary, because user can
-    /// override them.
-    for (const auto & column : virtuals)
+    /// Virtual columns must be appended after ordinary, because user can override them.
+    for (const auto & column : virtuals.getSampleBlock(kind, place).getNamesAndTypesList())
         res.insert({column.type->createColumn(), column.type, column.name});
 
     return res;
@@ -596,6 +640,26 @@ Names StorageInMemoryMetadata::getPrimaryKeyColumns() const
     return {};
 }
 
+const KeyDescription & StorageInMemoryMetadata::getUniqueKey() const
+{
+    return unique_key;
+}
+
+bool StorageInMemoryMetadata::isUniqueKeyDefined() const
+{
+    return unique_key.definition_ast != nullptr;
+}
+
+bool StorageInMemoryMetadata::hasUniqueKey() const
+{
+    return !unique_key.column_names.empty();
+}
+
+Names StorageInMemoryMetadata::getUniqueKeyColumns() const
+{
+    return unique_key.column_names;
+}
+
 ASTPtr StorageInMemoryMetadata::getSettingsChanges() const
 {
     if (settings_changes)
@@ -623,10 +687,20 @@ bool StorageInMemoryMetadata::hasSelectQuery() const
     return select.select_query != nullptr;
 }
 
+bool StorageInMemoryMetadata::hasStatistics() const
+{
+    for (const auto & column : columns)
+    {
+        if (!column.statistics.empty())
+            return true;
+    }
+    return false;
+}
+
 namespace
 {
-    using NamesAndTypesMap = HashMapWithSavedHash<StringRef, const IDataType *, StringRefHash>;
-    using UniqueStrings = HashSetWithSavedHash<StringRef, StringRefHash>;
+    using NamesAndTypesMap = HashMapWithSavedHash<std::string_view, const IDataType *, StringViewHash>;
+    using UniqueStrings = HashSetWithSavedHash<std::string_view, StringViewHash>;
 
     NamesAndTypesMap getColumnsMap(const NamesAndTypesList & columns)
     {
@@ -687,8 +761,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
 
         const auto * available_type = it->getMapped();
 
-        if (!available_type->hasDynamicSubcolumnsDeprecated()
-            && !column.type->equals(*available_type)
+        if (!column.type->equals(*available_type)
             && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
@@ -697,7 +770,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
                 available_type->getName(),
                 column.type->getName());
 
-        if (unique_names.end() != unique_names.find(column.name))
+        if (unique_names.contains(column.name))
             throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE,
                 "Column {} queried more than once",
                 column.name);
@@ -735,8 +808,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
         const auto * provided_column_type = it->getMapped();
         const auto * available_column_type = jt->getMapped();
 
-        if (!provided_column_type->hasDynamicSubcolumnsDeprecated()
-            && !provided_column_type->equals(*available_column_type)
+        if (!provided_column_type->equals(*available_column_type)
             && !isCompatibleEnumTypes(available_column_type, provided_column_type))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
@@ -745,7 +817,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
                 available_column_type->getName(),
                 provided_column_type->getName());
 
-        if (unique_names.end() != unique_names.find(name))
+        if (unique_names.contains(name))
             throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE,
                 "Column {} queried more than once",
                 name);
@@ -779,8 +851,7 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
                 listOfColumns(available_columns));
 
         const auto * available_type = it->getMapped();
-        if (!available_type->hasDynamicSubcolumnsDeprecated()
-            && !column.type->equals(*available_type)
+        if (!column.type->equals(*available_type)
             && !isCompatibleEnumTypes(available_type, column.type.get()))
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
@@ -816,6 +887,111 @@ NameSet StorageInMemoryMetadata::getColumnsWithoutDefaultExpressions(const Names
         if (!col.default_desc.expression && !exclude_map.contains(col.name))
             names.insert(col.name);
     return names;
+}
+
+void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context)
+{
+    // Ephemeral columns are excluded from implicit indices because they are not persisted;
+    // this is a key behavioral change (see PR description) to avoid creating indices for columns
+    // that do not exist in storage and cannot be indexed.
+    if (column.default_desc.kind == ColumnDefaultKind::Ephemeral)
+        return;
+
+    // Skip ALIAS columns that are just aliases to other columns (not expressions).
+    // Only create implicit indices for ALIAS columns with actual expressions.
+    // For example: `a ALIAS b` should be skipped, but `a ALIAS b > 0` should get an index.
+    if (column.default_desc.kind == ColumnDefaultKind::Alias && column.default_desc.expression)
+    {
+        // If the expression is just a simple identifier (column reference), skip creating implicit index
+        // because the underlying column will already have its own implicit index if needed.
+        if (column.default_desc.expression->as<ASTIdentifier>())
+            return;
+    }
+
+    if ((isNumber(column.type) && add_minmax_index_for_numeric_columns) || (isString(column.type) && add_minmax_index_for_string_columns)
+        || (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(column.type) && add_minmax_index_for_temporal_columns))
+    {
+        bool minmax_index_exists = false;
+
+        for (const auto & index : secondary_indices)
+        {
+            if (index.column_names.front() == column.name && index.type == "minmax")
+            {
+                minmax_index_exists = true;
+                break;
+            }
+        }
+
+        if (!minmax_index_exists)
+        {
+            auto index = createImplicitMinMaxIndexDescription(column.name, columns, escape_index_filenames, context);
+            bool valid_index = true;
+            try
+            {
+                MergeTreeIndexFactory::instance().validate(index, false);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::BAD_ARGUMENTS || e.code() == ErrorCodes::INCORRECT_QUERY)
+                    valid_index = false;
+                else
+                    throw;
+            }
+            if (valid_index)
+                secondary_indices.push_back(std::move(index));
+        }
+
+    }
+}
+
+void StorageInMemoryMetadata::dropImplicitIndicesForColumn(const String & column_name)
+{
+    for (auto index_it = secondary_indices.begin(); index_it != secondary_indices.end();)
+    {
+        /// We check the index name rather than column_names because for ALIAS columns,
+        /// the column_names contains the resolved underlying expression columns, not the alias name.
+        /// For example, for `alias UInt64 ALIAS value>0`, the implicit index is named
+        /// `auto_minmax_index_alias` but its column_names contains `["value"]`, not `["alias"]`.
+        if (index_it->isImplicitlyCreated() && index_it->name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
+            index_it = secondary_indices.erase(index_it);
+        else
+            ++index_it;
+    }
+}
+
+void StorageInMemoryMetadata::addImplicitIndicesForVirtualColumns(ContextPtr context)
+{
+    auto add_for = [&](const String & column_name, bool enabled)
+    {
+        if (!enabled)
+            return;
+
+        for (const auto & index : secondary_indices)
+            if (!index.column_names.empty() && index.column_names.front() == column_name && index.type == "minmax")
+                return;
+
+        const auto columns_to_analyze = virtuals.toColumnsDescription(VirtualsKind::All, VirtualsMaterializationPlace::All);
+        auto index = createImplicitMinMaxIndexDescription(column_name, columns_to_analyze, escape_index_filenames, context);
+        MergeTreeIndexFactory::instance().validate(index, false);
+
+        secondary_indices.push_back(std::move(index));
+    };
+
+    add_for(BlockNumberColumn::name, add_minmax_index_for_block_number_column);
+    add_for(BlockOffsetColumn::name, add_minmax_index_for_block_offset_column);
+}
+
+void StorageInMemoryMetadata::dropImplicitIndicesForVirtualColumns()
+{
+    for (auto index_it = secondary_indices.begin(); index_it != secondary_indices.end();)
+    {
+        if (!index_it->isImplicitlyCreated() || index_it->type != "minmax" || index_it->column_names.size() != 1)
+            ++index_it;
+        else if (isVirtualColumn(index_it->column_names.front()))
+            index_it = secondary_indices.erase(index_it);
+        else
+            ++index_it;
+    }
 }
 
 }

@@ -33,7 +33,7 @@ SELECT numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30])) AS res,
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorBuild>(documentation);
     }
     /// numericIndexedVectorPointwiseAdd
@@ -67,7 +67,7 @@ SELECT
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorPointwiseAdd>(documentation);
     }
     /// numericIndexedVectorPointwiseSubtract
@@ -101,7 +101,7 @@ SELECT
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorPointwiseSubtract>(documentation);
     }
     /// numericIndexedVectorPointwiseMultiply
@@ -133,7 +133,7 @@ SELECT
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorPointwiseMultiply>(documentation);
     }
     /// numericIndexedVectorPointwiseDivide
@@ -167,7 +167,7 @@ SELECT
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorPointwiseDivide>(documentation);
     }
     /// numericIndexedVectorPointwiseEqual
@@ -201,7 +201,7 @@ SELECT
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorPointwiseEqual>(documentation);
     }
     /// numericIndexedVectorPointwiseNotEqual
@@ -236,7 +236,7 @@ SELECT
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorPointwiseNotEqual>(documentation);
     }
     /// numericIndexedVectorPointwiseLess
@@ -271,7 +271,7 @@ SELECT
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorPointwiseLess>(documentation);
     }
     /// numericIndexedVectorPointwiseLessEqual
@@ -306,7 +306,7 @@ SELECT
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorPointwiseLessEqual>(documentation);
     }
     /// numericIndexedVectorPointwiseGreater
@@ -341,7 +341,7 @@ SELECT
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorPointwiseGreater>(documentation);
     }
     /// numericIndexedVectorPointwiseGreaterEqual
@@ -376,7 +376,7 @@ SELECT
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorPointwiseGreaterEqual>(documentation);
     }
     /// numericIndexedVectorGetValue
@@ -405,7 +405,7 @@ SELECT numericIndexedVectorGetValue(numericIndexedVectorBuild(mapFromArrays([1, 
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorGetValueImpl>(documentation);
     }
     /// numericIndexedVectorCardinality
@@ -433,7 +433,7 @@ SELECT numericIndexedVectorCardinality(numericIndexedVectorBuild(mapFromArrays([
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorCardinality>(documentation);
     }
     /// numericIndexedVectorAllValueSum
@@ -461,7 +461,7 @@ SELECT numericIndexedVectorAllValueSum(numericIndexedVectorBuild(mapFromArrays([
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorAllValueSum>(documentation);
     }
     /// numericIndexedVectorShortDebugString
@@ -490,7 +490,7 @@ res: {"vector_type":"BSI","index_type":"char8_t","value_type":"char8_t","integer
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorShortDebugString>(documentation);
     }
     /// numericIndexedVectorToMap
@@ -518,7 +518,7 @@ SELECT numericIndexedVectorToMap(numericIndexedVectorBuild(mapFromArrays([1, 2, 
         };
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::NumericIndexedVector;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionNumericIndexedVectorToMap>(documentation);
     }
 }

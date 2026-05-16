@@ -88,7 +88,8 @@ public:
                     getName(),
                     MAX_H3_RES);
 
-            Float64 res = getHexagonAreaAvgM2(resolution);
+            double res = 0;
+            getHexagonAreaAvgM2(resolution, &res);
 
             dst_data[row] = res;
         }
@@ -125,7 +126,7 @@ Returns average hexagon area in square meters at the given [H3](#h3-index) resol
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3HexAreaM2>(documentation);
 }
 

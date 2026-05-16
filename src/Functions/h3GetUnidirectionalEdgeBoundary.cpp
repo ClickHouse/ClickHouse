@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -12,7 +12,6 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
-#include <h3api.h>
 
 
 namespace DB
@@ -31,7 +30,11 @@ class FunctionH3GetUnidirectionalEdgeBoundary : public IFunction
 public:
     static constexpr auto name = "h3GetUnidirectionalEdgeBoundary";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3GetUnidirectionalEdgeBoundary>(); }
+    H3Validator validator;
+
+    explicit FunctionH3GetUnidirectionalEdgeBoundary(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3GetUnidirectionalEdgeBoundary>(context); }
 
     std::string getName() const override { return name; }
 
@@ -79,17 +82,21 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             H3Index edge = data_hindex_edge[row];
-            CellBoundary boundary{};
 
-            directedEdgeToBoundary(edge, &boundary);
-
-            for (int vert = 0; vert < boundary.numVerts; ++vert)
+            if (validator.validateEdge(edge))
             {
-                latitude->getData().push_back(radsToDegs(boundary.verts[vert].lat));
-                longitude->getData().push_back(radsToDegs(boundary.verts[vert].lng));
+                CellBoundary boundary{};
+                directedEdgeToBoundary(edge, &boundary);
+
+                for (int vert = 0; vert < boundary.numVerts; ++vert)
+                {
+                    latitude->getData().push_back(radsToDegs(boundary.verts[vert].lat));
+                    longitude->getData().push_back(radsToDegs(boundary.verts[vert].lng));
+                }
+
+                current_offset += boundary.numVerts;
             }
 
-            current_offset += boundary.numVerts;
             offsets->insert(current_offset);
         }
 
@@ -111,7 +118,7 @@ Returns the coordinates defining the unidirectional edge [H3](#h3-index).
         {"index", "Hexagon index number that represents a unidirectional edge.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns an array of (longitude, latitude) pairs defining a unidirectional edge.",
+        "Returns an array of (longitude, latitude) pairs defining a unidirectional edge. Throws an exception if the input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting).",
         {"Array(Float64, Float64)"}
     };
     FunctionDocumentation::Examples examples = {
@@ -127,7 +134,7 @@ Returns the coordinates defining the unidirectional edge [H3](#h3-index).
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3GetUnidirectionalEdgeBoundary>(documentation);
 }
 

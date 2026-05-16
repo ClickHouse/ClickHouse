@@ -8,8 +8,6 @@ title: 'Integration Libraries from Third-party Developers'
 doc_type: 'reference'
 ---
 
-# Integration libraries from third-party developers
-
 :::warning Disclaimer
 ClickHouse, Inc. does **not** maintain the tools and libraries listed below and haven't done extensive testing to ensure their quality.
 For official integrations please see the [integrations page](/integrations).
@@ -86,7 +84,7 @@ For official integrations please see the [integrations page](/integrations).
   - [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
   - [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](/engines/table-engines/mergetree-family/graphitemergetree) if rules from [rollup configuration](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) could be applied
 - [Grafana](https://grafana.com/)
-  - [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
+  - [clickhouse-grafana](https://github.com/Altinity/clickhouse-grafana)
 - [Prometheus](https://prometheus.io/)
   - [clickhouse_exporter](https://github.com/f1yegor/clickhouse_exporter)
   - [PromHouse](https://github.com/Percona-Lab/PromHouse)

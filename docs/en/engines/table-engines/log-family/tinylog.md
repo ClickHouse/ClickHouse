@@ -1,13 +1,17 @@
 ---
-description: 'Documentation for TinyLog'
+description: 'Documentation for the TinyLog table engine'
 slug: /engines/table-engines/log-family/tinylog
 toc_priority: 34
 toc_title: 'TinyLog'
-title: 'TinyLog'
+title: 'TinyLog table engine'
 doc_type: 'reference'
 ---
 
-# TinyLog
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+# TinyLog table engine
+
+<CloudNotSupportedBadge/>
 
 The engine belongs to the log engine family. See [Log Engine Family](../../../engines/table-engines/log-family/index.md) for common properties of log engines and their differences.
 

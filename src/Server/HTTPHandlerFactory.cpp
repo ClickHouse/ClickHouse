@@ -1,18 +1,25 @@
-#include <Server/HTTPHandlerFactory.h>
-
 #include <Server/HTTP/HTTPRequestHandler.h>
+#include <Server/HTTPHandler.h>
+#include <Server/HTTPHandlerFactory.h>
+#include <Server/IServer.h>
+#include <Server/IndexRequestHandler.h>
+#include <Server/InterserverIOHTTPHandler.h>
 #include <Server/PrometheusMetricsWriter.h>
 #include <Server/PrometheusRequestHandlerFactory.h>
-#include <Server/IServer.h>
+#include <Server/ReplicasStatusHandler.h>
+#include <Server/StaticRequestHandler.h>
+#include <Server/WebUIRequestHandler.h>
+#include <Server/WebTerminalRequestHandler.h>
+#if CLICKHOUSE_CLOUD
+#include <Server/CloudReadinessHandler.h>
+#endif
+
+#if USE_SSL
+#include <Server/ACME/RequestHandler.h>
+#include <Server/ACME/Client.h>
+#endif
 
 #include <Poco/Util/AbstractConfiguration.h>
-
-#include <Server/HTTPHandler.h>
-#include <Server/StaticRequestHandler.h>
-#include <Server/ReplicasStatusHandler.h>
-#include <Server/InterserverIOHTTPHandler.h>
-#include <Server/IndexRequestHandler.h>
-#include <Server/WebUIRequestHandler.h>
 
 
 namespace DB
@@ -217,15 +224,26 @@ static inline auto createHandlersFactoryFromConfig(
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
+            else if (handler_type == "jemalloc")
+            {
+                auto handler = createWebUIHandlerFactory<JemallocWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
             else if (handler_type == "js")
             {
-                // NOTE: JavaScriptWebUIRequestHandler only makes sense for paths other then /js/uplot.js, /js/lz-string.js
-                // because these paths are hardcoded in dashboard.html
+                /// `JavaScriptWebUIRequestHandler` serves a fixed set of embedded JS/CSS
+                /// assets hardcoded inside other UI pages (`dashboard.html` references
+                /// `/js/uplot.js` and `/js/lz-string.js`; `webterminal.html` references
+                /// the xterm files). The handler itself routes by exact path and replies
+                /// with `404` for anything else, so accept any URL under the `/js/` prefix
+                /// here rather than maintaining a parallel allowlist that drifts every
+                /// time a new asset is embedded.
                 const auto & path = config.getString(prefix + "." + key + ".url", "");
-                if (path != "/js/uplot.js" && path != "/js/lz-string.js")
+                if (!startsWith(path, "/js/"))
                 {
                     throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                                    "Handler type 'js' is only supported for url '/js/'. "
+                                    "Handler type 'js' is only supported for urls under '/js/'. "
                                     "Configured path here: {}", path);
                 }
 
@@ -233,6 +251,26 @@ static inline auto createHandlersFactoryFromConfig(
                 handler->addFiltersFromConfig(config, prefix + "." + key);
                 main_handler_factory->addHandler(std::move(handler));
             }
+            else if (handler_type == "webterminal")
+            {
+                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebTerminalRequestHandler>>(server);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
+#if USE_SSL
+            else if (handler_type == "acme")
+            {
+                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ACMERequestHandler>>(server);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
+#endif
+#if CLICKHOUSE_CLOUD
+            else if (handler_type == "cloud")
+            {
+                main_handler_factory->addHandler(createCloudHandlerFactory(server, config, prefix + "." + key));
+            }
+#endif
             else
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Unknown handler type '{}' in config here: {}.{}.handler.type",
                     handler_type, prefix, key);
@@ -246,11 +284,11 @@ static inline auto createHandlersFactoryFromConfig(
 }
 
 static inline HTTPRequestHandlerFactoryPtr
-createHTTPHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const std::string & name, AsynchronousMetrics & async_metrics)
+createHTTPHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const std::string & name, AsynchronousMetrics & async_metrics, const std::string & http_handlers_key = "http_handlers")
 {
-    if (config.has("http_handlers"))
+    if (config.has(http_handlers_key))
     {
-        return createHandlersFactoryFromConfig(server, config, name, "http_handlers", async_metrics);
+        return createHandlersFactoryFromConfig(server, config, name, http_handlers_key, async_metrics);
     }
 
     auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
@@ -270,15 +308,20 @@ static inline HTTPRequestHandlerFactoryPtr createInterserverHTTPHandlerFactory(I
     return factory;
 }
 
-
-HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, AsynchronousMetrics & async_metrics, const std::string & name)
+HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, AsynchronousMetrics & async_metrics, const std::string & name, const std::string & http_handlers_key)
 {
     if (name == "HTTPHandler-factory" || name == "HTTPSHandler-factory")
-        return createHTTPHandlerFactory(server, config, name, async_metrics);
+        return createHTTPHandlerFactory(server, config, name, async_metrics, http_handlers_key.empty() ? "http_handlers" : http_handlers_key);
     if (name == "InterserverIOHTTPHandler-factory" || name == "InterserverIOHTTPSHandler-factory")
         return createInterserverHTTPHandlerFactory(server, name, config);
     if (name == "PrometheusHandler-factory")
         return createPrometheusHandlerFactory(server, config, async_metrics, name);
+    if (name == "KeeperPrometheusHandler-factory")
+        return createKeeperPrometheusHandlerFactory(server, config, async_metrics, name);
+#if CLICKHOUSE_CLOUD
+    if (name == "CloudHandler-factory")
+        return createCloudMainHandlerFactory(server, config, name);
+#endif
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown HTTP handler factory name.");
 }
@@ -344,10 +387,32 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     factory.addPathToHints("/merges");
     factory.addHandler(merges_handler);
 
+    auto jemalloc_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JemallocWebUIRequestHandler>>(server);
+    jemalloc_handler->attachNonStrictPath("/jemalloc");
+    jemalloc_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/jemalloc");
+    factory.addHandler(jemalloc_handler);
+
     auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JavaScriptWebUIRequestHandler>>(server);
     js_handler->attachNonStrictPath("/js/");
     js_handler->allowGetAndHeadRequest();
     factory.addHandler(js_handler);
+
+    auto clickstack_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ClickStackUIRequestHandler>>(server);
+    clickstack_handler->attachNonStrictPath("/clickstack");
+    clickstack_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/clickstack");
+    factory.addHandler(clickstack_handler);
+
+#if USE_SSL
+    if (server.config().has("acme"))
+    {
+        auto acme_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ACMERequestHandler>>(server);
+        acme_handler->attachNonStrictPath(ACME::CHALLENGE_HTTP_PATH);
+        acme_handler->allowGetAndHeadRequest();
+        factory.addHandler(acme_handler);
+    }
+#endif
 }
 
 void addDefaultHandlersFactory(
@@ -357,6 +422,18 @@ void addDefaultHandlersFactory(
     AsynchronousMetrics & async_metrics)
 {
     addCommonDefaultHandlersFactory(factory, server, config);
+
+    /// `/webterminal` is intentionally registered only on the user-facing HTTP
+    /// port, never on the interserver port (which `createInterserverHTTPHandlerFactory`
+    /// builds via `addCommonDefaultHandlersFactory`). The interserver port has a
+    /// different (HMAC) trust model and is typically less-firewalled inside the
+    /// cluster, so exposing an interactive PTY shell there would punch a hole
+    /// through that boundary even when the experimental gate is open.
+    auto webterminal_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebTerminalRequestHandler>>(server);
+    webterminal_handler->attachNonStrictPath("/webterminal");
+    webterminal_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/webterminal");
+    factory.addHandler(webterminal_handler);
 
     auto dynamic_creator = [&server] () -> std::unique_ptr<DynamicQueryHandler>
     {

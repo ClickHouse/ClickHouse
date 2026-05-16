@@ -6,11 +6,9 @@ description: 'Tables with Distributed engine do not store any data of their own,
 sidebar_label: 'Distributed'
 sidebar_position: 10
 slug: /engines/table-engines/special/distributed
-title: 'Distributed Table Engine'
+title: 'Distributed table engine'
 doc_type: 'reference'
 ---
-
-# Distributed table engine
 
 :::warning Distributed engine in Cloud
 To create a distributed table engine in ClickHouse Cloud, you can use the [`remote` and `remoteSecure`](../../../sql-reference/table-functions/remote) table functions. 

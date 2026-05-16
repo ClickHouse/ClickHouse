@@ -6,8 +6,6 @@
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
 
-#include "config.h"
-
 
 namespace DB
 {
@@ -22,22 +20,33 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
 {
     /// Is it better to use siglongjmp instead of checks?
 
-    if (unlikely(b == 0))
+    if (b == 0) [[unlikely]]
         throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
     /// http://avva.livejournal.com/2548306.html
-    if (unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
-        throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division of minimal signed number by minus one");
+    if constexpr (is_signed_v<A> && is_signed_v<B>)
+    {
+        if (a == std::numeric_limits<A>::min() && b == -1) [[unlikely]]
+            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division of minimal signed number by minus one");
+    }
 }
 
+}
+
+
+namespace DB
+{
 template <typename A, typename B>
 inline bool divisionLeadsToFPE(A a, B b)
 {
-    if (unlikely(b == 0))
+    if (b == 0) [[unlikely]]
         return true;
 
-    if (unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
-        return true;
+    if constexpr (is_signed_v<A> && is_signed_v<B>)
+    {
+        if (a == std::numeric_limits<A>::min() && b == -1) [[unlikely]]
+            return true;
+    }
 
     return false;
 }
@@ -47,10 +56,10 @@ inline auto checkedDivision(A a, B b)
 {
     throwIfDivisionLeadsToFPE(a, b);
 
-    if constexpr (is_big_int_v<A> && is_floating_point<B>)
-        return static_cast<B>(a) / b;
-    else if constexpr (is_big_int_v<B> && is_floating_point<A>)
+    if constexpr (is_floating_point<A> && !is_floating_point<B>)
         return a / static_cast<A>(b);
+    else if constexpr (!is_floating_point<A> && is_floating_point<B>)
+        return static_cast<B>(a) / b;
     else if constexpr (is_big_int_v<A> && is_big_int_v<B>)
         return static_cast<A>(a / b);
     else if constexpr (!is_big_int_v<A> && is_big_int_v<B>)
@@ -173,7 +182,7 @@ struct ModuloImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false; /// don't know how to throw from LLVM IR
+    static constexpr bool compilable = false;
 #endif
 };
 
@@ -181,6 +190,10 @@ template <typename A, typename B>
 struct ModuloLegacyImpl : ModuloImpl<A, B>
 {
     using ResultType = typename NumberTraits::ResultOfModuloLegacy<A, B>::Type;
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// moduloLegacy is only used in partition key expression
+#endif
 };
 
 template <typename A, typename B>
@@ -213,17 +226,35 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
             if (res < 0)
             {
                 if constexpr (is_unsigned_v<B>)
-                    res += static_cast<OriginResultType>(b);
+                {
+                    if constexpr (is_integer<OriginResultType>)
+                    {
+                        /// Perform the addition in unsigned arithmetic to avoid
+                        /// undefined behavior when b does not fit in the signed OriginResultType.
+                        /// This is correct because mathematically 0 <= res + b < b.
+                        return static_cast<ResultType>(
+                            static_cast<make_unsigned_t<OriginResultType>>(res) + static_cast<make_unsigned_t<OriginResultType>>(b));
+                    }
+                    else
+                    {
+                        return static_cast<ResultType>(res + static_cast<OriginResultType>(b));
+                    }
+                }
                 else
                 {
                     if (b == std::numeric_limits<B>::lowest())
                         throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number");
-                    res += b >= 0 ? static_cast<OriginResultType>(b) : static_cast<OriginResultType>(-b);
+                    return static_cast<ResultType>(
+                        res + (b >= 0 ? static_cast<OriginResultType>(b) : static_cast<OriginResultType>(-b)));
                 }
             }
         }
         return static_cast<ResultType>(res);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false;
+#endif
 };
 
 template <typename A, typename B>

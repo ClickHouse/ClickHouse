@@ -141,7 +141,7 @@ size_t getMin(std::map<String, size_t> container)
 
 double getMean(std::map<String, size_t> container)
 {
-    return 1.0 * getSum(container) / container.size();
+    return 1.0 * static_cast<double>(getSum(container)) / static_cast<double>(container.size());
 }
 
 double getMaxDiff(std::map<String, size_t> container, double ref_val)
@@ -149,7 +149,7 @@ double getMaxDiff(std::map<String, size_t> container, double ref_val)
     double diff = 0.0;
     for (auto & [_, val] : container)
     {
-        diff = std::max(std::fabs(val - ref_val), diff);
+        diff = std::max(std::fabs(static_cast<double>(val) - ref_val), diff);
     }
 
     return diff;

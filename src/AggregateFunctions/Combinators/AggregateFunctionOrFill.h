@@ -1,12 +1,12 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
+#include <Common/memory.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -31,6 +31,7 @@ private:
 
     size_t size_of_data;
     bool inner_nullable;
+    bool result_is_nullable;
 
 public:
     AggregateFunctionOrFill(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
@@ -38,6 +39,7 @@ public:
         , nested_function{nested_function_}
         , size_of_data{nested_function->sizeOfData()}
         , inner_nullable{nested_function->getResultType()->isNullable()}
+        , result_is_nullable{createResultType(nested_function_->getResultType())->isNullable()}
     {
         // nothing
     }
@@ -48,6 +50,29 @@ public:
             return nested_function->getName() + "OrNull";
         else
             return nested_function->getName() + "OrDefault";
+    }
+
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    {
+        if (!this->haveSameDefinition(rhs))
+            return false;
+
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        return nested_function->canMergeStateFromDifferentVariant(*rhs_nested);
+    }
+
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
+    {
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        nested_function->mergeStateFromDifferentVariant(place, *rhs_nested, rhs_place, arena);
+
+        const size_t rhs_size_of_data = rhs_nested->sizeOfData();
+        place[size_of_data] |= rhs_place[rhs_size_of_data];
     }
 
     bool isVersioned() const override
@@ -77,7 +102,8 @@ public:
 
     size_t sizeOfData() const override
     {
-        return size_of_data + sizeof(char);
+        /// Pad to alignment so that arrays of states (e.g. in -ForEach) keep each element aligned.
+        return ::Memory::alignUp(size_of_data + sizeof(char), alignOfData());
     }
 
     size_t alignOfData() const override
@@ -255,6 +281,9 @@ public:
             if (inner_type_->isNullable())
                 return inner_type_;
 
+            if (!inner_type_->canBeInsideNullable())
+                return inner_type_;
+
             return std::make_shared<DataTypeNullable>(inner_type_);
         }
         else
@@ -277,7 +306,7 @@ public:
             {
                 // -OrNull
 
-                if (inner_nullable)
+                if (!result_is_nullable || inner_nullable)
                 {
                     if constexpr (merge)
                         nested_function->insertMergeResultInto(place, to, arena);
@@ -289,7 +318,10 @@ public:
                     ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
 
                     col.getNullMapColumn().insertDefault();
-                    nested_function->insertResultInto(place, col.getNestedColumn(), arena);
+                    if constexpr (merge)
+                        nested_function->insertMergeResultInto(place, col.getNestedColumn(), arena);
+                    else
+                        nested_function->insertResultInto(place, col.getNestedColumn(), arena);
                 }
             }
             else
@@ -316,6 +348,32 @@ public:
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
+
+    /// After `Nullable(Tuple)` was introduced, Tuple's `canBeInsideNullable` now returns true,
+    /// which changed the default null adapter for Tuple-returning functions:
+    ///   - single-arg: from `<false, false>` to `<true, true>` (flag byte added to serialization).
+    ///   - multi-arg: from `<false, true>` to `<true, true>` (flag byte was already present).
+    /// Only single-arg functions are affected because the multi-arg (variadic) Null combinator
+    /// always serialized the flag byte unconditionally, so its serialization format did not change.
+    /// Only OrDefault is affected. OrNull also has no backward compat concern since it
+    /// didn't work for Tuple-returning functions before `Nullable(Tuple)` was introduced.
+    /// Currently, the only single-arg Tuple-returning aggregate function is `sumCount`.
+    /// We hardcode the check for `sumCount` rather than matching all single-arg Tuple-returning
+    /// functions, so that future functions with the same shape get the correct new behavior
+    /// (`<true, true>`) by default and are not silently forced into the legacy adapter.
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr & nested_function_,
+        const DataTypes & arguments,
+        const Array & params,
+        const AggregateFunctionProperties & /*properties*/) const override
+    {
+        if constexpr (!UseNull) /// OrDefault only
+        {
+            if (nested_function->getName() == "sumCount")
+                return std::make_shared<AggregateFunctionNullUnary<false, false>>(nested_function_, arguments, params);
+        }
+        return nullptr;
+    }
 };
 
 }

@@ -1,5 +1,7 @@
 #pragma once
+#include <memory>
 #include <boost/noncopyable.hpp>
+#include <fmt/format.h>
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
@@ -11,10 +13,11 @@
 #include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/MutationCommands.h>
-#include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
-
+#include <Disks/DiskType.h>
+#include <IO/WriteBuffer.h>
 
 namespace DataLake
 {
@@ -34,6 +37,13 @@ using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 class StorageObjectStorageConfiguration;
 using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;
 struct StorageID;
+struct IObjectIterator;
+struct RelativePathWithMetadata;
+class IObjectStorage;
+struct ObjectInfo;
+using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
+using ObjectIterator = std::shared_ptr<IObjectIterator>;
+using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
 
 class IDataLakeMetadata : boost::noncopyable
 {
@@ -54,7 +64,20 @@ public:
 
     /// Table schema from data lake metadata.
     virtual NamesAndTypesList getTableSchema(ContextPtr local_context) const = 0;
-    virtual StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr) const { throwNotImplemented("getStorageSnapshotMetadata"); }
+
+    /// Returns the current table state snapshot (snapshot version, schema id, etc.)
+    /// Used to pin the exact state for both analysis and execution phases of a query,
+    /// preventing logical races when the datalake is updated mid-query.
+    virtual std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr) const { return std::nullopt; }
+
+    /// Builds a full StorageInMemoryMetadata (columns, sorting key, etc.) from the
+    /// given pinned state. Only called when schema reload for consistency is enabled.
+    virtual std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(
+        const DataLakeTableStateSnapshot &, ContextPtr) const { return nullptr; }
+
+    /// Whether to reload the schema (columns) from metadata before each query in order
+    /// to keep the columns stored in the in-memory metadata in sync with the datalake.
+    virtual bool shouldReloadSchemaForConsistency(ContextPtr) const { return false; }
 
     /// Read schema is the schema of actual data files,
     /// which can differ from table schema from data lake metadata.
@@ -80,8 +103,16 @@ public:
 
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 
+    static bool supportsTotalRows(ContextPtr, ObjectStorageType) { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) const { return {}; }
+    static bool supportsTotalBytes(ContextPtr, ObjectStorageType) { return false; }
     virtual std::optional<size_t> totalBytes(ContextPtr) const { return {}; }
+
+    /// Data which we are going to read is sorted by sorting key specified in StorageMetadataPtr.
+    /// For example in Iceberg it's a valid query to change sort_order for table, but older files will
+    /// not be rewritten and will be left unsorted or with previous sort order.
+    /// In this case we shouldn't use read in order optimization.
+    virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
 
     /// Some data lakes specify information for reading files from disks.
     /// For example, Iceberg has Parquet schema field ids in its metadata for reading files.
@@ -109,6 +140,7 @@ public:
     virtual bool supportsDelete() const { return false; }
     virtual void mutate(
         const MutationCommands & /*commands*/,
+        StorageObjectStorageConfigurationPtr /*configuration*/,
         ContextPtr /*context*/,
         const StorageID & /*storage_id*/,
         StorageMetadataPtr /*metadata_snapshot*/,
@@ -120,9 +152,22 @@ public:
 
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) { throwNotImplemented("mutations"); }
 
-    virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, ContextPtr) const { }
+    virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, FormatParserSharedResourcesPtr, ContextPtr) const { }
     virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
     virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) { throwNotImplemented("alter"); }
+
+    virtual Pipe executeCommand(
+        const String & command_name,
+        const ASTPtr & /*args*/,
+        ObjectStoragePtr /*object_storage*/,
+        StorageObjectStorageConfigurationPtr /*configuration*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        ContextPtr /*context*/,
+        const StorageID & /*storage_id*/)
+    {
+        throwNotImplemented(fmt::format("EXECUTE {}", command_name));
+    }
+
     virtual void drop(ContextPtr) { }
 
 protected:

@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -13,8 +13,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Interpreters/castColumn.h>
-
-#include <h3api.h>
 
 
 namespace DB
@@ -35,7 +33,11 @@ class FunctionH3KRing : public IFunction
 public:
     static constexpr auto name = "h3kRing";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3KRing>(); }
+    H3Validator validator;
+
+    explicit FunctionH3KRing(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3KRing>(context); }
 
     std::string getName() const override { return name; }
 
@@ -115,7 +117,15 @@ public:
             if (k < 0)
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Argument 'k' for {} function must be non negative", getName());
 
-            const auto vec_size = maxGridDiskSize(k);
+            if (!validator.validateCell(origin_hindex))
+            {
+                dst_offsets[row] = current_offset;
+                continue;
+            }
+
+            int64_t disk_size = 0;
+            maxGridDiskSize(k, &disk_size);
+            const auto vec_size = static_cast<size_t>(disk_size);
             std::vector<H3Index, AllocatorWithMemoryTracking<H3Index>> hindex_vec;
             hindex_vec.resize(vec_size);
             gridDisk(origin_hindex, k, hindex_vec.data());
@@ -171,7 +181,7 @@ Lists all the [H3](#H3-index) hexagons in the radius of `k` from the given hexag
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3KRing>(documentation);
 }
 
