@@ -1092,6 +1092,14 @@ bool FormatFactory::checkIfFormatSupportsPrewhere(const String & name, const Con
     return target.prewhere_support_checker && target.prewhere_support_checker(format_settings);
 }
 
+bool FormatFactory::shouldDetectUTFBOM(const String & format_name) const
+{
+    return format_name.starts_with("CSV")
+        || format_name.starts_with("TSV")
+        || format_name.starts_with("TabSeparated")
+        || format_name.starts_with("CustomSeparated");
+}
+
 void FormatFactory::registerAdditionalInfoForSchemaCacheGetter(
     const String & name, AdditionalInfoForSchemaCacheGetter additional_info_for_schema_cache_getter)
 {

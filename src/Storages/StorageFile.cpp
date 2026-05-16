@@ -510,10 +510,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     auto compressed_buffer = wrapReadBufferWithCompressionMethod(
         std::move(nested_buffer), method, zstd_window_log_max);
 
-    if (compressed_buffer->eof()) /// Checks pending data and triggers prefetch if empty
-        return compressed_buffer;
-
-    return std::make_unique<UTFConvertingReadBuffer>(std::move(compressed_buffer));
+    return compressed_buffer;
 }
 
 }
@@ -1602,6 +1599,9 @@ Chunk StorageFileSource::generate()
                     continue;
 
                 read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
+                
+                if (FormatFactory::instance().shouldDetectUTFBOM(storage->format_name))
+                    read_buf = std::make_unique<UTFConvertingReadBuffer>(std::move(read_buf));
             }
 
             size_t file_num = 0;

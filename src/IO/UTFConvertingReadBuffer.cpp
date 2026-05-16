@@ -6,45 +6,45 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_READ_ALL_DATA;
+extern const int CANNOT_READ_ALL_DATA;
 }
 
 namespace
 {
-    /// BOM (Byte Order Mark) signatures
-    constexpr uint8_t UTF8_BOM[] = {0xEF, 0xBB, 0xBF};
-    constexpr uint8_t UTF16_LE_BOM[] = {0xFF, 0xFE};
-    constexpr uint8_t UTF16_BE_BOM[] = {0xFE, 0xFF};
-    constexpr uint8_t UTF32_LE_BOM[] = {0xFF, 0xFE, 0x00, 0x00};
-    constexpr uint8_t UTF32_BE_BOM[] = {0x00, 0x00, 0xFE, 0xFF};
+/// BOM (Byte Order Mark) signatures
+constexpr uint8_t UTF8_BOM[] = {0xEF, 0xBB, 0xBF};
+constexpr uint8_t UTF16_LE_BOM[] = {0xFF, 0xFE};
+constexpr uint8_t UTF16_BE_BOM[] = {0xFE, 0xFF};
+constexpr uint8_t UTF32_LE_BOM[] = {0xFF, 0xFE, 0x00, 0x00};
+constexpr uint8_t UTF32_BE_BOM[] = {0x00, 0x00, 0xFE, 0xFF};
 
-    /// Unicode replacement character for invalid sequences
-    constexpr uint32_t REPLACEMENT_CHARACTER = 0xFFFD;
+/// Unicode replacement character for invalid sequences
+constexpr uint32_t REPLACEMENT_CHARACTER = 0xFFFD;
 
-    /// UTF-16 surrogate ranges
-    constexpr uint32_t HIGH_SURROGATE_START = 0xD800;
-    constexpr uint32_t HIGH_SURROGATE_END = 0xDBFF;
-    constexpr uint32_t LOW_SURROGATE_START = 0xDC00;
-    constexpr uint32_t LOW_SURROGATE_END = 0xDFFF;
+/// UTF-16 surrogate ranges
+constexpr uint32_t HIGH_SURROGATE_START = 0xD800;
+constexpr uint32_t HIGH_SURROGATE_END = 0xDBFF;
+constexpr uint32_t LOW_SURROGATE_START = 0xDC00;
+constexpr uint32_t LOW_SURROGATE_END = 0xDFFF;
 
-    /// Maximum valid Unicode code point
-    constexpr uint32_t MAX_UNICODE = 0x10FFFF;
+/// Maximum valid Unicode code point
+constexpr uint32_t MAX_UNICODE = 0x10FFFF;
 
-    bool isHighSurrogate(uint16_t code_unit)
-    {
-        return code_unit >= HIGH_SURROGATE_START && code_unit <= HIGH_SURROGATE_END;
-    }
+bool isHighSurrogate(uint16_t code_unit)
+{
+    return code_unit >= HIGH_SURROGATE_START && code_unit <= HIGH_SURROGATE_END;
+}
 
-    bool isLowSurrogate(uint16_t code_unit)
-    {
-        return code_unit >= LOW_SURROGATE_START && code_unit <= LOW_SURROGATE_END;
-    }
+bool isLowSurrogate(uint16_t code_unit)
+{
+    return code_unit >= LOW_SURROGATE_START && code_unit <= LOW_SURROGATE_END;
+}
 
-    /// Combine UTF-16 surrogate pair into a code point
-    uint32_t combineSurrogates(uint16_t high, uint16_t low)
-    {
-        return 0x10000 + ((static_cast<uint32_t>(high) & 0x3FF) << 10) + (static_cast<uint32_t>(low) & 0x3FF);
-    }
+/// Combine UTF-16 surrogate pair into a code point
+uint32_t combineSurrogates(uint16_t high, uint16_t low)
+{
+    return 0x10000 + ((static_cast<uint32_t>(high) & 0x3FF) << 10) + (static_cast<uint32_t>(low) & 0x3FF);
+}
 }
 
 UTFConvertingReadBuffer::UTFConvertingReadBuffer(std::unique_ptr<ReadBuffer> impl_)
@@ -69,7 +69,7 @@ void UTFConvertingReadBuffer::detectBOM()
             if (!impl->next())
                 break;
         }
-        
+
         size_t available = impl->available();
         size_t to_copy = std::min(available, 4 - bytes_read);
         memcpy(bom_buffer + bytes_read, impl->position(), to_copy);
@@ -83,7 +83,7 @@ void UTFConvertingReadBuffer::detectBOM()
         encoding = Encoding::UTF32_LE;
         return;
     }
-    
+
     if (bytes_read >= 4 && memcmp(bom_buffer, UTF32_BE_BOM, 4) == 0)
     {
         encoding = Encoding::UTF32_BE;
@@ -134,7 +134,7 @@ void UTFConvertingReadBuffer::detectBOM()
 bool UTFConvertingReadBuffer::readUTF16CodeUnit(uint16_t & code_unit)
 {
     uint8_t bytes[2];
-    
+
     /// Try to get 2 bytes from pending bytes first
     size_t from_pending = std::min(pending_bytes.size(), size_t(2));
     for (size_t i = 0; i < from_pending; ++i)
@@ -178,7 +178,7 @@ bool UTFConvertingReadBuffer::readUTF16CodeUnit(uint16_t & code_unit)
 bool UTFConvertingReadBuffer::readUTF32CodePoint(uint32_t & code_point)
 {
     uint8_t bytes[4];
-    
+
     /// Try to get 4 bytes from pending bytes first
     size_t from_pending = std::min(pending_bytes.size(), size_t(4));
     for (size_t i = 0; i < from_pending; ++i)
@@ -209,17 +209,13 @@ bool UTFConvertingReadBuffer::readUTF32CodePoint(uint32_t & code_point)
     /// Decode based on endianness
     if (encoding == Encoding::UTF32_LE)
     {
-        code_point = static_cast<uint32_t>(bytes[0])
-                   | (static_cast<uint32_t>(bytes[1]) << 8)
-                   | (static_cast<uint32_t>(bytes[2]) << 16)
-                   | (static_cast<uint32_t>(bytes[3]) << 24);
+        code_point = static_cast<uint32_t>(bytes[0]) | (static_cast<uint32_t>(bytes[1]) << 8) | (static_cast<uint32_t>(bytes[2]) << 16)
+            | (static_cast<uint32_t>(bytes[3]) << 24);
     }
     else
     {
-        code_point = (static_cast<uint32_t>(bytes[0]) << 24)
-                   | (static_cast<uint32_t>(bytes[1]) << 16)
-                   | (static_cast<uint32_t>(bytes[2]) << 8)
-                   | static_cast<uint32_t>(bytes[3]);
+        code_point = (static_cast<uint32_t>(bytes[0]) << 24) | (static_cast<uint32_t>(bytes[1]) << 16)
+            | (static_cast<uint32_t>(bytes[2]) << 8) | static_cast<uint32_t>(bytes[3]);
     }
 
     return true;
@@ -270,7 +266,7 @@ bool UTFConvertingReadBuffer::convertFromUTF16()
     char * output_ptr = memory.data();
     char * output_end = memory.data() + memory.size();
 
-    while (output_ptr < output_end)
+    while (output_ptr + 4 <= output_end) /// Ensure space for maximum UTF-8 sequence (4 bytes)
     {
         /// Handle pending high surrogate first
         if (pending_high_surrogate != 0)
@@ -292,6 +288,7 @@ bool UTFConvertingReadBuffer::convertFromUTF16()
                 uint32_t code_point = combineSurrogates(pending_high_surrogate, low_surrogate);
                 size_t bytes = encodeUTF8(code_point, output_ptr);
                 output_ptr += bytes;
+                pending_high_surrogate = 0;
             }
             else
             {
@@ -299,10 +296,11 @@ bool UTFConvertingReadBuffer::convertFromUTF16()
                 /// Emit replacement for high surrogate and process current code unit
                 size_t bytes = encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
                 output_ptr += bytes;
-                
+
                 /// Process the current code unit (might be another high surrogate)
                 if (isHighSurrogate(low_surrogate))
                 {
+                    /// Carry forward the new high surrogate to next iteration
                     pending_high_surrogate = low_surrogate;
                 }
                 else if (isLowSurrogate(low_surrogate))
@@ -310,15 +308,16 @@ bool UTFConvertingReadBuffer::convertFromUTF16()
                     /// Orphaned low surrogate
                     bytes = encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
                     output_ptr += bytes;
+                    pending_high_surrogate = 0;
                 }
                 else
                 {
                     /// Regular BMP character
                     bytes = encodeUTF8(low_surrogate, output_ptr);
                     output_ptr += bytes;
+                    pending_high_surrogate = 0;
                 }
             }
-            pending_high_surrogate = 0;
             continue;
         }
 
@@ -366,7 +365,7 @@ bool UTFConvertingReadBuffer::convertFromUTF32()
     char * output_ptr = memory.data();
     char * output_end = memory.data() + memory.size();
 
-    while (output_ptr + 4 <= output_end)  /// Ensure space for maximum UTF-8 sequence
+    while (output_ptr + 4 <= output_end) /// Ensure space for maximum UTF-8 sequence
     {
         uint32_t code_point;
         if (!readUTF32CodePoint(code_point))
@@ -425,7 +424,7 @@ bool UTFConvertingReadBuffer::nextImpl()
             size_t available = impl->available();
             size_t space_left = output_end - output_ptr;
             size_t to_copy = std::min(available, space_left);
-            
+
             memcpy(output_ptr, impl->position(), to_copy);
             impl->ignore(to_copy);
             output_ptr += to_copy;
@@ -449,7 +448,7 @@ bool UTFConvertingReadBuffer::nextImpl()
     {
         if (convertFromUTF16())
             return true;
-        
+
         eof = true;
         return false;
     }
@@ -459,7 +458,7 @@ bool UTFConvertingReadBuffer::nextImpl()
     {
         if (convertFromUTF32())
             return true;
-        
+
         eof = true;
         return false;
     }

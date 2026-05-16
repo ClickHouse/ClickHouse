@@ -25,7 +25,7 @@ public:
         UTF32_BE   /// UTF-32 Big Endian
     };
 
-    UTFConvertingReadBuffer(std::unique_ptr<ReadBuffer> impl_);
+    explicit UTFConvertingReadBuffer(std::unique_ptr<ReadBuffer> impl_);
     ~UTFConvertingReadBuffer() override;
 
 private:
