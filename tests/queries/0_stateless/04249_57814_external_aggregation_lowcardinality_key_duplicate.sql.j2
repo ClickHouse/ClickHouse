@@ -1,0 +1,32 @@
+-- Regression test for https://github.com/ClickHouse/ClickHouse/issues/57814
+--
+-- Bug: SELECT * FROM dist GROUP BY key, where `dist` was a Distributed table
+-- with a `LowCardinality(String)` key over a `String` source, used to return
+-- duplicated keys non-deterministically when external two-level aggregation
+-- kicked in (settings below). The same query with a plain `String` key on the
+-- Distributed table was always correct, so the bug was in the LowCardinality
+-- conversion path while merging partially aggregated blocks across buckets.
+--
+-- The bug no longer reproduces (per https://github.com/ClickHouse/ClickHouse/issues/57814#issuecomment-4459084045).
+-- This test runs the failing query many times to guard against a regression.
+
+DROP TABLE IF EXISTS data;
+DROP TABLE IF EXISTS dist;
+
+SET max_bytes_before_external_group_by = 1;
+SET group_by_two_level_threshold_bytes = 1;
+SET max_untracked_memory = '1Mi';
+SET memory_profiler_step = '1Mi';
+
+CREATE TABLE data (key String) ENGINE = Memory;
+CREATE TABLE dist (key LowCardinality(String))
+    ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), data);
+
+INSERT INTO data VALUES ('foo');
+
+{% for i in range(50) -%}
+SELECT * FROM dist GROUP BY key;
+{% endfor -%}
+
+DROP TABLE dist;
+DROP TABLE data;
