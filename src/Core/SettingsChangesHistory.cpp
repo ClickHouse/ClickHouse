@@ -43,6 +43,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"defer_partition_pruning_after_final", true, true, "Setting newly added in 26.5 to gate the FINAL partition-pruning behavior that shipped silently in 26.3 (https://github.com/ClickHouse/ClickHouse/pull/98242). The meaningful semantic change is registered under the 26.3 block so `compatibility = '26.2'` reverts it; this entry exists so the upgrade-from-26.4 check accepts the newly-introduced name."},
             {"optimize_trivial_group_by_limit_query", false, true, "New setting that limits aggregation to at most LIMIT distinct keys for `SELECT key_expr FROM t GROUP BY key_expr LIMIT n` queries."},
+            {"optimize_topn_aggregation", false, true, "New setting to enable fused TopN aggregation optimization for GROUP BY ... ORDER BY aggregate LIMIT K queries."},
+            {"topn_aggregation_pruning_level", 2, 2, "Controls Mode 2 (unsorted-input) pruning: 0=Mode 2 disabled, 1=in-transform threshold pruning, 2=in-transform threshold pruning plus dynamic __topKFilter prewhere pushdown."},
+            {"topn_aggregation_max_limit", 1000, 1000, "Maximum LIMIT value for applying TopN Mode 2 optimization; larger LIMIT falls back to standard pipeline to avoid regressions."},
             {"date_time_input_format", "basic", "best_effort", "Better usability"},
             {"cast_string_to_date_time_mode", "basic", "best_effort", "Better usability"},
             {"paimon_target_snapshot_id", -1, -1, "New setting."},
@@ -90,12 +93,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
-            {"optimize_topn_aggregation", false, false, "New setting to enable fused TopN aggregation optimization for GROUP BY ... ORDER BY aggregate LIMIT K queries."},
-            {"topn_aggregation_pruning_level", 2, 2, "Controls Mode 2 pruning optimizations: 0=direct compute only, 1=+in-transform threshold, 2=+dynamic filter pushdown."},
-            {"topn_aggregation_max_limit", 1000, 1000, "Maximum LIMIT value for applying TopN Mode 2 optimization; larger LIMIT falls back to standard pipeline to avoid regressions."},
-            {"paimon_target_snapshot_id", -1, -1, "New setting."},
-            {"max_consume_snapshots", 0, 0, "New setting."},
-            {"allow_experimental_paimon_storage_engine", false, false, "New setting."},
             {"max_bytes_before_external_join", 0, 0, "New setting to control automatic spilling of hash joins to disk. Non-zero value enables spilling and sets the byte threshold."},
             {"allow_iceberg_remove_orphan_files", false, false, "New setting to gate Iceberg orphan file removal"},
             {"iceberg_orphan_files_older_than_seconds", 259200, 259200, "New setting for default orphan file age threshold"},
