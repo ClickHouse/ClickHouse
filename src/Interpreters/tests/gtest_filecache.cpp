@@ -1,5 +1,6 @@
+#include <Columns/IColumn.h>
 #include <IO/copyData.h>
-#include <Interpreters/Cache/IFileCachePriority.h>
+#include <Interpreters/FileCache/IFileCachePriority.h>
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -17,11 +18,14 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheSettings.h>
-#include <Interpreters/Cache/FileSegment.h>
-#include <Interpreters/Cache/EvictionCandidates.h>
-#include <Interpreters/Cache/SLRUFileCachePriority.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheSettings.h>
+#include <Interpreters/FileCache/FileSegment.h>
+#include <Interpreters/FileCache/EvictionCandidates.h>
+#include <Interpreters/FileCache/SLRUFileCachePriority.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/Cache/OvercommitFileCachePriority.h>
+#endif
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/hex.h>
@@ -39,7 +43,7 @@
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Interpreters/Cache/WriteBufferToFileSegment.h>
+#include <Interpreters/FileCache/WriteBufferToFileSegment.h>
 
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/tests/gtest_disk.h>
@@ -65,9 +69,11 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsUInt64 boundary_alignment;
     extern const FileCacheSettingsFileCachePolicy cache_policy;
     extern const FileCacheSettingsDouble slru_size_ratio;
-    extern const FileCacheSettingsUInt64 load_metadata_threads;
+    extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
+    extern const FileCacheSettingsNonZeroUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
+    extern const FileCacheSettingsBool allow_dynamic_cache_resize;
 }
 
 void printRanges(const auto & segments)
@@ -355,14 +361,19 @@ public:
             fs::remove_all(cache_base_path);
         if (fs::exists(cache_base_path2))
             fs::remove_all(cache_base_path2);
+        if (fs::exists(cache_base_path3))
+            fs::remove_all(cache_base_path3);
         fs::create_directories(cache_base_path);
         fs::create_directories(cache_base_path2);
+        fs::create_directories(cache_base_path3);
     }
 
     void TearDown() override
     {
         if (fs::exists(cache_base_path))
             fs::remove_all(cache_base_path);
+        if (fs::exists(cache_base_path3))
+            fs::remove_all(cache_base_path3);
     }
 
     pcg64 rng;
@@ -1442,6 +1453,195 @@ TEST_F(FileCacheTest, SLRUPolicy)
     }
 }
 
+TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
+{
+    /// Test that SLRU dynamic resize correctly evicts from both sub-queues
+    /// after the per-queue stat fix.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    ReadSettings read_settings;
+    read_settings.enable_filesystem_cache = true;
+    read_settings.local_fs_method = LocalFSReadMethod::pread;
+
+    auto write_file = [](const std::string & filename, const std::string & s)
+    {
+        std::string file_path = fs::current_path() / filename;
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(s.data(), s.size());
+        wb->next();
+        wb->finalize();
+        return file_path;
+    };
+
+    /// Create SLRU cache: max_size=30, max_elements=6, ratio=0.5
+    /// So protected = 15 bytes / 3 elements, probationary = 15 bytes / 3 elements.
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path2;
+    settings[FileCacheSetting::max_file_segment_size] = 5;
+    settings[FileCacheSetting::max_size] = 30;
+    settings[FileCacheSetting::max_elements] = 6;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::slru_size_ratio] = 0.5;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
+    settings[FileCacheSetting::allow_dynamic_cache_resize] = true;
+
+    auto cache = std::make_shared<DB::FileCache>("slru_resize", settings);
+    cache->initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+
+    auto read_and_check = [&](const std::string & file, const FileCacheKey & key, const std::string & expect_result)
+    {
+        auto read_buffer_creator = [&]()
+        {
+            return createReadBufferFromFileBase(file, read_settings, std::nullopt, std::nullopt);
+        };
+        auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
+            file, key, cache, user, read_buffer_creator, read_settings,
+            "test", expect_result.size(), false, false, std::nullopt, nullptr);
+        WriteBufferFromOwnString result;
+        copyData(*cached_buffer, result);
+        ASSERT_EQ(result.str(), expect_result);
+    };
+
+    /// Read file1 twice -> 15 bytes in protected (3 segs x 5)
+    std::string data1(15, '*');
+    auto file1 = write_file("test_resize1", data1);
+    auto key1 = DB::FileCacheKey::fromPath(file1);
+    read_and_check(file1, key1, data1);
+    read_and_check(file1, key1, data1);
+
+    assertProtected(cache->dumpQueue(), { Range(0, 4), Range(5, 9), Range(10, 14) });
+
+    /// Read file2 once -> 10 bytes in probationary (2 segs x 5)
+    std::string data2(10, '+');
+    auto file2 = write_file("test_resize2", data2);
+    auto key2 = DB::FileCacheKey::fromPath(file2);
+    read_and_check(file2, key2, data2);
+
+    assertProbationary(cache->dumpQueue(), { Range(0, 4), Range(5, 9) });
+    ASSERT_EQ(cache->getUsedCacheSize(), 25);
+    ASSERT_EQ(cache->getFileSegmentsNum(), 5);
+
+    /// Resize to max_size=8, max_elements=6.
+    /// Protected limit = 4, probationary limit = 4.
+    /// Both queues need eviction. Without the fix, the protected pass
+    /// would short-circuit and modifySizeLimits would throw LOGICAL_ERROR.
+    DB::FileCacheSettings new_settings = settings;
+    new_settings[FileCacheSetting::max_size] = 8;
+    DB::FileCacheSettings actual_settings = settings;
+
+    /// Must not throw -- this is the core regression test for the bug.
+    ASSERT_NO_THROW(cache->applySettingsIfPossible(new_settings, actual_settings));
+
+    /// Verify limits were applied.
+    ASSERT_EQ(actual_settings[FileCacheSetting::max_size].value, 8);
+    ASSERT_EQ(actual_settings[FileCacheSetting::max_elements].value, 6);
+
+    /// Verify cache usage is within new limits.
+    ASSERT_LE(cache->getUsedCacheSize(), 8);
+    ASSERT_LE(cache->getFileSegmentsNum(), 6);
+}
+
+TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
+{
+    /// Regression test for https://github.com/ClickHouse/ClickHouse/issues/104307
+    ///
+    /// `SLRUFileCachePriority::collectEvictionInfo` is invoked from
+    /// `FileCache::freeSpaceRatioKeepingThreadFunc` (driven by the
+    /// `keep_free_space_size(elements)_ratio` features) with `is_total_space_cleanup=true`.
+    /// With a high enough free-space target the function used to `chassert` that we
+    /// evict at least one element/byte from the probationary queue. This is wrong when
+    /// entries have all been promoted to the protected queue and the probationary queue
+    /// is empty: the function must still be able to evict from the protected queue.
+    /// Without the fix, the assertion aborts the server in debug/sanitizer builds and
+    /// throws a `LOGICAL_ERROR` in release.
+    ///
+    /// We exercise `SLRUFileCachePriority::collectEvictionInfo` directly rather than
+    /// going through `FileCache::freeSpaceRatioKeepingThreadFunc` to avoid the timing
+    /// race with the asynchronous background eviction task that `FileCache` schedules
+    /// when `keep_free_space_*_ratio` is set: that task evicts entries between the
+    /// populate and assert steps, especially on slow builds (e.g. coverage), which
+    /// makes the higher-level test inherently flaky. The unit-level test below
+    /// reproduces the exact bug condition deterministically and on every build flavor.
+
+    ServerUUID::setRandomForUnitTests();
+
+    /// Match the parameters of the original repro: 30 bytes / 6 elements with
+    /// slru_size_ratio = 0.5 yields protected = 15 bytes / 3 elements and probationary
+    /// = 15 bytes / 3 elements.
+    const size_t max_size = 30;
+    const size_t max_elements = 6;
+    const double slru_size_ratio = 0.5;
+    SLRUFileCachePriority priority(max_size, max_elements, slru_size_ratio, "test_104307");
+
+    const std::string cache_path = caches_dir / "test_slru_104307";
+    fs::create_directories(cache_path);
+    CacheMetadata cache_metadata(cache_path,
+                                 /* background_download_queue_size_limit */0,
+                                 /* background_download_threads */0,
+                                 /* write_cache_per_user_directory */false);
+
+    const auto key = DB::FileCacheKey::fromPath("104307_protected_only_key");
+    const auto & origin = FileCache::getCommonOrigin();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+
+    CacheStateGuard state_guard;
+    CachePriorityGuard cache_guard;
+
+    /// Add 3 entries of 5 bytes each (15 bytes total) directly to the protected queue,
+    /// leaving probationary empty. This is the precondition that used to trigger the
+    /// chassert in `collectEvictionInfo`.
+    {
+        auto write_lock = cache_guard.writeLock();
+        auto state_lock = state_guard.lock();
+        priority.addForRestore(key_metadata, /* offset */0, /* size */5,
+                               IFileCachePriority::QueueEntryType::SLRU_Protected,
+                               write_lock, &state_lock);
+        priority.addForRestore(key_metadata, /* offset */5, /* size */5,
+                               IFileCachePriority::QueueEntryType::SLRU_Protected,
+                               write_lock, &state_lock);
+        priority.addForRestore(key_metadata, /* offset */10, /* size */5,
+                               IFileCachePriority::QueueEntryType::SLRU_Protected,
+                               write_lock, &state_lock);
+    }
+
+    /// Verify the precondition: 3 entries / 15 bytes total, all in protected,
+    /// probationary empty. The total counters alone would still pass if entries
+    /// leaked into probationary, so we also assert per-queue contents explicitly --
+    /// the empty-probationary assertion is what proves the regression precondition.
+    ASSERT_EQ(priority.getElementsCount(state_guard.lock()), 3);
+    ASSERT_EQ(priority.getSize(state_guard.lock()), 15);
+    ASSERT_EQ(priority.getProtectedElementsCount(state_guard.lock()), 3);
+    ASSERT_EQ(priority.getProtectedSize(state_guard.lock()), 15);
+    ASSERT_EQ(priority.getProbationaryElementsCount(state_guard.lock()), 0);
+    ASSERT_EQ(priority.getProbationarySize(state_guard.lock()), 0);
+
+    /// Call `collectEvictionInfo` with `is_total_space_cleanup=true` and a request
+    /// covering everything currently in the cache. This is what the background thread
+    /// invokes when `desired_size`/`desired_elements_num` is below the current usage
+    /// (i.e. `keep_free_space_size(elements)_ratio` is set high enough to drain the cache).
+    ///
+    /// Without the fix, this aborts via the chassert in debug/sanitizer builds.
+    /// With the fix, the function routes the full request to the protected queue
+    /// (since probationary is empty) and returns a valid eviction info.
+    EvictionInfoPtr eviction_info;
+    ASSERT_NO_THROW({
+        eviction_info = priority.collectEvictionInfo(
+            /* size */15,
+            /* elements */3,
+            /* reservee */nullptr,
+            /* is_total_space_cleanup */true,
+            origin,
+            state_guard.lock());
+    });
+
+    ASSERT_NE(eviction_info, nullptr);
+    ASSERT_TRUE(eviction_info->requiresEviction());
+}
+
 TEST_F(FileCacheTest, FileCacheGetOrSet)
 {
     ServerUUID::setRandomForUnitTests();
@@ -1623,4 +1823,101 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     priority.resetEvictionPos();
     ASSERT_EQ(priority.getEvictionPosCount(), 0); /// queue.begin()
+}
+
+TEST_F(FileCacheTest, LoadMetadataParallelism)
+{
+    /// Test that loading cache metadata with different numbers of threads produces
+    /// correct results. We build a complex structure — many keys spread across
+    /// different 3-char prefix directories, each with multiple segments at
+    /// non-overlapping offsets — and then reload it with 1, 3, and 32 threads.
+
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const size_t num_keys = 50;
+    const size_t segments_per_key = 3;
+    const size_t segment_size = 50;
+    const size_t file_size = segments_per_key * segment_size;
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = num_keys * segments_per_key * segment_size * 2;
+    settings[FileCacheSetting::max_elements] = num_keys * segments_per_key * 2;
+    settings[FileCacheSetting::max_file_segment_size] = segment_size;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::load_metadata_threads] = 1;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    /// Use diverse paths so keys hash to many different 3-char prefix directories,
+    /// exercising parallel listing across multiple prefix dirs.
+    std::vector<FileCacheKey> keys;
+    keys.reserve(num_keys);
+    for (size_t i = 0; i < num_keys; ++i)
+        keys.push_back(FileCacheKey::fromPath("test/dir/subdir_" + std::to_string(i * 7) + "/file_" + std::to_string(i)));
+
+    const auto & user = FileCache::getCommonOrigin();
+
+    /// Phase 1: populate cache with the full key/segment structure and download everything.
+    {
+        auto cache = DB::FileCache("LoadMetadataParallelism_init", settings);
+        cache.initialize();
+
+        for (size_t k = 0; k < num_keys; ++k)
+        {
+            for (size_t s = 0; s < segments_per_key; ++s)
+            {
+                auto holder = cache.getOrSet(keys[k], s * segment_size, segment_size, file_size, {}, 0, user);
+                ASSERT_EQ(holder->size(), 1);
+                download(*holder->begin());
+            }
+        }
+    }
+
+    /// Phase 2: reload with different thread counts and verify all segments are intact.
+    for (UInt64 thread_count : {1u, 3u, 32u})
+    {
+        const UInt64 expected_listing = std::max(UInt64(1), thread_count / 2);
+        const UInt64 expected_loading = thread_count - expected_listing;
+
+        settings[FileCacheSetting::load_metadata_threads] = thread_count;
+
+        testing::internal::CaptureStderr();
+        auto cache = DB::FileCache("LoadMetadataParallelism_" + std::to_string(thread_count), settings);
+        cache.initialize();
+        const auto log_output = testing::internal::GetCapturedStderr();
+
+        const auto expected_log = fmt::format(
+            "using {} listing thread(s) and {} loading thread(s)",
+            expected_listing, expected_loading);
+        ASSERT_NE(log_output.find(expected_log), std::string::npos)
+            << "Expected log message not found for load_metadata_threads=" << thread_count
+            << "\nExpected substring: " << expected_log;
+
+        size_t total_loaded = 0;
+        for (size_t k = 0; k < num_keys; ++k)
+        {
+            auto infos = cache.getFileSegmentInfos(keys[k], user.user_id);
+            ASSERT_EQ(infos.size(), segments_per_key)
+                << "key_index=" << k << " load_metadata_threads=" << thread_count;
+
+            std::sort(infos.begin(), infos.end(), [](const auto & a, const auto & b)
+            {
+                return a.range_left < b.range_left;
+            });
+
+            for (size_t s = 0; s < segments_per_key; ++s)
+            {
+                ASSERT_EQ(infos[s].state, State::DOWNLOADED)
+                    << "key_index=" << k << " segment=" << s << " load_metadata_threads=" << thread_count;
+                ASSERT_EQ(infos[s].range_left, s * segment_size);
+                ASSERT_EQ(infos[s].range_right, (s + 1) * segment_size - 1);
+            }
+            total_loaded += infos.size();
+        }
+
+        ASSERT_EQ(total_loaded, num_keys * segments_per_key)
+            << "load_metadata_threads=" << thread_count;
+    }
 }
