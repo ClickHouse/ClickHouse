@@ -41,9 +41,9 @@ Description: Projection has been analyzed and will be applied during reading
 Condition: (region in [\'eu\', \'eu\'])
 Search Algorithm: binary search
 Parts: 1
-Marks: 1
+Marks: 2
 Ranges: 1
-Rows: 1
+Rows: 2
 Filtered Parts: 0
 Name: user_id_proj
 Description: Projection has been analyzed and will be applied during reading
@@ -83,9 +83,9 @@ Description: Projection has been analyzed and will be applied during reading
 Condition: (user_id in [106, 106])
 Search Algorithm: binary search
 Parts: 1
-Marks: 1
+Marks: 2
 Ranges: 1
-Rows: 1
+Rows: 2
 Filtered Parts: 0
 SELECT * FROM t_proj WHERE user_id = 106 ORDER BY ALL;
 4	us	106
@@ -201,9 +201,9 @@ Description: Projection has been analyzed and will be applied during reading
 Condition: (region in [\'ru\', \'ru\'])
 Search Algorithm: binary search
 Parts: 1
-Marks: 1
+Marks: 2
 Ranges: 1
-Rows: 1
+Rows: 2
 Filtered Parts: 0
 SELECT * FROM t_partial WHERE region = 'ru' ORDER BY ALL;
 5	ru
@@ -218,9 +218,9 @@ Description: Projection has been analyzed and will be applied during reading
 Condition: (region in [\'cn\', \'cn\'])
 Search Algorithm: binary search
 Parts: 1
-Marks: 1
+Marks: 2
 Ranges: 1
-Rows: 1
+Rows: 2
 Filtered Parts: 0
 SELECT * FROM t_partial WHERE region = 'cn' ORDER BY ALL;
 3	cn
