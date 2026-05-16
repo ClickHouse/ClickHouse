@@ -85,15 +85,21 @@ public:
         /// different numeric values for the same instant, Enum stores the integer code while String
         /// stores the name, IPv4 has a custom Field encoding distinct from UInt32, etc.).
         ///
+        /// Floats are also excluded outright (not just on cross-width): has() uses accurateEquals
+        /// where +0.0 == -0.0, while in() builds a Set keyed on raw bits where +0.0 != -0.0. So
+        /// `has([0.0], -0.0)` returns 1 but `-0.0 IN (0.0)` returns 0 — even at the same width.
+        ///
         /// Only allow the rewrite if the array element type and the needle type are equivalent
         /// under raw Field comparison. The two safe cases are:
-        ///   - Exact same type after stripping LowCardinality.
-        ///   - Both are native numbers (UInt*/Int*/Float*), since they all reduce to a single
-        ///     numeric Field type and accurateEquals handles mixed widths and signs correctly.
+        ///   - Exact same non-float type after stripping LowCardinality.
+        ///   - Both are native integers (UInt*/Int*), since they all reduce to a single numeric
+        ///     Field type and accurateEquals handles mixed widths and signs correctly.
         const auto unwrapped_element_type = removeLowCardinality(element_type);
         const auto unwrapped_second_arg_type = removeLowCardinality(second_arg_type);
-        const bool both_native_numbers = isNativeNumber(unwrapped_element_type) && isNativeNumber(unwrapped_second_arg_type);
-        if (!both_native_numbers && !unwrapped_element_type->equals(*unwrapped_second_arg_type))
+        if (isNativeFloat(unwrapped_element_type) || isNativeFloat(unwrapped_second_arg_type))
+            return;
+        const bool both_native_integers = isNativeInteger(unwrapped_element_type) && isNativeInteger(unwrapped_second_arg_type);
+        if (!both_native_integers && !unwrapped_element_type->equals(*unwrapped_second_arg_type))
             return;
 
         /// Rewrite has(const_array, elem) -> in(elem, const_array)

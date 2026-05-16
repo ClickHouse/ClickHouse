@@ -139,10 +139,23 @@ SELECT COUNT(*) FROM (
     EXPLAIN actions=1,header=1 SELECT has([toDate('2026-01-10')], materialize(toDate('2026-01-10')))
     ) t WHERE explain like '%FUNCTION in%';
 
--- Native-number cross-width (Array(UInt16) vs UInt32): the rewrite is allowed because both
+-- Native-integer cross-width (Array(UInt16) vs UInt32): the rewrite is allowed because both
 -- sides reduce to a single numeric Field type and accurateEquals handles mixed widths.
 SELECT COUNT(*) FROM (
     EXPLAIN actions=1,header=1 SELECT has([toUInt16(1), toUInt16(2)], materialize(toUInt32(1)))
+    ) t WHERE explain like '%FUNCTION in%';
+
+-- Floats are intentionally excluded from the cross-width fast-path. has() uses accurateEquals
+-- where +0.0 == -0.0, while in() goes through a Set whose hash treats them as different raw
+-- bit patterns. `has([0.0], -0.0)` is 1, but `-0.0 IN (0.0)` is 0 — the rewrite must not happen.
+SELECT has([toFloat64(0.0)], materialize(toFloat64(-0.0)));
+SELECT COUNT(*) FROM (
+    EXPLAIN actions=1,header=1 SELECT has([toFloat64(0.0)], materialize(toFloat64(-0.0)))
+    ) t WHERE explain like '%FUNCTION in%';
+-- Even at the same float width, the rewrite is unsafe for the same +0.0/-0.0 reason.
+SELECT has([toFloat32(0.0)], materialize(toFloat32(-0.0)));
+SELECT COUNT(*) FROM (
+    EXPLAIN actions=1,header=1 SELECT has([toFloat32(0.0)], materialize(toFloat32(-0.0)))
     ) t WHERE explain like '%FUNCTION in%';
 
 -- Regression test for LowCardinality(non-nullable) needle: has() returns UInt8 but
