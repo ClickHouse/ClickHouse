@@ -674,7 +674,26 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
 
 void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePtr refresh_context, String & out_exception)
 {
-    auto query_scope = QueryScope::create(refresh_context);
+    /// The temporary table being dropped here was created by the refresh task itself
+    /// (either as a fresh inner table during refresh preparation, or as the previous
+    /// target table just rotated out by `exchangeTargetTable`). The user is not in
+    /// control of its size, so the server-wide `max_table_size_to_drop` /
+    /// `max_partition_size_to_drop` safety nets — meant to protect against accidental
+    /// user-initiated DROPs of large tables — must not apply here.
+    ///
+    /// Without this bypass, a refresh that produces a table larger than the user's
+    /// configured limit would fail to clean up its previous attempt, and every
+    /// subsequent refresh would create yet another fresh temporary table while still
+    /// being unable to drop the leaked ones. The view's data directory grows until the
+    /// disk is exhausted (issue #104900).
+    ///
+    /// We work on a copy of the refresh context so other operations on the same context
+    /// (logging, dependency teardown, etc.) keep their original settings.
+    auto drop_context = Context::createCopy(refresh_context);
+    drop_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
+    drop_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+
+    auto query_scope = QueryScope::create(drop_context);
 
     auto drop_query = make_intrusive<ASTDropQuery>();
     drop_query->setDatabase(table_id.database_name);
@@ -686,13 +705,13 @@ void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePt
     Stopwatch stopwatch;
     try
     {
-        InterpreterDropQuery(drop_query, refresh_context).execute();
+        InterpreterDropQuery(drop_query, drop_context).execute();
     }
     catch (...)
     {
-        auto query_for_logging = drop_query->formatForLogging(refresh_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
+        auto query_for_logging = drop_query->formatForLogging(drop_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
         UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context, drop_query, nullptr, stopwatch.elapsedMilliseconds(), /*internal*/ true);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, drop_context, drop_query, nullptr, stopwatch.elapsedMilliseconds(), /*internal*/ true);
         LOG_ERROR(getLogger("StorageMaterializedView"),
             "{}: Failed to drop temporary table after refresh. Table {} is left behind and requires manual cleanup.",
             getStorageID().getFullTableName(), table_id.getFullTableName());
