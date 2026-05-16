@@ -213,6 +213,20 @@ while true; do
         echo "${S}[${I}/${COUNT}] PR #${NUMBER}: ${TITLE}${R}"
         echo "${S}==========================================${R}"
 
+        # Switch back to master before each claude invocation. The inner
+        # `/continue-pr` checks out the PR branch, and after it's done its
+        # work and pushed, we need to leave the cwd on a known branch so
+        # that the next iteration's `claude --print` finds the project-level
+        # `continue-pr` skill (which lives under `.claude/skills/` and so
+        # is only present on branches that carry it - notably *not* on
+        # backport branches like `backport/26.2/...`). `-f` discards any
+        # uncommitted state left behind by the previous PR's work; by this
+        # point everything that should persist has already been pushed.
+        if ! git checkout -f master 2>/dev/null; then
+            echo "${S}WARNING: git checkout master failed before PR #${NUMBER}; skipping${R}"
+            continue
+        fi
+
         # Tee the raw stream-json output to a file so we can both render it
         # live and, after the run, check whether the main model actually took
         # a turn. Without that check, model-side errors (e.g. usage limits)
