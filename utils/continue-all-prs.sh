@@ -6,6 +6,10 @@ AUTHOR="$(gh api user --jq '.login')"
 
 SHARDS=1
 SHARD=0
+# Number of consecutive PR runs that produce no assistant turn before the
+# script gives up. This almost always means a model-side problem such as a
+# usage limit, where only the small title-generation submodel still runs.
+MAX_EMPTY_STREAK=3
 
 # Bright magenta for script messages, to distinguish from Claude output
 S=$'\033[1;35m'
@@ -35,7 +39,19 @@ cleanup_round_tmp() {
 }
 trap cleanup_round_tmp EXIT
 
+# Bail out promptly on Ctrl+C / SIGTERM. Without this, when `claude` handles
+# SIGINT itself and exits cleanly, the outer `|| ...` clause swallows the
+# error and bash advances to the next PR - making the script feel unresponsive
+# to Ctrl+C.
+on_interrupt() {
+    echo ""
+    echo "${S}Interrupted, exiting.${R}" >&2
+    exit 130
+}
+trap on_interrupt INT TERM
+
 ROUND=0
+EMPTY_STREAK=0
 while true; do
     ROUND=$((ROUND + 1))
     echo "${S}##########################################${R}"
@@ -186,10 +202,19 @@ while true; do
         echo "${S}[${I}/${COUNT}] PR #${NUMBER}: ${TITLE}${R}"
         echo "${S}==========================================${R}"
 
+        # Tee the raw stream-json output to a file so we can both render it
+        # live and, after the run, check whether the main model actually took
+        # a turn. Without that check, model-side errors (e.g. usage limits)
+        # are silent: only the title-generation submodel runs, no `assistant`
+        # event is emitted, and the `result` event - which carries the error
+        # subtype - was dropped by the jq filter below.
+        RAW="$ROUND_TMP/pr_${NUMBER}.jsonl"
+        : > "$RAW"
         timeout 3600 claude --dangerously-skip-permissions --print --verbose \
             --output-format stream-json \
             "/continue-pr https://github.com/${REPO}/pull/${NUMBER}" \
             < /dev/null 2>&1 \
+            | tee "$RAW" \
             | jq --unbuffered -r '
                 if .type == "assistant" then
                     (.message.content[] |
@@ -200,8 +225,31 @@ while true; do
                     (.message.content[] |
                         if .type == "tool_result" then "<<< \(.content | tostring | .[0:300])\n"
                         else empty end)
+                elif .type == "result" then
+                    if (.is_error // false) or ((.subtype // "") | startswith("error")) then
+                        "\n!!! claude error (\(.subtype // "result")): \(((.result // .message // .error // .) | tostring)[0:800])\n"
+                    else empty end
                 else empty end' \
-            || echo "${S}WARNING: claude exited with code $? for PR #${NUMBER}, continuing...${R}"
+            || echo "${S}WARNING: claude pipeline exited with code $? for PR #${NUMBER}, continuing...${R}"
+
+        # An "assistant" event is emitted for every main-model turn. If none
+        # was produced, the model did not actually work on this PR. A handful
+        # of these in a row almost always means a usage limit or other
+        # API-level failure - keep going just burns through the PR list.
+        if grep -q '"type":"assistant"' "$RAW" 2>/dev/null; then
+            EMPTY_STREAK=0
+        else
+            EMPTY_STREAK=$((EMPTY_STREAK + 1))
+            echo "${S}NOTE: claude produced no assistant turns for PR #${NUMBER} (${EMPTY_STREAK}/${MAX_EMPTY_STREAK} consecutive empty runs).${R}"
+            if (( EMPTY_STREAK >= MAX_EMPTY_STREAK )); then
+                # ROUND_TMP is deleted by the EXIT trap, so copy the raw
+                # stream out before bailing so it can be inspected.
+                KEEP=$(mktemp -t "continue-all-prs-empty-pr${NUMBER}.XXXXXX.jsonl")
+                cp "$RAW" "$KEEP" 2>/dev/null || KEEP="$RAW"
+                echo "${S}Aborting: ${MAX_EMPTY_STREAK} PRs in a row produced no work. Most likely a usage limit was hit. Last raw stream is at ${KEEP}.${R}" >&2
+                exit 1
+            fi
+        fi
 
         echo ""
         echo "${S}Done with PR #${NUMBER}${R}"
