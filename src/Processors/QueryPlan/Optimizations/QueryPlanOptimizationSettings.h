@@ -81,6 +81,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_prewhere;
     bool read_in_order;
     bool distinct_in_order;
+    bool limit_by_in_order;
     bool optimize_sorting_by_input_stream_properties;
     bool aggregation_in_order;
     bool optimize_projection;
