@@ -90,6 +90,7 @@ CREATE TABLE table
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
                                 [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, enable_phrase_query_support = 0 | 1 ]
                             )
 )
 ENGINE = MergeTree
@@ -123,6 +124,7 @@ ALTER TABLE table
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
                                 [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, enable_phrase_query_support = 0 | 1 ]
                             )
 
 ```
@@ -296,6 +298,14 @@ Optional parameter `posting_list_block_size` (default: 1048576) specifies the si
 Optional parameter `posting_list_codec` (default: `none`) specifies the codec for posting list:
 - `none` - the posting lists are stored without additional compression.
 - `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size). Slows down SELECT queries, not recommended at the moment.
+
+:::note Experimental
+Optional parameter `enable_phrase_query_support` (default: `0`) enables an experimental phrase-search backend.
+When set to `1`, the index additionally stores per-token positions (a `.pos` substream) using the Roaringish encoding from [Searching 1.3 Billion Vector-Embedded Wikipedia Articles in 50ms](https://research.marqo.ai/blog/searching-1-3-billion-vector-embedded-wikipedia-articles-in-50ms).
+This allows `hasPhrase` queries to be answered exactly from the index without re-scanning the source column, which can be substantially faster on selective phrase queries.
+The trade-off is increased index size and slower index build / merge times.
+This feature is experimental and the on-disk layout may change in future versions.
+:::
 </details>
 
 *Index granularity.*
