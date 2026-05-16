@@ -63,6 +63,7 @@ SELECT COUNT(*) FROM (
 
 DROP TABLE tab;
 
+SET optimize_rewrite_has_to_in = 1;
 -- Regression test for LowCardinality(Nullable(T)) needle: rewriting has() to in() would
 -- change semantics on NULL values (and would also depend on transform_null_in for in()),
 -- while has() returns 0 for NULL regardless. The pass must not rewrite in this case.
