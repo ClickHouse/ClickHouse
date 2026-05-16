@@ -1,4 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-replicated-database
+-- no-replicated-database: auto-fill skips Replicated databases by design, so the
+-- ON CLUSTER assertions only hold under non-replicated database engines.
 
 SET distributed_ddl_output_mode='none';
 SET allow_experimental_automatic_fill_on_cluster_mode = false;
