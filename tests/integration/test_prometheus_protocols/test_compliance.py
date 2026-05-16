@@ -562,6 +562,101 @@ UNSUPPORTED_DEFERRED = "unsupported/deferred categories"
 EXPECTATION_MISMATCHES = "reference or should-fail mismatches"
 
 
+def _query_without_strings_or_label_matchers(query):
+    result = []
+    in_string = False
+    escaped = False
+    label_matcher_depth = 0
+
+    for ch in query:
+        if in_string:
+            result.append(" ")
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+            result.append(" ")
+            continue
+
+        if ch == "{":
+            label_matcher_depth += 1
+            result.append(" ")
+            continue
+
+        if ch == "}" and label_matcher_depth:
+            label_matcher_depth -= 1
+            result.append(" ")
+            continue
+
+        if label_matcher_depth:
+            result.append(" ")
+            continue
+
+        result.append(ch)
+
+    return "".join(result)
+
+
+def _previous_non_space(text, index):
+    for i in range(index - 1, -1, -1):
+        if not text[i].isspace():
+            return i
+    return None
+
+
+def _next_non_space(text, index):
+    for i in range(index + 1, len(text)):
+        if not text[i].isspace():
+            return i
+    return None
+
+
+def _is_binary_minus(text, index):
+    previous_index = _previous_non_space(text, index)
+    next_index = _next_non_space(text, index)
+    if previous_index is None or next_index is None:
+        return False
+
+    previous = text[previous_index]
+    next_ch = text[next_index]
+    if previous in "+-*/%^=<>!,([{" or next_ch in "+-*/%^=<>!,)]}":
+        return False
+
+    previous_previous_index = _previous_non_space(text, previous_index)
+    if (
+        previous in "eE"
+        and previous_previous_index is not None
+        and text[previous_previous_index].isdigit()
+        and next_ch.isdigit()
+    ):
+        return False
+
+    return True
+
+
+def _has_binary_operator(query):
+    query = _query_without_strings_or_label_matchers(query)
+    i = 0
+    while i < len(query):
+        if query.startswith(("==", "!=", "<=", ">="), i):
+            return True
+
+        ch = query[i]
+        if ch in "+*/%^<>":
+            return True
+        if ch == "-" and _is_binary_minus(query, i):
+            return True
+        i += 1
+
+    return False
+
+
 def _feature_category(query):
     query_lower = query.lower()
     if "histogram_quantile" in query_lower or "_bucket" in query_lower:
@@ -580,7 +675,7 @@ def _feature_category(query):
         return "range functions"
     if " on(" in query_lower or " group_left" in query_lower or " group_right" in query_lower:
         return "vector matching"
-    if any(op in query_lower for op in ("+", "-", "*", "/", "%", "^", "==", "!=", "<=", ">=")):
+    if _has_binary_operator(query):
         return "scalar/vector binary operators"
     return "scalar/vector general"
 
@@ -590,6 +685,17 @@ def _unsupported_category(query):
     if feature == "histogram":
         return "unsupported: histogram"
     return f"unsupported: {feature}"
+
+
+def test_feature_category_uses_promql_operator_tokens():
+    assert _feature_category('demo_metric{instance="a-b"}') == "scalar/vector general"
+    assert _feature_category("1.23e-3") == "scalar/vector general"
+    assert _feature_category('demo_metric{instance!="a"}') == "scalar/vector general"
+    assert _feature_category("demo_metric < 1") == "scalar/vector binary operators"
+    assert _feature_category("demo_metric > 1") == "scalar/vector binary operators"
+    assert _feature_category("demo_metric <= 1") == "scalar/vector binary operators"
+    assert _feature_category("demo_metric >= 1") == "scalar/vector binary operators"
+    assert _feature_category("demo_metric - 1") == "scalar/vector binary operators"
 
 
 class ComplianceResult:
