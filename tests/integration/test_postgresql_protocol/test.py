@@ -546,14 +546,16 @@ def test_restricted_user_cannot_bypass_grants(started_cluster):
     )
     cur = restricted.cursor()
 
-    # The internal pg_type view should be accessible
+    # The internal pg_type view should be accessible.
+    # ClickHouse currently sends scalar values over the PostgreSQL protocol in
+    # text mode, so result[0] arrives as a string from psycopg.
     cur.execute("SELECT count() FROM pg_type")
     result = cur.fetchone()
-    assert result[0] > 0
+    assert int(result[0]) > 0
 
     # SELECT should work
     cur.execute("SELECT 1")
-    assert cur.fetchone() == (1,)
+    assert int(cur.fetchone()[0]) == 1
 
     # CREATE TABLE should be denied
     with pytest.raises(Exception) as exc:

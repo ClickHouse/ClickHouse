@@ -21,7 +21,10 @@ class Program
         var parsed = Parser.Default.ParseArguments<Program>(args);
         var options = parsed.Value;
 
-        var connectionString = $"Host={options.Host};Port={options.Port};Username={options.Username};Password={options.Password};Database=default;";
+        // Server Compatibility Mode=NoTypeLoading: Npgsql 9+ otherwise issues a
+        // complex `pg_catalog` introspection query on connect (joining pg_type,
+        // pg_class, pg_proc, pg_range, pg_namespace) that ClickHouse cannot run.
+        var connectionString = $"Host={options.Host};Port={options.Port};Username={options.Username};Password={options.Password};Database=default;Server Compatibility Mode=NoTypeLoading;";
 
         try
         {
