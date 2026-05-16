@@ -1,0 +1,6 @@
+non_zero_exit_propagated
+workdir_clean
+config_clean
+sql_clean
+empty_output_detected
+unknown_driver_detected

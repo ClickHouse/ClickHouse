@@ -113,16 +113,25 @@ String UserDefinedExecutableFunctionDriverInvoker::runCreateCommand(
         stderr_buf.finalize();
     }
 
+    /// `tryWait` returns the actual exit code without throwing on non-zero codes,
+    /// so we can decorate the resulting exception with the full driver stderr.
+    int retcode;
     try
     {
-        process->wait();
+        retcode = process->tryWait();
     }
-    catch (...)
+    catch (Exception & e)
     {
-        throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
-            "Driver '{}' failed for function '{}'. Stderr: {}",
-            driver.name, function_name, stderr_output);
+        e.addMessage(fmt::format(
+            "while waiting for driver '{}' create_command for function '{}'. Stderr: {}",
+            driver.name, function_name, stderr_output));
+        throw;
     }
+
+    if (retcode != 0)
+        throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
+            "Driver '{}' create_command for function '{}' exited with code {}. Stderr: {}",
+            driver.name, function_name, retcode, stderr_output);
 
     if (generated_config.empty())
         throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
@@ -168,15 +177,23 @@ void UserDefinedExecutableFunctionDriverInvoker::runDropCommand(
         stderr_buf.finalize();
     }
 
+    int retcode = -1;
     try
     {
-        process->wait();
+        retcode = process->tryWait();
     }
     catch (...)
     {
-        LOG_WARNING(log, "Driver '{}' drop_command failed for function '{}'. Stderr: {}",
-            driver.name, function_name, stderr_output);
+        tryLogCurrentException(log,
+            fmt::format("while waiting for driver '{}' drop_command for function '{}'. Stderr: {}",
+                driver.name, function_name, stderr_output));
+        return;
     }
+
+    if (retcode != 0)
+        throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
+            "Driver '{}' drop_command for function '{}' exited with code {}. Stderr: {}",
+            driver.name, function_name, retcode, stderr_output);
 }
 
 }

@@ -174,14 +174,25 @@ namespace
 
             std::filesystem::create_directories(working_dir);
 
-            String generated_config = UserDefinedExecutableFunctionDriverInvoker::runCreateCommand(
-                *driver,
-                function_name,
-                return_type,
-                args_signature,
-                query.source_code,
-                working_dir,
-                engine_argument_values);
+            String generated_config;
+            try
+            {
+                generated_config = UserDefinedExecutableFunctionDriverInvoker::runCreateCommand(
+                    *driver,
+                    function_name,
+                    return_type,
+                    args_signature,
+                    query.source_code,
+                    working_dir,
+                    engine_argument_values);
+            }
+            catch (...)
+            {
+                /// Driver failed - leave no half-baked state behind on disk.
+                std::error_code ec_cleanup;
+                std::filesystem::remove_all(working_dir, ec_cleanup);
+                throw;
+            }
 
             const String extension = pickExtensionForGeneratedConfig(generated_config);
             const String final_path = driverDynamicConfigPath(current_context, function_name, extension);
@@ -198,6 +209,7 @@ namespace
             {
                 std::error_code ec_cleanup;
                 std::filesystem::remove(tmp_path, ec_cleanup);
+                std::filesystem::remove_all(working_dir, ec_cleanup);
                 throw;
             }
         }
