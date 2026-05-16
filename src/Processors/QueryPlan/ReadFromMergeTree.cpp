@@ -2043,23 +2043,28 @@ void ReadFromMergeTree::buildIndexes(
     NamesAndTypesList dummy_names_and_types;
     indexes->key_condition_rpn_template = KeyCondition{filter_dag, query_context, {}, std::make_shared<ExpressionActions>(ActionsDAG(dummy_names_and_types))};
 
-    if (metadata_snapshot->hasPartitionKey())
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
-        auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
-        auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context));
+        const auto data_settings = data.getSettings();
 
-        bool skip_partition_analysis = skip_partition_pruning_ || !settings[Setting::use_partition_pruning];
-        indexes->minmax_idx_condition.emplace(
-            filter_dag, query_context, minmax_columns_names, minmax_expression_actions,
-            /* single_point_ = */ false,
-            /* skip_analysis_ = */ skip_partition_analysis);
-        indexes->partition_pruner.emplace(
-            metadata_snapshot,
-            filter_dag,
-            query_context,
-            false /* strict */,
-            skip_partition_analysis);
+        if (auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings); !minmax_columns.empty())
+        {
+            auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, data_settings, ExpressionActionsSettings(query_context));
+            indexes->minmax_idx_condition.emplace(
+                filter_dag, query_context, minmax_columns.getNames(), minmax_expression_actions,
+                /* single_point_ = */ false,
+                /* skip_analysis_ = */ skip_partition_pruning_ || !settings[Setting::use_partition_pruning] || !settings[Setting::use_skip_indexes]);
+        }
+
+        if (metadata_snapshot->hasPartitionKey())
+        {
+            indexes->partition_pruner.emplace(
+                metadata_snapshot,
+                filter_dag,
+                query_context,
+                /*strict=*/false,
+                /*skip_analysis=*/skip_partition_pruning_ || !settings[Setting::use_partition_pruning]);
+        }
     }
 
     indexes->part_values
@@ -2285,7 +2290,7 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
             partition_expr_names.begin(), partition_expr_names.end(),
             [&](const auto & expr_name) { return sorting_key_set.contains(expr_name); });
 
-        auto partition_required_columns = MergeTreeData::getMinMaxColumnsNames(partition_key);
+        auto partition_required_columns = partition_key.expression->getRequiredColumns();
         bool columns_match = std::all_of(
             partition_required_columns.begin(), partition_required_columns.end(),
             [&](const auto & col) { return sorting_key_set.contains(col); });
@@ -3860,8 +3865,8 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
     {
         case ReadFromMergeTree::IndexType::None:
             return "None";
-        case ReadFromMergeTree::IndexType::PartitionMinMax:
-            return "Partition Min-Max";
+        case ReadFromMergeTree::IndexType::MinMax:
+            return "Min-Max";
         case ReadFromMergeTree::IndexType::Partition:
             return "Partition";
         case ReadFromMergeTree::IndexType::Statistics:
