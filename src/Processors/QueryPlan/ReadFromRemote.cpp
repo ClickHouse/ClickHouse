@@ -867,7 +867,8 @@ static ASTPtr makeExplainPipeline(bool header, bool distributed, bool compact_re
     explain_settings->is_standalone = false;
     explain_settings->changes.emplace_back("header", int(header));
     explain_settings->changes.emplace_back("distributed", int(distributed));
-    explain_settings->changes.emplace_back("compact_repeated_processor_chains", int(compact_repeated_processor_chains));
+    if (compact_repeated_processor_chains)
+        explain_settings->changes.emplace_back("compact_repeated_processor_chains", 1);
 
     auto explain_query = make_intrusive<ASTExplainQuery>(ASTExplainQuery::ExplainKind::QueryPipeline);
     explain_query->setExplainedQuery(query);
