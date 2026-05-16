@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 """
-Driver for executable user-defined functions whose body is a C expression.
+Shared implementation for C-body executable user-defined function drivers.
 
 Invocation:
-    c_function_body_driver.py [create|drop] --name NAME --return TYPE --args "x UInt8, y DateTime"
+    c_driver_common.py --runtime docker [create|drop] --name NAME --return TYPE --args "x UInt8, y DateTime"
 
 When called with `create`, reads the C function body from stdin and:
 
   1. Generates a wrapper.c that defines the user function and reads/writes
      chunked `Buffers` blocks on stdin/stdout, calling the user function for each row.
-  2. Compiles the wrapper inside a sandboxed Docker container.
+  2. Compiles the wrapper.
   3. Prints to stdout an XML configuration for an `executable_pool` UDF whose
-     command runs the compiled binary inside another sandboxed Docker
-     container with no network access, read-only root filesystem, dropped
-     capabilities, and as the server OS user.
+     command runs the compiled binary using the selected runtime.
 
 When called with `drop`, this driver has no extra work to do besides what
 ClickHouse does itself (delete the dynamic config file and remove the working
@@ -22,7 +20,7 @@ directory).
 
 import argparse
 import os
-import shutil
+import shlex
 import subprocess
 import sys
 from html import escape as xml_escape
@@ -688,14 +686,6 @@ def run(cmd, **kwargs):
     return result
 
 
-def docker_available():
-    try:
-        result = subprocess.run(["docker", "version"], capture_output=True)
-        return result.returncode == 0
-    except FileNotFoundError:
-        return False
-
-
 def docker_image_for_build():
     return os.environ.get("CLICKHOUSE_C_DRIVER_BUILD_IMAGE", "gcc:14")
 
@@ -714,6 +704,14 @@ def docker_resource_limits():
 
 def docker_user():
     return os.environ.get("CLICKHOUSE_C_DRIVER_DOCKER_USER", f"{os.getuid()}:{os.getgid()}")
+
+
+def gvisor_runtime():
+    return os.environ.get("CLICKHOUSE_C_DRIVER_GVISOR_RUNTIME", "runsc")
+
+
+def shell_join(args):
+    return " ".join(shlex.quote(str(arg)) for arg in args)
 
 
 def compile_with_docker(work_dir):
@@ -738,41 +736,54 @@ def compile_with_docker(work_dir):
 
 
 def compile_with_cc(work_dir):
-    """Fallback compilation when Docker is unavailable - direct `cc` invocation."""
+    """Compile wrapper.c -> user_func with the host C compiler."""
     cmd = ["cc", "-O3", "-march=native", "-o", os.path.join(work_dir, "user_func"), os.path.join(work_dir, "wrapper.c")]
     run(cmd)
 
 
-def generate_xml_config(function_name, return_type, args, work_dir):
-    """Produce an executable_pool UDF configuration that invokes the compiled binary
-    inside a sandboxed Docker container, or directly if `CLICKHOUSE_C_DRIVER_FORCE_LOCAL=1`."""
+def should_compile_locally(runtime):
+    return (
+        runtime == "unsafe"
+        or os.environ.get("CLICKHOUSE_C_DRIVER_FORCE_LOCAL") == "1"
+        or os.environ.get("CLICKHOUSE_C_DRIVER_COMPILE_LOCAL") == "1"
+    )
+
+
+def runtime_command(runtime, work_dir):
+    if runtime == "unsafe" or os.environ.get("CLICKHOUSE_C_DRIVER_FORCE_LOCAL") == "1":
+        return os.path.join(work_dir, "user_func"), 0
+
+    docker_image = docker_image_for_run()
+    limits = docker_resource_limits()
+    user = docker_user()
+    # Tmp dir inside container is needed for some libc init even on a static binary.
+    cmd = [
+        "docker", "run", "--rm", "-i",
+        "--network=none",
+        "--read-only",
+        "--tmpfs=/tmp:rw,size=16m",
+        "--cap-drop=ALL",
+        "--user", user,
+        f"--memory={limits['memory']}",
+        f"--cpus={limits['cpus']}",
+        f"--pids-limit={limits['pids']}",
+        "-v", f"{work_dir}/user_func:/user_func:ro",
+    ]
+    if runtime == "gvisor":
+        cmd.append(f"--runtime={gvisor_runtime()}")
+    cmd.extend([docker_image, "/user_func"])
+    return shell_join(cmd), 0
+
+
+def generate_xml_config(function_name, return_type, args, work_dir, runtime):
+    """Produce an executable_pool UDF configuration for the selected runtime."""
     arguments_xml = "".join(
         "        <argument><name>{0}</name><type>{1}</type></argument>\n".format(
             xml_escape(name), xml_escape(ty))
         for name, ty in args
     )
 
-    if os.environ.get("CLICKHOUSE_C_DRIVER_FORCE_LOCAL") == "1":
-        runtime_command = f"{work_dir}/user_func"
-    else:
-        docker_image = docker_image_for_run()
-        limits = docker_resource_limits()
-        user = docker_user()
-        # Tmp dir inside container is needed for some libc init even on a static binary.
-        runtime_command = (
-            f"docker run --rm -i "
-            f"--network=none "
-            f"--read-only "
-            f"--tmpfs=/tmp:rw,size=16m "
-            f"--cap-drop=ALL "
-            f"--user {user} "
-            f"--memory={limits['memory']} "
-            f"--cpus={limits['cpus']} "
-            f"--pids-limit={limits['pids']} "
-            f"-v {work_dir}/user_func:/user_func:ro "
-            f"{docker_image} "
-            f"/user_func"
-        )
+    command, execute_direct = runtime_command(runtime, work_dir)
 
     return f"""<functions>
     <function>
@@ -780,8 +791,8 @@ def generate_xml_config(function_name, return_type, args, work_dir):
         <name>{xml_escape(function_name)}</name>
         <return_type>{xml_escape(return_type)}</return_type>
 {arguments_xml}        <format>Buffers</format>
-        <command>{xml_escape(runtime_command)}</command>
-        <execute_direct>0</execute_direct>
+        <command>{xml_escape(command)}</command>
+        <execute_direct>{execute_direct}</execute_direct>
         <pool_size>64</pool_size>
         <send_chunk_header>1</send_chunk_header>
         <command_read_timeout>10000</command_read_timeout>
@@ -801,7 +812,7 @@ def cmd_create(args):
     with open(wrapper_path, "w") as f:
         f.write(generate_wrapper_c(args.name, getattr(args, "return"), parsed_args, body))
 
-    if os.environ.get("CLICKHOUSE_C_DRIVER_FORCE_LOCAL") == "1" or not docker_available():
+    if should_compile_locally(args.runtime):
         compile_with_cc(work_dir)
     else:
         compile_with_docker(work_dir)
@@ -809,7 +820,7 @@ def cmd_create(args):
     if not os.path.exists(os.path.join(work_dir, "user_func")):
         sys.exit("Compilation produced no binary")
 
-    sys.stdout.write(generate_xml_config(args.name, getattr(args, "return"), parsed_args, work_dir))
+    sys.stdout.write(generate_xml_config(args.name, getattr(args, "return"), parsed_args, work_dir, args.runtime))
 
 
 def cmd_drop(args):
@@ -820,6 +831,7 @@ def cmd_drop(args):
 
 def main():
     parser = argparse.ArgumentParser(description="Driver for C-body executable user-defined functions.")
+    parser.add_argument("--runtime", choices=("docker", "gvisor", "unsafe"), default="docker")
     subparsers = parser.add_subparsers(dest="action", required=True)
 
     common = argparse.ArgumentParser(add_help=False)

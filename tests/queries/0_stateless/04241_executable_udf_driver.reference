@@ -1,3 +1,11 @@
+-- driver runtime commands
+docker_runtime_present
+docker_gvisor_runtime_absent
+docker_execute_shell
+gvisor_runtime_present
+gvisor_execute_shell
+unsafe_runtime_direct
+unsafe_docker_absent
 -- create + call
 42
 -- dynamic config exists after create
@@ -24,6 +32,9 @@ hello world
 0:1:2:3:4:
 string_allocator_present
 string_stdio_serde_absent
+-- unsafe driver direct call
+42
+unsafe_dynamic_runtime_direct
 -- if not exists does not invoke driver
 3
 -- attach-style recreate after config loss
@@ -40,3 +51,6 @@ string_config_removed
 string_workdir_metadata_removed
 string_workdir_removed
 string_sql_removed
+unsafe_config_removed
+unsafe_workdir_metadata_removed
+unsafe_sql_removed

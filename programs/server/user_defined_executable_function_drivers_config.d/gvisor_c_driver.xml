@@ -1,0 +1,29 @@
+<clickhouse>
+    <driver>
+        <!-- Source-tree example only. It is not installed by packages. -->
+        <!-- Name of the driver as it appears in `CREATE FUNCTION ... ENGINE = GVisorC(...)`. -->
+        <name>GVisorC</name>
+
+        <!-- The driver receives the function name, return type, argument signature, and body. -->
+        <!-- Relative paths are resolved against this configuration file. -->
+        <create_command>../user_defined_executable_function_drivers/gvisor_c_create.sh</create_command>
+
+        <drop_command>../user_defined_executable_function_drivers/gvisor_c_drop.sh</drop_command>
+
+        <!--
+            This driver does not declare any additional engine arguments. Arguments declared here
+            would appear as e.g. ENGINE = GVisorC(opt_level='2') and would be forwarded to
+            the driver.
+        -->
+        <!-- <engine_arguments> -->
+        <!--     <opt_level><required>false</required></opt_level> -->
+        <!-- </engine_arguments> -->
+
+        <!-- Environment variables exported when invoking the driver. -->
+        <env>
+            <CLICKHOUSE_C_DRIVER_MEMORY>256m</CLICKHOUSE_C_DRIVER_MEMORY>
+            <CLICKHOUSE_C_DRIVER_CPUS>1.0</CLICKHOUSE_C_DRIVER_CPUS>
+            <CLICKHOUSE_C_DRIVER_GVISOR_RUNTIME>runsc</CLICKHOUSE_C_DRIVER_GVISOR_RUNTIME>
+        </env>
+    </driver>
+</clickhouse>
