@@ -1,6 +1,6 @@
 #include "config.h"
 
-#if USE_NLP
+#if USE_LIBSTEMMER
 
 #include <algorithm>
 #include <cstring>
@@ -10,7 +10,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -25,17 +24,11 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_nlp_functions;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -158,17 +151,7 @@ class FunctionStem : public IFunction
 public:
     static constexpr auto name = "stem";
 
-    static FunctionPtr create(ContextPtr context)
-    {
-        if (!context->getSettingsRef()[Setting::allow_experimental_nlp_functions])
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Natural language processing function '{}' is experimental. "
-                "Set `allow_experimental_nlp_functions` setting to enable it",
-                name);
-
-        return std::make_shared<FunctionStem>();
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStem>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -293,4 +276,4 @@ Nullable and LowCardinality variants of String and FixedString are supported.
 
 }
 
-#endif
+#endif /// USE_LIBSTEMMER

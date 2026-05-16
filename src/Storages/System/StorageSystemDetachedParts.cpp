@@ -274,8 +274,8 @@ StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_i
         {"max_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()), "The maximum number of data parts that make up the current part after merging."},
         {"level",            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>()), "Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts."},
     }});
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemDetachedParts::createVirtuals()

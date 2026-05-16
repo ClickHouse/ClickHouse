@@ -1,6 +1,7 @@
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
 
 #include <Common/logger_useful.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/QueryLog.h>
@@ -34,6 +35,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 min_execution_speed;
     extern const SettingsUInt64 min_execution_speed_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -51,7 +53,7 @@ IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(const ASTPtr & qu
 
 IInterpreterUnionOrSelectQuery::IInterpreterUnionOrSelectQuery(
     const ASTPtr & query_ptr_, const ContextMutablePtr & context_, const SelectQueryOptions & options_)
-    : query_ptr(query_ptr_), context(context_), options(options_), max_streams(context->getSettingsRef()[Setting::max_threads])
+    : query_ptr(query_ptr_), context(context_), options(options_), max_streams(getMaxThreadsForAvailableMemory(context->getSettingsRef()[Setting::max_threads], context->getSettingsRef()[Setting::max_threads_min_free_memory_per_thread]))
 {
     /// FIXME All code here will work with the old analyzer, however for views over Distributed tables
     /// it's possible that the analyzer will be enabled in ::getQueryProcessingStage method

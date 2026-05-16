@@ -135,8 +135,8 @@ StorageArrowFlight::StorageArrowFlight(
         storage_metadata.setColumns(columns_);
 
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageArrowFlight::createVirtuals()

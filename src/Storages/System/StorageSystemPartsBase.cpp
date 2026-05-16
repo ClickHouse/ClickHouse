@@ -1,3 +1,4 @@
+#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
@@ -86,7 +87,7 @@ StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_stat
 MergeTreeData::ProjectionPartsVector
 StoragesInfo::getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const
 {
-    if (data->getInMemoryMetadataPtr()->projections.empty())
+    if (data->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->projections.empty())
         return {};
 
     using State = MergeTreeData::DataPartState;
@@ -151,6 +152,8 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
             {
                 String database_name = (*database_column_for_filter)[i].safeGet<String>();
                 const DatabasePtr & database = databases.at(database_name);
+                const bool check_access_for_tables_in_db
+                    = check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
                 offsets[i] = offsets[i - 1];
                 for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
@@ -173,7 +176,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                     if (!dynamic_cast<MergeTreeData *>(storage.get()))
                         continue;
 
-                    if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
+                    if (check_access_for_tables_in_db && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                         continue;
 
                     storages[storage_uuid] = storage;
@@ -359,8 +362,8 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Colu
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemPartsBase::createVirtuals()
