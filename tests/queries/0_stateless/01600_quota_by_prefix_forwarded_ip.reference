@@ -6,3 +6,6 @@ exceeded
 1
 --- Test the masked quota key for forwarded IP ---
 1.2.0.0
+--- Test /0 prefix collapses all forwarded IPs into one quota bucket ---
+exceeded
+1	0.0.0.0

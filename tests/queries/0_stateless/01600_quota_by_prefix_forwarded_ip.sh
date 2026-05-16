@@ -78,6 +78,31 @@ WHERE quota_name = 'quota_by_forwarded_ip_${CLICKHOUSE_DATABASE}'
 FORMAT TSV;
 " | grep -o "1.2.0.0"
 
+echo '--- Test /0 prefix collapses all forwarded IPs into one quota bucket ---'
+
+${CLICKHOUSE_CLIENT} --query "
+DROP QUOTA IF EXISTS quota_by_forwarded_ip_${CLICKHOUSE_DATABASE};
+CREATE QUOTA quota_by_forwarded_ip_${CLICKHOUSE_DATABASE}
+    KEYED BY forwarded_ip_address
+    IPV4_PREFIX_BITS 0
+    FOR RANDOMIZED INTERVAL 1 YEAR MAX QUERIES = 2
+    TO quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE};
+"
+
+# Two different forwarded IPs must share the same quota bucket because /0 masks every address to 0.0.0.0.
+${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 1.2.3.4' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE}" -d "SELECT 1" > /dev/null
+${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 9.8.7.6' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE}" -d "SELECT 1" > /dev/null
+# The third request from yet another IP must fail because the shared bucket is already exhausted.
+${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 200.100.50.25' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE}" -d "SELECT 1" | grep -oF 'exceeded'
+
+# Confirm both source IPs ended up under the same masked quota_key.
+${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 1.2.3.4' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE}" -d "
+SELECT count(DISTINCT quota_key), any(quota_key)
+FROM system.quota_usage
+WHERE quota_name = 'quota_by_forwarded_ip_${CLICKHOUSE_DATABASE}'
+FORMAT TSV;
+" 2>/dev/null
+
 ${CLICKHOUSE_CLIENT} --query "
 DROP QUOTA IF EXISTS quota_by_ip_${CLICKHOUSE_DATABASE};
 DROP QUOTA IF EXISTS quota_by_forwarded_ip_${CLICKHOUSE_DATABASE};
