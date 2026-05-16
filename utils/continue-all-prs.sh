@@ -210,7 +210,13 @@ while true; do
         # subtype - was dropped by the jq filter below.
         RAW="$ROUND_TMP/pr_${NUMBER}.jsonl"
         : > "$RAW"
-        timeout 3600 claude --dangerously-skip-permissions --print --verbose \
+        # `timeout --foreground` keeps `claude` in the same process group as
+        # bash, so the terminal driver delivers Ctrl+C / `SIGINT` to `claude`
+        # too. Without `--foreground`, `timeout` puts the child in a fresh
+        # process group, `SIGINT` only reaches bash + the rest of the
+        # pipeline, the pipeline keeps waiting on `claude`, and bash can
+        # never get to the `on_interrupt` trap.
+        timeout --foreground 3600 claude --dangerously-skip-permissions --print --verbose \
             --output-format stream-json \
             "/continue-pr https://github.com/${REPO}/pull/${NUMBER}" \
             < /dev/null 2>&1 \
