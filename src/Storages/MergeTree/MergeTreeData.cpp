@@ -228,6 +228,7 @@ namespace Setting
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_statistics_cache;
     extern const SettingsBool use_partition_pruning;
+    extern const SettingsBool use_skip_indexes;
 }
 
 namespace MergeTreeSetting
@@ -245,6 +246,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
     extern const MergeTreeSettingsAlterColumnSecondaryIndexMode alter_column_secondary_index_mode;
     extern const MergeTreeSettingsUInt64 concurrent_part_removal_threshold;
+    extern const MergeTreeSettingsUInt64 concurrent_part_removal_threshold_for_remote_disk;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsBool disable_freeze_partition_for_zero_copy_replication;
     extern const MergeTreeSettingsString disk;
@@ -297,6 +299,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_bytes_to_prewarm_caches;
     extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
+    extern const MergeTreeSettingsMergeTreePartMinMaxIndexColumns part_minmax_index_columns;
     extern const MergeTreeSettingsBool allow_commit_order_projection;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
@@ -1256,27 +1259,37 @@ ExpressionActionsPtr getCombinedIndicesExpression(
 
 }
 
-ExpressionActionsPtr MergeTreeData::getMinMaxExpr(const KeyDescription & partition_key, const ExpressionActionsSettings & settings)
+ExpressionActionsPtr MergeTreeData::getMinMaxExpr(
+    const KeyDescription & partition_key,
+    const MergeTreeSettingsPtr & data_settings,
+    const ExpressionActionsSettings & expr_settings)
 {
-    NamesAndTypesList partition_key_columns;
-    if (!partition_key.column_names.empty())
-        partition_key_columns = partition_key.expression->getRequiredColumnsWithTypes();
-
-    return std::make_shared<ExpressionActions>(ActionsDAG(partition_key_columns), settings);
+    return std::make_shared<ExpressionActions>(ActionsDAG(getMinMaxColumns(partition_key, data_settings)), expr_settings);
 }
 
-Names MergeTreeData::getMinMaxColumnsNames(const KeyDescription & partition_key)
+NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings, MergeTreePartMinMaxIndexColumns up_to)
 {
-    if (!partition_key.column_names.empty())
-        return partition_key.expression->getRequiredColumns();
-    return {};
+    NamesAndTypesList columns;
+
+    const MergeTreePartMinMaxIndexColumns setting_level = (*data_settings)[MergeTreeSetting::part_minmax_index_columns];
+    const auto level = std::min(setting_level, up_to);
+
+    if (level >= MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY)
+        if (!partition_key.column_names.empty())
+            columns = partition_key.expression->getRequiredColumnsWithTypes();
+
+    if (level >= MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET)
+    {
+        columns.emplace_back(BlockNumberColumn::name, BlockNumberColumn::type);
+        columns.emplace_back(BlockOffsetColumn::name, BlockOffsetColumn::type);
+    }
+
+    return columns;
 }
 
-DataTypes MergeTreeData::getMinMaxColumnsTypes(const KeyDescription & partition_key)
+NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partition_key, const MergeTreeSettingsPtr & data_settings)
 {
-    if (!partition_key.column_names.empty())
-        return partition_key.expression->getRequiredColumnsWithTypes().getTypes();
-    return {};
+    return getMinMaxColumns(partition_key, data_settings, MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET);
 }
 
 ExpressionActionsPtr
@@ -1299,7 +1312,7 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
     checkKeyExpression(*new_partition_key.expression, new_partition_key.sample_block, "Partition", allow_nullable_key);
 
     /// Add all columns used in the partition key to the min-max index.
-    DataTypes minmax_idx_columns_types = getMinMaxColumnsTypes(new_partition_key);
+    const auto minmax_columns = getMinMaxColumns(new_partition_key, getSettings());
 
     /// Try to find the date column in columns used by the partition key (a common case).
     /// If there are no - DateTime or DateTime64 would also suffice.
@@ -1307,9 +1320,10 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
     bool has_date_column = false;
     bool has_datetime_column = false;
 
-    for (size_t i = 0; i < minmax_idx_columns_types.size(); ++i)
+    Int64 i = 0;
+    for (const auto & [_, type] : minmax_columns)
     {
-        if (isDate(minmax_idx_columns_types[i]))
+        if (isDate(type))
         {
             if (!has_date_column)
             {
@@ -1322,14 +1336,14 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
                 minmax_idx_date_column_pos = -1;
             }
         }
+        ++i;
     }
     if (!has_date_column)
     {
-        for (size_t i = 0; i < minmax_idx_columns_types.size(); ++i)
+        i = 0;
+        for (const auto & [_, type] : minmax_columns)
         {
-            if (isDateTime(minmax_idx_columns_types[i])
-                || isDateTime64(minmax_idx_columns_types[i])
-            )
+            if (isDateTime(type) || isDateTime64(type))
             {
                 if (!has_datetime_column)
                 {
@@ -1342,6 +1356,7 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
                     minmax_idx_time_column_pos = -1;
                 }
             }
+            ++i;
         }
     }
 }
@@ -3555,7 +3570,17 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
         }
     };
 
-    if (parts_to_remove.size() <= (*settings)[MergeTreeSetting::concurrent_part_removal_threshold])
+    /// On remote disks each part removal is typically one network round-trip,
+    /// so serial removal of even a moderate number of parts can take tens of seconds.
+    /// Use a lower threshold to enter the parallel path in that case.
+    const bool any_part_on_remote_disk = std::ranges::any_of(
+        parts_to_remove, [](const auto & part) { return part->isStoredOnRemoteDisk(); });
+
+    const UInt64 concurrent_threshold = any_part_on_remote_disk
+        ? (*settings)[MergeTreeSetting::concurrent_part_removal_threshold_for_remote_disk]
+        : (*settings)[MergeTreeSetting::concurrent_part_removal_threshold];
+
+    if (parts_to_remove.size() <= concurrent_threshold)
     {
         remove_single_thread();
         return;
@@ -3707,7 +3732,8 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
         /// It may happen that we have a huge part covering thousands small parts.
         /// In this case, we will get a huge range that will be process by only one thread causing really long tail latency.
         /// Let's try to exclude such parts in order to get smaller tasks for thread pool and more uniform distribution.
-        if ((*settings)[MergeTreeSetting::concurrent_part_removal_threshold] < parts_in_range.size() &&
+        /// `concurrent_threshold` is `concurrent_part_removal_threshold_for_remote_disk` when any part is on a remote disk.
+        if (concurrent_threshold < parts_in_range.size() &&
             split_times < (*settings)[MergeTreeSetting::zero_copy_concurrent_part_removal_max_split_times])
         {
             auto smaller_parts_pred = [&range](const DataPartPtr & part)
@@ -8777,7 +8803,7 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(
         if (column_name == name)
             return true;
 
-    for (const auto & name : getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()))
+    for (const auto & [name, _] : getMinMaxColumns(metadata_snapshot->getPartitionKey(), getSettings()))
         if (column_name == name)
             return true;
 
@@ -8848,25 +8874,34 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     DataTypes minmax_columns_types;
     if (filter_dag)
     {
-        if (metadata_snapshot->hasPartitionKey())
+        const auto & partition_key = metadata_snapshot->getPartitionKey();
+        const auto data_settings = getSettings();
+
+        if (auto minmax_columns = getMinMaxColumns(partition_key, data_settings); !minmax_columns.empty())
         {
-            const auto & partition_key = metadata_snapshot->getPartitionKey();
-            auto minmax_columns_names = getMinMaxColumnsNames(partition_key);
-            minmax_columns_types = getMinMaxColumnsTypes(partition_key);
+            minmax_columns_types = minmax_columns.getTypes();
 
             ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context);
-            bool skip_partition_analysis = !query_context->getSettingsRef()[Setting::use_partition_pruning];
+            const auto & query_settings = query_context->getSettingsRef();
+
             minmax_idx_condition.emplace(
-                inverted_dag, query_context, minmax_columns_names,
-                getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context)),
-                /* single_point_ = */ false,
-                /* skip_analysis_ = */ skip_partition_analysis);
+                inverted_dag, query_context, minmax_columns.getNames(),
+                getMinMaxExpr(partition_key, data_settings, ExpressionActionsSettings(query_context)),
+                /*single_point_=*/false,
+                /*skip_analysis_=*/!query_settings[Setting::use_partition_pruning] || !query_settings[Setting::use_skip_indexes]);
+        }
+
+        if (metadata_snapshot->hasPartitionKey())
+        {
+            ActionsDAGWithInversionPushDown inverted_dag(filter_dag->getOutputs().front(), query_context);
+            const auto & query_settings = query_context->getSettingsRef();
+
             partition_pruner.emplace(
                 metadata_snapshot,
                 inverted_dag,
                 query_context,
-                false /* strict */,
-                skip_partition_analysis);
+                /*strict=*/false,
+                /*skip_analysis_=*/!query_settings[Setting::use_partition_pruning]);
         }
 
         const auto * predicate = filter_dag->getOutputs().at(0);
@@ -8897,7 +8932,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         if (part->isEmpty())
             continue;
 
-        if (!part->minmax_idx->initialized)
+        if (!part->getMinMaxIndex()->initialized)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Found a non-empty part with uninitialized minmax_idx. It's a bug");
 
         filter_column_data.emplace_back();
@@ -8910,7 +8945,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         }
 
         if (minmax_idx_condition
-            && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx->hyperrectangle, minmax_columns_types).can_be_true)
+            && !minmax_idx_condition->checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
 
         if (partition_pruner)
@@ -8948,14 +8983,14 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         ++pos;
     }
 
-    size_t minmax_idx_size = real_parts.front()->minmax_idx->hyperrectangle.size();
-    for (size_t i = 0; i < minmax_idx_size; ++i)
+    size_t partitioning_columns_count = metadata_snapshot->getColumnsRequiredForPartitionKey().size();
+    for (size_t i = 0; i < partitioning_columns_count; ++i)
     {
         if (required_columns_set.contains(partition_minmax_count_column_names[pos]))
         {
             for (const auto & part : real_parts)
             {
-                const auto & range = part->minmax_idx->hyperrectangle[i];
+                const auto & range = part->getMinMaxIndex()->hyperrectangle[i];
                 auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(min_column, range.left);
             }
@@ -8966,7 +9001,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         {
             for (const auto & part : real_parts)
             {
-                const auto & range = part->minmax_idx->hyperrectangle[i];
+                const auto & range = part->getMinMaxIndex()->hyperrectangle[i];
                 auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(max_column, range.right);
             }
@@ -9032,6 +9067,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 "Cannot find column {} in minmax_count projection but query analysis still selects this projection. It's a bug",
                 name);
     }
+
     return res;
 }
 
@@ -10802,7 +10838,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-    minmax_idx->update(block, getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+    minmax_idx->update(block, getMinMaxColumns(metadata_snapshot->getPartitionKey(), getSettings()));
 
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
     VolumePtr volume = getStoragePolicy()->getVolume(0);
@@ -10835,7 +10871,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
 
     new_data_part->partition = partition;
 
-    new_data_part->minmax_idx = std::move(minmax_idx);
+    new_data_part->setMinMaxIndex(std::move(minmax_idx));
     new_data_part->is_temp = true;
     /// In case of replicated merge tree with zero copy replication
     /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
