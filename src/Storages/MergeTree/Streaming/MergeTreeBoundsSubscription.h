@@ -13,7 +13,6 @@
 
 #include <map>
 #include <mutex>
-#include <optional>
 
 namespace DB
 {
@@ -46,6 +45,7 @@ private:
 #if defined(OS_LINUX)
     EventFD wake{/*non_blocking=*/true};
 #else
+    bool has_pending_update TSA_GUARDED_BY(mutex) = false;
     mutable std::condition_variable wake;
 #endif
 };

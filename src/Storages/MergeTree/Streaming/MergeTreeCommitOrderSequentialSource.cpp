@@ -377,24 +377,28 @@ void MergeTreeCommitOrderSequentialSource::work()
 {
     chassert(!pending_snapshot.has_value());
 
-    if (EventFD * fd = subscription->fd())
-        fd->read();
-
-    auto safe_block_numbers = subscription->snapshot();
+    std::map<String, Int64> safe_block_numbers;
     if (subscription->fd())
     {
+        subscription->fd()->read();
+        safe_block_numbers = subscription->snapshot();
         if (!canConstructReadingPipeline(safe_block_numbers, last_emitted_positions))
             return;
     }
     else
     {
-        while (!canConstructReadingPipeline(safe_block_numbers, last_emitted_positions))
+        safe_block_numbers = subscription->snapshot();
+        while (!canConstructReadingPipeline(safe_block_numbers, last_emitted_positions) && !subscription->isDisabled())
         {
             subscription->wait();
             safe_block_numbers = subscription->snapshot();
         }
     }
 
+    if (subscription->isDisabled())
+        return;
+
+    chassert(canConstructReadingPipeline(safe_block_numbers, last_emitted_positions));
     const auto partitions_to_read = getPartitionsCanBeRead(safe_block_numbers, last_emitted_positions);
     for (const auto & partition_id : partitions_to_read)
         reading_up_to_block_numbers[partition_id] = safe_block_numbers.at(partition_id);

@@ -74,6 +74,36 @@ TEST(MergeTreeBoundsSubscription, FsIsNonBlocking)
 TEST(MergeTreeBoundsSubscription, FdAbsentOnNonLinux)
 {
     MergeTreeBoundsSubscription sub(1, 0);
-    ASSERT_FALSE(sub.fd().has_value());
+    ASSERT_EQ(sub.fd(), nullptr);
+}
+
+TEST(MergeTreeBoundsSubscription, WaitWakesOnAdvance)
+{
+    MergeTreeBoundsSubscription sub(1, 0);
+
+    std::thread waiter([&] { sub.wait(); });
+    /// Give the waiter time to enter wait. Not a synchronisation primitive — the test
+    /// just needs to observe that a delayed advance unblocks an in-flight wait.
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    sub.advance("p1", 1);
+    waiter.join();
+
+    ASSERT_FALSE(sub.isDisabled());
+    auto snap = sub.snapshot();
+    ASSERT_EQ(snap.at("p1"), 1);
+}
+
+TEST(MergeTreeBoundsSubscription, WaitWakesOnDisable)
+{
+    MergeTreeBoundsSubscription sub(1, 0);
+
+    std::thread waiter([&] { sub.wait(); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    sub.disable();
+    waiter.join();
+
+    ASSERT_TRUE(sub.isDisabled());
 }
 #endif
