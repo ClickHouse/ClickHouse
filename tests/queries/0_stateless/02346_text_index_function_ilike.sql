@@ -181,6 +181,104 @@ SELECT count() FROM tab WHERE message NOT ILIKE '%A%' SETTINGS use_skip_indexes 
 
 DROP TABLE tab;
 
+SELECT 'Test results are same with/without the like optimization with array tokenizer';
+
+-- With the array tokenizer each row value is stored as a whole token in the index dictionary.
+
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    tag String,
+    INDEX idx(tag) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY (id);
+
+INSERT INTO tab(id, tag) VALUES
+    (1, 'ClickHouseServer'),
+    (2, 'clickhouseclient'),
+    (3, 'ClickHouseCloud'),
+    (4, 'ClickhouseSQL');
+
+SET use_text_index_like_evaluation_by_dictionary_scan = 0;
+
+SELECT '-- without optimization';
+
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%clickhouse%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%CLICKHOUSE%';
+SELECT groupArray(id) FROM tab WHERE tag NOT ILIKE '%clickhouse%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%nonexistent%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%sql%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%server%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%clickhouse%' AND tag ILIKE '%cloud%';
+
+SELECT '-- with optimization';
+
+SET use_text_index_like_evaluation_by_dictionary_scan = 1;
+
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%clickhouse%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%CLICKHOUSE%';
+SELECT groupArray(id) FROM tab WHERE tag NOT ILIKE '%clickhouse%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%nonexistent%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%sql%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%server%';
+SELECT groupArray(id) FROM tab WHERE tag ILIKE '%clickhouse%' AND tag ILIKE '%cloud%';
+
+DROP TABLE tab;
+
+SELECT 'Text index analysis for ILIKE with array tokenizer';
+
+SET use_text_index_like_evaluation_by_dictionary_scan = 1;
+
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    tag String,
+    INDEX idx(tag) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (id)
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab SELECT number, 'ClickHouseServer' FROM numbers(1024);
+INSERT INTO tab SELECT number, 'clickhouseclient' FROM numbers(1024);
+INSERT INTO tab SELECT number, 'ClickHouseCloud' FROM numbers(1024);
+INSERT INTO tab SELECT number, 'ClickHouseSQL' FROM numbers(1024);
+
+SELECT '-- Text index for ILIKE function with array tokenizer should choose none for non-existent token';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE tag ILIKE '%nonexistent%'
+) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT '-- Text index for ILIKE function with array tokenizer should choose 1 part and 1024 granules';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE tag ILIKE '%server%'
+) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT '-- Text index for ILIKE function with array tokenizer should choose 1 part and 1024 granules (uppercase pattern, case-insensitive)';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE tag ILIKE '%SERVER%'
+) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+SELECT '-- Text index for ILIKE function with array tokenizer should choose all 4 parts and 4096 granules';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE tag ILIKE '%clickhouse%'
+) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 2, 3;
+
+DROP TABLE tab;
+
 SELECT 'Test results are same with/without the optimization with expression index';
 
 DROP TABLE IF EXISTS tab;
