@@ -1,0 +1,6 @@
+Direct query has merge sort:	1
+View query has merge sort:	1
+View query avoids full sort on coordinator:	1
+View ORDER BY+LIMIT result count:	10
+GROUP BY result count:	5
+OFFSET result count:	5

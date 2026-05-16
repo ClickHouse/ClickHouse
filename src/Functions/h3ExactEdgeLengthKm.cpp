@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -9,9 +9,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
-
-#include <constants.h>
-#include <h3api.h>
 
 
 namespace DB
@@ -30,7 +27,11 @@ class FunctionH3ExactEdgeLengthKm : public IFunction
 public:
     static constexpr auto name = "h3ExactEdgeLengthKm";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ExactEdgeLengthKm>(); }
+    H3Validator validator;
+
+    explicit FunctionH3ExactEdgeLengthKm(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ExactEdgeLengthKm>(context); }
 
     std::string getName() const override { return name; }
 
@@ -79,7 +80,9 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 index = data[row];
-            Float64 res = exactEdgeLengthKm(index);
+            Float64 res = 0;
+            if (validator.validateEdge(index))
+                edgeLengthKm(index, &res);
             dst_data[row] = res;
         }
 
@@ -99,7 +102,7 @@ Returns the exact edge length of the unidirectional edge represented by the inpu
         {"index", "Hexagon index number.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the exact length of the H3 edge in kilometers.",
+        "Returns the exact length of the H3 edge in kilometers. Throws an exception if the input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting).",
         {"Float64"}
     };
     FunctionDocumentation::Examples examples = {
