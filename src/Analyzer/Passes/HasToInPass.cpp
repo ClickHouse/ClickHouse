@@ -10,8 +10,6 @@
 
 #include <Core/Settings.h>
 
-#include <Common/logger_useful.h>
-
 namespace DB
 {
 namespace Setting
