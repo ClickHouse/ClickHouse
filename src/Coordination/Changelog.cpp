@@ -148,7 +148,8 @@ std::string Changelog::formatChangelogPath(const std::string & name_prefix, uint
     return fmt::format("{}_{}_{}.{}", name_prefix, from_index, to_index, extension);
 }
 
-class IChangelogWriter {
+class IChangelogWriter
+{
 public:
     IChangelogWriter(
         std::map<uint64_t, ChangelogFileDescriptionPtr> & existing_changelogs_,
@@ -188,7 +189,8 @@ protected:
     std::optional<uint64_t> last_index_written;
 };
 
-class S3ChangelogWriter : public IChangelogWriter {
+class S3ChangelogWriter : public IChangelogWriter
+{
 public:
     S3ChangelogWriter(
         std::map<uint64_t, ChangelogFileDescriptionPtr> & existing_changelogs_,
@@ -209,8 +211,10 @@ public:
         s3_compaction_thread = std::make_unique<ThreadFromGlobalPool>([this] { s3CompactionThread(); });
     }
 
-    void setFile(ChangelogFileDescriptionPtr file_description, WriteMode) override {
-        if (current_file_description && last_index_written) {
+    void setFile(ChangelogFileDescriptionPtr file_description, WriteMode) override
+    {
+        if (current_file_description && last_index_written)
+        {
             flushImpl(*last_index_written + 1);
         }
 
@@ -235,11 +239,13 @@ public:
         LOG_TRACE(log, "Initialize S3 changelog file: {}", s3_cur_path);
     }
 
-    bool isFileSet() const override {
+    bool isFileSet() const override
+    {
         return write_buffer != nullptr;
     }
 
-    bool appendRecord(ChangelogRecord && record) override {
+    bool appendRecord(ChangelogRecord && record) override
+    {
         LOG_TRACE(log, "Writing to s3 buffer before {}", write_buffer->count());
 
         auto current_position{write_buffer->count()};
@@ -252,7 +258,8 @@ public:
         writeIntBinary(record.header.value_type, cur_write_buffer);
         writeIntBinary(record.header.blob_size, cur_write_buffer);
 
-        if (record.header.blob_size != 0) {
+        if (record.header.blob_size != 0)
+        {
             cur_write_buffer.write(reinterpret_cast<char *>(record.blob->data_begin()), record.blob->size());
         }
 
@@ -272,26 +279,31 @@ public:
         return true;
     }
 
-    void flush() override {
+    void flush() override
+    {
         chassert(last_index_written);
         flushImpl(*last_index_written + 1);
     }
 
-    void rotate(uint64_t new_start_log_index) override {
+    void rotate(uint64_t new_start_log_index) override
+    {
         flushImpl(new_start_log_index);
     }
 
-    uint64_t getStartIndex() const override {
+    uint64_t getStartIndex() const override
+    {
         assert(current_file_description);
         return current_file_description->from_log_index;
     }
 
-    void finalize() override {
+    void finalize() override
+    {
         LOG_TRACE(log, "Finalize S3 buffer");
 
         flush();
 
-        if (write_buffer) {
+        if (write_buffer)
+        {
             write_buffer->cancel();
             write_buffer.reset();
         }
@@ -449,17 +461,22 @@ private:
             LOG_WARNING(log, "Failed to push to S3 compaction queue, queue might be full or shutdown");
     }
 
-    DiskPtr getDisk() const {
+    DiskPtr getDisk() const
+    {
         return keeper_context->getS3LogDisk();
     }
 
-    ReadSettings getReadSettings() const {
+    ReadSettings getReadSettings() const
+    {
         return ReadSettings{};
     }
 
-    void flushImpl(uint64_t new_start_log_index) {
-        if (current_file_description && last_index_written) {
-            if (current_file_description->from_log_index > *last_index_written) {
+    void flushImpl(uint64_t new_start_log_index)
+    {
+        if (current_file_description && last_index_written)
+        {
+            if (current_file_description->from_log_index > *last_index_written)
+            {
                 LOG_TRACE(log, "Close s3 writing buffer");
 
                 existing_changelogs.erase(current_file_description->from_log_index);
@@ -523,7 +540,9 @@ private:
 
             entry_storage.addLogLocations(std::move(unflushed_indices_with_log_location));
             unflushed_indices_with_log_location.clear();
-        } else {
+        }
+        else
+        {
             LOG_WARNING(log, "Try to flush with empty state");
         }
 
@@ -546,7 +565,8 @@ private:
         LOG_TRACE(log, "Open new s3 buffer with path {}", s3_cur_path);
         write_buffer = getDisk()->writeFile(s3_cur_path);
 
-        if (!(existing_changelogs.size() % log_file_settings.rotate_interval)) {
+        if (!(existing_changelogs.size() % log_file_settings.rotate_interval))
+        {
             triggerS3Compaction();
         }
     }
@@ -2259,9 +2279,12 @@ Changelog::Changelog(
 
         append_completion_thread = std::make_unique<ThreadFromGlobalPool>([this] { appendCompletionThread(); });
 
-        if (keeper_context->isS3ExperimentalChangelog()) {
+        if (keeper_context->isS3ExperimentalChangelog())
+        {
             current_writer = std::make_unique<S3ChangelogWriter>(existing_changelogs, entry_storage, keeper_context, log_file_settings, writer_mutex);
-        } else {
+        }
+        else
+        {
             current_writer = std::make_unique<ChangelogWriter>(
                 existing_changelogs,
                 entry_storage,
@@ -2541,7 +2564,8 @@ DiskPtr Changelog::getLatestLogDisk() const
     return keeper_context->getLatestLogDisk();
 }
 
-DiskPtr Changelog::getS3LogDisk() const {
+DiskPtr Changelog::getS3LogDisk() const
+{
     return keeper_context->getS3LogDisk();
 }
 

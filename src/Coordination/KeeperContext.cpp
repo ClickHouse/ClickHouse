@@ -22,7 +22,7 @@
 
 #include <boost/algorithm/string.hpp>
 
-#include "base/types.h"
+#include <base/types.h>
 #include "config.h"
 #if USE_ROCKSDB
 #include <rocksdb/table.h>
@@ -226,11 +226,13 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     block_acl = config.getBool("keeper_server.cleanup_old_and_ignore_new_acl", false);
 }
 
-bool KeeperContext::isS3ExperimentalChangelog() const {
+bool KeeperContext::isS3ExperimentalChangelog() const
+{
     return s3_experimental_changelog;
 }
 
-Int64 KeeperContext::getS3FlushInterval() const {
+Int64 KeeperContext::getS3FlushInterval() const
+{
     return s3_flush_interval;
 }
 
