@@ -1,0 +1,78 @@
+--- contains (case-insensitive) ---
+HELLO
+hello
+--- contains_cs (case-sensitive) ---
+hello
+--- !contains ---
+World
+foo bar
+--- !contains_cs ---
+World
+foo bar
+hello
+--- startswith ---
+HELLO
+hello
+--- startswith_cs ---
+HELLO
+--- !startswith ---
+World
+foo bar
+--- !startswith_cs ---
+HELLO
+World
+foo bar
+--- endswith ---
+HELLO
+hello
+--- endswith_cs ---
+HELLO
+--- !endswith ---
+World
+foo bar
+--- !endswith_cs ---
+World
+foo bar
+hello
+--- has ---
+foo bar
+--- has_cs ---
+World
+--- !has ---
+HELLO
+World
+hello
+--- !has_cs ---
+HELLO
+World
+foo bar
+hello
+--- has_any ---
+HELLO
+foo bar
+hello
+--- has_any: one match ---
+foo bar
+--- has_all ---
+foo bar
+--- =~ (case-insensitive equals) ---
+HELLO
+hello
+--- !~ (case-insensitive not equals) ---
+World
+foo bar
+--- in ---
+foo bar
+hello
+--- !in ---
+HELLO
+World
+--- in~ (case-insensitive) ---
+HELLO
+foo bar
+hello
+--- !in~ ---
+World
+foo bar
+--- error: has_any with no open paren ---
+--- error: has_all with no open paren ---

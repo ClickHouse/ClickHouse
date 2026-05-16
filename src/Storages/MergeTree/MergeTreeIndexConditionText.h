@@ -102,8 +102,7 @@ private:
         {
             /// Atoms
             FUNCTION_EQUALS,
-            FUNCTION_IN,
-            FUNCTION_MATCH,
+            FUNCTION_HAS_ANY_ELEMENTS,
             FUNCTION_HAS_ANY_TOKENS,
             FUNCTION_HAS_ALL_TOKENS,
             FUNCTION_LIKE,
@@ -129,11 +128,12 @@ private:
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,
         const RPNBuilderTreeNode & index_column_node,
-        const DataTypePtr & value_type,
-        const Field & value_field,
+        DataTypePtr value_type,
+        Field value_field,
         RPNElement & out) const;
 
     TextIndexDirectReadMode getHintOrNoneMode() const;
+
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
     bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
     bool traverseJSONSubcolumnKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
