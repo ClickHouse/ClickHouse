@@ -323,24 +323,42 @@ public:
         if (!block.empty())
         {
             ProfileEventTimeIncrement<Microseconds> timer_serialize(ProfileEvents::WasmSerializationMicroseconds);
-            StringWithMemoryTracking input_data;
 
+            StringWithMemoryTracking dummy_buf;
+            WriteBufferFromStringWithMemoryTracking dummy_writer(dummy_buf);
+            auto probe = context->getOutputFormat(format_name, dummy_writer, block.cloneEmpty());
+            auto precomputed = probe->precomputeSerializedSize(block, num_rows);
+
+            if (precomputed)
             {
-                WriteBufferFromStringWithMemoryTracking buf(input_data);
-                auto out = context->getOutputFormat(format_name, buf, block.cloneEmpty());
-                formatBlock(out, block);
+                wasm_data = allocateInWasmMemory(wmm.get(), *precomputed);
+                auto wasm_mem = wasm_data.getMemoryView();
+                WriteBufferFromPointer wb(reinterpret_cast<char *>(wasm_mem.data()), *precomputed);
+                auto out = context->getOutputFormat(format_name, wb, block.cloneEmpty());
+                // write()+finalize() instead of formatBlock(): formatBlock calls flush()
+                // which triggers out.next() — fatal for WriteBufferFromPointer.
+                // auto_flush defaults to false so neither write() nor finalize() flush.
+                out->write(block);
+                out->finalize();
+                wb.cancel();
             }
-
-            wasm_data = allocateInWasmMemory(wmm.get(), input_data.size());
-            auto wasm_mem = wasm_data.getMemoryView();
-
-            if (wasm_mem.size() != input_data.size())
-                throw Exception(ErrorCodes::WASM_ERROR,
-                    "Cannot allocate buffer of size {}, got {} "
-                    "Maybe '{}' function implementation in WebAssembly module is incorrect",
-                    input_data.size(), wasm_mem.size(), WasmMemoryManagerV01::allocate_function_name);
-
-            std::copy(input_data.data(), input_data.data() + input_data.size(), wasm_mem.begin());
+            else
+            {
+                StringWithMemoryTracking input_data;
+                {
+                    WriteBufferFromStringWithMemoryTracking buf(input_data);
+                    auto out = context->getOutputFormat(format_name, buf, block.cloneEmpty());
+                    formatBlock(out, block);
+                }
+                wasm_data = allocateInWasmMemory(wmm.get(), input_data.size());
+                auto wasm_mem = wasm_data.getMemoryView();
+                if (wasm_mem.size() != input_data.size())
+                    throw Exception(ErrorCodes::WASM_ERROR,
+                        "Cannot allocate buffer of size {}, got {} "
+                        "Maybe '{}' function implementation in WebAssembly module is incorrect",
+                        input_data.size(), wasm_mem.size(), WasmMemoryManagerV01::allocate_function_name);
+                std::copy(input_data.data(), input_data.data() + input_data.size(), wasm_mem.begin());
+            }
         }
 
         auto result_ptr = compartment->invoke<WasmPtr>(function_name, {wasm_data.getHandle(), static_cast<WasmSizeT>(num_rows)}, stop_token);
