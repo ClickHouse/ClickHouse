@@ -9,9 +9,9 @@ doc_type: 'reference'
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
-# system.query_thread_log
-
 <SystemTableCloud/>
+
+## Description {#description}
 
 Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.
 
@@ -26,58 +26,69 @@ ClickHouse does not delete data from the table automatically. See [Introduction]
 
 You can use the [log_queries_probability](/operations/settings/settings#log_queries_probability)) setting to reduce the number of queries, registered in the `query_thread_log` table.
 
-Columns:
+## Columns {#columns}
 
-- `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
-- `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the thread has finished execution of the query.
-- `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the thread has finished execution of the query.
-- `event_time_microseconds` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the thread has finished execution of the query with microseconds precision.
-- `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of query execution.
-- `query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Start time of query execution with microsecond precision.
-- `query_duration_ms` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Duration of query execution.
-- `read_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of read rows.
-- `read_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of read bytes.
-- `written_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
-- `written_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
-- `memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — The difference between the amount of allocated and freed memory in context of this thread.
-- `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — The maximum difference between the amount of allocated and freed memory in context of this thread.
-- `thread_name` ([String](../../sql-reference/data-types/string.md)) — Name of the thread.
-- `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — OS thread ID.
-- `master_thread_id` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — OS initial ID of initial thread.
-- `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
-- `is_initial_query` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Query type. Possible values:
-  - 1 — Query was initiated by the client.
-  - 0 — Query was initiated by another query for distributed query execution.
-- `connection_address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — The client IP address from which the connection was made. When connected through a proxy this will be the address of the proxy.
-- `connection_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The client port from which the connection was made. When connected through a proxy this will be the port of the proxy.
-- `user` ([String](../../sql-reference/data-types/string.md)) — Name of the user who initiated the current query.
-- `query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the query.
-- `address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — The IP address that was used to make the query. When connected through a proxy and [auth_use_forwarded_address](/operations/server-configuration-parameters/settings#auth_use_forwarded_address) is set this will be the address of the client instead of the proxy.
-- `port` ([UInt16](/sql-reference/data-types/int-uint#integer-ranges)) — The client port that was used to make the query. When connected through a proxy and [auth_use_forwarded_address](/operations/server-configuration-parameters/settings#auth_use_forwarded_address) is set this will be the port of the client instead of the proxy.
-- `initial_user` ([String](../../sql-reference/data-types/string.md)) — Name of the user who ran the initial query (for distributed query execution).
-- `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the initial query (for distributed query execution).
-- `initial_address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP address that the parent query was launched from.
-- `initial_port` ([UInt16](/sql-reference/data-types/int-uint#integer-ranges)) — The client port that was used to make the parent query.
-- `interface` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Interface that the query was initiated from. Possible values:
-  - 1 — TCP.
-  - 2 — HTTP.
-- `os_user` ([String](../../sql-reference/data-types/string.md)) — OS's username who runs [clickhouse-client](../../interfaces/client.md).
-- `client_hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the client machine where the [clickhouse-client](../../interfaces/client.md) or another TCP client is run.
-- `client_name` ([String](../../sql-reference/data-types/string.md)) — The [clickhouse-client](../../interfaces/client.md) or another TCP client name.
-- `client_revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Revision of the [clickhouse-client](../../interfaces/client.md) or another TCP client.
-- `client_version_major` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Major version of the [clickhouse-client](../../interfaces/client.md) or another TCP client.
-- `client_version_minor` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Minor version of the [clickhouse-client](../../interfaces/client.md) or another TCP client.
-- `client_version_patch` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Patch component of the [clickhouse-client](../../interfaces/client.md) or another TCP client version.
-- `http_method` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — HTTP method that initiated the query. Possible values:
-  - 0 — The query was launched from the TCP interface.
-  - 1 — `GET` method was used.
-  - 2 — `POST` method was used.
-- `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — The `UserAgent` header passed in the HTTP request.
-- `quota_key` ([String](../../sql-reference/data-types/string.md)) — The "quota key" specified in the [quotas](../../operations/quotas.md) setting (see `keyed`).
-- `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse revision.
-- `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents that measure different metrics for this thread. The description of them could be found in the table [system.events](/operations/system-tables/events).
+<!--AUTOGENERATED_START-->
+- `hostname` ([LowCardinality(String)](/sql-reference/data-types/lowcardinality)) — Hostname of the server executing the query.
+- `event_date` ([Date](/sql-reference/data-types/date)) — The date when the thread has finished execution of the query.
+- `event_time` ([DateTime](/sql-reference/data-types/datetime)) — The date and time when the thread has finished execution of the query.
+- `event_time_microseconds` ([DateTime64(6)](/sql-reference/data-types/datetime64)) — The date and time when the thread has finished execution of the query with microseconds precision.
+- `query_start_time` ([DateTime](/sql-reference/data-types/datetime)) — Start time of query execution.
+- `query_start_time_microseconds` ([DateTime64(6)](/sql-reference/data-types/datetime64)) — Start time of query execution with microsecond precision.
+- `query_duration_ms` ([UInt64](/sql-reference/data-types/int-uint)) — Duration of query execution.
+- `read_rows` ([UInt64](/sql-reference/data-types/int-uint)) — Number of read rows.
+- `read_bytes` ([UInt64](/sql-reference/data-types/int-uint)) — Number of read bytes.
+- `written_rows` ([UInt64](/sql-reference/data-types/int-uint)) — For INSERT queries, the number of written rows. For other queries, the column value is 0.
+- `written_bytes` ([UInt64](/sql-reference/data-types/int-uint)) — For INSERT queries, the number of written bytes. For other queries, the column value is 0.
+- `memory_usage` ([Int64](/sql-reference/data-types/int-uint)) — The difference between the amount of allocated and freed memory in context of this thread.
+- `peak_memory_usage` ([Int64](/sql-reference/data-types/int-uint)) — The maximum difference between the amount of allocated and freed memory in context of this thread.
+- `thread_name` ([LowCardinality(String)](/sql-reference/data-types/lowcardinality)) — Name of the thread.
+- `thread_id` ([UInt64](/sql-reference/data-types/int-uint)) — Internal thread ID.
+- `master_thread_id` ([UInt64](/sql-reference/data-types/int-uint)) — OS initial ID of initial thread.
+- `current_database` ([LowCardinality(String)](/sql-reference/data-types/lowcardinality)) — Name of the current database.
+- `query` ([String](/sql-reference/data-types/string)) — Query string.
+- `normalized_query_hash` ([UInt64](/sql-reference/data-types/int-uint)) — The hash of normalized query - with wiped constants, etc.
+- `is_initial_query` ([UInt8](/sql-reference/data-types/int-uint)) — Query type. Possible values: 1 — Query was initiated by the client, 0 — Query was initiated by another query for distributed query execution.
+- `connection_address` ([IPv6](/sql-reference/data-types/ipv6)) — The client IP address from which the connection was made. When connected through a proxy, this will be the address of the proxy.
+- `connection_port` ([UInt16](/sql-reference/data-types/int-uint)) — The client port from which the connection was made. When connected through a proxy, this will be the port of the proxy.
+- `user` ([LowCardinality(String)](/sql-reference/data-types/lowcardinality)) — Name of the user who initiated the current query.
+- `query_id` ([String](/sql-reference/data-types/string)) — ID of the query.
+- `address` ([IPv6](/sql-reference/data-types/ipv6)) — IP address that was used to make the query. When connected through a proxy and `auth_use_forwarded_address` is set, this will be the address of the client instead of the proxy.
+- `port` ([UInt16](/sql-reference/data-types/int-uint)) — The client port that was used to make the query. When connected through a proxy and `auth_use_forwarded_address` is set, this will be the port of the client instead of the proxy.
+- `initial_user` ([LowCardinality(String)](/sql-reference/data-types/lowcardinality)) — Name of the user who ran the initial query (for distributed query execution).
+- `initial_query_id` ([String](/sql-reference/data-types/string)) — ID of the initial query (for distributed query execution).
+- `initial_address` ([IPv6](/sql-reference/data-types/ipv6)) — IP address that the parent query was launched from.
+- `initial_port` ([UInt16](/sql-reference/data-types/int-uint)) — The client port that was used to make the parent query.
+- `initial_query_start_time` ([DateTime](/sql-reference/data-types/datetime)) — Start time of the initial query execution.
+- `initial_query_start_time_microseconds` ([DateTime64(6)](/sql-reference/data-types/datetime64)) — Start time of the initial query execution
+- `authenticated_user` ([LowCardinality(String)](/sql-reference/data-types/lowcardinality)) — Name of the user who was authenticated in the session.
+- `interface` ([UInt8](/sql-reference/data-types/int-uint)) — Interface that the query was initiated from. Possible values: 1 — TCP, 2 — HTTP.
+- `is_secure` ([UInt8](/sql-reference/data-types/int-uint)) — The flag which shows whether the connection was secure.
+- `os_user` ([LowCardinality(String)](/sql-reference/data-types/lowcardinality)) — OSs username who runs clickhouse-client.
+- `client_hostname` ([LowCardinality(String)](/sql-reference/data-types/lowcardinality)) — Hostname of the client machine where the clickhouse-client or another TCP client is run.
+- `client_name` ([LowCardinality(String)](/sql-reference/data-types/lowcardinality)) — The clickhouse-client or another TCP client name.
+- `client_revision` ([UInt32](/sql-reference/data-types/int-uint)) — Revision of the clickhouse-client or another TCP client.
+- `client_version_major` ([UInt32](/sql-reference/data-types/int-uint)) — Major version of the clickhouse-client or another TCP client.
+- `client_version_minor` ([UInt32](/sql-reference/data-types/int-uint)) — Minor version of the clickhouse-client or another TCP client.
+- `client_version_patch` ([UInt32](/sql-reference/data-types/int-uint)) — Patch component of the clickhouse-client or another TCP client version.
+- `script_query_number` ([UInt32](/sql-reference/data-types/int-uint)) — A sequential query number in a multi-query script.
+- `script_line_number` ([UInt32](/sql-reference/data-types/int-uint)) — A line number in a multi-query script where the current query starts.
+- `http_method` ([UInt8](/sql-reference/data-types/int-uint)) — HTTP method that initiated the query. Possible values: 0 — The query was launched from the TCP interface, 1 — GET method was used., 2 — POST method was used.
+- `http_user_agent` ([LowCardinality(String)](/sql-reference/data-types/lowcardinality)) — The UserAgent header passed in the HTTP request.
+- `http_referer` ([String](/sql-reference/data-types/string)) — HTTP header `Referer` passed in the HTTP query (contains an absolute or partial address of the page making the query).
+- `forwarded_for` ([String](/sql-reference/data-types/string)) — HTTP header `X-Forwarded-For` passed in the HTTP query.
+- `quota_key` ([String](/sql-reference/data-types/string)) — The 'quota key' specified in the quotas setting.
+- `distributed_depth` ([UInt64](/sql-reference/data-types/int-uint)) — How many times a query was forwarded between servers.
+- `revision` ([UInt32](/sql-reference/data-types/int-uint)) — ClickHouse revision.
+- `ProfileEvents` ([Map(LowCardinality(String), UInt64)](/sql-reference/data-types/map)) — ProfileEvents that measure different metrics for this thread. The description of them could be found in the table system.events.
 
-**Example**
+**Aliases:**
+
+- `ProfileEvents.Names` — Alias for `mapKeys(ProfileEvents)`.
+- `ProfileEvents.Values` — Alias for `mapValues(ProfileEvents)`.
+<!--AUTOGENERATED_END-->
+
+## Example {#example}
 
 ```sql
  SELECT * FROM system.query_thread_log LIMIT 1 \G
@@ -127,7 +138,7 @@ revision:                      54440
 ProfileEvents:        {'Query':1,'SelectQuery':1,'ReadCompressedBytes':36,'CompressedReadBufferBlocks':1,'CompressedReadBufferBytes':10,'IOBufferAllocs':1,'IOBufferAllocBytes':89,'ContextLock':15,'RWLockAcquiredReadLocks':1}
 ```
 
-**See Also**
+## See Also {#see-also}
 
 - [system.query_log](/operations/system-tables/query_log) — Description of the `query_log` system table which contains common information about queries execution.
 - [system.query_views_log](/operations/system-tables/query_views_log) — This table contains information about each view executed during a query.
