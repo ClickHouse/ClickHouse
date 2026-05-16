@@ -615,7 +615,25 @@ void HTTPHandler::processQuery(
     }
 
     QueryFlags query_flags;
-    query_flags.parse_query_from_initial_buffer = !query.empty() && settings[Setting::input_format_max_block_wait_ms] != 0;
+    /// Streaming `INSERT` needs the parser to stop at the end of the URL-provided query so the
+    /// request body stays intact for the input format. Only enable this when the URL query
+    /// alone already begins with an `INSERT` statement, otherwise we would break the legacy
+    /// behavior of splitting SQL text between the `query` parameter and the request body.
+    auto url_query_starts_with_insert = [&query]()
+    {
+        size_t i = 0;
+        while (i < query.size() && isWhitespaceASCII(query[i]))
+            ++i;
+        static constexpr std::string_view kw = "INSERT";
+        if (query.size() - i < kw.size())
+            return false;
+        for (size_t j = 0; j < kw.size(); ++j)
+            if (toUpperIfAlphaASCII(query[i + j]) != kw[j])
+                return false;
+        return true;
+    };
+    query_flags.parse_query_from_initial_buffer
+        = settings[Setting::input_format_max_block_wait_ms] != 0 && url_query_starts_with_insert();
 
     executeQuery(
         std::move(in),
