@@ -1,4 +1,5 @@
 #include <memory>
+#include <ranges>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
@@ -31,6 +32,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/intExp.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 
@@ -1109,12 +1111,16 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         new_data_part->index_granularity_info,
         /*blocks_are_granules=*/ false);
 
+    MergeTreeIndices indices = metadata_snapshot->secondary_indices
+        | std::views::transform([&](const auto & index) { return MergeTreeIndexFactory::instance().get(index); })
+        | std::ranges::to<MergeTreeIndices>();
+
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         data_settings,
         metadata_snapshot,
         columns,
-        MergeTreeIndices{},
+        indices,
         compression_codec,
         std::move(index_granularity_ptr),
         Tx::NonTransactionalTID,
