@@ -10,7 +10,7 @@ import lz4.frame
 import pytest
 import pytz
 
-from helpers.cluster import ClickHouseCluster, is_arm, run_and_check
+from helpers.cluster import ClickHouseCluster, run_and_check
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 pb2_dir = os.path.join(script_dir, "pb2")
@@ -21,10 +21,6 @@ import clickhouse_grpc_pb2_grpc
 
 GRPC_PORT = 9100
 DEFAULT_ENCODING = "utf-8"
-
-# GRPC is disabled on ARM build - skip tests
-if is_arm():
-    pytestmark = pytest.mark.skip
 
 
 # Utilities

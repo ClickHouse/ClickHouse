@@ -42,6 +42,8 @@ struct CoordinationSettings
     uint64_t version = 0;
 
 private:
+    friend struct KeeperConfigurationAndSettings;
+
     std::unique_ptr<CoordinationSettingsImpl> impl;
 };
 

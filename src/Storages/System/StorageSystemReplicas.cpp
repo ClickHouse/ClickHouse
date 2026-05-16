@@ -2,6 +2,7 @@
 #include <memory>
 
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -37,7 +38,7 @@ using TFuture = typename StorageSystemReplicas::TPools::StatusPool::TFuture;
 using TStatus = typename StorageSystemReplicas::TPools::StatusPool::TStatus;
 
 StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , pools(std::make_shared<TPools>(128))
 {
 
@@ -93,7 +94,16 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(description);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageSystemReplicas::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 StorageSystemReplicas::~StorageSystemReplicas() = default;
@@ -157,7 +167,7 @@ void ReadFromSystemReplicas::applyFilters(ActionDAGNodes added_filter_nodes)
     }
 }
 
-void StorageSystemReplicas::read(
+void StorageSystemReplicas::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,

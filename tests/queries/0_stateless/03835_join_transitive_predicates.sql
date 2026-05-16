@@ -13,6 +13,7 @@ SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
 SET enable_join_transitive_predicates = 1;
+SET materialize_statistics_on_insert = 1;
 
 -- Dim_A: small dimension (10 rows), unique key
 CREATE TABLE Dim_A (
