@@ -121,6 +121,8 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
 
 size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
 
+size_t tryLimitByPartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
+
 /// Removes unused columns from the query plan. Unused columns can appear after other optimizations, such as filter
 /// push down over JOINs. If a column is only used for filtering after a JOIN, and the filter is pushed down into
 /// the JOIN condition, then the column may become unused in the plan.
@@ -144,7 +146,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 18> optimizations = {{
+    static const std::array<Optimization, 19> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
@@ -156,6 +158,7 @@ inline const auto & getOptimizations()
         {tryReuseStorageOrderingForWindowFunctions, "reuseStorageOrderingForWindowFunctions", &QueryPlanOptimizationSettings::reuse_storage_ordering_for_window_functions},
         {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::lift_up_union},
         {tryAggregatePartitionsIndependently, "aggregatePartitionsIndependently", &QueryPlanOptimizationSettings::aggregate_partitions_independently},
+        {tryLimitByPartitionsIndependently, "limitByPartitionsIndependently", &QueryPlanOptimizationSettings::limit_by_partitions_independently},
         {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct},
         {tryUseVectorSearch, "useVectorSearch", &QueryPlanOptimizationSettings::try_use_vector_search},
         {tryConvertJoinToIn, "convertJoinToIn", &QueryPlanOptimizationSettings::convert_join_to_in},

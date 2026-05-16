@@ -14,6 +14,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_aggregate_partitions_independently;
+    extern const SettingsBool allow_limit_by_partitions_independently;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
@@ -176,6 +177,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_prewhere = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_optimize_prewhere];
     read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order] && from[Setting::query_plan_read_in_order];
     distinct_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_distinct_in_order];
+    limit_by_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_limit_by_partitions_independently];
     optimize_sorting_by_input_stream_properties = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_sorting_by_input_stream_properties];
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
     optimize_projection = from[Setting::optimize_use_projections];
