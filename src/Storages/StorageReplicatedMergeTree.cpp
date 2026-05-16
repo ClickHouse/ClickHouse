@@ -8789,7 +8789,7 @@ void StorageReplicatedMergeTree::clearLockedBlockNumbersInPartition(
                 LOG_WARNING(log, new_version_warning, paths_to_get[i], result.data);
 
             Stopwatch time_waiting;
-            const Int64 timeout = getContext()->getSettingsRef()[Setting::lock_acquire_timeout].value.totalSeconds();
+            const Int64 timeout = getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalSeconds();
             const auto & stop_waiting
                 = [this, &time_waiting, &timeout]() { return partial_shutdown_called || (timeout < Int64(time_waiting.elapsedSeconds())); };
 
