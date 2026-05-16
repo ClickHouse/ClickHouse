@@ -324,7 +324,7 @@ void MergeTreeIndexGranuleVectorSimilarity::loadVectorsFromPart(
 
     NamesAndTypesList columns_to_read{{column_name, column_type}};
 
-    auto metadata_ptr = part.storage.getInMemoryMetadataPtr();
+    auto metadata_ptr = part.storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     auto storage_snapshot = std::make_shared<StorageSnapshot>(part.storage, metadata_ptr);
     auto storage_settings = part.storage.getSettings();
 
@@ -360,13 +360,36 @@ void MergeTreeIndexGranuleVectorSimilarity::loadVectorsFromPart(
     if (!index->allocate_vectors_lookup(num_rows))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to allocate vector lookup for vector similarity index ({} rows)", num_rows);
 
+    const auto & offsets = array_column->getOffsets();
+    if (offsets.size() < num_rows)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Vector column '{}' has {} rows, but {} rows are expected for vector similarity index",
+            column_name, offsets.size(), num_rows);
+
     /// Parallel HNSW insertions assign slots in non-deterministic order, so key K (= row K in the granule)
     /// may end up at slot S ≠ K. Recover the row assigned to each slot by iterating the loaded graph.
+    /// Validate the slot/key pairs against `num_rows` so a malformed index file cannot drive out-of-bounds writes.
     std::vector<size_t> slot_to_row(num_rows);
+    std::vector<bool> slot_assigned(num_rows, false);
     for (auto it = index->cbegin(); it != index->cend(); ++it)
-        slot_to_row[get_slot(it)] = static_cast<size_t>(it.key());
+    {
+        const size_t slot = static_cast<size_t>(get_slot(it));
+        const size_t row = static_cast<size_t>(it.key());
+        if (slot >= num_rows || row >= num_rows)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Vector similarity index has out-of-range slot or key (slot={}, key={}, num_rows={})",
+                slot, row, num_rows);
+        if (slot_assigned[slot])
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Vector similarity index has a duplicate slot {} during deserialization",
+                slot);
+        slot_to_row[slot] = row;
+        slot_assigned[slot] = true;
+    }
 
-    const auto & offsets = array_column->getOffsets();
     const auto * data_type_array = typeid_cast<const DataTypeArray *>(column_type.get());
     if (!data_type_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected DataTypeArray for vector column '{}'", column_name);
@@ -374,10 +397,18 @@ void MergeTreeIndexGranuleVectorSimilarity::loadVectorsFromPart(
     const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
     WhichDataType which(nested_type_index);
 
+    const size_t expected_dimensions = index->dimensions();
+
     for (size_t slot = 0; slot < num_rows; ++slot)
     {
         const size_t row = slot_to_row[slot];
         const size_t row_offset = (row == 0) ? 0 : offsets[row - 1];
+        const size_t row_length = offsets[row] - row_offset;
+        if (row_length != expected_dimensions)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Vector at row {} of column '{}' has length {}, expected {} (index dimensions)",
+                row, column_name, row_length, expected_dimensions);
         bool success;
 
         if (which.isFloat32())
