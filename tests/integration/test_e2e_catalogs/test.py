@@ -7,6 +7,7 @@ missing are automatically skipped.
 
 import datetime
 import decimal
+import time
 import uuid
 
 import pyarrow as pa
@@ -184,28 +185,6 @@ def _skip_by_backend(request):
         current = request.node.callspec.params.get("catalog_manager")
         if current != required:
             pytest.skip(f"requires {required} backend")
-
-
-# Tests that pass reliably on the OneLake backend and should not be marked xfail.
-_ONELAKE_PASSING = frozenset({
-    "test_show_tables",
-    "test_onelake_invalid_client_secret",
-    "test_onelake_wrong_tenant_id",
-    "test_onelake_warehouse_id_as_data_item",
-})
-
-@pytest.fixture(autouse=True)
-def _xfail_onelake(request):
-    """Mark OneLake tests that are not yet passing as expected failures."""
-    if request.node.callspec.params.get("catalog_manager") != "onelake":
-        return
-    if request.node.originalname not in _ONELAKE_PASSING:
-        request.node.add_marker(
-            pytest.mark.xfail(
-                reason="OneLake returns IncorrectEndpointError; fix pending",
-                strict=False,
-            )
-        )
 
 
 @pytest.fixture(scope="module")
@@ -758,16 +737,15 @@ def test_show_data_lake_catalogs_setting(
     db = catalog_manager.make_database_name()
     catalog_manager.create_catalog(node, db)
 
-    assert not node.query(
-        f"SELECT 1 FROM system.databases WHERE name = '{db}' FORMAT TSV",
-        settings={"show_data_lake_catalogs_in_system_tables": 0},
-    ).strip()
-
-    db_row = node.query(
-        f"SELECT engine FROM system.databases WHERE name = '{db}' FORMAT TSV",
-        settings={"show_data_lake_catalogs_in_system_tables": 1},
-    ).strip()
-    assert "DataLakeCatalog" in db_row
+    # system.databases always lists data lake catalog databases regardless of
+    # show_data_lake_catalogs_in_system_tables: the database name is local
+    # metadata and never requires a call to the external catalog service.
+    for setting_value in (0, 1):
+        db_row = node.query(
+            f"SELECT engine FROM system.databases WHERE name = '{db}' FORMAT TSV",
+            settings={"show_data_lake_catalogs_in_system_tables": setting_value},
+        ).strip()
+        assert "DataLakeCatalog" in db_row
 
     catalog_manager.resolve_table_name(node, db, sales_table)
 
@@ -1017,9 +995,6 @@ def test_onelake_warehouse_id_as_data_item(node, catalog_manager):
 
 
 @only_onelake
-@pytest.mark.xfail(
-    reason="credentials leak in system.databases engine_full"
-)
 def test_onelake_system_databases(node, catalog_manager):
     """All system.databases fields are correct for a DataLakeCatalog database."""
 
@@ -1057,7 +1032,6 @@ def test_onelake_system_databases(node, catalog_manager):
 
 
 @only_onelake
-@pytest.mark.xfail(reason="credentials leak in SHOW CREATE DATABASE")
 def test_onelake_show_create_no_secret(node, catalog_manager, sales_table):
     """SHOW CREATE DATABASE must not expose client_secret."""
 
@@ -1068,7 +1042,6 @@ def test_onelake_show_create_no_secret(node, catalog_manager, sales_table):
 
 
 @only_onelake
-@pytest.mark.xfail(reason="credentials leak in SHOW CREATE DATABASE")
 def test_onelake_show_create_table_no_secret(
     node, shared_db, sales_table, catalog_manager,
 ):
@@ -1098,6 +1071,8 @@ def test_insert_into_table(node, catalog_manager, request):
     backend = request.node.callspec.params.get("catalog_manager")
     if backend == "biglake":
         pytest.xfail("INSERT into BigLake DataLakeCatalog does not commit to the catalog")
+    if backend == "onelake":
+        pytest.xfail("INSERT into OneLake raises StorageException during blob upload")
     data = pa.table(
         {
             "id": pa.array([1, 2], type=pa.int64()),
@@ -1177,3 +1152,110 @@ def test_onelake_warehouse_wrong_format(node, catalog_manager):
         f"SELECT * FROM {db}.nonexistent_table FORMAT TSV"
     )
     assert error, "Expected error when accessing table with malformed warehouse"
+
+
+# ---------------------------------------------------------------------------
+# Catalog list pagination (regression: list-tables / list-namespaces
+# silently truncated when the server paginates the response)
+# ---------------------------------------------------------------------------
+
+
+def test_list_tables_pagination(node, catalog_manager):
+    """`SHOW TABLES` and `system.tables` list every table when the catalog
+    paginates the response.
+
+    Regression test for https://github.com/ClickHouse/ClickHouse/pull/104531.
+    Iceberg REST catalogs (`iceberg-rest`, `onelake`, `biglake`) paginate
+    list-tables / list-namespaces responses using a `next-page-token`
+    continuation (Fabric / OneLake pages at ~50 entries per namespace).
+    Before `RestCatalog::getTables` and `getNamespaces` followed the
+    token, only the first page was returned and identifiers sorted after
+    the page boundary disappeared from `SHOW TABLES` and `system.tables`,
+    even though they were still queryable via direct `SELECT`.
+
+    Each backend places the tables according to its own convention
+    (single shared namespace for `onelake`/`biglake`; one namespace per
+    table for `glue`), so the same test exercises both `getTables`
+    pagination (REST backends with many tables in one namespace) and the
+    listing of many namespaces (`glue`, whose AWS SDK paginates
+    independently of this PR).
+    """
+    n_tables = 60  # > Fabric's ~50-per-page boundary
+    # `pg` sorts lexicographically after any pre-existing `e2e_<hex>`
+    # or `tbl_<hex>` names produced by other tests in the same session,
+    # so any silent truncation drops our tables first.
+    prefix = f"e2e_pg_{uuid.uuid4().hex[:6]}_"
+    data = pa.table({"id": pa.array([1], type=pa.int64())})
+
+    expected = [f"{prefix}{i:03d}" for i in range(n_tables)]
+    created = []
+    db = None
+    try:
+        for short in expected:
+            created.append(catalog_manager.create_table(data, table_name=short))
+
+        db = catalog_manager.make_database_name()
+        catalog_manager.create_catalog(node, db)
+
+        # Catalog backends render tables as ``<namespace>.<short_name>``
+        # (``dbo.<X>`` for OneLake, ``<session_ns>.<X>`` for BigLake,
+        # per-table ``ch_e2e_glue_<hex>.<X>`` for Glue). Take the part
+        # after the last dot and use exact set membership so prefix
+        # collisions like ``..._001`` vs ``..._0010`` cannot be silently
+        # masked by substring matching.
+        def _short_names(lines):
+            return {line.strip().rsplit(".", 1)[-1] for line in lines if line.strip()}
+
+        # Cloud catalogs index new tables asynchronously; poll SHOW
+        # TABLES until every created table is visible or the deadline
+        # passes.
+        deadline = time.monotonic() + 600
+        listed = []
+        listed_set: set = set()
+        missing = list(expected)
+        while time.monotonic() < deadline:
+            listed = node.query(f"SHOW TABLES FROM {db}").strip().splitlines()
+            listed_set = _short_names(listed)
+            missing = [t for t in expected if t not in listed_set]
+            if not missing:
+                break
+            time.sleep(10)
+
+        assert not missing, (
+            f"SHOW TABLES from {db} is missing {len(missing)}/{n_tables} "
+            f"tables (first missing: {missing[:5]}); listing returned "
+            f"{len(listed_set)} unique short names from {len(listed)} entries "
+            f"— list response was truncated at the catalog page boundary."
+        )
+
+        sys_listed = node.query(
+            f"SELECT name FROM system.tables WHERE database = '{db}' FORMAT TSV",
+            settings={"show_data_lake_catalogs_in_system_tables": 1},
+        ).strip().splitlines()
+        sys_listed_set = _short_names(sys_listed)
+        sys_missing = [t for t in expected if t not in sys_listed_set]
+        assert not sys_missing, (
+            f"system.tables for {db} is missing {len(sys_missing)}/{n_tables} "
+            f"tables (first missing: {sys_missing[:5]}); listing returned "
+            f"{len(sys_listed_set)} unique short names from {len(sys_listed)} entries."
+        )
+
+        # Read a table whose name sorts last to confirm later-page entries
+        # are loadable end-to-end, not just listed.
+        late = expected[-1]
+        catalog_manager.wait_for_table_ready(late)
+        late_full = catalog_manager.resolve_table_name(node, db, late)
+        rows = node.query(
+            f"SELECT count() FROM {db}.`{late_full}` FORMAT TSV"
+        ).strip()
+        assert int(rows) == 1, (
+            f"Expected 1 row in last-page table {late}, got {rows}"
+        )
+    finally:
+        for name in created:
+            catalog_manager.cleanup_table(name)
+        if db is not None:
+            try:
+                node.query(f"DROP DATABASE IF EXISTS {db}")
+            except Exception:
+                pass

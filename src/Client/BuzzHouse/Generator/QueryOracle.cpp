@@ -822,7 +822,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 baco->add_partitions()->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
             }
 
-            gen.setBackupDestination(rg, bac);
+            gen.setBackupOut(rg, bac->mutable_out());
             res->mutable_out()->CopyFrom(bac->out());
             res->mutable_backup_element()->mutable_bobject()->CopyFrom(bac->backup_element().bobject());
 
@@ -977,7 +977,7 @@ bool QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
     /// Most of the times use SET command, other times SYSTEM
     if (use_settings)
     {
-        std::uniform_int_distribution<uint32_t> settings_range(1, 20);
+        std::uniform_int_distribution<uint32_t> settings_range(1, 40);
         const uint32_t nsets = settings_range(rg.generator);
         SettingValues * sv = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_setting_values();
 

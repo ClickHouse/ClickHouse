@@ -38,6 +38,13 @@ PRELIMINARY_JOBS = [
     "Build (arm_tidy)",
 ]
 
+BUILDS_FOR_TESTS = [
+    j.name
+    for j in JobConfigs.build_jobs
+    + JobConfigs.coverage_build_jobs
+    + JobConfigs.release_build_jobs
+]
+
 INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
     "Build (amd_asan_ubsan)",
     "Integration tests (amd_asan_ubsan, flaky)",
@@ -107,14 +114,6 @@ def should_skip_job(job_name):
             )
         return False, ""
 
-    if job_name == JobNames.PR_BODY:
-        # Run the job if AI assistant is explicitly enabled in the PR body
-        if "disable ai pr formatting assistant: true" in _info_cache.pr_body.lower():
-            return True, "AI PR assistant is explicitly disabled in the PR body"
-        if "Reverts ClickHouse/" in _info_cache.pr_body:
-            return True, "Skipped for revert PRs"
-        return False, ""
-
     if (
         Labels.CI_BUILD in _info_cache.pr_labels
         and "build" not in job_name.lower()
@@ -162,7 +161,7 @@ def should_skip_job(job_name):
 
     if Labels.CI_INTEGRATION in _info_cache.pr_labels and not (
         job_name.startswith(JobNames.INTEGRATION)
-        or job_name in JobConfigs.builds_for_tests
+        or job_name in BUILDS_FOR_TESTS
     ):
         return (
             True,
@@ -172,7 +171,7 @@ def should_skip_job(job_name):
     if Labels.CI_FUNCTIONAL in _info_cache.pr_labels and not (
         job_name.startswith(JobNames.STATELESS)
         or job_name.startswith(JobNames.STATEFUL)
-        or job_name in JobConfigs.builds_for_tests
+        or job_name in BUILDS_FOR_TESTS
         or "functional" in job_name.lower()  # Bugfix validation (functional tests)
     ):
         return (
@@ -229,12 +228,7 @@ def should_skip_job(job_name):
             except Exception as e:
                 print(f"Warning: failed to fetch previously-failed tests: {e}")
                 previously_failed = []
-            try:
-                relevant_tests, _ = targeter.get_most_relevant_tests()
-            except Exception as e:
-                print(f"Warning: failed to fetch relevant tests: {e}")
-                relevant_tests = []
-            if not changed_tests and not previously_failed and not relevant_tests:
+            if not changed_tests and not previously_failed:
                 return True, "Skipped, no tests to run"
         if "integration" in job_name.lower() and not has_new_integration_tests(
             changed_files
@@ -268,14 +262,20 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped, not labeled with 'pr-performance'"
 
-    # If only the functional tests script changed, run only the first batch of stateless tests
+    # If only CI scripts changed (no product code), run a minimal set of tests
+    # to validate the CI pipeline: stateless batch 1 and amd_asan_ubsan integration batch 1.
+    # Individual coverage test jobs run normally, but the LLVM merge/report job is skipped
+    # so that partial shard data does not corrupt the master coverage number.
     if changed_files and all(
         f.startswith("ci/") and f.endswith(".py") for f in changed_files
     ):
+        if job_name == JobNames.LLVM_COVERAGE:
+            return True, "Skipped: only CI scripts changed; skipping coverage merge to preserve master coverage number"
+
         if JobNames.STATELESS in job_name:
             match = re.search(r"(\d)/\d", job_name)
             if match and match.group(1) != "1" or "sequential" in job_name:
-                return True, "Skipped, only job script changed - run first batch only"
+                return True, "Skipped: only CI scripts changed; running stateless batch 1 only"
 
         if JobNames.INTEGRATION in job_name:
             match = re.search(r"(\d)/\d", job_name)
@@ -285,6 +285,6 @@ def should_skip_job(job_name):
                 or "sequential" in job_name
                 or "_asan" not in job_name
             ):
-                return True, "Skipped, only job script changed - run first batch only"
+                return True, "Skipped: only CI scripts changed; running amd_asan_ubsan integration batch 1 only"
 
     return False, ""

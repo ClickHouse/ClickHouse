@@ -209,6 +209,10 @@ CONV_FN(JSONColumn, jcol)
     {
         ret += "^";
     }
+    else if (jcol.has_jcombined())
+    {
+        ret += "@";
+    }
     ret += "`";
     ColumnToString(ret, 1, jcol.col());
     ret += "`";
@@ -2072,6 +2076,22 @@ static void FlatExprSchemaTableToString(String & ret, const ExprSchemaTable & es
 
 CONV_FN(TableFunction, tf);
 
+static void ValuesStatementToString(String & ret, const bool tudf, const ValuesStatement & values)
+{
+    ret += "VALUES ";
+    ret += tudf ? "(" : "";
+    ret += "(";
+    ExprListToString(ret, values.expr_list());
+    ret += ")";
+    for (int i = 0; i < values.extra_expr_lists_size(); i++)
+    {
+        ret += ", (";
+        ExprListToString(ret, values.extra_expr_lists(i));
+        ret += ")";
+    }
+    ret += tudf ? ")" : "";
+}
+
 static void TableOrFunctionToString(String & ret, const bool tudf, const TableOrFunction & tof)
 {
     using TableOrFunctionType = TableOrFunction::JtfOneofCase;
@@ -2094,6 +2114,11 @@ static void TableOrFunctionToString(String & ret, const bool tudf, const TableOr
             ret += tudf ? "view" : "";
             ret += "(";
             ExplainQueryToString(ret, tof.select());
+            ret += ")";
+            break;
+        case TableOrFunctionType::kValuesStandard:
+            ret += "(";
+            ValuesStatementToString(ret, false, tof.values_standard());
             ret += ")";
             break;
         default:
@@ -2422,22 +2447,6 @@ CONV_FN(GenerateRandomFunc, grfunc)
         ret += std::to_string(grfunc.max_array_length());
     }
     ret += ")";
-}
-
-static void ValuesStatementToString(String & ret, const bool tudf, const ValuesStatement & values)
-{
-    ret += "VALUES ";
-    ret += tudf ? "(" : "";
-    ret += "(";
-    ExprListToString(ret, values.expr_list());
-    ret += ")";
-    for (int i = 0; i < values.extra_expr_lists_size(); i++)
-    {
-        ret += ", (";
-        ExprListToString(ret, values.extra_expr_lists(i));
-        ret += ")";
-    }
-    ret += tudf ? ")" : "";
 }
 
 CONV_FN(ArrowFlightFunc, afunc)
@@ -4320,6 +4329,69 @@ CONV_FN(DictionarySourceDetails, dsd)
         }
         ret += "STORAGE_TYPE ";
         appendSQLStringLiteral(ret, DictionarySourceDetails_RedisStorageType_Name(dsd.redis_storage()));
+        has_something = true;
+    }
+    if (dsd.has_url())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "URL ";
+        appendSQLStringLiteral(ret, dsd.url());
+        has_something = true;
+    }
+    if (dsd.has_path())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "PATH ";
+        appendSQLStringLiteral(ret, dsd.path());
+        has_something = true;
+    }
+    if (dsd.has_format())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "FORMAT ";
+        appendSQLStringLiteral(ret, dsd.format());
+        has_something = true;
+    }
+    if (dsd.has_invalidate_query())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "INVALIDATE_QUERY ";
+        appendSQLStringLiteral(ret, dsd.invalidate_query());
+        has_something = true;
+    }
+    if (dsd.has_update_field())
+    {
+        const auto & cp = dsd.update_field();
+
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "UPDATE_FIELD '";
+        ConvertToSQLString(ret, cp.col().column());
+        for (int i = 0; i < cp.sub_cols_size(); i++)
+        {
+            ret += ".";
+            ConvertToSQLString(ret, cp.sub_cols(i).column());
+        }
+        ret += "'";
+        if (dsd.has_update_lag())
+        {
+            ret += " UPDATE_LAG ";
+            ret += std::to_string(dsd.update_lag());
+        }
     }
     ret += ")";
 }
@@ -4579,11 +4651,20 @@ CONV_FN(ExpireSnapshots, es)
 
     ret += "expire_snapshots(";
     if (es.has_positional_timestamp())
-        ret += sep() + "'" + es.positional_timestamp() + "'";
+    {
+        ret += sep();
+        appendSQLStringLiteral(ret, es.positional_timestamp());
+    }
     if (es.has_expire_before())
-        ret += sep() + "expire_before = '" + es.expire_before() + "'";
+    {
+        ret += sep() + "expire_before = ";
+        appendSQLStringLiteral(ret, es.expire_before());
+    }
     if (es.has_retention_period())
-        ret += sep() + "retention_period = '" + es.retention_period() + "'";
+    {
+        ret += sep() + "retention_period = ";
+        appendSQLStringLiteral(ret, es.retention_period());
+    }
     if (es.has_retain_last())
         ret += sep() + "retain_last = " + std::to_string(es.retain_last());
     if (es.snapshot_ids_size() > 0)
@@ -4602,6 +4683,27 @@ CONV_FN(ExpireSnapshots, es)
     ret += ")";
 }
 
+CONV_FN(RemoveOrphanFiles, ro)
+{
+    bool has_arg = false;
+    auto sep = [&]() -> String { return std::exchange(has_arg, true) ? ", " : ""; };
+
+    ret += "remove_orphan_files(";
+    if (ro.has_older_than())
+    {
+        ret += sep();
+        appendSQLStringLiteral(ret, ro.older_than());
+    }
+    if (ro.has_location())
+    {
+        ret += sep() + "location = ";
+        appendSQLStringLiteral(ret, ro.location());
+    }
+    if (ro.dry_run())
+        ret += sep() + "dry_run = 1";
+    ret += ")";
+}
+
 CONV_FN(ExecuteCommand, ec)
 {
     ret += "EXECUTE ";
@@ -4610,6 +4712,9 @@ CONV_FN(ExecuteCommand, ec)
     {
         case CommandType::kExpireSnapshots:
             ExpireSnapshotsToString(ret, ec.expire_snapshots());
+            break;
+        case CommandType::kRemoveOrphanFiles:
+            RemoveOrphanFilesToString(ret, ec.remove_orphan_files());
             break;
         default:
             break;
@@ -5489,9 +5594,42 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kDropDistributedCache:
             ret += "DROP DISTRIBUTED CACHE";
             break;
+        case CmdType::kFlushObjectStorageQueue: {
+            const auto & foq = cmd.flush_object_storage_queue();
+            SystemCommandOnCluster(ret, "FLUSH OBJECT STORAGE QUEUE", cmd, foq.table());
+            ret += " PATH ";
+            appendSQLStringLiteral(ret, foq.path());
+            break;
+        }
+        case CmdType::kStopVirtualPartsUpdate:
+            SystemCommandOnCluster(ret, "STOP VIRTUAL PARTS UPDATE", cmd, cmd.stop_virtual_parts_update());
+            break;
+        case CmdType::kStartVirtualPartsUpdate:
+            SystemCommandOnCluster(ret, "START VIRTUAL PARTS UPDATE", cmd, cmd.start_virtual_parts_update());
+            break;
+        case CmdType::kStopReduceBlockingParts:
+            SystemCommandOnCluster(ret, "STOP REDUCE BLOCKING PARTS", cmd, cmd.stop_reduce_blocking_parts());
+            break;
+        case CmdType::kStartReduceBlockingParts:
+            SystemCommandOnCluster(ret, "START REDUCE BLOCKING PARTS", cmd, cmd.start_reduce_blocking_parts());
+            break;
+        case CmdType::kWaitBlobsCleanup:
+            ret += "WAIT BLOBS CLEANUP";
+            if (cmd.has_cluster())
+            {
+                ClusterToString(ret, true, cmd.cluster());
+            }
+            ret += " ";
+            appendSQLStringLiteral(ret, cmd.wait_blobs_cleanup());
+            break;
         case CmdType::kUnlockSnapshot:
             ret += "UNLOCK SNAPSHOT ";
-            appendSQLStringLiteral(ret, cmd.unlock_snapshot());
+            appendSQLStringLiteral(ret, cmd.unlock_snapshot().name());
+            if (cmd.unlock_snapshot().has_from())
+            {
+                ret += " FROM ";
+                BackupOutToString(ret, cmd.unlock_snapshot().from());
+            }
             break;
         default:
             ret += "FLUSH LOGS";
@@ -5563,21 +5701,30 @@ CONV_FN(BackupRestoreElement, backup)
 CONV_FN(BackupRestore, backup)
 {
     const BackupRestore_BackupCommand & command = backup.command();
+    const bool backup_cmd = command == BackupRestore_BackupCommand_BACKUP;
 
     ret += BackupRestore_BackupCommand_Name(command);
     ret += " ";
-    BackupRestoreElementToString(ret, backup.backup_element());
-    for (int i = 0; i < backup.other_elements_size(); i++)
+    if (backup_cmd && backup.has_from_snapshot())
     {
-        ret += ", ";
-        BackupRestoreElementToString(ret, backup.other_elements(i));
+        ret += "FROM SNAPSHOT ";
+        BackupOutToString(ret, backup.from_snapshot());
+    }
+    else
+    {
+        BackupRestoreElementToString(ret, backup.backup_element());
+        for (int i = 0; i < backup.other_elements_size(); i++)
+        {
+            ret += ", ";
+            BackupRestoreElementToString(ret, backup.other_elements(i));
+        }
     }
     if (backup.has_cluster())
     {
         ClusterToString(ret, true, backup.cluster());
     }
     ret += " ";
-    ret += command == BackupRestore_BackupCommand_BACKUP ? "TO" : "FROM";
+    ret += backup_cmd ? "TO" : "FROM";
     ret += " ";
     BackupOutToString(ret, backup.out());
     if (backup.has_setting_values())
@@ -5600,6 +5747,14 @@ CONV_FN(BackupRestore, backup)
         ret += " FORMAT ";
         ret += OutFormat_Name(backup.outformat()).substr(4);
     }
+}
+
+CONV_FN(SnapshotQuery, sq)
+{
+    ret += "SNAPSHOT ";
+    BackupRestoreElementToString(ret, sq.element());
+    ret += " TO ";
+    BackupOutToString(ret, sq.out());
 }
 
 CONV_FN(Rename, ren)
@@ -5941,6 +6096,9 @@ CONV_FN(SQLQueryInner, query)
             break;
         case QueryType::kCreatePolicy:
             CreatePolicyToString(ret, query.create_policy());
+            break;
+        case QueryType::kSnapshotQuery:
+            SnapshotQueryToString(ret, query.snapshot_query());
             break;
         default:
             ret += "SELECT 1";

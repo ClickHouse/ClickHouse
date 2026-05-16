@@ -1,5 +1,6 @@
-#include <ranges>
 #include <Common/FieldVisitorToString.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -13,11 +14,13 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -154,14 +157,37 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
     if (parts_with_ranges.empty())
         return;
 
+    auto logger = getLogger("optimizeDirectReadFromTextIndex");
+    auto metadata_snapshot = read_from_merge_tree_step->getStorageMetadata();
+    auto mutations_snapshot = read_from_merge_tree_step->getMutationsSnapshot();
+    auto context = read_from_merge_tree_step->getContext();
+
     std::unordered_set<DataPartPtr> unique_parts;
     for (const auto & part : parts_with_ranges)
         unique_parts.insert(part.data_part);
+
+    /// Compute the union of updated columns only across the parts that will actually be read by this step.
+    /// Using `mutations_snapshot->getAllUpdatedColumns()` directly would include pending updates from
+    /// other partitions/parts not in `parts_with_ranges`, disabling direct text index reads even when
+    /// the queried parts have no on-the-fly updates for the index columns.
+    NameSet all_updated_columns;
+    for (const auto & part : unique_parts)
+    {
+        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context);
+        const auto & part_updated_columns = alter_conversions->getAllUpdatedColumns();
+        all_updated_columns.insert(part_updated_columns.begin(), part_updated_columns.end());
+    }
 
     for (const auto & index : indexes->skip_indexes.useful_indices)
     {
         if (!typeid_cast<MergeTreeIndexConditionText *>(index.condition.get()))
             continue;
+
+        if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, all_updated_columns); !result)
+        {
+            LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: {}", result.error().text);
+            continue;
+        }
 
         /// Index may be not materialized in some parts, e.g. after ALTER ADD INDEX query.
         size_t num_materialized_parts = std::ranges::count_if(unique_parts, [&](const auto & part)
@@ -289,6 +315,17 @@ public:
 
         /// Cache for added input nodes for each virtual column.
         std::unordered_map<String, const ActionsDAG::Node *> virtual_column_to_node;
+
+        /// Pre-populate the cache with any text-index virtual column inputs that are already present in this DAG from a previous
+        /// optimization pass. This prevents them from being re-added to `added_columns` when the same DAG is processed again.
+        ///
+        /// See: https://github.com/ClickHouse/ClickHouse/issues/101913#issuecomment-4198784580
+        for (const auto * input : actions_dag.getInputs())
+        {
+            if (input->result_name.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX))
+                virtual_column_to_node.emplace(input->result_name, input);
+        }
+
         /// Copy pointers to nodes to avoid the modification of nodes in the dag while iterating over them.
         auto nodes_ptrs = actions_dag.getNodesPointers();
 
@@ -351,16 +388,22 @@ private:
 
     static bool needApplyTokenizer(const String & function_name)
     {
-        return function_name == "hasAllTokens" || function_name == "hasAnyTokens";
+        return function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
     }
 
     static bool needApplyPreprocessor(const String & function_name)
     {
-        return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens";
+        return function_name == "hasToken" || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
     }
 
-    std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node)
+    std::vector<SelectedCondition> selectConditions(const ActionsDAG::Node & function_node, const ContextPtr & context)
     {
+        /// Canonicalize the function-node subtree so that the serialized column names
+        /// fed to MergeTreeIndexConditionText::traverseFunctionNode match the ones
+        /// produced when the condition was originally constructed in ReadFromMergeTree::applyFilters.
+        ActionsDAGWithInversionPushDown canonical_dag(&function_node, context);
+        const auto & canonical_node = canonical_dag.predicate ? *canonical_dag.predicate : function_node;
+
         NameSet used_index_columns;
         std::vector<SelectedCondition> selected_conditions;
 
@@ -375,7 +418,7 @@ private:
             if (index_header.columns() != 1 || used_index_columns.contains(index_header.begin()->name))
                 continue;
 
-            auto search_query = text_index_condition.createTextSearchQuery(function_node);
+            auto search_query = text_index_condition.createTextSearchQuery(canonical_node);
             if (!search_query || search_query->direct_read_mode == TextIndexDirectReadMode::None)
                 continue;
 
@@ -412,7 +455,7 @@ private:
         if (!need_preprocess_function && !direct_read_from_text_index)
             return replacement;
 
-        auto selected_conditions = selectConditions(function_node);
+        auto selected_conditions = selectConditions(function_node, context);
         if (selected_conditions.empty())
             return replacement;
 
@@ -497,7 +540,8 @@ private:
             new_children.push_back(&actions_dag.addColumn(std::move(arg)));
 
             /// Convert needles to array if they are a string by applying a tokenizer.
-            if (needles_field.getType() == Field::Types::String)
+            /// For hasPhrase the phrase must stay as a string — tokenization is done inside hasPhrase itself.
+            if (function_name != "hasPhrase" && needles_field.getType() == Field::Types::String)
             {
                 std::vector<String> needles_array;
                 const auto & needles_string = needles_field.safeGet<String>();
@@ -562,7 +606,7 @@ private:
                 else if (condition.search_query->direct_read_mode == TextIndexDirectReadMode::Hint)
                     default_expression = make_intrusive<ASTLiteral>(Field(1));
 
-                VirtualColumnDescription virtual_column(condition.virtual_column_name, std::make_shared<DataTypeUInt8>(), /*codec=*/ nullptr, condition.index_name, VirtualsKind::Ephemeral);
+                VirtualColumnDescription virtual_column(condition.virtual_column_name, std::make_shared<DataTypeUInt8>(), /*codec=*/ nullptr, condition.index_name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader);
                 virtual_column.default_desc.kind = ColumnDefaultKind::Default;
                 virtual_column.default_desc.expression = std::move(default_expression);
 
@@ -690,53 +734,21 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
     if (stack.size() < 2)
         return;
 
-    /// Walk up the stack for a FilterStep, collecting any ExpressionSteps along the way.
-    /// When query_plan_merge_expressions = 0, one or more ExpressionSteps may sit between ReadFromMergeTree and FilterStep.
-    QueryPlan::Node * filter_node = nullptr;
-    FilterStep * filter_step = nullptr;
-    std::vector<ExpressionStep *> expression_steps; /// bottom-up order (index 0 = closest to ReadFromMergeTree)
-
-    for (const auto & f : stack | std::views::reverse | std::views::drop(1))
-    {
-        if (auto * fs = typeid_cast<FilterStep *>(f.node->step.get()))
-        {
-            filter_node = f.node;
-            filter_step = fs;
-            break;
-        }
-        if (auto * es = typeid_cast<ExpressionStep *>(f.node->step.get()))
-            expression_steps.push_back(es);
-        else
-            break;
-    }
+    QueryPlan::Node * filter_node = (stack.rbegin() + 1)->node;
+    auto * filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
 
     if (!filter_step)
         return;
 
-    /// Compose the DAG by prepending any ExpressionSteps (bottom-up) into a clone of FilterStep's DAG.
-    ///
-    /// With query_plan_merge_expressions = 0 the new query analyzer inserts ExpressionSteps that rename "msg" to "__table1.msg", so FilterStep's DAG
-    /// has bare INPUT("__table1.msg") nodes that aren't found in the text index header.
-    ///
-    /// After composing, those inputs become ALIAS("__table1.msg") → INPUT("msg"), and getColumnName() follows the alias back to the
-    /// physical name. With query_plan_merge_expressions = 1 the loop is a no-op since expression_steps is empty.
-    const String & filter_column_name = filter_step->getFilterColumnName();
-
-    /// expression_steps is bottom-up (index 0 = closest to ReadFromMergeTree, back() = closest to FilterStep),
-    /// so iterate in reverse to build merge(bottom, merge(..., merge(top, filter_dag)...)).
-    ActionsDAG composed = filter_step->getExpression().clone();
-    for (auto * step : expression_steps | std::views::reverse)
-        composed = ActionsDAG::merge(step->getExpression().clone(), std::move(composed));
-
-    const auto * result_filter_node = processAndOptimizeTextIndexDAG(*read_from_merge_tree_step, composed, text_index_read_infos, filter_column_name, direct_read_from_text_index && !optimized);
+    ActionsDAG & filter_dag = filter_step->getExpression();
+    const auto * result_filter_node = processAndOptimizeTextIndexDAG(*read_from_merge_tree_step, filter_dag, text_index_read_infos, filter_step->getFilterColumnName(), direct_read_from_text_index && !optimized);
 
     if (!result_filter_node)
         return;
 
     bool removes_filter_column = filter_step->removesFilterColumn();
     auto new_filter_column_name = result_filter_node->result_name;
-    filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), std::move(composed), new_filter_column_name, removes_filter_column);
-    filter_node->children = {frame.node};
+    filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
 }
 
 }
