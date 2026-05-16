@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/UTF8Helpers.h>
+#include <Core/ColumnNumbers.h>
 #include <Functions/FunctionHelpers.h>
 #include <base/types.h>
 #include <optional>

@@ -11,7 +11,7 @@
 #endif
 
 
-int main(int, char **)
+int mainEntryExampleHashesTest(int, char **)
 {
     using Strings = std::vector<std::string>;
     using Hashes = std::vector<char>;

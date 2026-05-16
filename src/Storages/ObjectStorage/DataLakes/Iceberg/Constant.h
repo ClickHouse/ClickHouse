@@ -19,6 +19,8 @@ DEFINE_ICEBERG_FIELD(data_file);
 DEFINE_ICEBERG_FIELD(element);
 DEFINE_ICEBERG_FIELD(fields);
 DEFINE_ICEBERG_FIELD(float);
+DEFINE_ICEBERG_FIELD(geometry);
+DEFINE_ICEBERG_FIELD(geography);
 DEFINE_ICEBERG_FIELD(key);
 DEFINE_ICEBERG_FIELD(list)
 DEFINE_ICEBERG_FIELD(location);
@@ -129,6 +131,8 @@ DEFINE_ICEBERG_FIELD_ALIAS(field_id, field-id);
 DEFINE_ICEBERG_FIELD_ALIAS(last_sequence_number, last-sequence-number);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_file, metadata-file);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_log, metadata-log);
+DEFINE_ICEBERG_FIELD_ALIAS(partition_statistics, partition-statistics);
+DEFINE_ICEBERG_FIELD_ALIAS(statistics_path, statistics-path);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_sequence_number, sequence-number);
 DEFINE_ICEBERG_FIELD_ALIAS(min_snapshots_to_keep, history.expire.min-snapshots-to-keep);
 DEFINE_ICEBERG_FIELD_ALIAS(max_snapshot_age_ms, history.expire.max-snapshot-age-ms);

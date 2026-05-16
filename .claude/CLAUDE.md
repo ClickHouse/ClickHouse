@@ -140,11 +140,13 @@ When writing tests, do not add "no-*" tags (like "no-parallel") unless strictly 
 
 When writing tests in tests/queries, prefer adding a new test instead of extending existing ones.
 
-When adding a new test, consult `./tests/queries/0_stateless/add-test` to determine the correct name prefix for the new test.
+When adding a new test, use `./tests/queries/0_stateless/add-test <name>` for `.sql` tests or `./tests/queries/0_stateless/add-test <name>.sh` for `.sh` tests. It assigns the next available number prefix and creates both the test and reference files.
 
 When writing C++ code, always use Allman-style braces (opening brace on a new line). This is enforced by the style check in CI.
 
 Never use sleep in C++ code to fix race conditions - this is stupid and not acceptable!
+
+Avoid fallback paths. When an operation fails, prefer letting the error propagate over silently substituting a default value or alternate behavior. Fallbacks hide bugs and make incidents harder to diagnose. If a fallback is genuinely needed, follow the fail-close principle: never perform a destructive, expensive, or otherwise consequential action on the fallback path. Skip the operation and surface the error instead — for example, when label-attribution data is unavailable, do not assume "human-added" and create backports anyway; let the run fail and retry once the data is available.
 
 When writing messages, say ASan, not ASAN, and similar (because there are two words: Address Sanitizer).
 

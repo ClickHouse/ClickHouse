@@ -32,7 +32,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
+#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 
@@ -70,6 +70,7 @@ namespace ProfileEvents
     extern const Event ZooKeeperSync;
     extern const Event ZooKeeperClose;
     extern const Event ZooKeeperGetACL;
+    extern const Event ZooKeeperListRecursive;
     extern const Event ZooKeeperWaitMicroseconds;
     extern const Event ZooKeeperBytesSent;
     extern const Event ZooKeeperBytesReceived;
@@ -112,7 +113,7 @@ namespace
     {
         callback = [&histogram, callback, timer = Stopwatch()](const Response & response)
         {
-            const Int64 response_time = timer.elapsedMilliseconds();
+            const auto response_time = static_cast<HistogramMetrics::Value>(timer.elapsedMilliseconds());
             histogram.observe(response_time);
             return callback(response);
         };
@@ -791,7 +792,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
 
 void ZooKeeper::sendThread()
 {
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
 
     DB::setThreadName(ThreadName::ZOOKEEPER_SEND);
 
@@ -827,8 +828,8 @@ void ZooKeeper::sendThread()
                     /// After we popped element from the queue, we must register callbacks (even in the case when expired == true right now),
                     ///  because they must not be lost (callbacks must be called because the user will wait for them).
 
-                    ZooKeeperOpentelemetrySpans::maybeFinalize(
-                        info.request->spans.client_requests_queue,
+                    info.request->spans.maybeFinalize(
+                        KeeperSpan::ClientRequestsQueue,
                         [&]
                         {
                             return std::vector<OpenTelemetry::SpanAttribute>{
@@ -892,7 +893,7 @@ void ZooKeeper::sendThread()
 
 void ZooKeeper::receiveThread()
 {
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
 
     DB::setThreadName(ThreadName::ZOOKEEPER_RECV);
 
@@ -1012,7 +1013,7 @@ void ZooKeeper::receiveEvent()
             const WatchResponse & watch_response = dynamic_cast<const WatchResponse &>(response_);
 
             auto event_type = watch_response.type;
-            auto trigger_watches = [&watch_response](Watches & watches_container)
+            auto trigger_watches = [&watch_response](auto & watches_container)
             {
                 auto it = watches_container.find(watch_response.path);
                 if (it == watches_container.end())
@@ -1029,7 +1030,7 @@ void ZooKeeper::receiveEvent()
                 }
 
                 /// NOTE We may process callbacks not under mutex.
-                for (const auto & event_or_callback : it->second)
+                for (const auto & [event_or_callback, _] : it->second)
                 {
                     if (event_or_callback)
                         event_or_callback(watch_response);
@@ -1146,7 +1147,7 @@ void ZooKeeper::receiveEvent()
             std::lock_guard lock(watches_mutex);
             auto & callbacks = is_list_request ? list_watches[req_path] : watches[req_path];
 
-            if (!callbacks.insert(watch).second)
+            if (!callbacks.emplace(watch, WatchCreateInfo{std::chrono::system_clock::now(), req->xid, op_num}).second)
                 return;
 
             /// Warn only for debug or sanitizers builds (i.e. CI), since it is OK to have 100 replicas,
@@ -1368,7 +1369,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
         {
             std::lock_guard lock(watches_mutex);
 
-            auto trigger_watches = [this](Watches & watches_container)
+            auto trigger_watches = [this](auto & watches_container)
             {
                 WatchResponse response;
                 response.type = SESSION;
@@ -1378,7 +1379,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                 Int64 watch_callback_count = 0;
                 for (auto & path_watches : watches_container)
                 {
-                    for (const auto & event_or_callback : path_watches.second)
+                    for (const auto & [event_or_callback, _] : path_watches.second)
                     {
                         watch_callback_count += 1;
                         // TODO: there is impossible to have watch which will be "nullptr"
@@ -1510,10 +1511,10 @@ void ZooKeeper::pushRequest(RequestInfo && info)
             current_trace_context.isTraceEnabled() && current_trace_context.trace_flags & DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS
         )
         {
-            info.request->tracing_context = current_trace_context;
+            info.request->tracing_context = std::make_shared<OpenTelemetry::TracingContext>(current_trace_context);
         }
 
-        ZooKeeperOpentelemetrySpans::maybeInitialize(info.request->spans.client_requests_queue, info.request->tracing_context);
+        info.request->spans.maybeInitialize(KeeperSpan::ClientRequestsQueue, info.request->tracing_context.get());
 
         if (!requests_queue.tryPush(std::move(info), args.operation_timeout_ms))
         {
@@ -1696,6 +1697,27 @@ void ZooKeeper::removeRecursive(
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const RemoveRecursiveResponse &>(response)); };
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
+}
+
+void ZooKeeper::listRecursive(
+    const String & path,
+    uint32_t get_children_recursive_nodes_limit,
+    ListRecursiveCallback callback)
+{
+    if (!isFeatureEnabled(KeeperFeatureFlag::GET_CHILDREN_RECURSIVE))
+        throw Exception::fromMessage(Error::ZBADARGUMENTS, "ListRecursive request type cannot be used because it's not supported by the server");
+
+    ZooKeeperListRecursiveRequest request;
+    request.path = path;
+    request.children_nodes_limit = get_children_recursive_nodes_limit;
+
+    instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeReadonly);
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<ZooKeeperListRecursiveRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListRecursiveResponse &>(response)); };
+    pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperListRecursive);
 }
 
 void ZooKeeper::exists(
@@ -1951,7 +1973,7 @@ void ZooKeeper::close()
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperCloseRequest>(std::move(request));
 
-    ZooKeeperOpentelemetrySpans::maybeInitialize(request_info.request->spans.client_requests_queue, request_info.request->tracing_context);
+    request_info.request->spans.maybeInitialize(KeeperSpan::ClientRequestsQueue, request_info.request->tracing_context.get());
 
     if (!requests_queue.tryPush(std::move(request_info), args.operation_timeout_ms))
         throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push close request to queue within operation timeout of {} ms", args.operation_timeout_ms);
@@ -2022,7 +2044,7 @@ std::shared_ptr<AggregatedZooKeeperLog> ZooKeeper::getAggregatedZooKeeperLog()
 #ifdef ZOOKEEPER_LOG
 void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response, bool finalize, UInt64 elapsed_microseconds)
 {
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
+    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
 
     auto maybe_zk_log = getZooKeeperLog();
     if (!maybe_zk_log)
@@ -2173,4 +2195,21 @@ void ZooKeeper::maybeInjectRecvSleep()
     if (unlikely(inject_setup.test() && recv_inject_sleep && recv_inject_sleep.value()(thread_local_rng)))
         sleepForMilliseconds(args.recv_sleep_ms);
 }
+
+ZooKeeper::WatchesSnapshot ZooKeeper::getWatchesSnapshot() const
+{
+    WatchesSnapshot result;
+    std::lock_guard lock(watches_mutex);
+
+    for (const auto & [path, callbacks] : watches)
+        for (const auto & [_, create_info] : callbacks)
+            result[path].push_back(create_info);
+
+    for (const auto & [path, callbacks] : list_watches)
+        for (const auto & [_, create_info] : callbacks)
+            result[path].push_back(create_info);
+
+    return result;
+}
+
 }
