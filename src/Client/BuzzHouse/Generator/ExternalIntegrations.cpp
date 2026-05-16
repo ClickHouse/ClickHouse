@@ -19,12 +19,52 @@
 namespace BuzzHouse
 {
 
+static String escapeJSON(const String & s)
+{
+    String out;
+    out.reserve(s.size());
+    for (const unsigned char c : s)
+    {
+        switch (c)
+        {
+            case '"':
+                out += "\\\"";
+                break;
+            case '\\':
+                out += "\\\\";
+                break;
+            case '\b':
+                out += "\\b";
+                break;
+            case '\f':
+                out += "\\f";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
+            default:
+                if (c < 0x20 || c >= 0x80)
+                    out += fmt::format("\\u{:04x}", c);
+                else
+                    out += static_cast<char>(c);
+                break;
+        }
+    }
+    return out;
+}
+
 bool ClickHouseIntegratedDatabase::performTableIntegration(
     RandomGenerator & rg, SQLTable & t, const bool can_shuffle, std::vector<ColumnPathChain> & entries)
 {
-    const String str_tname = getTableName(t.db, t.tname);
+    const String tname = getSQLQuotedTableName(t.db, t.getBaseName());
 
-    if (!performQuery(fmt::format("DROP TABLE IF EXISTS {};", str_tname)))
+    if (!performQuery(fmt::format("DROP TABLE IF EXISTS {};", tname)))
     {
         String buf;
         bool first = true;
@@ -40,12 +80,12 @@ bool ClickHouseIntegratedDatabase::performTableIntegration(
             buf += fmt::format(
                 "{}{} {} {}NULL",
                 first ? "" : ", ",
-                entry.getBottomName(),
+                quoteIdentifier(entry.getBottomName()),
                 columnTypeAsString(rg, t.is_deterministic, tp),
                 ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable>(false, false, false, tp)) ? "" : "NOT ");
             first = false;
         }
-        return !performQuery(fmt::format("CREATE TABLE {}({});", str_tname, buf));
+        return !performQuery(fmt::format("CREATE TABLE {}({});", tname, buf));
     }
     return false;
 }
@@ -53,7 +93,7 @@ bool ClickHouseIntegratedDatabase::performTableIntegration(
 bool ClickHouseIntegratedDatabase::dropPeerTableOnRemote(const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    return !performQuery(fmt::format("DROP TABLE IF EXISTS {};", getTableName(t.db, t.tname)));
+    return !performQuery(fmt::format("DROP TABLE IF EXISTS {};", getSQLQuotedTableName(t.db, t.getBaseName())));
 }
 
 void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, CreateTable & newt)
@@ -285,7 +325,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 bool ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    return !performQuery(fmt::format("{} {} SYNC;", truncateStatement(), getTableName(t.db, t.tname)));
+    return !performQuery(fmt::format("{} {} SYNC;", truncateStatement(), getSQLQuotedTableName(t.db, t.getBaseName())));
 }
 
 bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)
@@ -300,6 +340,11 @@ bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableD
         case PeerTableDatabase::None:
             return fc.processServerQuery(false, query);
     }
+}
+
+String ClickHouseIntegratedDatabase::quoteIdentifier(const String & name) const
+{
+    return "`" + escapeSQLString(name, '`') + "`";
 }
 
 #if defined USE_MYSQL && USE_MYSQL
@@ -357,7 +402,7 @@ void MySQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
     }
     te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
     te->add_params()->set_svalue(sc.database);
-    te->add_params()->set_svalue(t.getTableName());
+    te->add_params()->set_svalue(t.getBaseName());
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
     if (!t.isExternalDistributedEngine() && rg.nextBool())
@@ -366,10 +411,12 @@ void MySQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
     }
 }
 
-String MySQLIntegration::getTableName(std::shared_ptr<SQLDatabase> db, const uint32_t tname)
+String MySQLIntegration::getSQLQuotedTableName(std::shared_ptr<SQLDatabase> db, const String & tname)
 {
-    const auto prefix = is_clickhouse ? (db ? fmt::format("d{}.", db->dname) : "") : "test.";
-    return fmt::format("{}t{}", prefix, tname);
+    if (is_clickhouse)
+        return db ? ("`" + escapeSQLString(db->getName(), '`') + "`.`" + escapeSQLString(tname, '`') + "`")
+                  : ("`" + escapeSQLString(tname, '`') + "`");
+    return "`test`.`" + escapeSQLString(tname, '`') + "`";
 }
 
 String MySQLIntegration::truncateStatement()
@@ -383,10 +430,10 @@ bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const 
     if (is_clickhouse && t.isMergeTreeFamily())
     {
         /// Sometimes the optimize step doesn't have to do anything, then throws error. Ignore it
-        const auto u = performQueryOnServerOrRemote(
-            pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK SETTINGS mutations_sync = 2;", getTableName(t.db, t.tname)));
-        const auto v = performQueryOnServerOrRemote(
-            pt, fmt::format("OPTIMIZE TABLE {}{};", getTableName(t.db, t.tname), t.supportsFinal() ? " FINAL" : ""));
+        const String tname = getSQLQuotedTableName(t.db, t.getBaseName());
+        const auto u
+            = performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK SETTINGS mutations_sync = 2;", tname));
+        const auto v = performQueryOnServerOrRemote(pt, fmt::format("OPTIMIZE TABLE {}{};", tname, t.supportsFinal() ? " FINAL" : ""));
         UNUSED(u);
         UNUSED(v);
     }
@@ -603,7 +650,7 @@ void PostgreSQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQ
     }
     te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_svalue(sc.database);
-    te->add_params()->set_svalue(t.getTableName());
+    te->add_params()->set_svalue(t.getBaseName());
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
     te->add_params()->set_svalue("test");
@@ -613,9 +660,14 @@ void PostgreSQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQ
     }
 }
 
-String PostgreSQLIntegration::getTableName(std::shared_ptr<SQLDatabase>, const uint32_t tname)
+String PostgreSQLIntegration::quoteIdentifier(const String & name) const
 {
-    return "test.t" + std::to_string(tname);
+    return "\"" + escapeSQLString(name, '"') + "\"";
+}
+
+String PostgreSQLIntegration::getSQLQuotedTableName(std::shared_ptr<SQLDatabase>, const String & tname)
+{
+    return R"("test".")" + escapeSQLString(tname, '"') + "\"";
 }
 
 String PostgreSQLIntegration::truncateStatement()
@@ -787,12 +839,12 @@ std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegratio
 void SQLiteIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable & t, TableEngine * te)
 {
     te->add_params()->set_svalue(sqlite_path.generic_string());
-    te->add_params()->set_svalue(t.getTableName());
+    te->add_params()->set_svalue(t.getBaseName());
 }
 
-String SQLiteIntegration::getTableName(std::shared_ptr<SQLDatabase>, const uint32_t tname)
+String SQLiteIntegration::getSQLQuotedTableName(std::shared_ptr<SQLDatabase>, const String & tname)
 {
-    return "t" + std::to_string(tname);
+    return "`" + escapeSQLString(tname, '`') + "`";
 }
 
 String SQLiteIntegration::truncateStatement()
@@ -936,7 +988,7 @@ void MongoDBIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable
 {
     te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_svalue(sc.database);
-    te->add_params()->set_svalue(t.getTableName());
+    te->add_params()->set_svalue(t.getBaseName());
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
 }
@@ -1383,8 +1435,8 @@ bool MongoDBIntegration::performTableIntegration(
         const bool permute = can_shuffle && rg.nextBool();
         const bool miss_cols = rg.nextBool();
         const uint32_t ndocuments = rg.nextMediumNumber();
-        const String & str_tname = t.getTableName();
-        mongocxx::collection coll = database[str_tname];
+        const String & tname = t.getBaseName();
+        mongocxx::collection coll = database[tname];
 
         for (uint32_t j = 0; j < ndocuments; j++)
         {
@@ -1405,7 +1457,7 @@ bool MongoDBIntegration::performTableIntegration(
             documents.emplace_back(document << bsoncxx::builder::stream::finalize);
         }
         /// Collection name
-        out_file << str_tname << std::endl;
+        out_file << tname << std::endl;
         for (const auto & doc : documents)
         {
             /// Write each JSON document on a new line
@@ -1463,7 +1515,7 @@ bool AzuriteIntegration::performTableIntegration(RandomGenerator &, SQLTable &, 
 
 void HTTPIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
 {
-    te->add_params()->set_svalue(t.getTablePath(rg, fc, false));
+    te->add_params()->set_svalue(t.getTablePath(rg, false));
 }
 
 bool HTTPIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
@@ -1626,7 +1678,7 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
               [&]
               {
                   sv->set_property("warehouse");
-                  sv->set_value("'" + d.getName() + "'");
+                  sv->set_value("'" + escapeSQLString(d.getName()) + "'");
                   added_warehouse++;
               }},
              {add_endpoint,
@@ -1665,24 +1717,27 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
     bool first = true;
     std::vector<ColumnPathChain> entries;
 
-    for (const auto & [key, val] : t.cols)
+    for (const auto & [_, val] : t.cols)
     {
         ColumnPathChain cpc(val.nullable, val.special, val.dmod, {});
 
-        collectColumnPaths("c" + std::to_string(key), val.tp.get(), 0, cpc, entries);
+        collectColumnPaths(val.getColumnName(), val.tp.get(), 0, cpc, entries);
     }
     /// Common information
     buf += fmt::format(
         R"({{"seed":{},"database_name":"{}","table_name":"{}","format":"{}","deterministic":{},"columns":[)",
         rg.nextInFullRange(),
-        t.getDatabaseName(),
-        t.getTableName(false),
+        escapeJSON(t.getDatabaseName()),
+        escapeJSON(t.getBaseName(false)),
         t.file_format.has_value() ? InOutFormat_Name(t.file_format.value()).substr(6) : "any",
         t.is_deterministic ? "1" : "0");
     for (const auto & entry : entries)
     {
         buf += fmt::format(
-            R"({}{{"name":"{}","type":"{}"}})", first ? "" : ",", entry.getBottomName(), entry.getBottomType()->typeName(false, true));
+            R"({}{{"name":"{}","type":"{}"}})",
+            first ? "" : ",",
+            escapeJSON(entry.getBottomName()),
+            entry.getBottomType()->typeName(false, true));
         first = false;
     }
     buf += "]";
@@ -1691,12 +1746,12 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
         buf += fmt::format(
             R"(,"engine":"{}","catalog_name":"{}","storage":"{}")",
             t.isAnyDeltaLakeEngine() ? "deltalake" : "iceberg",
-            t.getSparkCatalogName(),
+            escapeJSON(t.getSparkCatalogName()),
             t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"));
     }
     else if (t.isKafkaEngine())
     {
-        buf += fmt::format(R"(,"engine":"kafka","topic":"{}","group":"{}")", t.topic.value(), t.group.value());
+        buf += fmt::format(R"(,"engine":"kafka","topic":"{}","group":"{}")", escapeJSON(t.topic.value()), escapeJSON(t.group.value()));
     }
     buf += "}";
     fc.outf << "--External table " << buf << std::endl;
@@ -1798,7 +1853,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
                       [&]
                       {
                           sv->set_property("storage_warehouse");
-                          sv->set_value("'" + t.getDatabaseName() + "'");
+                          sv->set_value("'" + escapeSQLString(t.getDatabaseName()) + "'");
                           added_warehouse++;
                       }},
                      {add_endpoint,
@@ -1807,7 +1862,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
                           /// The key-value format is not well supported for catalogs at the moment
                           const ServerCredentials & minio = fc.minio_server.value();
 
-                          te->add_params()->set_svalue(t.getTablePath(fc));
+                          te->add_params()->set_svalue(t.getTablePath());
                           te->add_params()->set_svalue(minio.password);
                           te->add_params()->set_svalue(minio.secret);
                           if (t.isAnyIcebergEngine() && t.file_format.has_value() && rg.nextMediumNumber() < 96)

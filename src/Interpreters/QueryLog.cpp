@@ -20,8 +20,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/AsyncReadCounters.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <Interpreters/TransactionVersionMetadata.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DateLUTImpl.h>
@@ -64,7 +64,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", low_cardinality_string, "Hostname of the server executing the query."},
-        {"type", std::move(query_status_datatype), "Type of an event that occurred when executing the query."},
+        {"type", std::move(query_status_datatype), "Type of an event that occurred when executing the query. Values: `QueryStart` — successful start of query execution, `QueryFinish` — successful end of query execution, `ExceptionBeforeStart` — exception before the start of query execution, `ExceptionWhileProcessing` — exception during the query execution."},
         {"event_date", std::make_shared<DataTypeDate>(), "Query starting date."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Query starting time."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Query starting time with microseconds precision."},
@@ -91,18 +91,17 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"partitions", array_low_cardinality_string, "Names of the partitions present in the query."},
         {"projections", array_low_cardinality_string, "Names of the projections used during the query execution."},
         {"views", array_low_cardinality_string, "Names of the (materialized or live) views present in the query."},
-        {"skip_indices", array_low_cardinality_string, "Names of the skip indices used during the query execution."},
         {"exception_code", std::make_shared<DataTypeInt32>(), "Code of an exception."},
         {"exception", std::make_shared<DataTypeString>(), "Exception message."},
         {"stack_trace", std::make_shared<DataTypeString>(), "Stack trace. An empty string, if the query was completed successfully."},
 
         {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Query type. Possible values: 1 — query was initiated by the client, 0 — query was initiated by another query as part of distributed query execution."},
-        {"connection_address", DataTypeFactory::instance().get("IPv6"), "The client IP address from which connection was made."},
-        {"connection_port", std::make_shared<DataTypeUInt16>(), "The client port from which connection was made."},
+        {"connection_address", DataTypeFactory::instance().get("IPv6"), "The client IP address from which the connection was made. When connected through a proxy, this will be the address of the proxy."},
+        {"connection_port", std::make_shared<DataTypeUInt16>(), "The client port from which the connection was made. When connected through a proxy, this will be the port of the proxy."},
         {"user", low_cardinality_string, "Name of the user who initiated the current query."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
-        {"address", DataTypeFactory::instance().get("IPv6"), "IP address that was used to make the query."},
-        {"port", std::make_shared<DataTypeUInt16>(), "The client port that was used to make the query."},
+        {"address", DataTypeFactory::instance().get("IPv6"), "IP address that was used to make the query. When connected through a proxy and `auth_use_forwarded_address` is set, this will be the address of the client instead of the proxy."},
+        {"port", std::make_shared<DataTypeUInt16>(), "The client port that was used to make the query. When connected through a proxy and `auth_use_forwarded_address` is set, this will be the port of the client instead of the proxy."},
         {"initial_user", low_cardinality_string, "Name of the user who ran the initial query (for distributed query execution)."},
         {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query (for distributed query execution)."},
         {"initial_address", DataTypeFactory::instance().get("IPv6"), "IP address that the parent query was launched from."},
@@ -216,7 +215,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_partitions = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_projections = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_views = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_skip_indices = typeid_cast<ColumnArray &>(*columns[i++]);
 
         auto fill_column = [](const std::set<String> & data, ColumnArray & column)
         {
@@ -238,7 +236,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(query_partitions, column_partitions);
         fill_column(query_projections, column_projections);
         fill_column(query_views, column_views);
-        fill_column(query_skip_indices, column_skip_indices);
     }
 
     typeid_cast<ColumnInt32 &>(*columns[i++]).getData().push_back(exception_code);

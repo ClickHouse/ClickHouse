@@ -190,12 +190,20 @@ static void registerTokenizers(TokenizerFactory & factory)
         auto array = castAs<Array>(args[0], "separators");
         std::vector<String> values;
         for (const auto & value : array)
-            values.emplace_back(castAs<String>(value, "separator"));
+        {
+            const auto & value_as_string = castAs<String>(value, "separator");
+            if (value_as_string.empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Incorrect parameter of tokenizer '{}': the empty string cannot be used as a separator",
+                    SplitByStringTokenizer::getExternalName());
+            values.emplace_back(value_as_string);
+        }
 
         if (values.empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Incorrect parameter of tokenizer '{}': separators cannot be empty",
+                "Incorrect parameter of tokenizer '{}': the separators argument cannot be empty",
                 SplitByStringTokenizer::getExternalName());
 
         return std::make_unique<SplitByStringTokenizer>(values);
@@ -265,13 +273,14 @@ static void registerTokenizers(TokenizerFactory & factory)
     factory.registerTokenizer(SparseGramsTokenizer::getName(), ITokenizer::Type::SparseGrams, sparse_grams_creator);
     factory.registerTokenizer(SparseGramsTokenizer::getBloomFilterIndexName(), ITokenizer::Type::SparseGrams, sparse_grams_creator);
 
-    auto unicode_word_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    auto ascii_cjk_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
-        assertParamsCount(args.size(), 0, UnicodeWordTokenizer::getExternalName());
-        return std::make_unique<UnicodeWordTokenizer>();
+        assertParamsCount(args.size(), 0, AsciiCJKTokenizer::getExternalName());
+        return std::make_unique<AsciiCJKTokenizer>();
     };
 
-    factory.registerTokenizer(UnicodeWordTokenizer::getName(), ITokenizer::Type::UnicodeWord, unicode_word_creator);
+    factory.registerTokenizer(AsciiCJKTokenizer::getName(), ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
+    factory.registerTokenizer("unicodeWord", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
 }
 
 }
