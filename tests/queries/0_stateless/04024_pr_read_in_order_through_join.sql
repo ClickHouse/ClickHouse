@@ -20,9 +20,12 @@ SET optimize_aggregation_in_order = 1;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable spilling as it doesn't support read-in-order optimization
 SET enable_parallel_replicas = 0;
 
--- Without parallel replicas: read_in_order_through_join should apply (InOrder for events table)
+-- Without parallel replicas: read_in_order_through_join should apply (InOrder for events table).
+-- We sort the ReadType strings so the test is robust to plan reordering: `query_plan_top_k_through_join`
+-- may push `Sort + Limit 3` below the join, which reduces the preserved-side row estimate to 3 and
+-- causes `optimizeJoinLegacy` to swap the join sides. The set of ReadType values is unchanged.
 SELECT 'Without parallel replicas:';
-SELECT groupArray(trim(explain)) FROM (
+SELECT arraySort(groupArray(trim(explain))) FROM (
     EXPLAIN actions = 1
     SELECT events.Time, events.Id, payloads.Payload
     FROM events LEFT JOIN payloads ON events.Id = payloads.Id
@@ -37,7 +40,7 @@ SET enable_parallel_replicas = 1, max_parallel_replicas = 2, cluster_for_paralle
 SET parallel_replicas_local_plan = 1;
 
 SELECT 'With parallel replicas, sorting through JOIN:';
-SELECT groupArray(trim(explain)) FROM (
+SELECT arraySort(groupArray(trim(explain))) FROM (
     EXPLAIN actions = 1
     SELECT events.Time, events.Id, payloads.Payload
     FROM events LEFT JOIN payloads ON events.Id = payloads.Id
@@ -46,7 +49,7 @@ SELECT groupArray(trim(explain)) FROM (
 ) WHERE explain LIKE '%ReadType%';
 
 SELECT 'With parallel replicas, aggregation through JOIN:';
-SELECT groupArray(trim(explain)) FROM (
+SELECT arraySort(groupArray(trim(explain))) FROM (
     EXPLAIN actions = 1
     SELECT toStartOfHour(events.Time) AS t, count()
     FROM events LEFT JOIN payloads ON events.Id = payloads.Id
@@ -56,7 +59,7 @@ SELECT groupArray(trim(explain)) FROM (
 ) WHERE explain LIKE '%ReadType%';
 
 SELECT 'With parallel replicas, distinct through JOIN:';
-SELECT groupArray(trim(explain)) FROM (
+SELECT arraySort(groupArray(trim(explain))) FROM (
     EXPLAIN actions = 1
     SELECT DISTINCT events.Time
     FROM events LEFT JOIN payloads ON events.Id = payloads.Id
