@@ -112,14 +112,14 @@ public:
 REGISTER_FUNCTION(ExtractGroups)
 {
     FunctionDocumentation::Description description = R"(
-Extracts all groups from non-overlapping substrings matched by a regular expression.
+Extracts the capturing groups from the first substring matched by a regular expression. To extract groups from all matches, use [`extractAllGroupsHorizontal`](#extractAllGroupsHorizontal) or [`extractAllGroupsVertical`](/sql-reference/functions/splitting-merging-functions#extractAllGroupsVertical).
     )";
     FunctionDocumentation::Syntax syntax = "extractGroups(s, regexp)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "Input string to extract from.", {"String", "FixedString"}},
-        {"regexp", "Regular expression. Constant.", {"const String", "const FixedString"}}
+        {"regexp", "Regular expression. Must contain at least one capturing group. Constant.", {"const String", "const FixedString"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"If the function finds at least one matching group, it returns Array(Array(String)) column, clustered by group_id (`1` to `N`, where `N` is number of capturing groups in regexp). If there is no matching group, it returns an empty array.", {"Array(Array(String))"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"If the regular expression matches, returns an array containing the captured groups (`1` to `N`, where `N` is the number of capturing groups in `regexp`) of the first match. If there is no match, returns an empty array.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {
         {
             "Usage example",
@@ -132,7 +132,7 @@ WITH '< Server: nginx
 SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 )",
             R"(
-[['Server','nginx'],['Date','Tue, 22 Jan 2019 00:26:14 GMT'],['Content-Type','text/html; charset=UTF-8'],['Connection','keep-alive']]
+['Server','nginx']
     )"
         }
     };
