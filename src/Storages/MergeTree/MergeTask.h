@@ -235,7 +235,6 @@ private:
         NamesAndTypesList merging_columns{};
         NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
-        NamesAndTypesList virtual_columns{};
         NamesAndTypesList storage_columns_expired_by_ttl{};
 
         MergedBlockOutputStream::GatheredData gathered_data{};
