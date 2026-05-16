@@ -34,11 +34,29 @@ UserDefinedExecutableFunctionDriverPtr UserDefinedExecutableFunctionDriverRegist
 
 UserDefinedExecutableFunctionDriverPtr UserDefinedExecutableFunctionDriverRegistry::get(const String & driver_name) const
 {
-    auto driver = tryGet(driver_name);
-    if (!driver)
+    std::lock_guard lock(mutex);
+    auto it = drivers.find(driver_name);
+    if (it != drivers.end())
+        return it->second;
+
+    if (drivers.empty())
         throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
-            "Executable user-defined function driver '{}' is not registered", driver_name);
-    return driver;
+            "Executable user-defined function driver '{}' is not registered. No executable UDF drivers are configured. "
+            "Add driver definitions with the `<user_defined_executable_function_drivers_config>` server configuration key",
+            driver_name);
+
+    String registered_names;
+    for (const auto & [name, _] : drivers)
+    {
+        if (!registered_names.empty())
+            registered_names += ", ";
+        registered_names += name;
+    }
+
+    throw Exception(ErrorCodes::UNKNOWN_FUNCTION,
+        "Executable user-defined function driver '{}' is not registered. Registered drivers: {}",
+        driver_name,
+        registered_names);
 }
 
 std::vector<String> UserDefinedExecutableFunctionDriverRegistry::getAllRegisteredNames() const

@@ -1585,7 +1585,8 @@
 
     <!-- Configuration of drivers for executable user-defined functions. -->
     <!-- A driver knows how to take a user-supplied code snippet and produce a runnable executable -->
-    <!-- user-defined function. See user_defined_executable_function_drivers_config.d/. -->
+    <!-- user-defined function. Source-tree examples under this glob are not installed by packages; -->
+    <!-- operators can provide driver configs at the same config key. -->
     <user_defined_executable_function_drivers_config>user_defined_executable_function_drivers_config.d/*_driver.xml</user_defined_executable_function_drivers_config>
 
     <!-- Directory used to keep configuration files of executable UDFs created dynamically by drivers. -->

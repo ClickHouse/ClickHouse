@@ -1,6 +1,7 @@
 <clickhouse>
     <driver>
-        <!-- Name of the driver as it appears in CREATE FUNCTION ... ENGINE = c_function_body(...) -->
+        <!-- Source-tree example only. It is not installed by packages. -->
+        <!-- Name of the driver as it appears in `CREATE FUNCTION ... ENGINE = c_function_body(...)`. -->
         <name>c_function_body</name>
 
         <!-- The driver receives the function name, return type, argument signature, and body. -->

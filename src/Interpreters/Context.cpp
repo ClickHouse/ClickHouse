@@ -3792,7 +3792,9 @@ void Context::loadUserDefinedExecutableFunctionDrivers(const Poco::Util::Abstrac
         ConfigProcessor processor(file_path);
         auto loaded = processor.loadConfig();
         processor.savePreprocessedConfig(loaded, app_path);
-        driver_configs.emplace_back(loaded.configuration, std::filesystem::path(file_path).parent_path().string());
+        driver_configs.emplace_back(
+            loaded.configuration,
+            std::filesystem::absolute(file_path).parent_path().lexically_normal().string());
     }
 
     UserDefinedExecutableFunctionDriverRegistry::instance().loadDriversFromConfigs(driver_configs);

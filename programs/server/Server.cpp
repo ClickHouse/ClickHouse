@@ -2999,6 +2999,7 @@ try
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
+        global_context->loadUserDefinedExecutableFunctionDrivers(config());
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
 
         /// For driver-based executable UDFs persisted as ATTACH FUNCTION queries, ensure the
