@@ -84,7 +84,7 @@ ColumnsDescription TableFunctionInput::getActualTableStructure(ContextPtr contex
         /// `QueryAnalyzer::resolveTableFunction`). Honour that hint first — the
         /// user's destination column names take precedence over a format's
         /// fixed schema, so queries like
-        ///     INSERT INTO t (data String) SELECT data FROM input() FORMAT LineAsString
+        ///     INSERT INTO t (data) SELECT data FROM input() FORMAT LineAsString
         /// keep working even though `LineAsString` declares its column as `line`.
         if (!structure_hint.empty())
             return structure_hint;
