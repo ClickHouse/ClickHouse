@@ -964,12 +964,19 @@ bool StorageFileLog::updateFileInfos()
                         /// If the file already existed with a different inode (deleted and recreated),
                         /// clean up the old inode's meta entry and on-disk meta file to prevent
                         /// two meta_by_inode entries mapping to the same filename.
+                        /// Guard the cleanup by filename ownership: a rename within the same
+                        /// event batch may have re-assigned the old inode to a different
+                        /// filename, and we must not drop the meta tracking that other file.
                         if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                         {
                             if (it->second.inode != inode)
                             {
-                                file_infos.meta_by_inode.erase(it->second.inode);
-                                disk->removeFileIfExists(getFullMetaPath(file_name));
+                                if (auto meta = file_infos.meta_by_inode.find(it->second.inode);
+                                    meta != file_infos.meta_by_inode.end() && meta->second.file_name == file_name)
+                                {
+                                    file_infos.meta_by_inode.erase(meta);
+                                    disk->removeFileIfExists(getFullMetaPath(file_name));
+                                }
                             }
                             it->second = FileContext{.status = FileStatus::OPEN, .inode = inode};
                         }
@@ -1014,13 +1021,18 @@ bool StorageFileLog::updateFileInfos()
                         auto inode = getInode(file_path);
 
                         /// If the file name was previously tracked with a different inode,
-                        /// clean up the stale meta entry.
+                        /// clean up the stale meta entry. Guard by filename ownership so a
+                        /// rename within the same batch does not drop another file's meta.
                         if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                         {
                             if (it->second.inode != inode)
                             {
-                                file_infos.meta_by_inode.erase(it->second.inode);
-                                disk->removeFileIfExists(getFullMetaPath(file_name));
+                                if (auto meta = file_infos.meta_by_inode.find(it->second.inode);
+                                    meta != file_infos.meta_by_inode.end() && meta->second.file_name == file_name)
+                                {
+                                    file_infos.meta_by_inode.erase(meta);
+                                    disk->removeFileIfExists(getFullMetaPath(file_name));
+                                }
                             }
                             it->second = FileContext{.inode = inode};
                         }
