@@ -825,7 +825,14 @@ Pipe ReadFromMergeTree::readInOrder(
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
-    if (read_type == ReadType::InReverseOrder)
+    /// `parts_with_ranges` can legitimately be empty (e.g. when called from `readByLayers` for a
+    /// layer whose parts were entirely consumed by a sibling layer, or via the non-intersecting
+    /// branch of `splitPartsWithRangesByPrimaryKey` when no parts are non-intersecting). In that
+    /// case `Pipe::unitePipes` returns an empty `Pipe` (no output ports), and adding a
+    /// `ReverseTransform` would throw `LOGICAL_ERROR: 'Cannot add simple transform to empty Pipe.'`.
+    /// Reversing zero rows is a no-op anyway, so skip the transform when the pipe has no outputs.
+    /// Callers already handle empty pipes (see e.g. `readByLayers` substituting a `NullSource`).
+    if (read_type == ReadType::InReverseOrder && pipe.numOutputPorts() > 0)
     {
         pipe.addSimpleTransform([&](const SharedHeader & header)
         {
