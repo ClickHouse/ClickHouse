@@ -70,6 +70,8 @@ SELECT test_udf_drv_add(40, 2);
 
 echo "-- dynamic config exists after create"
 test -f "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "yes" || echo "no"
+grep -q '<format>RowBinary</format>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "rowbinary_format" || echo "bad_format"
+grep -q '<send_chunk_header>1</send_chunk_header>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "chunk_header_enabled" || echo "chunk_header_disabled"
 
 echo "-- work dir uses uuid name"
 WORK_DIR_NAME=$(cat "$WORK_DIR/dyn/test_udf_drv_add.workdir")
@@ -79,6 +81,10 @@ case "$WORK_DIR_NAME" in
 esac
 test -d "$WORK_DIR/dyn/$WORK_DIR_NAME" && echo "uuid_workdir_present" || echo "uuid_workdir_missing"
 test -d "$WORK_DIR/dyn/test_udf_drv_add.d" && echo "function_workdir_present" || echo "function_workdir_absent"
+grep -q 'setvbuf' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "setvbuf_present" || echo "setvbuf_absent"
+
+echo "-- multi-row chunk call"
+run "SELECT sum(test_udf_drv_add(toUInt8(number), toUInt8(1))) FROM numbers(10);"
 
 echo "-- if not exists does not invoke driver"
 run "

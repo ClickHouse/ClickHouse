@@ -8,7 +8,7 @@ Invocation:
 When called with `create`, reads the C function body from stdin and:
 
   1. Generates a wrapper.c that defines the user function and reads/writes
-     TabSeparated rows on stdin/stdout, calling the user function for each row.
+     chunked RowBinary rows on stdin/stdout, calling the user function for each row.
   2. Compiles the wrapper inside a sandboxed Docker container.
   3. Prints to stdout an XML configuration for an `executable_pool` UDF whose
      command runs the compiled binary inside another sandboxed Docker
@@ -27,19 +27,19 @@ import subprocess
 import sys
 from html import escape as xml_escape
 
-# Mapping from ClickHouse data types to a (C type, format-printf, format-scanf, deserializer) tuple.
+# Mapping from ClickHouse data types to a (C type, reader, writer) tuple.
 # Only a small set of types is supported here - this is a proof of concept.
 TYPE_MAP = {
-    "UInt8":  ("uint8_t",  '%" PRIu8 "',  '%" SCNu8 "',  'ch_read_uint8'),
-    "UInt16": ("uint16_t", '%" PRIu16 "', '%" SCNu16 "', 'ch_read_uint16'),
-    "UInt32": ("uint32_t", '%" PRIu32 "', '%" SCNu32 "', 'ch_read_uint32'),
-    "UInt64": ("uint64_t", '%" PRIu64 "', '%" SCNu64 "', 'ch_read_uint64'),
-    "Int8":   ("int8_t",   '%" PRId8 "',  '%" SCNd8 "',  'ch_read_int8'),
-    "Int16":  ("int16_t",  '%" PRId16 "', '%" SCNd16 "', 'ch_read_int16'),
-    "Int32":  ("int32_t",  '%" PRId32 "', '%" SCNd32 "', 'ch_read_int32'),
-    "Int64":  ("int64_t",  '%" PRId64 "', '%" SCNd64 "', 'ch_read_int64'),
-    "Float32": ("float",   '%g',          '%f',          'ch_read_float'),
-    "Float64": ("double",  '%g',          '%lf',         'ch_read_double'),
+    "UInt8":  ("uint8_t",  "ch_read_uint8",  "ch_write_uint8"),
+    "UInt16": ("uint16_t", "ch_read_uint16", "ch_write_uint16"),
+    "UInt32": ("uint32_t", "ch_read_uint32", "ch_write_uint32"),
+    "UInt64": ("uint64_t", "ch_read_uint64", "ch_write_uint64"),
+    "Int8":   ("int8_t",   "ch_read_int8",   "ch_write_int8"),
+    "Int16":  ("int16_t",  "ch_read_int16",  "ch_write_int16"),
+    "Int32":  ("int32_t",  "ch_read_int32",  "ch_write_int32"),
+    "Int64":  ("int64_t",  "ch_read_int64",  "ch_write_int64"),
+    "Float32": ("float",   "ch_read_float",  "ch_write_float"),
+    "Float64": ("double",  "ch_read_double", "ch_write_double"),
 }
 
 
@@ -66,17 +66,16 @@ def generate_wrapper_c(function_name, return_type, args, user_body):
     if return_type not in TYPE_MAP:
         raise SystemExit(f"Unsupported return type: {return_type}")
 
-    ret_c_type, ret_printf, _, _ = TYPE_MAP[return_type]
+    ret_c_type, _, ret_writer = TYPE_MAP[return_type]
 
     arg_c_decls = []
     arg_reads = []
     user_func_params = []
     user_call_args = []
     for name, ty in args:
-        c_type, _, scn_fmt, _ = TYPE_MAP[ty]
-        arg_c_decls.append(f"    {c_type} {name};")
-        # Per-arg read: scan one field, then expect either tab or newline depending on position.
-        arg_reads.append(f'    if (scanf(" {scn_fmt}", &{name}) != 1) {{ if (feof(stdin)) break; fputs("read error\\n", stderr); return 2; }}')
+        c_type, reader, _ = TYPE_MAP[ty]
+        arg_c_decls.append(f"            {c_type} {name};")
+        arg_reads.append(f'        if ({reader}(&{name}) != 1) {{ fputs("read error\\n", stderr); return 2; }}')
         user_func_params.append(f"{c_type} {name}")
         user_call_args.append(name)
 
@@ -89,7 +88,9 @@ def generate_wrapper_c(function_name, return_type, args, user_body):
 
     return f"""\
 /* Auto-generated wrapper for executable UDF '{safe_function_name}'. */
+#include <errno.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -100,18 +101,97 @@ static {ret_c_type} user_function({user_params_str})
 {user_body}
 }}
 
+static int ch_read_exact(void * ptr, size_t size)
+{{
+    unsigned char * out = (unsigned char *)ptr;
+    while (size != 0)
+    {{
+        size_t bytes = fread(out, 1, size, stdin);
+        if (bytes == 0)
+            return ferror(stdin) ? -1 : 0;
+        out += bytes;
+        size -= bytes;
+    }}
+    return 1;
+}}
+
+static int ch_write_exact(const void * ptr, size_t size)
+{{
+    const unsigned char * in = (const unsigned char *)ptr;
+    while (size != 0)
+    {{
+        size_t bytes = fwrite(in, 1, size, stdout);
+        if (bytes == 0)
+            return ferror(stdout) ? -1 : 0;
+        in += bytes;
+        size -= bytes;
+    }}
+    return 1;
+}}
+
+#define CH_DEFINE_RW(name, type) \\
+    static int ch_read_##name(type * value) {{ return ch_read_exact(value, sizeof(*value)); }} \\
+    static int ch_write_##name(const type * value) {{ return ch_write_exact(value, sizeof(*value)); }}
+
+CH_DEFINE_RW(uint8, uint8_t)
+CH_DEFINE_RW(uint16, uint16_t)
+CH_DEFINE_RW(uint32, uint32_t)
+CH_DEFINE_RW(uint64, uint64_t)
+CH_DEFINE_RW(int8, int8_t)
+CH_DEFINE_RW(int16, int16_t)
+CH_DEFINE_RW(int32, int32_t)
+CH_DEFINE_RW(int64, int64_t)
+CH_DEFINE_RW(float, float)
+CH_DEFINE_RW(double, double)
+
+static int ch_read_chunk_header(uint64_t * rows)
+{{
+    char buf[64];
+    if (!fgets(buf, sizeof(buf), stdin))
+        return feof(stdin) ? 0 : -1;
+
+    errno = 0;
+    char * end = NULL;
+    unsigned long long value = strtoull(buf, &end, 10);
+    if (errno != 0 || end == buf || value > UINT64_MAX || (*end != '\\n' && *end != '\\0'))
+        return -1;
+
+    *rows = (uint64_t)value;
+    return 1;
+}}
+
 int main(void)
 {{
-    /* Line-buffered stdout so each row is delivered to ClickHouse as soon as it is produced. */
-    setvbuf(stdout, NULL, _IOLBF, 0);
     for (;;)
     {{
+        uint64_t rows = 0;
+        int header_status = ch_read_chunk_header(&rows);
+        if (header_status == 0)
+            break;
+        if (header_status < 0)
+        {{
+            fputs("chunk header read error\\n", stderr);
+            return 2;
+        }}
+
+        for (uint64_t row = 0; row != rows; ++row)
+        {{
 {arg_c_decls_str}
 {arg_reads_str}
-        {ret_c_type} result = user_function({user_call_args_str});
-        printf("{ret_printf}\\n", result);
+            {ret_c_type} result = user_function({user_call_args_str});
+            if ({ret_writer}(&result) != 1)
+            {{
+                fputs("write error\\n", stderr);
+                return 3;
+            }}
+        }}
+
+        if (fflush(stdout) != 0)
+        {{
+            fputs("flush error\\n", stderr);
+            return 3;
+        }}
     }}
-    fflush(stdout);
     return 0;
 }}
 """
@@ -219,11 +299,11 @@ def generate_xml_config(function_name, return_type, args, work_dir):
         <type>executable_pool</type>
         <name>{xml_escape(function_name)}</name>
         <return_type>{xml_escape(return_type)}</return_type>
-{arguments_xml}        <format>TabSeparated</format>
+{arguments_xml}        <format>RowBinary</format>
         <command>{xml_escape(runtime_command)}</command>
         <execute_direct>0</execute_direct>
         <pool_size>4</pool_size>
-        <send_chunk_header>0</send_chunk_header>
+        <send_chunk_header>1</send_chunk_header>
         <command_read_timeout>10000</command_read_timeout>
         <command_write_timeout>10000</command_write_timeout>
         <command_termination_timeout>10</command_termination_timeout>
