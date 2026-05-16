@@ -23,7 +23,8 @@ public:
     CursorTreeNodePtr & next(const String & key);
 
     bool hasValue(const String & key) const;
-    const Int64 & getValue(const String & key) const;
+    Int64 getValue(const String & key) const;
+    Int64 getValue(const String & key, Int64 default_value) const;
     Int64 & setValue(const String & key, Int64 value);
 
     Data::iterator begin();

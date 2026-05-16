@@ -26,7 +26,7 @@ MergeTreeCursor buildMergeTreeCursor(const CursorTreeNodePtr & cursor_tree)
         const auto & partition_node = std::get<CursorTreeNodePtr>(node);
         cursor[partition_id] = PartitionCursor{
             .block_number = partition_node->getValue("block_number"),
-            .block_offset = partition_node->getValue("block_offset"),
+            .block_offset = partition_node->getValue("block_offset", -1),
         };
     }
 

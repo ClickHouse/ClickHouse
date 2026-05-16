@@ -96,12 +96,25 @@ bool CursorTreeNode::hasValue(const String & key) const
     return std::holds_alternative<Int64>(it->second);
 }
 
-const Int64 & CursorTreeNode::getValue(const String & key) const
+Int64 CursorTreeNode::getValue(const String & key) const
 {
     auto it = data.find(key);
 
     if (it == data.end())
         throw Exception(ErrorCodes::INVALID_CURSOR_LOOKUP, "Trying to extract value by key: '{}'", key);
+
+    if (!std::holds_alternative<Int64>(it->second))
+        throw Exception(ErrorCodes::INVALID_CURSOR_LOOKUP, "Trying to extract subtree by key: '{}'", key);
+
+    return std::get<Int64>(it->second);
+}
+
+Int64 CursorTreeNode::getValue(const String & key, Int64 default_value) const
+{
+    auto it = data.find(key);
+
+    if (it == data.end())
+        return default_value;
 
     if (!std::holds_alternative<Int64>(it->second))
         throw Exception(ErrorCodes::INVALID_CURSOR_LOOKUP, "Trying to extract subtree by key: '{}'", key);

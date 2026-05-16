@@ -1,8 +1,8 @@
 === Test Streaming from partitioned ReplicatedMergeTree ===
-0 p0-from-r1
-0 p1-from-r2
-1 p0-from-r2
-1 p1-from-r1
+p0-from-r1
+p1-from-r2
+p0-from-r2
+p1-from-r1
 
 ****************
 Killing process
