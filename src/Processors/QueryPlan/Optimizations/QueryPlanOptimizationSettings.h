@@ -63,6 +63,7 @@ struct QueryPlanOptimizationSettings
     bool use_join_disjunctions_push_down;
     bool convert_any_join_to_semi_or_anti_join;
     bool try_use_top_k_optimization;
+    bool top_k_through_join;
     bool remove_unused_columns;
 
     /// If we can swap probe/build tables in join
@@ -140,6 +141,7 @@ struct QueryPlanOptimizationSettings
 
     bool use_skip_indexes_for_top_k;
     bool use_top_k_dynamic_filtering;
+    bool use_top_k_dynamic_filtering_for_variable_length_types;
     bool use_skip_indexes_on_data_read;
     size_t max_limit_for_top_k_optimization = 0;
 

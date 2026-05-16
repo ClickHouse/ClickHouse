@@ -14,7 +14,7 @@ struct IcebergDataSnapshot
 {
     DB::ManifestFileCacheKeys manifest_list_entries;
     Int64 snapshot_id;
-    Int32 schema_id_on_snapshot_commit;
+    Int64 schema_id_on_snapshot_commit;
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_delete_rows;
@@ -36,10 +36,10 @@ struct IcebergHistoryRecord
     bool is_current_ancestor;
     Iceberg::IcebergPathFromMetadata manifest_list_path;
 
-    Int32 added_files = 0;
-    Int32 added_records = 0;
-    Int32 added_files_size;
-    Int32 num_partitions;
+    Int64 added_files = 0;
+    Int64 added_records = 0;
+    Int64 added_files_size = 0;
+    Int64 num_partitions = 0;
 };
 
 using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
