@@ -2,7 +2,7 @@
 42
 -- dynamic config exists after create
 yes
-rowbinary_format
+buffers_format
 chunk_header_enabled
 -- work dir uses uuid name
 uuid_workdir_name

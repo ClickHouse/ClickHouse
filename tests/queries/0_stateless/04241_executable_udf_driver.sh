@@ -70,7 +70,7 @@ SELECT test_udf_drv_add(40, 2);
 
 echo "-- dynamic config exists after create"
 test -f "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "yes" || echo "no"
-grep -q '<format>RowBinary</format>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "rowbinary_format" || echo "bad_format"
+grep -q '<format>Buffers</format>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "buffers_format" || echo "bad_format"
 grep -q '<send_chunk_header>1</send_chunk_header>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "chunk_header_enabled" || echo "chunk_header_disabled"
 
 echo "-- work dir uses uuid name"
