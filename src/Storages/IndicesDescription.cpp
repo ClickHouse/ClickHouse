@@ -145,10 +145,10 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     if (expr_list == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
 
-    expandColumnMatchersInExpressionList(expr_list, columns, context);
-
     ReplaceAliasToExprVisitor::Data data{columns};
     ReplaceAliasToExprVisitor{data}.visit(expr_list);
+
+    expandColumnMatchersInExpressionList(expr_list, columns, context);
 
     expression_list_ast = expr_list->clone();
 
