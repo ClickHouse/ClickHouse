@@ -17,13 +17,13 @@
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
 #include <Poco/JSON/Object.h>
+#include <Coordination/KeeperRequestDispatcherOld.h>
 #include <Coordination/KeeperRequestDispatcher.h>
-#include <Coordination/KeeperRequestDispatcher2.h>
 
 namespace DB
 {
 
-/// KeeperRequestDispatcher dispatches regular request processing, this class manages everything else:
+/// KeeperRequestDispatcherOld dispatches regular request processing, this class manages everything else:
 /// snapshots, new session id assignment, expired session cleanup etc.
 class KeeperDispatcher
 {
@@ -38,7 +38,7 @@ private:
     /// When client connects to the server for the first time it doesn't have session_id.
     /// It request it from server. We give temporary internal id for such requests just to match
     /// client with its response. This is a map of in-progress SessionID requests.
-    /// After a proper session id is assigned, session lives in KeeperRequestDispatcher's session map.
+    /// After a proper session id is assigned, session lives in KeeperRequestDispatcherOld's session map.
     mutable std::mutex new_session_id_mutex;
     std::unordered_map<int64_t, std::promise<int64_t>> new_session_id_requests;
 
@@ -53,9 +53,9 @@ private:
     std::unique_ptr<KeeperServer> server;
 
     /// Exactly one of these is non-null.
-    /// Hopefully KeeperRequestDispatcher2 will work well and we'll delete KeeperRequestDispatcher soon.
+    /// Hopefully KeeperRequestDispatcher will work well and we'll delete KeeperRequestDispatcherOld soon.
+    std::unique_ptr<KeeperRequestDispatcherOld> dispatcher_old;
     std::unique_ptr<KeeperRequestDispatcher> dispatcher;
-    std::unique_ptr<KeeperRequestDispatcher2> dispatcher2;
 
     KeeperConnectionStats keeper_stats;
 

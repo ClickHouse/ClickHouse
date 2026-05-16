@@ -117,26 +117,26 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
             /// Special new session response.
             if (response.response->xid != Coordination::WATCH_XID && response.response->getOpNum() == Coordination::OpNum::SessionID)
                 onSessionIDResponse(response.response);
-            else if (dispatcher)
-                dispatcher->onResponse(std::move(response));
+            else if (dispatcher_old)
+                dispatcher_old->onResponse(std::move(response));
             else
-                dispatcher2->onResponse(std::move(response));
+                dispatcher->onResponse(std::move(response));
         },
         snapshots_queue,
         keeper_context,
         snapshot_s3,
         [this](uint64_t /*log_idx*/, const KeeperRequestForSession & request_for_session)
         {
-            if (dispatcher)
-                dispatcher->onCommit(request_for_session);
+            if (dispatcher_old)
+                dispatcher_old->onCommit(request_for_session);
             else
-                dispatcher2->onCommit(request_for_session);
+                dispatcher->onCommit(request_for_session);
         });
 
     if (keeper_context->getCoordinationSettings()[CoordinationSetting::use_new_dispatcher])
-        dispatcher2 = std::make_unique<KeeperRequestDispatcher2>(server.get());
-    else
         dispatcher = std::make_unique<KeeperRequestDispatcher>(server.get());
+    else
+        dispatcher_old = std::make_unique<KeeperRequestDispatcherOld>(server.get());
 
     try
     {
@@ -160,8 +160,8 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         throw;
     }
 
-    if (dispatcher2)
-        dispatcher2->startup(); // after server->startup to avoid race on raft_instance
+    if (dispatcher)
+        dispatcher->startup(); // after server->startup to avoid race on raft_instance
 
     /// Start it after keeper server start
     session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
@@ -195,10 +195,10 @@ void KeeperDispatcher::shutdown(bool closed_all_connections)
                 update_configuration_thread.join();
         }
 
+        if (dispatcher_old)
+            dispatcher_old->shutdown();
         if (dispatcher)
-            dispatcher->shutdown();
-        if (dispatcher2)
-            dispatcher2->shutdown(closed_all_connections);
+            dispatcher->shutdown(closed_all_connections);
 
         if (server)
             server->shutdown();
@@ -244,10 +244,10 @@ void KeeperDispatcher::snapshotThread()
 
 bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64)
 {
-    if (dispatcher)
-        return dispatcher->putRequest(request, session_id, use_xid_64);
+    if (dispatcher_old)
+        return dispatcher_old->putRequest(request, session_id, use_xid_64);
     else
-        return dispatcher2->putRequest(request, session_id, use_xid_64);
+        return dispatcher->putRequest(request, session_id, use_xid_64);
 }
 
 void KeeperDispatcher::forceRecovery()
@@ -262,10 +262,10 @@ KeeperDispatcher::~KeeperDispatcher()
 
 void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
 {
-    if (dispatcher)
-        dispatcher->registerSession(session_id, std::move(callback));
+    if (dispatcher_old)
+        dispatcher_old->registerSession(session_id, std::move(callback));
     else
-        dispatcher2->registerSession(session_id, std::move(callback));
+        dispatcher->registerSession(session_id, std::move(callback));
 }
 
 void KeeperDispatcher::sessionCleanerTask()
@@ -315,10 +315,10 @@ void KeeperDispatcher::sessionCleanerTask()
 
 void KeeperDispatcher::finishSession(int64_t session_id)
 {
-    if (dispatcher)
-        dispatcher->finishSession(session_id);
+    if (dispatcher_old)
+        dispatcher_old->finishSession(session_id);
     else
-        dispatcher2->finishSession(session_id);
+        dispatcher->finishSession(session_id);
 }
 
 void KeeperDispatcher::onSessionIDResponse(const Coordination::ZooKeeperResponsePtr & response) noexcept
@@ -963,8 +963,8 @@ void KeeperDispatcher::cleanResources()
 
 void KeeperDispatcher::onResponseDeallocated(const Coordination::ZooKeeperResponse & response)
 {
-    if (dispatcher2)
-        dispatcher2->onResponseDeallocated(response);
+    if (dispatcher)
+        dispatcher->onResponseDeallocated(response);
 }
 
 }

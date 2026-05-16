@@ -94,7 +94,7 @@ def test_reconfig_replace_leader(started_cluster):
 
     # additional 20s wait before removing leader;
     # create new client because leader migration may spuriously close client sessions
-    # (see comment next to dropInFlightRequests call in KeeperRequestDispatcher2,
+    # (see comment next to dropInFlightRequests call in KeeperRequestDispatcher,
     #  if it's still there)
     zk2.stop()
     zk2 = create_client(node2)
