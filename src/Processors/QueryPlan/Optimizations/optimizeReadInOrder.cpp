@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
@@ -1386,6 +1387,72 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
     return {};
 }
 
+InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    /// Here we allow LimitByStep to drive read-in-order.
+    /// Example: SELECT * FROM t LIMIT 1 BY a; -- sorting key: a, b
+    /// Without an ORDER BY there is no SortingStep, so the LimitByStep::applyOrder propagation
+    /// in applyOrder.cpp does not fire; this pass installs the order request itself so
+    /// that LimitByTransform runs in streaming (InOrder) mode which is much more efficient in both
+    /// time and memory.
+
+    FindReadingStepContext find_reading_ctx{
+        .allow_existing_order = true,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+    };
+    QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
+    if (!reading_node)
+        return {};
+
+    const auto & keys = limit_by.getColumns();
+    size_t limit = 0;
+
+    std::optional<ActionsDAG> dag;
+    FixedColumns fixed_columns;
+    buildSortingDAG(node, dag, fixed_columns, limit);
+
+    if (dag && !fixed_columns.empty())
+        enrichFixedColumns(*dag, fixed_columns);
+
+    if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
+    {
+        /// Same as above: skip limit-by-in-order through JOIN for parallel replicas
+        /// to avoid coordination mode mismatch.
+        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
+            return {};
+
+        auto order_info = buildInputOrderFromUnorderedKeys(reading, fixed_columns, dag, keys);
+
+        if (!canImproveOrderForDistinct(order_info, reading->getInputOrder()))
+            return {};
+
+        if (!reading->requestReadingInOrder(
+                order_info.input_order->used_prefix_of_sorting_key_size, order_info.input_order->direction, order_info.input_order->limit))
+            return {};
+
+        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
+        return order_info;
+    }
+    if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
+    {
+        auto order_info = buildInputOrderFromUnorderedKeys(merge, fixed_columns, dag, keys);
+
+        if (!canImproveOrderForDistinct(order_info, merge->getInputOrder()))
+            return {};
+
+        if (!merge->requestReadingInOrder(order_info.input_order))
+            return {};
+
+        for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+            join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
+        return order_info;
+    }
+
+    /// TODO: Consider adding optimization for ReadFromObjectStorageStep after proper testing.
+    return {};
+}
+
 bool readingFromParallelReplicas(const QueryPlan::Node * node)
 {
     IQueryPlanStep * step = node->step.get();
@@ -1584,6 +1651,20 @@ void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const Q
     auto order_info = buildInputOrderInfo(*distinct, *node.children.front(), optimization_settings);
     if (order_info.input_order)
         distinct->applyOrder(std::move(order_info.sort_description));
+}
+
+void optimizeLimitByInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (node.children.size() != 1)
+        return;
+
+    auto * limit_by = typeid_cast<LimitByStep *>(node.step.get());
+    if (!limit_by)
+        return;
+
+    auto order_info = buildInputOrderInfo(*limit_by, *node.children.front(), optimization_settings);
+    if (order_info.input_order)
+        limit_by->applyOrder(std::move(order_info.sort_description));
 }
 
 /// This optimization is obsolete and will be removed.

@@ -25,6 +25,9 @@ public:
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
     void applyOrder(SortDescription sort_desc);
+
+    const Names & getColumns() const { return columns; }
+
 private:
     void updateOutputHeader() override
     {
