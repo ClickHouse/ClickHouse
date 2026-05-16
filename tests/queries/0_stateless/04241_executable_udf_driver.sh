@@ -87,6 +87,33 @@ grep -Eq 'fread|fwrite|fgets|fflush|fputs|scanf|printf|strtoull|setvbuf' "$WORK_
 echo "-- multi-row chunk call"
 run "SELECT sum(test_udf_drv_add(toUInt8(number), toUInt8(1))) FROM numbers(10);"
 
+echo "-- string args + return"
+run "
+CREATE FUNCTION test_udf_drv_concat ARGUMENTS (x String, y String) RETURNS String
+    ENGINE = c_function_body() AS '
+        struct buf out = alloc(x.size + y.size);
+        if (out.data == NULL && out.size != 0)
+            return out;
+        char * p = (char *)out.data;
+        for (size_t i = 0; i != x.size; ++i)
+            p[i] = x.data[i];
+        for (size_t i = 0; i != y.size; ++i)
+            p[x.size + i] = y.data[i];
+        return out;
+    ';
+SELECT test_udf_drv_concat('hello ', 'world');
+SELECT length(test_udf_drv_concat('', ''));
+SELECT arrayStringConcat(groupArray(value), '') FROM
+(
+    SELECT test_udf_drv_concat(toString(number), ':') AS value
+    FROM numbers(5)
+    ORDER BY number
+);
+"
+STRING_WORK_DIR_NAME=$(cat "$WORK_DIR/dyn/test_udf_drv_concat.workdir")
+grep -q 'struct buf alloc(size_t size)' "$WORK_DIR/dyn/$STRING_WORK_DIR_NAME/wrapper.c" && echo "string_allocator_present" || echo "string_allocator_missing"
+grep -Eq 'fread|fwrite|fgets|fflush|fputs|scanf|printf|strtoull|setvbuf' "$WORK_DIR/dyn/$STRING_WORK_DIR_NAME/wrapper.c" && echo "string_stdio_serde_present" || echo "string_stdio_serde_absent"
+
 echo "-- if not exists does not invoke driver"
 run "
 CREATE FUNCTION IF NOT EXISTS test_udf_drv_add ARGUMENTS (x UInt8, y UInt8) RETURNS Int64
@@ -100,8 +127,12 @@ run "SELECT test_udf_drv_add(10, 5);"
 RECREATED_WORK_DIR_NAME=$(cat "$WORK_DIR/dyn/test_udf_drv_add.workdir")
 
 echo "-- drop removes everything"
-run "DROP FUNCTION test_udf_drv_add;"
+run "DROP FUNCTION test_udf_drv_add; DROP FUNCTION test_udf_drv_concat;"
 test -f "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "config_still_present" || echo "config_removed"
 test -f "$WORK_DIR/dyn/test_udf_drv_add.workdir" && echo "workdir_metadata_still_present" || echo "workdir_metadata_removed"
 test -d "$WORK_DIR/dyn/$RECREATED_WORK_DIR_NAME" && echo "workdir_still_present" || echo "workdir_removed"
 test -f "$WORK_DIR/user_defined/function_test_udf_drv_add.sql" && echo "sql_still_present" || echo "sql_removed"
+test -f "$WORK_DIR/dyn/test_udf_drv_concat.xml" && echo "string_config_still_present" || echo "string_config_removed"
+test -f "$WORK_DIR/dyn/test_udf_drv_concat.workdir" && echo "string_workdir_metadata_still_present" || echo "string_workdir_metadata_removed"
+test -d "$WORK_DIR/dyn/$STRING_WORK_DIR_NAME" && echo "string_workdir_still_present" || echo "string_workdir_removed"
+test -f "$WORK_DIR/user_defined/function_test_udf_drv_concat.sql" && echo "string_sql_still_present" || echo "string_sql_removed"

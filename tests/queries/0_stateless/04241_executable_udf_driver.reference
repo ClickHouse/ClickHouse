@@ -12,6 +12,12 @@ setvbuf_absent
 stdio_serde_absent
 -- multi-row chunk call
 55
+-- string args + return
+hello world
+0
+0:1:2:3:4:
+string_allocator_present
+string_stdio_serde_absent
 -- if not exists does not invoke driver
 3
 -- attach-style recreate after config loss
@@ -21,3 +27,7 @@ config_removed
 workdir_metadata_removed
 workdir_removed
 sql_removed
+string_config_removed
+string_workdir_metadata_removed
+string_workdir_removed
+string_sql_removed

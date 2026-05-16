@@ -40,6 +40,7 @@ TYPE_MAP = {
     "Int64":  ("int64_t",  "ch_read_int64",  "ch_write_int64"),
     "Float32": ("float",   "ch_read_float",  "ch_write_float"),
     "Float64": ("double",  "ch_read_double", "ch_write_double"),
+    "String": ("struct buf", "ch_read_string", "ch_write_string"),
 }
 
 
@@ -96,12 +97,20 @@ def generate_wrapper_c(function_name, return_type, args, user_body):
 #include <stdlib.h>
 #include <unistd.h>
 
+struct buf
+{{
+    const char * data;
+    size_t size;
+}};
+
+struct buf alloc(size_t size);
+
 static {ret_c_type} user_function({user_params_str})
 {{
 {user_body}
 }}
 
-#define CH_BUFFER_SIZE (1U << 20)
+#define CH_BUFFER_SIZE (1U << 16)
 
 static unsigned char ch_input_buffer[CH_BUFFER_SIZE];
 static size_t ch_input_pos = 0;
@@ -109,6 +118,82 @@ static size_t ch_input_size = 0;
 
 static unsigned char ch_output_buffer[CH_BUFFER_SIZE];
 static size_t ch_output_pos = 0;
+
+struct ch_arena_block
+{{
+    struct ch_arena_block * next;
+    size_t size;
+    size_t pos;
+    char data[];
+}};
+
+static struct ch_arena_block * ch_arena_first = NULL;
+static struct ch_arena_block * ch_arena_current = NULL;
+
+static struct ch_arena_block * ch_new_arena_block(size_t size)
+{{
+    size_t block_size = size < CH_BUFFER_SIZE ? CH_BUFFER_SIZE : size;
+    if (block_size > SIZE_MAX - sizeof(struct ch_arena_block))
+        return NULL;
+
+    struct ch_arena_block * block = (struct ch_arena_block *)malloc(sizeof(struct ch_arena_block) + block_size);
+    if (block == NULL)
+        return NULL;
+
+    block->next = NULL;
+    block->size = block_size;
+    block->pos = 0;
+    return block;
+}}
+
+struct buf alloc(size_t size)
+{{
+    struct buf result = {{NULL, 0}};
+    if (size == 0)
+        return result;
+
+    if (ch_arena_current == NULL)
+    {{
+        ch_arena_current = ch_new_arena_block(size);
+        if (ch_arena_current == NULL)
+            return result;
+        ch_arena_first = ch_arena_current;
+    }}
+
+    if (ch_arena_current->size - ch_arena_current->pos < size)
+    {{
+        struct ch_arena_block * block = ch_arena_current->next;
+        while (block != NULL && block->size - block->pos < size)
+            block = block->next;
+
+        if (block == NULL)
+        {{
+            block = ch_new_arena_block(size);
+            if (block == NULL)
+                return result;
+
+            block->next = ch_arena_current->next;
+            ch_arena_current->next = block;
+        }}
+
+        ch_arena_current = block;
+    }}
+
+    if (ch_arena_current->size - ch_arena_current->pos < size)
+        return result;
+
+    result.data = ch_arena_current->data + ch_arena_current->pos;
+    result.size = size;
+    ch_arena_current->pos += size;
+    return result;
+}}
+
+static inline void ch_reset_alloc(void)
+{{
+    for (struct ch_arena_block * block = ch_arena_first; block != NULL; block = block->next)
+        block->pos = 0;
+    ch_arena_current = ch_arena_first;
+}}
 
 static ssize_t ch_read_retry(int fd, void * data, size_t size)
 {{
@@ -257,6 +342,84 @@ CH_DEFINE_RW(int64, int64_t)
 CH_DEFINE_RW(float, float)
 CH_DEFINE_RW(double, double)
 
+static int ch_read_var_uint(uint64_t * value)
+{{
+    uint64_t result = 0;
+
+    for (unsigned int shift = 0; shift < 64; shift += 7)
+    {{
+        unsigned char byte = 0;
+        int status = ch_read_byte(&byte);
+        if (status <= 0)
+            return status;
+
+        if (shift == 63 && (byte & 0xFE) != 0)
+            return -1;
+
+        result |= ((uint64_t)(byte & 0x7F)) << shift;
+        if ((byte & 0x80) == 0)
+        {{
+            *value = result;
+            return 1;
+        }}
+    }}
+
+    return -1;
+}}
+
+static int ch_write_var_uint(uint64_t value)
+{{
+    unsigned char bytes[10];
+    size_t pos = 0;
+
+    do
+    {{
+        unsigned char byte = (unsigned char)(value & 0x7F);
+        value >>= 7;
+        if (value != 0)
+            byte |= 0x80;
+        bytes[pos++] = byte;
+    }} while (value != 0);
+
+    return ch_write_exact(bytes, pos);
+}}
+
+static int ch_read_string(struct buf * value)
+{{
+    uint64_t size = 0;
+    int status = ch_read_var_uint(&size);
+    if (status <= 0)
+        return status;
+
+    if (size > (uint64_t)SIZE_MAX)
+        return -1;
+
+    struct buf out = alloc((size_t)size);
+    if (out.size != (size_t)size)
+        return -1;
+
+    if (ch_read_exact((char *)out.data, out.size) != 1)
+        return -1;
+
+    *value = out;
+    return 1;
+}}
+
+static int ch_write_string(const struct buf * value)
+{{
+    uint64_t size = (uint64_t)value->size;
+    if ((size_t)size != value->size)
+        return -1;
+
+    if (value->size != 0 && value->data == NULL)
+        return -1;
+
+    if (ch_write_var_uint(size) != 1)
+        return -1;
+
+    return ch_write_exact(value->data, value->size);
+}}
+
 static int ch_read_chunk_header(uint64_t * rows)
 {{
     uint64_t value = 0;
@@ -318,6 +481,7 @@ int main(void)
             ch_error("flush error\\n");
             return 3;
         }}
+        ch_reset_alloc();
     }}
     return 0;
 }}
@@ -379,14 +543,14 @@ def compile_with_docker(work_dir):
         "-v", f"{work_dir}:/work",
         "-w", "/work",
         image,
-        "sh", "-c", "cc -O2 -static -o user_func wrapper.c && chmod 0755 user_func",
+        "sh", "-c", "cc -O3 -march=native -static -o user_func wrapper.c && chmod 0755 user_func",
     ]
     run(cmd)
 
 
 def compile_with_cc(work_dir):
     """Fallback compilation when Docker is unavailable - direct `cc` invocation."""
-    cmd = ["cc", "-O2", "-o", os.path.join(work_dir, "user_func"), os.path.join(work_dir, "wrapper.c")]
+    cmd = ["cc", "-O3", "-march=native", "-o", os.path.join(work_dir, "user_func"), os.path.join(work_dir, "wrapper.c")]
     run(cmd)
 
 
@@ -429,7 +593,7 @@ def generate_xml_config(function_name, return_type, args, work_dir):
 {arguments_xml}        <format>RowBinary</format>
         <command>{xml_escape(runtime_command)}</command>
         <execute_direct>0</execute_direct>
-        <pool_size>4</pool_size>
+        <pool_size>64</pool_size>
         <send_chunk_header>1</send_chunk_header>
         <command_read_timeout>10000</command_read_timeout>
         <command_write_timeout>10000</command_write_timeout>
