@@ -134,6 +134,8 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         res->children.emplace_back(res->sample_size);
     if (res->sample_offset)
         res->children.emplace_back(res->sample_offset);
+    if (res->stream_settings)
+        res->children.emplace_back(res->stream_settings);
     if (res->column_aliases)
         res->children.emplace_back(res->column_aliases);
 
