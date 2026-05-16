@@ -48,8 +48,8 @@ class AggregateFunctionNothingImpl final : public IAggregateFunctionHelper<Aggre
     }
 
 public:
-    AggregateFunctionNothingImpl(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionHelper<AggregateFunctionNothingImpl<Name>>(arguments, params, getReturnType(arguments))
+    AggregateFunctionNothingImpl(const DataTypes & arguments, const Array &)
+        : IAggregateFunctionHelper<AggregateFunctionNothingImpl<Name>>(arguments, Array(), getReturnType(arguments))
     {
     }
 
