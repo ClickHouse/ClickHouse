@@ -1,7 +1,14 @@
 -- Tags: no-parallel
+-- Do not run in parallel: `CREATE WORKLOAD <name>` (without `IN <parent>`) claims the
+-- single global root-workload slot enforced in `WorkloadEntityStorageBase::storeEntityImpl`,
+-- so a rootless `CREATE WORKLOAD` races with any other test that does the same (e.g.
+-- `03232_workload_create_and_drop`) and one side fails with
+-- `BAD_ARGUMENTS: The second root is not allowed`. Workload names are isolated; the root
+-- slot is not.
+--
 -- Test that negative Float64 values are rejected for workload settings.
 -- Fixes https://github.com/ClickHouse/ClickHouse/issues/101825:
--- getNotNegativeFloat64() did not validate the sign of Float64 values,
+-- `getNotNegativeFloat64` did not validate the sign of Float64 values,
 -- only Int64 values. A negative Float64 like -100.5 was silently accepted,
 -- creating scheduler nodes with negative speed/burst limits.
 
