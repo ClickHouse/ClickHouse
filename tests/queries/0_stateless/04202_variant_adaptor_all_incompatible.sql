@@ -27,3 +27,14 @@ SELECT base58Encode(v) FROM (
 SELECT base58Encode(v) IS NOT NULL FROM (
     SELECT CAST('hello'::String AS Variant(UInt32, String)) AS v
 );
+
+-- With variant_throw_on_type_mismatch = 0, all-incompatible case must return NULL rows
+-- instead of throwing, consistent with the per-row mismatch behaviour.
+SET variant_throw_on_type_mismatch = 0;
+SELECT base58Encode(v) IS NULL FROM (
+    SELECT CAST(number::UInt32 AS Variant(UInt32, Date)) AS v FROM numbers(3)
+);
+SELECT count() FROM (
+    SELECT CAST(number::UInt32 AS Variant(UInt32, Date)) AS v FROM numbers(3)
+)
+WHERE base58Encode(v) != '';
