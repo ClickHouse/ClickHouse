@@ -32,23 +32,15 @@ namespace
         ::_exit(DB::OOMCanaryExitCodes::PERMANENT);
 
     /// Drop any non-CLOEXEC fds inherited across exec.
-#if defined(__NR_close_range)
-    if (::syscall(__NR_close_range, 3U, ~0U, 0) == 0)
-    {
-        /// Closed all fds in one syscall.
-    }
-    else
+#ifdef __NR_close_range
+    (void)::syscall(__NR_close_range, 3U, ~0U, 0);
+#else
+    int max_fd = static_cast<int>(::sysconf(_SC_OPEN_MAX));
+    if (max_fd < 0 || max_fd > 65536)
+        max_fd = 65536;
+    for (int fd = 3; fd < max_fd; ++fd)
+        (void)::close(fd);
 #endif
-    {
-        int max_fd = static_cast<int>(::sysconf(_SC_OPEN_MAX));
-        if (max_fd < 0 || max_fd > 65536)
-            max_fd = 65536;
-        for (int fd = 3; fd < max_fd; ++fd)
-            if (::close(fd) != 0 && errno != EBADF)
-            {
-                /// best effort
-            }
-    }
 
     /// Make the OOM killer pick us first.
     try
@@ -59,8 +51,6 @@ namespace
     }
     catch (...)
     {
-        /// Without this, the canary's score is based only on its RSS, which is dwarfed by the server's.
-        /// So exit and let the parent log an error and disable the feature.
         ::_exit(DB::OOMCanaryExitCodes::PERMANENT);
     }
 
@@ -73,21 +63,17 @@ namespace
 
     /// Force physical allocation: mmap only reserves virtual address space;
     /// pages remain COW-mapped to the zero page until first write.
-#if defined(MADV_POPULATE_WRITE)
-    if (::madvise(mem, size_bytes, MADV_POPULATE_WRITE) == 0)
-    {
-        /// Kernel populated all pages.
-    }
-    else
+#ifdef MADV_POPULATE_WRITE
+    if (::madvise(mem, size_bytes, MADV_POPULATE_WRITE))
+        ::_exit(DB::OOMCanaryExitCodes::TRANSIENT);
+#else
+    int64_t page_size = ::sysconf(_SC_PAGESIZE);
+    if (page_size <= 0)
+        page_size = 4096;
+    char * ptr = static_cast<char *>(mem);
+    for (size_t offset = 0; offset < size_bytes; offset += static_cast<size_t>(page_size))
+        ptr[offset] = static_cast<char>(offset & 0xFF);
 #endif
-    {
-        int64_t page_size = ::sysconf(_SC_PAGESIZE);
-        if (page_size <= 0)
-            page_size = 4096;
-        char * ptr = static_cast<char *>(mem);
-        for (size_t offset = 0; offset < size_bytes; offset += static_cast<size_t>(page_size))
-            ptr[offset] = static_cast<char>(offset & 0xFF);
-    }
 
     /// Best effort: keep pages resident so RSS stays predictable for the OOM
     /// killer's heuristic. Requires CAP_IPC_LOCK or sufficient RLIMIT_MEMLOCK;

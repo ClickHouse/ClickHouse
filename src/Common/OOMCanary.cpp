@@ -30,8 +30,8 @@
 
 #include <algorithm>
 #include <cerrno>
-#include <climits>
 #include <csignal>
+#include <limits>
 #include <cstdint>
 #include <cstring>
 #include <ctime>
@@ -47,52 +47,16 @@ namespace DB
 
 namespace
 {
-#if defined(SI_KERNEL)
 constexpr Int32 OOM_CANARY_SIGNAL_CODE = SI_KERNEL;
-#else
-constexpr Int32 OOM_CANARY_SIGNAL_CODE = 0;
-#endif
-
-std::optional<uint64_t> readCounterFromFile(const std::string & path, std::string_view key)
-{
-    try
-    {
-        ReadBufferFromFile in(path);
-
-        while (!in.eof())
-        {
-            std::string current_key;
-            readStringUntilWhitespace(current_key, in);
-            if (current_key.empty() && in.eof())
-                break;
-
-            assertChar(' ', in);
-
-            uint64_t value = 0;
-            readIntText(value, in);
-
-            if (current_key == key)
-                return value;
-
-            std::string rest_of_line;
-            readStringUntilNewlineInto(rest_of_line, in);
-            in.tryIgnore(1);
-        }
-    }
-    catch (...)
-    {
-        /// Ok: this is best-effort cgroup evidence probing. Missing or
-        /// malformed files make the OOM response conservative.
-        return std::nullopt;
-    }
-
-    return std::nullopt;
-}
 
 std::optional<std::string> getCgroupMemoryEventsPath()
 {
     if (auto cgroup_path = getCgroupsV2PathContainingFile("memory.events"))
         return (std::filesystem::path(*cgroup_path) / "memory.events").string();
+
+    LOG_WARNING(getLogger("OOMCanary"),
+        "Cannot observe cgroup v2 `memory.events`; OOM canary will relaunch after `SIGKILL`, "
+        "but will not run the OOM response without cgroup-local OOM evidence");
     return std::nullopt;
 }
 
@@ -110,11 +74,26 @@ namespace FailPoints
 extern const char oom_canary_force_oom_evidence[];
 }
 
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
+
 OOMCanary::OOMCanary(ContextMutablePtr context_, Config config_)
     : context(std::move(context_))
     , log(getLogger("OOMCanary"))
     , config(std::move(config_))
 {
+    static constexpr uint64_t max_allowed_backoff_seconds = std::numeric_limits<int>::max() / 1000;
+    if (config.max_backoff_seconds > max_allowed_backoff_seconds)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "oom_canary_max_backoff_seconds = {} is too large; maximum supported is {}",
+            config.max_backoff_seconds, max_allowed_backoff_seconds);
+
+    if (config.initial_backoff_seconds > config.max_backoff_seconds)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "oom_canary_initial_backoff_seconds = {} must not exceed oom_canary_max_backoff_seconds = {}",
+            config.initial_backoff_seconds, config.max_backoff_seconds);
 }
 
 OOMCanary::~OOMCanary()
@@ -128,13 +107,6 @@ void OOMCanary::start()
     {
         LOG_WARNING(log, "OOM canary size is 0 bytes, continuing without canary");
         return;
-    }
-
-    cgroup_memory_events_path = getCgroupMemoryEventsPath();
-    if (!cgroup_memory_events_path)
-    {
-        LOG_WARNING(log, "Cannot observe cgroup v2 `memory.events`; OOM canary will relaunch after `SIGKILL`, "
-            "but will not run the OOM response without cgroup-local OOM evidence");
     }
 
     try
@@ -152,9 +124,10 @@ void OOMCanary::stop()
     shutdown_fd.write();
 
     if (monitor_thread.joinable())
+    {
         monitor_thread.join();
-
-    LOG_INFO(log, "OOM canary stopped");
+        LOG_INFO(log, "OOM canary stopped");
+    }
 }
 
 pid_t OOMCanary::spawnCanary(size_t size_bytes)
@@ -171,7 +144,6 @@ pid_t OOMCanary::spawnCanary(size_t size_bytes)
     posix_spawnattr_t attr;
     if (::posix_spawnattr_init(&attr) != 0)
     {
-        LOG_WARNING(log, "posix_spawnattr_init failed: {}", errnoToString());
         return -1;
     }
     ::posix_spawnattr_setflags(&attr, POSIX_SPAWN_USEVFORK);
@@ -189,36 +161,47 @@ pid_t OOMCanary::spawnCanary(size_t size_bytes)
     return pid;
 }
 
-OOMCanary::OOMKillCounters OOMCanary::readOOMKillCounters() const
+std::optional<OOMCanary::OOMKillCounter> OOMCanary::readOOMKillCounter()
 {
-    OOMKillCounters counters;
-
     /// `memory.events` is monotonic for the current cgroup and is the only
     /// signal we use for OOM response. Host-wide counters such as
     /// `/proc/vmstat:oom_kill` are intentionally ignored because another
     /// workload on the same host can advance them.
-    if (cgroup_memory_events_path)
-        counters.cgroup_oom_kill = readCounterFromFile(*cgroup_memory_events_path, "oom_kill");
+    static const std::optional<std::string> path = getCgroupMemoryEventsPath();
+    if (!path)
+        return std::nullopt;
 
-    return counters;
+    try
+    {
+        ReadBufferFromFile in(*path);
+        while (!in.eof())
+        {
+            std::string current_key;
+            readStringUntilWhitespace(current_key, in);
+            if (current_key.empty() && in.eof())
+                break;
+
+            assertChar(' ', in);
+
+            uint64_t value = 0;
+            readIntText(value, in);
+
+            if (current_key == "oom_kill")
+                return OOMKillCounter{value};
+
+            skipToNextLineOrEOF(in);
+        }
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+    }
+
+    return std::nullopt;
 }
 
-bool OOMCanary::hasOOMKillCounterAdvanced(const OOMKillCounters & before, const OOMKillCounters & after) const
+bool OOMCanary::oomKilled(std::optional<OOMKillCounter> before, std::optional<OOMKillCounter> after)
 {
-    /// Tests use this failpoint to exercise the recovery path without creating
-    /// real memory pressure. Production builds without `libfiu` compile this to
-    /// a no-op, so the decision still depends only on cgroup OOM evidence.
-    bool force_oom_evidence = false;
-    fiu_do_on(FailPoints::oom_canary_force_oom_evidence, { force_oom_evidence = true; });
-    if (force_oom_evidence)
-        return true;
-
-    /// Prefer the current memory cgroup counter: it is local to the server's
-    /// cgroup and avoids treating unrelated host OOM kills as canary events.
-    if (before.cgroup_oom_kill && after.cgroup_oom_kill)
-        return *after.cgroup_oom_kill > *before.cgroup_oom_kill;
-
-    return false;
+    return before && after && *after > *before;
 }
 
 void OOMCanary::monitorThread()
@@ -228,29 +211,15 @@ void OOMCanary::monitorThread()
     Epoll epoll;
     epoll.add(shutdown_fd.fd, EPOLLIN);
 
-    auto interruptible_sleep = [&](uint64_t timeout_ms) -> bool
-    {
-        epoll_event ev;
-        const int clamped_timeout_ms = static_cast<int>(std::min<uint64_t>(timeout_ms, INT_MAX));
-        return epoll.getManyReady(1, &ev, clamped_timeout_ms) > 0;
-    };
-
     const uint64_t initial_backoff_milliseconds = config.initial_backoff_seconds * 1000;
     const uint64_t max_backoff_milliseconds = config.max_backoff_seconds * 1000;
 
     uint64_t backoff_milliseconds = 0;
     uint64_t attempt = 0;
 
-    while (!interruptible_sleep(backoff_milliseconds))
+    while (true)
     {
-        ++attempt;
-        if (attempt > 1 + config.max_rapid_relaunches)
-        {
-            LOG_WARNING(log, "OOM canary relaunch limit ({}) reached, giving up", config.max_rapid_relaunches);
-            break;
-        }
-
-        const OOMKillCounters oom_kill_counters_before_canary_spawn = readOOMKillCounters();
+        const std::optional<OOMKillCounter> oom_kill_counter_before_canary_spawn = readOOMKillCounter();
         const pid_t pid = spawnCanary(config.size_bytes);
         if (pid <= 0)
         {
@@ -262,6 +231,7 @@ void OOMCanary::monitorThread()
         if (pidfd < 0)
         {
             LOG_WARNING(log, "pidfd_open failed for canary pid {}: {}; disabling", pid, errnoToString());
+            ::kill(pid, SIGKILL);
             reapChild(pid);
             break;
         }
@@ -300,12 +270,10 @@ void OOMCanary::monitorThread()
         if (WIFSIGNALED(status))
         {
             const int sig = WTERMSIG(status);
-            if (sig == SIGKILL && hasOOMKillCounterAdvanced(oom_kill_counters_before_canary_spawn, readOOMKillCounters()))
-                confirmed_oom = true;
-            else if (sig == SIGKILL)
+            if (sig == SIGKILL)
             {
-                LOG_WARNING(log, "OOM canary pid {} killed by SIGKILL without cgroup OOM evidence; "
-                    "skipping OOM response (looks like external kill)", pid);
+                confirmed_oom = oomKilled(oom_kill_counter_before_canary_spawn, readOOMKillCounter());
+                fiu_do_on(FailPoints::oom_canary_force_oom_evidence, { confirmed_oom = true; });
             }
             else
             {
@@ -335,11 +303,23 @@ void OOMCanary::monitorThread()
         }
         else
         {
-            backoff_milliseconds = std::max(initial_backoff_milliseconds,
-                std::min(backoff_milliseconds * 2, max_backoff_milliseconds));
+            backoff_milliseconds = std::clamp(backoff_milliseconds * 2,
+                initial_backoff_milliseconds, max_backoff_milliseconds);
         }
 
         if (!config.relaunch)
+            break;
+
+        ++attempt;
+        if (attempt > config.max_rapid_relaunches)
+        {
+            LOG_WARNING(log, "OOM canary relaunch limit ({}) reached, giving up", config.max_rapid_relaunches);
+            break;
+        }
+
+        /// Sleep for `backoff_milliseconds`, break early if `stop()` signals shutdown.
+        epoll_event ev;
+        if (epoll.getManyReady(1, &ev, static_cast<int>(backoff_milliseconds)) > 0)
             break;
     }
 

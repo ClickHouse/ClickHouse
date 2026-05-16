@@ -5,10 +5,10 @@
 #include <Interpreters/Context_fwd.h>  // ContextMutablePtr
 #include <Common/EventFD.h>
 #include <Common/ThreadPool.h>
+#include <base/strong_typedef.h>
 
 #include <cstdint>
 #include <optional>
-#include <string>
 
 namespace DB
 {
@@ -71,28 +71,17 @@ private:
     /// Execute the OOM response sequence.
     void onCanaryOOM();
 
-    struct OOMKillCounters
-    {
-        /// Snapshot of cgroup v2 `memory.events:oom_kill`. This is deliberately
-        /// cgroup-local; a global host counter can be advanced by unrelated
-        /// processes and would make manual canary kills look like OOM events.
-        std::optional<uint64_t> cgroup_oom_kill;
-    };
+    using OOMKillCounter = StrongTypedef<uint64_t, struct OOMKillCounterTag>;
 
-    /// Read the OOM evidence used to classify canary death. Missing counters
-    /// are represented as `std::nullopt`, which makes the response conservative:
-    /// the canary may still be relaunched, but global query cancellation is not
-    /// triggered without local OOM evidence.
-    OOMKillCounters readOOMKillCounters() const;
+    /// Read the cgroup v2 `memory.events:oom_kill` counter. This is deliberately
+    /// cgroup-local; a global host counter can be advanced by unrelated processes
+    /// and would make manual canary kills look like OOM events. Returns nullopt
+    /// when the path is unset or the read fails.
+    static std::optional<OOMKillCounter> readOOMKillCounter();
 
-    /// Returns true only when the local OOM counter moved forward between the
-    /// canary spawn and its `SIGKILL`. `waitpid` alone cannot distinguish the
-    /// kernel OOM killer from an operator's `kill -9`.
-    bool hasOOMKillCounterAdvanced(const OOMKillCounters & before, const OOMKillCounters & after) const;
+    static bool oomKilled(std::optional<OOMKillCounter> before, std::optional<OOMKillCounter> after);
 
     EventFD shutdown_fd;
-
-    std::optional<std::string> cgroup_memory_events_path;
 
     ThreadFromGlobalPool monitor_thread;
 
