@@ -85,23 +85,30 @@ DROP QUOTA IF EXISTS quota_by_forwarded_ip_${CLICKHOUSE_DATABASE};
 CREATE QUOTA quota_by_forwarded_ip_${CLICKHOUSE_DATABASE}
     KEYED BY forwarded_ip_address
     IPV4_PREFIX_BITS 0
-    FOR RANDOMIZED INTERVAL 1 YEAR MAX QUERIES = 2
+    FOR RANDOMIZED INTERVAL 1 YEAR MAX QUERIES = 1
     TO quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE};
 "
 
-# Two different forwarded IPs must share the same quota bucket because /0 masks every address to 0.0.0.0.
-${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 1.2.3.4' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE}" -d "SELECT 1" > /dev/null
-${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 9.8.7.6' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE}" -d "SELECT 1" > /dev/null
-# The third request from yet another IP must fail because the shared bucket is already exhausted.
-${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 200.100.50.25' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE}" -d "SELECT 1" | grep -oF 'exceeded'
+# Drain the bucket from one forwarded IP. `MAX QUERIES = 1` permits a small
+# impl-specific burst before "exceeded" appears (see the loop used in the
+# first test in this file), so loop until the first failure.
+i=0 retries=300
+while [[ $i -lt $retries ]]; do
+    ((++i))
+    ${CLICKHOUSE_CURL} --fail -H 'X-Forwarded-For: 1.2.3.4' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE}" -d "SELECT 1" >/dev/null 2>/dev/null || break
+done
+
+# A request from a different forwarded IP must also fail, because `/0` masks
+# every address to `0.0.0.0` and the bucket is shared.
+${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 9.8.7.6' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE}" -d "SELECT 1" | grep -oF 'exceeded'
 
 # Confirm both source IPs ended up under the same masked quota_key.
-${CLICKHOUSE_CURL} -H 'X-Forwarded-For: 1.2.3.4' -sS "${CLICKHOUSE_URL}&user=quoted_by_forwarded_ip_${CLICKHOUSE_DATABASE}" -d "
+${CLICKHOUSE_CLIENT} --query "
 SELECT count(DISTINCT quota_key), any(quota_key)
 FROM system.quota_usage
 WHERE quota_name = 'quota_by_forwarded_ip_${CLICKHOUSE_DATABASE}'
 FORMAT TSV;
-" 2>/dev/null
+"
 
 ${CLICKHOUSE_CLIENT} --query "
 DROP QUOTA IF EXISTS quota_by_ip_${CLICKHOUSE_DATABASE};
