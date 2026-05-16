@@ -343,6 +343,8 @@ John, Jane
 
     factory.registerFunction("groupConcat", { createAggregateFunctionGroupConcat, documentation_groupConcat, properties });
     factory.registerAlias(GroupConcatImpl<false>::getNameAndAliases().at(1), GroupConcatImpl<false>::getNameAndAliases().at(0), AggregateFunctionFactory::Case::Insensitive);
+    /// PostgreSQL/SQL-standard `STRING_AGG(expr, sep)`. The argument order matches `groupConcat(expr, sep)`.
+    factory.registerAlias("STRING_AGG", "groupConcat", AggregateFunctionFactory::Case::Insensitive);
 }
 
 }
