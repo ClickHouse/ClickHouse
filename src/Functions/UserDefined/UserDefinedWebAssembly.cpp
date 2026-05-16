@@ -739,6 +739,21 @@ FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::get(const Str
     return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(executable_function));
 }
 
+FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::tryGet(const String & function_name, ContextPtr context)
+{
+    std::shared_ptr<UserDefinedWebAssemblyFunction> wasm_func = nullptr;
+    {
+        std::shared_lock lock(registry_mutex);
+        auto it = registry.find(function_name);
+        if (it == registry.end())
+            return nullptr;
+        wasm_func = it->second.function;
+    }
+
+    auto executable_function = std::make_shared<FunctionUserDefinedWasm>(function_name, std::move(wasm_func), std::move(context));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(executable_function));
+}
+
 bool UserDefinedWebAssemblyFunctionFactory::dropIfExists(const String & function_name)
 {
     std::unique_lock lock(registry_mutex);

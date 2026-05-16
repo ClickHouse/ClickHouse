@@ -93,13 +93,14 @@ namespace ErrorCodes
     DECLARE(UInt64, nuraft_max_log_gap_in_stream, 0, "Maximum number of in-flight log entries per follower when streaming mode is enabled. Acts as a throttling cap. Only effective when nuraft_streaming_mode is true.", 0) \
     DECLARE(UInt64, nuraft_max_bytes_in_flight_in_stream, 32 * 1024 * 1024, "Maximum bytes of in-flight data per follower when streaming mode is enabled. Acts as a data volume throttle. Only effective when nuraft_streaming_mode is true.", 0) \
 
-DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
+DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, COORDINATION_SETTINGS_SUPPORTED_TYPES)
 
 struct CoordinationSettingsImpl : public BaseSettings<CoordinationSettingsTraits>
 {
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 };
+
+IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, CoordinationSettings, CoordinationSetting)
 
 void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
 {
@@ -123,19 +124,9 @@ void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const 
 
     /// for backwards compatibility we set max_requests_append_size to max_requests_batch_size
     /// if max_requests_append_size was not changed
-    if (!max_requests_append_size.changed)
-        max_requests_append_size = max_requests_batch_size;
+    if (!(*this)[CoordinationSetting::max_requests_append_size].changed)
+        (*this)[CoordinationSetting::max_requests_append_size] = (*this)[CoordinationSetting::max_requests_batch_size];
 }
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    CoordinationSettings##TYPE NAME = &CoordinationSettingsImpl ::NAME;
-
-namespace CoordinationSetting
-{
-LIST_OF_COORDINATION_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
 
 CoordinationSettings::CoordinationSettings() : impl(std::make_unique<CoordinationSettingsImpl>())
 {
