@@ -73,17 +73,20 @@ while true; do
     echo "${S}Fetching open PRs in ${REPO} involving ${AUTHOR}...${R}"
     INVOLVES_RAW="$ROUND_TMP/involves_raw.json"
     INVOLVES_FILE="$ROUND_TMP/involves.json"
+    # `gh search prs` does not expose `baseRefName`, so identify backports by
+    # the auto-applied `pr-cherrypick` / `pr-backport` labels (the bot's own
+    # markers on PRs that ARE backports). Do not confuse with
+    # `pr-must-backport` / `ready-for-backport`, which mark the *original*
+    # master PR and would be wrong to skip.
     gh search prs --repo "$REPO" --state open --involves "$AUTHOR" --limit 1000 \
-        --json number,title,author,assignees,updatedAt,baseRefName > "$INVOLVES_RAW"
+        --json number,title,author,assignees,updatedAt,labels > "$INVOLVES_RAW"
     RAW_COUNT=$(jq 'length' "$INVOLVES_RAW")
 
-    # Drop backport PRs: any PR whose base branch is not `master` is targeting
-    # a release branch (`25.3`, `26.2`, etc.). Those should be skipped because
-    # they shouldn't be advanced by the generic `/continue-pr` flow.
-    jq '[.[] | select(.baseRefName == "master")]' "$INVOLVES_RAW" > "$INVOLVES_FILE"
+    jq '[.[] | select((.labels // []) | map(.name) | any(. == "pr-cherrypick" or . == "pr-backport") | not)]' \
+        "$INVOLVES_RAW" > "$INVOLVES_FILE"
     INVOLVES_COUNT=$(jq 'length' "$INVOLVES_FILE")
     SKIPPED_BACKPORTS=$((RAW_COUNT - INVOLVES_COUNT))
-    echo "${S}Found ${INVOLVES_COUNT} PR(s) involving ${AUTHOR} (skipped ${SKIPPED_BACKPORTS} backport PR(s) targeting non-master branches).${R}"
+    echo "${S}Found ${INVOLVES_COUNT} PR(s) involving ${AUTHOR} (skipped ${SKIPPED_BACKPORTS} backport PR(s)).${R}"
 
     # Filter 1: PRs authored by me.
     AUTHORED_FILE="$ROUND_TMP/authored.json"
