@@ -51,6 +51,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -438,6 +439,12 @@ void LocalServer::tryInitPath()
     std::string user_scripts_path = getClientConfiguration().getString("user_scripts_path", fs::path(path) / "user_scripts" / "");
     global_context->setUserScriptsPath(user_scripts_path);
 
+    std::string dynamic_udf_path = getClientConfiguration().getString(
+        "dynamic_user_defined_executable_functions_path",
+        fs::path(path) / "dynamic_user_defined_executable_functions" / "");
+    global_context->setDynamicUserDefinedExecutableFunctionsPath(dynamic_udf_path);
+    fs::create_directories(dynamic_udf_path);
+
     /// Set path for filesystem caches
     String filesystem_caches_path(getClientConfiguration().getString("filesystem_caches_path", fs::path(path) / "cache" / ""));
     if (!filesystem_caches_path.empty())
@@ -720,7 +727,13 @@ try
     /// try to load user defined executable functions, throw on error and die
     try
     {
+        global_context->loadUserDefinedExecutableFunctionDrivers(getClientConfiguration());
         global_context->loadOrReloadUserDefinedExecutableFunctions(getClientConfiguration());
+
+        /// Re-run drivers for previously persisted ATTACH FUNCTION entries whose
+        /// dynamic configuration files are missing.
+        UserDefinedSQLFunctionFactory::instance().reloadDriverBasedFunctions(
+            global_context, global_context->getUserDefinedSQLObjectsStorage());
     }
     catch (...)
     {

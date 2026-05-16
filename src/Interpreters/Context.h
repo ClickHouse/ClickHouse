@@ -739,6 +739,7 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
+    String getDynamicUserDefinedExecutableFunctionsPath() const;
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
 
@@ -814,6 +815,7 @@ public:
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
+    void setDynamicUserDefinedExecutableFunctionsPath(const String & path);
 
     void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
     void setTemporaryStoragePolicy(const String & policy_name, size_t max_size);
@@ -1146,6 +1148,9 @@ public:
     const IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage() const;
     IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
+
+    /// Load driver definitions from configuration files matching `<user_defined_executable_function_drivers_config>` patterns.
+    void loadUserDefinedExecutableFunctionDrivers(const Poco::Util::AbstractConfiguration & config);
 
     IWorkloadEntityStorage & getWorkloadEntityStorage() const;
 

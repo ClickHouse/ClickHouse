@@ -47,6 +47,10 @@ public:
 
     void loadFunctions(IUserDefinedSQLObjectsStorage & function_storage, WasmModuleManager & wasm_module_manager);
 
+    /// On startup, for each persisted driver-based function, re-run the driver if its dynamic
+    /// configuration file is missing. Should be called after the regular `loadFunctions` call.
+    void reloadDriverBasedFunctions(const ContextMutablePtr & context, IUserDefinedSQLObjectsStorage & function_storage);
+
 private:
     UserDefinedSQLFunctionFactory();
 };

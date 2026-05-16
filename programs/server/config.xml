@@ -1583,6 +1583,15 @@
     <!-- Configuration of user defined executable functions -->
     <user_defined_executable_functions_config>*_function.*ml</user_defined_executable_functions_config>
 
+    <!-- Configuration of drivers for executable user-defined functions. -->
+    <!-- A driver knows how to take a user-supplied code snippet and produce a runnable executable -->
+    <!-- user-defined function. See user_defined_executable_function_drivers_config.d/. -->
+    <user_defined_executable_function_drivers_config>user_defined_executable_function_drivers_config.d/*_driver.xml</user_defined_executable_function_drivers_config>
+
+    <!-- Directory used to keep configuration files of executable UDFs created dynamically by drivers. -->
+    <!-- It is automatically watched by the executable functions loader. -->
+    <!-- <dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path> -->
+
     <!-- Path in ZooKeeper to store user-defined SQL functions created by the command CREATE FUNCTION.
      If not specified they will be stored locally. -->
     <!-- <user_defined_zookeeper_path>/clickhouse/user_defined</user_defined_zookeeper_path> -->

@@ -1,0 +1,9 @@
+-- create + call
+42
+-- dynamic config exists after create
+yes
+-- attach-style recreate after config loss
+15
+-- drop removes everything
+config_removed
+sql_removed

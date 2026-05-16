@@ -1,7 +1,9 @@
 #include <Parsers/ParserCreateFunctionQuery.h>
 
+#include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
+#include <Parsers/ASTLiteral.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
@@ -17,6 +19,7 @@ namespace DB
 bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_create(Keyword::CREATE);
+    ParserKeyword s_attach(Keyword::ATTACH);
     ParserKeyword s_function(Keyword::FUNCTION);
     ParserKeyword s_or_replace(Keyword::OR_REPLACE);
     ParserKeyword s_if_not_exists(Keyword::IF_NOT_EXISTS);
@@ -25,14 +28,22 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     ParserKeyword s_as(Keyword::AS);
     ParserKeyword s_language(Keyword::LANGUAGE);
     ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_drv_arguments(Keyword::ARGUMENTS);
+    ParserKeyword s_drv_returns(Keyword::RETURNS);
+    ParserKeyword s_drv_engine(Keyword::ENGINE);
 
     ASTPtr function_name;
 
     String cluster_str;
     bool or_replace = false;
     bool if_not_exists = false;
+    bool is_attach = false;
 
-    if (!s_create.ignore(pos, expected))
+    if (s_create.ignore(pos, expected))
+        is_attach = false;
+    else if (s_attach.ignore(pos, expected))
+        is_attach = true;
+    else
         return false;
 
     if (s_or_replace.ignore(pos, expected))
@@ -51,6 +62,145 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
+    }
+
+    /// Driver-based form:
+    ///     CREATE FUNCTION name [ARGUMENTS (...)] [RETURNS T] ENGINE = DriverName(k=v, ...) AS '...'
+    /// `ATTACH FUNCTION ...` form ends up here too.
+    {
+        IParser::Pos saved_pos = pos;
+
+        ASTPtr arguments_ast;
+        ASTPtr return_type_ast;
+        bool consumed_anything = false;
+
+        if (s_drv_arguments.ignore(pos, expected))
+        {
+            ParserToken s_lparen(TokenType::OpeningRoundBracket);
+            ParserToken s_rparen(TokenType::ClosingRoundBracket);
+
+            if (!s_lparen.ignore(pos, expected))
+                return false;
+
+            if (s_rparen.ignore(pos, expected))
+            {
+                arguments_ast = make_intrusive<ASTExpressionList>();
+            }
+            else if (ParserNameTypePairList{}.parse(pos, arguments_ast, expected)
+                || ParserTypeList{}.parse(pos, arguments_ast, expected))
+            {
+                if (!s_rparen.ignore(pos, expected))
+                    return false;
+            }
+            else
+                return false;
+
+            consumed_anything = true;
+        }
+
+        if (s_drv_returns.ignore(pos, expected))
+        {
+            if (!ParserDataType{}.parse(pos, return_type_ast, expected))
+                return false;
+            consumed_anything = true;
+        }
+
+        if (s_drv_engine.ignore(pos, expected))
+        {
+            ParserToken s_eq(TokenType::Equals);
+            s_eq.ignore(pos, expected);
+
+            ASTPtr engine_ident;
+            if (!ParserIdentifier{}.parse(pos, engine_ident, expected))
+                return false;
+            String engine_name = engine_ident->as<ASTIdentifier>()->name();
+
+            ParserToken s_lparen(TokenType::OpeningRoundBracket);
+            ParserToken s_rparen(TokenType::ClosingRoundBracket);
+
+            std::vector<std::pair<String, ASTPtr>> engine_arguments;
+            if (s_lparen.ignore(pos, expected))
+            {
+                if (!s_rparen.ignore(pos, expected))
+                {
+                    ParserToken s_comma(TokenType::Comma);
+                    ParserToken s_eq_inner(TokenType::Equals);
+
+                    while (true)
+                    {
+                        ASTPtr key_ast;
+                        if (!ParserIdentifier{}.parse(pos, key_ast, expected))
+                            return false;
+                        String key_name = key_ast->as<ASTIdentifier>()->name();
+
+                        if (!s_eq_inner.ignore(pos, expected))
+                            return false;
+
+                        ASTPtr value_ast;
+                        if (!ParserLiteral{}.parse(pos, value_ast, expected))
+                            return false;
+
+                        engine_arguments.emplace_back(key_name, value_ast);
+
+                        if (!s_comma.ignore(pos, expected))
+                            break;
+                    }
+
+                    if (!s_rparen.ignore(pos, expected))
+                        return false;
+                }
+            }
+
+            String source_code;
+            if (s_as.ignore(pos, expected))
+            {
+                ASTPtr body_literal;
+                if (!ParserStringLiteral{}.parse(pos, body_literal, expected))
+                    return false;
+                source_code = body_literal->as<ASTLiteral>()->value.safeGet<String>();
+            }
+
+            auto create_function_query = make_intrusive<ASTCreateFunctionWithDriverQuery>();
+            create_function_query->or_replace = or_replace;
+            create_function_query->if_not_exists = if_not_exists;
+            create_function_query->is_attach = is_attach;
+            create_function_query->cluster = std::move(cluster_str);
+            create_function_query->engine_name = std::move(engine_name);
+            create_function_query->engine_arguments = std::move(engine_arguments);
+            create_function_query->source_code = std::move(source_code);
+
+            create_function_query->function_name_ast = function_name;
+            create_function_query->children.push_back(function_name);
+            if (arguments_ast)
+            {
+                create_function_query->arguments_ast = arguments_ast;
+                create_function_query->children.push_back(arguments_ast);
+            }
+            if (return_type_ast)
+            {
+                create_function_query->return_type_ast = return_type_ast;
+                create_function_query->children.push_back(return_type_ast);
+            }
+            for (const auto & [_, value] : create_function_query->engine_arguments)
+                create_function_query->children.push_back(value);
+
+            node = create_function_query;
+            return true;
+        }
+
+        if (consumed_anything)
+        {
+            /// We consumed ARGUMENTS/RETURNS but did not see ENGINE - this is not a valid query.
+            return false;
+        }
+
+        pos = saved_pos;
+    }
+
+    if (is_attach)
+    {
+        /// ATTACH FUNCTION is only meaningful for the driver-based variant above.
+        return false;
     }
 
     if (s_as.ignore(pos, expected))

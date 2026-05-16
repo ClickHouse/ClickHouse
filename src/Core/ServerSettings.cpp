@@ -1388,6 +1388,16 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     <user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
     ```
     )", 0) \
+    DECLARE(String, dynamic_user_defined_executable_functions_path, "/var/lib/clickhouse/dynamic_user_defined_executable_functions/", R"(
+    The directory used to keep configuration files of executable UDFs created dynamically by drivers (see `CREATE FUNCTION ... ENGINE = DriverName(...)`).
+    On server restart, the directory is scanned for configuration files and the corresponding UDFs are loaded without invoking the driver again.
+
+    **Example**
+
+    ```xml
+    <dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
+    ```
+    )", 0) \
     DECLARE(String, top_level_domains_path, "/var/lib/clickhouse/top_level_domains/", R"(
     The directory with top level domains.
 

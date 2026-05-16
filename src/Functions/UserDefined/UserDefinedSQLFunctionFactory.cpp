@@ -1,5 +1,6 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Common/CurrentThread.h>
+#include <Common/logger_useful.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Backups/RestorerFromBackup.h>
@@ -12,8 +13,12 @@
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+
+#include <filesystem>
+#include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -118,6 +123,13 @@ ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const Co
     {
         query->if_not_exists = false;
         query->or_replace = false;
+    }
+
+    if (auto * query = typeid_cast<ASTCreateFunctionWithDriverQuery *>(ptr.get()))
+    {
+        query->if_not_exists = false;
+        query->or_replace = false;
+        query->is_attach = true;
     }
 
     return ptr;
@@ -299,6 +311,55 @@ void UserDefinedSQLFunctionFactory::loadFunctions(IUserDefinedSQLObjectsStorage 
         {
             exception.addMessage(fmt::format("while loading user defined function {}", backQuote(name)));
             throw;
+        }
+    }
+}
+
+void UserDefinedSQLFunctionFactory::reloadDriverBasedFunctions(
+    const ContextMutablePtr & current_context, IUserDefinedSQLObjectsStorage & function_storage)
+{
+    auto log = getLogger("UserDefinedSQLFunctionFactory");
+
+    String dynamic_dir = current_context->getDynamicUserDefinedExecutableFunctionsPath();
+    if (!dynamic_dir.empty() && !dynamic_dir.ends_with('/'))
+        dynamic_dir.push_back('/');
+
+    for (const auto & [name, create_function_query] : function_storage.getAllObjects())
+    {
+        const auto * driver_ast = create_function_query->as<ASTCreateFunctionWithDriverQuery>();
+        if (!driver_ast)
+            continue;
+
+        if (dynamic_dir.empty())
+        {
+            LOG_WARNING(log, "Cannot recreate driver-based function '{}' - dynamic_user_defined_executable_functions_path is not configured", name);
+            continue;
+        }
+
+        /// Both XML and YAML are valid generated configuration formats - either is fine.
+        const bool config_present = std::filesystem::exists(dynamic_dir + name + ".xml")
+            || std::filesystem::exists(dynamic_dir + name + ".yaml");
+        if (config_present)
+            continue;
+
+        LOG_INFO(log, "Recreating driver-based function '{}' - dynamic configuration is missing", name);
+
+        try
+        {
+            /// Re-run the create flow via the interpreter, replacing the existing function.
+            auto recreate_ast = create_function_query->clone();
+            auto & recreate_driver_ast = recreate_ast->as<ASTCreateFunctionWithDriverQuery &>();
+            recreate_driver_ast.is_attach = false;
+            recreate_driver_ast.or_replace = true;
+            recreate_driver_ast.if_not_exists = false;
+
+            ASTPtr query = recreate_ast;
+            auto interpreter = InterpreterFactory::instance().get(query, current_context);
+            interpreter->execute();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("while recreating driver-based function {}", backQuote(name)));
         }
     }
 }

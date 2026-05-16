@@ -122,6 +122,8 @@
 #include <Common/StackTrace.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionDriverRegistry.h>
+#include <Poco/Glob.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -476,6 +478,7 @@ struct ContextSharedPart : boost::noncopyable
     String user_files_path TSA_GUARDED_BY(mutex);            /// Path to the directory with user provided files, usable by 'file' table function.
     String dictionaries_lib_path TSA_GUARDED_BY(mutex);      /// Path to the directory with user provided binaries and libraries for external dictionaries.
     String user_scripts_path TSA_GUARDED_BY(mutex);          /// Path to the directory with user provided scripts.
+    String dynamic_user_defined_executable_functions_path TSA_GUARDED_BY(mutex); /// Path to the directory for executable UDF configs created by drivers.
     String filesystem_caches_path TSA_GUARDED_BY(mutex);     /// Path to the directory with filesystem caches.
     String filesystem_cache_user TSA_GUARDED_BY(mutex);
     ConfigurationPtr config TSA_GUARDED_BY(mutex);           /// Global configuration settings.
@@ -505,6 +508,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader TSA_GUARDED_BY(external_user_defined_executable_functions_mutex);
     ExternalLoaderXMLConfigRepository * user_defined_executable_functions_config_repository TSA_GUARDED_BY(external_user_defined_executable_functions_mutex) = nullptr;
     scope_guard user_defined_executable_functions_xmls TSA_GUARDED_BY(external_user_defined_executable_functions_mutex);
+    ExternalLoaderXMLConfigRepository * dynamic_user_defined_executable_functions_config_repository TSA_GUARDED_BY(external_user_defined_executable_functions_mutex) = nullptr;
+    scope_guard dynamic_user_defined_executable_functions_xmls TSA_GUARDED_BY(external_user_defined_executable_functions_mutex);
 
     mutable OnceFlag user_defined_sql_objects_storage_initialized;
     mutable std::unique_ptr<IUserDefinedSQLObjectsStorage> user_defined_sql_objects_storage;
@@ -1392,6 +1397,12 @@ String Context::getUserScriptsPath() const
     return shared->user_scripts_path;
 }
 
+String Context::getDynamicUserDefinedExecutableFunctionsPath() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->dynamic_user_defined_executable_functions_path;
+}
+
 String Context::getFilesystemCachesPath() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -1809,13 +1820,19 @@ void Context::setUserScriptsPath(const String & path)
         shared->user_scripts_path = path;
     }
 
+    auto & function_storage = getUserDefinedSQLObjectsStorage();
+    function_storage.loadObjects();
+
+    /// Reload WASM functions if WebAssembly UDFs are enabled.
     auto * wasm_module_manager = initWasmModuleManager();
     if (wasm_module_manager)
-    {
-        auto & function_storage = getUserDefinedSQLObjectsStorage();
-        function_storage.loadObjects();
         UserDefinedSQLFunctionFactory::instance().loadFunctions(function_storage, *wasm_module_manager);
-    }
+}
+
+void Context::setDynamicUserDefinedExecutableFunctionsPath(const String & path)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->dynamic_user_defined_executable_functions_path = path;
 }
 
 void Context::addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const
@@ -3689,14 +3706,90 @@ void Context::loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::Abstr
     {
         shared->user_defined_executable_functions_config_repository->updatePatterns(patterns);
         external_user_defined_executable_functions_loader.reloadConfig(shared->user_defined_executable_functions_config_repository->getName());
-        return;
     }
+    else
+    {
+        auto app_path = getPath();
+        auto config_path = getConfigRef().getString("config-file", "config.xml");
+        auto repository = std::make_unique<ExternalLoaderXMLConfigRepository>(app_path, config_path, patterns);
+        shared->user_defined_executable_functions_config_repository = repository.get();
+        shared->user_defined_executable_functions_xmls = external_user_defined_executable_functions_loader.addConfigRepository(std::move(repository));
+    }
+
+    /// Additionally watch the dynamic UDF directory, where driver-generated configuration files live.
+    String dynamic_path;
+    {
+        SharedLockGuard inner_lock(shared->mutex);
+        dynamic_path = shared->dynamic_user_defined_executable_functions_path;
+    }
+
+    if (!dynamic_path.empty())
+    {
+        std::unordered_set<std::string> dynamic_patterns;
+        dynamic_patterns.insert(dynamic_path + "*.xml");
+        dynamic_patterns.insert(dynamic_path + "*.yaml");
+
+        if (shared->dynamic_user_defined_executable_functions_config_repository)
+        {
+            shared->dynamic_user_defined_executable_functions_config_repository->updatePatterns(dynamic_patterns);
+            external_user_defined_executable_functions_loader.reloadConfig(shared->dynamic_user_defined_executable_functions_config_repository->getName());
+        }
+        else
+        {
+            auto repository = std::make_unique<ExternalLoaderXMLConfigRepository>(
+                dynamic_path, /* main_config_path */ "dynamic_user_defined_executable_functions.xml", dynamic_patterns);
+            shared->dynamic_user_defined_executable_functions_config_repository = repository.get();
+            shared->dynamic_user_defined_executable_functions_xmls = external_user_defined_executable_functions_loader.addConfigRepository(std::move(repository));
+        }
+    }
+}
+
+void Context::loadUserDefinedExecutableFunctionDrivers(const Poco::Util::AbstractConfiguration & config)
+{
+    auto patterns_values = getMultipleValuesFromConfig(config, "", "user_defined_executable_function_drivers_config");
+    if (patterns_values.empty())
+        return;
 
     auto app_path = getPath();
     auto config_path = getConfigRef().getString("config-file", "config.xml");
-    auto repository = std::make_unique<ExternalLoaderXMLConfigRepository>(app_path, config_path, patterns);
-    shared->user_defined_executable_functions_config_repository = repository.get();
-    shared->user_defined_executable_functions_xmls = external_user_defined_executable_functions_loader.addConfigRepository(std::move(repository));
+    auto config_dir = std::filesystem::path(config_path).parent_path();
+
+    std::vector<Poco::AutoPtr<Poco::Util::AbstractConfiguration>> driver_configs;
+    std::set<std::string> resolved_files;
+    for (const auto & pattern : patterns_values)
+    {
+        if (pattern.empty())
+            continue;
+
+        std::set<std::string> files;
+        if (pattern[0] != '/')
+        {
+            const String absolute_path = config_dir / pattern;
+            Poco::Glob::glob(absolute_path, files, 0);
+            if (files.empty())
+                Poco::Glob::glob(pattern, files, 0);
+        }
+        else
+        {
+            Poco::Glob::glob(pattern, files, 0);
+        }
+        for (const auto & path : files)
+        {
+            if (ConfigProcessor::isPreprocessedFile(path))
+                continue;
+            resolved_files.insert(path);
+        }
+    }
+
+    for (const auto & file_path : resolved_files)
+    {
+        ConfigProcessor processor(file_path);
+        auto loaded = processor.loadConfig();
+        processor.savePreprocessedConfig(loaded, app_path);
+        driver_configs.emplace_back(loaded.configuration);
+    }
+
+    UserDefinedExecutableFunctionDriverRegistry::instance().loadDriversFromConfigs(driver_configs);
 }
 
 const IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage() const

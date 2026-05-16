@@ -91,6 +91,7 @@
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
@@ -397,6 +398,7 @@ namespace ServerSetting
     extern const ServerSettingsString user_files_path;
     extern const ServerSettingsString dictionaries_lib_path;
     extern const ServerSettingsString user_scripts_path;
+    extern const ServerSettingsString dynamic_user_defined_executable_functions_path;
     extern const ServerSettingsString top_level_domains_path;
     extern const ServerSettingsString interserver_http_host;
     extern const ServerSettingsUInt64 interserver_http_port;
@@ -1956,6 +1958,14 @@ try
         global_context->setUserScriptsPath(user_scripts_path);
     }
 
+    {
+        const auto & dynamic_udf_path_setting = server_settings[ServerSetting::dynamic_user_defined_executable_functions_path];
+        std::string dynamic_udf_path = dynamic_udf_path_setting.changed
+            ? getCanonicalPath(String(dynamic_udf_path_setting.value), path_str) : String(path / "dynamic_user_defined_executable_functions/");
+        global_context->setDynamicUserDefinedExecutableFunctionsPath(dynamic_udf_path);
+        fs::create_directories(dynamic_udf_path);
+    }
+
     /// top_level_domains_lists
     {
         const auto & top_level_domains_path_setting = server_settings[ServerSetting::top_level_domains_path];
@@ -2336,6 +2346,7 @@ try
                 /// It does not make sense to reload anything before server has started.
                 /// Moreover, it may break initialization order.
                 global_context->loadOrReloadDictionaries(config());
+                global_context->loadUserDefinedExecutableFunctionDrivers(config());
                 global_context->loadOrReloadUserDefinedExecutableFunctions(config());
             }
 
@@ -2989,6 +3000,11 @@ try
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
+
+        /// For driver-based executable UDFs persisted as ATTACH FUNCTION queries, ensure the
+        /// dynamic configuration files exist; re-run their drivers if they are missing.
+        UserDefinedSQLFunctionFactory::instance().reloadDriverBasedFunctions(
+            global_context, global_context->getUserDefinedSQLObjectsStorage());
 
         global_context->getRefreshSet().setRefreshesStopped(false);
     }
