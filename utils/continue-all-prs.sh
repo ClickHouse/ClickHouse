@@ -11,6 +11,11 @@ SHARD=0
 # usage limit, where only the small title-generation submodel still runs.
 MAX_EMPTY_STREAK=3
 
+# PRs authored by anyone in this list are skipped entirely - we don't run
+# `/continue-pr` on them regardless of which of the three involvement
+# filters (authored / assigned / taken-over) would otherwise match.
+SKIP_AUTHORS=(alesapin)
+
 # Bright magenta for script messages, to distinguish from Claude output
 S=$'\033[1;35m'
 R=$'\033[0m'
@@ -82,11 +87,23 @@ while true; do
         --json number,title,author,assignees,updatedAt,labels > "$INVOLVES_RAW"
     RAW_COUNT=$(jq 'length' "$INVOLVES_RAW")
 
+    AFTER_BACKPORTS="$ROUND_TMP/after_backports.json"
     jq '[.[] | select((.labels // []) | map(.name) | any(. == "pr-cherrypick" or . == "pr-backport") | not)]' \
-        "$INVOLVES_RAW" > "$INVOLVES_FILE"
+        "$INVOLVES_RAW" > "$AFTER_BACKPORTS"
+    AFTER_BACKPORTS_COUNT=$(jq 'length' "$AFTER_BACKPORTS")
+    SKIPPED_BACKPORTS=$((RAW_COUNT - AFTER_BACKPORTS_COUNT))
+
+    # Drop PRs whose author is on the manual skip list. Authors who reject
+    # this kind of help, or whose PRs need handling we shouldn't automate.
+    # NB: `.author.login as $a` binds first so that `index($a)` is evaluated
+    # against `$skip`, not against the PR object.
+    SKIP_AUTHORS_JSON=$(printf '%s\n' "${SKIP_AUTHORS[@]}" | jq -R . | jq -s .)
+    jq --argjson skip "$SKIP_AUTHORS_JSON" \
+        '[.[] | select(.author.login as $a | ($skip | index($a)) | not)]' \
+        "$AFTER_BACKPORTS" > "$INVOLVES_FILE"
     INVOLVES_COUNT=$(jq 'length' "$INVOLVES_FILE")
-    SKIPPED_BACKPORTS=$((RAW_COUNT - INVOLVES_COUNT))
-    echo "${S}Found ${INVOLVES_COUNT} PR(s) involving ${AUTHOR} (skipped ${SKIPPED_BACKPORTS} backport PR(s)).${R}"
+    SKIPPED_AUTHORS=$((AFTER_BACKPORTS_COUNT - INVOLVES_COUNT))
+    echo "${S}Found ${INVOLVES_COUNT} PR(s) involving ${AUTHOR} (skipped ${SKIPPED_BACKPORTS} backport PR(s), ${SKIPPED_AUTHORS} PR(s) by skip-listed authors: ${SKIP_AUTHORS[*]}).${R}"
 
     # Filter 1: PRs authored by me.
     AUTHORED_FILE="$ROUND_TMP/authored.json"
