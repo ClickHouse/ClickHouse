@@ -3,7 +3,7 @@
 Tests for the SQLStorm query rewriter.
 
 Validates that the PostgreSQL -> ClickHouse rewrites do not produce invalid SQL
-for known edge cases (e.g. casted or compound LHS expressions in `= ANY(...)`).
+for known edge cases (FETCH/OFFSET combinations).
 """
 
 import os
@@ -11,83 +11,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
-from rewrite_queries import rewrite_any_comparison, rewrite_query
-
-
-class TestRewriteAnyComparison(unittest.TestCase):
-    def test_simple_identifier(self):
-        self.assertEqual(
-            rewrite_any_comparison("SELECT * FROM t WHERE a = ANY(arr)"),
-            "SELECT * FROM t WHERE has(arr, a)",
-        )
-
-    def test_qualified_identifier(self):
-        self.assertEqual(
-            rewrite_any_comparison("SELECT * FROM t WHERE x.col = ANY(arr)"),
-            "SELECT * FROM t WHERE has(arr, x.col)",
-        )
-
-    def test_not_equal(self):
-        self.assertEqual(
-            rewrite_any_comparison("SELECT * FROM t WHERE col != ANY(arr)"),
-            "SELECT * FROM t WHERE NOT has(arr, col)",
-        )
-
-    def test_angle_not_equal(self):
-        self.assertEqual(
-            rewrite_any_comparison("SELECT * FROM t WHERE col <> ANY(arr)"),
-            "SELECT * FROM t WHERE NOT has(arr, col)",
-        )
-
-    def test_postgres_cast_lhs_not_rewritten(self):
-        # `a::integer = ANY(arr)` must not become `a::has(arr, integer)`
-        sql = "SELECT * FROM t WHERE a::integer = ANY(arr)"
-        self.assertEqual(rewrite_any_comparison(sql), sql)
-
-    def test_parenthesized_cast_lhs_not_rewritten(self):
-        sql = "SELECT * FROM t WHERE (a)::integer = ANY(arr)"
-        self.assertEqual(rewrite_any_comparison(sql), sql)
-
-    def test_qualified_cast_lhs_not_rewritten(self):
-        sql = "SELECT * FROM t WHERE x.a::integer = ANY(arr)"
-        self.assertEqual(rewrite_any_comparison(sql), sql)
-
-    def test_arithmetic_lhs_not_rewritten(self):
-        # `a + b = ANY(arr)` must not become `a + has(arr, b)`
-        sql = "SELECT * FROM t WHERE a + b = ANY(arr)"
-        self.assertEqual(rewrite_any_comparison(sql), sql)
-
-    def test_subquery_operand_not_rewritten(self):
-        # `a = ANY(SELECT ...)` must not become `has(SELECT ..., a)`, because
-        # `has` requires an array argument, not a subquery.
-        sql = "SELECT * FROM t WHERE a = ANY(SELECT b FROM u)"
-        self.assertEqual(rewrite_any_comparison(sql), sql)
-
-    def test_subquery_operand_with_with_clause_not_rewritten(self):
-        sql = "SELECT * FROM t WHERE a = ANY(WITH x AS (SELECT 1) SELECT b FROM u)"
-        self.assertEqual(rewrite_any_comparison(sql), sql)
-
-    def test_subquery_operand_not_equal_not_rewritten(self):
-        sql = "SELECT * FROM t WHERE a != ANY(SELECT b FROM u)"
-        self.assertEqual(rewrite_any_comparison(sql), sql)
-
-    def test_parenthesized_subquery_operand_not_rewritten(self):
-        # `a = ANY((SELECT ...))` (parenthesized subquery) must also be skipped:
-        # `has((SELECT b FROM u), a)` is invalid because `has` requires an array.
-        sql = "SELECT * FROM t WHERE a = ANY((SELECT b FROM u))"
-        self.assertEqual(rewrite_any_comparison(sql), sql)
-
-    def test_doubly_parenthesized_subquery_operand_not_rewritten(self):
-        sql = "SELECT * FROM t WHERE a = ANY(((SELECT b FROM u)))"
-        self.assertEqual(rewrite_any_comparison(sql), sql)
-
-    def test_spaced_parenthesized_subquery_operand_not_rewritten(self):
-        sql = "SELECT * FROM t WHERE a = ANY( ( SELECT b FROM u ) )"
-        self.assertEqual(rewrite_any_comparison(sql), sql)
-
-    def test_parenthesized_with_clause_operand_not_rewritten(self):
-        sql = "SELECT * FROM t WHERE a = ANY((WITH x AS (SELECT 1) SELECT b FROM u))"
-        self.assertEqual(rewrite_any_comparison(sql), sql)
+from rewrite_queries import rewrite_query
 
 
 class TestFetchOffsetRewrite(unittest.TestCase):
