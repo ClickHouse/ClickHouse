@@ -27,20 +27,20 @@ import subprocess
 import sys
 from html import escape as xml_escape
 
-# Mapping from ClickHouse data types to a (C type, appender) tuple.
+# Mapping from ClickHouse data types to a C type.
 # Only a small set of types is supported here - this is a proof of concept.
 TYPE_MAP = {
-    "UInt8":  ("uint8_t",  "ch_append_uint8"),
-    "UInt16": ("uint16_t", "ch_append_uint16"),
-    "UInt32": ("uint32_t", "ch_append_uint32"),
-    "UInt64": ("uint64_t", "ch_append_uint64"),
-    "Int8":   ("int8_t",   "ch_append_int8"),
-    "Int16":  ("int16_t",  "ch_append_int16"),
-    "Int32":  ("int32_t",  "ch_append_int32"),
-    "Int64":  ("int64_t",  "ch_append_int64"),
-    "Float32": ("float",   "ch_append_float"),
-    "Float64": ("double",  "ch_append_double"),
-    "String": ("struct buf", "ch_append_string"),
+    "UInt8":  "uint8_t",
+    "UInt16": "uint16_t",
+    "UInt32": "uint32_t",
+    "UInt64": "uint64_t",
+    "Int8":   "int8_t",
+    "Int16":  "int16_t",
+    "Int32":  "int32_t",
+    "Int64":  "int64_t",
+    "Float32": "float",
+    "Float64": "double",
+    "String": "struct buf",
 }
 
 
@@ -67,34 +67,79 @@ def generate_wrapper_c(function_name, return_type, args, user_body):
     if return_type not in TYPE_MAP:
         raise SystemExit(f"Unsupported return type: {return_type}")
 
-    ret_c_type, ret_appender = TYPE_MAP[return_type]
+    ret_c_type = TYPE_MAP[return_type]
+    ret_is_string = return_type == "String"
 
-    arg_c_decls = []
     arg_column_decls = []
     arg_column_reads = []
+    arg_value_decls = []
+    process_params = []
+    process_call_args = []
+    process_user_args = []
     user_func_params = []
-    user_call_args = []
     for index, (name, ty) in enumerate(args):
-        c_type, _ = TYPE_MAP[ty]
+        c_type = TYPE_MAP[ty]
         column_name = f"ch_arg_{index}"
+        values_name = f"{column_name}_values"
         arg_column_decls.append(f"    struct ch_column {column_name} = {{0}};")
         if ty == "String":
             arg_column_reads.append(
                 f'        if (ch_read_column(&{column_name}) != 1 || ch_parse_string_column(&{column_name}, rows) != 1) {{ ch_error("input column read error\\n"); return 2; }}')
-            arg_c_decls.append(f"            {c_type} {name} = {column_name}.strings[row];")
+            arg_value_decls.append(f"        const struct buf * __restrict {values_name} = {column_name}.strings;")
         else:
             arg_column_reads.append(
                 f'        if (ch_read_column(&{column_name}) != 1 || ch_validate_fixed_column(&{column_name}, rows, sizeof({c_type})) != 1) {{ ch_error("input column read error\\n"); return 2; }}')
-            arg_c_decls.append(f"            {c_type} {name};")
-            arg_c_decls.append(f"            __builtin_memcpy(&{name}, {column_name}.data.data + row * sizeof({c_type}), sizeof({c_type}));")
+            arg_value_decls.append(f"        const {c_type} * __restrict {values_name} = (const {c_type} *){column_name}.data.data;")
+        process_params.append(f"const {c_type} * __restrict {values_name}")
+        process_call_args.append(values_name)
+        process_user_args.append(f"{values_name}[row]")
         user_func_params.append(f"{c_type} {name}")
-        user_call_args.append(name)
 
-    arg_c_decls_str = "\n".join(arg_c_decls) if arg_c_decls else ""
     arg_column_decls_str = "\n".join(arg_column_decls) if arg_column_decls else ""
     arg_column_reads_str = "\n".join(arg_column_reads) if arg_column_reads else ""
+    arg_value_decls_str = "\n".join(arg_value_decls) if arg_value_decls else ""
     user_params_str = ", ".join(user_func_params) if user_func_params else "void"
-    user_call_args_str = ", ".join(user_call_args)
+    process_user_args_str = ", ".join(process_user_args)
+
+    if ret_is_string:
+        result_setup_str = "        ch_buffer_reset(&ch_result);"
+        process_params.append("struct ch_buffer * ch_result")
+        process_call_args.append("&ch_result")
+        process_result_str = f"""\
+        {ret_c_type} result = user_function({process_user_args_str});
+        if (ch_append_string(ch_result, &result) != 1)
+            return -1;"""
+    else:
+        result_setup_str = f"""\
+        if (rows > (uint64_t)(SIZE_MAX / sizeof({ret_c_type})) || ch_buffer_resize(&ch_result, (size_t)rows * sizeof({ret_c_type})) != 1)
+        {{
+            ch_error("result buffer allocation error\\n");
+            return 3;
+        }}
+        {ret_c_type} * __restrict ch_result_values = ({ret_c_type} *)ch_result.data;"""
+        process_params.append(f"{ret_c_type} * __restrict ch_result_values")
+        process_call_args.append("ch_result_values")
+        process_result_str = f"        ch_result_values[row] = user_function({process_user_args_str});"
+
+    process_params_str = ", ".join(["uint64_t rows"] + process_params)
+    process_call_args_str = ", ".join(["rows"] + process_call_args)
+    process_function_str = f"""\
+static CH_ALWAYS_INLINE int ch_process_chunk({process_params_str})
+{{
+    for (uint64_t row = 0; row != rows; ++row)
+    {{
+{process_result_str}
+    }}
+    return 1;
+}}
+"""
+
+    process_call_str = f"""\
+        if (ch_process_chunk({process_call_args_str}) != 1)
+        {{
+            ch_error("write error\\n");
+            return 3;
+        }}"""
 
     safe_function_name = function_name.replace('"', '\\"')
 
@@ -116,16 +161,18 @@ struct buf
 
 struct buf alloc(size_t size);
 
-static {ret_c_type} user_function({user_params_str})
+#if defined(__GNUC__) || defined(__clang__)
+#define CH_ALWAYS_INLINE __attribute__((always_inline)) inline
+#else
+#define CH_ALWAYS_INLINE inline
+#endif
+
+static CH_ALWAYS_INLINE {ret_c_type} user_function({user_params_str})
 {{
 {user_body}
 }}
 
 #define CH_BUFFER_SIZE (1U << 16)
-
-static unsigned char ch_input_buffer[CH_BUFFER_SIZE];
-static size_t ch_input_pos = 0;
-static size_t ch_input_size = 0;
 
 static unsigned char ch_output_buffer[CH_BUFFER_SIZE];
 static size_t ch_output_pos = 0;
@@ -254,28 +301,12 @@ static void ch_error(const char * message)
     }}
 }}
 
-static int ch_refill_input(void)
-{{
-    ssize_t bytes = ch_read_retry(STDIN_FILENO, ch_input_buffer, sizeof(ch_input_buffer));
-    if (bytes < 0)
-        return -1;
-
-    ch_input_pos = 0;
-    ch_input_size = (size_t)bytes;
-    return bytes == 0 ? 0 : 1;
-}}
-
 static inline int ch_read_byte(unsigned char * value)
 {{
-    if (ch_input_pos == ch_input_size)
-    {{
-        int status = ch_refill_input();
-        if (status <= 0)
-            return status;
-    }}
-
-    *value = ch_input_buffer[ch_input_pos++];
-    return 1;
+    ssize_t bytes = ch_read_retry(STDIN_FILENO, value, 1);
+    if (bytes < 0)
+        return -1;
+    return bytes == 0 ? 0 : 1;
 }}
 
 static inline int ch_read_exact(void * ptr, size_t size)
@@ -283,19 +314,11 @@ static inline int ch_read_exact(void * ptr, size_t size)
     unsigned char * out = (unsigned char *)ptr;
     while (size != 0)
     {{
-        if (ch_input_pos == ch_input_size)
-        {{
-            int status = ch_refill_input();
-            if (status <= 0)
-                return status;
-        }}
-
-        size_t available = ch_input_size - ch_input_pos;
-        size_t bytes = available < size ? available : size;
-        __builtin_memcpy(out, ch_input_buffer + ch_input_pos, bytes);
-        ch_input_pos += bytes;
-        out += bytes;
-        size -= bytes;
+        ssize_t bytes = ch_read_retry(STDIN_FILENO, out, size);
+        if (bytes <= 0)
+            return bytes == 0 ? 0 : -1;
+        out += (size_t)bytes;
+        size -= (size_t)bytes;
     }}
     return 1;
 }}
@@ -312,6 +335,23 @@ static int ch_flush_output(void)
     }}
 
     ch_output_pos = 0;
+    return 1;
+}}
+
+static int ch_write_direct(const void * ptr, size_t size)
+{{
+    if (ch_flush_output() != 1)
+        return -1;
+
+    const unsigned char * in = (const unsigned char *)ptr;
+    while (size != 0)
+    {{
+        ssize_t bytes = ch_write_retry(STDOUT_FILENO, in, size);
+        if (bytes <= 0)
+            return -1;
+        in += (size_t)bytes;
+        size -= (size_t)bytes;
+    }}
     return 1;
 }}
 
@@ -335,34 +375,12 @@ static inline int ch_write_exact(const void * ptr, size_t size)
 
 static int ch_read_uint64_le(uint64_t * value)
 {{
-    unsigned char bytes[8];
-    if (ch_read_exact(bytes, sizeof(bytes)) != 1)
-        return -1;
-
-    *value =
-        ((uint64_t)bytes[0]) |
-        ((uint64_t)bytes[1] << 8) |
-        ((uint64_t)bytes[2] << 16) |
-        ((uint64_t)bytes[3] << 24) |
-        ((uint64_t)bytes[4] << 32) |
-        ((uint64_t)bytes[5] << 40) |
-        ((uint64_t)bytes[6] << 48) |
-        ((uint64_t)bytes[7] << 56);
-    return 1;
+    return ch_read_exact(value, sizeof(*value));
 }}
 
 static int ch_write_uint64_le(uint64_t value)
 {{
-    unsigned char bytes[8];
-    bytes[0] = (unsigned char)value;
-    bytes[1] = (unsigned char)(value >> 8);
-    bytes[2] = (unsigned char)(value >> 16);
-    bytes[3] = (unsigned char)(value >> 24);
-    bytes[4] = (unsigned char)(value >> 32);
-    bytes[5] = (unsigned char)(value >> 40);
-    bytes[6] = (unsigned char)(value >> 48);
-    bytes[7] = (unsigned char)(value >> 56);
-    return ch_write_exact(bytes, sizeof(bytes));
+    return ch_write_exact(&value, sizeof(value));
 }}
 
 static int ch_buffer_reserve(struct ch_buffer * buffer, size_t capacity)
@@ -536,23 +554,6 @@ static int ch_buffer_append_var_uint(struct ch_buffer * buffer, uint64_t value)
     return ch_buffer_append(buffer, bytes, pos);
 }}
 
-#define CH_DEFINE_APPEND(name, type) \\
-    static inline int ch_append_##name(struct ch_buffer * buffer, const type * value) \\
-    {{ \\
-        return ch_buffer_append(buffer, value, sizeof(*value)); \\
-    }}
-
-CH_DEFINE_APPEND(uint8, uint8_t)
-CH_DEFINE_APPEND(uint16, uint16_t)
-CH_DEFINE_APPEND(uint32, uint32_t)
-CH_DEFINE_APPEND(uint64, uint64_t)
-CH_DEFINE_APPEND(int8, int8_t)
-CH_DEFINE_APPEND(int16, int16_t)
-CH_DEFINE_APPEND(int32, int32_t)
-CH_DEFINE_APPEND(int64, int64_t)
-CH_DEFINE_APPEND(float, float)
-CH_DEFINE_APPEND(double, double)
-
 static int ch_append_string(struct ch_buffer * buffer, const struct buf * value)
 {{
     uint64_t size = (uint64_t)value->size;
@@ -595,7 +596,7 @@ static int ch_write_buffers_result(const struct ch_buffer * column, uint64_t row
     if (ch_write_uint64_le(column_size) != 1)
         return -1;
 
-    return ch_write_exact(column->data, column->size);
+    return ch_write_direct(column->data, column->size);
 }}
 
 static int ch_read_chunk_header(uint64_t * rows)
@@ -628,6 +629,7 @@ static int ch_read_chunk_header(uint64_t * rows)
     return 1;
 }}
 
+{process_function_str}
 int main(void)
 {{
 {arg_column_decls_str}
@@ -653,18 +655,9 @@ int main(void)
         }}
 
 {arg_column_reads_str}
-        ch_buffer_reset(&ch_result);
-
-        for (uint64_t row = 0; row != rows; ++row)
-        {{
-{arg_c_decls_str}
-            {ret_c_type} result = user_function({user_call_args_str});
-            if ({ret_appender}(&ch_result, &result) != 1)
-            {{
-                ch_error("write error\\n");
-                return 3;
-            }}
-        }}
+{arg_value_decls_str}
+{result_setup_str}
+{process_call_str}
 
         if (ch_write_buffers_result(&ch_result, rows) != 1)
         {{

@@ -10,6 +10,10 @@ uuid_workdir_present
 function_workdir_absent
 setvbuf_absent
 stdio_serde_absent
+numeric_arg_view_present
+numeric_result_view_present
+chunk_loop_function_present
+input_staging_absent
 -- multi-row chunk call
 55
 -- declared argument cast

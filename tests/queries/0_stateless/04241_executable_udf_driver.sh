@@ -83,6 +83,10 @@ test -d "$WORK_DIR/dyn/$WORK_DIR_NAME" && echo "uuid_workdir_present" || echo "u
 test -d "$WORK_DIR/dyn/test_udf_drv_add.d" && echo "function_workdir_present" || echo "function_workdir_absent"
 grep -q 'setvbuf' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "setvbuf_present" || echo "setvbuf_absent"
 grep -Eq 'fread|fwrite|fgets|fflush|fputs|scanf|printf|strtoull|setvbuf' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "stdio_serde_present" || echo "stdio_serde_absent"
+grep -q 'ch_arg_0_values\[row\]' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "numeric_arg_view_present" || echo "numeric_arg_view_missing"
+grep -q 'ch_result_values\[row\] = user_function' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "numeric_result_view_present" || echo "numeric_result_view_missing"
+grep -q 'static CH_ALWAYS_INLINE int ch_process_chunk' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "chunk_loop_function_present" || echo "chunk_loop_function_missing"
+grep -q 'ch_input_buffer' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "input_staging_present" || echo "input_staging_absent"
 
 echo "-- multi-row chunk call"
 run "SELECT sum(test_udf_drv_add(toUInt8(number), toUInt8(1))) FROM numbers(10);"
