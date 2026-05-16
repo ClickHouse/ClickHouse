@@ -18,11 +18,11 @@ class UTFConvertingReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 public:
     enum class Encoding
     {
-        UTF8,      /// UTF-8 BOM detected or no BOM (passthrough mode)
-        UTF16_LE,  /// UTF-16 Little Endian
-        UTF16_BE,  /// UTF-16 Big Endian
-        UTF32_LE,  /// UTF-32 Little Endian
-        UTF32_BE   /// UTF-32 Big Endian
+        UTF8, /// UTF-8 BOM detected or no BOM (passthrough mode)
+        UTF16_LE, /// UTF-16 Little Endian
+        UTF16_BE, /// UTF-16 Big Endian
+        UTF32_LE, /// UTF-32 Little Endian
+        UTF32_BE /// UTF-32 Big Endian
     };
 
     explicit UTFConvertingReadBuffer(std::unique_ptr<ReadBuffer> impl_);
@@ -57,10 +57,10 @@ private:
 
     /// For handling incomplete multi-byte sequences at buffer boundaries
     std::vector<uint8_t> pending_bytes;
-    
+
     /// High surrogate from UTF-16 waiting for low surrogate
     uint16_t pending_high_surrogate = 0;
-    
+
     /// Track if we've reached EOF on the underlying buffer
     bool eof = false;
 };
