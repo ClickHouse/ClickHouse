@@ -29,6 +29,9 @@
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/Utils.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Functions/FunctionFactory.h>
+
 #include <Core/Settings.h>
 
 namespace DB
@@ -65,7 +68,36 @@ std::optional<FilterAnalysisResult> analyzeFilter(
     result.filter_actions->dag = std::move(filter_expression_dag);
     result.correlated_subtrees = std::move(correlated_subtrees);
 
-    const auto * output = result.filter_actions->dag.getOutputs().at(0);
+    auto & dag = result.filter_actions->dag;
+    const auto * output = dag.getOutputs().at(0);
+
+    /// If the filter expression is a bare column reference with a numeric type
+    /// (for example `WHERE id` where `id Int32`), rewrite it as `output != 0` so that
+    /// downstream index analysis treats it as a comparison against a constant rather than a
+    /// bare key column. This is scoped to bare INPUT/ALIAS nodes — a complex expression like
+    /// `WHERE sipHash64(...) % -0.` is left alone so that the existing type-strictness checks
+    /// in projection paths continue to reject it. See #89222.
+    auto is_bare_column = [](const ActionsDAG::Node * n)
+    {
+        while (n && n->type == ActionsDAG::ActionType::ALIAS)
+            n = n->children.empty() ? nullptr : n->children.front();
+        return n && n->type == ActionsDAG::ActionType::INPUT;
+    };
+
+    auto output_filter_type = removeNullable(removeLowCardinality(output->result_type));
+    if (is_bare_column(output)
+        && !output_filter_type->onlyNull()
+        && !isUInt8(output_filter_type)
+        && output->result_type->canBeUsedInBooleanContext())
+    {
+        auto zero_column = output->result_type->createColumnConst(1, output->result_type->getDefault());
+        const auto & zero_node = dag.addColumn({zero_column, output->result_type, "0"});
+        auto ne_func = FunctionFactory::instance().get("notEquals", planner_context->getQueryContext());
+        const auto & ne_node = dag.addFunction(ne_func, {output, &zero_node}, {});
+        dag.getOutputs()[0] = &ne_node;
+        output = &ne_node;
+    }
+
     if (output->column && ConstantFilterDescription(*output->column).always_true)
         return {};
 

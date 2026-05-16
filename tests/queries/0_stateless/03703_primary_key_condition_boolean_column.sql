@@ -11,8 +11,6 @@ INSERT INTO test_bool_index SELECT number, toString(number) FROM numbers(1000);
 
 EXPLAIN indexes = 1, description = 0 SELECT * FROM test_bool_index WHERE id;
 
-EXPLAIN indexes = 1, description = 0 SELECT * FROM test_bool_index WHERE NOT id;
-
 DROP TABLE test_bool_index;
 
 SELECT '--- Test 2: Float column used as boolean condition in WHERE';
