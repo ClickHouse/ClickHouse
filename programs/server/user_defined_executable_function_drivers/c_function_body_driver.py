@@ -13,7 +13,7 @@ When called with `create`, reads the C function body from stdin and:
   3. Prints to stdout an XML configuration for an `executable_pool` UDF whose
      command runs the compiled binary inside another sandboxed Docker
      container with no network access, read-only root filesystem, dropped
-     capabilities, no new privileges, and as an unprivileged user.
+     capabilities, and as the server OS user.
 
 When called with `drop`, this driver has no extra work to do besides what
 ClickHouse does itself (delete the dynamic config file and remove the working
@@ -152,6 +152,10 @@ def docker_resource_limits():
     }
 
 
+def docker_user():
+    return os.environ.get("CLICKHOUSE_C_DRIVER_DOCKER_USER", f"{os.getuid()}:{os.getgid()}")
+
+
 def compile_with_docker(work_dir):
     """Compile wrapper.c -> user_func inside an isolated Docker build container."""
     image = docker_image_for_build()
@@ -160,11 +164,11 @@ def compile_with_docker(work_dir):
         "--network=none",
         "--read-only",
         "--tmpfs=/tmp:rw,size=64m",
-        "--security-opt=no-new-privileges",
         "--cap-drop=ALL",
         "--memory=512m",
         "--cpus=1.0",
         "--pids-limit=128",
+        "--user", docker_user(),
         "-v", f"{work_dir}:/work",
         "-w", "/work",
         image,
@@ -193,15 +197,15 @@ def generate_xml_config(function_name, return_type, args, work_dir):
     else:
         docker_image = docker_image_for_run()
         limits = docker_resource_limits()
+        user = docker_user()
         # Tmp dir inside container is needed for some libc init even on a static binary.
         runtime_command = (
             f"docker run --rm -i "
             f"--network=none "
             f"--read-only "
             f"--tmpfs=/tmp:rw,size=16m "
-            f"--security-opt=no-new-privileges "
             f"--cap-drop=ALL "
-            f"--user 65534:65534 "
+            f"--user {user} "
             f"--memory={limits['memory']} "
             f"--cpus={limits['cpus']} "
             f"--pids-limit={limits['pids']} "
