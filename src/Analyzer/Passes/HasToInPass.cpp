@@ -55,7 +55,8 @@ public:
         /// Verify that none of the values in the constant array are NULLs, because has() and in() treat NULLs differently
         const auto & element_type = (typeid_cast<const DataTypeArray *>(first_arg_type.get()))->getNestedType();
         WhichDataType data_type(element_type);
-        if (data_type.isArray() || data_type.isTuple() || data_type.isObject() || data_type.isDynamic() || data_type.isNothing())
+        if (isNullableOrLowCardinalityNullable(element_type) ||
+                data_type.isArray() || data_type.isTuple() || data_type.isObject() || data_type.isDynamic() || data_type.isNothing())
             return;
 
         const auto & array_field = first_arg_constant->getValue();
@@ -70,7 +71,7 @@ public:
 
         const auto second_arg_type = has_function_arguments_nodes[1]->getResultType();
         WhichDataType expr_data_type(second_arg_type);
-        if (second_arg_type->isNullable() ||
+        if (isNullableOrLowCardinalityNullable(second_arg_type) ||
                 expr_data_type.isArray() || expr_data_type.isTuple() || expr_data_type.isObject() || expr_data_type.isDynamic() || expr_data_type.isNothing())
             return;
 
