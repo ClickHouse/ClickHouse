@@ -24,7 +24,23 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
             (sanitize_test_result_line(line) for line in descriptor),
             delimiter="\t",
         )
-        for line in reader:
+        for line_number, line in enumerate(reader, start=1):
+            # Blank lines (typically a trailing newline at end of file, or
+            # a separator artifact between writes) are common in practice
+            # and carry no information — skip them. A row with at least
+            # one cell but fewer than two cells is genuinely malformed:
+            # the writer either crashed mid-write or the file was
+            # truncated. Surface that with the offending content and the
+            # line number so investigators can diagnose without having to
+            # re-fetch the artifact.
+            if not line:
+                continue
+            if len(line) < 2:
+                raise ValueError(
+                    f"malformed row at line {line_number} in "
+                    f"{results_path}: expected at least 2 tab-separated "
+                    f"fields (name, status), got {len(line)}: {line!r}"
+                )
             name = line[0]
             status = line[1]
             time = None
