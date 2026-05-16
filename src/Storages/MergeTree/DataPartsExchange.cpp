@@ -2,29 +2,34 @@
 
 #include "config.h"
 
-#include <Formats/NativeWriter.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/createVolume.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
+#include <Formats/NativeWriter.h>
 #include <IO/HTTPCommon.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/S3Common.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
-#include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/ReplicatedFetchList.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/randomDelay.h>
-#include <Disks/IO/createReadBufferFromFileBase.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <base/scope_guard.h>
-#include <Poco/Net/HTTPRequest.h>
-#include <boost/algorithm/string/join.hpp>
 #include <base/sort.h>
+#include <boost/algorithm/string/join.hpp>
+#include <Poco/Net/HTTPRequest.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
+#include <Common/randomDelay.h>
+#include <Common/thread_local_rng.h>
 
 namespace fs = std::filesystem;
 
@@ -791,11 +796,19 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     auto part_dir = tmp_prefix + part_name;
     auto part_relative_path = data.getRelativeDataPath() + String(to_detached ? MergeTreeData::DETACHED_DIR_NAME : "");
-    auto volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
 
-    /// Create temporary part storage to write sent files.
-    /// Actual part storage will be initialized later from metadata.
-    auto part_storage_for_loading = std::make_shared<DataPartStorageOnDiskFull>(volume, part_relative_path, part_dir);
+    /// Same rationale as `MergeTreeData::loadDataPart`: the `SingleDiskVolume` and the
+    /// `DataPartStorageOnDiskFull` below are stored on the resulting part and live for its
+    /// lifetime. Only this two-line scope is wrapped — the actual fetch I/O buffers below
+    /// are short-lived and stay in the default arena.
+    auto [volume, part_storage_for_loading] = [&]
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        auto v = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
+        auto s = std::make_shared<DataPartStorageOnDiskFull>(v, part_relative_path, part_dir);
+        return std::pair{std::move(v), std::move(s)};
+    }();
+
     part_storage_for_loading->beginTransaction();
 
     if (part_storage_for_loading->exists())
@@ -862,7 +875,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
         MergeTreeDataPartBuilder builder(data, part_name, volume, part_relative_path, part_dir, getReadSettings());
         new_data_part = builder.withPartFormatFromDisk().build();
 
-        new_data_part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
+        new_data_part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
         new_data_part->is_temp = true;
         /// In case of replicated merge tree with zero copy replication
         /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs

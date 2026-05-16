@@ -1,7 +1,9 @@
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <boost/noncopyable.hpp>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
@@ -163,7 +165,7 @@ StorageMemory::StorageMemory(
     ConstraintsDescription constraints_,
     const String & comment,
     const MemorySettings & memory_settings_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , data(std::make_unique<const Blocks>())
     , memory_settings(std::make_unique<MemorySettings>(memory_settings_))
 {
@@ -172,14 +174,15 @@ StorageMemory::StorageMemory(
     storage_metadata.setConstraints(std::move(constraints_));
     storage_metadata.setComment(comment);
     storage_metadata.setSettingsChanges(memory_settings->getSettingsChangesQuery());
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageMemory::createVirtuals()
 {
     VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
     return desc;
 }
 
@@ -195,7 +198,7 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
 }
 
-void StorageMemory::read(
+void StorageMemory::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -241,7 +244,7 @@ void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*
 void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context)
 {
     std::lock_guard lock(mutex);
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
 
@@ -318,7 +321,7 @@ void StorageMemory::truncate(
 void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr context, DB::IStorage::AlterLockHolder & /*alter_lock_holder*/)
 {
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
     params.apply(new_metadata, context);
 
     if (params.isSettingsAlter())
@@ -501,7 +504,7 @@ void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector
 
     backup_entries_collector.addBackupEntries(std::make_shared<MemoryBackup>(
         backup_entries_collector.getContext(),
-        getInMemoryMetadataPtr(),
+        getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false),
         data.get(),
         data_path_in_backup,
         tmp_data,
