@@ -704,12 +704,6 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false
     ).strip()
     assert "DeltaLake" in result, f"Expected DeltaLake in used_storages, got {result}"
 
-    db_engines_result = node1.query(
-        f"SELECT used_database_engines FROM system.query_log"
-        f" WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
-    ).strip()
-    assert "'DataLakeCatalog'" in db_engines_result, f"Expected DataLakeCatalog in used_database_engines, got {db_engines_result}"
-
 
 def test_snapshot_version(started_cluster):
     """

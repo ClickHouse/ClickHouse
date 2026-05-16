@@ -891,22 +891,6 @@ def test_used_storages_in_query_log(started_cluster):
         "'IcebergS3'" in result_cluster
     ), f"Cluster: expected IcebergS3 in used_storages, got {result_cluster}"
 
-    db_engines_non_cluster = node1.query(
-        f"SELECT used_database_engines FROM system.query_log"
-        f" WHERE query_id = '{query_id_non_cluster}' AND type = 'QueryFinish'"
-    ).strip()
-    assert (
-        "'DataLakeCatalog'" in db_engines_non_cluster
-    ), f"Non-cluster: expected DataLakeCatalog in used_database_engines, got {db_engines_non_cluster}"
-
-    db_engines_cluster = node1.query(
-        f"SELECT used_database_engines FROM system.query_log"
-        f" WHERE query_id = '{query_id_cluster}' AND type = 'QueryFinish'"
-    ).strip()
-    assert (
-        "'DataLakeCatalog'" in db_engines_cluster
-    ), f"Cluster: expected DataLakeCatalog in used_database_engines, got {db_engines_cluster}"
-
 
 def test_not_specified_catalog_type(started_cluster):
     node = started_cluster.instances["node1"]

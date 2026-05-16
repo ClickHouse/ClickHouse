@@ -688,10 +688,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             /* is_table_function */true);
 
         if (context_->hasQueryContext() && context_->getSettingsRef()[Setting::log_queries])
-        {
             context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, storage_cluster->getName());
-            context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, getEngineName());
-        }
 
         storage_cluster->startup();
         return storage_cluster;
@@ -723,10 +720,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         /* lazy_init */true);
 
     if (context_->hasQueryContext() && context_->getSettingsRef()[Setting::log_queries])
-    {
         context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, result_storage->getName());
-        context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, getEngineName());
-    }
 
     return result_storage;
 }
