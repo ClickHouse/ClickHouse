@@ -20,13 +20,28 @@ SKIP_AUTHORS=(alesapin)
 S=$'\033[1;35m'
 R=$'\033[0m'
 
+FILTER_MY=0
+FILTER_ASSIGNED=0
+FILTER_OTHER=0
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --shards) SHARDS="$2"; shift 2 ;;
         --shard)  SHARD="$2";  shift 2 ;;
+        --my)       FILTER_MY=1;       shift ;;
+        --assigned) FILTER_ASSIGNED=1; shift ;;
+        --other)    FILTER_OTHER=1;    shift ;;
         *) echo "${S}Unknown option: $1${R}" >&2; exit 1 ;;
     esac
 done
+
+# No explicit category filter -> all three are on. Otherwise restrict to the
+# listed ones. Combinations are honored (e.g. `--my --assigned` skips other).
+if (( FILTER_MY == 0 && FILTER_ASSIGNED == 0 && FILTER_OTHER == 0 )); then
+    FILTER_MY=1
+    FILTER_ASSIGNED=1
+    FILTER_OTHER=1
+fi
 
 if (( SHARD >= SHARDS )); then
     echo "${S}Error: --shard (${SHARD}) must be less than --shards (${SHARDS})${R}" >&2
@@ -105,28 +120,41 @@ while true; do
     SKIPPED_AUTHORS=$((AFTER_BACKPORTS_COUNT - INVOLVES_COUNT))
     echo "${S}Found ${INVOLVES_COUNT} PR(s) involving ${AUTHOR} (skipped ${SKIPPED_BACKPORTS} backport PR(s), ${SKIPPED_AUTHORS} PR(s) by skip-listed authors: ${SKIP_AUTHORS[*]}).${R}"
 
-    # Filter 1: PRs authored by me.
+    # Filter 1: PRs authored by me. Sorted by updatedAt ascending so the
+    # staler one is processed first within the category.
     AUTHORED_FILE="$ROUND_TMP/authored.json"
-    jq --arg me "$AUTHOR" '[.[] | select(.author.login == $me)]' \
-        "$INVOLVES_FILE" > "$AUTHORED_FILE"
+    if (( FILTER_MY )); then
+        jq --arg me "$AUTHOR" '[.[] | select(.author.login == $me)] | sort_by(.updatedAt)' \
+            "$INVOLVES_FILE" > "$AUTHORED_FILE"
+    else
+        echo '[]' > "$AUTHORED_FILE"
+    fi
     AUTHORED_COUNT=$(jq 'length' "$AUTHORED_FILE")
 
     # Filter 2 candidates: I'm an assignee but not the author. These still
     # need the 5-day check (latest commit by the PR's original author must
     # be more than 5 days ago before we touch the PR).
     ASSIGNED_CAND_FILE="$ROUND_TMP/assigned_candidates.json"
-    jq --arg me "$AUTHOR" \
-        '[.[] | select(.author.login != $me) | select((.assignees // []) | map(.login) | index($me))]' \
-        "$INVOLVES_FILE" > "$ASSIGNED_CAND_FILE"
+    if (( FILTER_ASSIGNED )); then
+        jq --arg me "$AUTHOR" \
+            '[.[] | select(.author.login != $me) | select((.assignees // []) | map(.login) | index($me))]' \
+            "$INVOLVES_FILE" > "$ASSIGNED_CAND_FILE"
+    else
+        echo '[]' > "$ASSIGNED_CAND_FILE"
+    fi
     ASSIGNED_CAND_COUNT=$(jq 'length' "$ASSIGNED_CAND_FILE")
 
     # Filter 3 candidates: not authored by me, not assigned to me. We will
     # check that I added at least one commit and the latest commit from
     # anyone else was more than one month ago.
     TAKEN_OVER_CAND_FILE="$ROUND_TMP/taken_over_candidates.json"
-    jq --arg me "$AUTHOR" \
-        '[.[] | select(.author.login != $me) | select((.assignees // []) | map(.login) | index($me) | not)]' \
-        "$INVOLVES_FILE" > "$TAKEN_OVER_CAND_FILE"
+    if (( FILTER_OTHER )); then
+        jq --arg me "$AUTHOR" \
+            '[.[] | select(.author.login != $me) | select((.assignees // []) | map(.login) | index($me) | not)]' \
+            "$INVOLVES_FILE" > "$TAKEN_OVER_CAND_FILE"
+    else
+        echo '[]' > "$TAKEN_OVER_CAND_FILE"
+    fi
     TAKEN_OVER_CAND_COUNT=$(jq 'length' "$TAKEN_OVER_CAND_FILE")
 
     echo "${S}Candidates: ${AUTHORED_COUNT} authored, ${ASSIGNED_CAND_COUNT} assigned (pending 5-day check), ${TAKEN_OVER_CAND_COUNT} potentially taken-over (pending commit check).${R}"
@@ -177,19 +205,26 @@ while true; do
         done < <(jq -c '.[]' "$TAKEN_OVER_CAND_FILE")
     fi
 
-    # Build the merged list as JSON: authored + selected assigned + selected
-    # taken-over, deduped by number, sorted by updatedAt ascending.
-    SELECTED_NUMS_FILE="$ROUND_TMP/selected_nums.json"
-    {
-        jq -r '.[].number' "$AUTHORED_FILE"
-        printf '%s\n' "${ASSIGNED_NUMS[@]:-}"
-        printf '%s\n' "${TAKEN_OVER_NUMS[@]:-}"
-    } | awk 'NF' | jq -R 'tonumber' | jq -s 'unique' > "$SELECTED_NUMS_FILE"
+    # Build per-category PR lists, each sorted by updatedAt ascending, then
+    # concatenate in priority order: authored first, then assigned, then
+    # taken-over. The three categories are mutually exclusive by
+    # construction (the filters above partition on author/assignee), so no
+    # dedup is needed.
+    ASSIGNED_NUMS_JSON=$(printf '%s\n' "${ASSIGNED_NUMS[@]:-}" | awk 'NF' | jq -R 'tonumber' | jq -s .)
+    TAKEN_OVER_NUMS_JSON=$(printf '%s\n' "${TAKEN_OVER_NUMS[@]:-}" | awk 'NF' | jq -R 'tonumber' | jq -s .)
+
+    ASSIGNED_FILE="$ROUND_TMP/assigned.json"
+    jq --argjson nums "$ASSIGNED_NUMS_JSON" \
+        '[.[] | select(.number as $n | $nums | index($n))] | sort_by(.updatedAt)' \
+        "$INVOLVES_FILE" > "$ASSIGNED_FILE"
+
+    TAKEN_OVER_FILE="$ROUND_TMP/taken_over.json"
+    jq --argjson nums "$TAKEN_OVER_NUMS_JSON" \
+        '[.[] | select(.number as $n | $nums | index($n))] | sort_by(.updatedAt)' \
+        "$INVOLVES_FILE" > "$TAKEN_OVER_FILE"
 
     MERGED_FILE="$ROUND_TMP/merged.json"
-    jq --slurpfile nums "$SELECTED_NUMS_FILE" \
-        '[.[] | select(.number as $n | $nums[0] | index($n))] | sort_by(.updatedAt)' \
-        "$INVOLVES_FILE" > "$MERGED_FILE"
+    jq -s 'add' "$AUTHORED_FILE" "$ASSIGNED_FILE" "$TAKEN_OVER_FILE" > "$MERGED_FILE"
 
     PRS=$(jq -r '.[] | "\(.number)\t\(.title)"' "$MERGED_FILE")
 
