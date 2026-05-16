@@ -1,6 +1,7 @@
 -- driver runtime commands
 docker_runtime_present
 docker_gvisor_runtime_absent
+docker_log_driver_disabled
 docker_execute_shell
 gvisor_runtime_present
 gvisor_docker_absent

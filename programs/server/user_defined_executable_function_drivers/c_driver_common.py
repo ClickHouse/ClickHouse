@@ -721,6 +721,7 @@ def compile_with_docker(work_dir):
     image = docker_image_for_build()
     cmd = [
         "docker", "run", "--rm",
+        "--log-driver=none",
         "--network=none",
         "--read-only",
         "--tmpfs=/tmp:rw,size=64m",
@@ -770,6 +771,7 @@ def runtime_command(runtime, work_dir):
     # Tmp dir inside container is needed for some libc init even on a static binary.
     cmd = [
         "docker", "run", "--rm", "-i",
+        "--log-driver=none",
         "--network=none",
         "--read-only",
         "--tmpfs=/tmp:rw,size=16m",

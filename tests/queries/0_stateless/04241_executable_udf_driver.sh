@@ -89,6 +89,7 @@ mkdir -p "$WORK_DIR/docker_runtime" "$WORK_DIR/gvisor_runtime" "$WORK_DIR/unsafe
 ) > "$WORK_DIR/docker_runtime.xml"
 grep -q 'docker run --rm -i' "$WORK_DIR/docker_runtime.xml" && echo "docker_runtime_present" || echo "docker_runtime_missing"
 grep -q -- '--runtime=runsc' "$WORK_DIR/docker_runtime.xml" && echo "docker_gvisor_runtime_present" || echo "docker_gvisor_runtime_absent"
+grep -q -- '--log-driver=none' "$WORK_DIR/docker_runtime.xml" && echo "docker_log_driver_disabled" || echo "docker_log_driver_enabled"
 grep -q '<execute_direct>0</execute_direct>' "$WORK_DIR/docker_runtime.xml" && echo "docker_execute_shell" || echo "docker_execute_direct"
 
 (
