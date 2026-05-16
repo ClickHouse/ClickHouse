@@ -776,7 +776,7 @@ static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
 ) /// DECLARE_AVX512BW_SPECIFIC_CODE
 
 DECLARE_X86_64_V3_SPECIFIC_CODE(
-size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
+static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
 {
     size_t count = 0;
     const __m256i zero32 = _mm256_setzero_si256();
