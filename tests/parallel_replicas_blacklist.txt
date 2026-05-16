@@ -34,21 +34,13 @@
     Needle must not contain whitespace or separator characters: while executing 'FUNCTION hasToken(s : 0, 'abcabcabcabcabcabcabcab\0'_String :: 1) -> hasToken(__table1.s, 'abcabcabcabcabcabcabcab\0'_String) UInt8 : 2': While executing MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread). (BAD_ARGUMENTS) (version 25.1.1.1927 (official build)) (from [::ffff:127.0.0.1]:44318) (comment: 01781_token_extractor_buffer_overflow.sql) (in query: SELECT max(`__table1`.`id`) AS `max(id)` FROM `test_klfow1or`.`bloom_filter` AS `__table1` WHERE hasToken(`__table1`.`s`, 'abcabcabcabcabcabcabcab\0'))
 00945_bloom_filter_index
 
-    Setting offset=5 not work
-01892_setting_limit_offset_distributed
-
-    minor: distributed
-02517_wrong_total_structure_crash
-02985_shard_query_start_time
 
     order is never guaranteed
     https://github.com/ClickHouse/ClickHouse/issues/63203
 01513_optimize_aggregation_in_order_memory_long
-00154_avro
 
     https://github.com/ClickHouse/clickhouse-private/issues/15758
     dictGet by dict name
-01904_dictionary_default_nullable_type.cloud
 01904_ssd_cache_dictionary_default_nullable_type
 03062_analyzer_join_engine_missing_column
 
@@ -120,7 +112,6 @@
 03130_convert_outer_join_to_inner_join
 03355_join_to_in_optimization
 03152_join_filter_push_down_equivalent_columns
-03176_check_timeout_in_index_analysis
 03254_prewarm_mark_cache_rmt
 03273_group_by_in_order_still_used_when_group_by_key_doesnt_match_order_by_key
 03273_primary_index_cache
@@ -129,14 +120,11 @@
 03278_json_subcolumns_in_skipping_indexes.gen
 00443_preferred_block_size_bytes
 00933_test_fix_extra_seek_on_compressed_cache
-01508_partition_pruning_long_1
-01508_partition_pruning_long_2
 02149_read_in_order_fixed_prefix
 02151_hash_table_sizes_stats
 02156_storage_merge_prewhere
 02354_vector_search_subquery
 02451_order_by_monotonic
-02494_query_cache_nested_query_bug
 02499_monotonicity_toUnixTimestamp64
 02864_statistics_usage
 03143_prewhere_profile_events
@@ -160,33 +148,22 @@
 03274_prewarm_primary_index_cache
 03262_filter_push_down_view
 01283_max_threads_simple_query_optimization
-00183_prewhere_conditions_order
 
     # NOT BUGS
     Not a bug
 02494_query_cache_user_isolation
 02346_non_negative_derivative
 01913_exact_rows_before_limit
-01892_jit_aggregation_function_any_last_long
 03203_optimize_disjunctions_chain_to_in
 02713_array_low_cardinality_string
 01748_partition_id_pruning
-02177_issue_31009
 01201_read_single_thread_in_order
-01913_quantile_deterministic
 02402_merge_engine_with_view
 
-    RMT zookeeper test
-01154_move_partition_long
 
     plan and incorrect result
 01763_filter_push_down_bugs
 
-    max_memory_usage limit
-    !!!(MEMORY_LIMIT_EXCEEDED) (version 25.1.1.3390 (official build)) (from [::1]:59776) (comment: 02782_uniq_exact_parallel_merging_bug.sh) (in query: select count(distinct s) from test_372i6d19.t settings max_memory_usage = \'50Mi\')
-02782_uniq_exact_parallel_merging_bug
-    !!!Query memory limit exceeded: would use 286.54 MiB (attempt to allocate chunk of 1117086 bytes), current RSS 285.47 MiB, maximum: 286.10 MiB.: while receiving packet from 127.0.0.3:9000. (MEMORY_LIMIT_EXCEEDED) (version 25.1.1.3187 (official build)) (from [::1]:38602) (comment: 00084_external_aggregation.sql) (in query: SELECT URL, uniq(SearchPhrase) AS u FROM test.hits GROUP BY URL ORDER BY u DESC, URL LIMIT 10;
-00084_external_aggregation
 
     Limit for rows (controlled by 'max_rows_to_read' setting) exceeded
     !!!max rows: 20.00 million, current rows: 21.00 million
@@ -195,16 +172,10 @@
 01414_push_predicate_when_contains_with_clause
     !!!max rows: 20.00 million, current rows: 22.00 million
 02435_rollback_cancelled_queries
-    !!!max rows: 20.00 million, current rows: 26.64 million
-00063_loyalty_joins
-    max rows: 5.00, current rows: 20.00. (TOO_MANY_ROWS) (version 25.1.1.568) (from [::ffff:127.0.0.1]:52038) (comment: 00489_pk_subexpression.sql) (in query: SELECT toUInt32(`__table1`.`x`) AS `toUInt32(x)`, `__table1`.`y` AS `y`, `__table1`.`z` AS `z` FROM `test_i815geoe`.`pk` AS `__table1` WHERE (`__table1`.`x` >= _CAST(0, 'DateTime')) AND (`__table1`.`x` <= _CAST(59, 'DateTime')))
-00489_pk_subexpression
     max rows: 1.00, current rows: 10.00
 01576_alias_column_rewrite
     max rows: 4.00, current rows: 10.00
 01585_use_index_for_global_in
-    max rows: 5.00, current rows: 20.00
-00926_adaptive_index_granularity_pk
     max rows: 2.00, current rows: 11.00
 01585_use_index_for_global_in_with_null
 
@@ -217,8 +188,9 @@
 02910_prefetch_unexpceted_exception
 
     investigate failed tests
-00148_monotonic_functions_and_index
-00161_parallel_parsing_with_names
-00166_explain_estimate
-00141_transform
 03707_statistics_cache
+
+    Non-deterministic row order under parallel replicas: queries without `ORDER BY` over
+    `nullable_minmax_index` return rows in a different order across replicas, and the
+    reference file pins a specific ordering.
+01410_nullable_key_and_index

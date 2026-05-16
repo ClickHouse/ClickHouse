@@ -7,8 +7,6 @@ title: 'view'
 doc_type: 'reference'
 ---
 
-# view Table Function
-
 Turns a subquery into a table. The function implements views (see [CREATE VIEW](/sql-reference/statements/create/view)). The resulting table does not store data, but only stores the specified `SELECT` query. When reading from the table, ClickHouse executes the query and deletes all unnecessary columns from the result.
 
 ## Syntax {#syntax}

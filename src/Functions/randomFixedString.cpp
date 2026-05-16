@@ -25,11 +25,15 @@ namespace
 {
 
 /* Generate random fixed string with fully random bytes (including zero). */
-template <typename RandImpl>
-class FunctionRandomFixedStringImpl : public IFunction
+class FunctionRandomFixedString : public IFunction
 {
 public:
     static constexpr auto name = "randomFixedString";
+
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionRandomFixedString>();
+    }
 
     String getName() const override { return name; }
 
@@ -74,34 +78,6 @@ public:
 
         return col_to;
     }
-};
-
-class FunctionRandomFixedString : public FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>
-{
-public:
-    explicit FunctionRandomFixedString(ContextPtr context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default,
-            FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>>();
-
-    #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::x86_64_v3,
-            FunctionRandomFixedStringImpl<TargetSpecific::x86_64_v3::RandImpl>>();
-    #endif
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionRandomFixedString>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
 };
 
 }

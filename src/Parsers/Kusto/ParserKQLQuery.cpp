@@ -41,20 +41,20 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-bool ParserKQLBase::parseByString(String expr, ASTPtr & node, uint32_t max_depth, uint32_t max_backtracks)
+bool ParserKQLBase::parseByString(String expr, ASTPtr & node, const Pos & parent_pos)
 {
     Expected expected;
 
     Tokens tokens(expr.data(), expr.data() + expr.size(), 0, true);
-    IParser::Pos pos(tokens, max_depth, max_backtracks);
+    IParser::Pos pos(tokens, parent_pos);
     return parse(pos, node, expected);
 }
 
-bool ParserKQLBase::parseSQLQueryByString(ParserPtr && parser, String & query, ASTPtr & select_node, uint32_t max_depth, uint32_t max_backtracks)
+bool ParserKQLBase::parseSQLQueryByString(ParserPtr && parser, String & query, ASTPtr & select_node, const Pos & parent_pos)
 {
     Expected expected;
     Tokens token_subquery(query.data(), query.data() + query.size(), 0, true);
-    IParser::Pos pos_subquery(token_subquery, max_depth, max_backtracks);
+    IParser::Pos pos_subquery(token_subquery, parent_pos);
     if (!parser->parse(pos_subquery, select_node, expected))
         return false;
     return true;
@@ -129,10 +129,10 @@ bool ParserKQLBase::setSubQuerySource(ASTPtr & select_query, ASTPtr & source, bo
     return true;
 }
 
-String ParserKQLBase::getExprFromToken(const String & text, uint32_t max_depth, uint32_t max_backtracks)
+String ParserKQLBase::getExprFromToken(const String & text, const Pos & parent_pos)
 {
     Tokens tokens(text.data(), text.data() + text.size(), 0, true);
-    IParser::Pos pos(tokens, max_depth, max_backtracks);
+    IParser::Pos pos(tokens, parent_pos);
 
     return getExprFromToken(pos);
 }
@@ -481,12 +481,12 @@ static bool preprocessUnionJoin(IParser::Pos & pos, ASTPtr & node, Expected & ex
     ASTPtr right_ast;
 
     Tokens left_tokens(left_query.data(), left_query.data() + left_query.size(), 0, true);
-    IParser::Pos left_pos(left_tokens, pos.max_depth, pos.max_backtracks);
+    IParser::Pos left_pos(left_tokens, pos);
     if (!ParserKQLWithUnionQuery().parse(left_pos, left_ast, expected))
         return false;
 
     Tokens right_tokens(right_query.data(), right_query.data() + right_query.size(), 0, true);
-    IParser::Pos right_pos(right_tokens, pos.max_depth, pos.max_backtracks);
+    IParser::Pos right_pos(right_tokens, pos);
     if (!ParserKQLWithUnionQuery().parse(right_pos, right_ast, expected))
         return false;
 
@@ -571,7 +571,7 @@ static bool preprocessUnionJoin(IParser::Pos & pos, ASTPtr & node, Expected & ex
         /// No remaining pipes — parse as SQL
         String new_query = fmt::format("SELECT * FROM {}", combined);
         Tokens new_tokens(new_query.data(), new_query.data() + new_query.size(), 0, true);
-        IParser::Pos new_pos(new_tokens, pos.max_depth, pos.max_backtracks);
+        IParser::Pos new_pos(new_tokens, pos);
         ParserSelectWithUnionQuery sql_parser;
         if (!sql_parser.parse(new_pos, node, expected))
             return false;
@@ -583,7 +583,7 @@ static bool preprocessUnionJoin(IParser::Pos & pos, ASTPtr & node, Expected & ex
         /// by recursively calling KQL parser
         String kql_query = fmt::format("{} {}", combined, remaining);
         Tokens kql_tokens(kql_query.data(), kql_query.data() + kql_query.size(), 0, true);
-        IParser::Pos kql_pos(kql_tokens, pos.max_depth, pos.max_backtracks);
+        IParser::Pos kql_pos(kql_tokens, pos);
         if (!ParserKQLQuery().parse(kql_pos, node, expected))
             return false;
     }
@@ -737,7 +737,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ASTPtr range_ast;
         {
             Tokens range_tokens(range_sql.data(), range_sql.data() + range_sql.size(), 0, true);
-            IParser::Pos range_pos(range_tokens, pos.max_depth, pos.max_backtracks);
+            IParser::Pos range_pos(range_tokens, pos);
             ParserSelectWithUnionQuery sql_parser;
             if (!sql_parser.parse(range_pos, range_ast, expected))
                 return false;
@@ -767,7 +767,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         /// Parse remaining pipe operations using getExprFromPipe + operator parsers
         Tokens pipe_tokens(remaining.data(), remaining.data() + remaining.size(), 0, true);
-        IParser::Pos pipe_pos(pipe_tokens, pos.max_depth, pos.max_backtracks);
+        IParser::Pos pipe_pos(pipe_tokens, pos);
 
         if (isValidKQLPos(pipe_pos) && pipe_pos->type == TokenType::PipeMark)
             ++pipe_pos;
@@ -809,7 +809,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             String star = "*";
             Tokens star_tokens(star.data(), star.data() + star.size(), 0, true);
-            IParser::Pos star_pos(star_tokens, pos.max_depth, pos.max_backtracks);
+            IParser::Pos star_pos(star_tokens, pos);
             ASTPtr select_expr;
             if (!ParserNotEmptyExpressionList(true).parse(star_pos, select_expr, expected))
                 return false;
@@ -995,7 +995,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             String sub_query = fmt::format("({})", String(operation_pos.front().second->begin, last_pos->end));
             Tokens token_subquery(sub_query.data(), sub_query.data() + sub_query.size(), 0, true);
-            IParser::Pos pos_subquery(token_subquery, pos.max_depth, pos.max_backtracks);
+            IParser::Pos pos_subquery(token_subquery, pos);
 
             if (!ParserKQLSubquery().parse(pos_subquery, tables, expected))
                 return false;
@@ -1016,7 +1016,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (oprator)
             {
                 Tokens token_clause(op_calsue.data(), op_calsue.data() + op_calsue.size(), 0, true);
-                IParser::Pos pos_clause(token_clause, pos.max_depth, pos.max_backtracks);
+                IParser::Pos pos_clause(token_clause, pos);
                 if (!oprator->parse(pos_clause, node, expected))
                     return false;
             }
@@ -1051,7 +1051,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         auto expr = String("*");
         Tokens tokens(expr.data(), expr.data() + expr.size(), 0, true);
-        IParser::Pos new_pos(tokens, pos.max_depth, pos.max_backtracks);
+        IParser::Pos new_pos(tokens, pos);
         if (!std::make_unique<ParserKQLProject>()->parse(new_pos, node, expected))
             return false;
     }

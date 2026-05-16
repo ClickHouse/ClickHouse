@@ -7,8 +7,6 @@ title: 'nth_value'
 doc_type: 'reference'
 ---
 
-# nth_value
-
 Returns the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
 
 **Syntax**
