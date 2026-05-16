@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.5",
         {
+            {"allow_aggregate_partitions_independently", false, true, "Enable independent per-partition aggregation by default when the partition key suits the GROUP BY key. The existing runtime heuristics in `ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort` already skip the optimization when the partition layout is unfavorable (too few partitions, too many partitions, or significantly skewed partition sizes), so enabling the setting is safe in the cases where it would otherwise be a no-op."},
             {"defer_partition_pruning_after_final", true, true, "Setting newly added in 26.5 to gate the FINAL partition-pruning behavior that shipped silently in 26.3 (https://github.com/ClickHouse/ClickHouse/pull/98242). The meaningful semantic change is registered under the 26.3 block so `compatibility = '26.2'` reverts it; this entry exists so the upgrade-from-26.4 check accepts the newly-introduced name."},
             {"optimize_trivial_group_by_limit_query", false, true, "New setting that limits aggregation to at most LIMIT distinct keys for `SELECT key_expr FROM t GROUP BY key_expr LIMIT n` queries."},
             {"date_time_input_format", "basic", "best_effort", "Better usability"},

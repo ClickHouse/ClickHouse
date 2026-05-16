@@ -5711,8 +5711,8 @@ Allow experimental feature to store Kafka related offsets in ClickHouse Keeper. 
     DECLARE(Bool, enable_software_prefetch_in_aggregation, true, R"(
 Enable use of software prefetch in aggregation
 )", 0) \
-    DECLARE(Bool, allow_aggregate_partitions_independently, false, R"(
-Enable independent aggregation of partitions on separate threads when partition key suits group by key. Beneficial when number of partitions close to number of cores and partitions have roughly the same size
+    DECLARE(Bool, allow_aggregate_partitions_independently, true, R"(
+Enable independent aggregation of partitions on separate threads when partition key suits group by key. Beneficial when number of partitions close to number of cores and partitions have roughly the same size. Heuristics in `ReadFromMergeTree` automatically disable the optimization for unfavorable layouts (too few partitions, too many partitions, or significantly skewed partition sizes); see `force_aggregate_partitions_independently` to bypass those checks.
 )", 0) \
     DECLARE(Bool, force_aggregate_partitions_independently, false, R"(
 Force the use of optimization when it is applicable, but heuristics decided not to use it
