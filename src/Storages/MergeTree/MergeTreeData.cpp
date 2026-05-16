@@ -4359,7 +4359,15 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         if (new_metadata.settings_changes)
         {
-            const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+            /// Take a non-const copy so any inline `disk = disk(...)` setting (a parser-
+            /// produced `CustomType` `Field`) is converted to a registered disk name
+            /// `String` before `safeGet<String>` below. Without this conversion, a
+            /// `UNIQUE KEY` table created with inline `SETTINGS disk = disk(...)`
+            /// would still trip `Bad get: has CustomType, requested String` here on
+            /// any later `ALTER` that reaches this validation block (issue #63019).
+            SettingsChanges new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+            DiskFromAST::convertCustomDiskSettings(new_changes, local_context, /* attach */ false);
+
             for (const auto & changed : new_changes)
             {
                 StoragePolicyPtr new_policy;

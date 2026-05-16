@@ -114,3 +114,59 @@ SELECT count(), sum(a) FROM t_63019_modify_disk;
 SELECT a FROM t_63019_modify_disk ORDER BY a;
 
 DROP TABLE t_63019_modify_disk;
+
+-- clickhouse-gh[bot] review on PR #103818: the same `BAD_GET` is reachable through a fourth
+-- call site that the original three-site fix missed — the `UNIQUE KEY` storage-policy
+-- validation guard in `MergeTreeData::checkAlterIsPossible`. That guard iterates
+-- `new_metadata.settings_changes->as<const ASTSetQuery &>().changes` and calls
+-- `safeGet<String>` on every `disk`/`storage_policy` value before any of the other three
+-- conversion sites are reached. For a `UNIQUE KEY` table created with inline
+-- `SETTINGS disk = disk(...)`, that field is still a parser `CustomType` in metadata, so any
+-- later `ALTER` that lands in this guard previously threw `Bad get: has CustomType,
+-- requested String` independently of the original fix. The companion fix in this commit
+-- normalizes a mutable copy via `DiskFromAST::convertCustomDiskSettings` before the guard
+-- loop runs; this test exercises that path.
+
+DROP TABLE IF EXISTS t_63019_uk;
+
+SET allow_experimental_unique_key = 1;
+
+-- A local custom disk under the test environment's `custom_local_disks_base_directory`
+-- (`/var/lib/clickhouse/disks/`, configured by `tests/config/config.d/custom_disks_base_path.xml`).
+-- `UNIQUE KEY` rejects any disk whose `DataSourceDescription::type != Local`, so the
+-- `object_storage` / `local_blob_storage` style used by the other test cases above
+-- (which is classified as `ObjectStorage`) cannot be used here.
+CREATE TABLE t_63019_uk (id UInt64, v String) ENGINE = MergeTree
+UNIQUE KEY (id)
+ORDER BY (id)
+SETTINGS disk = disk(
+    name = '63019_uk_local',
+    type = local,
+    path = '/var/lib/clickhouse/disks/04145_uk_local/');
+
+INSERT INTO t_63019_uk SELECT number, toString(number) FROM numbers(5);
+SELECT count(), sum(id) FROM t_63019_uk;
+SELECT id, v FROM t_63019_uk ORDER BY id;
+
+-- ADD COLUMN — runs `MergeTreeData::checkAlterIsPossible`, which (after applying the
+-- alter to `new_metadata`) walks `new_metadata.settings_changes` inside the `UNIQUE KEY`
+-- storage-policy guard. Without the new `convertCustomDiskSettings` call this hit
+-- `safeGet<String>` on the `CustomType` `disk` value and threw `BAD_GET`.
+ALTER TABLE t_63019_uk ADD COLUMN extra String DEFAULT '-' AFTER v;
+SELECT count(), sum(id), uniq(extra) FROM t_63019_uk;
+SELECT id, v, extra FROM t_63019_uk ORDER BY id;
+
+-- MODIFY SETTING for a non-`disk` setting — still re-applies the table's
+-- `settings_changes` AST through the guard, still tripped `BAD_GET` even though the
+-- ALTER itself does not touch `disk`.
+ALTER TABLE t_63019_uk MODIFY SETTING merge_with_ttl_timeout = 60;
+SELECT count(), sum(id) FROM t_63019_uk;
+SELECT id, v, extra FROM t_63019_uk ORDER BY id;
+
+-- INSERT after ALTERs — verifies the read/write path on the inline custom local disk
+-- continues to work end-to-end, not just the metadata transitions.
+INSERT INTO t_63019_uk SELECT number + 100, toString(number + 100), 'y' FROM numbers(3);
+SELECT count(), sum(id) FROM t_63019_uk;
+SELECT id, v, extra FROM t_63019_uk ORDER BY id;
+
+DROP TABLE t_63019_uk;

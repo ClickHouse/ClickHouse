@@ -26,6 +26,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
+#include <Disks/DiskFromAST.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageDummy.h>
@@ -950,9 +951,20 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 settings_from_storage.push_back(change);
         }
 
+        /// Take a copy and convert any inline `disk = disk(...)` setting (a parser-produced
+        /// `CustomType` `Field`) to a registered disk-name `String` before applying it to
+        /// `effective_settings`. `disk` is registered as `SettingFieldString`, whose
+        /// `operator=` calls `Field::safeGet<String>` and throws `BAD_GET` otherwise.
+        /// Without this conversion, any `MODIFY_SETTING` ALTER on a table created with inline
+        /// `SETTINGS disk = disk(...)` would crash here when the new code path (computing
+        /// `add_minmax_index_for_*` from effective settings) iterates the table's existing
+        /// `settings_from_storage` (issue #63019).
+        SettingsChanges effective_changes = settings_from_storage;
+        DiskFromAST::convertCustomDiskSettings(effective_changes, context, /* attach */ false);
+
         MergeTreeSettings effective_settings;
         bool any_mt_setting = false;
-        for (const auto & change : settings_from_storage)
+        for (const auto & change : effective_changes)
         {
             if (MergeTreeSettings::hasBuiltin(change.name))
             {
