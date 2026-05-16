@@ -1462,7 +1462,8 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     return create.uuid;
 }
 
-void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr)
+void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr,
+                                            int64_t expected_max_log_ptr_czxid)
 {
     waitDatabaseStarted();
 
@@ -1480,7 +1481,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     else
         LOG_WARNING(log, "Will recover replica with staled log pointer {} from log pointer {}", our_log_ptr, max_log_ptr);
 
-    auto table_name_to_metadata = tryGetConsistentMetadataSnapshot(current_zookeeper, max_log_ptr);
+    auto table_name_to_metadata = tryGetConsistentMetadataSnapshot(current_zookeeper, max_log_ptr, expected_max_log_ptr_czxid);
 
     /// For ReplicatedMergeTree tables we can compare only UUIDs to ensure that it's the same table.
     /// Metadata can be different, it's handled on table replication level.
@@ -1868,9 +1869,10 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     current_zookeeper->set(replica_path + "/digest", toString(tables_metadata_digest));
 }
 
-std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr) const
+std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr,
+                                                                              int64_t expected_max_log_ptr_czxid) const
 {
-    return getConsistentMetadataSnapshotImpl(zookeeper, {}, /* max_retries= */ 10, max_log_ptr);
+    return getConsistentMetadataSnapshotImpl(zookeeper, {}, /* max_retries= */ 10, max_log_ptr, expected_max_log_ptr_czxid);
 }
 
 std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
@@ -1905,12 +1907,13 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
             "(max_log_ptr node missing at snapshot start)");
     }
 
-    /// If the caller pre-observed a specific identity (typically `getTablesForBackup` that reads
-    /// `/max_log_ptr` to fix `snapshot_version` before this call), reject mismatches at function
-    /// entry. Without this, a `DROP`+recreate that happens between the caller's read and the
-    /// function-entry stat read above would advance both the value and the `czxid` to the new
-    /// database; subsequent in-function identity checks would then compare new-to-new and pass,
-    /// silently substituting the recreated database's metadata for the dropped one. The internal
+    /// If the caller pre-observed a specific identity (`getTablesForBackup` reads `/max_log_ptr`
+    /// to fix `snapshot_version` before this call; `DatabaseReplicatedWorker` reads it before
+    /// calling `recoverLostReplica`), reject mismatches at function entry. Without this, a
+    /// `DROP`+recreate that happens between the caller's read and the function-entry stat read
+    /// above would advance both the value and the `czxid` to the new database; subsequent
+    /// in-function identity checks would then compare new-to-new and pass, silently substituting
+    /// the recreated database's metadata for the dropped one. The internal
     /// `max_log_ptr > new_max_log_ptr` rollback check only catches recreates where the new
     /// database has not yet advanced past the caller's pointer, so this entry-time identity
     /// check is required to close the remaining race window.

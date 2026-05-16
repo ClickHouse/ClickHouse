@@ -191,7 +191,14 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
 
     String log_ptr_str = zookeeper->get(database->replica_path + "/log_ptr");
     UInt32 our_log_ptr = parse<UInt32>(log_ptr_str);
-    UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
+    /// Read `/max_log_ptr` together with its `Stat` so we can pin the database identity (`czxid`
+    /// of the node) here and forward it to `recoverLostReplica`. Without this, a `DROP`+recreate
+    /// at the same Keeper path between this read and the snapshot read inside
+    /// `getConsistentMetadataSnapshotImpl` can advance both the value and the `czxid` to the new
+    /// database, after which the in-function identity checks compare new-to-new and silently
+    /// substitute metadata from the recreated database during recovery.
+    Coordination::Stat max_log_ptr_stat;
+    UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr", &max_log_ptr_stat));
     logs_to_keep = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
 
     UInt64 digest;
@@ -226,7 +233,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
             LOG_WARNING(log, "Replica seems to be lost: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
                         our_log_ptr, max_log_ptr, local_digest, digest);
 
-        database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr);
+        database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr, max_log_ptr_stat.czxid);
 
         fiu_do_on(FailPoints::database_replicated_delay_recovery,
         {
