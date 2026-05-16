@@ -33,8 +33,10 @@ function count()
 
 # Wait for all 6 error records with a bounded timeout.
 # Reduced from 20 to 6 errors (3 per file) so the FileLog background thread
-# can finish quickly even under TSAN/MSAN overhead.
-TIMEOUT=120
+# can finish quickly even under TSAN/MSAN overhead. Normal runtime is ~14s;
+# the 300s ceiling provides headroom for the slowest random settings the
+# flaky check explores while still preventing an unbounded hang.
+TIMEOUT=300
 START=$EPOCHSECONDS
 while [[ $(count) != 6 ]]; do
 	if ((EPOCHSECONDS - START > TIMEOUT)); then
