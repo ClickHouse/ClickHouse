@@ -104,7 +104,7 @@ void UserDefinedExecutableFunctionDriverRegistry::loadDriversFromConfigs(
 
         for (const auto & top_key : top_level_keys)
         {
-            if (top_key != "function" && !top_key.starts_with("function"))
+            if (top_key != "driver" && !top_key.starts_with("driver"))
                 continue;
 
             auto driver = parseDriverFromConfig(*config, top_key);

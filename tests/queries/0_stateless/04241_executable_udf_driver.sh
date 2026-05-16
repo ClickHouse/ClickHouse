@@ -41,14 +41,14 @@ EOF
 
 cat > "$WORK_DIR/c_function_body_driver.xml" <<EOF
 <clickhouse>
-    <function>
+    <driver>
         <name>c_function_body</name>
         <create_command>${DRIVER_DIR}/c_function_body_create.sh</create_command>
         <drop_command>${DRIVER_DIR}/c_function_body_drop.sh</drop_command>
         <env>
             <CLICKHOUSE_C_DRIVER_FORCE_LOCAL>1</CLICKHOUSE_C_DRIVER_FORCE_LOCAL>
         </env>
-    </function>
+    </driver>
 </clickhouse>
 EOF
 

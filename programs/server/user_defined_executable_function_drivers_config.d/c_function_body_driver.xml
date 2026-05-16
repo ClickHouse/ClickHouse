@@ -1,5 +1,5 @@
 <clickhouse>
-    <function>
+    <driver>
         <!-- Name of the driver as it appears in CREATE FUNCTION ... ENGINE = c_function_body(...) -->
         <name>c_function_body</name>
 
@@ -27,5 +27,5 @@
             <CLICKHOUSE_C_DRIVER_MEMORY>256m</CLICKHOUSE_C_DRIVER_MEMORY>
             <CLICKHOUSE_C_DRIVER_CPUS>1.0</CLICKHOUSE_C_DRIVER_CPUS>
         </env>
-    </function>
+    </driver>
 </clickhouse>

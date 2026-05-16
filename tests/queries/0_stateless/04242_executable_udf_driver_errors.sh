@@ -33,14 +33,14 @@ chmod +x "$WORK_DIR/silent_driver.sh"
 
 cat > "$WORK_DIR/drivers.xml" <<EOF
 <clickhouse>
-    <function>
+    <driver>
         <name>fail_driver</name>
         <create_command>${WORK_DIR}/fail_driver.sh</create_command>
-    </function>
-    <function>
+    </driver>
+    <driver>
         <name>silent_driver</name>
         <create_command>${WORK_DIR}/silent_driver.sh</create_command>
-    </function>
+    </driver>
 </clickhouse>
 EOF
 

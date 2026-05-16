@@ -12,8 +12,8 @@ namespace DB
   *
   * A driver is a small adapter program that, given a function signature and a body of code,
   * produces a configuration file for an "ordinary" executable user-defined function.
-  * The driver itself is described by an XML configuration file with the same structure as
-  * the static executable function config, with these additions and exclusions:
+  * The driver itself is described by an XML configuration file with a top-level `<driver>`
+  * element containing:
   *
   *   - `name`             - name of the driver (not of any function).
   *   - `create_command`   - path to a shell script used to create a UDF from a code snippet.
