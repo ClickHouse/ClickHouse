@@ -1,9 +1,11 @@
 #include <charconv>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <base/scope_guard.h>
 
@@ -3334,12 +3336,28 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
                 else
                 {
                     /// General form: lambda `_a -> argument OP _a` wrapped in
-                    /// `arrayExists` (for ANY) or `arrayAll` (for ALL). The
-                    /// lambda variable name is chosen to be unlikely to collide
-                    /// with user identifiers in `argument`.
-                    static constexpr std::string_view lambda_var = "_a";
-                    auto body = makeASTOperator(prev_op.function_name, argument, make_intrusive<ASTIdentifier>(String(lambda_var)));
-                    auto lambda = makeASTLambda({String(lambda_var)}, std::move(body));
+                    /// `arrayExists` (for ANY) or `arrayAll` (for ALL). Walk
+                    /// `argument` to find a lambda variable name that does not
+                    /// collide with any identifier it references (otherwise the
+                    /// lambda parameter would shadow that identifier).
+                    std::unordered_set<String> used_identifiers;
+                    std::function<void(const IAST *)> collect_identifiers = [&](const IAST * node)
+                    {
+                        if (!node)
+                            return;
+                        if (const auto * ident = node->as<ASTIdentifier>())
+                            used_identifiers.insert(ident->name());
+                        for (const auto & child : node->children)
+                            collect_identifiers(child.get());
+                    };
+                    collect_identifiers(argument.get());
+
+                    String lambda_var = "_a";
+                    for (size_t suffix = 1; used_identifiers.contains(lambda_var); ++suffix)
+                        lambda_var = "_a" + std::to_string(suffix);
+
+                    auto body = makeASTOperator(prev_op.function_name, argument, make_intrusive<ASTIdentifier>(lambda_var));
+                    auto lambda = makeASTLambda({lambda_var}, std::move(body));
                     const char * fn_name = any_kw ? "arrayExists" : "arrayAll";
                     function = makeASTFunction(fn_name, std::move(lambda), tmp);
                 }
