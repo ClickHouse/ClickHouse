@@ -450,7 +450,7 @@ private:
     }
 
     DiskPtr getDisk() const {
-        return keeper_context->getDisk("some_s3_plain");
+        return keeper_context->getS3LogDisk();
     }
 
     ReadSettings getReadSettings() const {
@@ -2528,7 +2528,7 @@ DiskPtr Changelog::getLatestLogDisk() const
 }
 
 DiskPtr Changelog::getS3LogDisk() const {
-    return keeper_context->getDisk("some_s3_plain");
+    return keeper_context->getS3LogDisk();
 }
 
 void Changelog::removeExistingLogs(ChangelogIter begin, ChangelogIter end)

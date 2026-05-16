@@ -24,12 +24,12 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </snapshot_s3_plain>
-            <some_s3_plain>
+            <s3_changelog>
                 <type>s3_plain</type>
                 <endpoint>http://minio1:9001/root/snaplogs/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
-            </some_s3_plain>
+            </s3_changelog>
         </disks>
     </storage_configuration>
 
@@ -48,6 +48,7 @@
             <reserved_log_items>1</reserved_log_items>
             <rotate_log_storage_interval>3</rotate_log_storage_interval>
             <s3_experimental_changelog>true</s3_experimental_changelog>
+            <s3_log_disk>s3_changelog</s3_log_disk>
         </coordination_settings>
 
         <!-- DISK DEFINITION PLACEHOLDER -->
