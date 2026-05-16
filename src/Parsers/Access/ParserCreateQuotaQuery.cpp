@@ -88,7 +88,7 @@ namespace
                     return false;
 
                 ASTPtr value_ast;
-                if (!ParserNumber{}.parse(pos, value_ast, expected))
+                if (!ParserUnsignedInteger{}.parse(pos, value_ast, expected))
                     throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected integer prefix length for IP address masking");
 
                 UInt64 prefix = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value_ast->as<ASTLiteral &>().value);
