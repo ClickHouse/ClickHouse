@@ -81,7 +81,7 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool th
                     Poco::Net::IPAddress forwarded_ip(params.forwarded_address);
                     return mask_address(forwarded_ip);
                 }
-                catch (...)
+                catch (...) /// Ok: a malformed X-Forwarded-For value should not fail the query; fall back to using the raw string as the quota key, matching pre-prefix-bits behavior.
                 {
                     return params.forwarded_address;
                 }
