@@ -2,6 +2,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -69,8 +70,30 @@ public:
 
         const auto second_arg_type = has_function_arguments_nodes[1]->getResultType();
         WhichDataType expr_data_type(second_arg_type);
-        if (isNullableOrLowCardinalityNullable(second_arg_type) ||
+        /// has() always returns UInt8, but in() preserves LowCardinality and Nullable from the needle
+        /// (returning e.g. LowCardinality(UInt8) for `lc_col IN (...)`). Rewriting would change the
+        /// node's return type, which breaks parent nodes that were already resolved against UInt8
+        /// (e.g. `NOT has(...)` ends up with `NOT in(...)` whose argument is LowCardinality(UInt8)).
+        if (isNullableOrLowCardinalityNullable(second_arg_type) || expr_data_type.isLowCardinality() ||
                 expr_data_type.isArray() || expr_data_type.isTuple() || expr_data_type.isObject() || expr_data_type.isDynamic() || expr_data_type.isNothing())
+            return;
+
+        /// has() on a constant array compares raw Field values (FunctionArrayIndex::executeConst uses
+        /// accurateEquals), while in() converts the right-hand side elements to the left-hand side
+        /// type via convertFieldToType. The two diverge for types where the Field representation
+        /// has different semantic meaning depending on the type (e.g. Date vs DateTime store
+        /// different numeric values for the same instant, Enum stores the integer code while String
+        /// stores the name, IPv4 has a custom Field encoding distinct from UInt32, etc.).
+        ///
+        /// Only allow the rewrite if the array element type and the needle type are equivalent
+        /// under raw Field comparison. The two safe cases are:
+        ///   - Exact same type after stripping LowCardinality.
+        ///   - Both are native numbers (UInt*/Int*/Float*), since they all reduce to a single
+        ///     numeric Field type and accurateEquals handles mixed widths and signs correctly.
+        const auto unwrapped_element_type = removeLowCardinality(element_type);
+        const auto unwrapped_second_arg_type = removeLowCardinality(second_arg_type);
+        const bool both_native_numbers = isNativeNumber(unwrapped_element_type) && isNativeNumber(unwrapped_second_arg_type);
+        if (!both_native_numbers && !unwrapped_element_type->equals(*unwrapped_second_arg_type))
             return;
 
         /// Rewrite has(const_array, elem) -> in(elem, const_array)
