@@ -147,14 +147,6 @@ std::optional<PipeWithResources> buildPartitionReadingPipeline(
         context);
     plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(convert)));
 
-    if (log->test())
-    {
-        WriteBufferFromOwnString plan_buffer;
-        ExplainPlanOptions explain_options{.header = true, .actions = true, .indexes = true, .compact = true, .pretty = true};
-        plan.explainPlan(plan_buffer, explain_options);
-        LOG_TEST(log, "Unoptimized snapshot subplan for partition '{}' (safe_block_number={}):\n{}", partition_id, safe_block_number, plan_buffer.str());
-    }
-
     /// TODO(michicosun): somehow force projection usage here
     QueryPlanOptimizationSettings opt_settings(context);
     plan.optimize(opt_settings);
