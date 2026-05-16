@@ -70,6 +70,22 @@
             --selection-color: #FFF;
             --selection-background-color: #456;
             --current-query-background-color: #FFF4E0;
+
+            /* Syntax highlighting palette, modelled after `clickhouse-client`. The
+               textarea text is made transparent when highlighting is ready, so the
+               user sees the backdrop text in these colors directly.
+               Light-theme values are darker variants of the terminal palette so they
+               read well on a light background. */
+            --syntax-default:    var(--text-color-active);
+            --syntax-keyword:    var(--text-color-active);  /* bold default fg */
+            --syntax-identifier: #00838F;                    /* CYAN */
+            --syntax-function:   #875F00;                    /* BROWN */
+            --syntax-number:     #008700;                    /* bright green */
+            --syntax-string:     #006400;                    /* GREEN */
+            --syntax-qident:     #008B8B;                    /* alias / teal */
+            --syntax-comment:    #757575;
+            --syntax-operator:   var(--text-color-active);
+            --syntax-error:      #B71C1C;
         }
 
         [data-theme="dark"] {
@@ -103,6 +119,18 @@
             --selection-color: #000;
             --selection-background-color: #FF8;
             --current-query-background-color: #442;
+
+            /* Dark-theme palette uses the actual xterm 16-color values that
+               `clickhouse-client` renders to in a dark terminal. */
+            --syntax-keyword:    var(--text-color-active);   /* bold default fg */
+            --syntax-identifier: #00CDCD;                     /* CYAN */
+            --syntax-function:   #CDCD00;                     /* BROWN */
+            --syntax-number:     #00D700;                     /* rgb666(0,4,0) */
+            --syntax-string:     #00CD00;                     /* GREEN */
+            --syntax-qident:     #00D7D7;                     /* rgb666(0,4,4) */
+            --syntax-comment:    #9E9E9E;
+            --syntax-operator:   var(--text-color-active);
+            --syntax-error:      #FF6E40;
         }
 
         ::selection {
@@ -456,11 +484,16 @@
             resize: none; /* Disable default browser resizer */
         }
 
-        /* When the backdrop is active, the textarea becomes transparent so
-           the colored query spans behind it are visible. */
+        /* When the backdrop is populated with the highlighted version of the text,
+           we hide the textarea's own text by setting its color to transparent. What
+           the user sees is the backdrop directly. The caret keeps a normal color via
+           `caret-color` (the bare `color: transparent` would also make the caret
+           transparent because the caret defaults to `currentColor`). */
         #query.has-backdrop
         {
             background: transparent;
+            color: transparent;
+            caret-color: var(--text-color-active);
         }
 
         #query-backdrop
@@ -481,10 +514,31 @@
             word-wrap: break-word;
             overflow-wrap: break-word;
             background-color: var(--element-background-color);
-            color: transparent; /* text is invisible; only backgrounds are visible */
+            /* Do NOT extend the background under the transparent 1px border: otherwise
+               the textarea's #CCC border blends with #FFF below via mix-blend-mode and
+               becomes a much darker gray than the other inputs. With padding-box clip,
+               the border region of the backdrop stays transparent and the textarea's
+               border keeps its true color after the diff blend. */
+            background-clip: padding-box;
+            /* Default backdrop text is the "neutral" color of the chosen palette.
+               It coincides with the canonical text color after the difference blend. */
+            color: var(--syntax-default);
         }
 
         #query-backdrop .q-active { background-color: var(--current-query-background-color); }
+
+        /* Per-token syntax highlighting classes. The color value here is the raw color
+           painted in the backdrop; the visible color the user sees is the difference
+           between this and --text-color-active (see the comment on .has-backdrop). */
+        #query-backdrop .q-kw  { color: var(--syntax-keyword); font-weight: bold; }
+        #query-backdrop .q-id  { color: var(--syntax-identifier); }
+        #query-backdrop .q-fn  { color: var(--syntax-function); }
+        #query-backdrop .q-num { color: var(--syntax-number); }
+        #query-backdrop .q-str { color: var(--syntax-string); }
+        #query-backdrop .q-qid { color: var(--syntax-qident); }
+        #query-backdrop .q-com { color: var(--syntax-comment); font-style: italic; }
+        #query-backdrop .q-op  { color: var(--syntax-operator); }
+        #query-backdrop .q-err { color: var(--syntax-error); text-decoration: underline wavy; }
 
 
         #inputs
@@ -723,6 +777,9 @@
 
         #query_div {
             position: relative;
+            /* Confine `mix-blend-mode` on the textarea so it only blends with the backdrop
+               and not with whatever is painted further behind on the page. */
+            isolation: isolate;
         }
 
         #query-params
@@ -3833,32 +3890,122 @@ function updateRunButtons(multi) {
     runAllBtn.style.display = (multi && !selects_all) ? 'inline-block' : 'none';
 }
 
-/// Update the backdrop div behind the textarea to highlight individual queries
-/// with alternating faint background colors.
+/// Update the backdrop div behind the textarea: paint per-query active backgrounds
+/// and per-token syntax-highlighting colors. The textarea above is in
+/// `mix-blend-mode: difference`, so the colors here mix with the user's text.
 const queryBackdrop = document.getElementById('query-backdrop');
 
 function escapeHTML(s) {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-/// Cached boundaries for cursor-tracking updates.
+/// Numeric TokenType values, matching the order of the C++ enum in src/Parsers/Lexer.h.
+/// Only the categories we actually classify are named; everything else is treated as
+/// "default" (unstyled) and renders in the canonical text color via the diff blend.
+const TT = {
+    Whitespace: 0, Comment: 1, BareWord: 2, Number: 3, StringLiteral: 4, QuotedIdentifier: 5,
+    Semicolon: 13, Asterisk: 16, HereDoc: 17, DollarSign: 18,
+    Plus: 19, Minus: 20, Slash: 21, Percent: 22, Arrow: 23,
+    QuestionMark: 24, Colon: 25, Caret: 26, DoubleColon: 27,
+    Equals: 28, NotEquals: 29, Less: 30, Greater: 31,
+    LessOrEquals: 32, GreaterOrEquals: 33, Spaceship: 34,
+    PipeMark: 35, Concatenation: 36, At: 37, DoubleAt: 38,
+};
+
+/// SQL keywords recognized for highlighting. The lexer reports them as BareWord, so we
+/// disambiguate identifiers from keywords here. Comparisons are case-insensitive.
+const SQL_KEYWORDS = new Set([
+    'ADD', 'AFTER', 'ALL', 'ALTER', 'AND', 'ANTI', 'ANY', 'ARRAY', 'AS', 'ASC', 'ASCENDING',
+    'ASOF', 'AST', 'ASYNC', 'ATTACH', 'BACKUP', 'BEGIN', 'BETWEEN', 'BOTH', 'BY',
+    'CACHE', 'CASCADE', 'CASE', 'CAST', 'CHANGE', 'CHANGED', 'CHECK', 'CLEAR', 'CLUSTER',
+    'CODEC', 'COLLATE', 'COLUMN', 'COLUMNS', 'COMMENT', 'COMMIT', 'CONSTRAINT', 'CREATE',
+    'CROSS', 'CUBE', 'CURRENT',
+    'DATABASE', 'DATABASES', 'DAY', 'DEDUPLICATE', 'DEFAULT', 'DELETE', 'DESC', 'DESCENDING',
+    'DESCRIBE', 'DETACH', 'DICTIONARIES', 'DICTIONARY', 'DISK', 'DISTINCT', 'DISTRIBUTED',
+    'DROP', 'ELSE', 'END', 'ENGINE', 'ESTIMATE', 'EVENTS', 'EXCEPT', 'EXCHANGE', 'EXISTS',
+    'EXPLAIN', 'EXPRESSION', 'EXTENDED', 'EXTRACT',
+    'FALSE', 'FETCH', 'FETCHES', 'FILE', 'FILESYSTEM', 'FINAL', 'FIRST', 'FLUSH', 'FOLLOWING',
+    'FOR', 'FOREIGN', 'FORMAT', 'FREEZE', 'FROM', 'FULL', 'FUNCTION',
+    'GLOBAL', 'GRANT', 'GROUP', 'GROUPS', 'HAVING', 'HIERARCHICAL', 'HOUR',
+    'ID', 'IDENTIFIED', 'IF', 'ILIKE', 'IN', 'INDEX', 'INF', 'INHERIT', 'INJECTIVE',
+    'INNER', 'INSERT', 'INTERSECT', 'INTERVAL', 'INTO', 'INVISIBLE', 'IS', 'IS_OBJECT_ID',
+    'JOIN', 'KEY', 'KEYED', 'KILL',
+    'LAST', 'LATERAL', 'LAYOUT', 'LEADING', 'LEFT', 'LIFETIME', 'LIKE', 'LIMIT', 'LIMITS',
+    'LIVE', 'LOCAL', 'LOGS',
+    'MATERIALIZE', 'MATERIALIZED', 'MAX', 'MERGES', 'MICROSECOND', 'MILLISECOND', 'MIN',
+    'MINUTE', 'MODIFY', 'MONTH', 'MOVE', 'MUTATION',
+    'NAN_SQL', 'NEXT', 'NO', 'NONE', 'NOT', 'NULL', 'NULLS',
+    'OFFSET', 'ON', 'ONLY', 'OPTIMIZE', 'OPTION', 'OR', 'ORDER', 'OUTER', 'OUTFILE', 'OVER',
+    'PARTITION', 'PASTE', 'PERMANENTLY', 'PLAN', 'POPULATE', 'PRECEDING', 'PRECISION',
+    'PREWHERE', 'PRIMARY', 'PROFILE', 'PROJECTION', 'QUARTER', 'QUERY', 'QUOTA',
+    'RANDOMIZED', 'RANGE', 'RECURSIVE', 'REFRESH', 'REGEXP', 'RELOAD', 'REMOTE', 'RENAME',
+    'REPLACE', 'REPLICA', 'REPLICAS', 'RESET', 'RESTORE', 'RESTRICT', 'RESTRICTIVE',
+    'RETURNS', 'REVOKE', 'RIGHT', 'ROLE', 'ROLLBACK', 'ROLLUP', 'ROW', 'ROWS',
+    'SAMPLE', 'SECOND', 'SELECT', 'SEMI', 'SENDS', 'SET', 'SETS', 'SETTINGS', 'SHARD',
+    'SHOW', 'SIGNED', 'SOURCE', 'SQL_SECURITY', 'START', 'STEP', 'STORAGE', 'STRICT',
+    'STRICTLY_ASCENDING', 'SUBPARTITION', 'SUBSTRING', 'SUSPEND', 'SYNC', 'SYNTAX', 'SYSTEM',
+    'TABLE', 'TABLES', 'TEMPORARY', 'TEST', 'THEN', 'TIES', 'TIMESTAMP', 'TO', 'TOP',
+    'TOTALS', 'TRACKING', 'TRAILING', 'TRANSACTION', 'TRIGGER', 'TRIM', 'TRUE', 'TRUNCATE',
+    'TYPE',
+    'UNBOUNDED', 'UNFREEZE', 'UNION', 'UNIQUE', 'UNSIGNED', 'UPDATE', 'USE', 'USING',
+    'UUID', 'VALUES', 'VARYING', 'VIEW', 'VIRTUAL', 'VISIBLE',
+    'WATCH', 'WEEK', 'WHEN', 'WHERE', 'WINDOW', 'WITH', 'WORK', 'WRITABLE',
+    'XOR', 'YEAR', 'ZKPATH',
+]);
+
+/// Map a single token to a CSS class. For BareWords we also peek at the next
+/// non-whitespace token to distinguish a function call (`foo(`) from a plain
+/// identifier — the lexer alone cannot tell them apart.
+function tokenClass(tokens, i) {
+    const elem = tokens[i];
+    switch (elem.type) {
+        case TT.Comment: return 'q-com';
+        case TT.Number: return 'q-num';
+        case TT.StringLiteral:
+        case TT.HereDoc: return 'q-str';
+        case TT.QuotedIdentifier: return 'q-qid';
+        case TT.BareWord: {
+            if (SQL_KEYWORDS.has(elem.token.toUpperCase())) return 'q-kw';
+            for (let j = i + 1; j < tokens.length; ++j) {
+                if (tokens[j].type === TT.Whitespace) continue;
+                return tokens[j].type === TT.OpeningRoundBracket ? 'q-fn' : 'q-id';
+            }
+            return 'q-id';
+        }
+        case TT.Asterisk: case TT.Plus: case TT.Minus: case TT.Slash: case TT.Percent:
+        case TT.Arrow: case TT.QuestionMark: case TT.Colon: case TT.DoubleColon: case TT.Caret:
+        case TT.Equals: case TT.NotEquals:
+        case TT.Less: case TT.Greater: case TT.LessOrEquals: case TT.GreaterOrEquals:
+        case TT.Spaceship: case TT.PipeMark: case TT.Concatenation:
+        case TT.At: case TT.DoubleAt: case TT.DollarSign:
+            return 'q-op';
+        default:
+            return '';
+    }
+}
+
+/// Cached state for cursor-tracking re-renders that do not re-tokenize.
+let currentTokens = [];
 let currentBoundaries = [];
 let currentBackdropText = '';
 
-function updateQueryBackdrop(text, boundaries) {
-    currentBoundaries = boundaries;
-    currentBackdropText = text;
+function updateQueryBackdrop(text, tokens, boundaries) {
+    currentTokens = tokens || [];
+    currentBoundaries = boundaries || [];
+    currentBackdropText = text || '';
     renderQueryBackdrop();
 }
 
 function renderQueryBackdrop() {
     const text = currentBackdropText;
+    const tokens = currentTokens;
     const boundaries = currentBoundaries;
 
     /// Update button labels to reflect current selection state.
     updateRunButtons(boundaries.length > 1);
 
-    if (boundaries.length <= 1) {
+    /// No content, or the WASM lexer is not available — fall back to the unstyled textarea.
+    if (!text || tokens.length === 0) {
         queryBackdrop.style.display = 'none';
         query_area.classList.remove('has-backdrop');
         return;
@@ -3867,32 +4014,57 @@ function renderQueryBackdrop() {
     const cursor = query_area.selectionStart;
     const focused = document.activeElement === query_area;
 
-    /// Find which query contains the cursor (only when textarea is focused).
-    let activeIdx = -1;
-    if (focused) for (let i = 0; i < boundaries.length; ++i) {
-        if (cursor >= boundaries[i].start && cursor <= boundaries[i].end) {
-            activeIdx = i;
-            break;
+    /// Find which query contains the cursor (only when textarea is focused and we are
+    /// actually in multi-query mode).
+    let activeStart = -1;
+    let activeEnd = -1;
+    if (focused && boundaries.length > 1) {
+        for (let i = 0; i < boundaries.length; ++i) {
+            if (cursor >= boundaries[i].start && cursor <= boundaries[i].end) {
+                activeStart = boundaries[i].start;
+                activeEnd = boundaries[i].end;
+                break;
+            }
         }
     }
 
     let html = '';
-    let pos = 0;
-    for (let i = 0; i < boundaries.length; ++i) {
-        const b = boundaries[i];
-        if (b.start > pos) {
-            html += escapeHTML(text.substring(pos, b.start));
+    let offset = 0;
+    let activeOpen = false;
+
+    for (let i = 0; i < tokens.length; ++i) {
+        const elem = tokens[i];
+        const tokStart = offset;
+        const tokEnd = offset + elem.token.length;
+        offset = tokEnd;
+
+        const inActive = activeStart >= 0 && tokEnd > activeStart && tokStart < activeEnd;
+        if (inActive && !activeOpen) {
+            html += '<span class="q-active">';
+            activeOpen = true;
+        } else if (!inActive && activeOpen) {
+            html += '</span>';
+            activeOpen = false;
         }
-        if (i === activeIdx) {
-            html += '<span class="q-active">' + escapeHTML(text.substring(b.start, b.end)) + '</span>';
+
+        const cls = tokenClass(tokens, i);
+        const escaped = escapeHTML(elem.token);
+        if (cls) {
+            html += '<span class="' + cls + '">' + escaped + '</span>';
         } else {
-            html += escapeHTML(text.substring(b.start, b.end));
+            html += escaped;
         }
-        pos = b.end;
     }
-    if (pos < text.length) {
-        html += escapeHTML(text.substring(pos));
+    if (activeOpen) {
+        html += '</span>';
     }
+
+    /// Any tail not covered by tokens (lexer hit an error or reached the size limit)
+    /// is shown with the error style.
+    if (offset < text.length) {
+        html += '<span class="q-err">' + escapeHTML(text.substring(offset)) + '</span>';
+    }
+
     /// Trailing newline fix: browsers collapse a trailing \n in a div.
     if (html.endsWith('\n')) html += ' ';
 
@@ -4000,7 +4172,7 @@ async function updateQueryParams()
         queryParamsContainer.innerHTML = '';
         currentQueryParams = [];
         updateRunButtons(false);
-        updateQueryBackdrop('', []);
+        updateQueryBackdrop('', [], []);
         return;
     }
 
@@ -4012,7 +4184,7 @@ async function updateQueryParams()
     /// Detect multi-query mode from the same token stream.
     const boundaries = getQueryBoundaries(tokens, query);
     updateRunButtons(boundaries.length > 1);
-    updateQueryBackdrop(query, boundaries);
+    updateQueryBackdrop(query, tokens, boundaries);
 
     if (JSON.stringify(params) === JSON.stringify(currentQueryParams))
     {
@@ -4065,11 +4237,16 @@ async function updateQueryParams()
     }
 }
 
-let paramDebounceTimer = null;
 query_area.addEventListener('input', () =>
 {
-    clearTimeout(paramDebounceTimer);
-    paramDebounceTimer = setTimeout(updateQueryParams, 100);
+    /// Run the update synchronously instead of with a setTimeout: the heavy work
+    /// (WASM tokenize, building backdrop HTML) is fast, and the await chain inside
+    /// `updateQueryParams` runs in microtasks — i.e. it finishes before the browser
+    /// paints the next frame. If we deferred this with `setTimeout`, the browser
+    /// would render one frame with the new textarea text against the stale backdrop,
+    /// and `mix-blend-mode: difference` would turn the freshly typed characters
+    /// invisible (e.g. `diff(black, white) = white` in light theme).
+    updateQueryParams();
 });
 
 function setColorTheme(new_theme, update_preference) {
