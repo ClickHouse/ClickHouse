@@ -90,14 +90,14 @@ template <is_decimal T>
 
         if (res < 0)
         {
-            const T * pa_end = pa + size();
+            const T * pa_end = data.data() + size();
             ++pa;
             for (; pa < pa_end && (*pa) < (*pb); ++pa)
                 --res;
         }
         else if (res > 0)
         {
-            const T * pb_end = pb + other.size();
+            const T * pb_end = other.data.data() + other.size();
             ++pb;
             for (; pb < pb_end && (*pb) < (*pa); ++pb)
                 ++res;
@@ -110,14 +110,14 @@ template <is_decimal T>
 
         if (res < 0)
         {
-            const T * pa_end = pa + size();
+            const T * pa_end = data.data() + size();
             ++pa;
             for (; pa < pa_end && decimalLess<T>(*pa, *pb, scale, other.scale); ++pa)
                 --res;
         }
         else if (res > 0)
         {
-            const T * pb_end = pb + other.size();
+            const T * pb_end = other.data.data() + other.size();
             ++pb;
             for (; pb < pb_end && decimalLess<T>(*pb, *pa, other.scale, scale); ++pb)
                 ++res;
