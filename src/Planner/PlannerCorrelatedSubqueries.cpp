@@ -553,7 +553,7 @@ Planner buildPlannerForCorrelatedSubquery(
 )
 {
     auto subquery_options = select_query_options.subquery();
-    auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+    auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     /// Register table expression data for correlated columns sources in the global context.
     /// Table expression data would be reused because it can't be initialized
     /// during plan construction for correlated subquery.
