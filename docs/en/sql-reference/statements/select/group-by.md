@@ -370,7 +370,7 @@ The aggregation can be performed more effectively, if a table is sorted by some 
 ### TopN Aggregation Optimization {#topn-aggregation-optimization}
 
 For queries of the form `GROUP BY ... ORDER BY aggregate LIMIT K`, ClickHouse can fuse aggregation, sorting, and limiting into a single optimized pass.
-This is controlled by the [optimize_topn_aggregation](/operations/settings/settings#optimize_topn_aggregation) setting (disabled by default).
+This is controlled by the [optimize_topn_aggregation](/operations/settings/settings#optimize_topn_aggregation) setting (enabled by default).
 
 When enabled, the optimizer rewrites eligible queries to use a `TopNAggregating` operator with one of two modes:
 
