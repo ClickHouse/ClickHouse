@@ -7,18 +7,21 @@ docker_container_name_present
 docker_fifo_runner_present
 docker_fifo_mkfifo_present
 docker_fifo_detached_exec_present
-docker_execute_shell
+docker_execute_direct
 gvisor_runtime_present
 gvisor_docker_absent
 gvisor_execute_shell
 gvisor_pipe_capacity_configured
 unsafe_runtime_direct
+unsafe_execute_direct
 unsafe_docker_absent
 -- create + call
 42
 -- dynamic config exists after create
 yes
 buffers_format
+dynamic_command_relative
+dynamic_execute_direct
 chunk_header_enabled
 pipe_capacity_default
 -- work dir uses uuid name
@@ -45,6 +48,7 @@ string_stdio_serde_absent
 -- unsafe driver direct call
 42
 unsafe_dynamic_runtime_direct
+unsafe_dynamic_execute_direct
 -- if not exists does not invoke driver
 3
 -- attach-style recreate after config loss

@@ -1,10 +1,14 @@
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 
+#include <Core/UUID.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <boost/algorithm/string/split.hpp>
 #include <Common/StringUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/filesystemHelpers.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -12,6 +16,8 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+
+#include <filesystem>
 
 
 namespace DB
@@ -99,6 +105,47 @@ namespace
 
         return parameters;
     }
+
+    String getDynamicFunctionWorkingDirectory(const ContextPtr & context, const String & config_file_path, const String & function_name)
+    {
+        if (config_file_path.empty())
+            return {};
+
+        String dynamic_path = context->getDynamicUserDefinedExecutableFunctionsPath();
+        if (dynamic_path.empty())
+            return {};
+        if (!dynamic_path.ends_with('/'))
+            dynamic_path.push_back('/');
+
+        if (!fileOrSymlinkPathStartsWith(config_file_path, dynamic_path))
+            return {};
+
+        auto config_path = std::filesystem::path(config_file_path);
+        const String extension = config_path.extension().string();
+        if (extension != ".xml" && extension != ".yaml")
+            return {};
+
+        const String metadata_path = config_path.replace_extension(".workdir").string();
+        if (!std::filesystem::exists(metadata_path))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Dynamic executable user defined function '{}' config '{}' has no working directory metadata '{}'",
+                function_name,
+                config_file_path,
+                metadata_path);
+
+        String directory_name;
+        ReadBufferFromFile in(metadata_path);
+        readStringUntilEOF(directory_name, in);
+
+        UUID uuid;
+        if (directory_name.empty() || !tryParseUUID({reinterpret_cast<const UInt8 *>(directory_name.data()), directory_name.size()}, uuid))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Invalid dynamic executable user defined function working directory name '{}' for function '{}'",
+                directory_name,
+                function_name);
+
+        return dynamic_path + directory_name;
+    }
 }
 
 ExternalUserDefinedExecutableFunctionsLoader::ExternalUserDefinedExecutableFunctionsLoader(ContextPtr global_context_)
@@ -130,7 +177,8 @@ void ExternalUserDefinedExecutableFunctionsLoader::reloadFunction(const std::str
 ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader::createObject(const std::string & name,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & key_in_config,
-    const std::string &) const
+    const std::string &,
+    const std::string & config_file_path) const
 {
     if (FunctionFactory::instance().hasNameOrAlias(name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The function '{}' already exists", name);
@@ -154,6 +202,9 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
     bool execute_direct = config.getBool(key_in_config + ".execute_direct", true);
 
     String command_value = config.getString(key_in_config + ".command");
+    String command_working_directory;
+    if (execute_direct)
+        command_working_directory = getDynamicFunctionWorkingDirectory(getContext(), config_file_path, name);
     std::vector<UserDefinedExecutableFunctionParameter> parameters = extractParametersFromCommand(command_value);
 
     if (!execute_direct && !parameters.empty())
@@ -240,6 +291,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
         .name = name,
         .command = std::move(command_value),
         .command_arguments = std::move(command_arguments),
+        .command_working_directory = std::move(command_working_directory),
         .arguments = std::move(arguments),
         .parameters = std::move(parameters),
         .result_type = std::move(result_type),

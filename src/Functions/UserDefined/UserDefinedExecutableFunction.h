@@ -28,6 +28,7 @@ struct UserDefinedExecutableFunctionConfiguration
     std::string name;
     std::string command;
     VectorWithMemoryTracking<std::string> command_arguments;
+    String command_working_directory;
     std::vector<UserDefinedExecutableFunctionArgument> arguments;
     std::vector<UserDefinedExecutableFunctionParameter> parameters;
     DataTypePtr result_type;

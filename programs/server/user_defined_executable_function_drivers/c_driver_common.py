@@ -903,7 +903,7 @@ def should_compile_locally(runtime):
 
 def runtime_command(function_name, runtime, work_dir):
     if runtime == "unsafe" or os.environ.get("CLICKHOUSE_C_DRIVER_FORCE_LOCAL") == "1":
-        return os.path.join(work_dir, "user_func"), 0
+        return "user_func", 1
 
     if runtime == "gvisor":
         return shell_join([
@@ -914,7 +914,7 @@ def runtime_command(function_name, runtime, work_dir):
             os.path.join(work_dir, "user_func"),
         ]), 0
 
-    return "exec " + shell_join([docker_fifo_runner_path(work_dir)]), 0
+    return "docker_fifo_runner.sh", 1
 
 
 def generate_xml_config(function_name, return_type, args, work_dir, runtime):

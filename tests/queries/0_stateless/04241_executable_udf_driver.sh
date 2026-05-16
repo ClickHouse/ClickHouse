@@ -110,7 +110,8 @@ grep -q '<command_pipe_capacity>1048576</command_pipe_capacity>' "$WORK_DIR/gvis
     cd "$WORK_DIR/unsafe_runtime" &&
     printf 'return x + y;\n' | "$DRIVER_DIR/unsafe_c_create.sh" --name test_unsafe_runtime --return UInt64 --args 'x UInt64, y UInt64'
 ) > "$WORK_DIR/unsafe_runtime.xml"
-grep -q '/user_func</command>' "$WORK_DIR/unsafe_runtime.xml" && echo "unsafe_runtime_direct" || echo "unsafe_runtime_missing"
+grep -q '<command>user_func</command>' "$WORK_DIR/unsafe_runtime.xml" && echo "unsafe_runtime_direct" || echo "unsafe_runtime_missing"
+grep -q '<execute_direct>1</execute_direct>' "$WORK_DIR/unsafe_runtime.xml" && echo "unsafe_execute_direct" || echo "unsafe_execute_shell"
 grep -q 'docker run' "$WORK_DIR/unsafe_runtime.xml" && echo "unsafe_docker_present" || echo "unsafe_docker_absent"
 
 echo "-- create + call"
@@ -123,6 +124,8 @@ SELECT test_udf_drv_add(40, 2);
 echo "-- dynamic config exists after create"
 test -f "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "yes" || echo "no"
 grep -q '<format>Buffers</format>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "buffers_format" || echo "bad_format"
+grep -q '<command>user_func</command>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "dynamic_command_relative" || echo "dynamic_command_absolute"
+grep -q '<execute_direct>1</execute_direct>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "dynamic_execute_direct" || echo "dynamic_execute_shell"
 grep -q '<send_chunk_header>1</send_chunk_header>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "chunk_header_enabled" || echo "chunk_header_disabled"
 grep -q '<command_pipe_capacity>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "pipe_capacity_configured" || echo "pipe_capacity_default"
 
@@ -185,7 +188,8 @@ CREATE FUNCTION test_udf_drv_unsafe ARGUMENTS (x UInt64, y UInt64) RETURNS UInt6
     ENGINE = UnsafeC() AS 'return x * y;';
 SELECT test_udf_drv_unsafe(6, 7);
 "
-grep -q '/user_func</command>' "$WORK_DIR/dyn/test_udf_drv_unsafe.xml" && echo "unsafe_dynamic_runtime_direct" || echo "unsafe_dynamic_runtime_missing"
+grep -q '<command>user_func</command>' "$WORK_DIR/dyn/test_udf_drv_unsafe.xml" && echo "unsafe_dynamic_runtime_direct" || echo "unsafe_dynamic_runtime_missing"
+grep -q '<execute_direct>1</execute_direct>' "$WORK_DIR/dyn/test_udf_drv_unsafe.xml" && echo "unsafe_dynamic_execute_direct" || echo "unsafe_dynamic_execute_shell"
 
 echo "-- if not exists does not invoke driver"
 run "

@@ -44,7 +44,7 @@ ExternalDictionariesLoader::ExternalDictionariesLoader(ContextPtr global_context
 
 ExternalLoader::LoadableMutablePtr ExternalDictionariesLoader::createObject(
         const std::string & name, const Poco::Util::AbstractConfiguration & config,
-        const std::string & key_in_config, const std::string & repository_name) const
+        const std::string & key_in_config, const std::string & repository_name, const std::string & /* config_file_path */) const
 {
     /// For dictionaries from databases (created with DDL queries) we have to perform
     /// additional checks, so we identify them here.

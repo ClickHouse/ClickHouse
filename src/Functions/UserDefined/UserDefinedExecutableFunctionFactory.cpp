@@ -145,26 +145,31 @@ public:
 
         if (coordinator_configuration.execute_direct)
         {
-            auto user_scripts_path = context->getUserScriptsPath();
-            auto script_path = user_scripts_path + '/' + command;
+            const bool use_function_working_directory = !configuration.command_working_directory.empty();
+            auto executable_base_path = use_function_working_directory ? configuration.command_working_directory : context->getUserScriptsPath();
+            const char * executable_base_path_description = use_function_working_directory ? "working directory" : "user scripts folder";
+            auto script_path = executable_base_path + '/' + command;
 
-            if (!fileOrSymlinkPathStartsWith(script_path, user_scripts_path))
+            if (!fileOrSymlinkPathStartsWith(script_path, executable_base_path))
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Executable file {} must be inside user scripts folder {}",
+                    "Executable file {} must be inside {} {}",
                     command,
-                    user_scripts_path);
+                    executable_base_path_description,
+                    executable_base_path);
 
             if (!FS::exists(script_path))
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Executable file {} does not exist inside user scripts folder {}",
+                    "Executable file {} does not exist inside {} {}",
                     command,
-                    user_scripts_path);
+                    executable_base_path_description,
+                    executable_base_path);
 
             if (!FS::canExecute(script_path))
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Executable file {} is not executable inside user scripts folder {}",
+                    "Executable file {} is not executable inside {} {}",
                     command,
-                    user_scripts_path);
+                    executable_base_path_description,
+                    executable_base_path);
 
             command = std::move(script_path);
         }
