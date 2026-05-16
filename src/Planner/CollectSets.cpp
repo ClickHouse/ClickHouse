@@ -2,6 +2,9 @@
 
 #include <Storages/StorageSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/StorageSharedSetJoin.h>
+#endif
 
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -36,6 +39,7 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -196,6 +200,13 @@ public:
         if (!function_node || !isNameOfInFunction(function_node->getFunctionName()))
             return;
 
+        if (function_node->getArguments().getNodes().size() < 2)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function '{}' is expected to have at least 2 arguments, got {}",
+                function_node->getFunctionName(),
+                function_node->getArguments().getNodes().size());
+
         auto in_first_argument = function_node->getArguments().getNodes().at(0);
         auto in_second_argument = function_node->getArguments().getNodes().at(1);
         auto in_second_argument_node_type = in_second_argument->getNodeType();
@@ -247,6 +258,11 @@ public:
                 return;
 
             auto ast = in_second_argument->toAST();
+#if CLICKHOUSE_CLOUD
+            if (storage_set->getName() == "SharedSet")
+                sets.addFromStorage(set_key, std::move(ast), static_cast<StorageSharedSet *>(storage_set)->getSet(planner_context.getQueryContext()), second_argument_table->getStorageID());
+            else
+#endif
             sets.addFromTuple(set_key, std::move(ast), std::move(set), settings);
         }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||

@@ -1,5 +1,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageArrowFlight.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #if USE_ARROWFLIGHT
 #include <Common/Logger.h>
@@ -119,7 +121,7 @@ StorageArrowFlight::StorageArrowFlight(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     ContextPtr context_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , WithContext(context_->getGlobalContext())
     , connection(connection_)
     , dataset_name(dataset_name_)
@@ -133,14 +135,15 @@ StorageArrowFlight::StorageArrowFlight(
         storage_metadata.setColumns(columns_);
 
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageArrowFlight::createVirtuals()
 {
     VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
     return desc;
 }
 
@@ -190,34 +193,15 @@ Pipe StorageArrowFlight::read(
 {
     storage_snapshot->check(column_names);
 
-    Block sample_block;
-    Block virtual_header;
-    for (const String & column_name : column_names)
-    {
-        if (storage_snapshot->metadata->columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
-        {
-            auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
-            sample_block.insert({column_data.type, column_data.name});
-        }
-        else
-        {
-            auto column_data = storage_snapshot->virtual_columns->tryGet(column_name);
-            virtual_header.insert({column_data->type, column_data->name});
-        }
-    }
-
-    if (sample_block.columns() == 0)
-    {
-        const auto & physical = storage_snapshot->metadata->getColumns().getAllPhysical().front();
-        sample_block.insert({physical.type, physical.name});
-    }
+    auto [physical_columns, virtual_columns] = VirtualColumnUtils::splitPhysicalAndVirtualColumnNames(column_names, storage_snapshot);
+    Block sample_block = storage_snapshot->getSampleBlockForColumns(physical_columns);
+    Block virtual_header = storage_snapshot->getSampleBlockForColumns(virtual_columns);
 
     return Pipe(std::make_shared<ArrowFlightSource>(
         connection,
         dataset_name,
         sample_block,
         virtual_header,
-        getStorageID(),
         context_));
 }
 

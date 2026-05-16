@@ -18,6 +18,10 @@ struct QueryPipelineFinalizedInfo
     std::optional<ResultProgress> result_progress;
     std::vector<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos;
     String pipeline_dump;
+
+    /// Set to true when finalization of a buffered query result cache write threw.
+    /// Used to downgrade `query_result_cache_usage` in `query_log` from `Write` to `None`.
+    bool query_result_cache_write_failed = false;
 };
 
 struct BlockIO
