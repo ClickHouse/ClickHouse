@@ -47,13 +47,13 @@ def fetch_github_issues(
         )
         label_query = " ".join([f'label:"{lbl}"' for lbl in label])
         search_query = f"{label_query} is:closed closed:>{date_threshold}"
-        base_cmd = f"gh issue list {repo_arg} --search '{search_query}' --json number,title,body,closedAt,labels --limit {limit_per_request}"
+        base_cmd = f"gh issue list {repo_arg} --search '{search_query}' --json number,title,body,closedAt,labels,url --limit {limit_per_request}"
         print(
             f"Fetching {state} issues with label '{label}' closed in last {hours_back} hours (since {date_threshold})..."
         )
     else:
         label_args = " ".join([f'--label "{lbl}"' for lbl in label])
-        base_cmd = f"gh issue list {repo_arg} {label_args} --state {state} --json number,title,body,closedAt,labels --limit {limit_per_request}"
+        base_cmd = f"gh issue list {repo_arg} {label_args} --state {state} --json number,title,body,closedAt,labels,url --limit {limit_per_request}"
         print(f"Fetching {state} issues with label '{label}'...")
 
     try:
@@ -282,7 +282,7 @@ class Issue:
         print(
             f"Marking '{result.name}' as flaky (matched: {test_name}, issue: #{self.number})"
         )
-        result.set_clickable_label(label=Result.Label.ISSUE, link=self.url)
+        result.set_label(Result.Label.ISSUE, link=self.url)
         return True
 
     def _check_infrastructure_match(
@@ -313,7 +313,7 @@ class Issue:
         print(
             f"  Marking '{result.name}' as infrastructure issue (issue: #{self.number})"
         )
-        result.set_clickable_label(label="issue", link=self.url)
+        result.set_label(Result.Label.ISSUE, link=self.url)
         return True
 
     @classmethod
@@ -324,6 +324,7 @@ class Issue:
         labels,
         closed_at="",
         number=0,
+        url="",
     ):
         body_fields = cls.parse_issue_body_fields(body)
         test_name = body_fields["test_name"]
@@ -333,16 +334,11 @@ class Issue:
                 test_name = cls.extract_test_name(title)
             else:
                 test_name = title
-        issue_url = (
-            f"https://github.com/ClickHouse/ClickHouse/issues/{number}"
-            if number
-            else ""
-        )
         return Issue(
             test_name=test_name,
             closed_at=closed_at if closed_at else "",
             number=int(number),
-            url=issue_url,
+            url=url,
             title=title,
             body=body if body else "",
             labels=labels,
@@ -377,11 +373,12 @@ class Issue:
         title = issue.get("title", "")
         body = issue.get("body", "")
         closed_at = issue.get("closedAt", "")
+        url = issue.get("url", "")
         assert number > 0, f"Issue {number} has no number"
         assert title, f"Issue {number} has no title"
         # Extract label names from the labels array
         labels = [label.get("name", "") for label in issue.get("labels", [])]
-        return cls.create_from(title, body, labels, closed_at, number)
+        return cls.create_from(title, body, labels, closed_at, number, url=url)
 
 
 @dataclass
