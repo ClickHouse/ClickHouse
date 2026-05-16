@@ -500,6 +500,14 @@ The value is similar to `OSUserTime` but divided to the number of CPU cores to b
 
 Number of threads in the server of the PostgreSQL compatibility protocol.
 
+### QueriesMemoryUsage {#queriesmemoryusage}
+
+Total memory currently used by all running queries on the server, in bytes. Useful for attributing memory pressure to the concurrent query load.
+
+### QueriesPeakMemoryUsage {#queriespeakmemoryusage}
+
+Peak memory used by all running queries on the server, in bytes.
+
 ### ReplicasMaxAbsoluteDelay {#replicasmaxabsolutedelay}
 
 Maximum difference in seconds between the most fresh replicated part and the most fresh data part still to be replicated, across Replicated tables. A very high value indicates a replica with no data.
