@@ -6,17 +6,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./streaming.lib
 . "$CURDIR"/streaming.lib
 
-opts=(
-    "--enable_streaming_queries=1"
-)
 
 insert_opts=(
     "--min_insert_block_size_rows=1"
     "--max_block_size=1"
 )
 
-$CLICKHOUSE_CLIENT "${opts[@]}" -q "DROP TABLE IF EXISTS t_streaming_test"
-$CLICKHOUSE_CLIENT "${opts[@]}" -q "CREATE TABLE t_streaming_test (a String, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS $STREAMING_TABLE_SETTINGS"
+$STREAMING_CLIENT -q "DROP TABLE IF EXISTS t_streaming_test"
+$STREAMING_CLIENT -q "CREATE TABLE t_streaming_test (a String, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS $STREAMING_TABLE_SETTINGS"
 
 echo "=== Test Streaming strict fifo order check ==="
 
@@ -25,7 +22,7 @@ $CLICKHOUSE_CLIENT "${insert_opts[@]}" -q "INSERT INTO t_streaming_test select n
 $CLICKHOUSE_CLIENT "${insert_opts[@]}" -q "INSERT INTO t_streaming_test select number, number from numbers(100)" &
 
 echo "start stream"
-read -r fifo_1 pid_1 < <(spawn $CLICKHOUSE_CLIENT "${opts[@]}" -q "SELECT _block_number FROM t_streaming_test STREAM")
+read -r fifo_1 pid_1 < <(spawn $STREAMING_CLIENT -q "SELECT _block_number FROM t_streaming_test STREAM")
 
 echo "start parallel insert"
 $CLICKHOUSE_CLIENT "${insert_opts[@]}" -q "INSERT INTO t_streaming_test select number, number from numbers(100)" &
@@ -38,4 +35,4 @@ cleanup "$fifo_1" "$pid_1"
 
 wait
 
-$CLICKHOUSE_CLIENT "${opts[@]}" -q "DROP TABLE t_streaming_test"
+$STREAMING_CLIENT -q "DROP TABLE t_streaming_test"

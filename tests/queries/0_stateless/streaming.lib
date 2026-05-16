@@ -7,6 +7,9 @@ STREAMING_TABLE_SETTINGS="\
     add_minmax_index_for_block_number_column = 1, \
     add_minmax_index_for_block_offset_column = 1"
 
+# Default client invocation for streaming-queries tests.
+STREAMING_CLIENT="$CLICKHOUSE_CLIENT --enable_streaming_queries=1 --use_skip_indexes_on_data_read=0"
+
 spawn()
 {
     # Create a unique name for the FIFO using mktemp
