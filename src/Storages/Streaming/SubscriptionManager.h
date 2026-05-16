@@ -1,11 +1,12 @@
 #pragma once
 
-#include <atomic>
+#include <Storages/Streaming/IStreamSubscription.h>
+
+#include <Common/SharedMutex.h>
+
+#include <shared_mutex>
 #include <functional>
 #include <list>
-#include <shared_mutex>
-
-#include <Storages/Streaming/IStreamSubscription.h>
 
 namespace DB
 {
@@ -19,8 +20,8 @@ class StreamSubscriptionManager
     void clean();
 
     /// returns locked mutex
-    std::shared_lock<std::shared_mutex> lockShared() const;
-    std::unique_lock<std::shared_mutex> lockExclusive() const;
+    std::shared_lock<SharedMutex> lockShared() const;
+    std::unique_lock<SharedMutex> lockExclusive() const;
 
 public:
     /// adds subscription for manager, not transfers lifetime
@@ -39,7 +40,7 @@ private:
     /// Lock required for all changes with subscriptions:
     /// - Add new subscription
     /// - Execute function
-    mutable std::shared_mutex rwlock;
+    mutable SharedMutex rwlock;
 
     /// List of all subscriptions
     std::list<StreamSubscriptionWeakPtr> subscriptions;

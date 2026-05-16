@@ -1,16 +1,14 @@
-#include <mutex>
-
 #include <Storages/Streaming/SubscriptionManager.h>
 
 namespace DB
 {
 
-std::shared_lock<std::shared_mutex> StreamSubscriptionManager::lockShared() const
+std::shared_lock<SharedMutex> StreamSubscriptionManager::lockShared() const
 {
     return std::shared_lock{rwlock};
 }
 
-std::unique_lock<std::shared_mutex> StreamSubscriptionManager::lockExclusive() const
+std::unique_lock<SharedMutex> StreamSubscriptionManager::lockExclusive() const
 {
     return std::unique_lock{rwlock};
 }

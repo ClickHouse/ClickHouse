@@ -34,16 +34,6 @@
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsUInt64 max_block_size;
-}
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 namespace
 {
 
