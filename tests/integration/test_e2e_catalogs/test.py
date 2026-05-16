@@ -191,7 +191,7 @@ def started_cluster(catalog_manager):
     cluster = ClickHouseCluster(__file__, name=f"test_e2e_catalogs_{catalog_manager}")
     cluster.add_instance(
         "node1",
-        main_configs=["configs/merge_tree.xml"],
+        main_configs=["configs/merge_tree.xml", "configs/biglake_metadata_hosts.xml"],
         user_configs=["configs/allow_experimental.xml"],
         env_variables=catalog_manager.clickhouse_env_variables(),
         stay_alive=True,
