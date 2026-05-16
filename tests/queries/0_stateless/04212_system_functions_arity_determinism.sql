@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 -- New columns on system.functions: deterministic, higher_order.
 
 SELECT '-- columns exist with the expected types';
