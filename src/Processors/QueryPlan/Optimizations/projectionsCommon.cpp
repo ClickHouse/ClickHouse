@@ -127,10 +127,9 @@ const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & nam
             if (node->result_type->onlyNull())
                 return nullptr;
 
-            auto filter_type = removeNullable(removeLowCardinality(node->result_type));
-            if (!isUInt8(filter_type) && !filter_type->canBeUsedInBooleanContext())
+            if (!isUInt8(removeNullable(removeLowCardinality(node->result_type))))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                    "Illegal type {} of column {} for filter. Must be UInt8, Nullable(UInt8), or a numeric type.",
+                    "Illegal type {} of column {} for filter. Must be UInt8 or Nullable(UInt8).",
                     node->result_type->getName(), name);
 
             if (remove)
