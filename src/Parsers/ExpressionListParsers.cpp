@@ -1547,6 +1547,100 @@ public:
     }
 };
 
+enum class ExtractUnit : uint8_t
+{
+    None,
+    Epoch,
+    Dow,
+    Doy,
+    Isodow,
+    Isoyear,
+    Century,
+    Decade,
+    Millennium,
+};
+
+/// Builds the AST corresponding to `EXTRACT(unit FROM expr)` /
+/// `date_part('unit', expr)`. Exactly one of `interval_kind` (when
+/// `extract_unit == ExtractUnit::None`) and `extract_unit` describes the unit.
+static ASTPtr buildExtractTimePartAST(IntervalKind interval_kind, ExtractUnit extract_unit, const ASTPtr & expr)
+{
+    if (extract_unit == ExtractUnit::None)
+        return makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), expr);
+
+    switch (extract_unit)
+    {
+        case ExtractUnit::Epoch:
+            return makeASTFunction("toUnixTimestamp", expr);
+        case ExtractUnit::Dow:
+            /// PostgreSQL DOW: 0 = Sunday, 6 = Saturday (toDayOfWeek mode 2)
+            return makeASTFunction("toDayOfWeek", expr, make_intrusive<ASTLiteral>(UInt64(2)));
+        case ExtractUnit::Doy:
+            return makeASTFunction("toDayOfYear", expr);
+        case ExtractUnit::Isodow:
+            /// ISO day of week: 1 = Monday, 7 = Sunday
+            return makeASTFunction("toDayOfWeek", expr);
+        case ExtractUnit::Isoyear:
+            return makeASTFunction("toISOYear", expr);
+        case ExtractUnit::Century:
+            /// century = (year - 1) / 100 + 1
+            return makeASTFunction("plus",
+                makeASTFunction("intDiv",
+                    makeASTFunction("minus", makeASTFunction("toYear", expr), make_intrusive<ASTLiteral>(UInt64(1))),
+                    make_intrusive<ASTLiteral>(UInt64(100))),
+                make_intrusive<ASTLiteral>(UInt64(1)));
+        case ExtractUnit::Decade:
+            /// decade = year / 10
+            return makeASTFunction("intDiv",
+                makeASTFunction("toYear", expr),
+                make_intrusive<ASTLiteral>(UInt64(10)));
+        case ExtractUnit::Millennium:
+            /// millennium = (year - 1) / 1000 + 1
+            return makeASTFunction("plus",
+                makeASTFunction("intDiv",
+                    makeASTFunction("minus", makeASTFunction("toYear", expr), make_intrusive<ASTLiteral>(UInt64(1))),
+                    make_intrusive<ASTLiteral>(UInt64(1000))),
+                make_intrusive<ASTLiteral>(UInt64(1)));
+        case ExtractUnit::None:
+            UNREACHABLE();
+    }
+}
+
+/// Parses a unit string (lowercased) like 'year' or 'epoch' into either an
+/// IntervalKind (standard units) or an ExtractUnit (PostgreSQL-specific extra
+/// units). Returns false if the string does not name a known unit.
+static bool tryParseExtractUnitFromString(const std::string & unit_lower, IntervalKind & interval_kind, ExtractUnit & extract_unit)
+{
+    extract_unit = ExtractUnit::None;
+    IntervalKind::Kind kind;
+    if (IntervalKind::tryParseString(unit_lower, kind))
+    {
+        interval_kind = IntervalKind{kind};
+        return true;
+    }
+
+    if (unit_lower == "epoch")
+        extract_unit = ExtractUnit::Epoch;
+    else if (unit_lower == "dow")
+        extract_unit = ExtractUnit::Dow;
+    else if (unit_lower == "doy")
+        extract_unit = ExtractUnit::Doy;
+    else if (unit_lower == "isodow")
+        extract_unit = ExtractUnit::Isodow;
+    else if (unit_lower == "isoyear")
+        extract_unit = ExtractUnit::Isoyear;
+    else if (unit_lower == "century")
+        extract_unit = ExtractUnit::Century;
+    else if (unit_lower == "decade")
+        extract_unit = ExtractUnit::Decade;
+    else if (unit_lower == "millennium")
+        extract_unit = ExtractUnit::Millennium;
+    else
+        return false;
+
+    return true;
+}
+
 class ExtractLayer : public LayerWithSeparator<TokenType::Comma, TokenType::ClosingRoundBracket>
 {
 public:
@@ -1607,7 +1701,7 @@ protected:
             if (elements.empty())
                 return false;
 
-            node = buildExtractResult(elements[0]);
+            node = buildExtractTimePartAST(interval_kind, extract_unit, elements[0]);
         }
         else
         {
@@ -1618,19 +1712,6 @@ protected:
     }
 
 private:
-    enum class ExtractUnit : uint8_t
-    {
-        None,
-        Epoch,
-        Dow,
-        Doy,
-        Isodow,
-        Isoyear,
-        Century,
-        Decade,
-        Millennium,
-    };
-
     IntervalKind interval_kind;
     ExtractUnit extract_unit = ExtractUnit::None;
 
@@ -1657,48 +1738,35 @@ private:
 
         return true;
     }
+};
 
-    ASTPtr buildExtractResult(const ASTPtr & expr) const
+/// PostgreSQL-style `date_part('unit', expr)` is syntactic sugar for
+/// `EXTRACT(unit FROM expr)`. The unit must be a constant string and is
+/// recognised at parse time, producing the same AST as the `EXTRACT` form.
+class DatePartLayer : public LayerWithSeparator<TokenType::Comma, TokenType::ClosingRoundBracket>
+{
+public:
+    DatePartLayer() : LayerWithSeparator(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
     {
-        if (extract_unit == ExtractUnit::None)
-            return makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), expr);
+        if (elements.size() != 2)
+            return false;
 
-        switch (extract_unit)
-        {
-            case ExtractUnit::Epoch:
-                return makeASTFunction("toUnixTimestamp", expr);
-            case ExtractUnit::Dow:
-                /// PostgreSQL DOW: 0 = Sunday, 6 = Saturday (toDayOfWeek mode 2)
-                return makeASTFunction("toDayOfWeek", expr, make_intrusive<ASTLiteral>(UInt64(2)));
-            case ExtractUnit::Doy:
-                return makeASTFunction("toDayOfYear", expr);
-            case ExtractUnit::Isodow:
-                /// ISO day of week: 1 = Monday, 7 = Sunday
-                return makeASTFunction("toDayOfWeek", expr);
-            case ExtractUnit::Isoyear:
-                return makeASTFunction("toISOYear", expr);
-            case ExtractUnit::Century:
-                /// century = (year - 1) / 100 + 1
-                return makeASTFunction("plus",
-                    makeASTFunction("intDiv",
-                        makeASTFunction("minus", makeASTFunction("toYear", expr), make_intrusive<ASTLiteral>(UInt64(1))),
-                        make_intrusive<ASTLiteral>(UInt64(100))),
-                    make_intrusive<ASTLiteral>(UInt64(1)));
-            case ExtractUnit::Decade:
-                /// decade = year / 10
-                return makeASTFunction("intDiv",
-                    makeASTFunction("toYear", expr),
-                    make_intrusive<ASTLiteral>(UInt64(10)));
-            case ExtractUnit::Millennium:
-                /// millennium = (year - 1) / 1000 + 1
-                return makeASTFunction("plus",
-                    makeASTFunction("intDiv",
-                        makeASTFunction("minus", makeASTFunction("toYear", expr), make_intrusive<ASTLiteral>(UInt64(1))),
-                        make_intrusive<ASTLiteral>(UInt64(1000))),
-                    make_intrusive<ASTLiteral>(UInt64(1)));
-            case ExtractUnit::None:
-                UNREACHABLE();
-        }
+        const auto * literal = elements[0]->as<ASTLiteral>();
+        if (!literal || literal->value.getType() != Field::Types::String)
+            return false;
+
+        const String unit_lower = Poco::toLower(literal->value.safeGet<String>());
+
+        IntervalKind interval_kind;
+        ExtractUnit extract_unit = ExtractUnit::None;
+        if (!tryParseExtractUnitFromString(unit_lower, interval_kind, extract_unit))
+            return false;
+
+        node = buildExtractTimePartAST(interval_kind, extract_unit, elements[1]);
+        return true;
     }
 };
 
@@ -2878,6 +2946,8 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
         return std::make_unique<CastLayer>();
     if (function_name_lowercase == "extract")
         return std::make_unique<ExtractLayer>();
+    if (function_name_lowercase == "date_part" || function_name_lowercase == "datepart")
+        return std::make_unique<DatePartLayer>();
     if (function_name_lowercase == "substring")
         return std::make_unique<SubstringLayer>();
     if (function_name_lowercase == "overlay")
