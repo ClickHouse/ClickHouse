@@ -7,7 +7,7 @@ docker_container_name_present
 docker_fifo_runner_present
 docker_fifo_mkfifo_present
 docker_fifo_detached_exec_present
-docker_execute_direct
+docker_execute_shell
 gvisor_runtime_present
 gvisor_docker_absent
 gvisor_execute_shell

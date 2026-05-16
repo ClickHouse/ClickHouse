@@ -914,7 +914,7 @@ def runtime_command(function_name, runtime, work_dir):
             os.path.join(work_dir, "user_func"),
         ]), 0
 
-    return docker_fifo_runner_path(work_dir), 1
+    return "exec " + shell_join([docker_fifo_runner_path(work_dir)]), 0
 
 
 def generate_xml_config(function_name, return_type, args, work_dir, runtime):
