@@ -1571,7 +1571,14 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     settings[Setting::allow_experimental_codecs]);
             }
 
-            all_columns.add(ColumnDescription(column_name, command.data_type));
+            ColumnDescription column(column_name, command.data_type);
+            if (command.default_expression)
+            {
+                column.default_desc.kind = command.default_kind;
+                column.default_desc.expression = command.default_expression->clone();
+            }
+
+            all_columns.add(std::move(column));
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
@@ -1680,6 +1687,28 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         ErrorCodes::BAD_ARGUMENTS,
                         "Column {} doesn't have COMMENT, cannot remove it",
                         backQuote(column_name));
+            }
+
+            const bool removes_default_expression = command.to_remove == AlterCommand::RemoveProperty::DEFAULT
+                || command.to_remove == AlterCommand::RemoveProperty::MATERIALIZED
+                || command.to_remove == AlterCommand::RemoveProperty::ALIAS;
+            if (command.data_type || command.default_expression || removes_default_expression)
+            {
+                all_columns.modify(column_name, [&](ColumnDescription & column)
+                {
+                    if (command.data_type)
+                        column.type = command.data_type;
+
+                    if (removes_default_expression)
+                    {
+                        column.default_desc = ColumnDefault{};
+                    }
+                    else if (command.default_expression)
+                    {
+                        column.default_desc.kind = command.default_kind;
+                        column.default_desc.expression = command.default_expression->clone();
+                    }
+                });
             }
 
             modified_columns.emplace(column_name);
