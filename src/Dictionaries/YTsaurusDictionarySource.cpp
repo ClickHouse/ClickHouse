@@ -275,13 +275,10 @@ void YTsarususDictionarySource::initializeLookupThrottlerIfNeeded()
     auto max_lookups_per_sec = configuration->settings[YTsaurusSetting::lookup_throttler_max_requests_per_second].value;
     if (!supportsSelectiveLoad() || !max_lookups_per_sec)
         return;
-    lookup_throttler_name = fmt::format("YTsaurusLookupThrottler({})", name);
     lookup_throttler = std::make_shared<Throttler>(
-        lookup_throttler_name.c_str(),
         max_lookups_per_sec,
-        0,
         ProfileEvents::YTsaurusLookupThrottled,
-        ::ProfileEvents::end()      /// No sleep time tracking for now
+        ProfileEvents::end()      /// No sleep time tracking for now
     );
 }
 #endif

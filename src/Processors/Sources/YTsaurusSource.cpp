@@ -198,9 +198,9 @@ Pipe createPipeForDynamicTable(
         "Will read dynamic table {} with {} streams and lookup mode",
             cypress_path, source_options.lookup_input_blocks->size());
 
-        YTsaurusClientPtr client_for_source(new YTsaurusClient(*client));
         for (const auto & block : *source_options.lookup_input_blocks)
         {
+            YTsaurusClientPtr client_for_source(new YTsaurusClient(*client));
             pipes.emplace_back(std::make_shared<YTsaurusTableSourceDynamicTableLookup>(
                 client_for_source,
                 cypress_path,

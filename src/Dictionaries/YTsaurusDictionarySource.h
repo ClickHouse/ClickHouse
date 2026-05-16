@@ -65,7 +65,6 @@ private:
     bool throttler_initialized = false;
     ThrottlerPtr lookup_throttler;
     const String name;
-    String lookup_throttler_name;
 };
 
 }
