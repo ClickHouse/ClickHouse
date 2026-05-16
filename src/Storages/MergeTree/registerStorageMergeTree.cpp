@@ -71,8 +71,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsString auto_statistics_types;
-    extern const MergeTreeSettingsBool enable_block_number_column;
-    extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsBool escape_index_filenames;
     extern const MergeTreeSettingsString disk;
     extern const MergeTreeSettingsString storage_policy;
