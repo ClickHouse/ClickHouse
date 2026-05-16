@@ -219,3 +219,12 @@ CREATE TABLE test_with_final (a UInt32, ver UInt32) ENGINE = ReplacingMergeTree(
 INSERT INTO test_with_final SELECT number, 1 FROM numbers_mt(1e3);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT a FROM test_with_final FINAL LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
 DROP TABLE test_with_final;
+DROP TABLE IF EXISTS test_projection_partitioned_reading;
+CREATE TABLE test_projection_partitioned_reading (a UInt32, b UInt32, PROJECTION p (SELECT a ORDER BY a)) ENGINE = MergeTree ORDER BY b PARTITION BY a % 8;
+SYSTEM STOP MERGES test_projection_partitioned_reading;
+INSERT INTO test_projection_partitioned_reading SELECT number % 100, number FROM numbers_mt(10000);
+INSERT INTO test_projection_partitioned_reading SELECT number % 100, number + 10000 FROM numbers_mt(10000);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT a FROM test_projection_partitioned_reading LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 1, optimize_use_projections = 1, force_optimize_projection = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+SELECT (SELECT count() FROM (SELECT a FROM test_projection_partitioned_reading LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 0, optimize_use_projections = 1, force_optimize_projection = 1)) = (SELECT count() FROM (SELECT a FROM test_projection_partitioned_reading LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 1, optimize_use_projections = 1, force_optimize_projection = 1));
+1
+DROP TABLE test_projection_partitioned_reading;
