@@ -480,14 +480,28 @@ private:
             {
                 try
                 {
-                    auto prev_reader{ReadBufferFromMemory(write_buffer->buffer().begin(), write_buffer->count())};
-                    auto prev_writer = getDisk()->writeFile(new_path);
-                    copyData(prev_reader, *prev_writer);
+                    /// Finalize the write at the current path first so the data is fully persisted
+                    /// to S3. We cannot reconstruct the payload from `write_buffer`'s in-memory
+                    /// buffer because most of the bytes have already been streamed out via
+                    /// multipart upload and are no longer addressable in process memory.
+                    write_buffer->sync();
+                    write_buffer->finalize();
 
-                    prev_writer->sync();
-                    prev_writer->finalize();
+                    auto disk = getDisk();
+                    auto reader = disk->readFile(current_file_description->path, getReadSettings());
+                    auto writer = disk->writeFile(new_path);
+                    copyData(*reader, *writer);
+                    writer->sync();
+                    writer->finalize();
 
-                    write_buffer->cancel();
+                    try
+                    {
+                        disk->removeFile(current_file_description->path);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, fmt::format("Failed to remove S3 changelog at old path {}", current_file_description->path));
+                    }
 
                     current_file_description->path = new_path;
                     current_file_description->to_log_index = *last_index_written;
