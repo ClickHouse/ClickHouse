@@ -986,6 +986,7 @@ struct ContextSharedPart : boost::noncopyable
 
         scope_guard delete_dictionaries_xmls;
         scope_guard delete_user_defined_executable_functions_xmls;
+        scope_guard delete_dynamic_user_defined_executable_functions_xmls;
 
         {
             std::lock_guard lock(clusters_mutex);
@@ -1039,6 +1040,7 @@ struct ContextSharedPart : boost::noncopyable
 
             delete_dictionaries_xmls = std::move(dictionaries_xmls);
             delete_user_defined_executable_functions_xmls = std::move(user_defined_executable_functions_xmls);
+            delete_dynamic_user_defined_executable_functions_xmls = std::move(dynamic_user_defined_executable_functions_xmls);
 
             delete_system_logs = std::move(system_logs);
             delete_embedded_dictionaries = std::move(embedded_dictionaries);
@@ -1088,6 +1090,7 @@ struct ContextSharedPart : boost::noncopyable
         /// but at least they can be preserved for storage termination.
         delete_dictionaries_xmls.reset();
         delete_user_defined_executable_functions_xmls.reset();
+        delete_dynamic_user_defined_executable_functions_xmls.reset();
 
         /// Can be removed without context lock
         delete_system_logs.reset();
@@ -3725,6 +3728,9 @@ void Context::loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::Abstr
 
     if (!dynamic_path.empty())
     {
+        if (!dynamic_path.ends_with('/'))
+            dynamic_path.push_back('/');
+
         std::unordered_set<std::string> dynamic_patterns;
         dynamic_patterns.insert(dynamic_path + "*.xml");
         dynamic_patterns.insert(dynamic_path + "*.yaml");
@@ -3754,7 +3760,7 @@ void Context::loadUserDefinedExecutableFunctionDrivers(const Poco::Util::Abstrac
     auto config_path = getConfigRef().getString("config-file", "config.xml");
     auto config_dir = std::filesystem::path(config_path).parent_path();
 
-    std::vector<Poco::AutoPtr<Poco::Util::AbstractConfiguration>> driver_configs;
+    std::vector<UserDefinedExecutableFunctionDriverRegistry::ConfigWithPath> driver_configs;
     std::set<std::string> resolved_files;
     for (const auto & pattern : patterns_values)
     {
@@ -3786,7 +3792,7 @@ void Context::loadUserDefinedExecutableFunctionDrivers(const Poco::Util::Abstrac
         ConfigProcessor processor(file_path);
         auto loaded = processor.loadConfig();
         processor.savePreprocessedConfig(loaded, app_path);
-        driver_configs.emplace_back(loaded.configuration);
+        driver_configs.emplace_back(loaded.configuration, std::filesystem::path(file_path).parent_path().string());
     }
 
     UserDefinedExecutableFunctionDriverRegistry::instance().loadDriversFromConfigs(driver_configs);

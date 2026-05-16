@@ -2,10 +2,14 @@
 #include <Interpreters/InterpreterCreateFunctionQuery.h>
 
 #include <Access/ContextAccess.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionDriverInvoker.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionDriverRegistry.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedWebAssembly.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
@@ -34,7 +38,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int DIRECTORY_DOESNT_EXIST;
-    extern const int UDF_EXECUTION_FAILED;
+    extern const int FUNCTION_ALREADY_EXISTS;
 }
 
 namespace
@@ -141,6 +145,48 @@ namespace
         return path + escapeForFileName(function_name) + ".d";
     }
 
+    bool shouldRunCreateFunctionWithDriver(
+        const ASTCreateFunctionWithDriverQuery & query,
+        const ContextMutablePtr & current_context,
+        const String & function_name,
+        bool throw_if_exists,
+        bool replace_if_exists)
+    {
+        if (FunctionFactory::instance().hasNameOrAlias(function_name))
+            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The function '{}' already exists", function_name);
+
+        if (AggregateFunctionFactory::instance().hasNameOrAlias(function_name))
+            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function '{}' already exists", function_name);
+
+        auto & storage = current_context->getUserDefinedSQLObjectsStorage();
+        if (storage.has(function_name))
+        {
+            if (throw_if_exists)
+                throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User-defined object '{}' already exists", function_name);
+            return replace_if_exists;
+        }
+
+        if (UserDefinedExecutableFunctionFactory::instance().has(function_name, current_context)) /// NOLINT(readability-static-accessed-through-instance)
+            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined executable function '{}' already exists", function_name);
+
+        if (throw_if_exists && UserDefinedWebAssemblyFunctionFactory::instance().has(function_name)) /// NOLINT(readability-static-accessed-through-instance)
+            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User defined wasm function '{}' already exists", function_name);
+
+        /// This keeps validation of engine arguments and driver availability before any filesystem side effects.
+        const auto driver = UserDefinedExecutableFunctionDriverRegistry::instance().get(query.engine_name);
+        formatEngineArguments(query, *driver);
+
+        return true;
+    }
+
+    void removeDriverArtifacts(const ContextPtr & context, const String & function_name)
+    {
+        std::error_code ec;
+        std::filesystem::remove(driverDynamicConfigPath(context, function_name, ".xml"), ec);
+        std::filesystem::remove(driverDynamicConfigPath(context, function_name, ".yaml"), ec);
+        std::filesystem::remove_all(driverWorkingDirectory(context, function_name), ec);
+    }
+
     /// Run the driver's create_command and write the generated config to disk atomically.
     /// `is_attach_mode` skips the driver invocation when the dynamic config already exists.
     BlockIO executeCreateFunctionWithDriver(
@@ -167,11 +213,6 @@ namespace
 
         if (!(query.is_attach && config_exists))
         {
-            /// Make sure no stale variants from previous attempts confuse the loader.
-            std::error_code ec;
-            std::filesystem::remove(xml_existing, ec);
-            std::filesystem::remove(yaml_existing, ec);
-
             std::filesystem::create_directories(working_dir);
 
             String generated_config;
@@ -189,8 +230,11 @@ namespace
             catch (...)
             {
                 /// Driver failed - leave no half-baked state behind on disk.
-                std::error_code ec_cleanup;
-                std::filesystem::remove_all(working_dir, ec_cleanup);
+                if (!config_exists)
+                {
+                    std::error_code ec_cleanup;
+                    std::filesystem::remove_all(working_dir, ec_cleanup);
+                }
                 throw;
             }
 
@@ -204,6 +248,12 @@ namespace
                 writeString(generated_config, out);
                 out.finalize();
                 std::filesystem::rename(tmp_path, final_path);
+
+                std::error_code ec_cleanup;
+                if (extension == ".xml")
+                    std::filesystem::remove(yaml_existing, ec_cleanup);
+                else
+                    std::filesystem::remove(xml_existing, ec_cleanup);
             }
             catch (...)
             {
@@ -212,18 +262,6 @@ namespace
                 std::filesystem::remove_all(working_dir, ec_cleanup);
                 throw;
             }
-        }
-
-        /// Trigger a reload so the new function is picked up by the executable UDF loader.
-        try
-        {
-            auto & loader = current_context->getExternalUserDefinedExecutableFunctionsLoader();
-            loader.reloadFunction(function_name);
-        }
-        catch (...) // NOLINT(bugprone-empty-catch)
-        {
-            /// Ignore reload errors here - they will be surfaced when the user tries to call the function.
-            tryLogCurrentException("InterpreterCreateFunctionQuery");
         }
 
         return BlockIO();
@@ -297,48 +335,63 @@ static std::optional<BlockIO> tryExecuteWithDriver(const ASTPtr & query_ptr, Con
 
     current_context->checkAccess(access_rights_elements);
 
+    bool throw_if_exists = !create_function_query->if_not_exists && !create_function_query->or_replace;
+    bool replace_if_exists = create_function_query->or_replace;
+    const String function_name = create_function_query->getFunctionName();
+
+    if (!shouldRunCreateFunctionWithDriver(
+            *create_function_query,
+            current_context,
+            function_name,
+            throw_if_exists,
+            replace_if_exists))
+        return BlockIO();
+
     /// 1. Invoke driver, write generated config to dynamic_path.
     executeCreateFunctionWithDriver(*create_function_query, current_context);
 
     /// 2. Persist the SQL AST (in ATTACH form) in user-defined SQL objects storage.
-    auto stored_ast_intrusive = make_intrusive<ASTCreateFunctionWithDriverQuery>(*create_function_query);
-    /// Replace children that were copied by value with deep clones to keep ownership consistent.
-    stored_ast_intrusive->children.clear();
-    stored_ast_intrusive->engine_arguments.clear();
-    stored_ast_intrusive->function_name_ast = create_function_query->function_name_ast->clone();
-    stored_ast_intrusive->children.push_back(stored_ast_intrusive->function_name_ast);
-    if (create_function_query->arguments_ast)
-    {
-        stored_ast_intrusive->arguments_ast = create_function_query->arguments_ast->clone();
-        stored_ast_intrusive->children.push_back(stored_ast_intrusive->arguments_ast);
-    }
-    if (create_function_query->return_type_ast)
-    {
-        stored_ast_intrusive->return_type_ast = create_function_query->return_type_ast->clone();
-        stored_ast_intrusive->children.push_back(stored_ast_intrusive->return_type_ast);
-    }
-    for (const auto & [name, value] : create_function_query->engine_arguments)
-    {
-        auto cloned_value = value->clone();
-        stored_ast_intrusive->children.push_back(cloned_value);
-        stored_ast_intrusive->engine_arguments.emplace_back(name, cloned_value);
-    }
-    stored_ast_intrusive->is_attach = true;
-    stored_ast_intrusive->or_replace = false;
-    stored_ast_intrusive->if_not_exists = false;
-
-    bool throw_if_exists = !create_function_query->if_not_exists && !create_function_query->or_replace;
-    bool replace_if_exists = create_function_query->or_replace;
+    ASTPtr stored_ast = normalizeCreateFunctionQuery(*create_function_query, current_context);
 
     auto & storage = current_context->getUserDefinedSQLObjectsStorage();
-    storage.storeObject(
-        current_context,
-        UserDefinedSQLObjectType::Function,
-        create_function_query->getFunctionName(),
-        ASTPtr(stored_ast_intrusive),
-        throw_if_exists,
-        replace_if_exists,
-        current_context->getSettingsRef());
+    bool stored = false;
+    try
+    {
+        stored = storage.storeObject(
+            current_context,
+            UserDefinedSQLObjectType::Function,
+            function_name,
+            stored_ast,
+            throw_if_exists,
+            replace_if_exists,
+            current_context->getSettingsRef());
+    }
+    catch (...)
+    {
+        removeDriverArtifacts(current_context, function_name);
+        throw;
+    }
+
+    if (!stored)
+    {
+        removeDriverArtifacts(current_context, function_name);
+        return BlockIO();
+    }
+
+    if (replace_if_exists)
+        UserDefinedWebAssemblyFunctionFactory::instance().dropIfExists(function_name);
+
+    /// Trigger a reload so the new function is picked up by the executable UDF loader.
+    try
+    {
+        auto & loader = current_context->getExternalUserDefinedExecutableFunctionsLoader();
+        loader.reloadFunction(function_name);
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// Ignore reload errors here - they will be surfaced when the user tries to call the function.
+        tryLogCurrentException("InterpreterCreateFunctionQuery");
+    }
 
     return BlockIO();
 }

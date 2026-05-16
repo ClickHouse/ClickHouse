@@ -8,6 +8,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
+#include <future>
+
 
 namespace DB
 {
@@ -66,6 +68,43 @@ namespace
 
         return out.str();
     }
+
+    String readPipeToString(ReadBuffer & pipe)
+    {
+        String output;
+        WriteBufferFromString output_buf(output);
+        copyData(pipe, output_buf);
+        output_buf.finalize();
+        return output;
+    }
+
+    struct CommandResult
+    {
+        int retcode = 0;
+        String stdout_output;
+        String stderr_output;
+        std::exception_ptr wait_exception;
+    };
+
+    CommandResult waitAndRead(ShellCommand & process)
+    {
+        auto stdout_future = std::async(std::launch::async, [&process] { return readPipeToString(process.out); });
+        auto stderr_future = std::async(std::launch::async, [&process] { return readPipeToString(process.err); });
+
+        CommandResult result;
+        result.stdout_output = stdout_future.get();
+        result.stderr_output = stderr_future.get();
+        try
+        {
+            result.retcode = process.tryWait();
+        }
+        catch (...)
+        {
+            result.wait_exception = std::current_exception();
+        }
+
+        return result;
+    }
 }
 
 String UserDefinedExecutableFunctionDriverInvoker::runCreateCommand(
@@ -101,44 +140,34 @@ String UserDefinedExecutableFunctionDriverInvoker::runCreateCommand(
     }
     process->in.close();
 
-    String generated_config;
-    WriteBufferFromString generated_config_buf(generated_config);
-    copyData(process->out, generated_config_buf);
-    generated_config_buf.finalize();
-
-    String stderr_output;
-    {
-        WriteBufferFromString stderr_buf(stderr_output);
-        copyData(process->err, stderr_buf);
-        stderr_buf.finalize();
-    }
-
     /// `tryWait` returns the actual exit code without throwing on non-zero codes,
     /// so we can decorate the resulting exception with the full driver stderr.
-    int retcode;
+    CommandResult result;
     try
     {
-        retcode = process->tryWait();
+        result = waitAndRead(*process);
+        if (result.wait_exception)
+            std::rethrow_exception(result.wait_exception);
     }
     catch (Exception & e)
     {
         e.addMessage(fmt::format(
             "while waiting for driver '{}' create_command for function '{}'. Stderr: {}",
-            driver.name, function_name, stderr_output));
+            driver.name, function_name, result.stderr_output));
         throw;
     }
 
-    if (retcode != 0)
+    if (result.retcode != 0)
         throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
             "Driver '{}' create_command for function '{}' exited with code {}. Stderr: {}",
-            driver.name, function_name, retcode, stderr_output);
+            driver.name, function_name, result.retcode, result.stderr_output);
 
-    if (generated_config.empty())
+    if (result.stdout_output.empty())
         throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
             "Driver '{}' produced empty configuration for function '{}'. Stderr: {}",
-            driver.name, function_name, stderr_output);
+            driver.name, function_name, result.stderr_output);
 
-    return generated_config;
+    return result.stdout_output;
 }
 
 void UserDefinedExecutableFunctionDriverInvoker::runDropCommand(
@@ -163,37 +192,25 @@ void UserDefinedExecutableFunctionDriverInvoker::runDropCommand(
     auto process = ShellCommand::execute(config);
     process->in.close();
 
-    String stdout_output;
-    {
-        WriteBufferFromString stdout_buf(stdout_output);
-        copyData(process->out, stdout_buf);
-        stdout_buf.finalize();
-    }
-
-    String stderr_output;
-    {
-        WriteBufferFromString stderr_buf(stderr_output);
-        copyData(process->err, stderr_buf);
-        stderr_buf.finalize();
-    }
-
-    int retcode = -1;
+    CommandResult result;
     try
     {
-        retcode = process->tryWait();
+        result = waitAndRead(*process);
+        if (result.wait_exception)
+            std::rethrow_exception(result.wait_exception);
     }
     catch (...)
     {
         tryLogCurrentException(log,
             fmt::format("while waiting for driver '{}' drop_command for function '{}'. Stderr: {}",
-                driver.name, function_name, stderr_output));
+                driver.name, function_name, result.stderr_output));
         return;
     }
 
-    if (retcode != 0)
+    if (result.retcode != 0)
         throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
             "Driver '{}' drop_command for function '{}' exited with code {}. Stderr: {}",
-            driver.name, function_name, retcode, stderr_output);
+            driver.name, function_name, result.retcode, result.stderr_output);
 }
 
 }

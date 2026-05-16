@@ -23,6 +23,7 @@
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 
 
@@ -337,8 +338,9 @@ void UserDefinedSQLFunctionFactory::reloadDriverBasedFunctions(
         }
 
         /// Both XML and YAML are valid generated configuration formats - either is fine.
-        const bool config_present = std::filesystem::exists(dynamic_dir + name + ".xml")
-            || std::filesystem::exists(dynamic_dir + name + ".yaml");
+        const String escaped_name = escapeForFileName(name);
+        const bool config_present = std::filesystem::exists(dynamic_dir + escaped_name + ".xml")
+            || std::filesystem::exists(dynamic_dir + escaped_name + ".yaml");
         if (config_present)
             continue;
 

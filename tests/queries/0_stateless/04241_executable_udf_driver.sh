@@ -71,6 +71,13 @@ SELECT test_udf_drv_add(40, 2);
 echo "-- dynamic config exists after create"
 test -f "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "yes" || echo "no"
 
+echo "-- if not exists does not invoke driver"
+run "
+CREATE FUNCTION IF NOT EXISTS test_udf_drv_add ARGUMENTS (x UInt8, y UInt8) RETURNS Int64
+    ENGINE = c_function_body() AS 'this is not valid C code';
+SELECT test_udf_drv_add(1, 2);
+"
+
 echo "-- attach-style recreate after config loss"
 rm -rf "$WORK_DIR/dyn/test_udf_drv_add.xml" "$WORK_DIR/dyn/test_udf_drv_add.yaml" "$WORK_DIR/dyn/test_udf_drv_add.d"
 run "SELECT test_udf_drv_add(10, 5);"

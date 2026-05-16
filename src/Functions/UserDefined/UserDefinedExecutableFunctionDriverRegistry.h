@@ -6,6 +6,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <mutex>
+#include <utility>
 #include <unordered_map>
 #include <vector>
 
@@ -22,6 +23,8 @@ namespace DB
 class UserDefinedExecutableFunctionDriverRegistry
 {
 public:
+    using ConfigWithPath = std::pair<Poco::AutoPtr<Poco::Util::AbstractConfiguration>, String>;
+
     static UserDefinedExecutableFunctionDriverRegistry & instance();
 
     UserDefinedExecutableFunctionDriverPtr tryGet(const String & driver_name) const;
@@ -34,7 +37,7 @@ public:
     /// Replaces all currently loaded drivers with definitions parsed from the passed configurations.
     /// Each AbstractConfiguration entry corresponds to one XML/YAML file with the format described
     /// in `UserDefinedExecutableFunctionDriver.h`.
-    void loadDriversFromConfigs(const std::vector<Poco::AutoPtr<Poco::Util::AbstractConfiguration>> & configs);
+    void loadDriversFromConfigs(const std::vector<ConfigWithPath> & configs);
 
 private:
     UserDefinedExecutableFunctionDriverRegistry() = default;

@@ -5,6 +5,8 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <filesystem>
+
 
 namespace DB
 {
@@ -51,7 +53,18 @@ std::vector<String> UserDefinedExecutableFunctionDriverRegistry::getAllRegistere
 
 namespace
 {
-    UserDefinedExecutableFunctionDriverPtr parseDriverFromConfig(const Poco::Util::AbstractConfiguration & config, const String & path_prefix)
+    String resolveCommandPath(const String & command, const String & config_dir)
+    {
+        if (command.empty() || command.starts_with('/'))
+            return command;
+
+        return (std::filesystem::path(config_dir) / command).lexically_normal().string();
+    }
+
+    UserDefinedExecutableFunctionDriverPtr parseDriverFromConfig(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & path_prefix,
+        const String & config_dir)
     {
         auto driver = std::make_shared<UserDefinedExecutableFunctionDriver>();
 
@@ -61,10 +74,10 @@ namespace
 
         if (!config.has(path_prefix + ".create_command"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Driver '{}' is missing required field 'create_command'", driver->name);
-        driver->create_command = config.getString(path_prefix + ".create_command");
+        driver->create_command = resolveCommandPath(config.getString(path_prefix + ".create_command"), config_dir);
 
         if (config.has(path_prefix + ".drop_command"))
-            driver->drop_command = config.getString(path_prefix + ".drop_command");
+            driver->drop_command = resolveCommandPath(config.getString(path_prefix + ".drop_command"), config_dir);
 
         if (config.has(path_prefix + ".engine_arguments"))
         {
@@ -91,13 +104,13 @@ namespace
 }
 
 void UserDefinedExecutableFunctionDriverRegistry::loadDriversFromConfigs(
-    const std::vector<Poco::AutoPtr<Poco::Util::AbstractConfiguration>> & configs)
+    const std::vector<ConfigWithPath> & configs)
 {
     std::unordered_map<String, UserDefinedExecutableFunctionDriverPtr> new_drivers;
 
     auto log = getLogger("UserDefinedExecutableFunctionDriverRegistry");
 
-    for (const auto & config : configs)
+    for (const auto & [config, config_dir] : configs)
     {
         Poco::Util::AbstractConfiguration::Keys top_level_keys;
         config->keys(top_level_keys);
@@ -107,7 +120,7 @@ void UserDefinedExecutableFunctionDriverRegistry::loadDriversFromConfigs(
             if (top_key != "driver" && !top_key.starts_with("driver"))
                 continue;
 
-            auto driver = parseDriverFromConfig(*config, top_key);
+            auto driver = parseDriverFromConfig(*config, top_key, config_dir);
             const String name = driver->name;
             auto [it, inserted] = new_drivers.try_emplace(name, std::move(driver));
             if (!inserted)

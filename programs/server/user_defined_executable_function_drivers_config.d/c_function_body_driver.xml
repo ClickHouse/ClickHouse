@@ -3,20 +3,16 @@
         <!-- Name of the driver as it appears in CREATE FUNCTION ... ENGINE = c_function_body(...) -->
         <name>c_function_body</name>
 
-        <!--
-            create_command is invoked as:
-                <create_command> --name FN --return TYPE --args 'X TYPE, Y TYPE' [--extra1 v1 ...]
-            with the user-provided body on stdin. The driver writes the generated executable UDF
-            configuration (XML or YAML) to stdout.
-        -->
-        <create_command>/home/ubuntu/ClickHouse1/programs/server/user_defined_executable_function_drivers/c_function_body_create.sh</create_command>
+        <!-- The driver receives the function name, return type, argument signature, and body. -->
+        <!-- Relative paths are resolved against this configuration file. -->
+        <create_command>../user_defined_executable_function_drivers/c_function_body_create.sh</create_command>
 
-        <drop_command>/home/ubuntu/ClickHouse1/programs/server/user_defined_executable_function_drivers/c_function_body_drop.sh</drop_command>
+        <drop_command>../user_defined_executable_function_drivers/c_function_body_drop.sh</drop_command>
 
         <!--
             This driver does not declare any additional engine arguments. Arguments declared here
             would appear as e.g. ENGINE = c_function_body(opt_level='2') and would be forwarded to
-            the driver as `--opt_level '2'`.
+            the driver.
         -->
         <!-- <engine_arguments> -->
         <!--     <opt_level><required>false</required></opt_level> -->

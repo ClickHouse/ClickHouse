@@ -2,6 +2,8 @@
 42
 -- dynamic config exists after create
 yes
+-- if not exists does not invoke driver
+3
 -- attach-style recreate after config loss
 15
 -- drop removes everything
