@@ -47,8 +47,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/FailPoint.h>
 
-#include <unordered_set>
-
 
 namespace DB::ErrorCodes
 {
