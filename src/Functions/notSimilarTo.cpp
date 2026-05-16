@@ -39,7 +39,7 @@ notSimilarTo(haystack, pattern)
         )"
     },
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
