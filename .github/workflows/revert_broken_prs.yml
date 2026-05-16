@@ -32,8 +32,8 @@ jobs:
           echo "Looking for broken merge commits on master since $cutoff..."
           echo ""
 
-          # List recent merge commits on master
-          commits_json=$(gh api "repos/$GH_REPO/commits?sha=master&since=$cutoff&per_page=100")
+          # List recent merge commits on master (paginate to cover all commits in the window)
+          commits_json=$(gh api "repos/$GH_REPO/commits?sha=master&since=$cutoff&per_page=100" --paginate --jq '.[]' | jq -s '.')
 
           # Extract merge commits (those with 2 parents) and their SHAs
           merge_shas=$(echo "$commits_json" | jq -r '.[] | select(.parents | length == 2) | .sha')
