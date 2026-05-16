@@ -90,6 +90,21 @@ template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<HashJoin:
 {
     using Type = ColumnsHashing::HashMethodHashed<Value, Mapped, false, use_offset>;
 };
+#define KEYGETTER_RANGE_IMPL(TYPE, FIELD_TYPE) \
+    template <typename Value, typename Mapped> \
+    struct KeyGetterForTypeImpl<HashJoin::Type::TYPE, Value, Mapped> \
+    { \
+        using Type = ColumnsHashing::HashMethodOneNumberInRange<Value, Mapped, FIELD_TYPE, false, use_offset>; \
+    };
+KEYGETTER_RANGE_IMPL(range8_key32, UInt32)
+KEYGETTER_RANGE_IMPL(range16_key32, UInt32)
+KEYGETTER_RANGE_IMPL(range17_key32, UInt32)
+KEYGETTER_RANGE_IMPL(range18_key32, UInt32)
+KEYGETTER_RANGE_IMPL(range8_key64, UInt64)
+KEYGETTER_RANGE_IMPL(range16_key64, UInt64)
+KEYGETTER_RANGE_IMPL(range17_key64, UInt64)
+KEYGETTER_RANGE_IMPL(range18_key64, UInt64)
+#undef KEYGETTER_RANGE_IMPL
 
 template <HashJoin::Type type, typename Data>
 struct KeyGetterForType

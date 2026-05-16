@@ -13,6 +13,8 @@
 #    include <unicode/utypes.h>
 #    include <Common/StringUtils.h>
 
+#    include <algorithm>
+
 namespace DB
 {
 
@@ -61,22 +63,43 @@ struct LowerUpperUTF8Impl
             const auto * src = reinterpret_cast<const char *>(&data[offsets[row_i - 1]]);
             size_t src_size = offsets[row_i] - offsets[row_i - 1];
 
+            /// ICU APIs accept `int32_t` for buffer sizes and return the required output
+            /// length as `int32_t` on `U_BUFFER_OVERFLOW_ERROR`. Unicode full case mapping
+            /// (Unicode `SpecialCasing.txt`, e.g. `U+0390` maps to 3 code points / 6 bytes
+            /// from a 2-byte input) expands UTF-8 output by at most 3x. Reject inputs
+            /// whose worst-case case-mapped output could exceed `INT32_MAX` — the retry
+            /// path could otherwise receive an overflowed `dst_size` and corrupt `res_data`.
+            if (static_cast<int64_t>(src_size) * 3 > INT32_MAX)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "String size {} exceeds the maximum supported length for {}: "
+                    "case mapping could produce output larger than the 2 GiB ICU API limit",
+                    src_size,
+                    upper ? "upperUTF8" : "lowerUTF8");
+
+            /// `res_data` accumulates output for all rows and may exceed `INT32_MAX`. Cap
+            /// the destination capacity passed to ICU; the `U_BUFFER_OVERFLOW_ERROR` retry
+            /// path enlarges `res_data` to fit and the guard above keeps the per-row
+            /// requested length representable as `int32_t`.
+            auto safe_dest_capacity = static_cast<int32_t>(std::min<size_t>(res_data.size() - curr_offset, INT32_MAX));
+            auto safe_src_size = static_cast<int32_t>(src_size);
+
             int32_t dst_size;
             if constexpr (upper)
                 dst_size = ucasemap_utf8ToUpper(
                     case_map,
                     reinterpret_cast<char *>(&res_data[curr_offset]),
-                    static_cast<int32_t>(res_data.size() - curr_offset),
+                    safe_dest_capacity,
                     src,
-                    static_cast<int32_t>(src_size),
+                    safe_src_size,
                     &error_code);
             else
                 dst_size = ucasemap_utf8ToLower(
                     case_map,
                     reinterpret_cast<char *>(&res_data[curr_offset]),
-                    static_cast<int32_t>(res_data.size() - curr_offset),
+                    safe_dest_capacity,
                     src,
-                    static_cast<int32_t>(src_size),
+                    safe_src_size,
                     &error_code);
 
             if (error_code == U_BUFFER_OVERFLOW_ERROR)
@@ -84,22 +107,24 @@ struct LowerUpperUTF8Impl
                 size_t new_size = curr_offset + dst_size;
                 res_data.resize(new_size);
 
+                safe_dest_capacity = static_cast<int32_t>(std::min<size_t>(res_data.size() - curr_offset, INT32_MAX));
+
                 error_code = U_ZERO_ERROR;
                 if constexpr (upper)
                     dst_size = ucasemap_utf8ToUpper(
                         case_map,
                         reinterpret_cast<char *>(&res_data[curr_offset]),
-                        static_cast<int32_t>(res_data.size() - curr_offset),
+                        safe_dest_capacity,
                         src,
-                        static_cast<int32_t>(src_size),
+                        safe_src_size,
                         &error_code);
                 else
                     dst_size = ucasemap_utf8ToLower(
                         case_map,
                         reinterpret_cast<char *>(&res_data[curr_offset]),
-                        static_cast<int32_t>(res_data.size() - curr_offset),
+                        safe_dest_capacity,
                         src,
-                        static_cast<int32_t>(src_size),
+                        safe_src_size,
                         &error_code);
             }
 

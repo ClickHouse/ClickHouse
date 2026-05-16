@@ -29,7 +29,7 @@ public:
         const IMergeTreeReader * main_reader_,
         MergeTreeIndexWithCondition index_,
         NamesAndTypesList columns_,
-        bool can_skip_mark_);
+        MergeTreeIndexGranulePtr index_granule_);
 
     size_t readRows(
         size_t from_mark,
@@ -39,12 +39,15 @@ public:
         size_t offset,
         Columns & res_columns) override;
 
-    bool canSkipMark(size_t mark, size_t current_task_last_mark) override;
     bool canReadIncompleteGranules() const override { return false; }
     void updateAllMarkRanges(const MarkRanges & ranges) override;
-    void prefetchBeginOfRange(Priority priority) override;
+
+    /// Sets a pre-computed granule from the skip index reader (Path 2: use_skip_indexes_on_data_read = 1).
+    /// Looks up its own index name in the map.
+    void setPrecomputedGranule(const IndexGranulesMap & granules);
 
 private:
+    void initializeFallbackReader(const IMergeTreeReader * main_reader);
     void createEmptyColumns(Columns & columns) const;
 
     /// Returns postings for all all tokens required for the given mark.
@@ -71,12 +74,12 @@ private:
     void analyzeTokensCardinality();
     void initializePostingStreams();
     void fillColumn(IColumn & column, const String & column_name, PostingsMap & postings, size_t row_offset, size_t num_rows);
-
-    size_t getNumRowsInGranule(size_t index_mark) const;
     double estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const;
 
+    using TextIndexGranulePtr = std::shared_ptr<const MergeTreeIndexGranuleText>;
+
     MergeTreeIndexWithCondition index;
-    MergeTreeIndexGranulePtr granule;
+    TextIndexGranulePtr granule;
     PostingsBlocksMap postings_blocks;
 
     /// Fallback reader for the physical columns required by the fallback expressions.
@@ -90,18 +93,6 @@ private:
     /// Per-virtual-column flag: true if this column's query was abandoned during the scan
     /// and the predicate must be evaluated directly via fallback_expressions.
     std::vector<bool> use_fallback;
-
-    /// True if the reader is allowed to skip marks.
-    /// Otherwise it only fills virtual columns.
-    bool can_skip_mark;
-    bool is_prefetched = false;
-
-    std::unique_ptr<MergeTreeReaderStream> sparse_index_stream;
-    std::unique_ptr<MergeTreeReaderStream> dictionary_stream;
-
-    /// Stream for small postings that are embedded or has one block.
-    std::unique_ptr<MergeTreeReaderStream> small_postings_stream;
-    /// Streams for large postings that are split into multiple blocks.
     /// A separate stream is created for each token to read
     /// postings blocks continuously without additional seeks.
     absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> large_postings_streams;
@@ -109,11 +100,9 @@ private:
     /// Current row position used when continuing reads across multiple calls.
     size_t current_row = 0;
     size_t current_mark = 0;
-
     PaddedPODArray<UInt32> indices_buffer;
-    roaring::Roaring analyzed_granules;
-    roaring::Roaring may_be_true_granules;
 
+    bool is_initialized = false;
     /// Virtual columns that are always true.
     std::vector<bool> is_always_true;
     /// Tokens that are useful for analysis and filling virtual columns.
