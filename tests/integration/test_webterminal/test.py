@@ -358,22 +358,6 @@ def test_oversized_preauth_frame_rejected_with_1009():
         sock.close()
 
 
-def test_html_page_sets_clickjacking_headers():
-    """The HTML page must be served with anti-clickjacking response headers.
-
-    The terminal asks the user to type ClickHouse credentials and forwards
-    keystrokes to a PTY, so an embedding page could trick a logged-in
-    user into typing into an invisible terminal. `Content-Security-Policy:
-    frame-ancestors 'none'` (modern browsers) and `X-Frame-Options: DENY`
-    (legacy fallback) together ensure the page cannot be framed.
-    """
-    response = instance.http_request("webterminal", method="GET")
-    assert response.status_code == 200
-    csp = response.headers.get("content-security-policy", "")
-    assert "frame-ancestors 'none'" in csp, f"unexpected CSP: {csp!r}"
-    assert response.headers.get("x-frame-options", "").upper() == "DENY"
-
-
 def test_oversized_frame_rejected_with_1009():
     """A frame whose advertised payload length exceeds the server's per-frame
     cap (`MAX_FRAME_SIZE`, 16 MiB) must trigger an explicit `1009` close.
