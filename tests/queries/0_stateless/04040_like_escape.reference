@@ -29,3 +29,7 @@
 10%
 SELECT x LIKE \'abc\' ESCAPE \'|\'
 SELECT x NOT ILIKE \'abc\' ESCAPE \'#\'
+1
+1
+1
+1

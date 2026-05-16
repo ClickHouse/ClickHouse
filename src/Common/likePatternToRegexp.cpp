@@ -120,6 +120,15 @@ String likePatternWithCustomEscapeToLikePattern(std::string_view pattern, char e
                 else
                     res += *pos;
             }
+            else if (escape_char == '\\')
+            {
+                /// Preserve legacy LIKE behavior for the default backslash escape: an unknown
+                /// escape sequence is kept as literal backslash + the next character, matching
+                /// `likePatternToRegexp` and ensuring that `LIKE p` and `LIKE p ESCAPE '\\'`
+                /// stay equivalent for users who only explicitly state the default escape.
+                res += '\\';
+                res += *pos;
+            }
             else
             {
                 throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE,

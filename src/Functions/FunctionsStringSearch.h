@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/MatchImpl.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Common/likePatternToRegexp.h>
@@ -87,12 +86,14 @@ enum class HaystackNeedleOrderIsConfigurable : uint8_t
     Yes     /// depending on a setting, the function arguments are (haystack, needle[, position]) or (needle, haystack[, position])
 };
 
-/// Detects whether Impl is `MatchImpl` instantiated with `MatchTraits::Syntax::Like`.
-template <typename T>
+/// Detects whether `Impl` is a LIKE-style search implementation that supports the ESCAPE clause.
+/// Uses a trait detection on `Impl::is_like` rather than a partial specialization on `MatchImpl`,
+/// so this header does not need to pull in the heavy `MatchImpl` machinery.
+template <typename T, typename = void>
 struct ImplIsLike : std::false_type {};
 
-template <typename Name, MatchTraits::Case case_, MatchTraits::Result result_>
-struct ImplIsLike<MatchImpl<Name, MatchTraits::Syntax::Like, case_, result_>> : std::true_type {};
+template <typename T>
+struct ImplIsLike<T, std::void_t<decltype(T::is_like)>> : std::bool_constant<T::is_like> {};
 
 template <typename Impl,
          ExecutionErrorPolicy execution_error_policy = ExecutionErrorPolicy::Throw,
@@ -223,10 +224,10 @@ public:
                         "The ESCAPE argument of function {} must be constant",
                         getName());
                 const String escape_str = col_escape->getValue<String>();
-                if (escape_str.size() != 1)
+                if (escape_str.size() != 1 || static_cast<unsigned char>(escape_str[0]) > 0x7F)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "The ESCAPE argument of function {} must be a single character, got '{}'",
+                        "The ESCAPE argument of function {} must be a single ASCII character, got '{}'",
                         getName(), escape_str);
                 char escape_char = escape_str[0];
 

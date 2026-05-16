@@ -74,3 +74,13 @@ SELECT '10%' LIKE '10|%' ESCAPE ''; -- { serverError BAD_ARGUMENTS }
 
 -- Error: multi-character escape string
 SELECT '10%' LIKE '10|%' ESCAPE '||'; -- { serverError BAD_ARGUMENTS }
+
+-- Error: non-ASCII single-byte escape character (e.g. binary 0xFF)
+SELECT '10%' LIKE '10|%' ESCAPE unhex('FF'); -- { serverError BAD_ARGUMENTS }
+
+-- ESCAPE '\\' must stay equivalent to default LIKE: unknown escape sequences are kept literal,
+-- not rejected. Compare to plain LIKE for the same patterns.
+SELECT 'a\\b' LIKE 'a\\b';
+SELECT 'a\\b' LIKE 'a\\b' ESCAPE '\\';
+SELECT 'a_b' LIKE 'a\_b';
+SELECT 'a_b' LIKE 'a\_b' ESCAPE '\\';
