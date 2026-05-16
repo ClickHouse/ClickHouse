@@ -1,9 +1,39 @@
-UTF-8 BOM Test:
+CSV UTF-8 BOM:
 1	Alice
 2	Bob
-UTF-16 LE BOM Test:
+CSV UTF-16 LE BOM:
 1	Alice
 2	Bob
-UTF-16 BE BOM Test:
+CSV UTF-16 BE BOM:
+1	Alice
+2	Bob
+CSV UTF-32 LE BOM:
+1	Alice
+2	Bob
+CSV UTF-32 BE BOM:
+1	Alice
+2	Bob
+TSV UTF-16 LE BOM:
+1	Alice
+2	Bob
+TSV UTF-16 BE BOM:
+1	Alice
+2	Bob
+TSV UTF-32 LE BOM:
+1	Alice
+2	Bob
+TSV UTF-32 BE BOM:
+1	Alice
+2	Bob
+JSONEachRow UTF-16 LE BOM:
+1	Alice
+2	Bob
+JSONEachRow UTF-16 BE BOM:
+1	Alice
+2	Bob
+JSONEachRow UTF-32 LE BOM:
+1	Alice
+2	Bob
+JSONEachRow UTF-32 BE BOM:
 1	Alice
 2	Bob
