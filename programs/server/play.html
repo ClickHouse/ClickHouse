@@ -4237,18 +4237,16 @@ async function updateQueryParams()
     }
 }
 
-let paramDebounceTimer = null;
 query_area.addEventListener('input', () =>
 {
-    /// Debounce briefly: bursts of input events (e.g. holding down a key, or
-    /// pasting the same query many times) would otherwise re-tokenize and
-    /// re-render the backdrop on every event and cause visible input lag for
-    /// large queries. 10 ms is short enough that the gap between the textarea
-    /// catching the new text (invisible while `.has-backdrop` is on) and the
-    /// backdrop catching up is imperceptible, but long enough to coalesce a
-    /// fast paste burst into a single update.
-    clearTimeout(paramDebounceTimer);
-    paramDebounceTimer = setTimeout(updateQueryParams, 10);
+    /// Run the update synchronously instead of with a setTimeout: the heavy work
+    /// (WASM tokenize, building backdrop HTML) is fast, and the await chain inside
+    /// `updateQueryParams` runs in microtasks — i.e. it finishes before the browser
+    /// paints the next frame. If we deferred this with `setTimeout`, the browser
+    /// would render one frame with the textarea's own text hidden (`color:
+    /// transparent` from `.has-backdrop`) and the backdrop still showing the
+    /// pre-edit contents, so the freshly typed characters would be invisible.
+    updateQueryParams();
 });
 
 function setColorTheme(new_theme, update_preference) {
