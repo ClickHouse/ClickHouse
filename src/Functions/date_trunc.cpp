@@ -5,9 +5,12 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -34,15 +37,74 @@ class FunctionDateTrunc : public IFunction
 public:
     static constexpr auto name = "dateTrunc";
 
-    explicit FunctionDateTrunc(ContextPtr context_) : context(context_) {}
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDateTrunc>(context); }
+    FunctionDateTrunc(FunctionOverloadResolverPtr to_start_of_interval_, IntervalKind::Kind datepart_kind_)
+        : to_start_of_interval(to_start_of_interval_), datepart_kind(datepart_kind_) {}
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
+    {
+        /// Not called through the overload resolver path.
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} should only be used through the overload resolver", getName());
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        ColumnsWithTypeAndName temp_columns(arguments.size());
+        temp_columns[0] = arguments[1];
+
+        const UInt16 interval_value = 1;
+        const ColumnPtr interval_column = ColumnConst::create(ColumnInt64::create(1, interval_value), input_rows_count);
+        temp_columns[1] = {interval_column, std::make_shared<DataTypeInterval>(datepart_kind), ""};
+
+        if (arguments.size() == 2)
+            return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count, /* dry_run = */ false);
+
+        temp_columns[2] = arguments[2];
+        return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count, /* dry_run = */ false);
+    }
+
+    bool hasInformationAboutMonotonicity() const override
+    {
+        return true;
+    }
+
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
+    {
+        return { .is_monotonic = true, .is_always_monotonic = true };
+    }
+
+private:
+    FunctionOverloadResolverPtr to_start_of_interval;
+    IntervalKind::Kind datepart_kind;
+};
+
+
+class FunctionDateTruncOverloadResolver : public IFunctionOverloadResolver
+{
+public:
+    static constexpr auto name = "dateTrunc";
+
+    explicit FunctionDateTruncOverloadResolver(ContextPtr context)
+        : to_start_of_interval(FunctionFactory::instance().get("toStartOfInterval", context))
+        , function_date_trunc_return_type_behavior(context->getSettingsRef()[Setting::function_date_trunc_return_type_behavior])
+    {
+    }
+
+    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<FunctionDateTruncOverloadResolver>(context); }
+
+    String getName() const override { return name; }
+
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -56,6 +118,8 @@ public:
             DateTime64,
         };
         ResultType result_type;
+
+        IntervalKind::Kind datepart_kind;
 
         String datepart_param;
         auto check_first_argument = [&] {
@@ -97,7 +161,7 @@ public:
             /// If we have a DateTime64 or Date32 as an input, it can be negative.
             /// In this case, we should provide the corresponding return type, which supports negative values.
             /// For compatibility, we do it under a setting.
-            if ((isDateTime64(arguments[1].type) || isDate32(arguments[1].type)) && context->getSettingsRef()[Setting::function_date_trunc_return_type_behavior] == 0)
+            if ((isDateTime64(arguments[1].type) || isDate32(arguments[1].type)) && function_date_trunc_return_type_behavior == 0)
             {
                 if (result_type == ResultType::Date)
                     result_type = Date32;
@@ -154,40 +218,37 @@ public:
         return std::make_shared<DataTypeDateTime64>(scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 1, false));
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 2}; }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        ColumnsWithTypeAndName temp_columns(arguments.size());
-        temp_columns[0] = arguments[1];
+        /// buildImpl receives original arguments which may still have Nullable and/or LowCardinality wrappers.
+        auto args = createBlockWithNestedColumns(arguments);
+        for (auto & arg : args)
+        {
+            arg.type = recursiveRemoveLowCardinality(arg.type);
+            arg.column = recursiveRemoveLowCardinality(arg.column);
+        }
+        const ColumnConst * datepart_column = checkAndGetColumnConst<ColumnString>(args[0].column.get());
+        if (!datepart_column)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be constant string: "
+                "name of datepart", getName());
 
-        const UInt16 interval_value = 1;
-        const ColumnPtr interval_column = ColumnConst::create(ColumnInt64::create(1, interval_value), input_rows_count);
-        temp_columns[1] = {interval_column, std::make_shared<DataTypeInterval>(datepart_kind), ""};
+        String datepart_param = Poco::toLower(datepart_column->getValue<String>());
+        IntervalKind::Kind datepart_kind;
+        if (!IntervalKind::tryParseString(datepart_param, datepart_kind))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like datepart name in {}", datepart_param, getName());
 
-        auto to_start_of_interval = FunctionFactory::instance().get("toStartOfInterval", context);
+        auto function = std::make_shared<FunctionDateTrunc>(to_start_of_interval, datepart_kind);
 
-        if (arguments.size() == 2)
-            return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count, /* dry_run = */ false);
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
 
-        temp_columns[2] = arguments[2];
-        return to_start_of_interval->build(temp_columns)->execute(temp_columns, result_type, input_rows_count, /* dry_run = */ false);
-    }
-
-    bool hasInformationAboutMonotonicity() const override
-    {
-        return true;
-    }
-
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
-    {
-        return { .is_monotonic = true, .is_always_monotonic = true };
+        return std::make_unique<FunctionToFunctionBaseAdaptor>(function, data_types, return_type);
     }
 
 private:
-    ContextPtr context;
-    mutable IntervalKind::Kind datepart_kind = IntervalKind::Kind::Second;
+    FunctionOverloadResolverPtr to_start_of_interval;
+    UInt64 function_date_trunc_return_type_behavior;
 };
 
 }
@@ -242,7 +303,7 @@ SELECT now(), dateTrunc('hour', now(), 'Asia/Istanbul');
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionDateTrunc>(documentation);
+    factory.registerFunction<FunctionDateTruncOverloadResolver>(documentation);
 
     /// Compatibility alias.
     factory.registerAlias("DATE_TRUNC", "dateTrunc", FunctionFactory::Case::Insensitive);

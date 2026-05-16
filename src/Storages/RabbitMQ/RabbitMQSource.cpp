@@ -24,7 +24,7 @@ static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_sna
     auto all_columns_header = storage_snapshot->metadata->getSampleBlock();
 
     auto non_virtual_header = storage_snapshot->metadata->getSampleBlockNonMaterialized();
-    auto virtual_header = storage_snapshot->virtual_columns->getSampleBlock();
+    auto virtual_header = storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
 
     for (const auto & column_name : column_names)
     {
@@ -227,7 +227,22 @@ Chunk RabbitMQSource::generateImpl()
             /// A buffer containing a single RabbitMQ message.
             if (auto buf = consumer->consume())
             {
-                new_rows = executor.execute(*buf);
+                try
+                {
+                    new_rows = executor.execute(*buf);
+                }
+                catch (...)
+                {
+                    /// The message was already dequeued by `consume`. Record its
+                    /// delivery tag so that `nackMessages` in `tryStreamToViews`
+                    /// can properly reject it. Without this, the tag is lost and
+                    /// the message stays unacked in RabbitMQ forever.
+                    /// See https://github.com/ClickHouse/ClickHouse/issues/73541
+                    const auto & message = consumer->currentMessage();
+                    commit_info.channel_id = message.channel_id;
+                    commit_info.delivery_tag = std::max(commit_info.delivery_tag, message.delivery_tag);
+                    throw;
+                }
             }
         }
 
