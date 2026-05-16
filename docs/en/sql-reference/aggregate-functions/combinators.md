@@ -326,11 +326,12 @@ FROM people
 Lets you divide data into buckets by the first argument (the x-axis key) and apply an aggregate function independently to values in each bucket. The per-bucket results are rendered as a Unicode sparkbar string. The nested aggregate function must return a numeric type (`Int*`, `UInt*`, `Float*`, or `Decimal`).
 
 ```sql
-<aggFunction>Sparkbar(width, min_x, max_x)(x, <aggFunction_params>)
+<aggFunction>Sparkbar([<aggFunction_params>,] width, min_x, max_x)(x, <aggFunction_args>)
 ```
 
 **Parameters**
 
+- `aggFunction_params` (optional) — Parameters forwarded to the nested aggregate function (e.g. the quantile level in `quantileSparkbar(0.9, width, min_x, max_x)(x, value)`). Place them before `width`.
 - `width` — Number of buckets. Must be in the range `[2, 1024]`.
 - `min_x` — Start of the x-axis range (inclusive).
 - `max_x` — End of the x-axis range (inclusive). Must be strictly greater than `min_x`.
@@ -338,7 +339,7 @@ Lets you divide data into buckets by the first argument (the x-axis key) and app
 **Arguments**
 
 - `x` — The x-axis column used to determine the bucket for each row. Supported types: `UInt8`–`UInt64`, `Int8`–`Int64`, `Date`, `Date32`, `DateTime`, `DateTime64`, `Enum`, `Interval`.
-- `aggFunction_params` — Arguments forwarded to the nested aggregate function (all arguments except `x`).
+- `aggFunction_args` — Arguments forwarded to the nested aggregate function (all arguments except `x`).
 
 **Returned value**
 

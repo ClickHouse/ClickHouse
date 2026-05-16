@@ -72,9 +72,16 @@ SELECT countSparkbar(5, toDateTime64('2024-01-01 00:00:00', 3), toDateTime64('20
     toDateTime64('2024-01-01 00:00:00', 6) + INTERVAL (number) DAY
 ) FROM numbers(5);
 
--- Error: wrong number of parameters
-SELECT countSparkbar(5, 0, 9, 1)(number) FROM numbers(10); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+-- Parametric nested aggregate: leading params are forwarded to the nested function,
+-- the last 3 are consumed by the combinator (width, begin_x, end_x).
+SELECT 'quantileSparkbar with range:';
+SELECT quantileSparkbar(0.9, 5, 0, 4)(number % 5, number) FROM numbers(20);
+
+-- Error: too few parameters
 SELECT countSparkbar(5, 0)(number) FROM numbers(10); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+-- Error: extra parameters forwarded to a nested function that takes no parameters
+SELECT countSparkbar(5, 0, 9, 1)(number) FROM numbers(10); -- { serverError AGGREGATE_FUNCTION_DOESNT_ALLOW_PARAMETERS }
 
 -- Error: width out of range
 SELECT countSparkbar(1, 0, 9)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }

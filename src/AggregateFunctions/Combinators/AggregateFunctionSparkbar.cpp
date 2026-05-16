@@ -37,14 +37,16 @@ public:
 
     Array transformParameters(const Array & params) const override
     {
-        if (params.size() != 3)
+        if (params.size() < 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Aggregate function with {} suffix requires exactly 3 parameters: "
-                "(width, begin_x, end_x), got {}",
+                "Aggregate function with {} suffix requires at least 3 parameters: "
+                "(..., width, begin_x, end_x), got {}",
                 getName(), params.size());
 
-        /// All parameters are consumed by the combinator; the nested function receives none.
-        return Array{};
+        /// The last 3 parameters (width, begin_x, end_x) are consumed by the combinator;
+        /// any leading parameters are forwarded to the nested function (e.g. the quantile
+        /// level in `quantileSparkbar(0.9, width, begin_x, end_x)`).
+        return Array(params.begin(), params.end() - 3);
     }
 
     AggregateFunctionPtr transformAggregateFunction(
@@ -59,13 +61,16 @@ public:
                 "At least one argument (bucket key) is required",
                 getName());
 
-        if (params.size() != 3)
+        if (params.size() < 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Aggregate function with {} suffix requires exactly 3 parameters: "
-                "(width, begin_x, end_x), got {}",
+                "Aggregate function with {} suffix requires at least 3 parameters: "
+                "(..., width, begin_x, end_x), got {}",
                 getName(), params.size());
 
-        const size_t width = params[0].safeGet<UInt64>();
+        /// The last 3 parameters belong to the combinator; the rest are the nested function's
+        /// own parameters and are kept in `params` for the nested function's state.
+        const size_t n = params.size();
+        const size_t width = params[n - 3].safeGet<UInt64>();
 
         /// Validate that the nested function returns a numeric type that can be
         /// converted to Float64 for sparkbar rendering. Non-numeric return types
@@ -85,8 +90,8 @@ public:
 
         if (which.isNativeUInt() || which.isDate() || which.isDateTime())
         {
-            const UInt64 begin_x = params[1].safeGet<UInt64>();
-            const UInt64 end_x   = params[2].safeGet<UInt64>();
+            const UInt64 begin_x = params[n - 2].safeGet<UInt64>();
+            const UInt64 end_x   = params[n - 1].safeGet<UInt64>();
 
             return std::make_shared<AggregateFunctionSparkbar<UInt64>>(
                 nested_function, width, begin_x, end_x, arguments, params);
@@ -110,14 +115,14 @@ public:
                 return ticks / static_cast<Int64>(DecimalUtils::scaleMultiplier<Int64>(param_scale - col_scale));
             };
             return std::make_shared<AggregateFunctionSparkbar<Int64>>(
-                nested_function, width, extract(params[1]), extract(params[2]), arguments, params);
+                nested_function, width, extract(params[n - 2]), extract(params[n - 1]), arguments, params);
         }
 
         if (which.isDate32())
         {
             Int64 tmp;
-            const Int32 begin_x = params[1].tryGet<Int64>(tmp) ? static_cast<Int32>(tmp) : static_cast<Int32>(params[1].safeGet<UInt64>());
-            const Int32 end_x   = params[2].tryGet<Int64>(tmp) ? static_cast<Int32>(tmp) : static_cast<Int32>(params[2].safeGet<UInt64>());
+            const Int32 begin_x = params[n - 2].tryGet<Int64>(tmp) ? static_cast<Int32>(tmp) : static_cast<Int32>(params[n - 2].safeGet<UInt64>());
+            const Int32 end_x   = params[n - 1].tryGet<Int64>(tmp) ? static_cast<Int32>(tmp) : static_cast<Int32>(params[n - 1].safeGet<UInt64>());
 
             return std::make_shared<AggregateFunctionSparkbar<Int32>>(
                 nested_function, width, begin_x, end_x, arguments, params);
@@ -126,8 +131,8 @@ public:
         if (which.isNativeInt() || which.isEnum() || which.isInterval())
         {
             Int64 tmp;
-            const Int64 begin_x = params[1].tryGet<Int64>(tmp) ? tmp : static_cast<Int64>(params[1].safeGet<UInt64>());
-            const Int64 end_x   = params[2].tryGet<Int64>(tmp) ? tmp : static_cast<Int64>(params[2].safeGet<UInt64>());
+            const Int64 begin_x = params[n - 2].tryGet<Int64>(tmp) ? tmp : static_cast<Int64>(params[n - 2].safeGet<UInt64>());
+            const Int64 end_x   = params[n - 1].tryGet<Int64>(tmp) ? tmp : static_cast<Int64>(params[n - 1].safeGet<UInt64>());
 
             return std::make_shared<AggregateFunctionSparkbar<Int64>>(
                 nested_function, width, begin_x, end_x, arguments, params);
