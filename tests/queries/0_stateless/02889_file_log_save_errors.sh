@@ -31,16 +31,20 @@ function count()
 	echo $COUNT
 }
 
-# Wait for all 6 error records with a bounded timeout.
+# Wait for at least 6 error records with a bounded timeout.
 # Reduced from 20 to 6 errors (3 per file) so the FileLog background thread
 # can finish quickly even under TSAN/MSAN overhead. Normal runtime is ~14s;
 # the 300s ceiling provides headroom for the slowest random settings the
 # flaky check explores while still preventing an unbounded hang.
+# Use a lower-bound check (`-lt`) instead of exact equality: if `log_errors`
+# ever overshoots 6 (e.g. duplicate read by the FileLog background thread),
+# the final `SELECT` below will fail fast on the reference comparison
+# instead of spinning until the timeout.
 TIMEOUT=300
 START=$EPOCHSECONDS
-while [[ $(count) != 6 ]]; do
+while [[ $(count) -lt 6 ]]; do
 	if ((EPOCHSECONDS - START > TIMEOUT)); then
-		echo "Timeout (${TIMEOUT}s) waiting for 6 error records in log_errors. Got $(count)."
+		echo "Timeout (${TIMEOUT}s) waiting for at least 6 error records in log_errors. Got $(count)."
 		${CLICKHOUSE_CLIENT} --query "drop table file_log;"
 		${CLICKHOUSE_CLIENT} --query "drop table log_errors;"
 		rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}
