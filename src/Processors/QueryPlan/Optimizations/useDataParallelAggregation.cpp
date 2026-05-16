@@ -93,22 +93,22 @@ bool isPartitionKeyFunctionOfKeys(const ReadFromMergeTree & reading, const Actio
 namespace DB::QueryPlanOptimizations
 {
 
-size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings & /*settings*/)
+void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & /*optimization_settings*/)
 {
-    if (!node || node->children.size() != 1)
-        return 0;
+    if (node.children.size() != 1)
+        return;
 
-    auto * aggregating_step = typeid_cast<AggregatingStep *>(node->step.get());
+    auto * aggregating_step = typeid_cast<AggregatingStep *>(node.step.get());
     if (!aggregating_step)
-        return 0;
+        return;
 
     if (aggregating_step->isGroupingSets())
-        return 0;
+        return;
 
-    const auto * expression_node = node->children.front();
+    const auto * expression_node = node.children.front();
     const auto * expression_step = typeid_cast<const ExpressionStep *>(expression_node->step.get());
     if (!expression_step)
-        return 0;
+        return;
 
     auto * maybe_reading_step = expression_node->children.front()->step.get();
 
@@ -116,13 +116,13 @@ size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::No
     {
         const auto * filter_node = expression_node->children.front();
         if (filter_node->children.size() != 1 || !filter_node->children.front()->step)
-            return 0;
+            return;
         maybe_reading_step = filter_node->children.front()->step.get();
     }
 
     auto * reading = typeid_cast<ReadFromMergeTree *>(maybe_reading_step);
     if (!reading)
-        return 0;
+        return;
 
     if (!reading->willOutputEachPartitionThroughSeparatePort()
         && isPartitionKeyFunctionOfKeys(*reading, expression_step->getExpression(), aggregating_step->getParams().keys))
@@ -130,34 +130,30 @@ size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::No
         if (reading->requestOutputEachPartitionThroughSeparatePortForAggregation())
             aggregating_step->skipMerging();
     }
-
-    return 0;
 }
 
-size_t tryLimitByPartitionsIndependently(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings & /*settings*/)
+void optimizeLimitByPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & /*optimization_settings*/)
 {
-    if (!node || node->children.size() != 1)
-        return 0;
+    if (node.children.size() != 1)
+        return;
 
-    auto * limit_by_step = typeid_cast<LimitByStep *>(node->step.get());
+    auto * limit_by_step = typeid_cast<LimitByStep *>(node.step.get());
     if (!limit_by_step)
-        return 0;
+        return;
 
-    auto * reading = findReadingStep(*node->children.front());
+    auto * reading = findReadingStep(*node.children.front());
     if (!reading)
-        return 0;
+        return;
 
     std::optional<ActionsDAG> dag;
-    buildKeyDAG(*node->children.front(), dag);
+    buildKeyDAG(*node.children.front(), dag);
     if (!dag)
-        return 0;
+        return;
 
     if (!reading->willOutputEachPartitionThroughSeparatePort() && isPartitionKeyFunctionOfKeys(*reading, *dag, limit_by_step->getColumns()))
     {
         if (reading->requestOutputEachPartitionThroughSeparatePortForLimitBy())
             limit_by_step->skipStreamMerging();
     }
-
-    return 0;
 }
 }

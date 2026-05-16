@@ -27,7 +27,7 @@ public:
     void applyOrder(SortDescription sort_desc);
 
     /// Skip the resize-to-one-stream and run one `LimitByTransform` per input stream.
-    /// Set by `tryLimitByPartitionsIndependently`; assumes upstream streams carry disjoint
+    /// Set by `optimizeLimitByPerPartition`; assumes upstream streams carry disjoint
     /// partition sets so no `LIMIT BY` group spans two streams.
     void skipStreamMerging() { skip_stream_merging = true; }
 
