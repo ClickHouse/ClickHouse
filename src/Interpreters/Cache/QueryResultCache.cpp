@@ -414,8 +414,8 @@ static constexpr auto * token_tag = "query_tag: ";
 void QueryResultCache::Key::serialize(WriteBuffer & buf) const
 {
     writeText(token_user_id, buf);
-    UUID user_id_ = user_id ? *user_id : UUIDHelpers::Nil;
-    writeUUIDText(user_id_, buf);
+    UUID uid = user_id ? *user_id : UUIDHelpers::Nil;
+    writeUUIDText(uid, buf);
     writeText("\n", buf);
 
     writeText(token_current_user_roles, buf);
@@ -455,23 +455,23 @@ void QueryResultCache::Key::serialize(WriteBuffer & buf) const
 void QueryResultCache::Key::deserialize(ReadBuffer & buf)
 {
     assertString(token_user_id, buf);
-    UUID user_id_;
-    readUUIDText(user_id_, buf);
-    if (user_id_ != UUIDHelpers::Nil)
-        user_id = user_id_;
+    UUID uid;
+    readUUIDText(uid, buf);
+    if (uid != UUIDHelpers::Nil)
+        user_id = uid;
 
     assertChar('\n', buf);
     assertString(token_current_user_roles, buf);
-    std::vector<UUID> current_user_roles_;
+    std::vector<UUID> roles;
     while (!checkChar('\n', buf))
     {
         UUID user_role;
         readUUIDText(user_role, buf);
-        current_user_roles_.push_back(user_role);
+        roles.push_back(user_role);
         assertChar(',', buf);
     }
-    if (!current_user_roles_.empty())
-        current_user_roles = current_user_roles_;
+    if (!roles.empty())
+        current_user_roles = roles;
 
     assertString(token_is_shared, buf);
     readBoolText(is_shared, buf);
@@ -785,9 +785,12 @@ QueryResultCacheReader::QueryResultCacheReader(QueryResultCachePtr cache_, const
 
     if (!entry.has_value() && enable_reads_from_query_cache_disk)
     {
-        entry = cache_->readFromDisk(key);
-        if (entry.has_value())
+        auto disk_entry = cache_->readFromDisk(key);
+        if (disk_entry.has_value())
+        {
             ProfileEvents::increment(ProfileEvents::QueryCacheDiskHits);
+            entry.emplace(std::move(*disk_entry));
+        }
         else
             ProfileEvents::increment(ProfileEvents::QueryCacheDiskMisses);
     }
@@ -809,25 +812,20 @@ QueryResultCacheReader::QueryResultCacheReader(QueryResultCachePtr cache_, const
     LOG_TRACE(logger, "Query result found for query {}", doubleQuoteString(key.query_string));
 }
 
-bool QueryResultCacheReader::hasCacheEntryForKey(bool update_profile_events) const
+bool QueryResultCacheReader::hasCacheEntryForKey() const
 {
-    bool has_entry = (source_from_chunks != nullptr);
-
-
-
-    return has_entry;
+    return source_from_chunks != nullptr;
 }
-
 
 std::chrono::time_point<std::chrono::system_clock> QueryResultCacheReader::entryCreatedAt()
 {
-    chassert(hasCacheEntryForKey(false));
+    chassert(hasCacheEntryForKey());
     return created_at;
 }
 
 std::chrono::time_point<std::chrono::system_clock> QueryResultCacheReader::entryExpiresAt()
 {
-    chassert(hasCacheEntryForKey(false));
+    chassert(hasCacheEntryForKey());
     return expires_at;
 }
 
@@ -953,8 +951,9 @@ void QueryResultCache::writeDisk(const Key & key, const QueryResultCache::Cache:
                 if (!shutdown)
                     disk->removeRecursive(entry_path);
             }
-            catch (...) // NOLINT(bugprone-empty-catch)
+            catch (...)
             {
+                tryLogCurrentException(logger, "Failed to remove query result cache entry from disk");
             }
             delete e;
         }
@@ -1062,8 +1061,9 @@ std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromDisk
         memory_cache.set(key, entry_);
         return {{disk_entry->key, entry_}};
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (...)
     {
+        tryLogCurrentException(logger, "Failed to read query result cache entry from disk");
     }
     return std::nullopt;
 }
@@ -1141,7 +1141,7 @@ std::tuple<Block, QueryResultCache::Cache::MappedPtr, QueryResultCache::DiskCach
     }
 
     auto totals_path = key_path / "totals.bin";
-    if (auto in = disk->readFileIfExists(totals_path))
+    if (auto in = disk->readFileIfExists(totals_path, {}))
     {
         auto compress_in = std::make_shared<CompressedReadBuffer>(*in);
         NativeReader reader(*compress_in, 0);
@@ -1152,7 +1152,7 @@ std::tuple<Block, QueryResultCache::Cache::MappedPtr, QueryResultCache::DiskCach
     }
 
     auto extremes_path = key_path / "extremes.bin";
-    if (auto in = disk->readFileIfExists(extremes_path))
+    if (auto in = disk->readFileIfExists(extremes_path, {}))
     {
         auto compress_in = std::make_shared<CompressedReadBuffer>(*in);
         NativeReader reader(*compress_in, 0);
@@ -1217,7 +1217,7 @@ void QueryResultCache::loadEntrysFromDisk()
             }
 
             /// When the EntryOnDisk is released, the disk file is also deleted.
-            auto disk_entry= std::shared_ptr<DiskEntry>(
+            auto disk_entry = std::shared_ptr<DiskEntry>(
                 new DiskEntry,
                 [this, entry_path](DiskEntry * e)
                 {
@@ -1226,8 +1226,9 @@ void QueryResultCache::loadEntrysFromDisk()
                         if (!shutdown)
                             disk->removeRecursive(entry_path);
                     }
-                    catch (...) // NOLINT(bugprone-empty-catch)
+                    catch (...)
                     {
+                        tryLogCurrentException(logger, "Failed to remove query result cache entry from disk");
                     }
                     delete e;
                 });
@@ -1247,11 +1248,13 @@ void QueryResultCache::loadEntrysFromDisk()
 
     for (const auto & entry_path : expired_entrys)
     {
-        try {
+        try
+        {
             disk->removeRecursive(entry_path);
         }
-        catch (...) // NOLINT(bugprone-empty-catch)
+        catch (...)
         {
+            tryLogCurrentException(logger, "Failed to remove expired query result cache entry from disk");
         }
     }
     LOG_INFO(logger, "Loading entries from disk, {} succeeded and {} failed.", disk_cache.count(), expired_entrys.size());
@@ -1316,7 +1319,7 @@ void QueryResultCache::clear(const std::optional<String> & type, const std::opti
 
 size_t QueryResultCache::maxSizeInBytes() const
 {
-    return cache.maxSizeInBytes();
+    return memory_cache.maxSizeInBytes();
 }
 
 size_t QueryResultCache::sizeInBytes() const
