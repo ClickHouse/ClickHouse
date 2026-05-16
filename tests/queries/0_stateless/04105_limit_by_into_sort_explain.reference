@@ -301,24 +301,30 @@ ExpressionTransform
                 (Expression)
                 ExpressionTransform × 2
                   (Join)
-                  JoiningTransform × 2 2 → 1
-                    (Expression)
-                    ExpressionTransform × 2
-                      (Expression)
-                      ExpressionTransform × 2
-                        (ReadFromMergeTree)
-                        MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
-                    (Expression)
-                    Resize 1 → 2
-                      FillingRightJoinSide
-                        Resize 2 → 1
-                          ExpressionTransform × 2
-                            (BuildRuntimeFilter)
-                            BuildRuntimeFilterTransform × 2
-                              (Expression)
-                              ExpressionTransform × 2
-                                (ReadFromMergeTree)
-                                MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
+                  Resize 4 → 2
+                    DelayedPorts 4 → 4
+                      JoiningTransform 2 → 1
+                        DelayedJoinedBlocksWorkerTransform
+                          JoiningTransform 2 → 1
+                            DelayedJoinedBlocksWorkerTransform
+                              DelayedJoinedBlocksTransform 0 → 2
+                                (Expression)
+                                ExpressionTransform × 2
+                                  (Expression)
+                                  ExpressionTransform × 2
+                                    (ReadFromMergeTree)
+                                    MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
+                                (Expression)
+                                Resize 1 → 2
+                                  FillingRightJoinSide
+                                    Resize 2 → 1
+                                      ExpressionTransform × 2
+                                        (BuildRuntimeFilter)
+                                        BuildRuntimeFilterTransform × 2
+                                          (Expression)
+                                          ExpressionTransform × 2
+                                            (ReadFromMergeTree)
+                                            MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
 -- With `full_sorting_merge`, the optimization applies to the final `ORDER BY` sort above
 -- the `JOIN`, not to the input sorts used by the join algorithm.
 EXPLAIN PIPELINE
