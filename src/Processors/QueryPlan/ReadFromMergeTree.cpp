@@ -3848,6 +3848,9 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
         format_settings.out << (format_settings.pretty ? "" : prefix) << "Granules: " << result.index_stats.back().num_granules_after << '\n';
     }
 
+    if (output_each_partition_through_separate_port)
+        format_settings.out << prefix << "Read each partition through separate port: 1\n";
+
     if (format_settings.pretty)
         QueryPlanFormat::formatOutputColumns(format_settings.pretty_names, format_settings.out, *this, prefix);
 
@@ -3958,6 +3961,10 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Parts", result.index_stats.back().num_parts_after);
         map.add("Granules", result.index_stats.back().num_granules_after);
     }
+
+    if (output_each_partition_through_separate_port)
+        map.add("Read each partition through separate port", true);
+
     std::unique_ptr<JSONBuilder::JSONMap> prewhere_info_map;
     if (query_info.prewhere_info || query_info.row_level_filter)
     {
