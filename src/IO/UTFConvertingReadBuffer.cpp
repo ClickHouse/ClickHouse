@@ -3,12 +3,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-extern const int CANNOT_READ_ALL_DATA;
-}
-
 namespace
 {
 /// BOM (Byte Order Mark) signatures
