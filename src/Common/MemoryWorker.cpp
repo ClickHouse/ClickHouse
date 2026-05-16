@@ -2,6 +2,7 @@
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <base/cgroupsv2.h>
 #include <base/getMemoryAmount.h>
@@ -481,11 +482,16 @@ uint64_t MemoryWorker::readAvailableForDynamicLimit()
             try
             {
                 buf->rewind();
+                /// `memory.max` value `"max"` means "no limit at this level". Handle it
+                /// explicitly so the common path doesn't depend on parse-failure semantics.
+                String first_token;
+                readStringUntilWhitespace(first_token, *buf);
+                if (first_token == "max")
+                    continue;
+
                 uint64_t limit_bytes = 0;
-                /// `memory.max` value `"max"` means "no limit at this level"; in that
-                /// case `tryReadIntText` fails to parse and we move on to the next
-                /// ancestor without contributing to `effective_limit`.
-                if (tryReadIntText(limit_bytes, *buf) && limit_bytes > 0)
+                ReadBufferFromString token_buf(first_token);
+                if (tryReadIntText(limit_bytes, token_buf) && limit_bytes > 0)
                 {
                     effective_limit = std::min(effective_limit, limit_bytes);
                     any_finite = true;
@@ -504,10 +510,10 @@ uint64_t MemoryWorker::readAvailableForDynamicLimit()
         }
     }
 #endif
-    return readSystemFreePlusCachedMemory();
+    return readSystemAvailableMemory();
 }
 
-uint64_t MemoryWorker::readSystemFreePlusCachedMemory()
+uint64_t MemoryWorker::readSystemAvailableMemory()
 {
 #if defined(OS_LINUX)
     static constexpr std::string_view path = "/proc/meminfo";
@@ -518,12 +524,7 @@ uint64_t MemoryWorker::readSystemFreePlusCachedMemory()
             meminfo_buf = std::make_unique<ReadBufferFromFile>(std::string{path});
         meminfo_buf->rewind();
 
-        uint64_t mem_free_kb = 0;
-        uint64_t cached_kb = 0;
-        bool got_mem_free = false;
-        bool got_cached = false;
-
-        while (!meminfo_buf->eof() && !(got_mem_free && got_cached))
+        while (!meminfo_buf->eof())
         {
             std::string name;
             readStringUntilWhitespace(name, *meminfo_buf);
@@ -532,28 +533,15 @@ uint64_t MemoryWorker::readSystemFreePlusCachedMemory()
             uint64_t kb = 0;
             readIntText(kb, *meminfo_buf);
 
-            if (name == "MemFree:")
-            {
-                mem_free_kb = kb;
-                got_mem_free = true;
-            }
-            else if (name == "Cached:")
-            {
-                cached_kb = kb;
-                got_cached = true;
-            }
+            if (name == "MemAvailable:")
+                return kb * 1024ULL;
 
             skipToNextLineOrEOF(*meminfo_buf);
         }
 
-        if (!got_mem_free || !got_cached)
-        {
-            if (!std::exchange(meminfo_warnings_printed, true))
-                LOG_ERROR(log, "Cannot find 'MemFree' or 'Cached' in '{}'", path);
-            return 0;
-        }
-
-        return (mem_free_kb + cached_kb) * 1024ULL;
+        if (!std::exchange(meminfo_warnings_printed, true))
+            LOG_ERROR(log, "Cannot find 'MemAvailable' in '{}'", path);
+        return 0;
     }
     catch (...)
     {
@@ -698,7 +686,7 @@ void MemoryWorker::updateResidentMemoryThread()
                 if (ceiling >= 0)
                 {
                     uint64_t available = readAvailableForDynamicLimit();
-                    if (available > 0)
+                    if (available)
                     {
                         /// Use `resident` (jemalloc RSS or cgroup `memory.current`) as the baseline
                         /// of "memory we already own", not the MemoryTracker counter. The tracker

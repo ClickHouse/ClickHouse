@@ -119,13 +119,13 @@ private:
     /// Amount of memory that may still be allocated by ClickHouse, used as input to the
     /// dynamic hard-limit formula. Prefers the cgroup view (`memory.max` minus the cgroup's
     /// `memory.current`-equivalent via `cgroups_reader`) when running in a cgroup with a
-    /// finite limit; otherwise falls back to `/proc/meminfo`'s `MemFree + Cached`.
+    /// finite limit; otherwise falls back to `/proc/meminfo`'s `MemAvailable`.
     /// Returns 0 if no source is available.
     uint64_t readAvailableForDynamicLimit();
 
-    /// Reads `MemFree + Cached` from /proc/meminfo. Returns 0 if the file can't be read.
+    /// Reads `MemAvailable` from /proc/meminfo. Returns 0 if the file can't be read.
     /// The lazily-opened buffer is owned by `updateResidentMemoryThread`, which is the only caller.
-    uint64_t readSystemFreePlusCachedMemory();
+    uint64_t readSystemAvailableMemory();
     std::unique_ptr<ReadBufferFromFile> meminfo_buf;
     [[maybe_unused]] bool meminfo_warnings_printed = false;
 
