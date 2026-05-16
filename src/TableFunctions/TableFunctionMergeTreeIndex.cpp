@@ -153,6 +153,10 @@ ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextP
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
     auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
 
+    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
+    if (!merge_tree)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function mergeTreeIndex expected MergeTree table, got: {}", source_table->getName());
+
     ColumnsDescription columns;
     for (const auto & column : StorageMergeTreeIndex::virtuals_sample_block)
         columns.add({column.name, column.type});
@@ -160,11 +164,8 @@ ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextP
     if (with_minmax)
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
-        if (!partition_key.column_names.empty() && partition_key.expression)
-        {
-            for (const auto & column : partition_key.expression->getRequiredColumnsWithTypes())
-                columns.add({fmt::format("minmax_{}", column.name), std::make_shared<DataTypeTuple>(DataTypes{column.type, column.type})});
-        }
+        for (const auto & column : MergeTreeData::getMinMaxColumns(partition_key, merge_tree->getSettings()))
+            columns.add({fmt::format("minmax_{}", column.name), std::make_shared<DataTypeTuple>(DataTypes{makeNullableSafe(column.type), makeNullableSafe(column.type)})});
     }
 
     for (const auto & column : metadata_snapshot->getPrimaryKey().sample_block)
@@ -176,10 +177,6 @@ ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextP
         auto mark_type = std::make_shared<DataTypeTuple>(
             DataTypes{element_type, element_type},
             Names{"offset_in_compressed_file", "offset_in_decompressed_block"});
-
-        const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
-        if (!merge_tree)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function mergeTreeIndex expected MergeTree table, got: {}", source_table->getName());
 
         auto data_parts = merge_tree->getDataPartsVectorForInternalUsage();
         auto columns_list = Nested::convertToSubcolumns(metadata_snapshot->getColumns().getAllPhysical());

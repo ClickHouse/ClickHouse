@@ -1,6 +1,8 @@
 #include <memory>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/assert_cast.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -19,8 +21,8 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/DateLUTImpl.h>
@@ -385,6 +387,14 @@ void MergeTreeTemporaryPart::finalize()
     part->getDataPartStorage().precommitTransaction();
     for (const auto & [_, projection] : part->getProjectionParts())
         projection->getDataPartStorage().precommitTransaction();
+
+    /// If any minmax column is a virtual, the writer aggregated placeholder values for it. Drop the
+    /// in-memory index so `getMinMaxIndex()` reloads from disk and applies the 0-level correction.
+    const auto metadata_snapshot = part->getMetadataSnapshot();
+    const auto data_settings = part->storage.getSettings();
+    for (const auto & [minmax_column, _] : MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings))
+        if (metadata_snapshot->isVirtualColumn(minmax_column))
+            part->setMinMaxIndex(nullptr);
 }
 
 /// This method must be called after rename and commit of part
@@ -611,17 +621,19 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     Block & block = *block_with_partition.block;
     MergeTreePartition & partition = block_with_partition.partition;
 
+    const auto & data_settings = data.getSettings();
+    const auto & global_settings = context->getSettingsRef();
+
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 
+    /// Do not write _block_number and _block_offset for 0-level parts: block number is not known on this step.
+    const auto minmax_columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-    minmax_idx->update(block, MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+    minmax_idx->update(block, minmax_columns);
 
-    const auto & global_settings = context->getSettingsRef();
-    const auto & data_settings = data.getSettings();
-    bool optimize_on_insert = !isPatchPartitionId(partition_id)
+    const bool optimize_on_insert = !isPatchPartitionId(partition_id)
         && global_settings[Setting::optimize_on_insert]
         && data.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
-
     UInt32 new_part_level = optimize_on_insert ? 1 : 0;
     MergeTreePartInfo new_part_info(std::move(partition_id), block_number, block_number, new_part_level);
 
@@ -844,7 +856,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     new_data_part->rows_count = block.rows();
     new_data_part->existing_rows_count = block.rows();
     new_data_part->partition = std::move(partition);
-    new_data_part->minmax_idx = std::move(minmax_idx);
+    new_data_part->setMinMaxIndex(std::move(minmax_idx));
     new_data_part->is_temp = true;
     /// In case of replicated merge tree with zero copy replication
     /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs

@@ -1865,6 +1865,13 @@ namespace ErrorCodes
     DECLARE(Bool, enable_block_offset_column, false, R"(
     Persists virtual column `_block_number` on merges.
     )", 0) \
+    DECLARE(MergeTreePartMinMaxIndexColumns, part_minmax_index_columns, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY, R"(
+    Selects which columns the per-part min-max index covers. Each value enables an additional group of columns on top of the previous one.
+
+    Possible values:
+    - `partition_key_only` — only the partition-key columns are tracked.
+    - `with_block_number_offset` — partition-key columns plus the persisted `_block_number` and `_block_offset` virtual columns. Enables part-level pruning by these columns.
+    )", 0) \
     DECLARE(Bool, add_minmax_index_for_numeric_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all numeric columns
     of the table.
@@ -2536,6 +2543,15 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
                 " the value of zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock ({})",
                 (*this)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock].value,
                 (*this)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock].value);
+    }
+
+    if ((*this)[MergeTreeSetting::part_minmax_index_columns] >= MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET)
+    {
+        if (!(*this)[MergeTreeSetting::enable_block_number_column])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_number_column' to be enabled");
+
+        if (!(*this)[MergeTreeSetting::enable_block_offset_column])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_offset_column' to be enabled");
     }
 }
 

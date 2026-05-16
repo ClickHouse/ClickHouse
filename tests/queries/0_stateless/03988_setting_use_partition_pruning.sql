@@ -35,13 +35,13 @@ SETTINGS use_partition_pruning = 1;
 SELECT *
 FROM test
 WHERE d = '2026-01-01'
-SETTINGS use_partition_pruning = 0;
+SETTINGS use_partition_pruning = 0, use_skip_indexes = 0;
 
 EXPLAIN indexes = 1
 SELECT *
 FROM test
 WHERE d = '2026-01-01'
-SETTINGS use_partition_pruning = 0;
+SETTINGS use_partition_pruning = 0, use_skip_indexes = 0;
 
 
 DROP TABLE IF EXISTS test;
@@ -83,7 +83,8 @@ WHERE toYear(toDate(p)) = 2020
 SETTINGS
     enable_analyzer = 0,
     optimize_use_implicit_projections = 0,
-    use_partition_pruning = 0;
+    use_partition_pruning = 0,
+    use_skip_indexes = 0;
 
 EXPLAIN indexes = 1
 SELECT count()
@@ -92,7 +93,8 @@ WHERE toYear(toDate(p)) = 2020
 SETTINGS
     enable_analyzer = 0,
     optimize_use_implicit_projections = 0,
-    use_partition_pruning = 0;
+    use_partition_pruning = 0,
+    use_skip_indexes = 0;
 
 
 -- `use_partition_key` is an alias
@@ -112,4 +114,5 @@ WHERE toYear(toDate(p)) = 2020
 SETTINGS
     enable_analyzer = 0,
     optimize_use_implicit_projections = 0,
-    use_partition_key = 0;
+    use_partition_key = 0,
+    use_skip_indexes = 0;

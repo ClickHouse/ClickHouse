@@ -648,7 +648,7 @@ def kill_process_group(pgid, fatal_log):
             print(f"Wait {stacktrace_delay} seconds for clickhouse utilities to handle SIGTSTP...")
             sleep(stacktrace_delay)
 
-            # Let's check maybe clickhouse already printed the stacktrace, then no need to do the same with gdb
+            # Let's check maybe clickhouse already printed the stacktrace, then no need to do the same with lldb
             client_printed_stacktrace = False
             try:
                 if fatal_log and os.path.exists(fatal_log):
@@ -664,7 +664,7 @@ def kill_process_group(pgid, fatal_log):
             if not client_printed_stacktrace:
                 processes = [p[0] for p in pgrep(pgid=pgid, command="clickhouse")]
                 for child in processes:
-                    print(get_stacktraces_from_gdb(child))
+                    print(get_stacktraces_from_lldb(child))
         # NOTE: this still may leave some processes, that had been
         # created by timeout(1), since it also creates new process
         # group. But this should not be a problem with default
@@ -941,14 +941,60 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
-# collect server stacktraces using gdb
-def get_stacktraces_from_gdb(pid):
-    # 30s ceiling: `thread apply all backtrace` should finish in seconds even
-    # on a debug build with many threads; anything beyond that means gdb
-    # itself is wedged (e.g. signal-handler deadlock on the inferior).
-    # Killing gdb leaves the server process untouched.
+_LLDB_INSTALL_ATTEMPTED = False
+
+
+def _ensure_lldb_installed():
+    """Make sure `lldb` is on PATH, installing it on the fly if not.
+
+    TEMPORARY scaffolding: the CI base images currently ship `gdb` (from the
+    `clickhouse/cctools` layer), not `lldb`. While the switch to `lldb` is in
+    flight, install it at runtime so `print_c_stacktraces` keeps working.
+    Once `ci/docker/cctools/Dockerfile` (and the images that copy from it)
+    install `lldb` permanently, this helper and its single call site below
+    should be removed.
+
+    Never raise: `print_c_stacktraces` is a best-effort diagnostic. If the
+    install fails (no sudo, no network, no `brew`, ...), let
+    `shell_get_output` return "" so the surrounding diagnostic flow keeps
+    going instead of crashing during an already-broken run.
+
+    Bounded and idempotent: each subprocess call has a hard timeout so a
+    stalled package mirror cannot wedge stacktrace collection for minutes,
+    and a process-wide flag ensures only the first call attempts the
+    install — `print_c_stacktraces` iterates over every server PID, and we
+    must not pay the install cost (or timeout) for each one if the first
+    attempt already failed.
+    """
+    global _LLDB_INSTALL_ATTEMPTED
+    if shutil.which("lldb"):
+        return
+    if _LLDB_INSTALL_ATTEMPTED:
+        return
+    _LLDB_INSTALL_ATTEMPTED = True
+    try:
+        if platform.system() == "Darwin":
+            subprocess.run(["brew", "install", "llvm"], check=True, timeout=180)
+        else:
+            env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
+            subprocess.run(["apt-get", "update"], check=True, env=env, timeout=60)
+            subprocess.run(
+                ["apt-get", "install", "-y", "lldb"],
+                check=True, env=env, timeout=120,
+            )
+    except Exception as e:
+        print(f"Could not install lldb on the fly: {e}", file=sys.stderr)
+
+
+# collect server stacktraces using lldb (used uniformly on Linux and macOS)
+def get_stacktraces_from_lldb(pid):
+    # 30s ceiling: `thread backtrace all` should finish in seconds even on a
+    # debug build with many threads; anything beyond that means lldb itself
+    # is wedged (e.g. signal-handler deadlock on the inferior). Killing lldb
+    # leaves the server process untouched.
+    _ensure_lldb_installed()  # TEMPORARY: see _ensure_lldb_installed docstring.
     return shell_get_output(
-        f"gdb -batch -ex 'thread apply all backtrace' -p {pid}",
+        f"lldb --batch -p {pid} -o 'thread backtrace all' -o 'detach' -o 'quit'",
         timeout=30,
     )
 
@@ -1027,7 +1073,7 @@ def get_all_server_pids():
 
 
 def is_asan_build(args):
-    """Check if the server is an ASan build — gdb disables LeakSanitizer detections."""
+    """Check if the server is an ASan build — attaching a debugger disables LeakSanitizer detections."""
     try:
         result = clickhouse_execute(
             args,
@@ -1040,22 +1086,22 @@ def is_asan_build(args):
 
 
 def print_c_stacktraces(args) -> None:
-    """C++-side backtraces via gdb.  Works whenever the server process
+    """C++-side backtraces via lldb.  Works whenever the server process
     exists and is debuggable, independent of whether SQL is reachable.
 
     Every call site is one of two situations: we're aborting the whole
     run (SERVER_DIED, hung-check, check_server_started) or terminating
-    the one wedged test (timeout_handler).  gdb's "thread apply all
-    backtrace" pause is on the order of seconds — acceptable in both
-    cases against the diagnostic value.
+    the one wedged test (timeout_handler).  lldb's "thread backtrace all"
+    pause is on the order of seconds — acceptable in both cases against
+    the diagnostic value.
 
-    Skipped under ASan, where gdb attach disables LeakSanitizer
-    detections.
+    Skipped under ASan, where attaching a debugger disables
+    LeakSanitizer detections.
     """
     if is_asan_build(args):
         print(
             colored(
-                "\nCannot collect C stacktraces under ASan: gdb attach is disabled.",
+                "\nCannot collect C stacktraces under ASan: debugger attach is disabled.",
                 args,
                 "red",
                 attrs=["bold"],
@@ -1079,8 +1125,8 @@ def print_c_stacktraces(args) -> None:
 
     for pid in all_pids:
         label = "main server" if pid == server_pid else "replica"
-        print(f"\nCollecting C stacktraces from {label} process {pid} with gdb:")
-        bt = get_stacktraces_from_gdb(pid)
+        print(f"\nCollecting C stacktraces from {label} process {pid} with lldb:")
+        bt = get_stacktraces_from_lldb(pid)
         if bt and len(bt) >= 1000:
             print(f"=== PID {pid} ({label}) ===\n{bt}")
         else:
@@ -4052,11 +4098,14 @@ class TestSuite:
         return TestSuite(args, suite_path, suite_tmp_path, suite)
 
 
-class ServerDied(Exception):
-    pass
+class TestRunAbort(Exception):
+    """Raised to abort the whole test run.
 
-
-class GlobalTimeout(Exception):
+    The actual reason (server crash, hung-check timeout, --max-failures
+    limit, global time limit, etc.) is in the exception message — the
+    catch handler prefixes it with "Test run aborted:" so it stands out
+    in the log.
+    """
     pass
 
 
@@ -4287,12 +4336,13 @@ def run_tests_array(
 
         if stop_testing.is_set():
             stop_tests()
-            raise ServerDied("Server died")
+            raise TestRunAbort(
+                "another component requested stop (see earlier output for the cause)"
+            )
 
         if args.stop_time and time() > args.stop_time:
-            print("\nStop tests run because global time limit is exceeded.\n")
             stop_tests()
-            raise GlobalTimeout("Stop tests run because global time limit is exceeded")
+            raise TestRunAbort("global time limit exceeded (--stop-time)")
 
         test_case = TestCase(test_suite, case, args, is_concurrent)
 
@@ -4314,7 +4364,7 @@ def run_tests_array(
 
             while True:
                 # This is the upper level timeout
-                # It helps with completely frozen processes, like in case of gdb errors
+                # It helps with completely frozen processes, like in case of lldb errors
                 def timeout_handler(_signum, _frame):
                     with redirect_stdout(cleanup_output):
                         # Dump stacktraces *before* stop_tests() kills the
@@ -4383,14 +4433,18 @@ def run_tests_array(
                     print_c_stacktraces(args)
                     stop_tests()
                     stop_testing.set()
-                    raise ServerDied("Server died")
+                    raise TestRunAbort(
+                        f"ClickHouse server died during test '{test_case.name}'"
+                    )
                 if args.max_failures > 0:
                     with total_failures_shared.get_lock():
                         total_failures_shared.value += 1
                         if total_failures_shared.value >= args.max_failures:
                             stop_tests()
                             stop_testing.set()
-                            raise ServerDied(f"Reached --max-failures limit ({args.max_failures})")
+                            raise TestRunAbort(
+                                f"reached --max-failures limit ({args.max_failures})"
+                            )
             elif test_result.status == TestStatus.SKIPPED:
                 skipped_total += 1
 
@@ -4402,7 +4456,9 @@ def run_tests_array(
         if failures_chain >= args.max_failures_chain:
             stop_tests()
             stop_testing.set()
-            raise ServerDied("Max failures chain")
+            raise TestRunAbort(
+                f"reached --max-failures-chain limit ({args.max_failures_chain})"
+            )
 
     if failures_total > 0:
         print(
@@ -6518,8 +6574,8 @@ if __name__ == "__main__":
 
     try:
         main(args)
-    except ServerDied as e:
-        print(f"{e}", file=sys.stderr)
+    except TestRunAbort as e:
+        print(f"Test run aborted: {e}", file=sys.stderr)
         traceback.print_exc()
         sys.exit(1)
     except Terminated as e:

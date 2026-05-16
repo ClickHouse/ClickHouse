@@ -4708,9 +4708,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
             size_t key_column = element.getKeyColumn();
             if (key_column >= hyperrectangle.size())
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Hyperrectangle size is {}, but requested element at position {} ({})",
-                                hyperrectangle.size(), key_column, element.toString());
+                rpn_stack.emplace_back(true, true);
+                continue;
             }
 
             /// Avoid copying Range when there is no monotonic function chain (the common case).
@@ -4811,6 +4810,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
               */
 
             size_t key_column = element.getKeyColumn();
+            if (key_column >= hyperrectangle.size())
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
             Range key_range = hyperrectangle[key_column];
 
             /// The only possible result type of a space filling curve is UInt64.
@@ -4913,6 +4918,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 return applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const Field &>(ref));
             };
 
+            if (element.key_columns[0] >= hyperrectangle.size() || element.key_columns[1] >= hyperrectangle.size())
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
             const auto & range_x = hyperrectangle[element.key_columns[0]];
             const auto & range_y = hyperrectangle[element.key_columns[1]];
 
@@ -4957,7 +4968,14 @@ BoolMask KeyCondition::checkInHyperrectangle(
             element.function == RPNElement::FUNCTION_IS_NULL
             || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
         {
-            const Range * key_range = &hyperrectangle[element.getKeyColumn()];
+            size_t key_column = element.getKeyColumn();
+            if (key_column >= hyperrectangle.size())
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            const Range * key_range = &hyperrectangle[key_column];
 
             /// No need to apply monotonic functions as nulls are kept.
             bool intersects = element.range.intersectsRange(*key_range);

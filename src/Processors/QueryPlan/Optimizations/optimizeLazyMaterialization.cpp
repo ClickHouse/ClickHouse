@@ -400,6 +400,31 @@ static ReadFromMergeTree * findReadingStep(QueryPlan::Node & node, StepStack & b
     return nullptr;
 }
 
+bool allExpressionsSuitableForLazyMaterialization(const QueryPlan::Node * node)
+{
+    while (!node->children.empty())
+    {
+        if (const auto * expr_step = typeid_cast<ExpressionStep *>(node->step.get()))
+        {
+            if (expr_step->getExpression().hasArrayJoin())
+                return false;
+        }
+        else if (const auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
+        {
+            if (filter_step->getExpression().hasArrayJoin())
+                return false;
+        }
+        else
+        {
+            return false;
+        }
+
+        node = node->children.front();
+    }
+
+    return true;
+}
+
 bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization)
 {
     if (root.children.size() != 1)
@@ -434,6 +459,9 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         return false;
 
     if (!canUseLazyMaterializationForReadingStep(reading_step))
+        return false;
+
+    if (!allExpressionsSuitableForLazyMaterialization(sorting_node->children.front()))
         return false;
 
     const auto & sorting_header = *sorting_step->getOutputHeader();

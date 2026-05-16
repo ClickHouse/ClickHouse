@@ -3,6 +3,10 @@
 #include <memory>
 #include <vector>
 
+#ifdef OS_LINUX
+#    include <unistd.h>
+#endif
+
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
@@ -50,6 +54,22 @@ extern const int SET_SIZE_LIMIT_EXCEEDED;
 extern const int TYPE_MISMATCH;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int INVALID_JOIN_ON_EXPRESSION;
+}
+
+size_t getMinBytesForPrefetchInJoin()
+{
+    /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
+    /// Threshold: 4 * max(L2 cache size, 256KB). Cached after first call.
+    static const size_t result = []
+    {
+        size_t l2_size = 0;
+#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
+        if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
+            l2_size = ret;
+#endif
+        return 4 * std::max<size_t>(l2_size, 256 * 1024);
+    }();
+    return result;
 }
 
 namespace
@@ -154,6 +174,7 @@ HashJoin::HashJoin(
     , max_joined_block_bytes(table_join->maxJoinedBlockBytes())
     , joined_block_split_single_row(table_join->joinedBlockAllowSplitSingleRow())
     , enable_lazy_columns_replication(table_join->enableColumnsLazyReplication())
+    , enable_prefetch(table_join->enableSoftwarePrefetchInJoin())
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
