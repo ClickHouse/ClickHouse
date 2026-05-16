@@ -95,7 +95,8 @@ grep -q '<execute_direct>0</execute_direct>' "$WORK_DIR/docker_runtime.xml" && e
     cd "$WORK_DIR/gvisor_runtime" &&
     printf 'return x + y;\n' | CLICKHOUSE_C_DRIVER_COMPILE_LOCAL=1 "$DRIVER_DIR/gvisor_c_create.sh" --name test_gvisor_runtime --return UInt64 --args 'x UInt64, y UInt64'
 ) > "$WORK_DIR/gvisor_runtime.xml"
-grep -q -- '--runtime=runsc' "$WORK_DIR/gvisor_runtime.xml" && echo "gvisor_runtime_present" || echo "gvisor_runtime_missing"
+grep -q 'runsc --rootless --network=none do' "$WORK_DIR/gvisor_runtime.xml" && echo "gvisor_runtime_present" || echo "gvisor_runtime_missing"
+grep -q 'docker run' "$WORK_DIR/gvisor_runtime.xml" && echo "gvisor_docker_present" || echo "gvisor_docker_absent"
 grep -q '<execute_direct>0</execute_direct>' "$WORK_DIR/gvisor_runtime.xml" && echo "gvisor_execute_shell" || echo "gvisor_execute_direct"
 
 (

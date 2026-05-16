@@ -706,8 +706,10 @@ def docker_user():
     return os.environ.get("CLICKHOUSE_C_DRIVER_DOCKER_USER", f"{os.getuid()}:{os.getgid()}")
 
 
-def gvisor_runtime():
-    return os.environ.get("CLICKHOUSE_C_DRIVER_GVISOR_RUNTIME", "runsc")
+def gvisor_binary():
+    return os.environ.get(
+        "CLICKHOUSE_C_DRIVER_GVISOR_BINARY",
+        os.environ.get("CLICKHOUSE_C_DRIVER_GVISOR_RUNTIME", "runsc"))
 
 
 def shell_join(args):
@@ -753,6 +755,15 @@ def runtime_command(runtime, work_dir):
     if runtime == "unsafe" or os.environ.get("CLICKHOUSE_C_DRIVER_FORCE_LOCAL") == "1":
         return os.path.join(work_dir, "user_func"), 0
 
+    if runtime == "gvisor":
+        return shell_join([
+            gvisor_binary(),
+            "--rootless",
+            "--network=none",
+            "do",
+            os.path.join(work_dir, "user_func"),
+        ]), 0
+
     docker_image = docker_image_for_run()
     limits = docker_resource_limits()
     user = docker_user()
@@ -769,8 +780,6 @@ def runtime_command(runtime, work_dir):
         f"--pids-limit={limits['pids']}",
         "-v", f"{work_dir}/user_func:/user_func:ro",
     ]
-    if runtime == "gvisor":
-        cmd.append(f"--runtime={gvisor_runtime()}")
     cmd.extend([docker_image, "/user_func"])
     return shell_join(cmd), 0
 

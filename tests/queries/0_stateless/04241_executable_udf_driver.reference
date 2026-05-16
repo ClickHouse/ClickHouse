@@ -3,6 +3,7 @@ docker_runtime_present
 docker_gvisor_runtime_absent
 docker_execute_shell
 gvisor_runtime_present
+gvisor_docker_absent
 gvisor_execute_shell
 unsafe_runtime_direct
 unsafe_docker_absent
