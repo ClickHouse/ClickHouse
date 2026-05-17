@@ -7,7 +7,6 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Interpreters/KeysNullMap.h>
 #include <Common/HashTable/Prefetching.h>
-#include <Interpreters/AggregationCommon.h>
 
 namespace DB
 {
@@ -23,6 +22,14 @@ struct HashMethodContextSettings
 {
     size_t max_threads;
     bool serialize_string_with_zero_byte = false;
+
+    /// Whether software prefetching of hash-table buckets is enabled for this run.
+    /// Controls the precomputed-hash prefetch path in `HashMethodSerialized<prealloc=true>`
+    /// (mirrors `enable_software_prefetch_in_aggregation`).
+    bool enable_prefetch = true;
+    /// Threshold on the hash table's buffer size below which prefetching is skipped
+    /// because the table fits into caches. Zero disables the threshold.
+    size_t min_bytes_for_prefetch = 0;
 };
 
 /// Generic context for HashMethod. Context is shared between multiple threads, all methods must be thread-safe.
@@ -220,17 +227,23 @@ public:
         auto key_holder = derived.getKeyHolder(row, pool);
         if constexpr (Derived::has_pre_computed_hashes)
         {
-            if (row == PrefetchingHelper::iterationsToMeasure())
-                derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
-            const auto & hashes = derived.hashes.getData();
-            if (row + derived.prefetch_look_ahead < hashes.size())
-                data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
-            return emplaceImpl<false>(key_holder, data, hashes[row]);
+            /// Single gate in the hot path: `precomputed_hashes_initialized` is set to `true`
+            /// after the first call (regardless of whether hashes were actually computed), so
+            /// subsequent rows only do the one `can_precompute_hashes` check below.
+            if (!derived.precomputed_hashes_initialized) [[unlikely]]
+                derived.initPrecomputedHashes(data, row);
+
+            if (derived.can_precompute_hashes)
+            {
+                if (row == derived.calibration_row)
+                    derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
+                const auto & hashes = derived.precomputed_hashes;
+                if (row + derived.prefetch_look_ahead < hashes.size())
+                    data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
+                return emplaceImpl<false>(key_holder, data, hashes[row]);
+            }
         }
-        else
-        {
-            return emplaceImpl<true>(key_holder, data, 0);
-        }
+        return emplaceImpl<true>(key_holder, data, 0);
     }
 
     template <typename Data>
@@ -261,18 +274,25 @@ public:
         auto & derived = static_cast<Derived &>(*this);
         if constexpr (Derived::has_pre_computed_hashes)
         {
-            if (row == PrefetchingHelper::iterationsToMeasure())
-                derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
-            const auto & hashes = derived.hashes.getData();
-            if (row + derived.prefetch_look_ahead < hashes.size())
-                data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
+            /// See note in `emplaceKey`: single gate via `precomputed_hashes_initialized`.
+            if (!derived.precomputed_hashes_initialized) [[unlikely]]
+                derived.initPrecomputedHashes(data, row);
 
-            if (data.isEmptyCell(hashes[row]))
+            if (derived.can_precompute_hashes)
             {
-                if constexpr (has_mapped)
-                    return FindResult(nullptr, false, 0);
-                else
-                    return FindResult(false, 0);
+                if (row == derived.calibration_row)
+                    derived.prefetch_look_ahead = derived.prefetching->calcPrefetchLookAhead();
+                const auto & hashes = derived.precomputed_hashes;
+                if (row + derived.prefetch_look_ahead < hashes.size())
+                    data.prefetchByHash(hashes[row + derived.prefetch_look_ahead]);
+
+                if (data.isEmptyCell(hashes[row]))
+                {
+                    if constexpr (has_mapped)
+                        return FindResult(nullptr, false, 0);
+                    else
+                        return FindResult(false, 0);
+                }
             }
         }
 
