@@ -506,23 +506,15 @@ static IndexesDescription aggregateIndexes(const std::vector<IndexesDescription>
             if (last_index[key] != j)
                 continue;
 
-            auto it = by_type.find(key);
-            if (it == by_type.end())
-            {
+            if (!by_type.contains(key))
                 type_order.push_back(stat.type);
-                auto & entry = by_type[key];
-                entry.type = stat.type;
-                entry.num_parts_after = stat.num_parts_after;
-                entry.num_granules_after = stat.num_granules_after;
-                entry.distributed = stat.distributed;
-            }
-            else
-            {
-                it->second.num_parts_after += stat.num_parts_after;
-                it->second.num_granules_after += stat.num_granules_after;
-                it->second.distributed.insert(it->second.distributed.end(),
-                    stat.distributed.begin(), stat.distributed.end());
-            }
+
+            auto & entry = by_type[key];
+            entry.type = stat.type;
+            entry.num_parts_after += stat.num_parts_after;
+            entry.num_granules_after += stat.num_granules_after;
+            entry.distributed.insert(entry.distributed.end(),
+                stat.distributed.begin(), stat.distributed.end());
         }
 
         aggregated.selected_ranges += desc.selected_ranges;
