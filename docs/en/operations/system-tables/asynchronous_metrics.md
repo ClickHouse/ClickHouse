@@ -506,7 +506,7 @@ Total memory currently used by all running queries on the server, in bytes. Usef
 
 ### QueriesPeakMemoryUsage {#queriespeakmemoryusage}
 
-Peak memory used by all running queries on the server, in bytes.
+Sum of per-user query memory peaks across all users tracked in `ProcessList`, in bytes. Each user's peak is the high-water mark of that user's memory tracker, which is reset when the user has no running queries. This is therefore an aggregate of currently-tracked per-user peaks, not a single server-wide peak of all queries since startup.
 
 ### ReplicasMaxAbsoluteDelay {#replicasmaxabsolutedelay}
 
