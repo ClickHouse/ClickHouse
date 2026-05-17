@@ -902,11 +902,11 @@ Microseconds of stall time since last measurement.Upstream docs can be found htt
 
 ### QueriesMemoryUsage {#queriesmemoryusage}
 
-Memory used by queries, in bytes.
+Total memory currently used by all running queries on the server, in bytes. Useful for attributing memory pressure to the concurrent query load.
 
 ### QueriesPeakMemoryUsage {#queriespeakmemoryusage}
 
-Peak memory usage for queries, in bytes.
+Sum of per-user query memory peaks across all users tracked in `ProcessList`, in bytes. Each user's peak is the high-water mark of that user's memory tracker, which is reset when the user has no running queries. This is therefore an aggregate of currently-tracked per-user peaks, not a single server-wide peak of all queries since startup.
 
 ### ReplicasMaxAbsoluteDelay {#replicasmaxabsolutedelay}
 

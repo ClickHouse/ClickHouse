@@ -465,8 +465,13 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             queries_memory_usage += info.memory_usage;
             queries_peak_memory_usage += info.peak_memory_usage;
         }
-        new_values["QueriesMemoryUsage"] = { queries_memory_usage, "Memory used by queries, in bytes." };
-        new_values["QueriesPeakMemoryUsage"] = { queries_peak_memory_usage, "Peak memory usage for queries, in bytes." };
+        new_values["QueriesMemoryUsage"] = { queries_memory_usage,
+            "Total memory currently used by all running queries on the server, in bytes."
+            " Useful for attributing memory pressure to the concurrent query load." };
+        new_values["QueriesPeakMemoryUsage"] = { queries_peak_memory_usage,
+            "Sum of per-user query memory peaks across all users tracked in `ProcessList`, in bytes."
+            " Each user's peak is the high-water mark of that user's memory tracker, which is reset when the user has no running queries."
+            " This is therefore an aggregate of currently-tracked per-user peaks, not a single server-wide peak of all queries since startup." };
     }
 
     new_values["ZooKeeperClientLastZXIDSeen"] = { getContext()->getZooKeeperLastZXIDSeen(), "The last ZXID seen by the current ZooKeeper client session. This value increases monotonically as the client observes transactions from ZooKeeper."};
