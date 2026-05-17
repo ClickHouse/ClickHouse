@@ -313,7 +313,7 @@ private:
     double computeSelectivity(const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right);
     size_t getColumnStats(BitSet rels, const String & column_name);
 
-    /// Peridically called from potentially long running optimization to check time limits and send progress
+    /// Periodically called from potentially long running optimization to check time limits and send progress
     void checkLimits();
 
     /// Try to build the best join plan between left_rels and right_rels.
@@ -1099,6 +1099,8 @@ void JoinOrderOptimizer::emitCsgCmp(const BitSet & left_csg, const BitSet & righ
 /// `exclusion` (paper: X) prevents revisiting already-processed nodes.
 void JoinOrderOptimizer::enumerateCmpRec(const BitSet & csg, const BitSet & complement, const BitSet & exclusion)
 {
+    checkLimits();
+
     LOG_TEST(log, "DPhyp: enumerateCmpRec(csg={{ {} }}, cmp={{ {} }}, excl={{ {} }})",
         fmt::join(csg, ","), fmt::join(complement, ","), fmt::join(exclusion, ","));
 
