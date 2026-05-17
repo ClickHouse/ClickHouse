@@ -6,9 +6,11 @@
 
 #include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Processors/Port.h>
 
+#include <limits>
 #include <unordered_set>
 
 
@@ -36,14 +38,15 @@ namespace
     /// Returns nullopt when the output should carry no field_ids (both overrides empty
     /// and auto-assign disabled).
     ///
-    ///   1. Every entry in `overrides` is applied verbatim. Unknown columns are rejected
+    ///   1. Every entry in `overrides` is parsed (value string -> Int32) and applied
+    ///      verbatim. Non-integer or out-of-range values and unknown columns are rejected
     ///      so users get a clear signal when the setting drifts from the query's schema.
     ///   2. If `auto_assign` is true, the remaining columns are given the smallest unused
     ///      positive IDs (Iceberg writers conventionally start at 1 and go up).
     ///   3. Duplicate IDs across overrides / auto-assigned columns are rejected.
     std::optional<std::unordered_map<String, Int64>> buildColumnFieldIds(
         const Block & header,
-        const std::vector<std::pair<String, Int32>> & overrides,
+        const std::vector<std::pair<String, String>> & overrides,
         bool auto_assign)
     {
         if (overrides.empty() && !auto_assign)
@@ -55,8 +58,17 @@ namespace
         std::unordered_map<String, Int64> result;
         std::unordered_set<Int32> used_ids;
 
-        for (const auto & [name, id] : overrides)
+        for (const auto & [name, id_string] : overrides)
         {
+            Int64 id_value = 0;
+            if (!tryParse<Int64>(id_value, id_string))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids value '{}' is not an integer", id_string);
+            if (id_value < 0 || id_value > std::numeric_limits<Int32>::max())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids value '{}' out of Int32 range", id_string);
+
+            const Int32 id = static_cast<Int32>(id_value);
             if (!known_columns.contains(name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "output_format_parquet_column_field_ids references unknown column '{}'", name);
