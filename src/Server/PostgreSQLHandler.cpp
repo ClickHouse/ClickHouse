@@ -886,6 +886,11 @@ void PostgreSQLHandler::processCloseQuery()
             prepared_statements_manager.deleteStatement(query->function_name);
 
         prepared_statements_manager.resetBindQuery();
+
+        /// Acknowledge the `Close` request. Clients that strictly track the
+        /// extended-protocol state machine wait for `CloseComplete` before
+        /// proceeding.
+        message_transport->send(PostgreSQLProtocol::Messaging::CloseQueryComplete(), true);
     }
     catch (const Exception & e)
     {

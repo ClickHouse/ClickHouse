@@ -904,9 +904,13 @@ public:
 class CloseQueryComplete : BackendMessage
 {
 public:
+    CloseQueryComplete() = default;
+
     void serialize(WriteBuffer & out) const override
     {
-        out.write('C');
+        /// 'C' is `CommandComplete`; `CloseComplete` is tagged with '3' per
+        /// the PostgreSQL message protocol.
+        out.write('3');
         writeBinaryBigEndian(size(), out);
     }
 
