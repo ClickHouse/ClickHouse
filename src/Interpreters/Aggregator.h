@@ -273,7 +273,11 @@ public:
     /// Merge several partially aggregated chunks into one.
     /// Precondition: for all chunks the is_overflows flag must be the same.
     /// (either all chunks are from overflow data or none are).
-    AggregatedChunk mergeBlocks(AggregatedChunks & chunks, bool final, std::atomic<bool> & is_cancelled);
+    AggregatedChunk mergeBlocks(
+        AggregatedChunks & chunks,
+        bool final,
+        std::atomic<bool> & is_cancelled,
+        const RuntimeDataflowStatisticsCacheUpdaterPtr & dataflow_cache_updater);
 
     /** Split block with partially-aggregated data to many blocks, as if two-level method of aggregation was used.
       * This is needed to simplify merging of that data with other results, that are already two-level.

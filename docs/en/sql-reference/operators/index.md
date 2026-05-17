@@ -7,8 +7,6 @@ title: 'Operators'
 doc_type: 'reference'
 ---
 
-# Operators
-
 ClickHouse transforms operators to their corresponding functions at the query parsing stage according to their priority, precedence, and associativity.
 
 ## Access Operators {#access-operators}
@@ -158,13 +156,11 @@ See [IN operators](../../sql-reference/operators/in.md) and [EXISTS](../../sql-r
 
 Query with ALL:
 
-```sql
+```sql title="Query"
 SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3, 3));
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─a─┐
 │ 6 │
 │ 7 │
@@ -175,13 +171,11 @@ Result:
 
 Query with ANY:
 
-```sql
+```sql title="Query"
 SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3, 3));
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─a─┐
 │ 4 │
 │ 5 │
