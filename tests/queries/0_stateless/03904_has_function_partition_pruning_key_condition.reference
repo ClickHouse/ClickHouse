@@ -27,7 +27,7 @@ Expression ((Project names + Projection))
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: (dt in 1-element set)
@@ -54,7 +54,7 @@ Expression ((Project names + Projection))
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               dt
             Condition: not((dt in 1-element set))
