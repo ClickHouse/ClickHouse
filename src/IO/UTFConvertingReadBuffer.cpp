@@ -430,11 +430,17 @@ bool UTFConvertingReadBuffer::nextImpl()
             return true;
         }
 
+        /// If we were reading from impl's buffer directly, sync our position back to it
+        /// so it knows how much data we consumed.
+        if (!working_buffer.empty() && working_buffer.begin() != pending_bytes)
+        {
+            impl->position() = pos;
+        }
+
         if (impl->hasPendingData() || impl->next())
         {
             working_buffer = impl->buffer();
-            pos = impl->position();
-            impl->position() = impl->buffer().end();
+            nextimpl_working_buffer_offset = impl->offset();
             return true;
         }
 
