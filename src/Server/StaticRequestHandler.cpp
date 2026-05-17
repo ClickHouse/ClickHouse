@@ -5,6 +5,8 @@
 #include <Server/HTTPResponseHeaderWriter.h>
 
 #include <Core/ServerSettings.h>
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
@@ -129,13 +131,31 @@ void StaticRequestHandler::writeResponse(WriteBuffer & out)
         /// server-side files. Resolve under `user_files_path` and require containment
         /// before accepting the candidate.
         ///
-        /// `user_files_path` may be a disk root from `user_files_policy`, including a
-        /// non-local disk (e.g. `s3_plain`) whose `getPath()` is a virtual marker, not a
-        /// real local directory. `fs::canonical` would throw in that case — treat the
-        /// failure as "no candidate available" so the handler reports an access error
-        /// instead of leaking the underlying I/O exception. `file://` is a local
-        /// filesystem feature and is satisfied only by a local root that contains the
-        /// resolved candidate.
+        /// `file://` is served via local `ReadBufferFromFile` and is a local-filesystem
+        /// feature. With `user_files_policy` configured on a non-local disk (e.g.
+        /// `s3_plain`), `getUserFilesPath` resolves to the disk's local metadata root,
+        /// so accepting `file://` would expose unrelated local metadata instead of the
+        /// configured backend. Reject up front, mirroring other call sites that gate
+        /// features on disk type.
+        if (auto user_files_volume = server.context()->getUserFilesVolume())
+        {
+            for (const auto & disk : user_files_volume->getDisks())
+            {
+                if (disk->isRemote())
+                    throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
+                        "Static HTTP handler `file://` source is not supported "
+                        "with non-local `user_files_policy` disks (disk `{}` is remote)",
+                        disk->getName());
+            }
+        }
+
+        /// `user_files_path` may still be a disk root from `user_files_policy` for a
+        /// local disk whose `getPath()` is a virtual marker rather than a real local
+        /// directory. `fs::canonical` would throw in that case — treat the failure as
+        /// "no candidate available" so the handler reports an access error instead of
+        /// leaking the underlying I/O exception. `file://` is a local filesystem
+        /// feature and is satisfied only by a local root that contains the resolved
+        /// candidate.
         String file_path;
         bool contained_candidate = false;
         {
