@@ -16,6 +16,8 @@ ORDER BY a;
 INSERT INTO alias_matcher_direct_clone_read_order (a) VALUES (1), (2);
 SELECT b FROM alias_matcher_direct_clone_read_order ORDER BY b
 SETTINGS allow_experimental_analyzer = 0, optimize_read_in_order = 1, optimize_respect_aliases = 1;
+SELECT b FROM alias_matcher_direct_clone_read_order ORDER BY b
+SETTINGS allow_experimental_analyzer = 1, optimize_read_in_order = 1, optimize_respect_aliases = 1;
 
 CREATE TABLE alias_matcher_direct_clone_prewhere
 (
