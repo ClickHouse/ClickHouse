@@ -93,6 +93,17 @@ Read each partition through separate port: 1
 SELECT (SELECT count() FROM (SELECT a FROM test_with_where_filter WHERE b > 0 LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 0)) = (SELECT count() FROM (SELECT a FROM test_with_where_filter WHERE b > 0 LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 1));
 1
 DROP TABLE test_with_where_filter;
+DROP TABLE IF EXISTS test_with_filter_step;
+CREATE TABLE test_with_filter_step (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY b PARTITION BY a % 8;
+SYSTEM STOP MERGES test_with_filter_step;
+INSERT INTO test_with_filter_step SELECT number, number FROM numbers_mt(1e3);
+INSERT INTO test_with_filter_step SELECT number, number + 1 FROM numbers_mt(1e3);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT a FROM test_with_filter_step WHERE b > 0 LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 1, optimize_move_to_prewhere = 0) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+Skip stream merging: 1
+Read each partition through separate port: 1
+SELECT (SELECT count() FROM (SELECT a FROM test_with_filter_step WHERE b > 0 LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 0, optimize_move_to_prewhere = 0)) = (SELECT count() FROM (SELECT a FROM test_with_filter_step WHERE b > 0 LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 1, optimize_move_to_prewhere = 0));
+1
+DROP TABLE test_with_filter_step;
 DROP TABLE IF EXISTS test_with_projection_alias;
 CREATE TABLE test_with_projection_alias (a UInt32, payload String) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a % 8;
 INSERT INTO test_with_projection_alias SELECT number, toString(number) FROM numbers_mt(1e3);
