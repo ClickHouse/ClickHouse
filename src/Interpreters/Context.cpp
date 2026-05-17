@@ -4580,11 +4580,8 @@ void Context::clearCaches() const
     std::lock_guard lock(shared->mutex);
 
     /// Each cache is null-checked because some `Context` users (e.g. the
-    /// `execute_query_fuzzer` libFuzzer harness and certain unit-test harnesses)
-    /// intentionally do not initialize the full set of caches. Clearing an
-    /// uninitialized cache is a no-op, not a programmer error, so this
-    /// matches the defensive pattern used by all of the single-cache
-    /// `clear<X>Cache` methods above.
+    /// `execute_query_fuzzer` libFuzzer harness) intentionally do not initialize
+    /// the full set of caches; matches the single-cache `clear<X>Cache` methods.
 
     if (shared->uncompressed_cache)
         shared->uncompressed_cache->clear();
