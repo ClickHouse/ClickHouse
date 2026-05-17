@@ -1,11 +1,17 @@
 #include <Functions/FunctionBaseAI.h>
+#include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <thread>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/RemoteHostFilter.h>
+#include <Poco/URI.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>
@@ -46,7 +52,7 @@ namespace
 {
 
 /// Strip control characters (U+0000..U+001F except \t \n \r) that break JSON serialization.
-String sanitizeTextForAI(const String & input)
+String sanitizeTextForAI(std::string_view input)
 {
     String output;
     output.reserve(input.size());
@@ -78,6 +84,9 @@ FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTy
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "First argument to AI function must be a named collection (constant String)");
 
     String collection_name = col_const->getValue<String>();
+
+    getContext()->checkAccess(AccessType::NAMED_COLLECTION, collection_name);
+
     const auto & named_collection = NamedCollectionFactory::instance().get(collection_name);
 
     config.provider = named_collection->getOrDefault<String>("provider", "");
@@ -118,9 +127,23 @@ float FunctionBaseAI::resolveTemperature(const ColumnsWithTypeAndName & argument
     return config.temperature;
 }
 
-ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
+ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    checkSanityBeforeExecuteImpl(arguments, result_type, input_rows_count);
+
+    /// A Nullable prompt can arrive as `ColumnNullable` or as `ColumnConst(ColumnNullable)` (e.g. `NULL::Nullable(String)`).
+    /// `convertToFullColumnIfConst` unwraps the latter into the former, so a single null-map path handles both.
+    size_t prompt_idx = promptArgumentIndex();
+    ColumnPtr prompt_column;
+    const ColumnNullable * prompt_nullable = nullptr;
+    if (prompt_idx < arguments.size() && arguments[prompt_idx].type->isNullable())
+    {
+        prompt_column = arguments[prompt_idx].column->convertToFullColumnIfConst();
+        prompt_nullable = typeid_cast<const ColumnNullable *>(prompt_column.get());
+    }
+
     auto config = resolveConfig(arguments);
+    getContext()->getRemoteHostFilter().checkURL(Poco::URI(config.endpoint));
     auto provider = createAIProvider(config.provider, config.endpoint, config.api_key, config.api_version);
     float temperature = resolveTemperature(arguments, config);
 
@@ -144,6 +167,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     auto response_format = buildResponseFormat(arguments);
 
     auto result_col = ColumnString::create();
+    auto null_map_col = prompt_nullable ? ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0)) : nullptr;
 
     UInt64 total_api_calls = 0;
     UInt64 total_input_tokens = 0;
@@ -153,6 +177,13 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     for (size_t i = 0; i < input_rows_count; ++i)
     {
+        if (prompt_nullable && prompt_nullable->getNullMapData()[i])
+        {
+            result_col->insertDefault();
+            null_map_col->getData()[i] = 1;
+            continue;
+        }
+
         if (quota.checkQuotas())
         {
             result_col->insertDefault();
@@ -222,6 +253,12 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
     ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
 
+    if (result_type->isNullable())
+    {
+        if (!null_map_col)
+            null_map_col = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
+        return ColumnNullable::create(std::move(result_col), std::move(null_map_col));
+    }
     return result_col;
 }
 

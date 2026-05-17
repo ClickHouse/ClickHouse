@@ -182,7 +182,7 @@ The function supports both individual geometry types (Point, Ring, Polygon, Mult
          "SELECT flipCoordinates(readWkt('POLYGON((0 0, 5 0, 5 5, 0 5, 0 0))'));",
          "[[(0, 0), (0, 5), (5, 5), (5, 0), (0, 0)]]"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
 
     FunctionDocumentation function_documentation = {

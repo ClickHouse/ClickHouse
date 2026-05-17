@@ -986,16 +986,24 @@ void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlan plan)
 {
     chassert(nodes.end() != std::find_if(cbegin(nodes), cend(nodes), [node](const Node & n) { return n.step == node->step; }));
 
+    SharedHeader expected_header;
     if (node->step)
+        expected_header = node->step->getOutputHeader();
+
+    replaceNodeWithPlan(node, std::move(plan), std::move(expected_header));
+}
+
+void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlan plan, SharedHeader expected_header)
+{
+    if (expected_header)
     {
-        const auto & header = node->step->getOutputHeader();
         const auto & plan_header = plan.getCurrentHeader();
 
-        if (!blocksHaveEqualStructure(*header, *plan_header))
+        if (!blocksHaveEqualStructure(*expected_header, *plan_header))
         {
             auto converting_dag = ActionsDAG::makeConvertingActions(
                 plan_header->getColumnsWithTypeAndName(),
-                header->getColumnsWithTypeAndName(),
+                expected_header->getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name,
                 nullptr);
 
