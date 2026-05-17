@@ -5,7 +5,7 @@
 #include <IO/WriteBufferFromOStream.h>
 
 
-int main(int, char **)
+int mainEntryExampleSelectParser(int, char **)
 try
 {
     using namespace DB;

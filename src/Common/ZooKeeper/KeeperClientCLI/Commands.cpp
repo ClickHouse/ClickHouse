@@ -23,7 +23,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
 bool LSCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
 {
     String path;

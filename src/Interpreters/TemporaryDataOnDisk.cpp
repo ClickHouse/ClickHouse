@@ -1,4 +1,5 @@
 #include <memory>
+#include <DataTypes/DataTypeArray.h>
 #include <mutex>
 
 #include <IO/EmptyReadBuffer.h>
