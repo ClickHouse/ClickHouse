@@ -86,9 +86,21 @@ def generate_cluster_def(common_path, port, azure_container):
                 <account_name>devstoreaccount1</account_name>
                 <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
             </disk_azure_common>
+            <disk_s3_with_cache>
+                <type>cache</type>
+                <disk>disk_s3_common</disk>
+                <path>/tmp/s3_cache/</path>
+                <max_size>1000000000</max_size>
+            </disk_s3_with_cache>
+            <disk_azure_with_cache>
+                <type>cache</type>
+                <disk>disk_azure_common</disk>
+                <path>/tmp/azure_cache/</path>
+                <max_size>1000000000</max_size>
+            </disk_azure_with_cache>
         </disks>
     </storage_configuration>
-    <allowed_disks_for_table_engines>disk_local_common,disk_s3_common,disk_azure_common</allowed_disks_for_table_engines>
+    <allowed_disks_for_table_engines>disk_local_common,disk_s3_common,disk_azure_common,disk_s3_with_cache,disk_azure_with_cache</allowed_disks_for_table_engines>
 </clickhouse>
 """
         )
@@ -162,10 +174,15 @@ def get_uuid_str():
 
 @pytest.mark.parametrize("format_version", ["2"])
 @pytest.mark.parametrize("storage_type", ["local", "s3", "azure"])
-def test_single_iceberg_file(started_cluster, format_version, storage_type):
+@pytest.mark.parametrize("with_cache", [False, True])
+def test_single_iceberg_file(started_cluster, format_version, storage_type, with_cache):
+    if with_cache and storage_type == "local":
+        pytest.skip("Cache is not supported with local disk")
+
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = f"test_single_iceberg_file_{get_uuid_str()}"
+    disk_name = f"disk_{storage_type}_with_cache" if with_cache else f"disk_{storage_type}_common"
 
     write_iceberg_from_df(spark, generate_data(spark, 0, 100), TABLE_NAME)
     default_upload_directory(
@@ -175,11 +192,12 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type):
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    table_name_1 = f"{TABLE_NAME}_{storage_type}_1"
-    table_name_2 = f"{TABLE_NAME}_{storage_type}_2"
-    table_name_3 = f"{TABLE_NAME}_{storage_type}_3"
-    table_name_4 = f"{TABLE_NAME}_{storage_type}_4"
-    table_name_5 = f"{TABLE_NAME}_{storage_type}_5"
+    suffix = f"{storage_type}_cache" if with_cache else storage_type
+    table_name_1 = f"{TABLE_NAME}_{suffix}_1"
+    table_name_2 = f"{TABLE_NAME}_{suffix}_2"
+    table_name_3 = f"{TABLE_NAME}_{suffix}_3"
+    table_name_4 = f"{TABLE_NAME}_{suffix}_4"
+    table_name_5 = f"{TABLE_NAME}_{suffix}_5"
 
     storage_path = (
         f"{TABLE_NAME}"
@@ -187,62 +205,67 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type):
         else f"var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
     )
     assert "Path suffixes" in instance.query_and_get_error(
-        f"CREATE TABLE {table_name_1} ENGINE=Iceberg('../', 'Parquet') SETTINGS disk = 'disk_{storage_type}_common'"
+        f"CREATE TABLE {table_name_1} ENGINE=Iceberg('../', 'Parquet') SETTINGS disk = '{disk_name}'"
     )
     assert "Path suffixes" in instance.query_and_get_error(
-        f"CREATE TABLE {table_name_1} ENGINE=Iceberg('/var/lib/clickhouse/user_files/default', 'Parquet') SETTINGS disk = 'disk_{storage_type}_common'"
+        f"CREATE TABLE {table_name_1} ENGINE=Iceberg('/var/lib/clickhouse/user_files/default', 'Parquet') SETTINGS disk = '{disk_name}'"
     )
 
     instance.query(
-        f"CREATE TABLE {table_name_2} ENGINE=Iceberg('{storage_path}', 'Parquet') SETTINGS disk = 'disk_{storage_type}_common'"
+        f"CREATE TABLE {table_name_2} ENGINE=Iceberg('{storage_path}', 'Parquet') SETTINGS disk = '{disk_name}'"
     )
     assert instance.query(f"SELECT * FROM {table_name_2}") == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
     instance.query(
-        f"CREATE TABLE {table_name_3} ENGINE=Iceberg(path = '{storage_path}', format = Parquet) SETTINGS disk = 'disk_{storage_type}_common'"
+        f"CREATE TABLE {table_name_3} ENGINE=Iceberg(path = '{storage_path}', format = Parquet) SETTINGS disk = '{disk_name}'"
     )
     assert instance.query(f"SELECT * FROM {table_name_3}") == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
     instance.query(
-        f"CREATE TABLE {table_name_4} ENGINE=Iceberg(path = '{storage_path}', format = Parquet, compression_method = 'auto') SETTINGS disk = 'disk_{storage_type}_common'"
+        f"CREATE TABLE {table_name_4} ENGINE=Iceberg(path = '{storage_path}', format = Parquet, compression_method = 'auto') SETTINGS disk = '{disk_name}'"
     )
     assert instance.query(f"SELECT * FROM {table_name_4}") == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
     instance.query(
-        f"CREATE TABLE {table_name_5} ENGINE=Iceberg(path = '{storage_path}', format = Parquet, compression_method = 'auto') SETTINGS disk = 'disk_{storage_type}_common'"
+        f"CREATE TABLE {table_name_5} ENGINE=Iceberg(path = '{storage_path}', format = Parquet, compression_method = 'auto') SETTINGS disk = '{disk_name}'"
     )
     assert instance.query(f"SELECT * FROM {table_name_5}") == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
     assert instance.query(
-        f"SELECT * FROM iceberg(path = '{storage_path}', SETTINGS disk = 'disk_{storage_type}_common')"
+        f"SELECT * FROM iceberg(path = '{storage_path}', SETTINGS disk = '{disk_name}')"
     ) == instance.query("SELECT number, toString(number + 1) FROM numbers(100)")
 
     if storage_type == "s3":
         with pytest.raises(Exception):
             instance.query(
-                f"SELECT * FROM icebergLocal(path = '{storage_path}', SETTINGS disk = 'disk_{storage_type}_common')"
+                f"SELECT * FROM icebergLocal(path = '{storage_path}', SETTINGS disk = '{disk_name}')"
             )
         instance.query(
-            f"SELECT * FROM icebergS3(path = '{storage_path}',  SETTINGS disk = 'disk_{storage_type}_common')"
+            f"SELECT * FROM icebergS3(path = '{storage_path}',  SETTINGS disk = '{disk_name}')"
         )
-
 
 @pytest.mark.parametrize("format_version", ["2"])
 @pytest.mark.parametrize("storage_type", ["local", "s3", "azure"])
-def test_many_tables(started_cluster, format_version, storage_type):
+@pytest.mark.parametrize("with_cache", [False, True])
+def test_many_tables(started_cluster, format_version, storage_type, with_cache):
+    if with_cache and storage_type == "local":
+        pytest.skip("Cache is not supported with local disk")
+
     instance = started_cluster.instances["node1"]
     TABLE_NAME = f"test_many_tables_{get_uuid_str()}"
+    disk_name = f"disk_{storage_type}_with_cache" if with_cache else f"disk_{storage_type}_common"
 
-    table_name = f"{TABLE_NAME}_{storage_type}"
-    table_name_2 = f"{TABLE_NAME}_{storage_type}_2"
+    suffix = f"{storage_type}_cache" if with_cache else storage_type
+    table_name = f"{TABLE_NAME}_{suffix}"
+    table_name_2 = f"{TABLE_NAME}_{suffix}_2"
 
     storage_path = (
         f"{table_name}"
@@ -256,11 +279,11 @@ def test_many_tables(started_cluster, format_version, storage_type):
     )
 
     instance.query(
-        f"CREATE TABLE {table_name} (col INT) ENGINE=Iceberg(path = '{storage_path}', format = Parquet, compression_method = 'auto') SETTINGS disk = 'disk_{storage_type}_common'",
+        f"CREATE TABLE {table_name} (col INT) ENGINE=Iceberg(path = '{storage_path}', format = Parquet, compression_method = 'auto') SETTINGS disk = '{disk_name}'",
         settings={"allow_insert_into_iceberg": 1},
     )
     instance.query(
-        f"CREATE TABLE {table_name_2} (col INT) ENGINE=Iceberg(path = '{storage_path_2}', format = Parquet, compression_method = 'auto') SETTINGS disk = 'disk_{storage_type}_common'",
+        f"CREATE TABLE {table_name_2} (col INT) ENGINE=Iceberg(path = '{storage_path_2}', format = Parquet, compression_method = 'auto') SETTINGS disk = '{disk_name}'",
         settings={"allow_insert_into_iceberg": 1},
     )
 
@@ -281,10 +304,12 @@ def test_many_tables(started_cluster, format_version, storage_type):
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
-def test_cluster_table_function(started_cluster, storage_type):
+@pytest.mark.parametrize("with_cache", [False, True])
+def test_cluster_table_function(started_cluster, storage_type, with_cache):
 
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
+    disk_name = f"disk_{storage_type}_with_cache" if with_cache else f"disk_{storage_type}_common"
 
     TABLE_NAME = f"test_iceberg_cluster_{get_uuid_str()}"
 
@@ -319,9 +344,9 @@ def test_cluster_table_function(started_cluster, storage_type):
 
     # Regular Query only node1
     table_function_expr = (
-        f"iceberg('{TABLE_NAME}', SETTINGS disk = 'disk_{storage_type}_common')"
+        f"iceberg('{TABLE_NAME}', SETTINGS disk = '{disk_name}')"
         if storage_type == "s3"
-        else f"iceberg('var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}', SETTINGS disk = 'disk_{storage_type}_common')"
+        else f"iceberg('var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}', SETTINGS disk = '{disk_name}')"
     )
     select_regular = (
         instance.query(f"SELECT * FROM {table_function_expr}").strip().split()
@@ -329,9 +354,9 @@ def test_cluster_table_function(started_cluster, storage_type):
 
     # Cluster Query with node1 as coordinator
     table_function_expr_cluster = (
-        f"icebergCluster('cluster_simple', '{TABLE_NAME}', SETTINGS disk = 'disk_{storage_type}_common')"
+        f"icebergCluster('cluster_simple', '{TABLE_NAME}', SETTINGS disk = '{disk_name}')"
         if storage_type == "s3"
-        else f"icebergCluster('cluster_simple', 'var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}', SETTINGS disk = 'disk_{storage_type}_common')"
+        else f"icebergCluster('cluster_simple', 'var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}', SETTINGS disk = '{disk_name}')"
     )
     select_cluster = (
         instance.query(f"SELECT * FROM {table_function_expr_cluster}").strip().split()
