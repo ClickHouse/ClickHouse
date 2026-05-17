@@ -51,7 +51,14 @@ private:
         tryRegisterFunctions();
         tryRegisterAggregateFunctions();
 
-        DatabasePtr database = std::make_shared<DatabaseMemory>("test", context);
+        /// Use a unique database name to avoid colliding with other gtests
+        /// (e.g. `gtest_transform_query_for_external_database.cpp`) that
+        /// register a database called "test" in the process-wide
+        /// `DatabaseCatalog`: whichever gtest runs first wins, the other
+        /// then fails with "Database test already exists".
+        static constexpr auto database_name = "planner_empty_projection_test_db";
+
+        DatabasePtr database = std::make_shared<DatabaseMemory>(database_name, context);
 
         NamesAndTypesList columns{
             {"x", std::make_shared<DataTypeUInt64>()},
@@ -61,7 +68,7 @@ private:
             context,
             "t",
             std::make_shared<StorageMemory>(
-                StorageID("test", "t"),
+                StorageID(database_name, "t"),
                 ColumnsDescription{columns},
                 ConstraintsDescription{},
                 String{},
@@ -69,7 +76,7 @@ private:
             {});
 
         DatabaseCatalog::instance().attachDatabase(database->getDatabaseName(), database);
-        context->setCurrentDatabase("test");
+        context->setCurrentDatabase(database_name);
     }
 };
 
