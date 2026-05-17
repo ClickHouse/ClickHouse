@@ -1,5 +1,6 @@
 -- In order version of LIMIT BY works only if analyzer enabled
 SET enable_analyzer = 1;
+SET parallel_replicas_local_plan = 1;
 
 DROP TABLE IF EXISTS 03701_unsorted, 03701_sorted;
 
