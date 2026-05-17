@@ -2627,6 +2627,22 @@ def test_aggregation_operators():
         ],
     )
 
+    # Behavior: Prometheus removes `__name__` from `without` grouping keys
+    # even when `__name__` is the `count_values` destination label. The generated
+    # metric name does not keep sample-value buckets split; results collapse by
+    # the remaining labels instead.
+    do_unordered_query_test(
+        'count_values("__name__", {__name__=~"foo|bar"}) without (shape)',
+        110,
+        '{"resultType": "vector", "result": [{"metric": {"size": "l"}, "value": [110, "3"]}, {"metric": {"size": "m"}, "value": [110, "1"]}, {"metric": {"size": "s"}, "value": [110, "2"]}, {"metric": {"size": "xl"}, "value": [110, "1"]}]}',
+        [
+            ["[('size','l')]", "1970-01-01 00:01:50.000", 3],
+            ["[('size','m')]", "1970-01-01 00:01:50.000", 1],
+            ["[('size','s')]", "1970-01-01 00:01:50.000", 2],
+            ["[('size','xl')]", "1970-01-01 00:01:50.000", 1],
+        ],
+    )
+
     do_unordered_query_test(
         "count_values(\"size\", foo) without (shape)",
         130,
