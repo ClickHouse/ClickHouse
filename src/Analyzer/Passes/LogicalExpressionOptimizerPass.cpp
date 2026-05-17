@@ -475,6 +475,34 @@ std::optional<CommonExpressionExtractionResult> tryExtractCommonExpressions(cons
     return CommonExpressionExtractionResult{new_or_node, common_exprs};
 }
 
+/// `true` when `_CAST(value, UInt8)` is value-preserving — i.e. when the value is already a
+/// `Bool` / `UInt8` (possibly wrapped in `Nullable` / `LowCardinality`). For wider numeric types,
+/// `_CAST` truncates to the low byte and silently drops truthiness for values like `256`, `512`,
+/// `2147483648`, etc.
+bool isUInt8Like(const DataTypePtr & type)
+{
+    return WhichDataType(removeNullable(recursiveRemoveLowCardinality(type))).isUInt8();
+}
+
+/// Coerce `expression` to a boolean via `notEquals(expression, 0)`.
+///
+/// Used in place of `buildCastFunction(expression, UInt8)` when the original cast would truncate.
+/// `_CAST` on a non-`UInt8` numeric type narrows to the low byte, so values whose low byte is zero
+/// (`256`, `512`, `0x100000000`, …) silently evaluate to `0`. Under a `WHERE` filter the matching
+/// rows are then dropped without warning. See https://github.com/ClickHouse/ClickHouse/issues/105009.
+///
+/// The replacement mirrors the fix applied in `Storages/VirtualColumnUtils.cpp::splitFilterNodeForAllowedInputs`
+/// (#101269, #101287) for the analogous bug in the storage-side filter path.
+QueryTreeNodePtr buildBooleanCoercion(QueryTreeNodePtr expression, const ContextPtr & context)
+{
+    auto expression_type = expression->getResultType();
+    auto zero_node = std::make_shared<ConstantNode>(expression_type->getDefault(), expression_type);
+    auto not_equals_node = std::make_shared<FunctionNode>("notEquals");
+    not_equals_node->getArguments().getNodes() = {std::move(expression), std::move(zero_node)};
+    resolveOrdinaryFunctionNodeByName(*not_equals_node, "notEquals", context);
+    return not_equals_node;
+}
+
 void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const ContextPtr & context)
 {
     [[maybe_unused]] auto * root_node = node->as<FunctionNode>();
@@ -506,7 +534,15 @@ void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const ContextPtr 
         }
 
         if (!new_root_node->getResultType()->equals(*node->getResultType()))
-            new_root_node = buildCastFunction(new_root_node, node->getResultType(), context);
+        {
+            /// Convert wider numeric types via `notEquals(x, 0)` to avoid the truncating-cast bug
+            /// (issue #105009). For `UInt8`-like sources, `_CAST` is value-preserving (only widens
+            /// to `Nullable` / `LowCardinality`), so skip the extra `notEquals`.
+            if (!isUInt8Like(new_root_node->getResultType()))
+                new_root_node = buildBooleanCoercion(std::move(new_root_node), context);
+            if (!new_root_node->getResultType()->equals(*node->getResultType()))
+                new_root_node = buildCastFunction(new_root_node, node->getResultType(), context);
+        }
         node = std::move(new_root_node);
     }
 }
@@ -553,7 +589,13 @@ void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr
     QueryTreeNodePtr new_root_node = and_function_node;
 
     if (!new_root_node->getResultType()->equals(*node->getResultType()))
-        new_root_node = buildCastFunction(new_root_node, node->getResultType(), context);
+    {
+        /// See the matching comment in `tryOptimizeCommonExpressionsInOr` above (issue #105009).
+        if (!isUInt8Like(new_root_node->getResultType()))
+            new_root_node = buildBooleanCoercion(std::move(new_root_node), context);
+        if (!new_root_node->getResultType()->equals(*node->getResultType()))
+            new_root_node = buildCastFunction(new_root_node, node->getResultType(), context);
+    }
     node = std::move(new_root_node);
 }
 

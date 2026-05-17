@@ -1,0 +1,17 @@
+Int64 OR(x,x)	4
+Int64 OR(x,x,x)	4
+Int64 (x*x) OR (x*x)	4
+Int64 control x != 0	4
+SQLancer++ shape	1
+Int16	4
+Int32	4
+Int64	4
+UInt16	4
+UInt32	4
+UInt64	4
+Float32	4
+Float64	4
+UInt8	4
+Bool	3
+Int64 with zeroes (expect 2)	2
+projection agreement	1

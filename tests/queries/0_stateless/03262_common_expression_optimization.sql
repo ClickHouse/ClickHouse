@@ -84,7 +84,9 @@ SELECT * FROM x WHERE ((A AND B AND C) OR (A AND B AND D)) AND ((B AND A AND E) 
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((A AND B AND C) OR (A AND B AND D)) AND ((B AND A AND E) OR (B AND A AND F));
 
 
--- _CAST function has to be used to maintain the same result type
+-- The first form needs a `_CAST(UInt8 -> Nullable(UInt8))` to maintain the original `or` result type.
+-- The second form (wider numeric source) must use `notEquals(x, 0)` instead of `_CAST(x, UInt8)` --
+-- a truncating cast there silently drops rows whose low byte is zero. See issue #105009.
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE ((B AND C) OR (B AND C AND toNullable(F)));
 EXPLAIN QUERY TREE dump_ast = 1 SELECT count() FROM x WHERE (x AND x) OR (x AND x);
 -- Here the result type stays nullable because of `toNullable(C)`, so no cast is needed
