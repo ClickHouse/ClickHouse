@@ -13,6 +13,7 @@
 
 
 #include <csignal>
+#include <ctime>
 #include <pthread.h>
 #include <sanitizer/common_interface_defs.h>
 #include <sys/poll.h>
@@ -185,6 +186,19 @@ void signalSafeWrite(const char * msg)
 /// Flag set by the SIGUSR1 handler on the runner thread after printing its stack.
 std::atomic<bool> runner_stack_printed{false};
 
+/// Monotonic-clock seconds at the start of the current `LLVMFuzzerTestOneInput`
+/// call. libfuzzer arms `setitimer(ITIMER_REAL)` with an interval of
+/// `UnitTimeoutSec / 2 + 1` seconds (11 s for our 20 s timeout), so SIGALRM
+/// fires periodically — not only at the actual timeout. The wrapper uses this
+/// to skip the expensive runner-stack dump when no timeout is imminent.
+std::atomic<int64_t> iteration_start_sec{0};
+
+/// `tests/fuzz/clickhouse_fuzzer.options` sets `timeout = 20`. Only kick off
+/// the runner-stack dump when we are within a couple of seconds of that limit,
+/// so the periodic 11-second SIGALRMs pass through without disturbing the
+/// runner thread.
+constexpr int64_t timeout_imminent_sec = 15;
+
 /// SIGUSR1 handler installed on the runner thread — prints its own stack trace.
 void runnerStackTraceHandler(int /*sig*/, siginfo_t * /*info*/, void * /*context*/)
 {
@@ -201,48 +215,81 @@ inline void signal_safe_sleep_ms(int ms)
 }
 
 /// When libfuzzer's timeout fires SIGALRM, it lands on the main thread.
-/// We first dump the runner thread's stack trace (via SIGUSR1), then call
-/// libfuzzer's original handler which will print the main thread stack and _Exit.
-void fuzzerSigalrmHandler(int /*sig*/, siginfo_t * /*info*/, void * /*context*/)
+/// We first dump the runner thread's stack trace (via SIGUSR1), then forward
+/// to libfuzzer's original handler which will print the main thread stack and
+/// `_Exit`.
+///
+/// SIGALRM is also fired periodically by libfuzzer's `setitimer` (every
+/// `UnitTimeout/2 + 1` seconds), not only on an actual timeout. We must
+/// distinguish the two: the runner-stack dump shells out to llvm-symbolizer
+/// (slow, not async-signal-safe), and running it on every periodic alarm has
+/// caused real timeouts where the iteration would otherwise have completed in
+/// time. We skip the dump unless our own monotonic clock says we are within a
+/// few seconds of the configured `UnitTimeoutSec`. We also forward to
+/// libfuzzer's handler *without* permanently restoring it, so the wrapper
+/// continues to intercept later periodic alarms.
+void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
 {
-    signalSafeWrite("[fuzzer] SIGALRM handler: sending SIGUSR1 to runner thread\n");
+    struct timespec ts;
+    (void)clock_gettime(CLOCK_MONOTONIC, &ts);
+    int64_t elapsed_sec = ts.tv_sec - iteration_start_sec.load(std::memory_order_acquire);
 
-    /// Send SIGUSR1 to the runner thread to print its stack trace.
-    runner_stack_printed.store(false, std::memory_order_release);
-    int rc = pthread_kill(runner_thread_id, SIGUSR1);
-
-    if (rc != 0)
+    if (elapsed_sec >= timeout_imminent_sec)
     {
-        signalSafeWrite("[fuzzer] pthread_kill failed with error ");
-        /// Signal-safe integer-to-string for small error codes.
-        char err_buf[16];
-        int pos = 14;
-        err_buf[15] = '\0';
-        err_buf[14] = '\n';
-        int tmp = rc;
-        do
+        /// Guard the slow dump so multiple concurrent SIGALRM deliveries
+        /// can't run it in parallel — only the first wins.
+        static std::atomic<bool> dump_started{false};
+        bool expected = false;
+        if (dump_started.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
         {
-            err_buf[--pos] = '0' + (tmp % 10);
-            tmp /= 10;
-        } while (tmp > 0 && pos > 0);
-        signalSafeWrite(err_buf + pos);
+            signalSafeWrite("[fuzzer] SIGALRM handler: sending SIGUSR1 to runner thread\n");
+
+            runner_stack_printed.store(false, std::memory_order_release);
+            int rc = pthread_kill(runner_thread_id, SIGUSR1);
+
+            if (rc != 0)
+            {
+                signalSafeWrite("[fuzzer] pthread_kill failed with error ");
+                /// Signal-safe integer-to-string for small error codes.
+                char err_buf[16];
+                int pos = 14;
+                err_buf[15] = '\0';
+                err_buf[14] = '\n';
+                int tmp = rc;
+                do
+                {
+                    err_buf[--pos] = '0' + (tmp % 10);
+                    tmp /= 10;
+                } while (tmp > 0 && pos > 0);
+                signalSafeWrite(err_buf + pos);
+            }
+
+            /// Wait for the runner thread to print its stack, yielding CPU.
+            constexpr int max_iterations = 3000;
+            int i = 0;
+            for (; i < max_iterations && !runner_stack_printed.load(std::memory_order_acquire); ++i)
+                signal_safe_sleep_ms(1);
+
+            if (i == max_iterations)
+                signalSafeWrite("[fuzzer] Timed out waiting for runner thread stack trace\n");
+            else
+                signalSafeWrite("[fuzzer] Runner thread stack trace printed successfully\n");
+        }
     }
 
-    /// Wait for the runner thread to print its stack, with nanosleep to yield CPU.
-    constexpr int max_iterations = 3000;
-    int i = 0;
-    for (; i < max_iterations && !runner_stack_printed.load(std::memory_order_acquire); ++i)
-        signal_safe_sleep_ms(1);
-
-    if (i == max_iterations)
-        signalSafeWrite("[fuzzer] Timed out waiting for runner thread stack trace\n");
-    else
-        signalSafeWrite("[fuzzer] Runner thread stack trace printed successfully\n");
-
-    /// Restore and call libfuzzer's original SIGALRM handler.
-    /// It will print the main thread's stack and call _Exit.
-    (void)sigaction(SIGALRM, &original_sigalrm_action, nullptr);
-    (void)raise(SIGALRM);
+    /// Forward to libfuzzer's original SIGALRM handler. If this is a real
+    /// timeout it will print the main-thread stack and `_Exit`; otherwise it
+    /// returns and the wrapper stays installed for the next periodic alarm.
+    if (original_sigalrm_action.sa_flags & SA_SIGINFO)
+    {
+        if (original_sigalrm_action.sa_sigaction)
+            original_sigalrm_action.sa_sigaction(sig, info, ctx);
+    }
+    else if (original_sigalrm_action.sa_handler != SIG_IGN
+          && original_sigalrm_action.sa_handler != SIG_DFL)
+    {
+        original_sigalrm_action.sa_handler(sig);
+    }
 }
 
 extern "C"
@@ -293,6 +340,15 @@ int LLVMFuzzerInitialize(const int *argc, char ***argv)
 extern "C"
 int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 {
+    /// Mark the start of this iteration before installing/handling SIGALRM so
+    /// `fuzzerSigalrmHandler` can tell a real timeout from libfuzzer's
+    /// periodic SIGALRM.
+    {
+        struct timespec ts;
+        (void)clock_gettime(CLOCK_MONOTONIC, &ts);
+        iteration_start_sec.store(ts.tv_sec, std::memory_order_release);
+    }
+
     /// Install our SIGALRM forwarder on the first call, after libfuzzer
     /// has already set up its own handler (which we save as original).
     static bool handler_installed = false;
@@ -326,6 +382,19 @@ void DB::ClientBase::runLibFuzzer()
 {
     // Initialize thread_status
     ThreadStatus thread_status;
+
+    /// Block SIGALRM on the runner thread so libfuzzer's periodic timer
+    /// signal is only delivered to the libfuzzer main thread. Without this,
+    /// SIGALRM can land on the runner — it then runs `fuzzerSigalrmHandler`
+    /// and `pthread_kill`'s SIGUSR1 to itself, causing the slow runner-stack
+    /// dump to run concurrently with the main thread's dump and corrupting
+    /// the signal-handler state via two competing `sigaction` calls.
+    {
+        sigset_t set;
+        sigemptyset(&set);
+        sigaddset(&set, SIGALRM);
+        (void)pthread_sigmask(SIG_BLOCK, &set, nullptr);
+    }
 
     /// Install SIGUSR1 handler on the runner thread for stack trace dumping.
     {
