@@ -31,6 +31,8 @@
 #include <cmath>
 #include <limits>
 #include <ranges>
+#include <string_view>
+#include <type_traits>
 
 namespace ProfileEvents
 {
@@ -128,6 +130,52 @@ Float32 distanceToQuery(unum::usearch::metric_kind_t metric_kind, const Float32 
         return static_cast<Float32>(dot);
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported metric kind for vector_spann index search");
+}
+
+/// Check two things to prevent undefined behavior further down in Usearch
+/// - No vector element is +inf, -inf or nan.
+/// - In the case of i8 quantization (which is obscure): additionally, the vector magnitude must not be zero.
+template <typename T>
+void checkVectorIsSane(
+    const T * vector,
+    size_t dimension,
+    unum::usearch::scalar_kind_t scalar_kind,
+    int error_code,
+    std::string_view context)
+{
+    double magnitude_squared = 0.0;
+    for (size_t i = 0; i != dimension; ++i)
+    {
+        T casted = static_cast<T>(vector[i]);
+        if constexpr (std::is_same_v<T, BFloat16>)
+        {
+            if (!casted.isFinite())
+                throw Exception(
+                    error_code,
+                    "Vector for vector_spann index ({}) must not contain non-finite values (NaN or Inf)",
+                    context);
+        }
+        else
+        {
+            if (!std::isfinite(casted))
+                throw Exception(
+                    error_code,
+                    "Vector for vector_spann index ({}) must not contain non-finite values (NaN or Inf)",
+                    context);
+        }
+
+        if (scalar_kind == unum::usearch::scalar_kind_t::i8_k)
+        {
+            double v = static_cast<double>(vector[i]);
+            magnitude_squared += v * v;
+        }
+    }
+
+    if (scalar_kind == unum::usearch::scalar_kind_t::i8_k && magnitude_squared == 0.0)
+        throw Exception(
+            error_code,
+            "Zero-magnitude vectors for vector_spann index ({}) are not supported with `i8` quantization",
+            context);
 }
 
 size_t postingListSerializedBytes(size_t count, size_t dimensions)
@@ -354,6 +402,7 @@ USearchIndexWithSerializationPtr MergeTreeIndexAggregatorVectorSpann::buildCentr
                 query_status->throwIfKilled();
 
         const Float32 * ptr = accumulated_vectors[row_id_in_accumulated].data();
+        checkVectorIsSane(ptr, params.dimensions, params.scalar_kind, ErrorCodes::INCORRECT_DATA, "indexed vector");
         unum::usearch::index_dense_t::add_result_t result = centroid_index->add(key, ptr);
         if (!result)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Could not add centroid to vector_spann index. Error: {}", result.error.release());
@@ -529,13 +578,13 @@ MergeTreeIndexConditionVectorSpann::MergeTreeIndexConditionVectorSpann(
     , metric_kind(metric_kind_)
     , params(params_)
     , search_epsilon(0.0f)
+    , index_fetch_multiplier(context->getSettingsRef()[Setting::vector_search_index_fetch_multiplier])
+    , max_limit(context->getSettingsRef()[Setting::max_limit_for_vector_search_queries])
+    , is_rescoring(context->getSettingsRef()[Setting::vector_search_with_rescoring])
     , max_posting_lists(std::max<size_t>(1, context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search]))
 {
     static constexpr auto MAX_INDEX_FETCH_MULTIPLIER = 1000.0;
     const auto expansion_search = context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search];
-    const auto index_fetch_multiplier = context->getSettingsRef()[Setting::vector_search_index_fetch_multiplier];
-    const auto max_limit = context->getSettingsRef()[Setting::max_limit_for_vector_search_queries];
-    const auto is_rescoring = context->getSettingsRef()[Setting::vector_search_with_rescoring];
 
     if (expansion_search == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
@@ -544,10 +593,6 @@ MergeTreeIndexConditionVectorSpann::MergeTreeIndexConditionVectorSpann(
         || index_fetch_multiplier <= 0.0 || index_fetch_multiplier > MAX_INDEX_FETCH_MULTIPLIER
         || (parameters && !std::isfinite(index_fetch_multiplier * static_cast<double>(parameters->limit))))
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be greater than 0.0 and less than {}", MAX_INDEX_FETCH_MULTIPLIER);
-
-    /// Silence unused-variable warnings for settings read only for validation parity with vector_similarity.
-    (void)max_limit;
-    (void)is_rescoring;
 }
 
 bool MergeTreeIndexConditionVectorSpann::mayBeTrueOnGranule(MergeTreeIndexGranulePtr, const UpdatePartialDisjunctionResultFn &) const
@@ -593,6 +638,13 @@ NearestNeighbours MergeTreeIndexConditionVectorSpann::calculateApproximateNeares
     for (size_t i = 0; i < params.dimensions; ++i)
         query_float[i] = static_cast<Float32>(parameters->reference_vector[i]);
 
+    checkVectorIsSane(
+        parameters->reference_vector.data(),
+        parameters->reference_vector.size(),
+        params.scalar_kind,
+        ErrorCodes::INCORRECT_QUERY,
+        "reference vector in the SELECT query");
+
     auto search_centroids = centroid_index->search(
         query_float.data(), max_posting_lists, unum::usearch::index_dense_t::any_thread(), false, default_expansion_search);
     if (!search_centroids)
@@ -624,7 +676,10 @@ NearestNeighbours MergeTreeIndexConditionVectorSpann::calculateApproximateNeares
         }
     }
 
-    const size_t limit = parameters->limit;
+    size_t limit = parameters->limit;
+    if (parameters->additional_filters_present || is_rescoring)
+        limit = std::min(static_cast<size_t>(static_cast<double>(limit) * index_fetch_multiplier), max_limit);
+
     const bool higher_is_better = (metric_kind == unum::usearch::metric_kind_t::ip_k);
     auto compare = [higher_is_better](const Candidate & a, const Candidate & b)
     {
@@ -725,9 +780,6 @@ MergeTreeIndexPtr spannIndexCreator(const IndexDescription & index)
         if (args[6].getType() != Field::Types::Float64)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Seventh argument of vector_spann index (centroid_ratio) must be Float");
         spann_params.centroid_ratio = static_cast<float>(args[6].safeGet<Float64>());
-
-        if (spann_params.scalar_kind == unum::usearch::scalar_kind_t::b1x8_k)
-            spann_params.metric_kind = unum::usearch::metric_kind_t::hamming_k;
     }
 
     return std::make_shared<MergeTreeIndexVectorSpann>(index, std::move(spann_params));
@@ -775,10 +827,9 @@ void spannIndexValidator(const IndexDescription & index, bool /* attach */)
 
         if (quantizationToScalarKind.at(args[3].safeGet<String>()) == unum::usearch::scalar_kind_t::b1x8_k)
         {
-            if (distanceFunctionToMetricKind.at(args[1].safeGet<String>()) != unum::usearch::metric_kind_t::cos_k)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Binary quantization in vector_spann index can only be used with the cosine distance as distance function");
-            if (args[2].safeGet<UInt64>() % 8 != 0)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Binary quantization in vector_spann index requires that the dimension is a multiple of 8");
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Binary quantization (`b1`) is not supported in vector_spann: posting lists store Float32 vectors and Hamming-distance reranking over Float32 vectors is not meaningful");
         }
 
         const UInt64 connectivity = args[4].safeGet<UInt64>();

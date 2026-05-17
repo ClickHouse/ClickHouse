@@ -130,6 +130,9 @@ private:
     const unum::usearch::metric_kind_t metric_kind;
     const SpannParams params;
     const float search_epsilon;
+    const double index_fetch_multiplier;
+    const size_t max_limit;
+    const bool is_rescoring;
     const size_t max_posting_lists;
 };
 
