@@ -141,9 +141,11 @@ public:
     {
         /// Legacy enforces FixedString(16) (uuid_bytes_length) at execution; here we accept
         /// any FixedString and the executor handles the length check. The optional second
-        /// argument selects the UUID variant — `parseVariant` reads it via `getInt`, so it
-        /// must be an integer (`Int8`/`UInt8` in practice).
-        return "(FixedString, [Integer]) -> String";
+        /// argument selects the UUID variant — `parseVariant` reads it via `getInt` and
+        /// casts to the enum's underlying type, which silently wraps for wider integers
+        /// (e.g. UInt16(258) becomes 2). Narrow to `Int8 | UInt8` to preserve the
+        /// original validation contract.
+        return "(FixedString, [Int8 | UInt8]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -209,7 +211,8 @@ public:
 
     String getSignatureString() const override
     {
-        return "(String | FixedString, [Integer]) -> FixedString(16)";
+        /// See `FunctionUUIDNumToString::getSignatureString` for why `[Int8 | UInt8]`.
+        return "(String | FixedString, [Int8 | UInt8]) -> FixedString(16)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -303,7 +306,8 @@ public:
 
     String getSignatureString() const override
     {
-        return "(UUID, [Integer]) -> FixedString(16)";
+        /// See `FunctionUUIDNumToString::getSignatureString` for why `[Int8 | UInt8]`.
+        return "(UUID, [Int8 | UInt8]) -> FixedString(16)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
