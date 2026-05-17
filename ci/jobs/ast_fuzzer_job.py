@@ -7,7 +7,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from ci.jobs.scripts.clickhouse_proc import collect_and_encrypt_cores
+from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.docker_image import DockerImage
 from ci.jobs.scripts.log_parser import FuzzerLogParser
@@ -225,10 +225,7 @@ def run_fuzz_job(check_name: str):
 
     # Fix file ownership after running docker as root
     logging.info("Fuzzer: Fixing file ownership after running docker as root")
-    uid = os.getuid()
-    gid = os.getgid()
-    chown_cmd = f"docker run --rm --user root --volume {cwd}:/repo --workdir=/repo {docker_image} chown -R {uid}:{gid} /repo"
-    Shell.check(chown_cmd, verbose=True)
+    Utils.fix_ownership_after_docker(cwd, docker_image)
 
     server_log, fuzzer_log, stderr_log, dmesg_log, fatal_log = JOB_ARTIFACTS
     paths = list(JOB_ARTIFACTS)
@@ -346,7 +343,7 @@ def run_fuzz_job(check_name: str):
     if is_failed:
         # generate fatal log
         Shell.check(f"rg --text '\\s<Fatal>\\s' {server_log} > {fatal_log}")
-        result.set_files(collect_and_encrypt_cores(WORKSPACE_PATH, f"{cwd}/ci/defs/public.pem"))
+        result.set_files(ClickHouseService.collect_cores(WORKSPACE_PATH))
         for file in paths:
             if file.exists() and file.stat().st_size > 0:
                 result.set_files(file)

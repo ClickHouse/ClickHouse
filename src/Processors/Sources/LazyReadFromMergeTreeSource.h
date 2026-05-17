@@ -36,7 +36,7 @@ public:
 
     String getName() const override { return "LazyReadFromMergeTreeSource"; }
     Status prepare(const UpdatedInputPorts & updated_input_ports, const UpdatedOutputPorts & /*updated_output_ports*/) override;
-    Processors expandPipeline() override;
+    PipelineUpdate updatePipeline() override;
 
 private:
     size_t max_block_size;

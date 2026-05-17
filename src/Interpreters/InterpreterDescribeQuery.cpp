@@ -101,7 +101,7 @@ BlockIO InterpreterDescribeQuery::execute()
     else if (table_expression.table_function)
         fillColumnsFromTableFunction(table_expression);
     else
-        fillColumnsFromTable(table_expression);
+        fillColumnsFromTable(table_expression, ast.temporary);
 
     Block sample_block = getSampleBlock(
         settings[Setting::describe_include_subcolumns], settings[Setting::describe_include_virtual_columns], settings[Setting::describe_compact_output]);
@@ -174,10 +174,11 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
     }
 }
 
-void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & table_expression)
+void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & table_expression, bool temporary)
 {
     auto query_context = getContext();
-    auto table_id = query_context->resolveStorageID(table_expression.database_and_table_name);
+    auto resolve_type = temporary ? Context::ResolveExternal : Context::ResolveAll;
+    auto table_id = query_context->resolveStorageID(table_expression.database_and_table_name, resolve_type);
     query_context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
 
     auto table = DatabaseCatalog::instance().getTable(table_id, query_context);

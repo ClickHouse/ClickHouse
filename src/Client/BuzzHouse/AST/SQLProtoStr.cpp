@@ -209,6 +209,10 @@ CONV_FN(JSONColumn, jcol)
     {
         ret += "^";
     }
+    else if (jcol.has_jcombined())
+    {
+        ret += "@";
+    }
     ret += "`";
     ColumnToString(ret, 1, jcol.col());
     ret += "`";
@@ -4327,6 +4331,36 @@ CONV_FN(DictionarySourceDetails, dsd)
         appendSQLStringLiteral(ret, DictionarySourceDetails_RedisStorageType_Name(dsd.redis_storage()));
         has_something = true;
     }
+    if (dsd.has_url())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "URL ";
+        appendSQLStringLiteral(ret, dsd.url());
+        has_something = true;
+    }
+    if (dsd.has_path())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "PATH ";
+        appendSQLStringLiteral(ret, dsd.path());
+        has_something = true;
+    }
+    if (dsd.has_format())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "FORMAT ";
+        appendSQLStringLiteral(ret, dsd.format());
+        has_something = true;
+    }
     if (dsd.has_invalidate_query())
     {
         if (has_something)
@@ -4617,11 +4651,20 @@ CONV_FN(ExpireSnapshots, es)
 
     ret += "expire_snapshots(";
     if (es.has_positional_timestamp())
-        ret += sep() + "'" + es.positional_timestamp() + "'";
+    {
+        ret += sep();
+        appendSQLStringLiteral(ret, es.positional_timestamp());
+    }
     if (es.has_expire_before())
-        ret += sep() + "expire_before = '" + es.expire_before() + "'";
+    {
+        ret += sep() + "expire_before = ";
+        appendSQLStringLiteral(ret, es.expire_before());
+    }
     if (es.has_retention_period())
-        ret += sep() + "retention_period = '" + es.retention_period() + "'";
+    {
+        ret += sep() + "retention_period = ";
+        appendSQLStringLiteral(ret, es.retention_period());
+    }
     if (es.has_retain_last())
         ret += sep() + "retain_last = " + std::to_string(es.retain_last());
     if (es.snapshot_ids_size() > 0)
@@ -4640,6 +4683,27 @@ CONV_FN(ExpireSnapshots, es)
     ret += ")";
 }
 
+CONV_FN(RemoveOrphanFiles, ro)
+{
+    bool has_arg = false;
+    auto sep = [&]() -> String { return std::exchange(has_arg, true) ? ", " : ""; };
+
+    ret += "remove_orphan_files(";
+    if (ro.has_older_than())
+    {
+        ret += sep();
+        appendSQLStringLiteral(ret, ro.older_than());
+    }
+    if (ro.has_location())
+    {
+        ret += sep() + "location = ";
+        appendSQLStringLiteral(ret, ro.location());
+    }
+    if (ro.dry_run())
+        ret += sep() + "dry_run = 1";
+    ret += ")";
+}
+
 CONV_FN(ExecuteCommand, ec)
 {
     ret += "EXECUTE ";
@@ -4648,6 +4712,9 @@ CONV_FN(ExecuteCommand, ec)
     {
         case CommandType::kExpireSnapshots:
             ExpireSnapshotsToString(ret, ec.expire_snapshots());
+            break;
+        case CommandType::kRemoveOrphanFiles:
+            RemoveOrphanFilesToString(ret, ec.remove_orphan_files());
             break;
         default:
             break;
@@ -5526,6 +5593,34 @@ CONV_FN(SystemCommand, cmd)
             break;
         case CmdType::kDropDistributedCache:
             ret += "DROP DISTRIBUTED CACHE";
+            break;
+        case CmdType::kFlushObjectStorageQueue: {
+            const auto & foq = cmd.flush_object_storage_queue();
+            SystemCommandOnCluster(ret, "FLUSH OBJECT STORAGE QUEUE", cmd, foq.table());
+            ret += " PATH ";
+            appendSQLStringLiteral(ret, foq.path());
+            break;
+        }
+        case CmdType::kStopVirtualPartsUpdate:
+            SystemCommandOnCluster(ret, "STOP VIRTUAL PARTS UPDATE", cmd, cmd.stop_virtual_parts_update());
+            break;
+        case CmdType::kStartVirtualPartsUpdate:
+            SystemCommandOnCluster(ret, "START VIRTUAL PARTS UPDATE", cmd, cmd.start_virtual_parts_update());
+            break;
+        case CmdType::kStopReduceBlockingParts:
+            SystemCommandOnCluster(ret, "STOP REDUCE BLOCKING PARTS", cmd, cmd.stop_reduce_blocking_parts());
+            break;
+        case CmdType::kStartReduceBlockingParts:
+            SystemCommandOnCluster(ret, "START REDUCE BLOCKING PARTS", cmd, cmd.start_reduce_blocking_parts());
+            break;
+        case CmdType::kWaitBlobsCleanup:
+            ret += "WAIT BLOBS CLEANUP";
+            if (cmd.has_cluster())
+            {
+                ClusterToString(ret, true, cmd.cluster());
+            }
+            ret += " ";
+            appendSQLStringLiteral(ret, cmd.wait_blobs_cleanup());
             break;
         case CmdType::kUnlockSnapshot:
             ret += "UNLOCK SNAPSHOT ";

@@ -58,6 +58,12 @@ public:
     void commitTransaction() override;
     void precommitTransaction() override {}
     bool hasActiveTransaction() const override { return transaction != nullptr; }
+#if CLICKHOUSE_CLOUD
+    TransactionCommitOutcomeVariant tryCommitTransaction(const TransactionCommitOptionsVariant & options) override;
+    void undoTransaction() override;
+    void serializeAuxiliaryInfo(WriteBuffer &) const override {}
+    void deserializeAuxiliaryInfo(ReadBuffer &) override {}
+#endif
 
 private:
     DataPartStorageOnDiskFull(VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_);

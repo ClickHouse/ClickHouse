@@ -636,6 +636,7 @@ class ClickHouseCluster:
         self.base_redis_cmd = []
         self.base_azurite_cmd = []
         self.base_nginx_cmd = []
+        self.base_prometheus_cmd = []
         self.pre_zookeeper_commands = []
         self.instances: dict[str, ClickHouseInstance] = {}
         self.with_arrowflight = False
@@ -886,19 +887,11 @@ class ClickHouseCluster:
 
         # available when with_prometheus == True
         self.with_prometheus = False
-        self.prometheus_writer_host = "prometheus_writer"
-        self.prometheus_writer_port = 9090
-        self.prometheus_writer_ip = None
-        self.prometheus_writer_logs_dir = p.abspath(p.join(self.instances_dir, "prometheus_writer/logs"))
-        self.prometheus_reader_host = "prometheus_reader"
-        self.prometheus_reader_port = 9091
-        self.prometheus_reader_ip = None
-        self.prometheus_reader_logs_dir = p.abspath(p.join(self.instances_dir, "prometheus_reader/logs"))
-        self.prometheus_receiver_host = "prometheus_receiver"
-        self.prometheus_receiver_port = 9092
-        self.prometheus_receiver_ip = None
-        self.prometheus_receiver_logs_dir = p.abspath(p.join(self.instances_dir, "prometheus_receiver/logs"))
-        self.prometheus_servers = []
+        self.prometheus_host = "prometheus"
+        self.prometheus_port = {"writer": 9090, "reader": 9091, "receiver": 9092}
+        self.prometheus_ip = {"writer": None, "reader": None, "receiver": None}
+        self.prometheus_logs_dir = "prometheus_{}/logs"
+        self.prometheus_servers = set()
         self.prometheus_remote_write_handlers = []
         self.prometheus_remote_read_handlers = []
 
@@ -1562,6 +1555,17 @@ class ClickHouseCluster:
         env_variables["SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT"] = str(
             self.schema_registry_auth_port
         )
+        if is_arm():
+            env_variables["KAFKA_IMAGE_TAG"] = "7.9.0"
+            env_variables["KAFKA_SCHEMA_REGISTRY_IMAGE_TAG"] = "7.9.0"
+            env_variables["KAFKA_ZOOKEEPER_IMAGE_TAG"] = "3.8"
+            # The `zookeeper:3.4.9` image put `clientPort=2181` into zoo.cfg itself,
+            # but starting from 3.5 the only way to set it is the `;<port>` suffix in
+            # ZOO_SERVERS. Without it the client port is not bound and Kafka cannot
+            # connect.
+            env_variables["KAFKA_ZOOKEEPER_SERVERS"] = (
+                "server.1=kafka_zookeeper:2888:3888;2181"
+            )
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_kafka.yml")]
         )
@@ -1954,53 +1958,39 @@ class ClickHouseCluster:
         )
         return self.base_letsencrypt_pebble_cmd
 
-    def setup_prometheus_cmd(self, instance, env_variables, docker_compose_yml_dir):
-        if "writer" in self.prometheus_servers:
-            prefix = f"PROMETHEUS_WRITER"
-            env_variables[f"{prefix}_HOST"] = self.prometheus_writer_host
-            env_variables[f"{prefix}_PORT"] = str(self.prometheus_writer_port)
-            env_variables[f"{prefix}_LOGS"] = self.prometheus_writer_logs_dir
-            env_variables[f"{prefix}_LOGS_FS"] = "bind"
+    def setup_prometheus_cmd(self, instance, env_variables, docker_compose_yml_dir, prometheus_server):
+        if prometheus_server in self.prometheus_servers:
+            return self.base_prometheus_cmd
 
-        if "reader" in self.prometheus_servers:
-            prefix = f"PROMETHEUS_READER"
-            env_variables[f"{prefix}_HOST"] = self.prometheus_reader_host
-            env_variables[f"{prefix}_PORT"] = str(self.prometheus_reader_port)
-            env_variables[f"{prefix}_LOGS"] = self.prometheus_reader_logs_dir
-            env_variables[f"{prefix}_LOGS_FS"] = "bind"
+        prefix = f"PROMETHEUS_{prometheus_server.upper()}"
+        env_variables[f"{prefix}_HOST"] = f"{self.prometheus_host}_{prometheus_server}"
+        env_variables[f"{prefix}_PORT"] = str(self.prometheus_port[prometheus_server])
+        env_variables[f"{prefix}_LOGS"] = p.abspath(p.join(self.instances_dir, self.prometheus_logs_dir.format(prometheus_server)))
+        env_variables[f"{prefix}_LOGS_FS"] = "bind"
+        docker_compose_path = p.join(docker_compose_yml_dir, f"docker_compose_prometheus_{prometheus_server}.yml")
+        self.base_cmd.extend(["--file", docker_compose_path])
 
-        if "receiver" in self.prometheus_servers:
-            prefix = f"PROMETHEUS_RECEIVER"
-            env_variables[f"{prefix}_HOST"] = self.prometheus_receiver_host
-            env_variables[f"{prefix}_PORT"] = str(self.prometheus_receiver_port)
-            env_variables[f"{prefix}_LOGS"] = self.prometheus_receiver_logs_dir
-            env_variables[f"{prefix}_LOGS_FS"] = "bind"
+        if not self.prometheus_servers:
+            self.base_prometheus_cmd = self.compose_cmd()
+        self.base_prometheus_cmd.extend(["--env-file", instance.env_file, "--file", docker_compose_path])
 
+        self.prometheus_servers.add(prometheus_server)
+        self.with_prometheus = True
+        return self.base_prometheus_cmd
+
+    def setup_prometheus_remote_write_handler(self, instance, env_variables, handler_port, handler_path):
+        self.prometheus_remote_write_handlers.append((instance.hostname, handler_port, handler_path))
         handler_urls = []
-        for handler_host, handler_port, handler_path in self.prometheus_remote_write_handlers:
-            handler_urls.append(f"http://{handler_host}:{handler_port}/{handler_path.strip('/')}")
+        for host, port, path in self.prometheus_remote_write_handlers:
+            handler_urls.append(f"http://{host}:{port}/{path.strip('/')}")
         env_variables["PROMETHEUS_REMOTE_WRITE_HANDLERS"] = '[' + ', '.join([f"{{'url': '{url}'}}" for url in handler_urls]) + ']'
 
+    def setup_prometheus_remote_read_handler(self, instance, env_variables, handler_port, handler_path):
+        self.prometheus_remote_read_handlers.append((instance.hostname, handler_port, handler_path))
         handler_urls = []
-        for handler_host, handler_port, handler_path in self.prometheus_remote_read_handlers:
-            handler_urls.append(f"http://{handler_host}:{handler_port}/{handler_path.strip('/')}")
+        for host, port, path in self.prometheus_remote_read_handlers:
+            handler_urls.append(f"http://{host}:{port}/{path.strip('/')}")
         env_variables["PROMETHEUS_REMOTE_READ_HANDLERS"] = '[' + ', '.join([f"{{'url': '{url}'}}" for url in handler_urls]) + ']'
-
-        if not self.with_prometheus:
-            self.with_prometheus = True
-            self.base_cmd.extend(
-                [
-                    "--file",
-                    p.join(docker_compose_yml_dir, "docker_compose_prometheus.yml"),
-                ]
-            )
-            self.base_prometheus_cmd = self.compose_cmd(
-                "--env-file",
-                instance.env_file,
-                "--file",
-                p.join(docker_compose_yml_dir, "docker_compose_prometheus.yml"),
-            )
-        return self.base_prometheus_cmd
 
     def add_instance(
         self,
@@ -2468,21 +2458,21 @@ class ClickHouseCluster:
             )
 
         if with_prometheus_writer:
-            self.prometheus_servers.append('writer')
-        if with_prometheus_reader:
-            self.prometheus_servers.append('reader')
-        if with_prometheus_receiver:
-            self.prometheus_servers.append('receiver')
-        if handle_prometheus_remote_write:
-            self.prometheus_remote_write_handlers.append((instance.hostname,) + handle_prometheus_remote_write)
-        if handle_prometheus_remote_read:
-            self.prometheus_remote_read_handlers.append((instance.hostname,) + handle_prometheus_remote_read)
-        if self.prometheus_servers:
             cmds.append(
-                self.setup_prometheus_cmd(
-                    instance, env_variables, docker_compose_yml_dir
-                )
+                self.setup_prometheus_cmd(instance, env_variables, docker_compose_yml_dir, 'writer')
             )
+        if with_prometheus_reader:
+            cmds.append(
+                self.setup_prometheus_cmd(instance, env_variables, docker_compose_yml_dir, 'reader')
+            )
+        if with_prometheus_receiver:
+            cmds.append(
+                self.setup_prometheus_cmd(instance, env_variables, docker_compose_yml_dir, 'receiver')
+            )
+        if handle_prometheus_remote_write:
+            self.setup_prometheus_remote_write_handler(instance, env_variables, *handle_prometheus_remote_write)
+        if handle_prometheus_remote_read:
+            self.setup_prometheus_remote_read_handler(instance, env_variables, *handle_prometheus_remote_read)
 
         ### !!!! This is the last step after combining all cmds, don't put anything after
         if self.with_net_trics:
@@ -3052,20 +3042,6 @@ class ClickHouseCluster:
 
         raise RuntimeError("Cannot wait RabbitMQ container")
 
-    @contextmanager
-    def pause_rabbitmq(self, timeout=120):
-        run_rabbitmqctl(
-            self.rabbitmq_docker_id, self.rabbitmq_cookie, "stop_app", timeout
-        )
-
-        try:
-            yield
-        finally:
-            run_rabbitmqctl(
-                self.rabbitmq_docker_id, self.rabbitmq_cookie, "start_app", timeout
-            )
-            self.wait_rabbitmq_to_start(timeout)
-
     def reset_rabbitmq(self, timeout=120):
         try:
             resp = requests.get(f"http://{self.rabbitmq_ip}:{self.rabbitmq_management_port}/api/overview",
@@ -3418,15 +3394,10 @@ class ClickHouseCluster:
         raise Exception("Can't wait LDAP to start")
 
     def wait_prometheus_to_start(self):
-        if "writer" in self.prometheus_servers:
-            self.prometheus_writer_ip = self.get_instance_ip(self.prometheus_writer_host)
-            self.wait_for_url(f"http://{self.prometheus_writer_ip}:{self.prometheus_writer_port}/api/v1/status/runtimeinfo")
-        if "reader" in self.prometheus_servers:
-            self.prometheus_reader_ip = self.get_instance_ip(self.prometheus_reader_host)
-            self.wait_for_url(f"http://{self.prometheus_reader_ip}:{self.prometheus_reader_port}/api/v1/status/runtimeinfo")
-        if "receiver" in self.prometheus_servers:
-            self.prometheus_receiver_ip = self.get_instance_ip(self.prometheus_receiver_host)
-            self.wait_for_url(f"http://{self.prometheus_receiver_ip}:{self.prometheus_receiver_port}/api/v1/status/runtimeinfo")
+        for prometheus_server in self.prometheus_servers:
+            ip = self.get_instance_ip(f"{self.prometheus_host}_{prometheus_server}")
+            self.prometheus_ip[prometheus_server] = ip
+            self.wait_for_url(f"http://{ip}:{self.prometheus_port[prometheus_server]}/api/v1/status/runtimeinfo")
 
     def wait_arrowflight_to_start(self):
         time.sleep(5) # TODO
@@ -3969,15 +3940,10 @@ class ClickHouseCluster:
                 )
 
             if self.with_prometheus and self.base_prometheus_cmd:
-                if "writer" in self.prometheus_servers:
-                    os.makedirs(self.prometheus_writer_logs_dir)
-                    os.chmod(self.prometheus_writer_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                if "reader" in self.prometheus_servers:
-                    os.makedirs(self.prometheus_reader_logs_dir)
-                    os.chmod(self.prometheus_reader_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-                if "receiver" in self.prometheus_servers:
-                    os.makedirs(self.prometheus_receiver_logs_dir)
-                    os.chmod(self.prometheus_receiver_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                for prometheus_server in self.prometheus_servers:
+                    logs_dir = p.abspath(p.join(self.instances_dir, self.prometheus_logs_dir.format(prometheus_server)))
+                    os.makedirs(logs_dir)
+                    os.chmod(logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 prometheus_start_cmd = self.base_prometheus_cmd + common_opts
 
@@ -4242,11 +4208,84 @@ class ClickHouseCluster:
     def _unpause_container_using_signal(self, instance_name):
         subprocess_check_call(self.base_cmd + ["kill", "--signal=SIGCONT", instance_name])
 
+    def _wait_for_pause_effective(self, instance_name, timeout):
+        """Block until pausing `instance_name` is observably effective for
+        fresh client connections.
+
+        Docker's cgroup freezer (and `SIGSTOP`) suspends user-space tasks
+        asynchronously with respect to in-flight TCP traffic. After
+        `docker compose pause` returns, the kernel can still complete the
+        TCP three-way handshake for new connections — and a short
+        application-level greeting that is already buffered in the socket
+        can still flow back to the client — for a brief window before the
+        freeze fully blocks the server's accept/read/write loop. Tests
+        that assert on connection failure under `pause_container` can
+        therefore see the very first probe succeed, producing chronic
+        flakes (see issues `#103819`, `#103820`).
+
+        For ClickHouse instances, poll a sibling ClickHouse node with a
+        tight `remote(<paused>:9000, system.one)` probe until it raises a
+        `QueryRuntimeException`. That event deterministically establishes
+        that fresh connections to the paused container can no longer
+        complete the ClickHouse handshake, which is the property every
+        existing caller actually depends on.
+
+        For non-ClickHouse containers (Kafka, MongoDB, etc.) we cannot
+        speak the application protocol from a sibling node, so we skip
+        the wait. The current Kafka callers do not assert on the timing
+        of the freeze — they wait for log lines that the paused side
+        emits well after the freeze is effective — so the absence of a
+        global probe is benign for them.
+        """
+        if instance_name not in self.instances:
+            return
+        probers = [
+            inst
+            for name, inst in self.instances.items()
+            if name != instance_name and inst.is_up
+        ]
+        if not probers:
+            return
+        prober = probers[0]
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                prober.query(
+                    f"SELECT 1 FROM remote('{instance_name}:9000', system.one) "
+                    "SETTINGS connect_timeout_with_failover_ms=200, "
+                    "handshake_timeout_ms=200, "
+                    "connections_with_failover_max_tries=1",
+                    timeout=2,
+                )
+            except QueryRuntimeException:
+                return
+            time.sleep(0.1)
+        raise Exception(
+            f"pause_container({instance_name!r}) did not become observably "
+            f"effective within {timeout}s — connections to {instance_name} "
+            f"from {prober.name!r} still succeed"
+        )
+
     @contextmanager
-    def pause_container(self, instance_name):
+    def pause_container(self, instance_name, wait_for_paused=True, wait_timeout=30.0):
         """Use it as following:
         with cluster.pause_container(name):
             useful_stuff()
+
+        When `instance_name` refers to a ClickHouse instance and another
+        ClickHouse instance is available to probe with, this helper blocks
+        until the pause is observably effective for fresh TCP-plus-
+        ClickHouse-handshake connections, removing a chronic race where
+        Docker's cgroup freezer takes effect asynchronously with respect
+        to in-flight traffic. Set `wait_for_paused=False` to opt out and
+        keep the older non-blocking behavior.
+
+        Cleanup: once the container has been paused (whether via
+        `docker compose pause` or the `SIGSTOP` fallback), unpausing must
+        always run on context exit — even if `_wait_for_pause_effective`
+        times out. Otherwise a probe failure would leave the container
+        permanently paused and cascade into unrelated test failures in
+        the same suite.
         """
         used_signal = False
         try:
@@ -4259,7 +4298,10 @@ class ClickHouseCluster:
             )
             self._pause_container_using_signal(instance_name)
             used_signal = True
+
         try:
+            if wait_for_paused:
+                self._wait_for_pause_effective(instance_name, wait_timeout)
             yield
         finally:
             if used_signal:
@@ -4268,9 +4310,11 @@ class ClickHouseCluster:
                 self._unpause_container(instance_name)
 
     @contextmanager
-    def pause_container_using_signal(self, instance_name):
+    def pause_container_using_signal(self, instance_name, wait_for_paused=True, wait_timeout=30.0):
         self._pause_container_using_signal(instance_name)
         try:
+            if wait_for_paused:
+                self._wait_for_pause_effective(instance_name, wait_timeout)
             yield
         finally:
             self._unpause_container_using_signal(instance_name)
@@ -6232,4 +6276,4 @@ class ClickHouseKiller(object):
 
 @cache
 def is_arm():
-    return any(arch in platform.processor().lower() for arch in ("arm, aarch"))
+    return platform.machine().lower() in ("arm64", "aarch64")
