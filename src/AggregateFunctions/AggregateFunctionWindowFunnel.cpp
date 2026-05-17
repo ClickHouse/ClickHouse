@@ -369,21 +369,20 @@ private:
 
     UInt8 getEventLevelStrictOnce(const AggregateFunctionWindowFunnelStrictOnceData<T>::TimestampEvents & events_list) const
     {
-        /// Stores the timestamp of the first and last i-th level event happen within time window
-        /// NOLINTBEGIN(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-        /// `event_path` is intentionally uninitialized: only the prefix [0..event_idx] is used,
-        /// and zero-initializing the full 256-byte array on every construction is wasteful in this hot path.
+        /// Stores the timestamp of the first and last i-th level event happen within time window.
+        /// `event_path` must be zero-initialized: the full array is copied by `auto prev_path = it->event_path`
+        /// even though only the prefix [0..event_idx] is logically used, so leaving the tail uninitialized
+        /// would read indeterminate values under MSan/ASan.
         struct EventMatchTimeWindow
         {
             UInt64 first_timestamp{};
             UInt64 last_timestamp{};
-            std::array<UInt64, MAX_EVENTS> event_path;
+            std::array<UInt64, MAX_EVENTS> event_path{};
 
             EventMatchTimeWindow() = default;
             EventMatchTimeWindow(UInt64 first_ts, UInt64 last_ts)
                 : first_timestamp(first_ts), last_timestamp(last_ts) {}
         };
-        /// NOLINTEND(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
 
         /// We track all possible event sequences up to the current event.
         /// It's required because one event can meet several conditions.
