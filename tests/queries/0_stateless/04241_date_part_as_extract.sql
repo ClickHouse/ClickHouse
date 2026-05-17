@@ -32,3 +32,26 @@ SELECT datepart('year', toDate('2024-03-17'));
 -- Equivalence with EXTRACT(unit FROM expr).
 SELECT date_part('year', toDate('2024-03-17')) = EXTRACT(YEAR FROM toDate('2024-03-17'));
 SELECT date_part('epoch', toDateTime('2024-03-17 00:00:00', 'UTC')) = EXTRACT(EPOCH FROM toDateTime('2024-03-17 00:00:00', 'UTC'));
+
+-- Same alias vocabulary as `EXTRACT`: plurals, `SQL_TSI_*`, and short forms.
+SELECT date_part('years', toDate('2024-03-17'));
+SELECT date_part('YY', toDate('2024-03-17'));
+SELECT date_part('yyyy', toDate('2024-03-17'));
+SELECT date_part('sql_tsi_year', toDate('2024-03-17'));
+SELECT date_part('months', toDate('2024-03-17'));
+SELECT date_part('mm', toDate('2024-03-17'));
+SELECT date_part('days', toDate('2024-03-17'));
+SELECT date_part('dd', toDate('2024-03-17'));
+SELECT date_part('hours', toDateTime('2024-03-17 13:45:07'));
+SELECT date_part('hh', toDateTime('2024-03-17 13:45:07'));
+SELECT date_part('minutes', toDateTime('2024-03-17 13:45:07'));
+SELECT date_part('mi', toDateTime('2024-03-17 13:45:07'));
+SELECT date_part('seconds', toDateTime('2024-03-17 13:45:07'));
+SELECT date_part('ss', toDateTime('2024-03-17 13:45:07'));
+SELECT date_part('quarters', toDate('2024-03-17'));
+SELECT date_part('weeks', toDate('2024-03-17'));
+SELECT date_part('wk', toDate('2024-03-17'));
+SELECT date_part('ms', toDateTime64('2024-03-17 13:45:07.123', 3));
+
+-- Unknown unit string still rejects.
+SELECT date_part('not_a_unit', toDate('2024-03-17')); -- { serverError SYNTAX_ERROR }

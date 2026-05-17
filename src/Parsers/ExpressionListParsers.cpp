@@ -1606,6 +1606,73 @@ static ASTPtr buildExtractTimePartAST(IntervalKind interval_kind, ExtractUnit ex
     }
 }
 
+/// Maps a lowercased unit string to an `IntervalKind`, accepting the same
+/// aliases that `parseIntervalKind` accepts as keywords for `EXTRACT`
+/// (plurals like `years`, `SQL_TSI_*` forms, and short forms like `yy`, `mm`,
+/// `ns`). Keep in sync with `parseIntervalKind.cpp`.
+static bool tryParseIntervalKindFromLowerString(const std::string & unit_lower, IntervalKind::Kind & result)
+{
+    if (IntervalKind::tryParseString(unit_lower, result))
+        return true;
+
+    if (unit_lower == "nanoseconds" || unit_lower == "sql_tsi_nanosecond" || unit_lower == "ns")
+    {
+        result = IntervalKind::Kind::Nanosecond;
+        return true;
+    }
+    if (unit_lower == "microseconds" || unit_lower == "sql_tsi_microsecond")
+    {
+        result = IntervalKind::Kind::Microsecond;
+        return true;
+    }
+    if (unit_lower == "milliseconds" || unit_lower == "sql_tsi_millisecond" || unit_lower == "ms")
+    {
+        result = IntervalKind::Kind::Millisecond;
+        return true;
+    }
+    if (unit_lower == "seconds" || unit_lower == "sql_tsi_second" || unit_lower == "ss" || unit_lower == "s")
+    {
+        result = IntervalKind::Kind::Second;
+        return true;
+    }
+    if (unit_lower == "minutes" || unit_lower == "sql_tsi_minute" || unit_lower == "mi" || unit_lower == "n")
+    {
+        result = IntervalKind::Kind::Minute;
+        return true;
+    }
+    if (unit_lower == "hours" || unit_lower == "sql_tsi_hour" || unit_lower == "hh" || unit_lower == "h")
+    {
+        result = IntervalKind::Kind::Hour;
+        return true;
+    }
+    if (unit_lower == "days" || unit_lower == "sql_tsi_day" || unit_lower == "dd" || unit_lower == "d")
+    {
+        result = IntervalKind::Kind::Day;
+        return true;
+    }
+    if (unit_lower == "weeks" || unit_lower == "sql_tsi_week" || unit_lower == "wk" || unit_lower == "ww")
+    {
+        result = IntervalKind::Kind::Week;
+        return true;
+    }
+    if (unit_lower == "months" || unit_lower == "sql_tsi_month" || unit_lower == "mm" || unit_lower == "m")
+    {
+        result = IntervalKind::Kind::Month;
+        return true;
+    }
+    if (unit_lower == "quarters" || unit_lower == "sql_tsi_quarter" || unit_lower == "qq" || unit_lower == "q")
+    {
+        result = IntervalKind::Kind::Quarter;
+        return true;
+    }
+    if (unit_lower == "years" || unit_lower == "sql_tsi_year" || unit_lower == "yyyy" || unit_lower == "yy")
+    {
+        result = IntervalKind::Kind::Year;
+        return true;
+    }
+    return false;
+}
+
 /// Parses a unit string (lowercased) like 'year' or 'epoch' into either an
 /// IntervalKind (standard units) or an ExtractUnit (PostgreSQL-specific extra
 /// units). Returns false if the string does not name a known unit.
@@ -1613,7 +1680,7 @@ static bool tryParseExtractUnitFromString(const std::string & unit_lower, Interv
 {
     extract_unit = ExtractUnit::None;
     IntervalKind::Kind kind;
-    if (IntervalKind::tryParseString(unit_lower, kind))
+    if (tryParseIntervalKindFromLowerString(unit_lower, kind))
     {
         interval_kind = IntervalKind{kind};
         return true;
