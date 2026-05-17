@@ -1,7 +1,0 @@
----
-# Disable `memory_worker_rss_speculative_reserve_ratio` for tests running under
-# sanitizers. Under ASan, UBSan, MSan, TSan, the gap `resident - tracked` is
-# dominated by sanitizer shadow / runtime overhead rather than tracker
-# bookkeeping lag, so a non-zero ratio biases the tracker far past
-# `max_server_memory_usage` and breaks ordinary, non memory-stress queries.
-memory_worker_rss_speculative_reserve_ratio: 0
