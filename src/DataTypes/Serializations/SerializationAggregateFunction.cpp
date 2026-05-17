@@ -75,7 +75,7 @@ void deserializeFromString(const AggregateFunctionPtr & function, IColumn & colu
     column_concrete.getData().push_back(place);
 }
 
-void createStateFromValues(const AggregateFunctionPtr & function, IColumn & column, const IColumn ** arg_columns)
+void createStateFromValues(const AggregateFunctionPtr & function, IColumn & column, const IColumn ** arg_columns, size_t num_rows)
 {
     ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
 
@@ -87,7 +87,7 @@ void createStateFromValues(const AggregateFunctionPtr & function, IColumn & colu
 
     try
     {
-        function->addBatchSinglePlace(0, arg_columns[0]->size(), place, arg_columns, &arena);
+        function->addBatchSinglePlace(0, num_rows, place, arg_columns, &arena);
     }
     catch (...)
     {
@@ -122,7 +122,7 @@ void deserializeFromValues(IColumn & column, ReadBuffer & istr, const FormatSett
             for (const auto & col : assert_cast<const ColumnTuple*>(tmp_column.get())->getColumns())
                 columns_ptrs.push_back(col.get());
 
-        createStateFromValues(function, column, columns_ptrs.data());
+        createStateFromValues(function, column, columns_ptrs.data(), 1);
     }
     else
     {
@@ -134,11 +134,11 @@ void deserializeFromValues(IColumn & column, ReadBuffer & istr, const FormatSett
         absl::InlinedVector<const IColumn *, 7> columns_ptrs;
         if (argument_types.size() == 1)
             columns_ptrs.push_back(array_column.getDataPtr().get());
-        else
+        else if (!argument_types.empty())
             for (const auto & col : assert_cast<const ColumnTuple&>(array_column.getData()).getColumns())
                 columns_ptrs.push_back(col.get());
 
-        createStateFromValues(function, column, columns_ptrs.data());
+        createStateFromValues(function, column, columns_ptrs.data(), array_column.getData().size());
     }
 }
 
@@ -173,6 +173,7 @@ void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer
     try
     {
         absl::InlinedVector<const IColumn *, 7> columns_ptrs;
+        size_t num_rows = 0;
         if (settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::Value)
         {
             const auto tmp_column = value_type->createColumn();
@@ -185,6 +186,7 @@ void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer
             else
                 for (const auto & col : assert_cast<const ColumnTuple*>(tmp_column.get())->getColumns())
                     columns_ptrs.push_back(col.get());
+            num_rows = 1;
         } else
         {
             auto array_type = DataTypeArray(value_type);
@@ -196,12 +198,13 @@ void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer
             const auto & array_column = assert_cast<const ColumnArray&>(*tmp_column);
             if (argument_types.size() == 1)
                 columns_ptrs.push_back(array_column.getDataPtr().get());
-            else
+            else if (!argument_types.empty())
                 for (const auto & col : assert_cast<const ColumnTuple&>(array_column.getData()).getColumns())
                     columns_ptrs.push_back(col.get());
+            num_rows = array_column.getData().size();
         }
 
-        function->addBatchSinglePlace(0, columns_ptrs[0]->size(), place, columns_ptrs.data(), &arena);
+        function->addBatchSinglePlace(0, num_rows, place, columns_ptrs.data(), &arena);
         WriteBufferFromString buf(s.data);
         function->serialize(place, buf, version);
     }
