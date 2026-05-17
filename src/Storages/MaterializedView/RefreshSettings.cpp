@@ -13,21 +13,8 @@ namespace DB
     DECLARE(Bool, prefer_dependency_replica, false, "Deprecated and ignored.", 0) \
     DECLARE(UInt64, prefer_dependency_replica_delay_ms, 2000, "Deprecated and ignored.", 0) \
 
-DECLARE_SETTINGS_TRAITS(RefreshSettingsTraits, LIST_OF_REFRESH_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(RefreshSettingsTraits, LIST_OF_REFRESH_SETTINGS)
-
-struct RefreshSettingsImpl : public BaseSettings<RefreshSettingsTraits>
-{
-};
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) RefreshSettings##TYPE NAME = &RefreshSettingsImpl ::NAME;
-
-namespace RefreshSetting
-{
-LIST_OF_REFRESH_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(RefreshSettingsTraits, LIST_OF_REFRESH_SETTINGS, REFRESH_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(RefreshSettingsTraits, LIST_OF_REFRESH_SETTINGS, RefreshSettings, RefreshSetting)
 
 RefreshSettings::RefreshSettings() : impl(std::make_unique<RefreshSettingsImpl>())
 {

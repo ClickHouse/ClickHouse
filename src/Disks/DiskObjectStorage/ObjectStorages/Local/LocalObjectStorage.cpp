@@ -408,13 +408,10 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
     if (!fs::exists(path) || !fs::is_directory(path))
         return;
 
-    for (const auto & entry : fs::directory_iterator(path))
+    for (const auto & entry : fs::recursive_directory_iterator(path))
     {
         if (entry.is_directory())
-        {
-            listObjects(entry.path(), children, 0);
             continue;
-        }
 
         children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry.path(), getObjectMetadata(entry.path(), false)));
     }
