@@ -1416,9 +1416,8 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
-        /// Same as above: skip limit-by-in-order through JOIN for parallel replicas
-        /// to avoid coordination mode mismatch.
-        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
+        /// TODO: Skip for parallel replicas for now to avoid coordination mode mismatch.
+        if (reading->isParallelReadingFromReplicas())
             return {};
 
         auto order_info = buildInputOrderFromUnorderedKeys(reading, fixed_columns, dag, keys);
