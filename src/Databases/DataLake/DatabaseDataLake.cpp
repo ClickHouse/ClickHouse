@@ -685,13 +685,22 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
+    /// If the user explicitly disabled vended credentials, do not let the catalog refresh callback
+    /// silently re-fetch them and override the static credentials we configured above.
+    auto get_credentials_refresh_callback = [&](const StorageID & storage_id) -> DataLake::ICatalog::CredentialsRefreshCallback
+    {
+        if (!with_vended_credentials)
+            return std::nullopt;
+        return catalog->getCredentialsConfigurationCallback(storage_id);
+    };
+
     if (can_use_parallel_replicas && !is_secondary_query)
     {
         auto storage_id = StorageID(getDatabaseName(), name);
         auto storage_cluster = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,
             configuration,
-            configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(storage_id)),
+            configuration->createObjectStorage(context_copy, /* is_readonly */ false, get_credentials_refresh_callback(storage_id)),
             storage_id,
             columns,
             ConstraintsDescription{},
@@ -711,7 +720,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     return std::make_shared<StorageObjectStorage>(
         configuration,
-        configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(StorageID(getDatabaseName(), name))),
+        configuration->createObjectStorage(context_copy, /* is_readonly */ false, get_credentials_refresh_callback(StorageID(getDatabaseName(), name))),
         context_copy,
         StorageID(getDatabaseName(), name),
         /* columns */columns,
