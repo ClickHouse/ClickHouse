@@ -239,6 +239,7 @@ private:
         NamesAndTypesList storage_columns{};
         NamesAndTypesList storage_columns_expired_by_ttl{};
         NamesAndTypesList virtual_columns{};
+        NamesAndTypesList minmax_idx_columns{};
 
         MergedBlockOutputStream::GatheredData gathered_data{};
         std::unordered_map<String, ColumnsStatistics> statistics_to_build_by_part;

@@ -393,10 +393,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
     /// Recalculate the min-max index for partition columns if the merge might reduce rows.
     if (global_ctx->merge_may_reduce_rows)
-    {
-        auto minmax_columns = MergeTreeData::getMinMaxColumnsNames(global_ctx->metadata_snapshot->getPartitionKey());
-        key_columns.insert(minmax_columns.begin(), minmax_columns.end());
-    }
+        key_columns.insert_range(global_ctx->minmax_idx_columns.getNames());
 
     key_columns.insert(global_ctx->deduplicate_by_columns.begin(), global_ctx->deduplicate_by_columns.end());
 
@@ -486,9 +483,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             global_ctx->gathering_columns.emplace_back(column);
     }
 
-    /// If any skip index references the persistent virtual columns _block_number / _block_offset,
-    /// they must be available in the horizontal merge block. Otherwise the index aggregator would
-    /// not see them and would skip writing the granule.
+    /// Track whether any projection or index needs _block_number/_block_offset in the horizontal phase.
     global_ctx->need_block_number_in_merge |= key_columns.contains(BlockNumberColumn::name);
     global_ctx->need_block_offset_in_merge |= key_columns.contains(BlockOffsetColumn::name);
 }
@@ -568,8 +563,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
 
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
-    global_ctx->storage_columns = global_ctx->metadata_snapshot->columns.getAllPhysical();
+    global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
     global_ctx->virtual_columns = global_ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
+    global_ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(global_ctx->metadata_snapshot->getPartitionKey(), global_ctx->data_settings);
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
@@ -761,7 +757,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             if (part->isEmpty())
                 continue;
 
-            global_ctx->new_data_part->minmax_idx->merge(*part->minmax_idx);
+            global_ctx->new_data_part->getMinMaxIndex()->merge(*part->getMinMaxIndex());
             const auto & result_statistics = global_ctx->gathered_data.statistics;
 
             if (result_statistics.empty())
@@ -1345,10 +1341,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
 
         if (global_ctx->merge_may_reduce_rows)
-        {
-            global_ctx->new_data_part->minmax_idx->update(
-                block, MergeTreeData::getMinMaxColumnsNames(global_ctx->metadata_snapshot->getPartitionKey()));
-        }
+            global_ctx->new_data_part->getMinMaxIndex()->update(block, global_ctx->minmax_idx_columns);
 
         calculateProjections(block, starting_offset);
 
