@@ -413,6 +413,7 @@ TEST(Statistics, NullPredicateEstimates)
 
     auto check = [&](const String & expression, Float64 expected_rows, Float64 eps)
     {
+        std::cout << "check: " << expression << std::endl;
         Float64 actual = estimateRows(estimator, expression);
         EXPECT_NEAR(actual, expected_rows, eps)
             << "Expression: " << expression
@@ -440,6 +441,7 @@ TEST(Statistics, NullPredicateEstimates)
     check("x IS NOT NULL",         50.0, 2.0);
     check("x IS NOT NULL OR x < 50",         50.0, 2.0);
     check("not x < 50",         25.0, 2.0);
+    check("not (x IS NOT NULL AND x < 50)",         75.0, 2.0);
     check("x IS NULL OR not x < 50",         75.0, 2.0);
 
     /// Plain range — must not include NULL rows.
@@ -651,6 +653,109 @@ TEST(Statistics, DeserializeV3ThrowsOnOversizedStat)
     /// Deserialization should throw ILLEGAL_STATISTICS because consumed > stat_size
     ReadBufferFromString mod_read_buf(modified);
     EXPECT_THROW(ColumnStatistics::deserialize(mod_read_buf, data_type), DB::Exception);
+}
+
+TEST(Statistics, NullableEstimatorWithMinMax)
+{
+    /// Two nullable columns with range, IS NULL, and IS NOT NULL predicates.
+    ///
+    /// column a: Nullable(Int32), 1000 rows, every 5th NULL → 200 NULLs, 800 non-NULLs in [1,999]
+    /// column b: Nullable(Int32), 1000 rows, every 10th NULL → 100 NULLs, 900 non-NULLs in [1,999]
+    ///
+    /// MinMax formulas (min=1, max=999):
+    ///   estimateLess(500) = 499/998 * non_null = non_null/2 exactly (since 499*2==998)
+    ///   a: estimateLess/Greater(500) = 400.0 exactly
+    ///   b: estimateLess/Greater(500) = 450.0 exactly
+    tryRegisterFunctions();
+
+    auto stats_a = buildNullableInt32Stats({StatisticsType::MinMax}, 1000, 5);
+    auto stats_b = buildNullableInt32Stats({StatisticsType::MinMax}, 1000, 10);
+    ASSERT_EQ(stats_a->getNonNullRowCount(), 800u);
+    ASSERT_EQ(stats_b->getNonNullRowCount(), 900u);
+
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addStatistics("a", stats_a);
+    builder.addStatistics("b", stats_b);
+    builder.incrementRowCount(1000);
+    auto estimator = builder.getEstimator();
+
+    auto check = [&](const String & expression, Float64 expected, Float64 eps)
+    {
+        Float64 actual = estimateRows(estimator, expression);
+        EXPECT_NEAR(actual, expected, eps) << "Expression: " << expression;
+    };
+
+    /// Single column — plain ranges
+    check("a > 500",       400.0, 1.0);
+    check("a < 500",       400.0, 1.0);
+    check("b > 500",       450.0, 1.0);
+    check("b < 500",       450.0, 1.0);
+
+    /// Single column — IS NULL / IS NOT NULL
+    check("a IS NULL",     200.0, 1e-6);
+    check("a IS NOT NULL", 800.0, 1e-6);
+    check("b IS NULL",     100.0, 1e-6);
+    check("b IS NOT NULL", 900.0, 1e-6);
+
+    /// Single column — IS NULL AND range → contradiction
+    check("a IS NULL AND a > 500", 0.0, 1e-6);
+    check("b IS NULL AND b < 500", 0.0, 1e-6);
+
+    /// Single column — IS NULL OR range → null rows ∪ matching range rows
+    check("a IS NULL OR a > 500", 600.0, 1.0);   /// 200 + 400
+    check("b IS NULL OR b < 500", 550.0, 1.0);   /// 100 + 450
+
+    /// Single column — IS NOT NULL AND range → equals the range (implied)
+    check("a IS NOT NULL AND a > 500", 400.0, 1.0);
+    check("b IS NOT NULL AND b < 500", 450.0, 1.0);
+
+    /// Single column — IS NOT NULL OR range → IS NOT NULL dominates
+    check("a IS NOT NULL OR a > 500", 800.0, 1.0);
+    check("b IS NOT NULL OR b < 500", 900.0, 1.0);
+
+    /// Cross-column — range AND range (independent columns)
+    /// P = 0.4 * 0.45 = 0.18
+    check("a > 500 AND b > 500", 180.0, 2.0);
+
+    /// Cross-column — range OR range
+    /// P = 1 - (1-0.4)*(1-0.45) = 1 - 0.33 = 0.67
+    check("a > 500 OR b > 500", 670.0, 2.0);
+
+    /// Cross-column — IS NULL AND range (different columns, independent)
+    /// P = P(a IS NULL) * P(b > 500) = 0.2 * 0.45 = 0.09
+    check("a IS NULL AND b > 500", 90.0, 2.0);
+
+    /// Cross-column — IS NULL OR range
+    /// P = 1 - P(a IS NOT NULL) * P(b <= 500) = 1 - 0.8 * 0.55 = 0.56
+    check("a IS NULL OR b > 500", 560.0, 2.0);
+
+    /// Cross-column — IS NULL AND IS NULL
+    /// P = 0.2 * 0.1 = 0.02
+    check("a IS NULL AND b IS NULL", 20.0, 2.0);
+
+    /// Cross-column — IS NULL OR IS NULL
+    /// P = 1 - 0.8 * 0.9 = 0.28
+    check("a IS NULL OR b IS NULL", 280.0, 2.0);
+
+    /// Cross-column — IS NOT NULL AND IS NOT NULL
+    /// P = 0.8 * 0.9 = 0.72
+    check("a IS NOT NULL AND b IS NOT NULL", 720.0, 2.0);
+
+    /// Cross-column — IS NOT NULL AND IS NULL (different columns)
+    /// P = 0.8 * 0.1 = 0.08
+    check("a IS NOT NULL AND b IS NULL", 80.0, 2.0);
+
+    /// Cross-column — range AND IS NULL (different columns)
+    /// P = P(a > 500) * P(b IS NULL) = 0.4 * 0.1 = 0.04
+    check("a > 500 AND b IS NULL", 40.0, 2.0);
+
+    /// Cross-column — IS NOT NULL AND range on same column, combined with IS NULL on other
+    /// a IS NOT NULL AND a > 500 → same as a > 500 (P=0.4); then AND b IS NULL (P=0.1)
+    check("a IS NOT NULL AND a > 500 AND b IS NULL", 40.0, 2.0);
+
+    /// Contradictions spanning two columns
+    check("a > 500 AND b > 500 AND b IS NULL", 0.0, 1e-6);  /// b > 500 contradicts b IS NULL
+    check("a IS NULL AND a > 500 AND b IS NULL", 0.0, 1e-6); /// a IS NULL contradicts a > 500
 }
 
 TEST(Statistics, LikeSelectivity)

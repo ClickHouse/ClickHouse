@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Columns/ColumnSparse.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionFactory.h>
@@ -192,6 +193,8 @@ void MergeTreeDataPartWriterWide::addStreams(
                 max_compress_block_size = value->safeGet<UInt64>();
         if (!max_compress_block_size)
             max_compress_block_size = settings.max_compress_block_size;
+        /// Clamp to prevent absurd memory allocations from fuzzed or misconfigured column settings.
+        max_compress_block_size = std::min<UInt64>(max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
 
         WriteSettings query_write_settings = settings.query_write_settings;
         query_write_settings.use_adaptive_write_buffer =
@@ -652,7 +655,15 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
         if (settings.can_use_adaptive_granularity)
             readBinaryLittleEndian(index_granularity_rows, *mrk_in);
         else
-            index_granularity_rows = index_granularity_info.fixed_index_granularity;
+            /// Non-adaptive mark files do not store per-mark row counts. The writer uses the
+            /// in-memory `index_granularity` to determine how many rows belong to each mark,
+            /// and `MergeTreeIndexGranularityConstant` allows the last data mark to have fewer
+            /// rows than `fixed_index_granularity` (e.g. after `fixFromRowsCount` adjusts it
+            /// during part loading). Read back the per-mark row count from the in-memory
+            /// granularity rather than blindly assuming `fixed_index_granularity`, otherwise
+            /// the comparison below would falsely fail for parts whose last mark is incomplete
+            /// (issue #98585).
+            index_granularity_rows = index_granularity->getMarkRows(mark_num);
 
         if (must_be_last)
         {
