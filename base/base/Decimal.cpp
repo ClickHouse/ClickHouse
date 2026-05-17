@@ -19,28 +19,35 @@ namespace DB
     M(Int128, X) \
     M(Int256, X)
 
-template <typename T> const Decimal<T> & Decimal<T>::operator += (const T & x) { value += x; return *this; }
-template <typename T> const Decimal<T> & Decimal<T>::operator -= (const T & x) { value -= x; return *this; }
-template <typename T> const Decimal<T> & Decimal<T>::operator *= (const T & x) { value *= x; return *this; }
-template <typename T> const Decimal<T> & Decimal<T>::operator /= (const T & x) { value /= x; return *this; }
-template <typename T> const Decimal<T> & Decimal<T>::operator %= (const T & x) { value %= x; return *this; }
+/// Decimal arithmetic in ClickHouse semantically allows wrap-around overflow:
+/// callers that need overflow detection use the helpers in `base/arithmeticOverflow.h`
+/// (`addOverflow`, `mulOverflow`, etc.) or check operands explicitly, while paths such
+/// as digit accumulation in `readDecimalText` and running sums in aggregate functions
+/// rely on two's-complement wrap. The operator overloads must therefore be marked
+/// `NO_SANITIZE_UNDEFINED` so UBSAN does not flag the wrap as undefined behaviour
+/// (matches `addOverflow` / `negateOverflow` below).
+template <typename T> NO_SANITIZE_UNDEFINED const Decimal<T> & Decimal<T>::operator += (const T & x) { value += x; return *this; }
+template <typename T> NO_SANITIZE_UNDEFINED const Decimal<T> & Decimal<T>::operator -= (const T & x) { value -= x; return *this; }
+template <typename T> NO_SANITIZE_UNDEFINED const Decimal<T> & Decimal<T>::operator *= (const T & x) { value *= x; return *this; }
+template <typename T> NO_SANITIZE_UNDEFINED const Decimal<T> & Decimal<T>::operator /= (const T & x) { value /= x; return *this; }
+template <typename T> NO_SANITIZE_UNDEFINED const Decimal<T> & Decimal<T>::operator %= (const T & x) { value %= x; return *this; }
 
 template <typename T> void NO_SANITIZE_UNDEFINED Decimal<T>::addOverflow(const T & x) { value += x; }
 
 /// Maybe this explicit instantiation affects performance since operators cannot be inlined.
 
-template <typename T> template <typename U> const Decimal<T> & Decimal<T>::operator += (const Decimal<U> & x) { value += static_cast<T>(x.value); return *this; }
-template <typename T> template <typename U> const Decimal<T> & Decimal<T>::operator -= (const Decimal<U> & x) { value -= static_cast<T>(x.value); return *this; }
-template <typename T> template <typename U> const Decimal<T> & Decimal<T>::operator *= (const Decimal<U> & x) { value *= static_cast<T>(x.value); return *this; }
-template <typename T> template <typename U> const Decimal<T> & Decimal<T>::operator /= (const Decimal<U> & x) { value /= static_cast<T>(x.value); return *this; }
-template <typename T> template <typename U> const Decimal<T> & Decimal<T>::operator %= (const Decimal<U> & x) { value %= static_cast<T>(x.value); return *this; }
+template <typename T> template <typename U> NO_SANITIZE_UNDEFINED const Decimal<T> & Decimal<T>::operator += (const Decimal<U> & x) { value += static_cast<T>(x.value); return *this; }
+template <typename T> template <typename U> NO_SANITIZE_UNDEFINED const Decimal<T> & Decimal<T>::operator -= (const Decimal<U> & x) { value -= static_cast<T>(x.value); return *this; }
+template <typename T> template <typename U> NO_SANITIZE_UNDEFINED const Decimal<T> & Decimal<T>::operator *= (const Decimal<U> & x) { value *= static_cast<T>(x.value); return *this; }
+template <typename T> template <typename U> NO_SANITIZE_UNDEFINED const Decimal<T> & Decimal<T>::operator /= (const Decimal<U> & x) { value /= static_cast<T>(x.value); return *this; }
+template <typename T> template <typename U> NO_SANITIZE_UNDEFINED const Decimal<T> & Decimal<T>::operator %= (const Decimal<U> & x) { value %= static_cast<T>(x.value); return *this; }
 
 #define DISPATCH(TYPE_T, TYPE_U) \
-    template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator += (const Decimal<TYPE_U> & x); \
-    template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator -= (const Decimal<TYPE_U> & x); \
-    template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator *= (const Decimal<TYPE_U> & x); \
-    template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator /= (const Decimal<TYPE_U> & x); \
-    template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator %= (const Decimal<TYPE_U> & x);
+    template NO_SANITIZE_UNDEFINED const Decimal<TYPE_T> & Decimal<TYPE_T>::operator += (const Decimal<TYPE_U> & x); \
+    template NO_SANITIZE_UNDEFINED const Decimal<TYPE_T> & Decimal<TYPE_T>::operator -= (const Decimal<TYPE_U> & x); \
+    template NO_SANITIZE_UNDEFINED const Decimal<TYPE_T> & Decimal<TYPE_T>::operator *= (const Decimal<TYPE_U> & x); \
+    template NO_SANITIZE_UNDEFINED const Decimal<TYPE_T> & Decimal<TYPE_T>::operator /= (const Decimal<TYPE_U> & x); \
+    template NO_SANITIZE_UNDEFINED const Decimal<TYPE_T> & Decimal<TYPE_T>::operator %= (const Decimal<TYPE_U> & x);
 #define INVOKE(X) FOR_EACH_UNDERLYING_DECIMAL_TYPE_PASS(DISPATCH, X)
 FOR_EACH_UNDERLYING_DECIMAL_TYPE(INVOKE);
 #undef INVOKE
@@ -68,19 +75,20 @@ FOR_EACH_UNDERLYING_DECIMAL_TYPE(DISPATCH)
 #undef DISPATCH
 
 
-template <typename T> Decimal<T> operator+ (const Decimal<T> & x, const Decimal<T> & y) { return x.value + y.value; }
-template <typename T> Decimal<T> operator- (const Decimal<T> & x, const Decimal<T> & y) { return x.value - y.value; }
-template <typename T> Decimal<T> operator* (const Decimal<T> & x, const Decimal<T> & y) { return x.value * y.value; }
-template <typename T> Decimal<T> operator/ (const Decimal<T> & x, const Decimal<T> & y) { return x.value / y.value; }
-template <typename T> Decimal<T> operator- (const Decimal<T> & x) { return -x.value; }
+/// Same wrap-around semantics as the compound assignment operators above.
+template <typename T> NO_SANITIZE_UNDEFINED Decimal<T> operator+ (const Decimal<T> & x, const Decimal<T> & y) { return x.value + y.value; }
+template <typename T> NO_SANITIZE_UNDEFINED Decimal<T> operator- (const Decimal<T> & x, const Decimal<T> & y) { return x.value - y.value; }
+template <typename T> NO_SANITIZE_UNDEFINED Decimal<T> operator* (const Decimal<T> & x, const Decimal<T> & y) { return x.value * y.value; }
+template <typename T> NO_SANITIZE_UNDEFINED Decimal<T> operator/ (const Decimal<T> & x, const Decimal<T> & y) { return x.value / y.value; }
+template <typename T> NO_SANITIZE_UNDEFINED Decimal<T> operator- (const Decimal<T> & x) { return -x.value; }
 template <typename T> Decimal<T> NO_SANITIZE_UNDEFINED negateOverflow (const Decimal<T> & x) { return -x.value; }
 
 #define DISPATCH(TYPE) \
-template Decimal<TYPE> operator+ (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
-template Decimal<TYPE> operator- (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
-template Decimal<TYPE> operator* (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
-template Decimal<TYPE> operator/ (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
-template Decimal<TYPE> operator- (const Decimal<TYPE> & x); \
+template NO_SANITIZE_UNDEFINED Decimal<TYPE> operator+ (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
+template NO_SANITIZE_UNDEFINED Decimal<TYPE> operator- (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
+template NO_SANITIZE_UNDEFINED Decimal<TYPE> operator* (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
+template NO_SANITIZE_UNDEFINED Decimal<TYPE> operator/ (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
+template NO_SANITIZE_UNDEFINED Decimal<TYPE> operator- (const Decimal<TYPE> & x); \
 template Decimal<TYPE> NO_SANITIZE_UNDEFINED negateOverflow (const Decimal<TYPE> & x);
 FOR_EACH_UNDERLYING_DECIMAL_TYPE(DISPATCH)
 #undef DISPATCH
