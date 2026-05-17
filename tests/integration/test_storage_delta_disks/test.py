@@ -16,6 +16,7 @@ from pyspark.sql.types import (
 from pyspark.sql.window import Window
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_secret_key
 from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 from helpers.s3_tools import (
     AzureUploader,

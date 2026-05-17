@@ -754,7 +754,6 @@ def test_kafka_formats(kafka_cluster, create_query_generator):
             CREATE MATERIALIZED VIEW test.kafka_{format_name}_mv ENGINE=MergeTree ORDER BY tuple() AS
                 SELECT *, _topic, _partition, _offset FROM test.kafka_{format_name};
             """.format(
-                topic_name=topic_name,
                 format_name=format_name,
                 create_query=create_query_generator(
                     f"kafka_{format_name}",

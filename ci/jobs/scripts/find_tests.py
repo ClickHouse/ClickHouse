@@ -144,7 +144,6 @@ class Targeting:
 
     def get_previously_failed_tests(self):
         from ci.praktika.cidb import CIDB
-        from ci.praktika.settings import Settings
 
         assert self.job_type, "Unsupported job type"
         assert (

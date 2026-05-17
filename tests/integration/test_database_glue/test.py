@@ -9,7 +9,7 @@ import pyarrow as pa
 import pytest
 import urllib3
 import pytz
-from datetime import datetime, timedelta
+from datetime import timedelta
 from minio import Minio
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec

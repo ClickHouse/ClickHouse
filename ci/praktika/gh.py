@@ -909,7 +909,7 @@ class GH:
         sha: str = ""
         start_time: Optional[float] = None
         duration: Optional[float] = None
-        failed_results: List["ResultSummaryForGH"] = dataclasses.field(
+        failed_results: List["ResultSummaryForGH"] = dataclasses.field(  # noqa: F821  # self-referential nested dataclass
             default_factory=list
         )
         info: str = ""

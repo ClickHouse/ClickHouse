@@ -6,8 +6,6 @@ import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from more_itertools import tail
-
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.integration_tests_configs import (
     IMAGES_ENV,

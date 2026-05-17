@@ -49,7 +49,6 @@ from helpers.mock_servers import start_mock_servers
 from helpers.network import PartitionManager
 from helpers.s3_tools import (
     AzureUploader,
-    LocalUploader,
     S3Uploader,
     get_file_contents,
     list_s3_objects,
@@ -4209,7 +4208,7 @@ deltaLake{suffix}({cluster}
 
 
 @pytest.mark.parametrize("cluster", [False, True])
-def test_partition_columns_3(started_cluster, cluster):
+def test_partition_columns_jumbled(started_cluster, cluster):
     """Test for bug https://github.com/ClickHouse/ClickHouse/issues/95526
 
     Reproduces issue where partition column values become incorrect when inserting

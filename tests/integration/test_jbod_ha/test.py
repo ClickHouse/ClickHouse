@@ -170,4 +170,4 @@ def test_jbod_ha_fetch_partition(start_cluster):
 
     finally:
         for node in [node1, node2]:
-            node.query("DROP TABLE IF EXISTS tbl SYNC".format(i + 1))
+            node.query("DROP TABLE IF EXISTS tbl SYNC")

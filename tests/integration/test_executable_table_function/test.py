@@ -356,7 +356,7 @@ def test_executable_storage_input_slow_python(started_cluster):
     node.query("DROP TABLE test_table")
 
 
-def test_executable_function_input_multiple_pipes_python(started_cluster):
+def test_executable_storage_input_multiple_pipes_python(started_cluster):
     skip_test_msan(node)
 
     query = "CREATE TABLE test_table (value String) ENGINE=Executable('input_multiple_pipes.py', 'TabSeparated', {source})"
