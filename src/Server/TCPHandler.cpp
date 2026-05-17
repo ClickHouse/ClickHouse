@@ -1421,7 +1421,8 @@ void TCPHandler::processInsertQuery(QueryState & state)
 
             {
                 std::lock_guard lock(*callback_mutex);
-                sendProgress(state);
+                if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PROGRESS_IN_ASYNC_INSERT)
+                    sendProgress(state);
                 sendInsertProfileEvents(state);
             }
             return;
@@ -1445,7 +1446,6 @@ void TCPHandler::processInsertQuery(QueryState & state)
     }
 
     std::lock_guard lock(*callback_mutex);
-    sendProgress(state);
     sendInsertProfileEvents(state);
 }
 

@@ -131,7 +131,6 @@ class TextLog;
 class TraceLog;
 class MetricLog;
 class TransposedMetricLog;
-class HistogramMetricLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
@@ -614,7 +613,7 @@ protected:
 
         static size_t shardIndex(const StorageID & id)
         {
-            return StorageID::DatabaseAndTableNameHash{}(id) & (NumShards - 1);
+            return StorageID::DatabaseAndTableNameHash{}(id) % NumShards;
         }
     };
 
@@ -1450,6 +1449,10 @@ public:
     void setParquetMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
     void updateParquetMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<ParquetMetadataCache> getParquetMetadataCache() const;
+    /// Same as `getParquetMetadataCache`, but returns nullptr if the cache has not been
+    /// initialised (e.g. on the client side of `INSERT ... FROM INFILE`) instead of throwing.
+    /// Use this from code paths that can run in such contexts.
+    std::shared_ptr<ParquetMetadataCache> tryGetParquetMetadataCache() const;
     void clearParquetMetadataCache() const;
 #endif
 
@@ -1534,7 +1537,6 @@ public:
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;
     std::shared_ptr<TransposedMetricLog> getTransposedMetricLog() const;
-    std::shared_ptr<HistogramMetricLog> getHistogramMetricLog() const;
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
