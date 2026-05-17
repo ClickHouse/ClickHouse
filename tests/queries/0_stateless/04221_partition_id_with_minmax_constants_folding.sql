@@ -26,7 +26,7 @@ INSERT INTO partition_id_with_minmax_folding SELECT 2, 3; -- 2_5_5_0
 INSERT INTO partition_id_with_minmax_folding SELECT 2, 4; -- 2_6_6_0
 
 SELECT '== result ==';
-SELECT * FROM partition_id_with_minmax_folding WHERE (_partition_id = '1' AND _block_number > 1) or (_partition_id = '2' AND _block_number >= 6);
+SELECT * FROM partition_id_with_minmax_folding WHERE (_partition_id = '1' AND _block_number > 1) or (_partition_id = '2' AND _block_number >= 6) ORDER BY p;
 
 SELECT '== explain ==';
 EXPLAIN indexes = 1 SELECT * FROM partition_id_with_minmax_folding WHERE (_partition_id = '1' AND _block_number > 1) or (_partition_id = '2' AND _block_number >= 6);
