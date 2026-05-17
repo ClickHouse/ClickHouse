@@ -125,7 +125,7 @@ Float32 distanceToQuery(unum::usearch::metric_kind_t metric_kind, const Float32 
         Float64 dot = 0;
         for (size_t i = 0; i < dimensions; ++i)
             dot += static_cast<Float64>(query[i]) * static_cast<Float64>(vec[i]);
-        return static_cast<Float32>(-dot);
+        return static_cast<Float32>(dot);
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported metric kind for vector_spann index search");
 }
@@ -625,9 +625,14 @@ NearestNeighbours MergeTreeIndexConditionVectorSpann::calculateApproximateNeares
     }
 
     const size_t limit = parameters->limit;
+    const bool higher_is_better = (metric_kind == unum::usearch::metric_kind_t::ip_k);
+    auto compare = [higher_is_better](const Candidate & a, const Candidate & b)
+    {
+        return higher_is_better ? (a.distance > b.distance) : (a.distance < b.distance);
+    };
     if (candidates.size() <= limit)
     {
-        std::ranges::sort(candidates, [](const Candidate & a, const Candidate & b) { return a.distance < b.distance; });
+        std::ranges::sort(candidates, compare);
     }
     else
     {
@@ -635,7 +640,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSpann::calculateApproximateNeares
             candidates.begin(),
             candidates.begin() + static_cast<std::ptrdiff_t>(limit),
             candidates.end(),
-            [](const Candidate & a, const Candidate & b) { return a.distance < b.distance; });
+            compare);
         candidates.resize(limit);
     }
 
