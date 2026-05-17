@@ -26,6 +26,7 @@
 #include <Common/UniqueLock.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/levenshteinDistance.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
 #include <Common/quoteString.h>
@@ -2263,6 +2264,13 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
     /// NOTE Skip datalake catalogs to avoid unnecessary access to remote catalogs (can be expensive)
     auto all_databases = database_catalog.getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
 
+    /// Pick the closest match across all databases, not just the first match found.
+    /// Returning the first database with any match is non-deterministic when several
+    /// databases contain similarly named tables (e.g. concurrent runs of the same
+    /// stateless test in the flaky check), and the closest hint is more useful.
+    std::pair<String, String> best_match;
+    size_t best_distance = std::numeric_limits<size_t>::max();
+
     for (const auto & [db_name, db] : all_databases)
     {
         /// this case should be covered already by getHintForTable
@@ -2271,13 +2279,17 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
 
         TableNameHints hints(db, context);
         auto results = hints.getHints(table_name);
+        if (results.empty())
+            continue;
 
-        /// if the results are not empty, return the first instance of the table_name
-        /// and the corresponding database_name that was found.
-        if (!results.empty())
-            return std::make_pair(db_name, results[0]);
+        size_t distance = levenshteinDistanceCaseInsensitive(results[0], table_name);
+        if (distance < best_distance)
+        {
+            best_distance = distance;
+            best_match = std::make_pair(db_name, results[0]);
+        }
     }
-    return {};
+    return best_match;
 }
 
 Names TableNameHints::getAllRegisteredNames() const
