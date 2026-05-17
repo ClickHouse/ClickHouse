@@ -3,8 +3,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Access/User.h>
+#include <Access/ContextAccess.h>
 #include <Access/EnabledRolesInfo.h>
+#include <Access/User.h>
 #include <Interpreters/Context.h>
 
 
@@ -24,8 +25,15 @@ ColumnsDescription StorageSystemCurrentRoles::getColumnsDescription()
 
 void StorageSystemCurrentRoles::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    auto roles_info = context->getRolesInfo();
-    auto user = context->getUser();
+    /// In a context with no user attached (e.g. the query context built by
+    /// `DDLWorker` for a replicated DDL when `distributed_ddl_use_initial_user_and_roles`
+    /// is disabled), `Context::getRolesInfo` already returns an empty set, so
+    /// the loop below is a no-op. Use `tryGetUser` to avoid throwing a
+    /// `LOGICAL_ERROR` on this legitimate state — that turns into a SIGABRT
+    /// in debug/sanitizer builds and was reported by `BuzzHouse` (`STID: 2436-3d64`).
+    auto access = context->getAccess();
+    auto roles_info = access->getRolesInfo();
+    auto user = access->tryGetUser();
 
     size_t column_index = 0;
     auto & column_role_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
@@ -43,7 +51,7 @@ void StorageSystemCurrentRoles::fillData(MutableColumns & res_columns, ContextPt
     {
         const String & role_name = roles_info->names_of_roles.at(role_id);
         bool admin_option = roles_info->enabled_roles_with_admin_option.count(role_id);
-        bool is_default = user->default_roles.match(role_id);
+        bool is_default = user && user->default_roles.match(role_id);
         add_row(role_name, admin_option, is_default);
     }
 }
