@@ -103,7 +103,7 @@ Float64 bucketQuantile(Float64 q, std::vector<Bucket> buckets)
     }
 
     Float64 observations = buckets.back().count;
-    if (observations == 0 || std::isnan(observations))
+    if (observations == 0)
         return std::numeric_limits<Float64>::quiet_NaN();
 
     Float64 rank = q * observations;

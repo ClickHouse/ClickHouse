@@ -381,6 +381,18 @@ def send_test_data():
                 {160: -1},
             ),
             (
+                {"__name__": "request_duration_nan_observations_bucket", "job": "api", "le": "1"},
+                {160: 1},
+            ),
+            (
+                {"__name__": "request_duration_nan_observations_bucket", "job": "api", "le": "2"},
+                {160: 2},
+            ),
+            (
+                {"__name__": "request_duration_nan_observations_bucket", "job": "api", "le": "+Inf"},
+                {160: float("nan")},
+            ),
+            (
                 {"__name__": "request_duration_seconds2_bucket", "instance": "a", "job": "api", "le": "1"},
                 {160: 20},
             ),
@@ -941,6 +953,16 @@ def test_function_histogram_quantile():
     # Behavior: Prometheus only treats exactly zero observations as empty; negative cumulative counts still follow BucketQuantile interpolation.
     do_query_test(
         "histogram_quantile(0.5, request_duration_negative_bucket)",
+        160,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [160, "2"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:40.000", 2]],
+        eps=1e-9,
+    )
+
+    # Behavior: Prometheus also does not treat `NaN` observations as empty;
+    # the unordered bucket search falls through to the highest-bucket path.
+    do_query_test(
+        "histogram_quantile(0.5, request_duration_nan_observations_bucket)",
         160,
         '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [160, "2"]}]}',
         [["[('job','api')]", "1970-01-01 00:02:40.000", 2]],
