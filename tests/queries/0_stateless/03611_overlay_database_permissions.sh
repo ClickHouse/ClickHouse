@@ -41,17 +41,19 @@ ${CLICKHOUSE_CLIENT} -nm --query "
     CREATE DATABASE ${DB_OVL} ENGINE = Overlay('${DB_A}', '${DB_B}');
 "
 
-# Users
+# Access is checked against the database named in the query, so users need
+# explicit grants on the Overlay database to read tables through it; grants on
+# the underlying databases are not propagated through the Overlay facade.
 ${CLICKHOUSE_CLIENT} -nm --query "
     CREATE USER ${USER_OK}  NOT IDENTIFIED;
     CREATE USER ${USER_BAD} NOT IDENTIFIED;
 
-    -- OK user: ONLY underlying grants (no overlay grants)
-    GRANT SELECT ON ${DB_A}.* TO ${USER_OK};
-    GRANT SELECT ON ${DB_B}.* TO ${USER_OK};
+    -- OK user: grant on the Overlay database itself.
+    GRANT SELECT ON ${DB_OVL}.* TO ${USER_OK};
 
-    -- BAD user: ONLY overlay grants (no underlying)
-    GRANT SELECT ON ${DB_OVL}.* TO ${USER_BAD};
+    -- BAD user: grants only on the underlying databases (no grant on the Overlay).
+    GRANT SELECT ON ${DB_A}.* TO ${USER_BAD};
+    GRANT SELECT ON ${DB_B}.* TO ${USER_BAD};
 "
 
 echo 'Sanity: default user can see overlay tables'

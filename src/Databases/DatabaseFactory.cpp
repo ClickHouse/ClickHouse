@@ -15,6 +15,8 @@
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
 
+#include <Poco/String.h>
+
 
 namespace fs = std::filesystem;
 
@@ -72,6 +74,18 @@ void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & me
 
 }
 
+String DatabaseFactory::resolveCanonicalEngineName(const String & engine_name) const
+{
+    if (database_engines.contains(engine_name))
+        return engine_name;
+
+    auto it = case_insensitive_aliases.find(Poco::toLower(engine_name));
+    if (it != case_insensitive_aliases.end())
+        return it->second;
+
+    return {};
+}
+
 void DatabaseFactory::validate(const ASTCreateQuery & create_query) const
 {
     auto * storage = create_query.storage;
@@ -99,14 +113,20 @@ void DatabaseFactory::validate(const ASTCreateQuery & create_query) const
 DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode)
 {
     const auto engine_name = create.storage->engine->name;
-    /// check if the database engine is a valid one before proceeding
-    if (!database_engines.contains(engine_name))
+    /// Resolve engine name to its canonical (registered) casing. The SQL parser may have
+    /// lowercased the engine name when it collides with a built-in function (e.g. `Overlay`
+    /// → `overlay` because of the `OVERLAY()` string function), so we accept any casing.
+    String canonical_engine_name = resolveCanonicalEngineName(engine_name);
+    if (canonical_engine_name.empty())
     {
         auto hints = getHints(engine_name);
         if (!hints.empty())
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine {}. Maybe you meant: {}", engine_name, toString(hints));
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", create.storage->engine->name);
     }
+
+    if (canonical_engine_name != engine_name)
+        create.storage->engine->name = canonical_engine_name;
 
     /// if the engine is found (i.e. registered with the factory instance), then validate if the
     /// supplied engine arguments, settings and table overrides are valid for the engine.
@@ -129,6 +149,11 @@ void DatabaseFactory::registerDatabase(const std::string & name, CreatorFn creat
 {
     if (!database_engines.emplace(name, Creator{std::move(creator_fn), features}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DatabaseFactory: the database engine name '{}' is not unique", name);
+
+    String lowercase_name = Poco::toLower(name);
+    if (lowercase_name != name && !case_insensitive_aliases.emplace(lowercase_name, name).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "DatabaseFactory: the database engine name '{}' clashes with existing engine under case-insensitive comparison", name);
 }
 
 DatabaseFactory & DatabaseFactory::instance()
@@ -139,10 +164,10 @@ DatabaseFactory & DatabaseFactory::instance()
 
 bool DatabaseFactory::isDatabaseExternal(const String & engine_name) const
 {
-    auto it = database_engines.find(engine_name);
-    if (it == database_engines.end())
+    String canonical_engine_name = resolveCanonicalEngineName(engine_name);
+    if (canonical_engine_name.empty())
         return false;
-    return it->second.features.is_external;
+    return database_engines.at(canonical_engine_name).features.is_external;
 }
 
 DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode)

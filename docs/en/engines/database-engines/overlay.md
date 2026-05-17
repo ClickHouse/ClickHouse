@@ -96,6 +96,15 @@ DROP DATABASE dboverlay SYNC;
 
 ---
 
+## Access control {#access-control}
+
+Access checks are performed against the database named in the query. To read a table through an `Overlay` database, a user needs a `SELECT` grant on the `Overlay` database itself; grants on the underlying databases are not propagated through the facade.
+
+```sql
+GRANT SELECT ON dboverlay.* TO some_user;  -- required to read via `dboverlay`
+GRANT SELECT ON db_a.* TO some_user;       -- does NOT grant access via `dboverlay`
+```
+
 ## Compatibility notes {#compatibility}
 
 * Overlay is intentionally **read-only** at the DDL/DML surface; it’s a **discovery & read** tool.

@@ -95,8 +95,16 @@ public:
         return result;
     }
 
+    /// Resolves an engine name to its canonical, registered casing.
+    /// Returns the canonical name on case-insensitive match, or empty string if not registered.
+    /// Engine name lookup is case-insensitive because the SQL parser may lowercase engine names
+    /// that collide with built-in SQL function names (e.g. `Overlay` collides with `OVERLAY()`).
+    String resolveCanonicalEngineName(const String & engine_name) const;
+
 private:
     DatabaseEngines database_engines;
+    /// Maps lowercase engine name to canonical (case-preserved) registered name.
+    std::unordered_map<std::string, std::string> case_insensitive_aliases;
 
     DatabasePtr getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode);
 
