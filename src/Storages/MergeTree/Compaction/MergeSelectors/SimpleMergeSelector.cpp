@@ -144,6 +144,7 @@ bool allow(
     double sum_size,
     double max_size,
     double min_age,
+    double max_age,
     double partition_size,
     double min_size_to_lower_base_log,
     double max_size_to_lower_base_log,
@@ -167,7 +168,7 @@ bool allow(
     /// See the detailed comment in SimpleMergeSelector.h.
     if (settings.small_parts_min_count
         && max_size < static_cast<double>(settings.small_parts_threshold)
-        && min_age < static_cast<double>(settings.small_parts_max_age)
+        && max_age < static_cast<double>(settings.small_parts_max_age)
         && size < settings.small_parts_min_count)
         return false;
 
@@ -286,6 +287,7 @@ void selectWithinPartsRange(
         size_t sum_rows = parts[begin].rows;
         size_t max_size = parts[begin].size;
         size_t min_age = parts[begin].age;
+        size_t max_age = parts[begin].age;
 
         for (size_t end = begin + 2; end <= parts_count; ++end)
         {
@@ -301,6 +303,7 @@ void selectWithinPartsRange(
             sum_rows += cur_rows;
             max_size = std::max(max_size, cur_size);
             min_age = std::min(min_age, cur_age);
+            max_age = std::max(max_age, cur_age);
 
             if (sum_size > constraint.max_size_bytes)
                 break;
@@ -315,6 +318,7 @@ void selectWithinPartsRange(
                     static_cast<double>(sum_size),
                     static_cast<double>(max_size),
                     static_cast<double>(min_age),
+                    static_cast<double>(max_age),
                     static_cast<double>(parts_count),
                     min_size_to_lower_base_log,
                     max_size_to_lower_base_log,

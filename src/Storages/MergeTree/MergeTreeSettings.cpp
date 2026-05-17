@@ -847,9 +847,10 @@ namespace ErrorCodes
     0 means disabled. Works for Simple and StochasticSimple merge selectors.
     )", 0) \
     DECLARE(UInt64, merge_selector_small_parts_max_age, 600, R"(
-    Age limit in seconds for the small-parts restriction: once the youngest part in a range
-    exceeds this age, the restriction from `merge_selector_small_parts_min_count` is lifted.
-    Works for Simple and StochasticSimple merge selectors.
+    Age limit in seconds for the small-parts restriction: as soon as any part in a range
+    exceeds this age, the restriction from `merge_selector_small_parts_min_count` is lifted,
+    so backlogs of stale small parts can still merge even if the range is shorter than
+    `merge_selector_small_parts_min_count`. Works for Simple and StochasticSimple merge selectors.
     )", 0) \
     DECLARE(Bool, apply_patches_on_merge, true, R"(
     If true patch parts are applied on merges
