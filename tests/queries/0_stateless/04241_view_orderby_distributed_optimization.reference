@@ -1,6 +1,10 @@
 Direct query has merge sort:	1
 View query has merge sort:	1
-View query avoids full sort on coordinator:	1
 View ORDER BY+LIMIT result count:	10
+NULLS FIRST has merge sort:	1
+NULLS FIRST result count:	10
+WITH TIES disables pushdown:	1
+WITH TIES result count:	10
+WITH FILL disables pushdown:	1
 GROUP BY result count:	5
 OFFSET result count:	5

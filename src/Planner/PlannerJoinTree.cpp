@@ -52,6 +52,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -768,12 +769,20 @@ std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
 }
 
 /// Push ORDER BY and LIMIT from outer query into simple VIEW's inner query.
-/// This enables merge-sorted-streams optimization for views over Distributed tables.
+/// This enables merge-sorted-streams optimization for views over `Distributed` tables.
 ///
-/// Only safe when the VIEW is a "transparent projection" that doesn't change ORDER BY semantics:
+/// Only safe when the VIEW is a "transparent projection" that does not change
+/// ORDER BY/LIMIT semantics:
 /// - Single SELECT from one table (no UNION)
 /// - No row transformations (JOIN, GROUP BY, DISTINCT, window functions)
 /// - No existing ORDER BY/LIMIT in the view
+///
+/// Outer query restrictions (to preserve semantics under shard-local truncation):
+/// - No GROUP BY/HAVING/DISTINCT/window
+/// - No LIMIT ... OFFSET (pushing LIMIT_LENGTH would truncate before outer OFFSET)
+/// - No LIMIT ... WITH TIES (ties are computed globally after merging)
+/// - No ORDER BY ... WITH FILL (WITH FILL synthesizes rows; per-shard fills are wrong)
+/// - ORDER BY items must be plain column references resolved to this view
 void pushOrderByIntoView(
     const StoragePtr & storage,
     const StorageSnapshotPtr & storage_snapshot,
@@ -805,12 +814,22 @@ void pushOrderByIntoView(
     if (outer->hasOffset())
         return;
 
-    /// Validate ORDER BY: must be simple columns from this view
+    /// LIMIT ... WITH TIES decides ties globally after ordering. Pushing
+    /// LIMIT_LENGTH into the view would truncate per-shard before the global
+    /// tie set is known.
+    if (outer->isLimitWithTies())
+        return;
+
+    /// Validate ORDER BY: must be simple columns from this view, and must not
+    /// use WITH FILL (which synthesizes rows from the sort range — per-shard
+    /// fill would produce wrong results after merging).
     const auto & order_list = outer->getOrderBy();
     for (const auto & node : order_list.getNodes())
     {
         const auto * sort = node->as<SortNode>();
-        const auto * col = sort ? sort->getExpression()->as<ColumnNode>() : nullptr;
+        if (!sort || sort->withFill())
+            return;
+        const auto * col = sort->getExpression()->as<ColumnNode>();
         if (!col || col->getColumnSource().get() != table_expression.get())
             return;
     }
@@ -833,7 +852,9 @@ void pushOrderByIntoView(
     if (sel->orderBy() || sel->limitBy() || sel->limitLength() || sel->limitOffset())
         return;
 
-    /// Clone and add ORDER BY/LIMIT to the view's inner query
+    /// Clone and add ORDER BY/LIMIT to the view's inner query.
+    /// Preserve every ORDER BY modifier (direction, NULLS FIRST/LAST, COLLATE,
+    /// etc.) by going through SortNode::toAST instead of rebuilding the AST.
     ASTPtr modified = inner->clone();
     sel = modified->as<ASTSelectWithUnionQuery>()->list_of_selects->children[0]->as<ASTSelectQuery>();
 
@@ -841,15 +862,31 @@ void pushOrderByIntoView(
     for (const auto & node : order_list.getNodes())
     {
         const auto * sort = node->as<SortNode>();
+        /// SortNode::toAST converts the inner column reference to its
+        /// disambiguated identifier (e.g. `__table1.ts`), which is invalid in
+        /// the view's inner AST. Build a fresh ASTOrderByElement and copy
+        /// every modifier from SortNode explicitly.
         auto elem = make_intrusive<ASTOrderByElement>();
         elem->direction = sort->getSortDirection() == SortDirection::ASCENDING ? 1 : -1;
-        elem->nulls_direction = elem->direction;
+        if (auto nulls_dir = sort->getNullsSortDirection())
+        {
+            elem->nulls_direction = *nulls_dir == SortDirection::ASCENDING ? 1 : -1;
+            elem->nulls_direction_was_explicitly_specified = true;
+        }
+        else
+        {
+            elem->nulls_direction = elem->direction;
+        }
         elem->children.push_back(make_intrusive<ASTIdentifier>(sort->getExpression()->as<ColumnNode>()->getColumnName()));
+        if (const auto & collator = sort->getCollator())
+            elem->setCollation(make_intrusive<ASTLiteral>(Field(collator->getLocale())));
         order_ast->children.push_back(elem);
     }
     sel->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_ast);
+
     if (outer->hasLimit())
         sel->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, outer->getLimit()->toAST());
+
     table_expression_query_info.view_query = modified;
 }
 
