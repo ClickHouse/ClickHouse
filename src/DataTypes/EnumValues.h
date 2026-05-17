@@ -47,6 +47,10 @@ private:
 
     void buildLookupStructures();
 
+    /// Exact-name lookup without numeric-string fallback.
+    /// Returns true and writes the value into `result` if `field_name` matches an enum name.
+    bool findValueByName(std::string_view field_name, T & result) const;
+
 public:
     explicit EnumValues(const Values & values_);
     ~EnumValues() override;

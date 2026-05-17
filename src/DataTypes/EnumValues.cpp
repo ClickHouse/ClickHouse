@@ -168,7 +168,7 @@ T EnumValues<T>::getValue(std::string_view field_name) const
 }
 
 template <typename T>
-bool EnumValues<T>::tryGetValue(T & x, std::string_view field_name) const
+bool EnumValues<T>::findValueByName(std::string_view field_name, T & result) const
 {
     /// Binary search on name-sorted index
     auto it = std::lower_bound(name_sorted_index.begin(), name_sorted_index.end(), field_name,
@@ -176,9 +176,18 @@ bool EnumValues<T>::tryGetValue(T & x, std::string_view field_name) const
 
     if (it != name_sorted_index.end() && values[*it].first == field_name)
     {
-        x = values[*it].second;
+        result = values[*it].second;
         return true;
     }
+
+    return false;
+}
+
+template <typename T>
+bool EnumValues<T>::tryGetValue(T & x, std::string_view field_name) const
+{
+    if (findValueByName(field_name, x))
+        return true;
 
     /// Fallback: try parsing as numeric value
     if (tryParse(x, field_name.data(), field_name.size()) && hasValue(x))
@@ -221,9 +230,12 @@ bool EnumValues<T>::containsAll(const TValues & rhs_values) const
 {
     auto check = [&](const auto & value)
     {
-        /// Try to find by name using binary search
+        /// Look up by exact name only. We must NOT fall back to numeric-string parsing here:
+        /// `containsAll` is a compatibility check between enums, and a literal name like "1" must
+        /// not be reinterpreted as the numeric value 1 (which would change behavior compared to
+        /// the previous hash-map-based implementation).
         T found_value;
-        if (tryGetValue(found_value, value.first))
+        if (findValueByName(value.first, found_value))
         {
             /// If we have this name, it should have the same value
             return found_value == value.second;
