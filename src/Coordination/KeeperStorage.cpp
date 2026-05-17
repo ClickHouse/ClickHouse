@@ -4515,7 +4515,7 @@ uint64_t KeeperStorage<Container>::getNodesCount() const
 
 
 template<typename Container>
-std::vector<std::pair<std::string, Int32>> KeeperStorage<Container>::collectExpiredTTLPaths(int64_t now_ms) const
+std::vector<std::pair<std::string, Int32>> KeeperStorage<Container>::collectExpiredTTLPaths(int64_t now_ms, size_t batch_size) const
 {
     std::vector<String> expired_nodes;
     std::unordered_map<String, Int32> versions;
@@ -4529,6 +4529,8 @@ std::vector<std::pair<std::string, Int32>> KeeperStorage<Container>::collectExpi
         versions[ttl_path] = node.stats.version;
         if (node.destroy_time.has_value() && now_ms >= *node.destroy_time)
             expired_nodes.push_back(ttl_path);
+        if (expired_nodes.size() >= batch_size)
+            break;
     }
 
     std::vector<std::pair<std::string, Int32>> result;

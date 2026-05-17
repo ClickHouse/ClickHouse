@@ -693,7 +693,7 @@ public:
 
     uint64_t getArenaDataSize() const;
 
-    std::vector<std::pair<std::string, Int32>> collectExpiredTTLPaths(int64_t now_ms) const;
+    std::vector<std::pair<std::string, Int32>> collectExpiredTTLPaths(int64_t now_ms, size_t batch_size) const;
 
     void updateStats();
 

@@ -12,6 +12,7 @@
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/HistogramMetrics.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/setThreadName.h>
@@ -81,6 +82,7 @@ namespace CoordinationSetting
 {
     extern const CoordinationSettingsMilliseconds dead_session_check_period_ms;
     extern const CoordinationSettingsMilliseconds ttl_gc_period_ms;
+    extern const CoordinationSettingsUInt64 ttl_gc_batch_size;
     extern const CoordinationSettingsUInt64 max_request_queue_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_bytes_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_size;
@@ -611,7 +613,7 @@ void KeeperDispatcher::snapshotThread()
     }
 }
 
-void KeeperDispatcher::garbageCollectorThread()
+void KeeperDispatcher::garbageCollectorThread(size_t batch_size)
 {
     DB::setThreadName(ThreadName::KEEPER_TTL_GARBAGE_COLLECTOR);
 
@@ -622,7 +624,7 @@ void KeeperDispatcher::garbageCollectorThread()
         {
             if (server->checkInit() && isLeader())
             {
-                auto paths = server->getExpiredTTLPathsForGarbageCollector();
+                auto paths = server->getExpiredTTLPathsForGarbageCollector(batch_size);
                 for (auto & [path, version] : paths)
                 {
                     auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::TryRemove);
@@ -641,7 +643,10 @@ void KeeperDispatcher::garbageCollectorThread()
                     info.request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, info.request->tracing_context.get());
 
                     if (requests_queue->push(std::move(info)))
+                    {
                         ProfileEvents::increment(ProfileEvents::KeeperTTLRemoveRequestsEnqueued);
+                        LOG_TRACE(log, "Garbage collector: Remove request enqueued, path: {}, time: {}", rem.path, time);
+                    }
                     else
                     {
                         ProfileEvents::increment(ProfileEvents::KeeperTTLRemoveRequestsDropped);
@@ -902,7 +907,10 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     /// Start it after keeper server start
     session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
-    ttl_garbage_collector_thread = ThreadFromGlobalPool([this] { garbageCollectorThread(); });
+    const auto & feature_flags = keeper_context->getFeatureFlags();
+    size_t batch_size = keeper_context->getCoordinationSettings()[CoordinationSetting::ttl_gc_batch_size];
+    if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL))
+        ttl_garbage_collector_thread = ThreadFromGlobalPool([this, batch_size] { garbageCollectorThread(batch_size); });
 
     update_configuration_thread = reconfigEnabled()
         ? ThreadFromGlobalPool([this] { clusterUpdateThread(); })
@@ -921,7 +929,8 @@ void KeeperDispatcher::shutdown()
 
             LOG_DEBUG(log, "Shutting down storage dispatcher");
 
-            if (ttl_garbage_collector_thread.joinable())
+            const auto & feature_flags = keeper_context->getFeatureFlags();
+            if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL) && ttl_garbage_collector_thread.joinable())
                 ttl_garbage_collector_thread.join();
 
             if (session_cleaner_thread.joinable())

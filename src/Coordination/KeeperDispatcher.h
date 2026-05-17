@@ -126,7 +126,7 @@ private:
     void checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command);
     void checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command);
 
-    void garbageCollectorThread();
+    void garbageCollectorThread(size_t batch_size);
 public:
     using SessionAndXID = std::pair</*session ID*/ int64_t, Coordination::XID>;
 

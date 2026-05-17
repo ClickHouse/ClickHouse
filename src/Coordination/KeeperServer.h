@@ -163,7 +163,7 @@ public:
 
     std::optional<AuthenticationData> getAuthenticationData() const { return state_manager->getAuthenticationData(); }
 
-    std::vector<std::pair<std::string, Int32>> getExpiredTTLPathsForGarbageCollector() const;
+    std::vector<std::pair<std::string, Int32>> getExpiredTTLPathsForGarbageCollector(size_t batch_size) const;
 };
 
 }

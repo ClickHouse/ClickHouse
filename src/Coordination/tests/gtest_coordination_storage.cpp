@@ -1887,9 +1887,9 @@ TYPED_TEST(CoordinationTest, TestTTLNodeExpiry)
         EXPECT_EQ(*node_it->value.destroy_time, ttl_ms);
     }
 
-    EXPECT_TRUE(storage.collectExpiredTTLPaths(/*now_ms=*/0).empty());
+    EXPECT_TRUE(storage.collectExpiredTTLPaths(/*now_ms=*/0, 1000000).empty());
 
-    auto expired = storage.collectExpiredTTLPaths(/*now_ms=*/ttl_ms + 1);
+    auto expired = storage.collectExpiredTTLPaths(/*now_ms=*/ttl_ms + 1, 1000000);
     ASSERT_EQ(expired.size(), 1u);
     EXPECT_EQ(expired[0].first, "/ttl_node");
 
@@ -1903,7 +1903,7 @@ TYPED_TEST(CoordinationTest, TestTTLNodeExpiry)
 
     EXPECT_FALSE(storage.ttl_paths.contains("/ttl_node"));
     EXPECT_EQ(storage.container.find("/ttl_node"), storage.container.end());
-    EXPECT_TRUE(storage.collectExpiredTTLPaths(ttl_ms + 1).empty());
+    EXPECT_TRUE(storage.collectExpiredTTLPaths(ttl_ms + 1, 1000000).empty());
 }
 
 TYPED_TEST(CoordinationTest, TestTTLNodeSetRefreshesUncommittedDestroyTime)
@@ -1983,7 +1983,7 @@ TYPED_TEST(CoordinationTest, TestTTLGCVersionCheckPreventsStaleRemoval)
     storage.preprocessRequest(create_request, session_id, create_time, ++zxid);
     storage.processRequest(create_request, session_id, zxid);
 
-    auto expired = storage.collectExpiredTTLPaths(create_time + ttl_ms + 1);
+    auto expired = storage.collectExpiredTTLPaths(create_time + ttl_ms + 1, 1000000);
     ASSERT_EQ(expired.size(), 1u);
     EXPECT_EQ(expired[0].first, "/ttl_node");
     const int32_t collected_version = expired[0].second;
