@@ -31,11 +31,11 @@ def get_paths(output_dir):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     clickhouse_root = os.path.join(script_dir, "../..")
     
-    # The profiler binary is built from src/Parsers/examples/parser_memory_profiler.cpp
+    # The profiler binary is part of the clickhouse-examples multi-call binary (src/Examples/)
     return {
         'script_dir': script_dir,
         'build_dir': os.path.join(clickhouse_root, "build"),
-        'profiler': os.path.join(clickhouse_root, "build/src/Parsers/examples/parser_memory_profiler"),
+        'profiler': os.path.join(clickhouse_root, "build/src/Examples/clickhouse-examples"),
         'jeprof': os.path.expanduser("~/github/jemalloc/bin/jeprof"),
         'flamegraph': os.path.expanduser("~/FlameGraph/flamegraph.pl"),
         'output_dir': output_dir,
@@ -76,7 +76,7 @@ Examples:
         """
     )
     parser.add_argument('output_dir', help='Output directory containing profiles/ and results.json')
-    parser.add_argument('--profiler', help='Path to parser_memory_profiler binary')
+    parser.add_argument('--profiler', help='Path to clickhouse-examples binary')
     parser.add_argument('--jeprof', help='Path to jeprof binary')
     parser.add_argument('--flamegraph', help='Path to flamegraph.pl')
     parser.add_argument('--timeout', type=int, default=TIMEOUT, help=f'Timeout for jeprof commands (default: {TIMEOUT}s)')
@@ -101,8 +101,8 @@ Examples:
         sys.exit(1)
     
     if not os.path.exists(paths['profiler']):
-        print(f"Error: profiler not found at {paths['profiler']}")
-        print("Build it with: cd build && ninja parser_memory_profiler")
+        print(f"Error: clickhouse-examples not found at {paths['profiler']}")
+        print("Build it with: cd build && ninja clickhouse-examples")
         sys.exit(1)
     
     if not os.path.exists(paths['jeprof']):
