@@ -1,7 +1,5 @@
 -- Tags: no-parallel
 
-SET parallel_replicas_local_plan = 1;
-
 DROP TABLE IF EXISTS t_primary_index_cache;
 
 SYSTEM CLEAR PRIMARY INDEX CACHE;
@@ -34,7 +32,7 @@ SELECT
     ProfileEvents['LoadedPrimaryIndexRows'],
     ProfileEvents['LoadedPrimaryIndexBytes']
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND log_comment = '03273_reload_query' AND current_database = currentDatabase() AND type = 'QueryFinish'
+WHERE log_comment = '03273_reload_query' AND current_database = currentDatabase() AND type = 'QueryFinish'
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_primary_index_cache;
