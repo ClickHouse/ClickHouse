@@ -183,6 +183,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::START_VIRTUAL_PARTS_UPDATE:
         case Type::STOP_REDUCE_BLOCKING_PARTS:
         case Type::START_REDUCE_BLOCKING_PARTS:
+        case Type::SYNC_MERGES:
         {
             if (table)
             {
@@ -193,6 +194,16 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             {
                 print_on_volume();
             }
+            break;
+        }
+        case Type::SCHEDULE_MERGE:
+        {
+            chassert(table);
+            ostr << ' ';
+            print_database_table();
+            print_keyword(" PARTS ");
+            chassert(scheduled_merge_parts);
+            scheduled_merge_parts->format(ostr, settings, state, frame);
             break;
         }
         case Type::FLUSH_OBJECT_STORAGE_QUEUE:
@@ -459,6 +470,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::START_REPLICATED_VIEW:
         case Type::STOP_VIEW:
         case Type::STOP_REPLICATED_VIEW:
+        case Type::PAUSE_VIEW:
         case Type::CANCEL_VIEW:
         case Type::WAIT_VIEW:
         {
@@ -595,6 +607,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CLEAR_S3_CLIENT_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
         case Type::CLEAR_PARQUET_METADATA_CACHE:
+        case Type::CLEAR_AVRO_SCHEMA_CACHE:
         case Type::RESET_COVERAGE:
         case Type::RESTART_REPLICAS:
         case Type::JEMALLOC_PURGE:
@@ -617,6 +630,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::STOP_THREAD_FUZZER:
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
+        case Type::PAUSE_VIEWS:
         case Type::CLEAR_PAGE_CACHE:
         case Type::STOP_REPLICATED_DDL_QUERIES:
         case Type::START_REPLICATED_DDL_QUERIES:

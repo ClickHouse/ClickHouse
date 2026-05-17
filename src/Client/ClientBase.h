@@ -120,6 +120,7 @@ protected:
     void runNonInteractive();
 
     char * argv0 = nullptr;
+    String app_name; /// Application name for help messages (e.g., "clickhouse client" or "clickhouse-client")
     void runLibFuzzer();
 
     /// This is the analogue of Poco::Application::config()
@@ -329,6 +330,7 @@ protected:
 
     bool echo_queries = false; /// Print queries before execution in batch mode.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
+    bool inline_insert_data = false; /// Send INSERT data as is in the query text instead of converting to native blocks.
 
     std::optional<Suggest> suggest;
     bool load_suggestions = false;

@@ -87,6 +87,7 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_group_name;
     extern const KafkaSettingsStreamingHandleErrorMode kafka_handle_error_mode;
     extern const KafkaSettingsUInt64 kafka_max_block_size;
+    extern const KafkaSettingsBool kafka_map_virtual_columns_on_write;
     extern const KafkaSettingsUInt64 kafka_max_rows_per_message;
     extern const KafkaSettingsUInt64 kafka_num_consumers;
     extern const KafkaSettingsUInt64 kafka_poll_max_batch_size;
@@ -266,8 +267,11 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
     size_t poll_timeout = settings[Setting::stream_poll_timeout_ms].totalMilliseconds();
     auto header = metadata_snapshot->getSampleBlockNonMaterialized();
 
+    const bool map_virtual_columns_on_write = (*kafka_settings)[KafkaSetting::kafka_map_virtual_columns_on_write];
+    auto payload_split = StorageKafkaUtils::splitPayloadColumns(header, map_virtual_columns_on_write);
+
     auto producer = std::make_unique<KafkaProducer>(
-        std::make_shared<cppkafka::Producer>(conf), topics[0], std::chrono::milliseconds(poll_timeout), shutdown_called, header);
+        std::make_shared<cppkafka::Producer>(conf), topics[0], std::chrono::milliseconds(poll_timeout), shutdown_called, header, map_virtual_columns_on_write);
 
     LOG_TRACE(log, "Kafka producer created");
 
@@ -275,8 +279,16 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
     /// Need for backward compatibility.
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
         max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
+    auto format_header = std::make_shared<const Block>(std::move(payload_split.format_header));
     return std::make_shared<MessageQueueSink>(
-        std::make_shared<const Block>(std::move(header)), getFormatName(), max_rows, std::move(producer), getName(), modified_context);
+        std::make_shared<const Block>(std::move(header)),
+        format_header,
+        std::move(payload_split.format_column_indices),
+        getFormatName(),
+        max_rows,
+        std::move(producer),
+        getName(),
+        modified_context);
 }
 
 
