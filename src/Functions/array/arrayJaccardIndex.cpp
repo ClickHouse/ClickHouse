@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -83,6 +84,40 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
     String getSignatureString() const override { return "(Array, Array) -> Float64"; }
+
+    /// The DSL signature accepts any array element types, but the implementation
+    /// builds `arrayIntersect` whose element type is `leastSupertype(T1, T2)`.
+    /// Enforce that common-supertype check here so calls like
+    /// `arrayJaccardIndex(['1','2'], [1,2])` are rejected at analyzer time
+    /// with `NO_COMMON_TYPE` instead of silently returning `0`.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.size() != 2)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} requires exactly 2 arguments, got {}",
+                getName(),
+                arguments.size());
+
+        DataTypes element_types;
+        element_types.reserve(2);
+        for (size_t i = 0; i < 2; ++i)
+        {
+            const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].type.get());
+            if (!array_type)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Argument {} of function {} must be Array, got {}",
+                    i + 1,
+                    getName(),
+                    arguments[i].type->getName());
+            element_types.push_back(array_type->getNestedType());
+        }
+
+        /// Throws `NO_COMMON_TYPE` if elements are incompatible.
+        (void)getLeastSupertype(element_types);
+        return std::make_shared<DataTypeFloat64>();
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
