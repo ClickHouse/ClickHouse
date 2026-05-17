@@ -91,14 +91,16 @@ TEST(MD5IsaL, AvailabilityMatchesBuildConfig)
 #endif
 }
 
-TEST(MD5IsaL, EmptyBatchIsNoOp)
+TEST(MD5IsaL, EmptyBatchTouchesNothing)
 {
     ColumnFixedString::Chars output;
     auto get_row = [](size_t, const UInt8 *&, size_t &) { FAIL() << "empty batch must not request rows"; };
 
-    /// Empty batches are reported as handled regardless of the build:
-    /// there is nothing to hash, so there is no work for the scalar fallback either.
-    EXPECT_TRUE(MD5IsaL::tryApply(0, output, get_row));
+    /// Whether tryApply claims the empty batch depends on the build, but in
+    /// both builds it must not call into get_row and must leave the output empty:
+    /// the enabled path short-circuits success, the disabled path lets the
+    /// scalar fallback do the (also empty) work.
+    EXPECT_EQ(MD5IsaL::enabled, MD5IsaL::tryApply(0, output, get_row));
     EXPECT_TRUE(output.empty());
 }
 
