@@ -8,7 +8,13 @@
 -- read path, every source reports the file's full total and the result is
 -- multiplied by the number of buckets.
 
-INSERT INTO FUNCTION file('04230.parquet') SELECT * FROM numbers(1000)
+-- The file must have enough row groups for `ParquetBucketSplitter` to actually
+-- split it: with `min_row_groups_per_chunk = 16` and at least 2 chunks needed,
+-- the file needs >= 32 row groups. We use 64 row groups (numbers(3200) at
+-- row-group size 50) so the file is fanned out into multiple per-bucket
+-- sources and the bucketed read path is exercised.
+
+INSERT INTO FUNCTION file('04230.parquet') SELECT * FROM numbers(3200)
     SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_row_group_size = 50;
 
 SELECT count() FROM file('04230.parquet')
