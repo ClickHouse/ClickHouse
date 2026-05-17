@@ -64,13 +64,16 @@ struct Decimal
             return static_cast<U>(value);
     }
 
-    /// All arithmetic operators below have wrap-around semantics and are marked
-    /// `NO_SANITIZE_UNDEFINED`. See `Decimal.cpp` for the rationale.
+    /// The overflow-dependent operators below (`+=`, `-=`, `*=`, plus the free
+    /// `+`, `-`, `*` and unary `-`) intentionally wrap around — see `Decimal.cpp`
+    /// for the rationale — and are marked `NO_SANITIZE_UNDEFINED`. `/=` and `%=`
+    /// keep UBSan instrumentation so `divide-by-zero` and `INT_MIN / -1` are
+    /// still reported.
     NO_SANITIZE_UNDEFINED const Decimal<T> & operator += (const T & x);
     NO_SANITIZE_UNDEFINED const Decimal<T> & operator -= (const T & x);
     NO_SANITIZE_UNDEFINED const Decimal<T> & operator *= (const T & x);
-    NO_SANITIZE_UNDEFINED const Decimal<T> & operator /= (const T & x);
-    NO_SANITIZE_UNDEFINED const Decimal<T> & operator %= (const T & x);
+    const Decimal<T> & operator /= (const T & x);
+    const Decimal<T> & operator %= (const T & x);
 
     constexpr Decimal<T> operator~() const { return Decimal<T>(~value); }
 
@@ -86,8 +89,8 @@ struct Decimal
     template <typename U> NO_SANITIZE_UNDEFINED const Decimal<T> & operator += (const Decimal<U> & x);
     template <typename U> NO_SANITIZE_UNDEFINED const Decimal<T> & operator -= (const Decimal<U> & x);
     template <typename U> NO_SANITIZE_UNDEFINED const Decimal<T> & operator *= (const Decimal<U> & x);
-    template <typename U> NO_SANITIZE_UNDEFINED const Decimal<T> & operator /= (const Decimal<U> & x);
-    template <typename U> NO_SANITIZE_UNDEFINED const Decimal<T> & operator %= (const Decimal<U> & x);
+    template <typename U> const Decimal<T> & operator /= (const Decimal<U> & x);
+    template <typename U> const Decimal<T> & operator %= (const Decimal<U> & x);
 
     /// This is to avoid UB for sumWithOverflow()
     void NO_SANITIZE_UNDEFINED addOverflow(const T & x);
@@ -103,8 +106,8 @@ FOR_EACH_UNDERLYING_DECIMAL_TYPE(DISPATCH)
     extern template NO_SANITIZE_UNDEFINED const Decimal<TYPE_T> & Decimal<TYPE_T>::operator += (const Decimal<TYPE_U> & x); \
     extern template NO_SANITIZE_UNDEFINED const Decimal<TYPE_T> & Decimal<TYPE_T>::operator -= (const Decimal<TYPE_U> & x); \
     extern template NO_SANITIZE_UNDEFINED const Decimal<TYPE_T> & Decimal<TYPE_T>::operator *= (const Decimal<TYPE_U> & x); \
-    extern template NO_SANITIZE_UNDEFINED const Decimal<TYPE_T> & Decimal<TYPE_T>::operator /= (const Decimal<TYPE_U> & x); \
-    extern template NO_SANITIZE_UNDEFINED const Decimal<TYPE_T> & Decimal<TYPE_T>::operator %= (const Decimal<TYPE_U> & x);
+    extern template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator /= (const Decimal<TYPE_U> & x); \
+    extern template const Decimal<TYPE_T> & Decimal<TYPE_T>::operator %= (const Decimal<TYPE_U> & x);
 #define INVOKE(X) FOR_EACH_UNDERLYING_DECIMAL_TYPE_PASS(DISPATCH, X)
 FOR_EACH_UNDERLYING_DECIMAL_TYPE(INVOKE);
 #undef INVOKE
@@ -130,7 +133,7 @@ FOR_EACH_UNDERLYING_DECIMAL_TYPE(DISPATCH)
 template <typename T> NO_SANITIZE_UNDEFINED Decimal<T> operator+ (const Decimal<T> & x, const Decimal<T> & y);
 template <typename T> NO_SANITIZE_UNDEFINED Decimal<T> operator- (const Decimal<T> & x, const Decimal<T> & y);
 template <typename T> NO_SANITIZE_UNDEFINED Decimal<T> operator* (const Decimal<T> & x, const Decimal<T> & y);
-template <typename T> NO_SANITIZE_UNDEFINED Decimal<T> operator/ (const Decimal<T> & x, const Decimal<T> & y);
+template <typename T> Decimal<T> operator/ (const Decimal<T> & x, const Decimal<T> & y);
 template <typename T> NO_SANITIZE_UNDEFINED Decimal<T> operator- (const Decimal<T> & x);
 template <typename T> Decimal<T> NO_SANITIZE_UNDEFINED negateOverflow (const Decimal<T> & x);
 
@@ -138,7 +141,7 @@ template <typename T> Decimal<T> NO_SANITIZE_UNDEFINED negateOverflow (const Dec
 extern template NO_SANITIZE_UNDEFINED Decimal<TYPE> operator+ (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
 extern template NO_SANITIZE_UNDEFINED Decimal<TYPE> operator- (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
 extern template NO_SANITIZE_UNDEFINED Decimal<TYPE> operator* (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
-extern template NO_SANITIZE_UNDEFINED Decimal<TYPE> operator/ (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
+extern template Decimal<TYPE> operator/ (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
 extern template NO_SANITIZE_UNDEFINED Decimal<TYPE> operator- (const Decimal<TYPE> & x); \
 extern template Decimal<TYPE> NO_SANITIZE_UNDEFINED negateOverflow (const Decimal<TYPE> & x);
 FOR_EACH_UNDERLYING_DECIMAL_TYPE(DISPATCH)
