@@ -38,6 +38,7 @@
 #include <Poco/DOM/Node.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <cstdlib>
 #include <filesystem>
 #include <unordered_set>
 
@@ -2145,6 +2146,8 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                     return;
                 walk_xml(doc.get(), walk_xml);
                 /// Pick up a top-level `<include_from>` so we can later parse the source.
+                /// Also resolve `from_env="VAR"` substitutions, which leave `innerText()` empty
+                /// in the raw XML (the value lives in the environment, not the document).
                 if (auto * root = doc->documentElement())
                 {
                     for (auto * child = root->firstChild(); child; child = child->nextSibling())
@@ -2153,6 +2156,16 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                             && child->nodeName() == "include_from")
                         {
                             String src = child->innerText();
+                            if (src.empty())
+                            {
+                                auto * elem = static_cast<Poco::XML::Element *>(child);
+                                if (elem->hasAttribute("from_env"))
+                                {
+                                    const String env_name = elem->getAttribute("from_env");
+                                    if (const char * env_val = std::getenv(env_name.c_str())) // NOLINT(concurrency-mt-unsafe)
+                                        src = env_val;
+                                }
+                            }
                             if (!src.empty())
                                 include_from_paths.insert(std::move(src));
                         }
@@ -2184,6 +2197,12 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         scan_file(config_path);
         scan_dir(config_dir / "config.d");
         scan_dir(config_dir / "users.d");
+
+        /// The merged `config` already has `<include_from>` substitutions (from_env, from_zk)
+        /// resolved by `ConfigProcessor`. Use it as a fallback for sources we cannot resolve
+        /// from raw XML alone (e.g. ZooKeeper-backed substitutions).
+        if (String resolved_include_from = config.getString("include_from", ""); !resolved_include_from.empty())
+            include_from_paths.insert(std::move(resolved_include_from));
 
         /// Resolve the users config path (mirrors AccessControl::addUsersConfigStorage).
         String users_config_value = config.getString("users_config", "");
