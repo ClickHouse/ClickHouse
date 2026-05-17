@@ -187,6 +187,18 @@ public:
         alias = {};
     }
 
+    /// Returns true if the expression was parenthesized in the original query
+    bool isParenthesized() const
+    {
+        return parenthesized;
+    }
+
+    /// Set parenthesized flag
+    void setParenthesized(bool value)
+    {
+        parenthesized = value;
+    }
+
     /// Returns true if query tree node has original AST, false otherwise
     bool hasOriginalAST() const
     {
@@ -300,6 +312,8 @@ private:
     /// but we need to keep the original one to support additional_table_filters.
     String original_alias;
     ASTPtr original_ast;
+    /// If the expression has extra parentheses around it in the original query
+    bool parenthesized = false;
 };
 
 }
