@@ -60,4 +60,3 @@ destination volume (for `TO DISK 'X'`, on the volume that contains disk
 `X`). The part is then written to the priority-N volume first and moved to
 the TTL destination by a background move task. See the
 [`perform_ttl_move_on_insert` setting on the MergeTree engine](/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes_configure).
-
