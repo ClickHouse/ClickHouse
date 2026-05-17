@@ -394,9 +394,9 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     factory.addHandler(jemalloc_handler);
 
     auto processors_profile_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ProcessorsProfileWebUIRequestHandler>>(server);
-    processors_profile_handler->attachNonStrictPath("/processors_profile");
+    processors_profile_handler->attachNonStrictPath("/processors-profile");
     processors_profile_handler->allowGetAndHeadRequest();
-    factory.addPathToHints("/processors_profile");
+    factory.addPathToHints("/processors-profile");
     factory.addHandler(processors_profile_handler);
 
     auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JavaScriptWebUIRequestHandler>>(server);
