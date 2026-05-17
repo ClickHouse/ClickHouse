@@ -514,12 +514,6 @@
             word-wrap: break-word;
             overflow-wrap: break-word;
             background-color: var(--element-background-color);
-            /* Do NOT extend the background under the transparent 1px border: otherwise
-               the textarea's #CCC border blends with #FFF below via mix-blend-mode and
-               becomes a much darker gray than the other inputs. With padding-box clip,
-               the border region of the backdrop stays transparent and the textarea's
-               border keeps its true color after the diff blend. */
-            background-clip: padding-box;
             /* Default backdrop text is the "neutral" color of the chosen palette.
                It coincides with the canonical text color after the difference blend. */
             color: var(--syntax-default);
