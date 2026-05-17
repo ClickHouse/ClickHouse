@@ -1297,6 +1297,19 @@ public:
         return "(Any, Any) -> UInt8";
     }
 
+    /// Bypass the DSL — the (Any, Any) -> UInt8 signature is documentation-only
+    /// and does not capture Nullable propagation for tuples. Delegate to the
+    /// legacy `DataTypes` overload, which performs full validation and wraps
+    /// the result in `Nullable(UInt8)` when any tuple element is nullable.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & arg : arguments)
+            types.push_back(arg.type);
+        return getReturnTypeImpl(types);
+    }
+
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
