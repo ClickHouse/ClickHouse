@@ -730,10 +730,14 @@ public:
             subcolumn = IColumn::mutate(std::move(subcolumn).detach());
 #if defined(DEBUG_OR_SANITIZER_BUILD)
             chassert(subcolumn->use_count() == 1);
-            /// Verify sub-columns are also use_count=1.
-            subcolumn->forEachSubcolumn([](const WrappedPtr & sub)
+            /// Verify sub-columns are also use_count=1. Use the recursive callback that takes
+            /// `const IColumn &` directly: passing a `WrappedPtr` to a callback for columns that
+            /// store children as `ColumnPtr` (e.g. `ColumnFunction::captured_columns`) would
+            /// construct a temporary `WrappedPtr` that itself holds a reference, making the
+            /// `use_count() == 1` check over-count by one.
+            subcolumn->forEachSubcolumnRecursively([](const IColumn & sub)
             {
-                chassert(sub->use_count() == 1);
+                chassert(sub.use_count() == 1);
             });
 #endif
         });

@@ -983,8 +983,15 @@ ColumnPtr ColumnTuple::compress(bool force_compression) const
 
 void ColumnTuple::finalize()
 {
+    /// Each element of `columns` can be shared by a row-input format serializer that retains a
+    /// `ColumnPtr` to it between rows of the same chunk; the format then calls `finalize()` on the
+    /// owning column while the borrowed reference is still alive. Go through the const dereference
+    /// so that `WrappedPtr` does not trigger its `use_count() == 1` assertion in this safe case.
     for (auto & column : columns)
-        column->finalize();
+    {
+        const auto & element_ref = column;
+        const_cast<IColumn &>(*element_ref).finalize();
+    }
 }
 
 bool ColumnTuple::isFinalized() const
