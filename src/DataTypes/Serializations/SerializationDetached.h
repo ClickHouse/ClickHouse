@@ -10,8 +10,14 @@ namespace DB
 /// `deserialize` method will return a `ColumnBLOB` with the same BLOB as input. Deserialization and decompression of the BLOB will be done later by `UnmarshallBlocksTransform`.
 class SerializationDetached final : public ISerialization
 {
-public:
+private:
     explicit SerializationDetached(const SerializationPtr & nested_);
+
+public:
+    static UInt128 getHash(const SerializationPtr & nested_);
+    static SerializationPtr create(const SerializationPtr & nested_);
+    bool supportsPooling() const override { return nested->supportsPooling(); }
+    const SerializationPtr & getNested() const { return nested; }
 
     KindStack getKindStack() const override;
 

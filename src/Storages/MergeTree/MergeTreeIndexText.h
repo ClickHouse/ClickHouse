@@ -284,7 +284,7 @@ struct TextIndexSerialization
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
 public:
-    using TokenToPostingsMap = absl::flat_hash_map<std::string_view, PostingListPtr>;
+    using TokenToPostingsMap = absl::flat_hash_map<String, PostingListPtr>;
 
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_, PostingListCodecPtr posting_list_codec_);
     ~MergeTreeIndexGranuleText() override = default;
@@ -302,8 +302,13 @@ public:
     bool hasAllQueryTokens(const TextSearchQuery & query) const;
     bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
 
+    bool hasAnyQueryPatterns(const TextSearchQuery & query) const;
+
     const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
+    const TokenToPostingsInfosMap & getPatternTokens() const { return pattern_tokens; }
+    const std::vector<String> & getPatternTokensForTextQuery(const TextSearchQuery & query) const;
     PostingListPtr getPostingsForRareToken(std::string_view token) const;
+    bool canUseLikeDictionaryScan() const { return can_use_like_dictionary_scan; }
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
     const String & getIndexIdForCaches() const { return index_id_for_caches; }
 
@@ -317,7 +322,9 @@ public:
 
 private:
     /// Reads dictionary blocks and analyzes them for tokens.
-    void analyzeDictionary(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
+    void analyzeDictionaryForTokens(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
+    /// Reads dictionary blocks and analyzes them for patterns.
+    void analyzeDictionaryForPatterns(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
     /// Fills tokens and their infos from the cache.
     /// Returns tokens that are not in the cache and need to be read from the dictionary file.
     std::vector<String> fillTokensFromCache(MergeTreeIndexDeserializationState & state);
@@ -326,10 +333,16 @@ private:
     void readPostingsForRareTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
     bool is_empty = true;
+    /// Indicates if pattern scan successfully finished. The LIKE optimization can be used.
+    bool can_use_like_dictionary_scan = false;
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
     /// Tokens that are in the index granule after analysis.
     TokenToPostingsInfosMap remaining_tokens;
+    /// Tokens that are in the index granule after analysis of patterns.
+    TokenToPostingsInfosMap pattern_tokens;
+    /// Tokens per a virtual column that are in the index granule after analysis of pattern.
+    std::unordered_map<UInt128, std::vector<String>> pattern_tokens_per_query;
     /// Tokens with postings lists that have only one block.
     TokenToPostingsMap rare_tokens_postings;
     /// Current range of rows that is being processed. If set, mayBeTrueOnGranule returns more precise result.
@@ -458,6 +471,7 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     PostingListCodecPtr getPostingListCodec() const { return posting_list_codec.get(); }
+    static DataTypePtr getNestedDataType(const DataTypePtr & data_type);
 
     MergeTreeIndexTextParams params;
     std::unique_ptr<ITokenizer> tokenizer;

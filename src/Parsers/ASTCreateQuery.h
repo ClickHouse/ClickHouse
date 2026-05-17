@@ -28,6 +28,7 @@ public:
     IAST * order_by = nullptr;
     IAST * sample_by = nullptr;
     IAST * ttl_table = nullptr;
+    IAST * unique_key = nullptr;
     ASTSetQuery * settings = nullptr;
 
     String getID(char) const override { return "Storage definition"; }
@@ -35,6 +36,10 @@ public:
     ASTPtr clone() const override;
 
     bool isExtendedStorageDefinition() const;
+
+    /// Rebuild `children` in canonical order (engine, partition_by, primary_key, order_by, ...).
+    /// Needed after moving primary_key from columns_list because `set()` always appends.
+    void normalizeChildrenOrder();
 
     void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
@@ -44,6 +49,7 @@ public:
         f(&order_by, nullptr);
         f(&sample_by, nullptr);
         f(&ttl_table, nullptr);
+        f(&unique_key, nullptr);
         f(reinterpret_cast<IAST **>(&settings), nullptr);
     }
 

@@ -43,25 +43,19 @@ wait $PIPELINE_PID
 exec 2>&$_stderr {_stderr}>&-
 
 
-sleep 5
-
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, part_log;"
-
-
-parts_count=$(${CLICKHOUSE_CLIENT} --query "
-SELECT count(*) 
-FROM system.part_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600
-  AND table = '${CLICKHOUSE_TABLE}'
-  AND event_type = 'NewPart'
-  AND query_id = (
-        SELECT argMax(query_id, event_time)
-        FROM system.query_log
-        WHERE event_date >= yesterday() AND event_time >= now() - 600
-          AND query LIKE CONCAT('%INSERT INTO ', '${CLICKHOUSE_TABLE}', '%')
-          AND current_database = currentDatabase()
-    )
-")
+for _ in $(seq 1 60); do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS part_log;"
+    parts_count=$(${CLICKHOUSE_CLIENT} --query "
+        SELECT count()
+        FROM system.part_log
+        WHERE table = '${CLICKHOUSE_TABLE}'
+          AND event_type = 'NewPart'
+          AND database = currentDatabase()
+          AND event_time > (now() - 120)
+    ")
+    [ "${parts_count}" -ge 1 ] && break
+    sleep 0.5
+done
 
 echo "Number of parts created: ${parts_count}"
 

@@ -73,15 +73,13 @@ class ElOraculoDeTablas:
 
         try:
             # Limit to tables only, exclude not deterministic tables, and tables not persisted after restarts
-            tables_str = client.query(
-                """
+            tables_str = client.query("""
                 SELECT database, name, engine
                 FROM system.tables
                 WHERE database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')
                 AND NOT is_temporary
                 AND NOT match(engine, '.*View.*|Dictionary|Merge$|GenerateRandom|Memory|Buffer|.*Set');
-                """
-            )
+                """)
             if not isinstance(tables_str, str) or tables_str == "":
                 logger.warn(f"No tables found to fetch on node {next_node.name}")
                 return None
@@ -176,6 +174,7 @@ class ElOraculoDeTablas:
         "replication queue exception(s)",
         "LOGICAL_ERROR(s) in text_log",
         "CORRUPTED_DATA(s) in text_log",
+        "CHECKSUM_DOESNT_MATCH error(s) in text_log",
     ]
 
     DETAIL_QUERIES = [
@@ -190,6 +189,7 @@ class ElOraculoDeTablas:
         "SELECT database, table, last_exception FROM system.replication_queue WHERE last_exception != '' LIMIT 3;",
         "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'LOGICAL', '_ERROR', '%') ORDER BY event_time DESC LIMIT 3;",
         "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%') ORDER BY event_time DESC LIMIT 3;",
+        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CHECKSUM', '_DOESNT', '_MATCH', '%') ORDER BY event_time DESC LIMIT 3;",
     ]
 
     def run_health_check(
@@ -202,15 +202,23 @@ class ElOraculoDeTablas:
             )
             info_str = ""
             try:
-                info_str = client.query(
-                    """
+                info_str = client.query("""
                     SELECT x FROM (
                     (SELECT count() x, 1 y FROM system.detached_parts WHERE startsWith("name", 'broken'))
                      UNION ALL
                     (SELECT ifNull(sum(lost_part_count), 0), 2 y FROM system.replicas)
                      UNION ALL
-                    (SELECT count() x, 3 y FROM system.text_log
-                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'POTENTIALLY', '_BROKEN', '_DATA', '_PART', '%'))
+                    -- Single scan of text_log for all pattern-based checks (3, 8, 10, 11, 12)
+                    (SELECT t.1 x, t.2 y FROM (
+                     SELECT arrayJoin(arrayZip(
+                       [countIf(message ILIKE concat('%','POTENTIALLY','_BROKEN','_DATA','_PART','%')),
+                        countIf(message ILIKE concat('%','REPLICA','_ALREADY','_EXISTS','%')),
+                        countIf(message ILIKE concat('%','LOGICAL','_ERROR','%')),
+                        countIf(message ILIKE concat('%','CORRUPTED','_DATA','%')),
+                        countIf(message ILIKE concat('%','CHECKSUM','_DOESNT','_MATCH','%'))],
+                       [toUInt64(3), toUInt64(8), toUInt64(10), toUInt64(11), toUInt64(12)]
+                     )) AS t
+                     FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60)) tlog)
                      UNION ALL
                     (SELECT count() x, 4 y FROM clusterAllReplicas(default, system.clusters)
                      WHERE is_shared_catalog_cluster = true AND is_local = true AND recovery_time > 5)
@@ -222,19 +230,9 @@ class ElOraculoDeTablas:
                     (SELECT count() x, 7 y FROM (SELECT part_name FROM clusterAllReplicas(default, system.part_log)
                      WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) GROUP BY part_name HAVING count() > 10) tx)
                      UNION ALL
-                    (SELECT count() x, 8 y FROM system.text_log
-                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'REPLICA', '_ALREADY', '_EXISTS', '%'))
-                     UNION ALL
                     (SELECT count() x, 9 y FROM system.replication_queue WHERE last_exception != '')
-                     UNION ALL
-                    (SELECT count() x, 10 y FROM system.text_log
-                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'LOGICAL', '_ERROR', '%'))
-                     UNION ALL
-                    (SELECT count() x, 11 y FROM system.text_log
-                     WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%'))
-                    ) tx ORDER BY y;
-                    """
-                )
+                    ) tx ORDER BY y SETTINGS use_query_condition_cache = 0, use_query_cache = 0;
+                    """)
             except Exception as ex:
                 logger.warn(
                     f"Error occurred while fetching monitoring information for node {next_node.name}: {ex}"
