@@ -65,7 +65,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_parquet_use_native_reader_v3", true, true, "Obsolete setting, the native reader v3 is now always used."},
             {"max_bytes_ratio_before_external_join", 0., 0.5, "New setting: ratio of available memory used as the spill threshold for hash joins. Enabled by default at `0.5`, mirroring `max_bytes_ratio_before_external_group_by` and `max_bytes_ratio_before_external_sort`. Combined with the absolute `max_bytes_before_external_join` (the smaller of the two applies)."},
             {"allow_key_condition_coalesce_rewrite", false, true, "New setting to rewrite predicates of the form `coalesce(a_1, ..., a_N) <op> const` (and equivalently `ifNull`, or with the constant on the left) into a disjunction before index analysis, so per-column primary key and skip indexes on each `a_i` can be used. Partial-constant forms such as `coalesce(a, 42, b)` and `coalesce(a, b, 42)` are also handled."},
-            {"use_columns_cache", false, true, "New setting to enable columns cache for MergeTree tables"},
+            {"use_columns_cache", false, false, "New setting to enable columns cache for MergeTree tables"},
             {"enable_reads_from_columns_cache", true, true, "New setting to control reading from columns cache"},
             {"enable_writes_to_columns_cache", true, true, "New setting to control writing to columns cache"},
             {"dynamic_disk_allow_from_env", false, false, "New setting to allow `from_env` substitutions in dynamic disk configuration (the `disk()` function). Disabled by default for security."},
