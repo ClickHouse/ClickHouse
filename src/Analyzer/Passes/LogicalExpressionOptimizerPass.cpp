@@ -493,10 +493,24 @@ bool isUInt8Like(const DataTypePtr & type)
 ///
 /// The replacement mirrors the fix applied in `Storages/VirtualColumnUtils.cpp::splitFilterNodeForAllowedInputs`
 /// (#101269, #101287) for the analogous bug in the storage-side filter path.
+///
+/// The zero constant is built from the *nested* type's default, not `expression_type->getDefault()`.
+/// `DataTypeNullable::getDefault()` returns `Null()`, and `notEquals(x, NULL)` is `NULL` (SQL
+/// three-valued logic), which the filter treats as `false` — so every non-`NULL` row would be
+/// silently dropped (a strictly worse bug than the original truncating cast). `removeNullable` +
+/// `recursiveRemoveLowCardinality` strip both `Nullable` and `LowCardinality` wrappers so the
+/// numeric default (`0`) is used regardless of how the type is wrapped. The `Nothing` fallback
+/// covers `Nullable(Nothing)` (bare `NULL` literal): `Nothing` has no useful default, so we keep
+/// the `Nullable` default (`Null`) — `x` is also always `NULL` in that case, so
+/// `notEquals(x, NULL) = NULL = false` is the correct behavior.
 QueryTreeNodePtr buildBooleanCoercion(QueryTreeNodePtr expression, const ContextPtr & context)
 {
     auto expression_type = expression->getResultType();
-    auto zero_node = std::make_shared<ConstantNode>(expression_type->getDefault(), expression_type);
+    auto nested_type = removeNullable(recursiveRemoveLowCardinality(expression_type));
+    auto zero_field = (nested_type->getTypeId() == TypeIndex::Nothing)
+        ? expression_type->getDefault()
+        : nested_type->getDefault();
+    auto zero_node = std::make_shared<ConstantNode>(std::move(zero_field), expression_type);
     auto not_equals_node = std::make_shared<FunctionNode>("notEquals");
     not_equals_node->getArguments().getNodes() = {std::move(expression), std::move(zero_node)};
     resolveOrdinaryFunctionNodeByName(*not_equals_node, "notEquals", context);

@@ -15,3 +15,16 @@ UInt8	4
 Bool	3
 Int64 with zeroes (expect 2)	2
 projection agreement	1
+Nullable(Int64) OR(x,x)	4
+Nullable(Int64) OR(x,x,x)	4
+Nullable(Int64) control	4
+Nullable(Int16)	4
+Nullable(Int32)	4
+Nullable(Int64)	4
+Nullable(UInt32)	4
+Nullable(UInt64)	4
+Nullable(Float64)	4
+LC(Nullable(Int64))	4
+Nullable(Int64) zeroes+nulls	2
+Nullable(Nothing) filter	0
+Nullable(Int64) (x AND x) OR (x AND x)	4

@@ -53,3 +53,60 @@ SELECT 'Int64 with zeroes (expect 2)', count()
 SELECT 'projection agreement',
        sumIf(1, (c0 OR c0) = 1) = countIf(c0 != 0)
   FROM (SELECT arrayJoin([toInt64(256), 512, 65536, 2147483648, 1, 255, 0]) AS c0);
+
+-- Nullable coverage. `DataTypeNullable::getDefault()` returns `Null`, so a naive
+-- `notEquals(x, expression_type->getDefault())` would build `notEquals(x, NULL)`,
+-- which evaluates to `NULL` for both `x = 0` and `x != 0` and is treated as `false`
+-- by the filter -- every non-`NULL` row would be silently dropped. The fix uses
+-- the *nested* type's default (`removeNullable(...)->getDefault() = 0`) so that
+-- nullable numerics are coerced as `notEquals(x, 0)`. NULL rows still evaluate to
+-- NULL (filtered out), but non-NULL non-zero rows survive.
+DROP TABLE IF EXISTS t_105009_nullable;
+CREATE TABLE t_105009_nullable (c0 Nullable(Int64)) ENGINE = MergeTree ORDER BY tuple()
+  SETTINGS allow_nullable_key = 1;
+INSERT INTO t_105009_nullable VALUES (256), (512), (1), (255), (NULL), (0);
+
+-- Expected: 4 non-zero non-NULL rows. Before the fix this returned 0
+-- (notEquals(x, NULL) -> NULL -> false for every row).
+SELECT 'Nullable(Int64) OR(x,x)',     count() FROM t_105009_nullable WHERE c0 OR c0;
+SELECT 'Nullable(Int64) OR(x,x,x)',   count() FROM t_105009_nullable WHERE c0 OR c0 OR c0;
+SELECT 'Nullable(Int64) control',     count() FROM t_105009_nullable WHERE c0 != 0;
+
+DROP TABLE t_105009_nullable;
+
+-- Nullable per-type coverage (low byte zero in some variants, plus NULL row).
+SELECT 'Nullable(Int16)',   count() FROM (SELECT arrayJoin([toNullable(toInt16(256)), 512, 1, 255, NULL]) AS c0) WHERE c0 OR c0;
+SELECT 'Nullable(Int32)',   count() FROM (SELECT arrayJoin([toNullable(toInt32(256)), 512, 1, 255, NULL]) AS c0) WHERE c0 OR c0;
+SELECT 'Nullable(Int64)',   count() FROM (SELECT arrayJoin([toNullable(toInt64(256)), 512, 1, 255, NULL]) AS c0) WHERE c0 OR c0;
+SELECT 'Nullable(UInt32)',  count() FROM (SELECT arrayJoin([toNullable(toUInt32(256)), 512, 1, 255, NULL]) AS c0) WHERE c0 OR c0;
+SELECT 'Nullable(UInt64)',  count() FROM (SELECT arrayJoin([toNullable(toUInt64(256)), 512, 1, 255, NULL]) AS c0) WHERE c0 OR c0;
+SELECT 'Nullable(Float64)', count() FROM (SELECT arrayJoin([toNullable(toFloat64(256)), 512, 1.5, 255, NULL]) AS c0) WHERE c0 OR c0;
+
+-- `LowCardinality(Nullable(Int64))`: same trap as `Nullable(Int64)` -- the
+-- `LowCardinality` wrapper's `getDefault()` delegates to the dictionary type
+-- (`Nullable(Int64)`), which returns `Null`. The fix uses
+-- `recursiveRemoveLowCardinality` + `removeNullable` to strip both wrappers and
+-- get the numeric `0` default.
+SELECT 'LC(Nullable(Int64))', count()
+  FROM (SELECT arrayJoin([toLowCardinality(toNullable(toInt64(256))), 512, 1, 255, NULL]) AS c0)
+  WHERE c0 OR c0;
+
+-- Nullable falsy values: `0` is non-NULL but falsy -> filtered out; `NULL` ->
+-- filtered out (notEquals returns NULL); only the two non-zero rows survive.
+SELECT 'Nullable(Int64) zeroes+nulls', count()
+  FROM (SELECT arrayJoin([toNullable(toInt64(256)), 512, 0, 0, NULL, NULL]) AS c0)
+  WHERE c0 OR c0;
+
+-- Bare-NULL OR bare-NULL collapses to a `Nullable(Nothing)` filter -- every row
+-- evaluates to NULL and is filtered out. We must not raise an exception during
+-- optimization (the `Nothing` fallback in the coercion guards against
+-- `DataTypeNothing::getDefault` not returning a usable value).
+SELECT 'Nullable(Nothing) filter', count() FROM (SELECT 1 AS c0) WHERE NULL OR NULL;
+
+-- AND counterpart: the same coercion is used in `tryOptimizeCommonExpressionsInAnd`.
+-- Without the fix, `WHERE (x AND x) OR (x AND x)` on Nullable(Int64) would drop
+-- every non-NULL row (the inner AND result is Nullable, coercion built
+-- `notEquals(x, NULL)`).
+SELECT 'Nullable(Int64) (x AND x) OR (x AND x)', count()
+  FROM (SELECT arrayJoin([toNullable(toInt64(256)), 512, 1, 255, NULL, 0]) AS c0)
+  WHERE (c0 AND c0) OR (c0 AND c0);
