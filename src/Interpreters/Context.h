@@ -1150,7 +1150,7 @@ public:
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
     /// Load driver definitions from configuration files matching `<user_defined_executable_function_drivers_config>` patterns.
-    void loadUserDefinedExecutableFunctionDrivers(const Poco::Util::AbstractConfiguration & config);
+    void loadUserDefinedExecutableFunctionDrivers(const Poco::Util::AbstractConfiguration & config) const;
 
     IWorkloadEntityStorage & getWorkloadEntityStorage() const;
 

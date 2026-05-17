@@ -3750,7 +3750,7 @@ void Context::loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::Abstr
     }
 }
 
-void Context::loadUserDefinedExecutableFunctionDrivers(const Poco::Util::AbstractConfiguration & config)
+void Context::loadUserDefinedExecutableFunctionDrivers(const Poco::Util::AbstractConfiguration & config) const
 {
     auto patterns_values = getMultipleValuesFromConfig(config, "", "user_defined_executable_function_drivers_config");
     if (patterns_values.empty())
