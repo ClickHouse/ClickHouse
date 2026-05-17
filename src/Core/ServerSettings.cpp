@@ -1640,7 +1640,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
 // clang-format on
 
-/// If you add a setting which can be updated at runtime, please update 'changeable_settings' map in dumpToSystemServerSettingsColumns below
+/// If you add a setting which can be updated at runtime, please update the 'changeable_settings' map in collectChangeableServerSettings below
 
 DECLARE_SETTINGS_TRAITS_WITH_PATH(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS_WITHOUT_PATH, LIST_OF_SERVER_SETTINGS_WITH_PATH, SERVER_SETTINGS_SUPPORTED_TYPES)
 
@@ -1720,15 +1720,19 @@ void ServerSettings::loadSettingsFromConfig(const Poco::Util::AbstractConfigurat
 }
 
 
-void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParams & params) const
+namespace
 {
-    MutableColumns & res_columns = params.res_columns;
-    ContextPtr context = params.context;
 
-    /// When the server configuration file is periodically re-loaded from disk, the server components (e.g. memory tracking) are updated
-    /// with new the setting values but the settings themselves are not stored between re-loads. As a result, if one wants to know the
-    /// current setting values, one needs to ask the components directly.
-    std::unordered_map<String, std::pair<String, ChangeableWithoutRestart>> changeable_settings
+using ChangeableSettingsMap = std::unordered_map<String, std::pair<String, ServerSettings::ChangeableWithoutRestart>>;
+
+/// When the server configuration file is periodically re-loaded from disk, the server components (e.g. memory tracking) are updated
+/// with new the setting values but the settings themselves are not stored between re-loads. As a result, if one wants to know the
+/// current setting values, one needs to ask the components directly.
+ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
+{
+    using ChangeableWithoutRestart = ServerSettings::ChangeableWithoutRestart;
+
+    ChangeableSettingsMap changeable_settings
         = {
             {"max_server_memory_usage", {std::to_string(total_memory_tracker.getHardLimit()), ChangeableWithoutRestart::Yes}},
 
@@ -1887,6 +1891,19 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"parquet_metadata_cache_size",
              {std::to_string(context->getParquetMetadataCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
 #endif
+
+    return changeable_settings;
+}
+
+}
+
+void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParams & params) const
+{
+    MutableColumns & res_columns = params.res_columns;
+    ContextPtr context = params.context;
+
+    const auto changeable_settings = collectChangeableServerSettings(context);
+
     for (const auto & setting : impl->all())
     {
         const auto & setting_name = setting.getName();
@@ -1904,5 +1921,14 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
         res_columns[6]->insert(is_changeable ? changeable_settings_it->second.second : ChangeableWithoutRestart::No);
         res_columns[7]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
     }
+}
+
+std::optional<String> ServerSettings::tryGetLiveValueAsString(ContextPtr context, std::string_view name) const
+{
+    const auto changeable_settings = collectChangeableServerSettings(context);
+    auto it = changeable_settings.find(String{name});
+    if (it == changeable_settings.end())
+        return std::nullopt;
+    return it->second.first;
 }
 }
