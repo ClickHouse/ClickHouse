@@ -335,7 +335,17 @@ ClusterPtr DatabaseReplicated::tryGetCluster() const
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        /// The exception is expected during concurrent database lifecycle
+        /// operations (e.g. another session is dropping the database or its
+        /// Keeper state is mid-creation). The caller treats nullptr as "no
+        /// cluster info available for this database, skip it", so logging
+        /// at `error` is misleading and noisy. In particular, the test
+        /// runner forwards server logs at `warning` and above to the client
+        /// stderr, which makes any otherwise-passing test that touches
+        /// `system.clusters` flaky (e.g. `01293_show_clusters`). Use
+        /// `information` so administrators still see the message in normal
+        /// server logs but it does not propagate to clients.
+        tryLogCurrentException(log, "Failed to get cluster info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
     }
     return cluster;
 }
@@ -359,7 +369,8 @@ ClusterPtr DatabaseReplicated::tryGetAllGroupsCluster() const
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        /// See the note in `tryGetCluster` above for why this is `information`.
+        tryLogCurrentException(log, "Failed to get all-groups cluster info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
     }
     return cluster_all_groups;
 }
@@ -562,7 +573,13 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        /// Same rationale as in `tryGetCluster` above: the caller (e.g.
+        /// `system.clusters`) treats an empty `ReplicasInfo` as "skip the
+        /// replica state columns for this database", and the Keeper state
+        /// of a Replicated database can be in flux during normal lifecycle
+        /// operations. Log at `information` so this does not leak into the
+        /// client stderr at the default `send_logs_level = warning`.
+        tryLogCurrentException(log, "Failed to get replicas info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
         return {};
     }
 }
