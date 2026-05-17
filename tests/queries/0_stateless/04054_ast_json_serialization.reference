@@ -241,6 +241,7 @@ RT_rename_db	RENAME TABLE db1.a TO db2.b
 RT_exchange	EXCHANGE TABLES a AND b
 RT_dictionary	CREATE DICTIONARY dict (`id` UInt64, `name` String DEFAULT \'\') PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE \'t\')) LIFETIME(MIN 0 MAX 1000) LAYOUT(HASHED())
 RT_dict_range	CREATE DICTIONARY dict (`id` UInt64, `start` DateTime, `end` DateTime, `name` String DEFAULT \'\') PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE \'t\')) LIFETIME(MIN 0 MAX 1000) LAYOUT(RANGE_HASHED()) RANGE(MIN start MAX end)
+RT_dict_settings	CREATE DICTIONARY dict (`id` UInt64, `name` String DEFAULT \'\') PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE \'t\')) LIFETIME(MIN 0 MAX 1000) LAYOUT(FLAT()) SETTINGS(max_result_bytes = 1024, dictionary_use_async_executor = 1)
 RT_system_flush	SYSTEM FLUSH LOGS
 RT_system_stop	SYSTEM STOP MERGES t
 RT_show_tables	SHOW TABLES FROM db

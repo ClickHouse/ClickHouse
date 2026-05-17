@@ -1468,6 +1468,9 @@ SELECT 'RT_dictionary' AS t, formatQueryFromJSON(parseQueryToJSON('CREATE DICTIO
 -- Dictionary with range
 SELECT 'RT_dict_range' AS t, formatQueryFromJSON(parseQueryToJSON('CREATE DICTIONARY dict (id UInt64, start DateTime, end DateTime, name String DEFAULT \'\') PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE \'t\')) LAYOUT(RANGE_HASHED()) LIFETIME(MIN 0 MAX 1000) RANGE(MIN start MAX end)'));
 
+-- Dictionary SETTINGS preserve typed Field values (numeric stays numeric, not quoted string)
+SELECT 'RT_dict_settings' AS t, formatQueryFromJSON(parseQueryToJSON('CREATE DICTIONARY dict (id UInt64, name String DEFAULT \'\') PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE \'t\')) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1000) SETTINGS(max_result_bytes = 1024, dictionary_use_async_executor = 1)'));
+
 -- SYSTEM queries
 SELECT 'RT_system_flush' AS t, formatQueryFromJSON(parseQueryToJSON('SYSTEM FLUSH LOGS'));
 SELECT 'RT_system_stop' AS t, formatQueryFromJSON(parseQueryToJSON('SYSTEM STOP MERGES t'));

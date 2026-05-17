@@ -144,19 +144,19 @@ void ASTDictionarySettings::writeJSON(WriteBuffer & out) const
     if (!changes.empty())
     {
         w.writeKey("changes");
-        out << '[';
+        auto & o = w.getOut();
+        const auto & fs = w.getFormatSettings();
+        o << '[';
         for (size_t i = 0; i < changes.size(); ++i)
         {
             if (i > 0)
-                out << ',';
-            out << '{';
-            out << "\"name\":";
-            writeJSONString(std::string_view(changes[i].name), out, w.getFormatSettings());
-            out << ",\"value\":";
-            writeJSONString(std::string_view(applyVisitor(FieldVisitorToString(), changes[i].value)), out, w.getFormatSettings());
-            out << '}';
+                o << ',';
+            o << "{\"name\":";
+            writeJSONString(changes[i].name, o, fs);
+            w.writeFieldValue("value", changes[i].value);
+            o << '}';
         }
-        out << ']';
+        o << ']';
     }
 }
 
@@ -174,8 +174,10 @@ void ASTDictionarySettings::readJSON(const Poco::JSON::Object & json)
             if (!obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'changes' array during AST JSON deserialization", i);
             String setting_name = obj->getValue<String>("name");
-            String setting_value = obj->getValue<String>("value");
-            changes.emplace_back(setting_name, Field(setting_value));
+            auto value_obj = obj->getObject("value");
+            if (!value_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'value' object at index {} in 'changes' array during AST JSON deserialization", i);
+            changes.emplace_back(setting_name, JSONObjectReader::readFieldFromObject(*value_obj));
         }
     }
 }
