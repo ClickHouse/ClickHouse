@@ -45,10 +45,13 @@ public:
 
     String getSignatureString() const override
     {
-        /// The third argument's presence depends on a setting
-        /// (allow_custom_error_code_in_throwif); the signature always allows it and the
-        /// executor falls back to the default error code when the setting is off.
-        return "(NativeNumber, [const String], [const Int8 | Int16 | Int32]) -> UInt8";
+        /// The third argument's presence depends on `allow_custom_error_code_in_throwif`;
+        /// when the setting is off, calls with three arguments must be rejected by the
+        /// analyzer (matching the legacy `getNumberOfArguments() == 1`/`2` contract that
+        /// the test exercises).
+        if (allow_custom_error_code_argument)
+            return "(NativeNumber, [const String], [const Int8 | Int16 | Int32]) -> UInt8";
+        return "(NativeNumber, [const String]) -> UInt8";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
