@@ -4,6 +4,7 @@
 #include <IO/Operators.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Port.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/TopNAggregatingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
