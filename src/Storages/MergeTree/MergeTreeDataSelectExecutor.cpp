@@ -2127,15 +2127,20 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         bool skip_vector_distance_hints = false;
         std::unordered_map<size_t, MarkRanges> pk_ranges_by_index_mark;
         std::unordered_map<size_t, NearestNeighbours> vector_search_results_by_index_mark;
+        std::unordered_map<size_t, size_t> remaining_uses_by_index_mark;
         std::unordered_set<size_t> merged_hints_index_marks;
+        const bool use_vector_search_cache = index_helper->isVectorSimilarityIndex() && !all_match;
 
-        if (index_helper->isVectorSimilarityIndex() && !all_match)
+        if (use_vector_search_cache)
         {
             for (size_t i = 0; i < ranges_size; ++i)
             {
                 const MarkRange & index_range = index_ranges[i];
                 for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
+                {
                     pk_ranges_by_index_mark[index_mark].push_back(ranges[i]);
+                    ++remaining_uses_by_index_mark[index_mark];
+                }
             }
         }
 
@@ -2152,24 +2157,31 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
                 if (index_helper->isVectorSimilarityIndex())
                 {
-                    auto search_result_it = vector_search_results_by_index_mark.find(index_mark);
-                    if (search_result_it == vector_search_results_by_index_mark.end())
+                    std::optional<NearestNeighbours> uncached_vector_search_result;
+                    const NearestNeighbours * nn_ptr = nullptr;
+                    if (use_vector_search_cache)
                     {
-                        std::optional<IMergeTreeIndexCondition::GranuleRowFilter> row_filter;
-                        if (!all_match)
+                        auto search_result_it = vector_search_results_by_index_mark.find(index_mark);
+                        if (search_result_it == vector_search_results_by_index_mark.end())
                         {
-                            row_filter.emplace(IMergeTreeIndexCondition::GranuleRowFilter{
-                                part->index_granularity.get(),
-                                pk_ranges_by_index_mark.at(index_mark),
+                            std::optional<IMergeTreeIndexCondition::GranuleRowFilter> row_filter{
+                                IMergeTreeIndexCondition::GranuleRowFilter{
+                                    part->index_granularity.get(),
+                                    pk_ranges_by_index_mark.at(index_mark),
+                                    index_mark,
+                                    skip_index_granularity}};
+                            search_result_it = vector_search_results_by_index_mark.emplace(
                                 index_mark,
-                                skip_index_granularity});
+                                condition->calculateApproximateNearestNeighbors(granule, row_filter)).first;
                         }
-
-                        search_result_it = vector_search_results_by_index_mark.emplace(
-                            index_mark,
-                            condition->calculateApproximateNearestNeighbors(granule, row_filter)).first;
+                        nn_ptr = &search_result_it->second;
                     }
-                    const NearestNeighbours & nn = search_result_it->second;
+                    else
+                    {
+                        uncached_vector_search_result = condition->calculateApproximateNearestNeighbors(granule, std::nullopt);
+                        nn_ptr = &uncached_vector_search_result.value();
+                    }
+                    const NearestNeighbours & nn = *nn_ptr;
 
                     /// We need to sort the result ranges ascendingly (granule-local row ids).
                     auto rows = nn.rows;
@@ -2225,6 +2237,18 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                             res.push_back(data_range);
                         else
                             res.back().end = data_range.end;
+                    }
+
+                    if (use_vector_search_cache)
+                    {
+                        auto uses_it = remaining_uses_by_index_mark.find(index_mark);
+                        chassert(uses_it != remaining_uses_by_index_mark.end());
+                        if (--uses_it->second == 0)
+                        {
+                            remaining_uses_by_index_mark.erase(uses_it);
+                            vector_search_results_by_index_mark.erase(index_mark);
+                            pk_ranges_by_index_mark.erase(index_mark);
+                        }
                     }
                 }
                 else
