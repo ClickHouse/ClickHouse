@@ -1478,6 +1478,16 @@ void expandColumnMatchersInExpression(ASTPtr & expression, const ColumnsDescript
     expandColumnMatchersImpl(expression, columns, context);
 }
 
+ASTPtr cloneAndExpandColumnDefaultExpression(const ColumnDefault & column_default, const ColumnsDescription & columns, ContextPtr context)
+{
+    if (!column_default.expression)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected column default expression");
+
+    auto expression = column_default.expression->clone();
+    expandColumnMatchersInExpression(expression, columns, context);
+    return expression;
+}
+
 void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const ColumnsDescription & columns, ContextPtr context)
 {
     expandColumnMatchersImpl(expression_list, columns, context);

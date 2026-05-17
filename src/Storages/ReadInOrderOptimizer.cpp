@@ -13,6 +13,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -306,10 +307,11 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(
             if (!aliased_columns.contains(required_sort_description[i].column_name))
                 continue;
 
-            auto column_expr = metadata_snapshot->getColumns().get(required_sort_description[i].column_name).default_desc.expression->clone();
-            replaceAliasColumnsInQuery(column_expr, metadata_snapshot->getColumns(), array_join_result_to_source, context);
+            const auto & columns = metadata_snapshot->getColumns();
+            auto column_expr = cloneAndExpandColumnDefaultExpression(columns.get(required_sort_description[i].column_name).default_desc, columns, context);
+            replaceAliasColumnsInQuery(column_expr, columns, array_join_result_to_source, context);
 
-            auto syntax_analyzer_result = TreeRewriter(context).analyze(column_expr, metadata_snapshot->getColumns().getAll());
+            auto syntax_analyzer_result = TreeRewriter(context).analyze(column_expr, columns.getAll());
             auto expression_analyzer = ExpressionAnalyzer(column_expr, syntax_analyzer_result, context);
 
             aliases_sort_description[i].column_name = column_expr->getColumnName();

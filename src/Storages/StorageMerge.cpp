@@ -837,7 +837,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
                         if (is_alias)
                         {
-                            column_expr = column_default->expression->clone();
+                            column_expr = cloneAndExpandColumnDefaultExpression(*column_default, storage_metadata_snapshot->getColumns(), context);
                             replaceAliasColumnsInQuery(column_expr, storage_metadata_snapshot->getColumns(),
                                                     syntax_result->array_join_result_to_source, context);
 
