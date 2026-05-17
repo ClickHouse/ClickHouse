@@ -174,7 +174,7 @@ add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (sqids-cpp-cmake sqids-cpp)
 
 option(ENABLE_JIEBA "Enable jieba support" ${ENABLE_LIBRARIES})
-if (ENABLE_JIEBA)
+if (ENABLE_JIEBA AND NOT ARCH_S390X)
     add_contrib (darts-clone-cmake darts-clone)
     add_contrib (jieba)
 endif()
