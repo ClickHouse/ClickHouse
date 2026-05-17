@@ -1,3 +1,11 @@
+-- Tags: long
+-- The `long` tag exempts the test from the 180s flaky-check per-run timeout:
+-- it contains 8 distinct `WITH RECURSIVE` queries, each exercising a different
+-- planner edge case, and under pathological random-settings combinations
+-- (notably `max_threads = 32` with split-range injection) a single recursive
+-- step can take several seconds, putting the whole test over budget even
+-- though the dataset is small.
+
 -- Test that recursive CTEs with JOINs use MergeTree primary key index.
 -- Without the optimization, each recursion step scans the entire table.
 -- With the optimization, join key values from the working table are injected
