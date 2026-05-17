@@ -502,7 +502,7 @@
 
     <!-- Size of cache for deserialized columns from MergeTree tables.
          In bytes. Cache is single for server. Memory is allocated only on demand.
-         Cache is used when 'use_columns_cache' user setting is turned on (off by default).
+         Cache is used when 'use_columns_cache' user setting is turned on (on by default).
       -->
     <columns_cache_size>2147483648</columns_cache_size>
 

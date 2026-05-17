@@ -5,6 +5,7 @@ drop table if exists data;
 create table data (key Int) engine=MergeTree() order by () settings prewarm_mark_cache=0;
 
 set load_marks_asynchronously=0;
+set use_columns_cache=0;
 
 insert into data values (1);
 --
