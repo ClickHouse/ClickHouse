@@ -287,10 +287,13 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     if (projection_definition->index)
     {
         chassert(projection_definition->type);
-        result.index = ProjectionIndexFactory::instance().get(*projection_definition);
-        result.index->fillProjectionDescription(result, projection_definition->index, columns, partition_key, query_context);
+
         if (projection_definition->with_settings)
             result.loadSettings(projection_definition->with_settings->changes);
+
+        result.index = ProjectionIndexFactory::instance().get(*projection_definition);
+        result.index->fillProjectionDescription(result, projection_definition->index, columns, partition_key, query_context);
+
         return result;
     }
 
