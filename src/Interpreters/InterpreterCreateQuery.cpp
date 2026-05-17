@@ -1765,9 +1765,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         chassert(!ddl_guard);
         return doCreateOrReplaceTable(create, properties, mode);
     }
-    bool isCreateTableAsSelect = create.select && !create.attach && !create.is_create_empty && !create.is_ordinary_view && !create.is_materialized_view && !create.is_window_view;
+    const bool is_create_table_as_select = create.select && !create.attach && !create.is_create_empty && !create.is_ordinary_view && !create.is_materialized_view && !create.is_window_view;
 
-    if (getContext()->getSettingsRef()[Setting::atomic_create_as_select] && isCreateTableAsSelect && !create.isTemporary()
+    if (getContext()->getSettingsRef()[Setting::atomic_create_as_select] && is_create_table_as_select && !create.isTemporary()
         && (database->getEngineName() == "Atomic" || database->getEngineName() == "Replicated"))
     {
         chassert(!ddl_guard);
@@ -2176,6 +2176,13 @@ BlockIO InterpreterCreateQuery::doCreateTableAsSelect(ASTCreateQuery & create,
 
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(target_table);
+
+        /// If the target already exists and IF NOT EXISTS is set, skip the whole CTAS dance:
+        /// otherwise we would create and populate a temporary table only to discover the target exists
+        /// at rename time, leaking a populated temp table that the cleanup path may fail to drop
+        /// due to user RBAC. A race against a concurrent CREATE is still handled by the rename below.
+        if (if_not_exists && database->isTableExist(target_table, current_context))
+            return {};
     }
 
     {
