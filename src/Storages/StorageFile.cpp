@@ -1040,6 +1040,8 @@ StorageFile::getTableStructureAndFormatFromFileDescriptor(std::optional<String> 
     /// We will use PeekableReadBuffer to create a checkpoint, so we need a place
     /// where we can store the original read buffer.
     read_buffer_from_fd = createReadBuffer("", file_stat, true, table_fd, compression_method, context);
+    if (format && FormatFactory::instance().shouldDetectUTFBOM(*format))
+        read_buffer_from_fd = std::make_unique<UTFConvertingReadBuffer>(std::move(read_buffer_from_fd));
     auto read_buf = std::make_unique<PeekableReadBuffer>(*read_buffer_from_fd);
     read_buf->setCheckpoint();
     auto read_buffer_iterator = SingleReadBufferIterator(std::move(read_buf));

@@ -2,6 +2,7 @@
 #include <memory>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadBufferWrapperBase.h>
 
 namespace DB
 {
@@ -12,7 +13,7 @@ namespace DB
 /// - UTF-16 LE/BE: converted to UTF-8 on the fly
 /// - UTF-32 LE/BE: converted to UTF-8 on the fly
 /// Invalid sequences are replaced with U+FFFD ().
-class UTFConvertingReadBuffer : public ReadBuffer
+class UTFConvertingReadBuffer : public ReadBuffer, public ReadBufferWrapperBase
 {
 public:
     enum class Encoding
@@ -26,6 +27,8 @@ public:
 
     explicit UTFConvertingReadBuffer(std::unique_ptr<ReadBuffer> impl_);
     ~UTFConvertingReadBuffer() override;
+
+    const ReadBuffer & getWrappedReadBuffer() const override { return *impl; }
 
 private:
     bool nextImpl() override;
