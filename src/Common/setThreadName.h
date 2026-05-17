@@ -64,6 +64,7 @@ namespace DB
     M(GRPC_SERVER_QUEUE, "gRPCServerQueue") \
     M(HASHED_DICT_DTOR, "HashedDictDtor") \
     M(HASHED_DICT_LOAD, "HashedDictLoad") \
+    M(HISTOGRAM_METRIC_LOG, "HistMetricLog") \
     M(HTTP_HANDLER, "HTTPHandler") \
     M(ICEBERG_ITERATOR, "IcebergIter") \
     M(ICEBERG_SCHEDULE_POOL, "IcebergSchPool") \
