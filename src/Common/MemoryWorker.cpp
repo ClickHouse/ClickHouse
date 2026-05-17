@@ -435,10 +435,11 @@ void MemoryWorker::updateResidentMemoryThread()
             /// Speculatively reserve `(resident - tracked) * ratio` on top of the observed RSS.
             /// `resident - tracked` is the amount of memory we observed during the last tick that
             /// had not yet flowed into the tracker; treat it as a lower bound on what may grow in
-            /// the next tick as well. With `ratio = 1.0` we reserve one full delta of headroom,
-            /// so `MemoryTracker::allocImpl` will throw `MEMORY_LIMIT_EXCEEDED` (via the global
-            /// `will_be_rss > current_hard_limit` branch) before the kernel OOM-killer closes the
-            /// gap. The default `ratio = 0` keeps the previous behaviour (`rss = resident`).
+            /// the next tick as well. With the default `ratio = 1.0` we reserve one full delta of
+            /// headroom, so `MemoryTracker::allocImpl` will throw `MEMORY_LIMIT_EXCEEDED` (via the
+            /// global `will_be_rss > current_hard_limit` branch) before the kernel OOM-killer
+            /// closes the gap. `ratio = 0` disables the speculation (`rss = resident`); sanitizer
+            /// test configs pin it to `0` because shadow-memory overhead dominates the gap there.
             Int64 speculative_rss = resident;
             if (rss_speculative_reserve_ratio > 0.0)
             {
