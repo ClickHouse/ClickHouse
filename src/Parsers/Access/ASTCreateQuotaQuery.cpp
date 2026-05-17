@@ -10,6 +10,15 @@ namespace DB
 {
 namespace
 {
+    void formatIpPrefixBits(const std::optional<MaskBits> & ipv4_prefix_bits,
+                            const std::optional<MaskBits> & ipv6_prefix_bits, WriteBuffer & ostr)
+    {
+        if (ipv4_prefix_bits)
+            ostr << " IPV4_PREFIX_BITS " << static_cast<UInt64>(*ipv4_prefix_bits);
+        if (ipv6_prefix_bits)
+            ostr << " IPV6_PREFIX_BITS " << static_cast<UInt64>(*ipv6_prefix_bits);
+    }
+
     void formatKeyType(const QuotaKeyType & key_type, const std::optional<MaskBits> & ipv4_prefix_bits,
                        const std::optional<MaskBits> & ipv6_prefix_bits, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
@@ -37,12 +46,7 @@ namespace
         ostr << type_info.name;
 
         if (key_type == QuotaKeyType::IP_ADDRESS || key_type == QuotaKeyType::FORWARDED_IP_ADDRESS)
-        {
-            if (ipv4_prefix_bits)
-                ostr << " IPV4_PREFIX_BITS " << static_cast<UInt64>(*ipv4_prefix_bits);
-            if (ipv6_prefix_bits)
-                ostr << " IPV6_PREFIX_BITS " << static_cast<UInt64>(*ipv6_prefix_bits);
-        }
+            formatIpPrefixBits(ipv4_prefix_bits, ipv6_prefix_bits, ostr);
     }
 
 
@@ -184,6 +188,14 @@ void ASTCreateQuotaQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & 
 
     if (key_type)
         formatKeyType(*key_type, ipv4_prefix_bits, ipv6_prefix_bits, ostr, settings);
+    else if (ipv4_prefix_bits || ipv6_prefix_bits)
+    {
+        /// `ALTER QUOTA q IPV4_PREFIX_BITS 16` does not include `KEYED BY`, so
+        /// `key_type` is unset. We still need to format the prefix bits so that
+        /// `ON CLUSTER` distribution (which serializes via `formatWithSecretsOneLine`)
+        /// carries the option to replicas.
+        formatIpPrefixBits(ipv4_prefix_bits, ipv6_prefix_bits, ostr);
+    }
 
     formatIntervalsWithLimits(all_limits, ostr, settings);
 
