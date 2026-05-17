@@ -112,7 +112,7 @@ Result:
 - The generated query must be a single `SELECT` query. `eval` does not execute multiple statements.
 - The generated query cannot contain another `eval` table function.
 - The input `SELECT` query is evaluated once during query analysis, not once per row or block.
-- In distributed queries, `eval` is expanded on the initiator. The generated `SELECT` query is then executed as a normal query.
+- In distributed queries, `eval` is usually analyzed on the initiator. If `eval` is used as a nested table function argument of `remote` or `cluster`, the generated `SELECT` query is resolved on the remote shard instead, so it can reference objects available only on that shard.
 - The outer query log records the original query that contains `eval`; the generated `SELECT` query is not logged as a separate user query.
 
 ## Related {#related}
