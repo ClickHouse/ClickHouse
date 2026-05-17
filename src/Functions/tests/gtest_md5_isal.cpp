@@ -143,6 +143,7 @@ TEST(MD5IsaL, LargeBatchSpansMultipleWaves)
         GTEST_SKIP() << "ISA-L Crypto MD5 is not enabled for this build";
     }
 
+#if USE_ISAL_CRYPTO
     /// Sprinkle the known-answer input "abc" across multiple waves of the
     /// fixed-size lane pool to make sure wave boundaries do not scramble
     /// completion order or stomp on previously-written digests.
@@ -167,6 +168,7 @@ TEST(MD5IsaL, LargeBatchSpansMultipleWaves)
 
     for (const auto row : abc_rows)
         EXPECT_EQ(std::string(canonical_abc), digestHex(output, row)) << "row: " << row;
+#endif
 }
 
 TEST(MD5IsaL, HashesKnownBoundaryVectors)
