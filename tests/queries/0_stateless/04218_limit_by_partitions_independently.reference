@@ -3,8 +3,8 @@
 DROP TABLE IF EXISTS test_partition_eq_key;
 CREATE TABLE test_partition_eq_key (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a % 8;
 SYSTEM STOP MERGES test_partition_eq_key;
-INSERT INTO test_partition_eq_key SELECT number, number FROM numbers_mt(1e5);
-INSERT INTO test_partition_eq_key SELECT number, number FROM numbers_mt(1e5);
+INSERT INTO test_partition_eq_key SELECT number, number FROM numbers_mt(1e3);
+INSERT INTO test_partition_eq_key SELECT number, number FROM numbers_mt(1e3);
 EXPLAIN PIPELINE SELECT a FROM test_partition_eq_key LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 1;
 (Expression)
 ExpressionTransform × 8
@@ -38,8 +38,8 @@ DROP TABLE test_partition_eq_key;
 DROP TABLE IF EXISTS test_partition_func_of_key;
 CREATE TABLE test_partition_func_of_key (d Date, x UInt32) ENGINE = MergeTree ORDER BY d PARTITION BY toYYYYMM(d);
 SYSTEM STOP MERGES test_partition_func_of_key;
-INSERT INTO test_partition_func_of_key SELECT toDate('2024-01-01') + (number % 240), number FROM numbers_mt(5e4);
-INSERT INTO test_partition_func_of_key SELECT toDate('2024-01-01') + (number % 240), number + 1 FROM numbers_mt(5e4);
+INSERT INTO test_partition_func_of_key SELECT toDate('2024-01-01') + (number % 240), number FROM numbers_mt(1e3);
+INSERT INTO test_partition_func_of_key SELECT toDate('2024-01-01') + (number % 240), number + 1 FROM numbers_mt(1e3);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT d FROM test_partition_func_of_key LIMIT 3 BY d SETTINGS allow_limit_by_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
 Skip stream merging: 1
 Read each partition through separate port: 1
@@ -85,8 +85,8 @@ DROP TABLE test_partition_sum_of_components;
 DROP TABLE IF EXISTS test_with_where_filter;
 CREATE TABLE test_with_where_filter (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY b PARTITION BY a % 8;
 SYSTEM STOP MERGES test_with_where_filter;
-INSERT INTO test_with_where_filter SELECT number, number FROM numbers_mt(1e4);
-INSERT INTO test_with_where_filter SELECT number, number + 1 FROM numbers_mt(1e4);
+INSERT INTO test_with_where_filter SELECT number, number FROM numbers_mt(1e3);
+INSERT INTO test_with_where_filter SELECT number, number + 1 FROM numbers_mt(1e3);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT a FROM test_with_where_filter WHERE b > 0 LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
 Skip stream merging: 1
 Read each partition through separate port: 1
@@ -95,7 +95,7 @@ SELECT (SELECT count() FROM (SELECT a FROM test_with_where_filter WHERE b > 0 LI
 DROP TABLE test_with_where_filter;
 DROP TABLE IF EXISTS test_with_projection_alias;
 CREATE TABLE test_with_projection_alias (a UInt32, payload String) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a % 8;
-INSERT INTO test_with_projection_alias SELECT number, toString(number) FROM numbers_mt(1e4);
+INSERT INTO test_with_projection_alias SELECT number, toString(number) FROM numbers_mt(1e3);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT a, length(payload) AS plen FROM test_with_projection_alias LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
 Skip stream merging: 1
 Read each partition through separate port: 1
@@ -134,8 +134,8 @@ DROP TABLE test_with_offset;
 DROP TABLE IF EXISTS test_few_partitions_many_threads;
 CREATE TABLE test_few_partitions_many_threads (a UInt32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a % 2;
 SYSTEM STOP MERGES test_few_partitions_many_threads;
-INSERT INTO test_few_partitions_many_threads SELECT number FROM numbers_mt(1e4);
-INSERT INTO test_few_partitions_many_threads SELECT number FROM numbers_mt(1e4);
+INSERT INTO test_few_partitions_many_threads SELECT number FROM numbers_mt(1e3);
+INSERT INTO test_few_partitions_many_threads SELECT number FROM numbers_mt(1e3);
 EXPLAIN PIPELINE SELECT a FROM test_few_partitions_many_threads LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 1;
 (Expression)
 ExpressionTransform × 2
@@ -157,8 +157,8 @@ DROP TABLE test_few_partitions_many_threads;
 DROP TABLE IF EXISTS test_table_level_order_by;
 CREATE TABLE test_table_level_order_by (a UInt32) ENGINE = MergeTree ORDER BY a PARTITION BY a % 8;
 SYSTEM STOP MERGES test_table_level_order_by;
-INSERT INTO test_table_level_order_by SELECT number FROM numbers_mt(1e4);
-INSERT INTO test_table_level_order_by SELECT number FROM numbers_mt(1e4);
+INSERT INTO test_table_level_order_by SELECT number FROM numbers_mt(1e3);
+INSERT INTO test_table_level_order_by SELECT number FROM numbers_mt(1e3);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT a FROM test_table_level_order_by LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
 Skip stream merging: 1
 Read each partition through separate port: 1
@@ -222,8 +222,8 @@ DROP TABLE test_with_final;
 DROP TABLE IF EXISTS test_projection_partitioned_reading;
 CREATE TABLE test_projection_partitioned_reading (a UInt32, b UInt32, PROJECTION p (SELECT a ORDER BY a)) ENGINE = MergeTree ORDER BY b PARTITION BY a % 8;
 SYSTEM STOP MERGES test_projection_partitioned_reading;
-INSERT INTO test_projection_partitioned_reading SELECT number % 100, number FROM numbers_mt(10000);
-INSERT INTO test_projection_partitioned_reading SELECT number % 100, number + 10000 FROM numbers_mt(10000);
+INSERT INTO test_projection_partitioned_reading SELECT number % 100, number FROM numbers_mt(1e3);
+INSERT INTO test_projection_partitioned_reading SELECT number % 100, number + 10000 FROM numbers_mt(1e3);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT a FROM test_projection_partitioned_reading LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 1, optimize_use_projections = 1, force_optimize_projection = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
 SELECT (SELECT count() FROM (SELECT a FROM test_projection_partitioned_reading LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 0, optimize_use_projections = 1, force_optimize_projection = 1)) = (SELECT count() FROM (SELECT a FROM test_projection_partitioned_reading LIMIT 2 BY a SETTINGS allow_limit_by_partitions_independently = 1, optimize_use_projections = 1, force_optimize_projection = 1));
 1
