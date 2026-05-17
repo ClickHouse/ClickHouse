@@ -23,7 +23,6 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 using IColumnPermutation = PaddedPODArray<size_t>;
 
 struct KeyDescription;
-struct MergeTreeSettings;
 
 class ASTProjectionSelectQuery;
 
@@ -79,24 +78,28 @@ struct ProjectionDescription
 
     ProjectionIndexPtr index;
 
-    std::optional<UInt64> index_granularity;
-    std::optional<UInt64> index_granularity_bytes;
+    /// Settings (configurable via WITH SETTINGS clause of the projection declaration)
+    std::optional<UInt64> index_granularity = {};
+    std::optional<UInt64> index_granularity_bytes = {};
+    bool add_minmax_index_for_numeric_columns = false;
+    bool add_minmax_index_for_string_columns = false;
+    bool add_minmax_index_for_temporal_columns = false;
+    bool add_minmax_index_for_block_number_column = false;
+    bool add_minmax_index_for_block_offset_column = false;
 
     /// Parse projection from definition AST
     static ProjectionDescription getProjectionFromAST(
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
         const KeyDescription * partition_key,
-        const ContextPtr & query_context,
-        const MergeTreeSettings * merge_tree_settings = nullptr);
+        const ContextPtr & query_context);
 
     static void fillProjectionDescriptionByQuery(
         ProjectionDescription & result,
         const ASTProjectionSelectQuery & query,
         const ColumnsDescription & columns,
         const KeyDescription * partition_key,
-        const ContextPtr & query_context,
-        const MergeTreeSettings * merge_tree_settings = nullptr);
+        const ContextPtr & query_context);
 
     static ProjectionDescription getMinMaxCountProjection(
         const ColumnsDescription & columns,

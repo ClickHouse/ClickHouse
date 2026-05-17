@@ -39,7 +39,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
@@ -62,17 +61,6 @@ namespace Setting
 
 extern const SettingsBool enable_positional_arguments_for_projections;
 
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
-    extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
-    extern const MergeTreeSettingsBool add_minmax_index_for_temporal_columns;
-    extern const MergeTreeSettingsBool add_minmax_index_for_block_number_column;
-    extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
-    extern const MergeTreeSettingsBool enable_block_number_column;
-    extern const MergeTreeSettingsBool enable_block_offset_column;
 }
 
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
@@ -114,6 +102,11 @@ ProjectionDescription ProjectionDescription::clone() const
     other.index = index;
     other.index_granularity = index_granularity;
     other.index_granularity_bytes = index_granularity_bytes;
+    other.add_minmax_index_for_numeric_columns = add_minmax_index_for_numeric_columns;
+    other.add_minmax_index_for_string_columns = add_minmax_index_for_string_columns;
+    other.add_minmax_index_for_temporal_columns = add_minmax_index_for_temporal_columns;
+    other.add_minmax_index_for_block_number_column = add_minmax_index_for_block_number_column;
+    other.add_minmax_index_for_block_offset_column = add_minmax_index_for_block_offset_column;
 
     return other;
 }
@@ -246,6 +239,16 @@ void ProjectionDescription::loadSettings(const SettingsChanges & changes)
             index_granularity = value.safeGet<UInt64>();
         else if (setting == "index_granularity_bytes")
             index_granularity_bytes = value.safeGet<UInt64>();
+        else if (setting == "add_minmax_index_for_numeric_columns")
+            add_minmax_index_for_numeric_columns = value.safeGet<UInt64>() != 0;
+        else if (setting == "add_minmax_index_for_string_columns")
+            add_minmax_index_for_string_columns = value.safeGet<UInt64>() != 0;
+        else if (setting == "add_minmax_index_for_temporal_columns")
+            add_minmax_index_for_temporal_columns = value.safeGet<UInt64>() != 0;
+        else if (setting == "add_minmax_index_for_block_number_column")
+            add_minmax_index_for_block_number_column = value.safeGet<UInt64>() != 0;
+        else if (setting == "add_minmax_index_for_block_offset_column")
+            add_minmax_index_for_block_offset_column = value.safeGet<UInt64>() != 0;
         else
             throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}' for projections", setting);
     }
@@ -267,8 +270,7 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
     const KeyDescription * partition_key,
-    const ContextPtr & query_context,
-    const MergeTreeSettings * merge_tree_settings)
+    const ContextPtr & query_context)
 {
     const auto * projection_definition = definition_ast->as<ASTProjectionDeclaration>();
 
@@ -295,7 +297,7 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     if (projection_definition->with_settings)
         result.loadSettings(projection_definition->with_settings->changes);
 
-    fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, partition_key, query_context, merge_tree_settings);
+    fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, partition_key, query_context);
     return result;
 }
 
@@ -304,8 +306,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     const ASTProjectionSelectQuery & query,
     const ColumnsDescription & columns,
     const KeyDescription * partition_key,
-    const ContextPtr & query_context,
-    const MergeTreeSettings * merge_tree_settings)
+    const ContextPtr & query_context)
 {
     auto projection_order_by = query.orderBy();
     result.query_ast = query.cloneToASTSelect();
@@ -466,21 +467,15 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     metadata.setColumns(ColumnsDescription(metadata_columns));
     metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));
 
-    /// Initialize skip indices based on parent table settings.
-    if (merge_tree_settings)
-    {
-        const auto & settings = *merge_tree_settings;
-
-        metadata.add_minmax_index_for_numeric_columns = settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
-        metadata.add_minmax_index_for_string_columns = settings[MergeTreeSetting::add_minmax_index_for_string_columns];
-        metadata.add_minmax_index_for_temporal_columns = settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
-        metadata.add_minmax_index_for_block_number_column = settings[MergeTreeSetting::add_minmax_index_for_block_number_column] && settings[MergeTreeSetting::enable_block_number_column];
-        metadata.add_minmax_index_for_block_offset_column = settings[MergeTreeSetting::add_minmax_index_for_block_offset_column] && settings[MergeTreeSetting::enable_block_offset_column];
-
-        metadata.addImplicitIndicesForVirtualColumns(query_context);
-        for (const auto & column : metadata.columns)
-            metadata.addImplicitIndicesForColumn(column, query_context);
-    }
+    /// Initialize implicit-minmax skip indices from projection-level settings.
+    metadata.add_minmax_index_for_numeric_columns = result.add_minmax_index_for_numeric_columns;
+    metadata.add_minmax_index_for_string_columns = result.add_minmax_index_for_string_columns;
+    metadata.add_minmax_index_for_temporal_columns = result.add_minmax_index_for_temporal_columns;
+    metadata.add_minmax_index_for_block_number_column = result.add_minmax_index_for_block_number_column;
+    metadata.add_minmax_index_for_block_offset_column = result.add_minmax_index_for_block_offset_column;
+    metadata.addImplicitIndicesForVirtualColumns(query_context);
+    for (const auto & column : metadata.columns)
+        metadata.addImplicitIndicesForColumn(column, query_context);
 
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
 }
