@@ -48,10 +48,19 @@ ${CLICKHOUSE_CLIENT} --query="SELECT count(), arraySort(groupArray(json)) FROM t
 
 # 5. Negative case: a format with no fixed schema (`CSV`). The user must still provide
 #    a structure manually; we should preserve the old, actionable error message.
+#    Capture the client's exit status explicitly so the test fails loudly if the
+#    `INSERT` unexpectedly succeeds instead of silently producing an empty line that
+#    would only be caught by the reference diff.
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE t_input_csv (a Int32, b Int32) ENGINE = Memory"
-printf '1,2\n' | \
-    ${CLICKHOUSE_CLIENT} --query="INSERT INTO t_input_csv SELECT a, b FROM input() FORMAT CSV" 2>&1 \
-    | grep -oF 'CANNOT_EXTRACT_TABLE_STRUCTURE' | head -n 1
+set +e
+csv_output=$(printf '1,2\n' | ${CLICKHOUSE_CLIENT} --query="INSERT INTO t_input_csv SELECT a, b FROM input() FORMAT CSV" 2>&1)
+csv_status=$?
+set -e
+if [ "$csv_status" -eq 0 ]; then
+    echo "ERROR: INSERT FROM input() FORMAT CSV was expected to fail but succeeded; output: $csv_output"
+    exit 1
+fi
+echo "$csv_output" | grep -oF 'CANNOT_EXTRACT_TABLE_STRUCTURE' | head -n 1
 
 # 6. Existing behaviour: explicit structure on `input(...)` still works, including when
 #    its column name does not match the format's fixed schema.
