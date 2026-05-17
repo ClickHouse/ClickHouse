@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- Regression test: parsing KQL array indexing with deeply nested square brackets used to allocate
 -- exponentially with depth (3^N) because the converted SQL duplicated the inner expression three
 -- times. With N ~ 20 the create_parser fuzzer OOMed at 6+ GB of RSS.
