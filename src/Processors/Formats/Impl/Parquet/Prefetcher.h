@@ -3,6 +3,7 @@
 #include <Common/PODArray.h>
 #include <Processors/Formats/Impl/Parquet/ReadCommon.h>
 
+#include <optional>
 #include <span>
 
 namespace DB
@@ -130,6 +131,18 @@ private:
         ///       the range in parallel (into subranges of one buffer). E.g. if there's a big column
         ///       chunk with no offset index, and we're reading over network.
         PaddedPODArray<char> buf;
+
+        /// When the underlying read buffer supports zero-copy cached reads, and the Task's range
+        /// happens to fit in one retained cache cell, we reference that cell here and don't use `buf`.
+        /// Lightweight mirror of SeekableReadBuffer::CachedRegion to avoid the heavy include.
+        struct CachedReadRegion
+        {
+            std::shared_ptr<void> handle;
+            const char * data = nullptr;
+            size_t size = 0;
+            size_t file_offset = 0;
+        };
+        std::optional<CachedReadRegion> cached_region;
 
         std::atomic<State> state {State::Scheduled};
         /// How many RequestState-s in HasTask state point to this Task.

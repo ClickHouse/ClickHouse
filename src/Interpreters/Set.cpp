@@ -266,7 +266,10 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
 #undef M
     }
 
-    return limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    bool within_limits = limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    if (!within_limits)
+        is_truncated = true;
+    return within_limits;
 }
 
 void Set::appendSetElements(SetKeyColumns & holder)
@@ -720,6 +723,9 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     ranges.reserve(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
     {
+        if (indexes_mapping[i].key_index >= key_ranges.size())
+            return {true, true};
+
         std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
             key_ranges[indexes_mapping[i].key_index],
             indexes_mapping[i].functions,

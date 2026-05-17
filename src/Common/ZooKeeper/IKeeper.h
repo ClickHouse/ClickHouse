@@ -3,7 +3,10 @@
 #include <base/defines.h>
 #include <base/types.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 
+#include <chrono>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <unordered_map>
@@ -459,6 +462,21 @@ struct RemoveRecursiveResponse : virtual Response
 };
 
 
+struct ListRecursiveResponse : virtual Response
+{
+    std::vector<String> children;
+
+    void removeRootPath(const String & root_path) override;
+
+    size_t bytesSize() const override
+    {
+        size_t result = 0;
+        for (const auto & child : children)
+            result += child.size();
+        return result;
+    }
+};
+
 struct ExistsRequest : virtual Request
 {
     String path;
@@ -549,6 +567,14 @@ struct ListResponse : virtual Response
             size += child_data.size();
         return size;
     }
+};
+
+struct ListRecursiveRequest : virtual ListRequest
+{
+    /// strict limit for number of listed nodes
+    uint32_t children_nodes_limit = std::numeric_limits<uint32_t>::max();
+
+    size_t bytesSize() const override { return ListRequest::bytesSize() + sizeof(children_nodes_limit); }
 };
 
 struct CheckRequest : virtual Request
@@ -667,6 +693,7 @@ using SyncCallback = std::function<void(const SyncResponse &)>;
 using ReconfigCallback = std::function<void(const ReconfigResponse &)>;
 using MultiCallback = std::function<void(const MultiResponse &)>;
 using GetACLCallback = std::function<void(const GetACLResponse &)>;
+using ListRecursiveCallback = std::function<void(const ListRecursiveResponse &)>;
 
 /// For watches.
 enum State
@@ -771,6 +798,11 @@ public:
         uint32_t remove_nodes_limit,
         RemoveRecursiveCallback callback) = 0;
 
+    virtual void listRecursive(
+        const String & path,
+        uint32_t get_children_recursive_nodes_limit,
+        ListRecursiveCallback callback) = 0;
+
     virtual void exists(
         const String & path,
         ExistsCallback callback,
@@ -831,9 +863,18 @@ public:
     using WatchCallbacks = std::unordered_set<WatchCallbackPtrOrEventPtr>;
     using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
 
+    struct WatchCreateInfo
+    {
+        std::chrono::system_clock::time_point create_time{};
+        XID request_xid{0};
+        OpNum op_num{OpNum::Error};
+    };
+
+    using WatchesSnapshot = std::unordered_map<String, std::vector<WatchCreateInfo>>;
+
 protected:
     std::unordered_map<String, WatchCallbackPtrOrEventPtr> watches_by_id TSA_GUARDED_BY(watches_mutex);
-    std::mutex watches_mutex;
+    mutable std::mutex watches_mutex;
 };
 
 }
