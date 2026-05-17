@@ -2812,8 +2812,19 @@ def test_kafka_engine_put_errors_to_stream(kafka_cluster, create_query_generator
     with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
         instance.wait_for_log_line(f"{kafka_table}.*Committed offset 128")
 
-        assert TSV(instance.query(f"SELECT count() FROM test.{kafka_table}_data")) == TSV("64")
-        assert TSV(instance.query(f"SELECT count() FROM test.{kafka_table}_errors")) == TSV("64")
+        # `Committed offset 128` only tells us the Kafka consumer side committed
+        # the offset; the materialized-view INSERT into the destination
+        # `MergeTree` runs in a separate path and may not have flushed yet.
+        # Poll the destination row counts until they reach the expected values
+        # instead of asserting them once immediately.
+        assert int(instance.query_with_retry(
+            f"SELECT count() FROM test.{kafka_table}_data",
+            check_callback=lambda x: int(x) == 64,
+        )) == 64
+        assert int(instance.query_with_retry(
+            f"SELECT count() FROM test.{kafka_table}_errors",
+            check_callback=lambda x: int(x) == 64,
+        )) == 64
 
         instance.query(f"""
             DROP TABLE test.{kafka_table};
@@ -2879,10 +2890,21 @@ def test_kafka_engine_put_errors_to_stream_with_random_malformed_json(
     k.kafka_produce(kafka_cluster, topic_name, messages)
     with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
         instance.wait_for_log_line(f"{kafka_table}.*Committed offset 128")
+        # `Committed offset 128` only tells us the Kafka consumer side committed
+        # the offset; the materialized-view INSERT into the destination
+        # `MergeTree` runs in a separate path and may not have flushed yet.
+        # Poll the destination row counts until they reach the expected values
+        # instead of asserting them once immediately.
         # 64 good messages, each containing 10 rows
-        assert TSV(instance.query(f"SELECT count() FROM test.{kafka_table}_data")) == TSV("640")
+        assert int(instance.query_with_retry(
+            f"SELECT count() FROM test.{kafka_table}_data",
+            check_callback=lambda x: int(x) == 640,
+        )) == 640
         # 64 bad messages, each containing some broken row
-        assert TSV(instance.query(f"SELECT count() FROM test.{kafka_table}_errors")) == TSV("64")
+        assert int(instance.query_with_retry(
+            f"SELECT count() FROM test.{kafka_table}_errors",
+            check_callback=lambda x: int(x) == 64,
+        )) == 64
 
         instance.query(f"""
             DROP TABLE test.{kafka_table};
