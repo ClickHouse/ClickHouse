@@ -1649,6 +1649,24 @@ StorageFile::StorageFile(FileSource file_source_, CommonArguments args)
 
     is_db_table = false;
 
+    /// `rename_files_after_processing` relies on local-filesystem `fs::rename` in
+    /// `StorageFileSource::beforeDestroy`. With `user_files_policy` configured on a
+    /// non-local disk (for example `s3_plain`), `paths` are entries on that disk,
+    /// not local files, so the local rename would target a metadata path instead of
+    /// the configured backend (and the failure is swallowed in the destructor).
+    /// Reject up front, mirroring other call sites that gate features on disk type.
+    if (!args.rename_after_processing.empty() && user_files_volume)
+    {
+        for (const auto & disk : user_files_volume->getDisks())
+        {
+            if (disk->isRemote())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "`rename_files_after_processing` is not supported "
+                    "with non-local `user_files_policy` disks (disk `{}` is remote)",
+                    disk->getName());
+        }
+    }
+
     file_renamer = FileRenamer(args.rename_after_processing);
 
     setStorageMetadata(args);
