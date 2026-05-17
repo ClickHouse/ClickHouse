@@ -332,15 +332,6 @@ void WebTerminalRequestHandler::serveHTML(HTTPServerRequest & request, HTTPServe
 
     setResponseDefaultHeaders(response);
 
-    /// Refuse framing by any other origin. The web terminal asks the user for
-    /// ClickHouse credentials and forwards keystrokes to a PTY; an embedding
-    /// page (clickjacking) could trick a logged-in user into typing into an
-    /// invisible terminal. `frame-ancestors 'none'` (CSP) is the modern check
-    /// honoured by current browsers, and `X-Frame-Options: DENY` is the legacy
-    /// fallback for older browsers / proxies that ignore CSP.
-    response.set("Content-Security-Policy", "frame-ancestors 'none'");
-    response.set("X-Frame-Options", "DENY");
-
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
     auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
     wb.write(reinterpret_cast<const char *>(resource_webterminal_html), std::size(resource_webterminal_html));
