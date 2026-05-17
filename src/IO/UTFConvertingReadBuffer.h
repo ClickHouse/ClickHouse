@@ -1,6 +1,5 @@
 #pragma once
 #include <memory>
-#include <vector>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
 
@@ -12,8 +11,8 @@ namespace DB
 /// - UTF-8 BOM: skipped, data passed through in zero-copy fashion
 /// - UTF-16 LE/BE: converted to UTF-8 on the fly
 /// - UTF-32 LE/BE: converted to UTF-8 on the fly
-/// Invalid sequences are replaced with U+FFFD (�).
-class UTFConvertingReadBuffer : public BufferWithOwnMemory<ReadBuffer>
+/// Invalid sequences are replaced with U+FFFD ().
+class UTFConvertingReadBuffer : public ReadBuffer
 {
 public:
     enum class Encoding
@@ -55,14 +54,18 @@ private:
     std::unique_ptr<ReadBuffer> impl;
     Encoding encoding = Encoding::UTF8;
 
-    /// For handling incomplete multi-byte sequences at buffer boundaries
-    std::vector<uint8_t> pending_bytes;
+    /// Fixed size array for holding bytes that were read during BOM detection
+    char pending_bytes[4];
+    size_t pending_bytes_count = 0;
+
+    /// Memory buffer used only for UTF-16/32 conversion
+    Memory<> memory;
 
     /// High surrogate from UTF-16 waiting for low surrogate
     uint16_t pending_high_surrogate = 0;
 
     /// Track if we've reached EOF on the underlying buffer
-    bool eof = false;
+    bool eof_reached = false;
 };
 
 }

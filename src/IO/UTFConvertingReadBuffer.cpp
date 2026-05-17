@@ -42,7 +42,7 @@ uint32_t combineSurrogates(uint16_t high, uint16_t low)
 }
 
 UTFConvertingReadBuffer::UTFConvertingReadBuffer(std::unique_ptr<ReadBuffer> impl_)
-    : BufferWithOwnMemory<ReadBuffer>(DBMS_DEFAULT_BUFFER_SIZE)
+    : ReadBuffer(nullptr, 0)
     , impl(std::move(impl_))
 {
     detectBOM();
@@ -52,11 +52,10 @@ UTFConvertingReadBuffer::~UTFConvertingReadBuffer() = default;
 
 void UTFConvertingReadBuffer::detectBOM()
 {
-    /// Try to read first 4 bytes to detect BOM
     uint8_t bom_buffer[4] = {};
     size_t bytes_read = 0;
 
-    while (bytes_read < 4 && !impl->eof())
+    while (bytes_read < 4)
     {
         if (!impl->hasPendingData())
         {
@@ -67,7 +66,7 @@ void UTFConvertingReadBuffer::detectBOM()
         size_t available = impl->available();
         size_t to_copy = std::min(available, 4 - bytes_read);
         memcpy(bom_buffer + bytes_read, impl->position(), to_copy);
-        impl->ignore(to_copy);
+        impl->position() += to_copy;
         bytes_read += to_copy;
     }
 
@@ -87,10 +86,10 @@ void UTFConvertingReadBuffer::detectBOM()
     if (bytes_read >= 3 && memcmp(bom_buffer, UTF8_BOM, 3) == 0)
     {
         encoding = Encoding::UTF8;
-        /// Put back the bytes after BOM
         if (bytes_read > 3)
         {
-            pending_bytes.assign(bom_buffer + 3, bom_buffer + bytes_read);
+            memcpy(pending_bytes, bom_buffer + 3, bytes_read - 3);
+            pending_bytes_count = bytes_read - 3;
         }
         return;
     }
@@ -98,10 +97,10 @@ void UTFConvertingReadBuffer::detectBOM()
     if (bytes_read >= 2 && memcmp(bom_buffer, UTF16_LE_BOM, 2) == 0)
     {
         encoding = Encoding::UTF16_LE;
-        /// Put back the bytes after BOM
         if (bytes_read > 2)
         {
-            pending_bytes.assign(bom_buffer + 2, bom_buffer + bytes_read);
+            memcpy(pending_bytes, bom_buffer + 2, bytes_read - 2);
+            pending_bytes_count = bytes_read - 2;
         }
         return;
     }
@@ -109,50 +108,53 @@ void UTFConvertingReadBuffer::detectBOM()
     if (bytes_read >= 2 && memcmp(bom_buffer, UTF16_BE_BOM, 2) == 0)
     {
         encoding = Encoding::UTF16_BE;
-        /// Put back the bytes after BOM
         if (bytes_read > 2)
         {
-            pending_bytes.assign(bom_buffer + 2, bom_buffer + bytes_read);
+            memcpy(pending_bytes, bom_buffer + 2, bytes_read - 2);
+            pending_bytes_count = bytes_read - 2;
         }
         return;
     }
 
-    /// No BOM detected, assume UTF-8 and put back all bytes
+    /// No BOM detected, assume UTF-8 and put back all bytes into our pending buffer
     encoding = Encoding::UTF8;
     if (bytes_read > 0)
     {
-        pending_bytes.assign(bom_buffer, bom_buffer + bytes_read);
+        memcpy(pending_bytes, bom_buffer, bytes_read);
+        pending_bytes_count = bytes_read;
     }
 }
 
 bool UTFConvertingReadBuffer::readUTF16CodeUnit(uint16_t & code_unit)
 {
     uint8_t bytes[2];
+    size_t bytes_got = 0;
 
-    /// Try to get 2 bytes from pending bytes first
-    size_t from_pending = std::min(pending_bytes.size(), size_t(2));
-    for (size_t i = 0; i < from_pending; ++i)
+    /// Try to get from pending bytes first
+    while (bytes_got < 2 && pending_bytes_count > 0)
     {
-        bytes[i] = pending_bytes[i];
+        bytes[bytes_got++] = pending_bytes[0];
+        memmove(pending_bytes, pending_bytes + 1, pending_bytes_count - 1);
+        pending_bytes_count--;
     }
-    pending_bytes.erase(pending_bytes.begin(), pending_bytes.begin() + from_pending);
 
     /// Read remaining bytes from underlying buffer
-    for (size_t i = from_pending; i < 2; ++i)
+    while (bytes_got < 2)
     {
         if (!impl->hasPendingData())
         {
             if (!impl->next())
             {
                 /// Incomplete sequence at EOF - save what we have for next call
-                if (from_pending > 0 || i > 0)
+                if (bytes_got > 0)
                 {
-                    pending_bytes.insert(pending_bytes.begin(), bytes, bytes + i);
+                    memcpy(pending_bytes, bytes, bytes_got);
+                    pending_bytes_count = bytes_got;
                 }
                 return false;
             }
         }
-        bytes[i] = *impl->position();
+        bytes[bytes_got++] = *impl->position();
         impl->ignore(1);
     }
 
@@ -172,31 +174,33 @@ bool UTFConvertingReadBuffer::readUTF16CodeUnit(uint16_t & code_unit)
 bool UTFConvertingReadBuffer::readUTF32CodePoint(uint32_t & code_point)
 {
     uint8_t bytes[4];
+    size_t bytes_got = 0;
 
-    /// Try to get 4 bytes from pending bytes first
-    size_t from_pending = std::min(pending_bytes.size(), size_t(4));
-    for (size_t i = 0; i < from_pending; ++i)
+    /// Try to get from pending bytes first
+    while (bytes_got < 4 && pending_bytes_count > 0)
     {
-        bytes[i] = pending_bytes[i];
+        bytes[bytes_got++] = pending_bytes[0];
+        memmove(pending_bytes, pending_bytes + 1, pending_bytes_count - 1);
+        pending_bytes_count--;
     }
-    pending_bytes.erase(pending_bytes.begin(), pending_bytes.begin() + from_pending);
 
     /// Read remaining bytes from underlying buffer
-    for (size_t i = from_pending; i < 4; ++i)
+    while (bytes_got < 4)
     {
         if (!impl->hasPendingData())
         {
             if (!impl->next())
             {
                 /// Incomplete sequence at EOF - save what we have for next call
-                if (from_pending > 0 || i > 0)
+                if (bytes_got > 0)
                 {
-                    pending_bytes.insert(pending_bytes.begin(), bytes, bytes + i);
+                    memcpy(pending_bytes, bytes, bytes_got);
+                    pending_bytes_count = bytes_got;
                 }
                 return false;
             }
         }
-        bytes[i] = *impl->position();
+        bytes[bytes_got++] = *impl->position();
         impl->ignore(1);
     }
 
@@ -352,20 +356,19 @@ bool UTFConvertingReadBuffer::convertFromUTF16()
             output_ptr += bytes;
             pending_high_surrogate = 0;
         }
-        else if (!pending_bytes.empty())
+        else if (pending_bytes_count > 0)
         {
             /// Incomplete UTF-16 code unit at EOF
             size_t bytes = encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
             output_ptr += bytes;
-            pending_bytes.clear();
+            pending_bytes_count = 0;
         }
     }
 
     size_t written = output_ptr - memory.data();
     if (written > 0)
     {
-        internal_buffer = Buffer(memory.data(), memory.data() + written);
-        working_buffer = internal_buffer;
+        working_buffer = Buffer(memory.data(), memory.data() + written);
         pos = working_buffer.begin();
         return true;
     }
@@ -393,19 +396,18 @@ bool UTFConvertingReadBuffer::convertFromUTF32()
 
     /// Handle incomplete sequences at EOF
     /// If we have leftover incomplete bytes, emit replacement character
-    if (output_ptr + 4 <= output_end && !pending_bytes.empty())
+    if (output_ptr + 4 <= output_end && pending_bytes_count > 0)
     {
         /// Incomplete UTF-32 code point at EOF
         size_t bytes = encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
         output_ptr += bytes;
-        pending_bytes.clear();
+        pending_bytes_count = 0;
     }
 
     size_t written = output_ptr - memory.data();
     if (written > 0)
     {
-        internal_buffer = Buffer(memory.data(), memory.data() + written);
-        working_buffer = internal_buffer;
+        working_buffer = Buffer(memory.data(), memory.data() + written);
         pos = working_buffer.begin();
         return true;
     }
@@ -415,55 +417,35 @@ bool UTFConvertingReadBuffer::convertFromUTF32()
 
 bool UTFConvertingReadBuffer::nextImpl()
 {
-    if (eof)
+    if (eof_reached)
         return false;
 
-    /// Handle UTF-8: passthrough (copy to our buffer since BOM detection already consumed bytes)
     if (encoding == Encoding::UTF8)
     {
-        char * output_ptr = memory.data();
-        char * output_end = memory.data() + memory.size();
-
-        /// First, copy any pending bytes from BOM detection
-        while (!pending_bytes.empty() && output_ptr < output_end)
+        if (pending_bytes_count > 0)
         {
-            *output_ptr++ = static_cast<char>(pending_bytes.front());
-            pending_bytes.erase(pending_bytes.begin());
-        }
-
-        /// Then read more data from underlying buffer
-        while (output_ptr < output_end)
-        {
-            if (!impl->hasPendingData())
-            {
-                if (!impl->next())
-                {
-                    /// No more data available
-                    break;
-                }
-            }
-
-            /// Copy available data
-            size_t available = impl->available();
-            size_t space_left = output_end - output_ptr;
-            size_t to_copy = std::min(available, space_left);
-
-            memcpy(output_ptr, impl->position(), to_copy);
-            impl->ignore(to_copy);
-            output_ptr += to_copy;
-        }
-
-        size_t written = output_ptr - memory.data();
-        if (written > 0)
-        {
-            internal_buffer = Buffer(memory.data(), memory.data() + written);
-            working_buffer = internal_buffer;
+            working_buffer = Buffer(pending_bytes, pending_bytes + pending_bytes_count);
             pos = working_buffer.begin();
+            pending_bytes_count = 0;
             return true;
         }
 
-        eof = true;
+        if (impl->hasPendingData() || impl->next())
+        {
+            working_buffer = impl->buffer();
+            pos = impl->position();
+            impl->position() = impl->buffer().end();
+            return true;
+        }
+
+        eof_reached = true;
         return false;
+    }
+
+    /// For UTF-16/32, we need to allocate memory if not already allocated
+    if (memory.size() == 0)
+    {
+        memory.resize(DBMS_DEFAULT_BUFFER_SIZE);
     }
 
     /// Handle UTF-16 conversion
@@ -472,7 +454,7 @@ bool UTFConvertingReadBuffer::nextImpl()
         if (convertFromUTF16())
             return true;
 
-        eof = true;
+        eof_reached = true;
         return false;
     }
 
@@ -482,11 +464,11 @@ bool UTFConvertingReadBuffer::nextImpl()
         if (convertFromUTF32())
             return true;
 
-        eof = true;
+        eof_reached = true;
         return false;
     }
 
-    eof = true;
+    eof_reached = true;
     return false;
 }
 

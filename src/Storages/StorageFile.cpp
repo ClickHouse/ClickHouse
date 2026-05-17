@@ -74,7 +74,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#include <IO/UTFBOMDetection.h>
+
 #include <IO/UTFConvertingReadBuffer.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -596,7 +596,7 @@ public:
 
         auto buffer = createReadBuffer(path, file_stat, false, -1, compression_method, getContext());
         if (format && FormatFactory::instance().shouldDetectUTFBOM(*format))
-            buffer = wrapWithUTFBOMDetection(std::move(buffer));
+            buffer = std::make_unique<UTFConvertingReadBuffer>(std::move(buffer));
         return {std::move(buffer), std::nullopt, format};
     }
 
@@ -638,7 +638,7 @@ public:
         auto file_stat = getFileStat(path, false, -1, "File");
         auto buffer = createReadBuffer(path, file_stat, false, -1, compression_method, getContext());
         if (format && FormatFactory::instance().shouldDetectUTFBOM(*format))
-            buffer = wrapWithUTFBOMDetection(std::move(buffer));
+            buffer = std::make_unique<UTFConvertingReadBuffer>(std::move(buffer));
         return buffer;
     }
 
@@ -850,7 +850,7 @@ public:
 
         /// Apply UTF BOM detection/conversion for text formats
         if (read_buf && format && FormatFactory::instance().shouldDetectUTFBOM(*format))
-            read_buf = wrapWithUTFBOMDetection(std::move(read_buf));
+            read_buf = std::make_unique<UTFConvertingReadBuffer>(std::move(read_buf));
 
         return {std::move(read_buf), std::nullopt, format};
     }
@@ -909,7 +909,7 @@ public:
         }
 
         if (buffer && format && FormatFactory::instance().shouldDetectUTFBOM(*format))
-            buffer = wrapWithUTFBOMDetection(std::move(buffer));
+            buffer = std::make_unique<UTFConvertingReadBuffer>(std::move(buffer));
         return buffer;
     }
 
@@ -1624,7 +1624,7 @@ Chunk StorageFileSource::generate()
 
             /// Apply UTF BOM detection/conversion for text formats to all read buffers
             if (read_buf && !files_iterator->isReadFromArchive() && FormatFactory::instance().shouldDetectUTFBOM(storage->format_name))
-                read_buf = wrapWithUTFBOMDetection(std::move(read_buf));
+                read_buf = std::make_unique<UTFConvertingReadBuffer>(std::move(read_buf));
 
             size_t file_num = 0;
             if (storage->archive_info)
