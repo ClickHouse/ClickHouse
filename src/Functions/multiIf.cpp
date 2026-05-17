@@ -97,9 +97,9 @@ public:
         /// the repeating pair. The fixed group before `...` matches one mandatory pair, so
         /// minimum arity is 3 (cond, then, else) — exactly matching the legacy check.
         ///
-        /// Loses the `use_variant_as_common_type` opt-in: the DSL only knows leastSupertype,
-        /// not leastSupertypeOrVariant. Functions using this setting fall back to plain
-        /// leastSupertype, which is the same result for non-Variant inputs.
+        /// `use_variant_as_common_type` selects `leastSupertypeOrVariant`, matching `if`.
+        if (use_variant_as_common_type)
+            return "(MaybeNullable(UInt8) | Nothing, V1, ..., E) -> leastSupertypeOrVariant(V1, ..., E)";
         return "(MaybeNullable(UInt8) | Nothing, V1, ..., E) -> leastSupertype(V1, ..., E)";
     }
 
@@ -483,7 +483,7 @@ private:
     }
 
     const bool allow_execute_multiif_columnar;
-    [[maybe_unused]] const bool use_variant_as_common_type;
+    const bool use_variant_as_common_type;
 };
 
 }

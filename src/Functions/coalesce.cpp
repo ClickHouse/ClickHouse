@@ -84,13 +84,12 @@ public:
         /// All non-last arguments are stripped of Nullable before computing the supertype,
         /// so the result is non-Nullable iff the last argument is non-Nullable.
         ///
-        /// Loses two legacy optimizations:
-        ///   1. \`coalesce(NULL, NULL, x)\` early-out — under DSL this still computes
-        ///      leastSupertype(Nothing, Nothing, x); for compatible types the answer is
-        ///      the same (x's type), but a deliberate type mismatch in trailing args is
-        ///      no longer silently dropped.
-        ///   2. The \`use_variant_as_common_type\` setting opt-in — DSL only knows
-        ///      leastSupertype, not leastSupertypeOrVariant.
+        /// `use_variant_as_common_type` selects `leastSupertypeOrVariant`, matching `if`/`multiIf`.
+        if (use_variant_as_common_type)
+            return
+                "() -> NULL"
+                " OR (T) -> T"
+                " OR (T1, ..., E) -> leastSupertypeOrVariant(removeNullable(T1), ..., E)";
         return
             "() -> NULL"
             " OR (T) -> T"
@@ -193,7 +192,7 @@ private:
     FunctionOverloadResolverPtr assume_not_null;
     FunctionOverloadResolverPtr if_function;
     FunctionOverloadResolverPtr multi_if_function;
-    [[maybe_unused]] bool use_variant_as_common_type = false;
+    bool use_variant_as_common_type = false;
 };
 
 }
