@@ -98,6 +98,21 @@ public:
 
     void intersect(const ThetaSketchData & rhs)
     {
+        /// If `rhs` has no recorded values it represents an empty set, and the
+        /// intersection with an empty set is always empty. Without this guard
+        /// `theta_intersection` would only receive `this` as a single input and
+        /// `get_result` would return that input unchanged — yielding a wrong,
+        /// non-empty result. This matters for example after
+        /// `uniqThetaMergeStateIf(state, predicate)` when the predicate excludes
+        /// every row: the resulting state is freshly created and has neither
+        /// `sk_update` nor `sk_union` allocated.
+        if (!rhs.sk_update && !rhs.sk_union)
+        {
+            sk_update.reset(nullptr);
+            sk_union.reset(nullptr);
+            return;
+        }
+
         datasketches::theta_union * u = getSkUnion();
 
         if (sk_update)
