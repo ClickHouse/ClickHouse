@@ -903,6 +903,11 @@ void PostgreSQLHandler::processSyncQuery()
     {
         std::unique_ptr<PostgreSQLProtocol::Messaging::SyncQuery> query =
             message_transport->receive<PostgreSQLProtocol::Messaging::SyncQuery>();
+
+        /// Per PostgreSQL protocol, Sync ends the current extended-query cycle
+        /// and destroys the unnamed portal, so the next Parse/Bind/Execute
+        /// pair starts from a clean state.
+        prepared_statements_manager.resetBindQuery();
     }
     catch (const Exception & e)
     {

@@ -1707,14 +1707,18 @@ public:
 
     void attachBindQuery(std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query)
     {
-        if (bind_query)
-            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Query is already binded");
-
+        /// Per PostgreSQL extended-query protocol, a Bind message replaces any
+        /// existing portal of the same name. Since we keep a single bind slot,
+        /// simply overwrite it instead of failing — clients (e.g. Npgsql) issue
+        /// multiple Parse/Bind/Execute/Sync cycles per connection.
         bind_query = std::move(query);
     }
 
     String getStatmentFromBind()
     {
+        if (!bind_query)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Execute without prior Bind");
+
         auto result = getStatement(bind_query->function_name, bind_query->parameters);
 
         return result;
