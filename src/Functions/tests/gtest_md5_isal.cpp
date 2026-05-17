@@ -91,13 +91,78 @@ TEST(MD5IsaL, AvailabilityMatchesBuildConfig)
 #endif
 }
 
-TEST(MD5IsaL, EmptyBatchReturnsToCaller)
+TEST(MD5IsaL, EmptyBatchIsNoOp)
 {
     ColumnFixedString::Chars output;
     auto get_row = [](size_t, const UInt8 *&, size_t &) { FAIL() << "empty batch must not request rows"; };
 
-    EXPECT_EQ(MD5IsaL::enabled, MD5IsaL::tryApply(0, output, get_row));
+    /// Empty batches are reported as handled regardless of the build:
+    /// there is nothing to hash, so there is no work for the scalar fallback either.
+    EXPECT_TRUE(MD5IsaL::tryApply(0, output, get_row));
     EXPECT_TRUE(output.empty());
+}
+
+TEST(MD5IsaL, SmallBatchFallsBackToScalar)
+{
+    if constexpr (!MD5IsaL::enabled)
+    {
+        GTEST_SKIP() << "ISA-L Crypto MD5 is not enabled for this build";
+    }
+
+    /// Batches that cannot fill even one SIMD lane must be rejected so the
+    /// caller can use the cheaper scalar OpenSSL path.
+    ASSERT_GT(MD5IsaL::min_batch_size, 1u);
+
+    const std::vector<std::string> rows(MD5IsaL::min_batch_size - 1, "abc");
+    ColumnFixedString::Chars output;
+    output.resize(rows.size() * MD5IsaL::digest_size);
+    std::fill(output.begin(), output.end(), static_cast<UInt8>(0xCD));
+
+    auto get_row = [&](size_t row, const UInt8 *& begin, size_t & size)
+    {
+        begin = reinterpret_cast<const UInt8 *>(rows[row].data());
+        size = rows[row].size();
+    };
+
+    EXPECT_FALSE(MD5IsaL::tryApply(rows.size(), output, get_row));
+
+    /// Rejection must leave the output buffer untouched so the scalar fallback
+    /// can fill it without first having to clear stale partial writes.
+    for (const auto value : output)
+        EXPECT_EQ(0xCDu, static_cast<unsigned>(value));
+}
+
+TEST(MD5IsaL, LargeBatchSpansMultipleWaves)
+{
+    if constexpr (!MD5IsaL::enabled)
+    {
+        GTEST_SKIP() << "ISA-L Crypto MD5 is not enabled for this build";
+    }
+
+    /// Sprinkle the known-answer input "abc" across multiple waves of the
+    /// fixed-size lane pool to make sure wave boundaries do not scramble
+    /// completion order or stomp on previously-written digests.
+    constexpr std::string_view canonical_abc = "900150983CD24FB0D6963F7D28E17F72";
+    const size_t row_count = MD5IsaL::lane_count * 3 + 5;
+
+    std::vector<std::string> rows;
+    rows.reserve(row_count);
+    for (size_t row = 0; row < row_count; ++row)
+        rows.push_back(repeatString(std::to_string(row), (row % 17) + 1));
+
+    std::vector<size_t> abc_rows;
+    for (size_t row = 0; row < row_count; row += MD5IsaL::lane_count - 1)
+    {
+        rows[row] = "abc";
+        abc_rows.push_back(row);
+    }
+
+    bool used_isal = false;
+    const auto output = applyRows(rows, used_isal);
+    ASSERT_TRUE(used_isal);
+
+    for (const auto row : abc_rows)
+        EXPECT_EQ(std::string(canonical_abc), digestHex(output, row)) << "row: " << row;
 }
 
 TEST(MD5IsaL, HashesKnownBoundaryVectors)
