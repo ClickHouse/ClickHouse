@@ -38,7 +38,7 @@ void ASTAlterRewriteRuleQuery::formatImpl(WriteBuffer & ostr, const IAST::Format
     } else if (reject())
     {
         ostr << "REJECT WITH ";
-        ostr << reject_message;
+        ostr << quoteString(reject_message);
     }
 }
 

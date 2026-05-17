@@ -5,7 +5,6 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTCreateRewriteRuleQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Common/FieldVisitorToString.h>
 
 namespace DB
 {
@@ -20,7 +19,7 @@ bool ParserCreateRewriteRuleQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, 
     ParserKeyword s_reject(Keyword::REJECT);
     ParserKeyword s_with(Keyword::WITH);
     ParserIdentifier rule_name_p;
-    ParserLiteral reject_message_p;
+    ParserStringLiteral reject_message_p;
     ParserQuery source_query_p(end, allow_settings_after_format_in_insert);
     ParserQuery resulting_query_p(end, allow_settings_after_format_in_insert);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
@@ -87,10 +86,9 @@ bool ParserCreateRewriteRuleQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, 
     auto query = make_intrusive<ASTCreateRewriteRuleQuery>();
 
     tryGetIdentifierNameInto(rule_name, query->rule_name);
-    if (auto* literal = reject_message ? reject_message->as<ASTLiteral>() : nullptr;
-        literal && literal->value.getType() == Field::Types::String)
+    if (auto* literal = reject_message ? reject_message->as<ASTLiteral>() : nullptr)
     {
-        query->reject_message = applyVisitor(FieldVisitorToString(), literal->value);
+        query->reject_message = literal->value.safeGet<String>();
     }
     query->source_query = std::move(source_query);
     query->resulting_query = std::move(resulting_query);
