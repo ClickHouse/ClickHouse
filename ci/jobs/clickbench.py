@@ -25,6 +25,19 @@ def main():
                 f"cp ./ci/jobs/scripts/clickbench/filesystem_caches_path.xml {temp_dir}/config.d/",
                 verbose=True,
             )
+            # `programs/server/config.d/storage_conf_local.xml` is a symlink to
+            # the test-only config that defines pre-configured `local_cache*`
+            # disks with `max_size = 22548578304` (~21 GiB) under relative path
+            # `local_cache/`. With our `filesystem_caches_path` override the
+            # cache base path becomes `/dev/shm/clickhouse/local_cache/`, but
+            # the ClickBench container runs with `--shm-size=16g`, so the
+            # capacity check in `FileCache::initialize` rejects the disk and
+            # the server fails to start. ClickBench doesn't use these test
+            # disks, so drop the config.
+            res = res and Shell.check(
+                f"rm -f {temp_dir}/config.d/storage_conf_local.xml",
+                verbose=True,
+            )
             if info.is_local_run:
                 return res
             return res and ch.create_log_export_config()
