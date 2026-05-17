@@ -1,0 +1,46 @@
+-- { echo }
+
+SELECT name, value FROM system.settings WHERE name IN ('data_type_default_nullable', 'group_by_use_nulls', 'intersect_default_mode', 'except_default_mode', 'joined_subquery_requires_alias', 'join_use_nulls', 'union_default_mode', 'aggregate_functions_null_for_empty', 'cast_keep_nullable', 'prefer_column_name_to_alias') ORDER BY name;
+aggregate_functions_null_for_empty	0
+cast_keep_nullable	0
+data_type_default_nullable	0
+except_default_mode	ALL
+group_by_use_nulls	0
+intersect_default_mode	ALL
+join_use_nulls	0
+joined_subquery_requires_alias	1
+prefer_column_name_to_alias	0
+union_default_mode	
+SET strict_sql_compatibility = 1;
+SELECT name, value FROM system.settings WHERE name IN ('data_type_default_nullable', 'group_by_use_nulls', 'intersect_default_mode', 'except_default_mode', 'joined_subquery_requires_alias', 'join_use_nulls', 'union_default_mode', 'aggregate_functions_null_for_empty', 'cast_keep_nullable', 'prefer_column_name_to_alias') ORDER BY name;
+aggregate_functions_null_for_empty	1
+cast_keep_nullable	1
+data_type_default_nullable	1
+except_default_mode	DISTINCT
+group_by_use_nulls	1
+intersect_default_mode	DISTINCT
+join_use_nulls	1
+joined_subquery_requires_alias	1
+prefer_column_name_to_alias	1
+union_default_mode	DISTINCT
+SET join_use_nulls = 0;
+SELECT value FROM system.settings WHERE name = 'join_use_nulls';
+0
+SET strict_sql_compatibility = 0;
+SELECT name, value FROM system.settings WHERE name IN ('data_type_default_nullable', 'group_by_use_nulls', 'intersect_default_mode', 'except_default_mode', 'joined_subquery_requires_alias', 'join_use_nulls', 'union_default_mode', 'aggregate_functions_null_for_empty', 'cast_keep_nullable', 'prefer_column_name_to_alias') ORDER BY name;
+aggregate_functions_null_for_empty	0
+cast_keep_nullable	0
+data_type_default_nullable	0
+except_default_mode	ALL
+group_by_use_nulls	0
+intersect_default_mode	ALL
+join_use_nulls	0
+joined_subquery_requires_alias	1
+prefer_column_name_to_alias	0
+union_default_mode	
+SET cast_keep_nullable = 0;
+SET strict_sql_compatibility = 1;
+SELECT value FROM system.settings WHERE name = 'cast_keep_nullable';
+0
+SELECT value FROM system.settings WHERE name = 'union_default_mode';
+DISTINCT

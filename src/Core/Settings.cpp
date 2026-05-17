@@ -6586,6 +6586,26 @@ However, the compatibility setting can be overridden at the user, role, profile,
 :::
 )", 0) \
     \
+    DECLARE(Bool, strict_sql_compatibility, false, R"(
+Enables SQL-standard-compatible defaults for several settings at once.
+
+When set to `1`, the following settings are switched to their SQL-standard values, unless they have already been changed manually:
+- `data_type_default_nullable = 1`
+- `group_by_use_nulls = 1`
+- `intersect_default_mode = 'DISTINCT'`
+- `except_default_mode = 'DISTINCT'`
+- `joined_subquery_requires_alias = 1`
+- `join_use_nulls = 1`
+- `union_default_mode = 'DISTINCT'`
+- `aggregate_functions_null_for_empty = 1`
+- `cast_keep_nullable = 1`
+- `prefer_column_name_to_alias = 1`
+
+Switching the setting back to `0` reverts only the settings that this setting changed; settings that the user explicitly overrode are left alone.
+
+Disabled by default.
+)", 0) \
+    \
     DECLARE(Map, additional_table_filters, "", R"(
 An additional filter expression that is applied after reading
 from the specified table.
@@ -8289,8 +8309,10 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
 
 private:
     void applyCompatibilitySetting(const String & compatibility);
+    void applyStrictSqlCompatibility(bool enable);
 
     std::unordered_set<std::string_view> settings_changed_by_compatibility_setting;
+    std::unordered_set<std::string_view> settings_changed_by_strict_sql_compatibility;
 };
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
@@ -8414,13 +8436,20 @@ void SettingsImpl::set(std::string_view name, const Field & value)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type of value for setting 'compatibility'. Expected String, got {}", value.getTypeName());
         applyCompatibilitySetting(value.safeGet<String>());
     }
-    /// If we change setting that was changed by compatibility setting before
-    /// we should remove it from settings_changed_by_compatibility_setting,
-    /// otherwise the next time we will change compatibility setting
-    /// this setting will be changed too (and we don't want it).
-    /// Resolve aliases so the lookup matches the canonical names stored in the set.
-    else if (auto final_name = SettingsTraits::resolveName(name); settings_changed_by_compatibility_setting.contains(final_name))
+    else if (name == "strict_sql_compatibility")
+    {
+        applyStrictSqlCompatibility(SettingFieldBool{value}.value);
+    }
+    /// If we change a setting that was changed by a compatibility-like setting before,
+    /// we should remove it from the corresponding tracking set; otherwise the next time
+    /// the compatibility-like setting is reapplied it would revert the manual override too.
+    /// Resolve aliases so the lookup matches the canonical names stored in the sets.
+    else
+    {
+        auto final_name = SettingsTraits::resolveName(name);
         settings_changed_by_compatibility_setting.erase(final_name);
+        settings_changed_by_strict_sql_compatibility.erase(final_name);
+    }
 
     BaseSettings::set(name, value);
 }
@@ -8462,6 +8491,53 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
             BaseSettings::set(final_name, change.previous_value);
             settings_changed_by_compatibility_setting.insert(final_name);
         }
+    }
+}
+
+void SettingsImpl::applyStrictSqlCompatibility(bool enable)
+{
+    /// First, revert all changes applied by the previous value of `strict_sql_compatibility`
+    /// (the user can flip the setting on and off, and we only undo what we ourselves changed).
+    for (const auto & setting_name : settings_changed_by_strict_sql_compatibility)
+        resetToDefault(setting_name);
+
+    settings_changed_by_strict_sql_compatibility.clear();
+
+    if (!enable)
+        return;
+
+    /// Curated list of settings whose SQL-standard-aligned values the supersetting flips on.
+    /// Values are encoded as strings because both `Bool` and `SetOperationMode` setting fields
+    /// parse from their string representation, which keeps the table heterogeneous yet uniform.
+    static constexpr std::array<std::pair<std::string_view, std::string_view>, 10> overrides = {{
+        {"data_type_default_nullable",         "1"},
+        {"group_by_use_nulls",                 "1"},
+        {"intersect_default_mode",             "DISTINCT"},
+        {"except_default_mode",                "DISTINCT"},
+        {"joined_subquery_requires_alias",     "1"},
+        {"join_use_nulls",                     "1"},
+        {"union_default_mode",                 "DISTINCT"},
+        {"aggregate_functions_null_for_empty", "1"},
+        {"cast_keep_nullable",                 "1"},
+        {"prefer_column_name_to_alias",        "1"},
+    }};
+
+    for (const auto & [name, value] : overrides)
+    {
+        auto final_name = SettingsTraits::resolveName(name);
+
+        /// If this setting was changed manually, we don't touch it.
+        if (isChanged(final_name) && !settings_changed_by_strict_sql_compatibility.contains(final_name))
+            continue;
+
+        Field new_value{String{value}};
+
+        /// Don't mark as changed if the value isn't really changed.
+        if (get(final_name) == new_value)
+            continue;
+
+        BaseSettings::set(final_name, new_value);
+        settings_changed_by_strict_sql_compatibility.insert(final_name);
     }
 }
 
