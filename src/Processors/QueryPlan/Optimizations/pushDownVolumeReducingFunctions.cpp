@@ -456,7 +456,7 @@ bool checkGrandchildOutput(
     std::unordered_map<std::string, PushdownCandidate> & side_candidates,
     const SharedHeader & grandchild_header)
 {
-    for (auto it = side_candidates.begin(); it != side_candidates.end(); )
+    for (auto it = side_candidates.begin(); it != side_candidates.end();)
     {
         if (!grandchild_header->has(it->first))
         {
@@ -625,7 +625,7 @@ size_t handleSingleChildPushDown(
     if (child_node->children.size() != 1)
         return 0;
 
-    for (auto it = candidates.begin(); it != candidates.end(); )
+    for (auto it = candidates.begin(); it != candidates.end();)
     {
         if (isColumnUsedByStep(child_step.get(), it->first))
             it = candidates.erase(it);
