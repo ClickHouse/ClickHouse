@@ -120,6 +120,7 @@ ReturnType parseDateTimeBestEffortImpl(
     UInt8 second = 0;
 
     bool has_time = false;
+    bool has_fractional = false;
 
     bool has_time_zone_offset = false;
     bool time_zone_offset_negative = false;
@@ -561,6 +562,9 @@ ReturnType parseDateTimeBestEffortImpl(
             {
                 if (!has_time)
                     return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected point symbol");
+                if (has_fractional)
+                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: duplicate fractional part");
+                has_fractional = true;
 
                 ++in.position();
                 num_digits = readDigits(digits, sizeof(digits), in);
@@ -867,6 +871,15 @@ ReturnType parseDateTimeBestEffortImpl(
             }
             res = *res_maybe;
             adjust_time_zone();
+
+            /// After timezone adjustment, the value may have shifted outside the valid range.
+            /// For example, "2106-02-07 06:28:15-01:00" is within range before adjustment,
+            /// but after converting to UTC it exceeds UINT32_MAX.
+            if constexpr (!is_64)
+            {
+                if (res < 0 || static_cast<uint64_t>(res) > UINT32_MAX)
+                    return false;
+            }
         }
         else
         {

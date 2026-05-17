@@ -196,12 +196,32 @@ String ContainerClientWrapper::GetBlobPath(const String & blob_name) const
     return blob_prefix + blob_name;
 }
 
+/// The Azure SDK throws std::logic_error subtypes (std::invalid_argument from
+/// std::stoi for malformed ports, std::out_of_range for port overflow) when a
+/// connection string or blob URL has malformed components. These are user-input
+/// errors but must be translated to DB::Exception, otherwise they propagate to
+/// getCurrentExceptionMessageAndPattern, which catches std::logic_error and calls
+/// abortOnFailedAssertion in debug/sanitizer builds — turning a user typo into a
+/// "Logical error" abort.
+[[noreturn]] static void translateAzureSdkParseError(const std::logic_error & e)
+{
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Failed to parse Azure connection string or blob URL: {}", e.what());
+}
+
 String ConnectionParams::getConnectionURL() const
 {
     if (std::holds_alternative<ConnectionString>(auth_method))
     {
-        auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(endpoint.storage_account_url);
-        return parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl();
+        try
+        {
+            auto parsed_connection_string = Azure::Storage::_internal::ParseConnectionString(endpoint.storage_account_url);
+            return parsed_connection_string.BlobServiceUrl.GetAbsoluteUrl();
+        }
+        catch (const std::logic_error & e)
+        {
+            translateAzureSdkParseError(e);
+        }
     }
 
     return endpoint.storage_account_url;
@@ -209,36 +229,50 @@ String ConnectionParams::getConnectionURL() const
 
 std::unique_ptr<ServiceClient> ConnectionParams::createForService() const
 {
-    return std::visit([this]<typename T>(const T & auth)
+    try
     {
-        if constexpr (std::is_same_v<T, ConnectionString>)
-            return std::make_unique<ServiceClient>(ServiceClient::CreateFromConnectionString(auth.toUnderType(), client_options));
-        else
-            return std::make_unique<ServiceClient>(endpoint.getServiceEndpoint(), auth, client_options);
-    }, auth_method);
+        return std::visit([this]<typename T>(const T & auth)
+        {
+            if constexpr (std::is_same_v<T, ConnectionString>)
+                return std::make_unique<ServiceClient>(ServiceClient::CreateFromConnectionString(auth.toUnderType(), client_options));
+            else
+                return std::make_unique<ServiceClient>(endpoint.getServiceEndpoint(), auth, client_options);
+        }, auth_method);
+    }
+    catch (const std::logic_error & e)
+    {
+        translateAzureSdkParseError(e);
+    }
 }
 
 std::unique_ptr<ContainerClient> ConnectionParams::createForContainer() const
 {
-    if (!endpoint.sas_auth.empty())
+    try
     {
-        RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
-        return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-    }
+        if (!endpoint.sas_auth.empty())
+        {
+            RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
+            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+        }
 
-    return std::visit([this]<typename T>(const T & auth)
+        return std::visit([this]<typename T>(const T & auth)
+        {
+            if constexpr (std::is_same_v<T, ConnectionString>)
+            {
+                auto raw_client = RawContainerClient::CreateFromConnectionString(auth.toUnderType(), endpoint.container_name, client_options);
+                return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+            }
+            else
+            {
+                RawContainerClient raw_client{endpoint.getContainerEndpoint(), auth, client_options};
+                return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
+            }
+        }, auth_method);
+    }
+    catch (const std::logic_error & e)
     {
-        if constexpr (std::is_same_v<T, ConnectionString>)
-        {
-            auto raw_client = RawContainerClient::CreateFromConnectionString(auth.toUnderType(), endpoint.container_name, client_options);
-            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-        }
-        else
-        {
-            RawContainerClient raw_client{endpoint.getContainerEndpoint(), auth, client_options};
-            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-        }
-    }, auth_method);
+        translateAzureSdkParseError(e);
+    }
 }
 
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method)
@@ -440,8 +474,10 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
 {
     String storage_url;
     String account_name;
+    String account_key;
     String container_name;
     String prefix;
+    bool endpoint_contains_account_name = false;
 
     auto get_container_name = [&]
     {
@@ -461,7 +497,7 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
 
         /// For some authentication methods account name is not present in the endpoint
         /// 'endpoint_contains_account_name' bool is used to understand how to split the endpoint (default : true)
-        bool endpoint_contains_account_name = config.getBool(config_prefix + ".endpoint_contains_account_name", true);
+        endpoint_contains_account_name = config.getBool(config_prefix + ".endpoint_contains_account_name", true);
 
         size_t pos = endpoint.find("//");
         if (pos == std::string::npos)
@@ -512,7 +548,16 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
             {
                 container_name = endpoint.substr(cont_pos_begin + 1);
             }
+
+            /// When the account name is not embedded in the endpoint path, read it
+            /// from the explicit `account_name` config key if provided.
+            /// It will not be appended to service/container URLs (add_account_name_to_url = false),
+            /// but is stored for use by external systems such as delta-kernel-rs.
+            if (config.has(config_prefix + ".account_name"))
+                account_name = config.getString(config_prefix + ".account_name");
         }
+        if (config.has(config_prefix + ".account_key"))
+                account_key = config.getString(config_prefix + ".account_key");
         if (config.has(config_prefix + ".endpoint_subpath"))
         {
             String endpoint_subpath = config.getString(config_prefix + ".endpoint_subpath");
@@ -535,6 +580,14 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
         storage_url = config.getString(config_prefix + ".storage_account_url");
         validateStorageAccountUrl(storage_url);
         container_name = get_container_name();
+
+        /// The account name is not part of the URL here; read it from config if provided.
+        /// It will not be appended to service/container URLs (add_account_name_to_url defaults
+        /// to false for this path), but is stored for use by external systems such as delta-kernel-rs.
+        if (config.has(config_prefix + ".account_name"))
+            account_name = config.getString(config_prefix + ".account_name");
+        if (config.has(config_prefix + ".account_key"))
+            account_key = config.getString(config_prefix + ".account_key");
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected either `storage_account_url` or `connection_string` or `endpoint` in config");
@@ -546,7 +599,7 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     if (config.has(config_prefix + ".container_already_exists"))
         container_already_exists = {config.getBool(config_prefix + ".container_already_exists")};
 
-    return {storage_url, account_name, container_name, prefix, "", "", container_already_exists};
+    return {storage_url, account_name, account_key, container_name, prefix, /* sas_auth */"", /* additional_params */"", container_already_exists, endpoint_contains_account_name};
 }
 
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings)

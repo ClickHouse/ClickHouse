@@ -7,7 +7,7 @@
 
 using namespace zkutil;
 
-int main(int argc, char ** argv)
+int mainEntryExampleZkutilTestCommands(int argc, char ** argv)
 try
 {
     if (argc < 2)

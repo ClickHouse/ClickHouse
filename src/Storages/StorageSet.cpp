@@ -10,6 +10,7 @@
 #include <Formats/NativeReader.h>
 #include <QueryPipeline/ProfileInfo.h>
 #include <Disks/IDisk.h>
+#include <Common/CurrentThread.h>
 #include <Common/formatReadable.h>
 #include <Common/StringUtils.h>
 #include <Interpreters/Context.h>
@@ -154,8 +155,8 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 
     if (relative_path_.empty())
         throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Join and Set storages require data path");
@@ -183,7 +184,7 @@ StorageSet::StorageSet(
     : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
     , set(std::make_shared<Set>(SizeLimits(), 0, true))
 {
-    Block header = getInMemoryMetadataPtr()->getSampleBlock();
+    Block header = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getSampleBlock();
     set->setHeader(header.getColumnsWithTypeAndName());
 
     restore();
