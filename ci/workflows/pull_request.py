@@ -159,12 +159,6 @@ workflow = Workflow.Config(
             .set_name("Keeper Stress Tests (PR)")
             .set_timeout(3 * 3600),
         *JobConfigs.toolchain_build_jobs,
-        # TODO: uncomment when praktika supports depends-on-all-jobs;
-        # currently set_run_after requires an explicit list, but CI Results Review
-        # should only run after every other job has finished.
-        # JobConfigs.ci_results_review.set_run_after(
-        #     FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
-        # ),
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
