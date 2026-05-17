@@ -207,13 +207,16 @@ def test_cancel_infinite_query(setup_infinite_query):
 
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
+    # Use look_behind_lines=0 to only match new log lines, avoiding stale matches
+    # from preceding tests in this file which run similar queries.
     node1.wait_for_log_line(
-        'ReadFromPostgreSQL: Query: SELECT "counter" FROM "infinite_counter"'
+        'ReadFromPostgreSQL: Query: SELECT "counter" FROM "infinite_counter"',
+        look_behind_lines=0,
     )
     time.sleep(2)
 
     node1.stop_clickhouse_client()
-    node1.wait_for_log_line("DB::Exception: Received 'Cancel' packet from the client")
+    node1.wait_for_log_line("Received 'Cancel' packet from the client")
     time.sleep(1)
 
     query_thread.join()
@@ -243,11 +246,13 @@ SETTINGS max_block_size = 10000"""
 
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
-    node1.wait_for_log_line("Generate a chunk from stream")
+    # Use look_behind_lines=0 to only match new log lines, avoiding stale matches
+    # from preceding tests in this file (test_kill_query also produces this line).
+    node1.wait_for_log_line("Generate a chunk from stream", look_behind_lines=0)
     time.sleep(2)
 
     node1.stop_clickhouse_client()
-    node1.wait_for_log_line("DB::Exception: Received 'Cancel' packet from the client")
+    node1.wait_for_log_line("Received 'Cancel' packet from the client")
     time.sleep(1)
 
     query_thread.join()

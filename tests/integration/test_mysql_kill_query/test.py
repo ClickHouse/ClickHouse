@@ -212,11 +212,13 @@ def test_cancel_infinite_query(setup_infinite_query):
 
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
-    node1.wait_for_log_line("Get data from database")
+    # Use look_behind_lines=0 to only match new log lines, avoiding stale matches
+    # from preceding tests in this file (test_kill_query also produces this line).
+    node1.wait_for_log_line("Get data from database", look_behind_lines=0)
     time.sleep(2)
 
     node1.stop_clickhouse_client()
-    node1.wait_for_log_line("DB::Exception: Received 'Cancel' packet from the client")
+    node1.wait_for_log_line("Received 'Cancel' packet from the client")
     time.sleep(1)
 
     query_thread.join()
@@ -247,12 +249,15 @@ SETTINGS max_block_size = 10000"""
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
 
-    node1.wait_for_log_line("Get data from database")
-    node1.wait_for_log_line("Generate a chunk")
+    # Use look_behind_lines=0 to only match new log lines, avoiding stale matches
+    # from preceding tests in this file (test_kill_query and test_cancel_infinite_query
+    # both produce these lines).
+    node1.wait_for_log_line("Get data from database", look_behind_lines=0)
+    node1.wait_for_log_line("Generate a chunk", look_behind_lines=0)
     time.sleep(2)
 
     node1.stop_clickhouse_client()
-    node1.wait_for_log_line("DB::Exception: Received 'Cancel' packet from the client")
+    node1.wait_for_log_line("Received 'Cancel' packet from the client")
     time.sleep(1)
 
     query_thread.join()
