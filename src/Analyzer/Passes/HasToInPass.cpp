@@ -96,7 +96,10 @@ public:
         ///     Field type and accurateEquals handles mixed widths and signs correctly.
         const auto unwrapped_element_type = removeLowCardinality(element_type);
         const auto unwrapped_second_arg_type = removeLowCardinality(second_arg_type);
-        if (isNativeFloat(unwrapped_element_type) || isNativeFloat(unwrapped_second_arg_type))
+        /// `isFloat` covers `BFloat16` in addition to `Float32`/`Float64`; without it,
+        /// `has([+0bf16], -0bf16)` would return 1 but the rewritten `in()` returns 0
+        /// (the Set is keyed by raw 16-bit payload, so `+0`/`-0` and NaN bit patterns diverge).
+        if (isFloat(unwrapped_element_type) || isFloat(unwrapped_second_arg_type))
             return;
         const bool both_native_integers = isNativeInteger(unwrapped_element_type) && isNativeInteger(unwrapped_second_arg_type);
         if (!both_native_integers && !unwrapped_element_type->equals(*unwrapped_second_arg_type))

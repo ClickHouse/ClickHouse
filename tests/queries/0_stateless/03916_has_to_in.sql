@@ -158,6 +158,13 @@ SELECT has([toFloat32(0.0)], materialize(toFloat32(-0.0)));
 SELECT COUNT(*) FROM (
     EXPLAIN actions=1,header=1 SELECT has([toFloat32(0.0)], materialize(toFloat32(-0.0)))
     ) t WHERE explain like '%FUNCTION in%';
+-- BFloat16 must be excluded for the same reason. The early guard uses `isFloat` so
+-- BFloat16 is covered alongside Float32/Float64. Without that, the rewrite would
+-- flip `has([+0bf16], -0bf16)` from 1 to 0.
+SELECT has([toBFloat16(0.0)], materialize(toBFloat16(-0.0)));
+SELECT COUNT(*) FROM (
+    EXPLAIN actions=1,header=1 SELECT has([toBFloat16(0.0)], materialize(toBFloat16(-0.0)))
+    ) t WHERE explain like '%FUNCTION in%';
 
 -- Regression test for LowCardinality(non-nullable) needle: has() returns UInt8 but
 -- `lc_col IN (...)` returns LowCardinality(UInt8). Rewriting would leave parent nodes
