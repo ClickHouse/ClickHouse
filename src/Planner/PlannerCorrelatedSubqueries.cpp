@@ -369,7 +369,7 @@ QueryPlan decorrelateQueryPlan(
             new_keys.push_back(correlated_column_identifier);
         }
 
-        auto new_aggregator_params = original_aggregator_params.cloneWithKeys(new_keys);
+        auto new_aggregator_params = original_aggregator_params.cloneWithKeys(new_keys, original_aggregator_params.only_merge);
 
         auto result_step = std::make_unique<AggregatingStep>(
             std::move(input_header),
