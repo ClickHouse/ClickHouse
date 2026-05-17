@@ -111,7 +111,9 @@ namespace
             {
                 try
                 {
-                    if (auto resolver = factory.tryGet(name, context))
+                    /// Use the non-tracking lookup so that querying `system.functions`
+                    /// does not register every function name in `query_log.used_functions`.
+                    if (auto resolver = factory.tryGetWithoutTracking(name, context))
                         signature = resolver->getSignatureString();
                 }
                 catch (...) // NOLINT(bugprone-empty-catch)

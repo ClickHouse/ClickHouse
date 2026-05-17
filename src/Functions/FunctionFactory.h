@@ -47,6 +47,11 @@ public:
     /// Returns nullptr if not found.
     FunctionOverloadResolverPtr tryGet(const std::string & name, ContextPtr context) const;
 
+    /// Like `tryGet` but skips registering the lookup in `query_log.used_functions`.
+    /// Use for reflection-style metadata access (e.g. `system.functions`) where the
+    /// caller is enumerating function names rather than using them in a query.
+    FunctionOverloadResolverPtr tryGetWithoutTracking(const std::string & name, ContextPtr context) const;
+
     /// The same methods to get developer interface implementation.
     FunctionOverloadResolverPtr getImpl(const std::string & name, ContextPtr context) const;
     FunctionOverloadResolverPtr tryGetImpl(const std::string & name, ContextPtr context) const;
