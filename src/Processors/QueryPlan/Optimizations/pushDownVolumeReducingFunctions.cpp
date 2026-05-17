@@ -112,7 +112,7 @@ classifyAndCollectCandidates(const ActionsDAG & parent_dag)
         if (actual->type == ActionsDAG::ActionType::FUNCTION)
         {
             bool is_vr = actual->function_base
-                && actual->function_base->isSuitableForPushDownBeforeFilter();
+                && actual->function_base->isVolumeReducing();
 
             /// Validity check: exactly one distinct INPUT child, rest are COLUMN.
             bool is_valid_vr = false;

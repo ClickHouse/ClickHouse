@@ -99,7 +99,7 @@ public:
     String getName() const override { return function_name; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool isSuitableForPushDownBeforeFilter() const override { return true; }
+    bool isVolumeReducing() const override { return true; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return return_type; }

@@ -114,7 +114,7 @@ public:
     bool isVariadic() const override { return Impl::supports_start_pos; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool isSuitableForPushDownBeforeFilter() const override { return true; }
+    bool isVolumeReducing() const override { return true; }
 
     size_t getNumberOfArguments() const override
     {

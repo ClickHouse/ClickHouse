@@ -31,7 +31,7 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForPushDownBeforeFilter() const override { return true; }
+    bool isVolumeReducing() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 

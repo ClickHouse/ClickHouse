@@ -96,7 +96,7 @@ public:
         return true;
     }
 
-    bool isSuitableForPushDownBeforeFilter() const override
+    bool isVolumeReducing() const override
     {
         return true;
     }

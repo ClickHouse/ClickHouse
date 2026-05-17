@@ -92,7 +92,7 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
         while (node->type == ActionsDAG::ActionType::ALIAS)
             node = node->children.front();
         if (node->type == ActionsDAG::ActionType::FUNCTION
-            && node->function_base && node->function_base->isSuitableForPushDownBeforeFilter())
+            && node->function_base && node->function_base->isVolumeReducing())
             sort_columns.insert(output->result_name);
     }
 

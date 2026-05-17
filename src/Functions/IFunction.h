@@ -321,7 +321,7 @@ public:
     /** Indicates whether this function is suitable for being pushed down before a filter operation.
       * Functions that reduce data volume (e.g., aggregations) may benefit from early evaluation.
       */
-    virtual bool isSuitableForPushDownBeforeFilter() const { return false; }
+    virtual bool isVolumeReducing() const { return false; }
 
     /// The property of monotonicity for a certain range.
     struct Monotonicity
@@ -580,7 +580,7 @@ public:
     /** Indicates whether this function is suitable for being pushed down before a filter operation.
       * Functions that reduce data volume (e.g., aggregations) may benefit from early evaluation.
       */
-    virtual bool isSuitableForPushDownBeforeFilter() const { return false; }
+    virtual bool isVolumeReducing() const { return false; }
 
     virtual bool hasInformationAboutMonotonicity() const { return false; }
     virtual bool hasInformationAboutPreimage() const { return false; }
