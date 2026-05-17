@@ -2247,7 +2247,71 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
-    if (!scope.expressions_in_resolve_process_stack.hasAggregateFunction())
+    /// When an APPLY transformer creates an aggregate function (e.g. `* APPLY x -> argMax(x, number)`
+    /// or `* APPLY x -> toString(argMax(x, number))`), the matched columns must NOT be converted to
+    /// Nullable here. Aggregate function arguments use pre-aggregation types (non-Nullable); the Nullable
+    /// wrapping is handled post-aggregation by Rollup/Cube/GroupingSets transforms. Converting here would
+    /// create a type mismatch: the aggregate function would expect Nullable input columns, but the actual
+    /// columns in the Aggregating step are non-Nullable.
+    /// This causes a crash in AggregateFunctionNullVariadic::addBatchSinglePlace.
+    ///
+    /// We traverse the APPLY expression tree because the aggregate function may be nested
+    /// inside other function calls (e.g. `toString(argMax(x, number))`), not just at the top level.
+    /// We use `AggregateFunctionFactory` name lookup (not `FunctionNode::isAggregateFunction`) because
+    /// APPLY expressions have not been resolved yet at this point — `FunctionNode::kind` is still `UNKNOWN`.
+    auto has_aggregate_function_in_tree = [](const IQueryTreeNode * root) -> bool
+    {
+        if (!root)
+            return false;
+
+        std::vector<const IQueryTreeNode *> nodes_to_process;
+        nodes_to_process.push_back(root);
+
+        while (!nodes_to_process.empty())
+        {
+            const auto * subtree_node = nodes_to_process.back();
+            nodes_to_process.pop_back();
+
+            if (const auto * func = subtree_node->as<FunctionNode>())
+            {
+                if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->getFunctionName()))
+                    return true;
+            }
+
+            for (const auto & child : subtree_node->getChildren())
+            {
+                if (child)
+                    nodes_to_process.push_back(child.get());
+            }
+        }
+
+        return false;
+    };
+
+    bool has_aggregate_apply_transformer = false;
+    for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
+    {
+        if (auto * apply = transformer->as<ApplyColumnTransformerNode>())
+        {
+            const IQueryTreeNode * expr_to_check = nullptr;
+            if (apply->getApplyTransformerType() == ApplyColumnTransformerType::LAMBDA)
+            {
+                if (const auto * lambda = apply->getExpressionNode()->as<LambdaNode>())
+                    expr_to_check = lambda->getExpression().get();
+            }
+            else if (apply->getApplyTransformerType() == ApplyColumnTransformerType::FUNCTION)
+            {
+                expr_to_check = apply->getExpressionNode().get();
+            }
+            if (expr_to_check && has_aggregate_function_in_tree(expr_to_check))
+            {
+                has_aggregate_apply_transformer = true;
+                break;
+            }
+        }
+    }
+
+    if (!scope.expressions_in_resolve_process_stack.hasAggregateFunction() && !has_aggregate_apply_transformer)
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
         {
@@ -2309,7 +2373,17 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     auto function_to_resolve_untyped = expression_node->clone();
                     auto & function_to_resolve_typed = function_to_resolve_untyped->as<FunctionNode &>();
                     function_to_resolve_typed.getArguments().getNodes().push_back(node);
+                    /// Push the function onto the resolve stack so that argument resolution
+                    /// sees this scope as being inside the function. This matters for aggregate
+                    /// functions: without it, matched columns appended as arguments would be
+                    /// converted to Nullable in resolveExpressionNode (when group_by_use_nulls=1
+                    /// and the column is a GROUP BY key), causing a type mismatch with the
+                    /// non-Nullable aggregation input. The lambda branch is unaffected because
+                    /// resolveLambda resolves the body via resolveExpressionNode, which itself
+                    /// pushes the aggregate function before resolving its arguments.
+                    scope.pushExpressionNode(function_to_resolve_untyped);
                     node_projection_names = resolveFunction(function_to_resolve_untyped, scope);
+                    scope.popExpressionNode();
                     node = function_to_resolve_untyped;
                 }
                 else
