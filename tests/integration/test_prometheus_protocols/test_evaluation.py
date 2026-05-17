@@ -963,6 +963,15 @@ def test_conversion_functions():
         [["1970-01-01 00:02:10.000", "nan"]],
     )
 
+    # Behavior: Prometheus `scalar` returns `NaN` when `clamp` produces an
+    # empty instant vector for the evaluation timestamp.
+    do_query_test(
+        "scalar(clamp(vector(2), 5, 1))",
+        500,
+        '{"resultType": "scalar", "result": [500, "NaN"]}',
+        [["1970-01-01 00:08:20.000", "nan"]],
+    )
+
     # Behavior: Prometheus `scalar` returns `NaN` for zero or multiple float samples.
     do_query_test(
         "vector(scalar({http_code='404'}))[80:10]",

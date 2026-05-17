@@ -84,25 +84,17 @@ namespace
         }
     }
 
-    bool constantClampHasEmptyResult(const std::vector<SQLQueryPiece> & arguments, ClampKind kind)
+    bool clampMayProduceEmptyVector(const std::vector<SQLQueryPiece> & arguments, ClampKind kind)
     {
         if (kind != ClampKind::Both)
             return false;
 
         const auto & min_arg = arguments[1];
         const auto & max_arg = arguments[2];
-        return min_arg.store_method == StoreMethod::CONST_SCALAR
-            && max_arg.store_method == StoreMethod::CONST_SCALAR
-            && max_arg.scalar_value < min_arg.scalar_value;
-    }
+        if (min_arg.store_method != StoreMethod::CONST_SCALAR || max_arg.store_method != StoreMethod::CONST_SCALAR)
+            return true;
 
-    bool clampMayHaveEmptyResultAtRuntime(const std::vector<SQLQueryPiece> & arguments, ClampKind kind)
-    {
-        if (kind != ClampKind::Both)
-            return false;
-
-        return arguments[1].store_method != StoreMethod::CONST_SCALAR
-            || arguments[2].store_method != StoreMethod::CONST_SCALAR;
+        return max_arg.scalar_value < min_arg.scalar_value;
     }
 
     ASTPtr keepNullSamplesSparse(ASTPtr value, ASTPtr clamped_value)
@@ -189,10 +181,7 @@ SQLQueryPiece applyClampFunction(const PQT::Function * function_node, std::vecto
 
     checkArgumentTypes(function_node, arguments, context, *impl_info);
 
-    if (constantClampHasEmptyResult(arguments, impl_info->kind))
-        return SQLQueryPiece{function_node, function_node->result_type, StoreMethod::EMPTY};
-
-    if (clampMayHaveEmptyResultAtRuntime(arguments, impl_info->kind))
+    if (clampMayProduceEmptyVector(arguments, impl_info->kind))
         arguments[0] = toVectorGrid(std::move(arguments[0]), context);
 
     auto apply_function_to_ast = [&](ASTs args) -> ASTPtr
