@@ -1,0 +1,10 @@
+Statistics types:
+col_10pct	['MinMax','NullCount']
+col_50pct	['MinMax','NullCount']
+col_90pct	['MinMax','NullCount']
+col_non_null	['MinMax']
+Null count estimates:
+col_10pct	10
+col_50pct	50
+col_90pct	90
+col_non_null	\N

@@ -11,7 +11,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>
-#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/FileCache/FileCache.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/S3Common.h>
