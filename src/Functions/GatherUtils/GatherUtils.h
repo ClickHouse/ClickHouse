@@ -70,10 +70,14 @@ void push(IArraySource & array_source, IValueSource & value_source, IArraySink &
 void resizeDynamicSize(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, const IColumn & size_column);
 void resizeConstantSize(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, ssize_t size);
 
-/// Polls the per-thread query cancellation flag and throws `QUERY_WAS_CANCELLED`
-/// when the query has been killed. Called periodically from hot loops inside
-/// `resizeDynamicSize` and `resizeConstantSize` so that `max_execution_time`
-/// is honored while filling very long arrays with heavy element types.
+/// Polls the per-thread query cancellation state and throws the appropriate
+/// exception when the query has been killed. When a `QueryStatus` is available
+/// the call is routed through `QueryStatus::throwIfKilled`, so a timeout-driven
+/// cancellation surfaces as `TIMEOUT_EXCEEDED` and a user/error cancellation
+/// surfaces as `QUERY_WAS_CANCELLED`, matching the semantics used elsewhere in
+/// query execution. Called periodically from hot loops inside `resizeDynamicSize`
+/// and `resizeConstantSize` so that `max_execution_time` is honored while filling
+/// very long arrays with heavy element types.
 void checkQueryCancellation();
 
 }
