@@ -694,6 +694,15 @@ void NO_INLINE arrayAllAny(FirstSource && first, SecondSource && second, UInt8 *
     }
 }
 
+/// `writeSlice` of a single element on heavy types (Map, Tuple, String, Array of
+/// big-ints) can cost hundreds of nanoseconds, so a single arrayResize call that
+/// fills hundreds of millions of slots runs for tens of seconds without ever
+/// returning to the pipeline. Poll the per-thread cancellation flag every this
+/// many write iterations so that `max_execution_time` and explicit `KILL QUERY`
+/// take effect promptly. The period is a power of two so the compiler folds the
+/// modulo into a bit-and.
+inline constexpr size_t resize_cancellation_check_period = 16384;
+
 template <typename ArraySource, typename ValueSource, typename Sink>
 void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source, Sink && sink, const IColumn & size_column)
 {
@@ -722,7 +731,11 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
                 {
                     writeSlice(array_source.getWhole(), sink);
                     for (size_t i = array_size; i < length; ++i)
+                    {
+                        if (((i - array_size) % resize_cancellation_check_period) == 0)
+                            checkQueryCancellation();
                         writeSlice(value_source.getWhole(), sink);
+                    }
                 }
                 else
                     writeSlice(array_source.getSliceFromLeft(0, length), sink);
@@ -737,7 +750,11 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
                 if (array_size <= length)
                 {
                     for (size_t i = array_size; i < length; ++i)
+                    {
+                        if (((i - array_size) % resize_cancellation_check_period) == 0)
+                            checkQueryCancellation();
                         writeSlice(value_source.getWhole(), sink);
+                    }
                     writeSlice(array_source.getWhole(), sink);
                 }
                 else
@@ -771,7 +788,11 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
             {
                 writeSlice(array_source.getWhole(), sink);
                 for (size_t i = array_size; i < length; ++i)
+                {
+                    if (((i - array_size) % resize_cancellation_check_period) == 0)
+                        checkQueryCancellation();
                     writeSlice(value_source.getWhole(), sink);
+                }
             }
             else
                 writeSlice(array_source.getSliceFromLeft(0, length), sink);
@@ -786,7 +807,11 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
             if (array_size <= length)
             {
                 for (size_t i = array_size; i < length; ++i)
+                {
+                    if (((i - array_size) % resize_cancellation_check_period) == 0)
+                        checkQueryCancellation();
                     writeSlice(value_source.getWhole(), sink);
+                }
                 writeSlice(array_source.getWhole(), sink);
             }
             else

@@ -1,5 +1,19 @@
 #include <Functions/GatherUtils/GatherUtils.h>
 
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int QUERY_WAS_CANCELLED;
+}
+
+}
+
 namespace DB::GatherUtils
 {
 
@@ -23,6 +37,12 @@ void sliceHas(IArraySource & first, IArraySource & second, ArraySearchType searc
             sliceHasEndsWith(first, second, result);
             break;
     }
+}
+
+void checkQueryCancellation()
+{
+    if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
 
 }

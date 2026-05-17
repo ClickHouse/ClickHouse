@@ -70,4 +70,10 @@ void push(IArraySource & array_source, IValueSource & value_source, IArraySink &
 void resizeDynamicSize(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, const IColumn & size_column);
 void resizeConstantSize(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, ssize_t size);
 
+/// Polls the per-thread query cancellation flag and throws `QUERY_WAS_CANCELLED`
+/// when the query has been killed. Called periodically from hot loops inside
+/// `resizeDynamicSize` and `resizeConstantSize` so that `max_execution_time`
+/// is honored while filling very long arrays with heavy element types.
+void checkQueryCancellation();
+
 }
