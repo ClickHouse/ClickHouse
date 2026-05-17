@@ -223,14 +223,12 @@ struct StatisticsStringRef
         parq::Statistics s;
         if (min.ptr == nullptr)
             return s;
-        if (static_cast<size_t>(min.len) <= options.max_statistics_size)
+        if (static_cast<size_t>(min.len) <= options.max_statistics_size
+            && static_cast<size_t>(max.len) <= options.max_statistics_size)
         {
             s.__set_min_value(std::string(reinterpret_cast<const char *>(min.ptr), static_cast<size_t>(min.len)));
-            s.__set_is_min_value_exact(true);
-        }
-        if (static_cast<size_t>(max.len) <= options.max_statistics_size)
-        {
             s.__set_max_value(std::string(reinterpret_cast<const char *>(max.ptr), static_cast<size_t>(max.len)));
+            s.__set_is_min_value_exact(true);
             s.__set_is_max_value_exact(true);
         }
         return s;
@@ -286,14 +284,12 @@ struct StatisticsStringCopy
         parq::Statistics s;
         if (empty)
             return s;
-        if (min.size() <= options.max_statistics_size)
+        if (min.size() <= options.max_statistics_size
+            && max.size() <= options.max_statistics_size)
         {
             s.__set_min_value(std::string(min.data(), min.size()));
-            s.__set_is_min_value_exact(true);
-        }
-        if (max.size() <= options.max_statistics_size)
-        {
             s.__set_max_value(std::string(max.data(), max.size()));
+            s.__set_is_min_value_exact(true);
             s.__set_is_max_value_exact(true);
         }
         return s;
@@ -949,6 +945,10 @@ void writeColumnImpl(
         if (options.write_page_index)
         {
             bool all_null_page = data_count == 0;
+            bool has_stats = page_stats.__isset.min_value && page_stats.__isset.max_value;
+            if (!all_null_page && !has_stats)
+                s.indexes.column_index_valid = false;
+
             s.indexes.column_index.min_values.push_back(page_stats.min_value);
             s.indexes.column_index.max_values.push_back(page_stats.max_value);
             if (has_null_count)
@@ -1404,6 +1404,9 @@ static void writePageIndex(FileWriteState & file, WriteBuffer & out)
         chassert(rg.column_indexes.size() == rg.row_group.columns.size());
         for (size_t j = 0; j < rg.column_indexes.size(); ++j)
         {
+            if (!rg.column_indexes.at(j).column_index_valid)
+                continue;
+
             auto & column = rg.row_group.columns.at(j);
             column.__set_column_index_offset(file.offset);
             size_t length = serializeThriftStruct(rg.column_indexes.at(j).column_index, out);

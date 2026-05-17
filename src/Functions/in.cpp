@@ -52,7 +52,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments[0]->hasDynamicSubcolumns())
+        if (arguments[0]->hasDynamicStructure())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
         return std::make_shared<DataTypeUInt8>();
@@ -125,12 +125,7 @@ public:
 
         auto set = future_set->get();
         if (!set)
-        {
-            if (dry_run)
-                return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
-
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set is passed as the second argument for function '{}'", getName());
-        }
 
         auto set_types = set->getDataTypes();
 

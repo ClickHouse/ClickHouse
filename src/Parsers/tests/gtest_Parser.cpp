@@ -8,6 +8,7 @@
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/ParserAttachAccessEntity.h>
+#include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
@@ -36,6 +37,13 @@ std::ostream & operator<<(std::ostream & ostr, const ParserTestCase & test_case)
     std::string input_text{test_case.input_text};
     boost::replace_all(input_text, "\n", "\\n");
     return ostr << "ParserTestCase input: " << input_text;
+}
+
+TEST(Lexer, NullInputWithMaxQuerySize)
+{
+    Lexer lexer(nullptr, nullptr, 262144);
+    Token token = lexer.nextToken();
+    EXPECT_EQ(TokenType::EndOfStream, token.type);
 }
 
 TEST_P(ParserTest, parseQuery)
@@ -363,6 +371,6 @@ INSTANTIATE_TEST_SUITE_P(
             },
             {
                 "from matches\nfilter start_date > @2023-05-30                 # Some comment here\nderive {\n  some_derived_value_1 = a + (b ?? 0),          # And there\n  some_derived_value_2 = c + some_derived_value\n}\nfilter some_derived_value_2 > 0\ngroup {country, city} (\n  aggregate {\n    average some_derived_value_2,\n    aggr = max some_derived_value_2\n  }\n)\nderive place = f\"{city} in {country}\"\nderive country_code = s\"LEFT(country, 2)\"\nsort {aggr, -country}\ntake 1..20",
-                "WITH\n    table_1 AS\n    (\n        SELECT\n            country,\n            city,\n            c + some_derived_value AS _expr_1\n        FROM matches\n        WHERE start_date > toDate('2023-05-30')\n    ),\n    table_0 AS\n    (\n        SELECT\n            country,\n            city,\n            AVG(_expr_1) AS _expr_0,\n            MAX(_expr_1) AS aggr\n        FROM table_1\n        WHERE _expr_1 > 0\n        GROUP BY\n            country,\n            city\n    )\nSELECT\n    country,\n    city,\n    _expr_0,\n    aggr,\n    CONCAT(city, ' in ', country) AS place,\n    LEFT(country, 2) AS country_code\nFROM table_0\nORDER BY\n    aggr ASC,\n    country DESC\nLIMIT 20",
+                "WITH table_0 AS\n    (\n        SELECT\n            country,\n            city,\n            AVG(c + some_derived_value) AS _expr_0,\n            MAX(c + some_derived_value) AS aggr\n        FROM matches\n        WHERE (start_date > toDate('2023-05-30')) AND ((c + some_derived_value) > 0)\n        GROUP BY\n            country,\n            city\n    )\nSELECT\n    country,\n    city,\n    _expr_0,\n    aggr,\n    CONCAT(city, ' in ', country) AS place,\n    LEFT(country, 2) AS country_code\nFROM table_0\nORDER BY\n    aggr ASC,\n    country DESC\nLIMIT 20",
             },
         })));

@@ -883,6 +883,62 @@ void ColumnVariant::updateHashWithValue(size_t n, SipHash & hash) const
         variants[localDiscriminatorByGlobal(global_discr)]->updateHashWithValue(offsetAt(n), hash);
 }
 
+void ColumnVariant::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    const auto & local_discriminators_data = getLocalDiscriminators();
+    size_t num_variants = local_to_global_discriminators.size();
+
+    if (begin == 0 && end == local_discriminators_data.size())
+    {
+        /// Fast path: the range covers the entire column, so each variant's
+        /// range is simply [0, variant.size()) — no need to scan offsets.
+        for (size_t i = 0; i < end; ++i)
+            hash.update(globalDiscriminatorByLocal(local_discriminators_data[i]));
+
+        for (Discriminator global_discr = 0;
+             global_discr < static_cast<Discriminator>(num_variants);
+             ++global_discr)
+        {
+            auto local_discr = global_to_local_discriminators[global_discr];
+            variants[local_discr]->updateHashWithValueRange(0, variants[local_discr]->size(), hash);
+        }
+        return;
+    }
+
+    /// General case: scan discriminators to find first offset and count per variant.
+    /// Within a contiguous row range, offsets for each variant are also contiguous,
+    /// so the sub-column range is [first_offset, first_offset + count).
+    const auto & offsets_data = getOffsets();
+    VectorWithMemoryTracking<size_t> variant_first_offset(num_variants, 0);
+    VectorWithMemoryTracking<size_t> variant_count(num_variants, 0);
+
+    for (size_t i = begin; i < end; ++i)
+    {
+        auto local_discr = local_discriminators_data[i];
+        auto global_discr = globalDiscriminatorByLocal(local_discr);
+        hash.update(global_discr);
+        if (local_discr != NULL_DISCRIMINATOR)
+        {
+            if (variant_count[local_discr] == 0)
+                variant_first_offset[local_discr] = offsets_data[i];
+            ++variant_count[local_discr];
+        }
+    }
+
+    /// Hash each variant's data in global discriminator order.
+    for (Discriminator global_discr = 0; global_discr < static_cast<Discriminator>(num_variants); ++global_discr)
+    {
+        auto local_discr = global_to_local_discriminators[global_discr];
+        if (variant_count[local_discr] > 0)
+        {
+            variants[local_discr]->updateHashWithValueRange(
+                variant_first_offset[local_discr],
+                variant_first_offset[local_discr] + variant_count[local_discr],
+                hash);
+        }
+    }
+}
+
 WeakHash32 ColumnVariant::getWeakHash32() const
 {
     auto s = size();
@@ -1822,7 +1878,7 @@ bool ColumnVariant::hasDynamicStructure() const
     return false;
 }
 
-void ColumnVariant::takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnVariant::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     /// List of source columns for each variant. In global order.
     VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> variants_source_columns;
@@ -1833,21 +1889,23 @@ void ColumnVariant::takeDynamicStructureFromSourceColumns(const VectorWithMemory
 
     for (const auto & source_column : source_columns)
     {
-        const auto & source_variant = assert_cast<const ColumnVariant &>(*source_column);
+        const auto & source_variant_col = assert_cast<const ColumnVariant &>(*source_column);
         for (size_t i = 0; i != num_variants; ++i)
-            variants_source_columns[i].push_back(source_variant.getVariantPtrByGlobalDiscriminator(i));
+            variants_source_columns[i].push_back(source_variant_col.getVariantPtrByGlobalDiscriminator(i));
     }
 
     for (size_t i = 0; i != num_variants; ++i)
-        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i], max_dynamic_subcolumns);
+        getVariantByGlobalDiscriminator(i).chooseDynamicStructureForMerge(variants_source_columns[i], max_dynamic_subcolumns);
 }
 
-void ColumnVariant::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+void ColumnVariant::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    const auto & source_variant = assert_cast<const ColumnVariant &>(*source_column);
-    for (size_t i = 0; i != variants.size(); ++i)
-        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromColumn(source_variant.getVariantPtrByGlobalDiscriminator(i));
+    const auto & source_variant = assert_cast<const ColumnVariant &>(source);
+    size_t num_variants = variants.size();
+    for (size_t i = 0; i != num_variants; ++i)
+        getVariantByGlobalDiscriminator(i).takeExactDynamicStructureFrom(source_variant.getVariantByGlobalDiscriminator(i));
 }
+
 
 void ColumnVariant::fixDynamicStructure()
 {
@@ -1882,6 +1940,29 @@ void ColumnVariant::validateState() const
     {
         if (variants[i]->size() != expected_variant_sizes[i])
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Variant {} ({}) has size {}, but expected {}", i, variants[i]->getName(), variants[i]->size(), expected_variant_sizes[i]);
+    }
+}
+
+bool ColumnVariant::hasStatistics() const
+{
+    for (const auto & variant : variants)
+    {
+        if (variant->hasStatistics())
+            return true;
+    }
+
+    return false;
+}
+
+void ColumnVariant::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+{
+    for (size_t i = 0; i != variants.size(); ++i)
+    {
+        VectorWithMemoryTracking<ColumnPtr> variant_source_columns;
+        variant_source_columns.reserve(source_columns.size());
+        for (const auto & source_column : source_columns)
+            variant_source_columns.push_back(assert_cast<const ColumnVariant &>(*source_column).getVariantPtrByGlobalDiscriminator(i));
+        variants[i]->takeOrCalculateStatisticsFrom(variant_source_columns);
     }
 }
 

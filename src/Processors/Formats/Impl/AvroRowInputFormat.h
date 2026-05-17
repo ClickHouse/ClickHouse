@@ -4,20 +4,17 @@
 
 #if USE_AVRO
 
-#include <unordered_map>
 #include <map>
+#include <unordered_map>
 #include <vector>
-
-#include <Formats/FormatSettings.h>
 #include <Formats/FormatSchemaInfo.h>
+#include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
-
 #include <DataFile.hh>
 #include <Decoder.hh>
 #include <Schema.hh>
 #include <ValidSchema.hh>
-
 
 namespace DB
 {
@@ -29,6 +26,7 @@ namespace ErrorCodes
 
 class Block;
 
+class ConfluentSchemaRegistry;
 class AvroInputStreamReadBufferAdapter : public avro::InputStream
 {
 public:
@@ -51,6 +49,12 @@ class AvroDeserializer
 public:
     AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
     AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
+
+    AvroDeserializer(const AvroDeserializer &) = delete;
+    AvroDeserializer & operator=(const AvroDeserializer &) = delete;
+    AvroDeserializer(AvroDeserializer &&) = default;
+    AvroDeserializer & operator=(AvroDeserializer &&) = delete;
+
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
 
     using DeserializeFn = std::function<bool(IColumn & column, avro::Decoder & decoder)>;
@@ -149,6 +153,10 @@ private:
     /// This is to avoid infinite recursion when  Avro schema contains self-references. e.g. LinkedList
     std::map<avro::Name, SkipFn> symbolic_skip_fn_map;
 
+    /// Guard against infinite recursion in createDeserializeFn and createAction
+    /// when Avro schema contains cyclic symbolic references (e.g. TypeA -> TypeB -> TypeA).
+    std::unordered_set<std::string> symbolic_deserialize_guard;
+
     bool null_as_default = false;
 
     const FormatSettings & settings;
@@ -185,8 +193,6 @@ public:
     AvroConfluentRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
     String getName() const override { return "AvroConfluentRowInputFormat"; }
 
-    class SchemaRegistry;
-
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
@@ -194,7 +200,7 @@ private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
-    std::shared_ptr<SchemaRegistry> schema_registry;
+    std::shared_ptr<ConfluentSchemaRegistry> schema_registry;
     using SchemaId = uint32_t;
     std::unordered_map<SchemaId, AvroDeserializer> deserializer_cache;
     const AvroDeserializer & getOrCreateDeserializer(SchemaId schema_id);
@@ -213,6 +219,7 @@ public:
 
     static DataTypePtr avroNodeToDataType(avro::NodePtr node);
 private:
+    static DataTypePtr avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names);
 
     bool confluent;
     const FormatSettings format_settings;
