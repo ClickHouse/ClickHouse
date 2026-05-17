@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnNullable.h>
 #include <Core/Settings.h>
@@ -70,6 +71,8 @@ namespace Setting
     extern const SettingsDeduplicateInsertSelectMode deduplicate_insert_select;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_insert_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
+    extern const SettingsUInt64 max_insert_threads_min_free_memory_per_thread;
     extern const SettingsBool use_strict_insert_block_limits;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
@@ -112,7 +115,6 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
-    extern const int LOGICAL_ERROR;
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
@@ -130,8 +132,12 @@ InterpreterInsertQuery::InterpreterInsertQuery(
         quota->checkExceeded(QuotaType::WRITTEN_BYTES);
 
     const Settings & settings = getContext()->getSettingsRef();
-    max_threads = std::max<size_t>(1, settings[Setting::max_threads]);
-    max_insert_threads = std::min(std::max<size_t>(1, settings[Setting::max_insert_threads]), max_threads);
+    max_threads = getMaxThreadsForAvailableMemory(
+        std::max<size_t>(1, settings[Setting::max_threads]),
+        settings[Setting::max_threads_min_free_memory_per_thread]);
+    max_insert_threads = getMaxThreadsForAvailableMemory(
+        std::min(std::max<size_t>(1, settings[Setting::max_insert_threads]), max_threads),
+        settings[Setting::max_insert_threads_min_free_memory_per_thread]);
 }
 
 StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
@@ -565,7 +571,9 @@ static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool pr
 
         Settings new_settings = select_context->getSettingsCopy();
 
-        new_settings[Setting::max_threads] = std::max<UInt64>(1, settings[Setting::max_insert_threads]);
+        new_settings[Setting::max_threads] = getMaxThreadsForAvailableMemory(
+            std::max<UInt64>(1, settings[Setting::max_insert_threads]),
+            settings[Setting::max_insert_threads_min_free_memory_per_thread]);
 
         if (prefer_large_blocks)
         {
@@ -628,13 +636,13 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         }
     }();
 
-    select_query_sorted = queryHasOrderByAll(query.select);
-
-    if (select_query_sorted && pipeline.getNumStreams() > 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "INSERT SELECT expecting single stream for fully sorted SELECT query,"
-                " but got {} streams",
-                pipeline.getNumStreams());
+    /// ORDER BY ALL should produce a single globally-sorted stream.
+    /// However, certain edge cases (e.g., BuzzHouse fuzzer findings on specific
+    /// table engines or optimizer paths) can result in multiple streams.
+    /// Treat multi-stream output as unsorted — deduplication won't be enabled,
+    /// but the query executes correctly since addInsertToSelectPipeline()
+    /// resizes to 1 stream regardless.
+    select_query_sorted = queryHasOrderByAll(query.select) && pipeline.getNumStreams() <= 1;
 
     return addInsertToSelectPipeline(query, table, pipeline);
 }

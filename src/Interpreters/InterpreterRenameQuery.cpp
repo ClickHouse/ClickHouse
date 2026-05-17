@@ -135,15 +135,19 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         std::vector<StorageID> from_ref_dependencies;
         std::vector<StorageID> from_loading_dependencies;
         std::vector<StorageID> from_mv_dependencies;
+        std::vector<StorageID> from_dependent_views;
         std::vector<StorageID> to_ref_dependencies;
         std::vector<StorageID> to_loading_dependencies;
         std::vector<StorageID> to_mv_dependencies;
+        std::vector<StorageID> to_dependent_views;
 
         if (exchange_tables)
         {
             DatabaseCatalog::instance().checkTablesCanBeExchangedWithNoCyclicDependencies(from_table_id, to_table_id);
-            std::tie(from_ref_dependencies, from_loading_dependencies, from_mv_dependencies) = database_catalog.removeDependencies(from_table_id, false, false, false, /*mv*/ true);
-            std::tie(to_ref_dependencies, to_loading_dependencies, to_mv_dependencies) = database_catalog.removeDependencies(to_table_id, false, false, false, /*mv*/ true);
+            std::tie(from_ref_dependencies, from_loading_dependencies, from_mv_dependencies) = database_catalog.removeDependencies(from_table_id, false, false, false, /*is_mv*/ true);
+            std::tie(to_ref_dependencies, to_loading_dependencies, to_mv_dependencies) = database_catalog.removeDependencies(to_table_id, false, false, false, /*is_mv*/ true);
+            from_dependent_views = database_catalog.takeSourceViewDependencies(from_table_id);
+            to_dependent_views = database_catalog.takeSourceViewDependencies(to_table_id);
         }
         else
         {
@@ -152,7 +156,8 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             DatabaseCatalog::instance().checkTableCanBeRenamedWithNoCyclicDependencies(from_table_id, to_table_id);
             bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
             bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
-            std::tie(from_ref_dependencies, from_loading_dependencies, from_mv_dependencies) = database_catalog.removeDependencies(from_table_id, check_ref_deps, check_loading_deps, false, /*mv*/ true);
+            std::tie(from_ref_dependencies, from_loading_dependencies, from_mv_dependencies) = database_catalog.removeDependencies(from_table_id, check_ref_deps, check_loading_deps, false, /*is_mv*/ true);
+            from_dependent_views = database_catalog.takeSourceViewDependencies(from_table_id);
         }
         try
         {
@@ -165,8 +170,10 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 rename.dictionary);
 
             DatabaseCatalog::instance().addDependencies(to_table_id, from_ref_dependencies, from_loading_dependencies, from_mv_dependencies);
+            DatabaseCatalog::instance().addSourceViewDependencies(to_table_id, from_dependent_views);
             if (!to_ref_dependencies.empty() || !to_loading_dependencies.empty() || !to_mv_dependencies.empty())
                 DatabaseCatalog::instance().addDependencies(from_table_id, to_ref_dependencies, to_loading_dependencies, to_mv_dependencies);
+            DatabaseCatalog::instance().addSourceViewDependencies(from_table_id, to_dependent_views);
 
             NamedCollectionFactory::instance().renameDependencies(from_table_id, to_table_id);
             if (exchange_tables)
@@ -176,8 +183,10 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         {
             /// Restore dependencies if RENAME fails
             DatabaseCatalog::instance().addDependencies(from_table_id, from_ref_dependencies, from_loading_dependencies, from_mv_dependencies);
+            DatabaseCatalog::instance().addSourceViewDependencies(from_table_id, from_dependent_views);
             if (!to_ref_dependencies.empty() || !to_loading_dependencies.empty() || !to_mv_dependencies.empty())
                 DatabaseCatalog::instance().addDependencies(to_table_id, to_ref_dependencies, to_loading_dependencies, to_mv_dependencies);
+            DatabaseCatalog::instance().addSourceViewDependencies(to_table_id, to_dependent_views);
             throw;
         }
     }

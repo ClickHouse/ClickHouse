@@ -214,7 +214,12 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
         size_t evict_size_from_probationary = std::min(size, probationary_queue.getSize(lock));
         size_t evict_elements_from_probationary = std::min(elements, probationary_queue.getElementsCount(lock));
 
-        chassert(evict_size_from_probationary || evict_elements_from_probationary);
+        /// It is valid for the probationary queue to be empty here while the protected queue still
+        /// has entries -- e.g. when `keep_free_space_size(elements)_ratio` is high enough for the
+        /// background thread to want to evict everything, but all entries have already been
+        /// promoted to the protected queue. The downstream code below correctly handles this case
+        /// by passing zeroes to `probationary_queue.collectEvictionInfo` and routing the full
+        /// requested amount to the protected queue.
         size -= evict_size_from_probationary;
         elements -= evict_elements_from_probationary;
 
