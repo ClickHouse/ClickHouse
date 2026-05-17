@@ -4225,12 +4225,16 @@ class ClickHouseCluster:
 
         Probe strategy: open a fresh TCP connection from the test process
         directly to `<instance>:9000` on every iteration, send one byte
-        (an intentionally-invalid client header), and wait for the
+        that the ClickHouse native protocol treats as an unexpected
+        first packet (varint `0x05`, `Protocol::Client::TablesStatusRequest`
+        — anything other than `Hello`/`G`/`P`), and wait for the
         server's response with a tight read timeout. A live ClickHouse
-        server replies — typically with an error packet — within
-        milliseconds. A paused server can complete the kernel-level
-        handshake but cannot read or write any bytes from user space, so
-        the read times out and the probe declares the pause effective.
+        server immediately raises `UNEXPECTED_PACKET_FROM_CLIENT` from
+        `TCPHandler::receiveHello` and sends a `Server::Exception`
+        packet back, which we observe within milliseconds. A paused
+        server can complete the kernel-level handshake but cannot run
+        the `TCPHandler` accept/read/write loop in user space, so the
+        read times out and the probe declares the pause effective.
 
         Why not reuse a sibling ClickHouse node and `remote()`? Each
         ClickHouse server keeps a per-target connection pool keyed by
@@ -4278,13 +4282,28 @@ class ClickHouseCluster:
                 # any pooling/caching the test process or kernel might do.
                 sock = socket.create_connection((addr, port), timeout=0.5)
                 sock.settimeout(0.5)
-                # ClickHouse native server reads the client Hello first.
-                # Sending a single zero byte either provokes a fast error
-                # response (server is alive) or hangs the read (server
-                # is frozen). We do not care whether the byte itself is
-                # valid — only whether the server can react to it.
+                # ClickHouse native server reads the client `Hello`
+                # packet first; the first byte on the wire is a varint
+                # packet type. `Hello` is `0x00`, so sending `\x00`
+                # would put the server into reading the rest of the
+                # `Hello` body (`client_name`, versions, user, etc.)
+                # and it would not reply until the full handshake is
+                # received — making a live server look identical to a
+                # frozen one. See `TCPHandler::receiveHello` in
+                # `src/Server/TCPHandler.cpp`.
+                #
+                # Instead, send a single-byte varint that is a valid
+                # client packet type but is NOT `Hello` (e.g. `0x05`,
+                # `Protocol::Client::TablesStatusRequest`). The server
+                # immediately raises `UNEXPECTED_PACKET_FROM_CLIENT`
+                # and sends a `Server::Exception` packet back to us
+                # before any further handshake reads, which we observe
+                # within milliseconds. A paused server cannot run the
+                # `TCPHandler` code path at all, so `recv` times out.
+                # We must also avoid `0x47` (`G`) and `0x50` (`P`),
+                # which the server treats as wrong-port HTTP requests.
                 try:
-                    sock.sendall(b"\x00")
+                    sock.sendall(b"\x05")
                 except (BrokenPipeError, ConnectionResetError) as e:
                     last_outcome = f"sendall raised {type(e).__name__}"
                     return
