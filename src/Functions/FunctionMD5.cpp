@@ -241,8 +241,8 @@ protected:
         t2 = Ops::add(t2, k); \
         t1 = Ops::add(t1, msg1[g]); \
         t2 = Ops::add(t2, msg2[g]); \
-        w1 = Ops::add(x1, Ops::template rotl<s>(t1)); \
-        w2 = Ops::add(x2, Ops::template rotl<s>(t2)); \
+        (w1) = Ops::add(x1, Ops::template rotl<s>(t1)); \
+        (w2) = Ops::add(x2, Ops::template rotl<s>(t2)); \
     }
 
 DECLARE_MULTITARGET_CODE(
@@ -266,8 +266,14 @@ DECLARE_MULTITARGET_CODE(
         const typename Ops::Vec msg2[16])
     {
         using Vec = typename Ops::Vec;
-        Vec aa1 = a1, bb1 = b1, cc1 = c1, dd1 = d1;
-        Vec aa2 = a2, bb2 = b2, cc2 = c2, dd2 = d2;
+        Vec aa1 = a1;
+        Vec bb1 = b1;
+        Vec cc1 = c1;
+        Vec dd1 = d1;
+        Vec aa2 = a2;
+        Vec bb2 = b2;
+        Vec cc2 = c2;
+        Vec dd2 = d2;
 
         // As in https://github.com/intel/isa-l_crypto/blob/ad5aab170d038340a81d973add670466e258f606/md5_mb/md5_ref.c
         // Round 1: F, shifts 7/12/17/22
@@ -424,8 +430,14 @@ DECLARE_MULTITARGET_CODE(
             final_block_count[N + j] = md5PadFinalBlocks(&md5_dummy_lane_byte, 0, final_buf[N + j]);
         }
 
-        Vec a1 = Ops::set1(MD5_A0), b1 = Ops::set1(MD5_B0), c1 = Ops::set1(MD5_C0), d1 = Ops::set1(MD5_D0);
-        Vec a2 = Ops::set1(MD5_A0), b2 = Ops::set1(MD5_B0), c2 = Ops::set1(MD5_C0), d2 = Ops::set1(MD5_D0);
+        Vec a1 = Ops::set1(MD5_A0);
+        Vec b1 = Ops::set1(MD5_B0);
+        Vec c1 = Ops::set1(MD5_C0);
+        Vec d1 = Ops::set1(MD5_D0);
+        Vec a2 = Ops::set1(MD5_A0);
+        Vec b2 = Ops::set1(MD5_B0);
+        Vec c2 = Ops::set1(MD5_C0);
+        Vec d2 = Ops::set1(MD5_D0);
 
         for (size_t blk = 0; blk < max_blocks; ++blk)
         {
@@ -446,7 +458,8 @@ DECLARE_MULTITARGET_CODE(
                 }
             }
 
-            Vec msg1[16], msg2[16];
+            Vec msg1[16];
+            Vec msg2[16];
             Ops::gatherAllMessageWords(block_ptrs, msg1);
             Ops::gatherAllMessageWords(block_ptrs + N, msg2);
 
