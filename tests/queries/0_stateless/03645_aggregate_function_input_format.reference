@@ -68,3 +68,9 @@
 2	2
 3	2
 4	2
+=== Test 23: Zero-argument aggregate function (count) - value format ===
+800	1
+=== Test 24: Zero-argument aggregate function (count) - array format ===
+800	1
+801	3
+802	0

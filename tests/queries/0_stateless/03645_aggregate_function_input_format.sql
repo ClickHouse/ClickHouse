@@ -129,26 +129,37 @@ SELECT user_id, avgMerge(avg_session_length) FROM test_agg_single WHERE user_id 
 SELECT '=== Test 19: RowBinary format - value ===';
 INSERT INTO TABLE FUNCTION file(database() || '-test.bin', RowBinary) SELECT number::UInt64, (number * 100)::UInt32 FROM numbers(5);
 SET aggregate_function_input_format = 'value';
-INSERT INTO test_agg_single SELECT * FROM file(database() || '-test.bin', RowBinary);
+INSERT INTO test_agg_single SELECT * FROM file(database() || '-test.bin', RowBinary, 'user_id UInt64, avg_session_length AggregateFunction(avg, UInt32)');
 SELECT user_id, avgMerge(avg_session_length) FROM test_agg_single WHERE user_id < 100 GROUP BY user_id ORDER BY ALL;
 
 SELECT '=== Test 20: RowBinary format - array ===';
 INSERT INTO TABLE FUNCTION file(database() || '-test-array.bin', RowBinary) SELECT number::UInt64, [number, number*2]::Array(UInt32) FROM numbers(5);
 SET aggregate_function_input_format = 'array';
 TRUNCATE TABLE test_agg_single;
-INSERT INTO test_agg_single SELECT * FROM file(database() || '-test-array.bin', RowBinary);
+INSERT INTO test_agg_single SELECT * FROM file(database() || '-test-array.bin', RowBinary, 'user_id UInt64, avg_session_length AggregateFunction(avg, UInt32)');
 SELECT user_id, avgMerge(avg_session_length) FROM test_agg_single WHERE user_id < 100 GROUP BY user_id ORDER BY ALL;
 
 SELECT '=== Test 21: RowBinary format - multiple arguments ===';
 INSERT INTO TABLE FUNCTION file(database() || '-test-multi.bin', RowBinary)
   SELECT number::UInt64, [tuple(number, number*2), tuple(number+1, number*3)]::Array(Tuple(Float64, Float64)) FROM numbers(5);
 SET aggregate_function_input_format = 'array';
-INSERT INTO test_agg_multi SELECT * FROM file(database() || '-test-multi.bin', RowBinary);
+INSERT INTO test_agg_multi SELECT * FROM file(database() || '-test-multi.bin', RowBinary, 'user_id UInt64, corr_values AggregateFunction(corr, Float64, Float64)');
 SELECT user_id, corrMerge(corr_values) FROM test_agg_multi WHERE user_id < 100 GROUP BY user_id ORDER BY ALL;
 
 SELECT '=== Test 22: String aggregate function - binary array format ===';
 INSERT INTO TABLE FUNCTION file(database() || '-test-string.bin', RowBinary)
     SELECT number::UInt64, [toString(number), toString(number*2)]::Array(String) FROM numbers(5);
 SET aggregate_function_input_format = 'array';
-INSERT INTO test_agg_string SELECT * FROM file(database() || '-test-string.bin', RowBinary);
+INSERT INTO test_agg_string SELECT * FROM file(database() || '-test-string.bin', RowBinary, 'user_id UInt64, unique_strings AggregateFunction(uniq, String)');
 SELECT user_id, uniqMerge(unique_strings) FROM test_agg_string WHERE user_id < 100 GROUP BY user_id ORDER BY ALL;
+
+SELECT '=== Test 23: Zero-argument aggregate function (count) - value format ===';
+CREATE TABLE test_agg_count (user_id UInt64, c AggregateFunction(count)) ENGINE = Memory;
+SET aggregate_function_input_format = 'value';
+INSERT INTO test_agg_count VALUES (800, '()');
+SELECT user_id, countMerge(c) FROM test_agg_count GROUP BY user_id;
+
+SELECT '=== Test 24: Zero-argument aggregate function (count) - array format ===';
+SET aggregate_function_input_format = 'array';
+INSERT INTO test_agg_count VALUES (801, '[(), (), ()]'), (802, '[]');
+SELECT user_id, countMerge(c) FROM test_agg_count GROUP BY user_id ORDER BY user_id;
