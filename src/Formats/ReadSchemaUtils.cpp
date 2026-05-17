@@ -12,6 +12,8 @@
 #include <Common/assert_cast.h>
 #include <base/scope_guard.h>
 
+#include <stdexcept>
+
 namespace DB
 {
 namespace Setting

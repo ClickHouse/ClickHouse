@@ -9,10 +9,6 @@
 #include <IO/WriteBufferFromVector.h>
 #include <Processors/Port.h>
 
-#include <parquet/arrow/writer.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
-
 
 namespace CurrentMetrics
 {
@@ -26,105 +22,47 @@ namespace DB
 
 using namespace Parquet;
 
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_EXCEPTION;
-    extern const int NOT_IMPLEMENTED;
-}
-
-namespace
-{
-
-    parquet::ParquetVersion::type getParquetVersion(const FormatSettings & settings)
-    {
-        switch (settings.parquet.output_version)
-        {
-            case FormatSettings::ParquetVersion::V1_0:
-                return parquet::ParquetVersion::PARQUET_1_0;
-            case FormatSettings::ParquetVersion::V2_4:
-                return parquet::ParquetVersion::PARQUET_2_4;
-            case FormatSettings::ParquetVersion::V2_6:
-                return parquet::ParquetVersion::PARQUET_2_6;
-            case FormatSettings::ParquetVersion::V2_LATEST:
-                return parquet::ParquetVersion::PARQUET_2_LATEST;
-        }
-    }
-
-    parquet::Compression::type getParquetCompression(FormatSettings::ParquetCompression method)
-    {
-        if (method == FormatSettings::ParquetCompression::NONE)
-            return parquet::Compression::type::UNCOMPRESSED;
-
-#if USE_SNAPPY
-        if (method == FormatSettings::ParquetCompression::SNAPPY)
-            return parquet::Compression::type::SNAPPY;
-#endif
-
-#if USE_BROTLI
-        if (method == FormatSettings::ParquetCompression::BROTLI)
-            return parquet::Compression::type::BROTLI;
-#endif
-
-        if (method == FormatSettings::ParquetCompression::ZSTD)
-            return parquet::Compression::type::ZSTD;
-
-        if (method == FormatSettings::ParquetCompression::LZ4)
-            return parquet::Compression::type::LZ4;
-
-        if (method == FormatSettings::ParquetCompression::GZIP)
-            return parquet::Compression::type::GZIP;
-
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported parquet compression method");
-    }
-}
-
 ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, FormatFilterInfoPtr format_filter_info_)
     : IOutputFormat(header_, out_), format_settings{format_settings_}, format_filter_info(format_filter_info_)
 {
-    if (format_settings.parquet.use_custom_encoder)
+    if (format_settings.parquet.parallel_encoding && format_settings.max_threads > 1)
+        pool = std::make_unique<ThreadPool>(
+            CurrentMetrics::ParquetEncoderThreads,
+            CurrentMetrics::ParquetEncoderThreadsActive,
+            CurrentMetrics::ParquetEncoderThreadsScheduled,
+            format_settings.max_threads);
+
+    using C = FormatSettings::ParquetCompression;
+    switch (format_settings.parquet.output_compression_method)
     {
-        if (format_settings.parquet.output_version < FormatSettings::ParquetVersion::V2_6)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Custom parquet encoder doesn't support parquet versions < 2.6. Use output_format_parquet_use_custom_encoder = 0.");
-
-        if (format_settings.parquet.parallel_encoding && format_settings.max_threads > 1)
-            pool = std::make_unique<ThreadPool>(
-                CurrentMetrics::ParquetEncoderThreads,
-                CurrentMetrics::ParquetEncoderThreadsActive,
-                CurrentMetrics::ParquetEncoderThreadsScheduled,
-                format_settings.max_threads);
-
-        using C = FormatSettings::ParquetCompression;
-        switch (format_settings.parquet.output_compression_method)
-        {
-            case C::NONE: options.compression = CompressionMethod::None; break;
-            case C::SNAPPY: options.compression = CompressionMethod::Snappy; break;
-            case C::ZSTD: options.compression = CompressionMethod::Zstd; break;
-            case C::LZ4: options.compression = CompressionMethod::Lz4; break;
-            case C::GZIP: options.compression = CompressionMethod::Gzip; break;
-            case C::BROTLI: options.compression = CompressionMethod::Brotli; break;
-        }
-        options.compression_level = static_cast<int>(format_settings.parquet.output_compression_level);
-        options.output_string_as_string = format_settings.parquet.output_string_as_string;
-        options.output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array;
-        options.output_datetime_as_uint32 = format_settings.parquet.output_datetime_as_uint32;
-        options.output_date_as_uint16 = format_settings.parquet.output_date_as_uint16;
-        options.output_enum_as_byte_array = format_settings.parquet.output_enum_as_byte_array;
-        options.data_page_size = format_settings.parquet.data_page_size;
-        options.write_batch_size = format_settings.parquet.write_batch_size;
-        options.write_page_index = format_settings.parquet.write_page_index;
-        options.write_bloom_filter = format_settings.parquet.write_bloom_filter;
-        options.write_checksums = format_settings.parquet.write_checksums;
-        options.bloom_filter_bits_per_value = format_settings.parquet.bloom_filter_bits_per_value;
-        options.bloom_filter_flush_threshold_bytes = format_settings.parquet.bloom_filter_flush_threshold_bytes;
-        options.write_geometadata = format_settings.parquet.write_geometadata;
-        options.max_dictionary_size = format_settings.parquet.max_dictionary_size;
-        options.use_dictionary_encoding = options.max_dictionary_size > 0;
-
-        if (format_filter_info_ && format_filter_info_->column_mapper)
-            schema = convertSchema(*header_, options, format_filter_info_->column_mapper->getStorageColumnEncoding());
-        else
-            schema = convertSchema(*header_, options, std::nullopt);
+        case C::NONE: options.compression = CompressionMethod::None; break;
+        case C::SNAPPY: options.compression = CompressionMethod::Snappy; break;
+        case C::ZSTD: options.compression = CompressionMethod::Zstd; break;
+        case C::LZ4: options.compression = CompressionMethod::Lz4; break;
+        case C::GZIP: options.compression = CompressionMethod::Gzip; break;
+        case C::BROTLI: options.compression = CompressionMethod::Brotli; break;
     }
+    options.compression_level = static_cast<int>(format_settings.parquet.output_compression_level);
+    options.output_string_as_string = format_settings.parquet.output_string_as_string;
+    options.output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array;
+    options.output_datetime_as_uint32 = format_settings.parquet.output_datetime_as_uint32;
+    options.output_date_as_uint16 = format_settings.parquet.output_date_as_uint16;
+    options.output_enum_as_byte_array = format_settings.parquet.output_enum_as_byte_array;
+    options.data_page_size = format_settings.parquet.data_page_size;
+    options.write_batch_size = format_settings.parquet.write_batch_size;
+    options.write_page_index = format_settings.parquet.write_page_index;
+    options.write_bloom_filter = format_settings.parquet.write_bloom_filter;
+    options.write_checksums = format_settings.parquet.write_checksums;
+    options.bloom_filter_bits_per_value = format_settings.parquet.bloom_filter_bits_per_value;
+    options.bloom_filter_flush_threshold_bytes = format_settings.parquet.bloom_filter_flush_threshold_bytes;
+    options.write_geometadata = format_settings.parquet.write_geometadata;
+    options.max_dictionary_size = format_settings.parquet.max_dictionary_size;
+    options.use_dictionary_encoding = options.max_dictionary_size > 0;
+
+    if (format_filter_info_ && format_filter_info_->column_mapper)
+        schema = convertSchema(*header_, options, format_filter_info_->column_mapper->getStorageColumnEncoding());
+    else
+        schema = convertSchema(*header_, options, std::nullopt);
 }
 
 ParquetBlockOutputFormat::~ParquetBlockOutputFormat()
@@ -223,56 +161,36 @@ void ParquetBlockOutputFormat::finalizeImpl()
     if (!staging_chunks.empty())
         writeRowGroup(std::move(staging_chunks));
 
-    if (format_settings.parquet.use_custom_encoder)
+    if (pool)
     {
-        if (pool)
+        std::unique_lock lock(mutex);
+
+        /// Wait for background work to complete.
+        while (true)
         {
-            std::unique_lock lock(mutex);
+            reapCompletedRowGroups(lock);
 
-            /// Wait for background work to complete.
-            while (true)
-            {
-                reapCompletedRowGroups(lock);
+            if (background_exception)
+                std::rethrow_exception(background_exception);
 
-                if (background_exception)
-                    std::rethrow_exception(background_exception);
+            if (is_stopped)
+                return;
 
-                if (is_stopped)
-                    return;
+            if (row_groups.empty())
+                break;
 
-                if (row_groups.empty())
-                    break;
-
-                condvar.wait(lock);
-            }
-        }
-
-        if (file_state.offset == 0)
-        {
-            base_offset = out.count();
-            writeFileHeader(file_state, out);
-        }
-        Block header = materializeBlock(getPort(PortKind::Main).getHeader());
-        writeFileFooter(file_state, schema, options, out, header);
-        chassert(out.count() - base_offset == file_state.offset);
-    }
-    else
-    {
-        if (!file_writer)
-        {
-            Block header = materializeBlock(getPort(PortKind::Main).getHeader());
-            std::vector<Chunk> chunks;
-            chunks.push_back(Chunk(header.getColumns(), 0));
-            writeRowGroup(std::move(chunks));
-        }
-
-        if (file_writer)
-        {
-            auto status = file_writer->Close();
-            if (!status.ok())
-                throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error while closing a table: {}", status.ToString());
+            condvar.wait(lock);
         }
     }
+
+    if (file_state.offset == 0)
+    {
+        base_offset = out.count();
+        writeFileHeader(file_state, out);
+    }
+    Block header = materializeBlock(getPort(PortKind::Main).getHeader());
+    writeFileFooter(file_state, schema, options, out, header);
+    chassert(out.count() - base_offset == file_state.offset);
 }
 
 void ParquetBlockOutputFormat::resetFormatterImpl()
@@ -289,7 +207,6 @@ void ParquetBlockOutputFormat::resetFormatterImpl()
     task_queue.clear();
     row_groups.clear();
     file_state = {};
-    file_writer.reset();
     staging_chunks.clear();
     staging_rows = 0;
     staging_bytes = 0;
@@ -303,9 +220,9 @@ void ParquetBlockOutputFormat::onCancel() noexcept
 void ParquetBlockOutputFormat::writeRowGroup(std::vector<Chunk> chunks)
 {
     if (pool)
+    {
         writeRowGroupInParallel(std::move(chunks));
-    else if (!format_settings.parquet.use_custom_encoder)
-        writeUsingArrow(std::move(chunks));
+    }
     else
     {
         Chunk concatenated;
@@ -318,80 +235,11 @@ void ParquetBlockOutputFormat::writeRowGroup(std::vector<Chunk> chunks)
             else
             {
                 concatenated.append(chunk);
-                chunk.clear(); // free chunk's buffers so memory is release earlier
+                chunk.clear(); // free chunk's buffers so memory is released earlier
             }
         }
         writeRowGroupInOneThread(std::move(concatenated));
     }
-}
-
-void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
-{
-    const size_t columns_num = chunks.at(0).getNumColumns();
-    std::shared_ptr<arrow::Table> arrow_table;
-
-    if (!ch_column_to_arrow_column)
-    {
-        const Block & header = getPort(PortKind::Main).getHeader();
-        ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(
-            header,
-            "Parquet",
-            CHColumnToArrowColumn::Settings
-            {
-                .output_string_as_string = format_settings.parquet.output_string_as_string,
-                .output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array,
-                .output_unsupported_types_as_binary = format_settings.parquet.output_unsupported_types_as_binary,
-            });
-    }
-
-    if (format_filter_info && format_filter_info->column_mapper)
-        ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunks, columns_num, format_filter_info->column_mapper->getStorageColumnEncoding());
-    else
-        ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunks, columns_num);
-
-    if (!file_writer)
-    {
-        auto sink = std::make_shared<ArrowBufferedOutputStream>(out);
-
-        parquet::WriterProperties::Builder builder;
-        builder.version(getParquetVersion(format_settings));
-        auto compression_codec = getParquetCompression(format_settings.parquet.output_compression_method);
-        builder.compression(compression_codec);
-        if (format_settings.parquet.max_dictionary_size == 0)
-            builder.disable_dictionary();
-        else
-            builder.dictionary_pagesize_limit(format_settings.parquet.max_dictionary_size);
-
-        if (arrow::util::Codec::SupportsCompressionLevel(compression_codec))
-        {
-            builder.compression_level(static_cast<int>(format_settings.parquet.output_compression_level));
-        }
-
-        // Writing page index is enabled by default.
-        if (!format_settings.parquet.write_page_index)
-            builder.disable_write_page_index();
-
-        parquet::ArrowWriterProperties::Builder writer_props_builder;
-        if (format_settings.parquet.output_compliant_nested_types)
-            writer_props_builder.enable_compliant_nested_types();
-        else
-            writer_props_builder.disable_compliant_nested_types();
-
-        auto result = parquet::arrow::FileWriter::Open(
-            *arrow_table->schema(),
-            arrow::default_memory_pool(),
-            sink,
-            builder.build(),
-            writer_props_builder.build());
-        if (!result.ok())
-            throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error while opening a table: {}", result.status().ToString());
-        file_writer = std::move(result.ValueOrDie());
-    }
-
-    auto status = file_writer->WriteTable(*arrow_table, INT64_MAX);
-
-    if (!status.ok())
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Error while writing a table: {}", status.ToString());
 }
 
 void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
