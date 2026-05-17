@@ -4,7 +4,6 @@
 #include <Parsers/formatSettingName.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Common/FieldVisitorToString.h>
 
 
 namespace DB
