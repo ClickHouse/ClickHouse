@@ -25,7 +25,7 @@ Contains information about all filesystem cache settings
 - `background_download_threads` ([UInt64](/sql-reference/data-types/int-uint)) — Number of background download threads. Value 0 disables background download
 - `background_download_queue_size_limit` ([UInt64](/sql-reference/data-types/int-uint)) — Size of background download queue. Value 0 disables background download
 - `background_download_max_file_segment_size` ([UInt64](/sql-reference/data-types/int-uint)) — Maximum size which can be downloaded in background download
-- `load_metadata_threads` ([UInt64](/sql-reference/data-types/int-uint)) — Number of threads to load cache metadata at server startup. Value 0 disables asynchronous loading of metadata
+- `load_metadata_threads` ([UInt64](/sql-reference/data-types/int-uint)) — Maximum number of threads used to load cache metadata at server startup
 - `load_metadata_asynchronously` ([UInt8](/sql-reference/data-types/int-uint)) — Enables asynchronous loading of metadata on server startup
 - `keep_free_space_size_ratio` ([Float64](/sql-reference/data-types/float)) — A ratio of free space which cache would try to uphold in the background
 - `keep_free_space_elements_ratio` ([Float64](/sql-reference/data-types/float)) — A ratio of free elements which cache would try to uphold in the background
