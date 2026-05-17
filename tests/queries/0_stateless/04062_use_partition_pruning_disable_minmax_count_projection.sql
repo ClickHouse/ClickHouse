@@ -14,7 +14,7 @@ SETTINGS use_partition_pruning = 1;
 
 -- With partition pruning disabled: both MinMax and Partition should show always true
 EXPLAIN indexes = 1 SELECT * FROM t WHERE x = 1
-SETTINGS use_partition_pruning = 0;
+SETTINGS use_partition_pruning = 0, use_skip_indexes = 0;
 
 -- Verify correctness: results must be the same regardless of the setting
 SELECT * FROM t WHERE x = 1 SETTINGS use_partition_pruning = 1;
