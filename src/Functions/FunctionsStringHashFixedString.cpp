@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/MD5IsaL.h>
 #include <Functions/IFunction.h>
 #include <base/IPv4andIPv6.h>
 
@@ -51,16 +52,16 @@ namespace ErrorCodes
 using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
 
 /// Initializes a context with the right provider in the constructor.
-/// Apply() then only copies it (once per new thread), this is faster than re-creating the context every time.
+/// apply() then only copies it (once per new thread), this is faster than re-creating the context every time.
 template <typename ProviderImpl>
-class OpenSSLProvider
+class OpenSSLProviderBase
 {
 public:
     static constexpr auto name = ProviderImpl::name;
     static constexpr auto length = ProviderImpl::length;
     static constexpr auto available_in_fips_mode = ProviderImpl::available_in_fips_mode;
 
-    OpenSSLProvider()
+    OpenSSLProviderBase()
         : ctx_template(EVP_MD_CTX_new(), &EVP_MD_CTX_free)
     {
         if (OpenSSLInitializer::instance().isFIPSEnabled() && !available_in_fips_mode)
@@ -94,6 +95,19 @@ private:
     EVP_MD_CTX_ptr ctx_template;
 };
 
+template <typename ProviderImpl>
+class OpenSSLProvider : public OpenSSLProviderBase<ProviderImpl>
+{
+public:
+    static constexpr auto name = ProviderImpl::name;
+    static constexpr auto length = ProviderImpl::length;
+    static constexpr auto available_in_fips_mode = ProviderImpl::available_in_fips_mode;
+    static constexpr bool has_batch_interface = false;
+
+    using OpenSSLProviderBase<ProviderImpl>::OpenSSLProviderBase;
+    using OpenSSLProviderBase<ProviderImpl>::apply;
+};
+
 struct MD4Impl
 {
     static constexpr auto name = "MD4";
@@ -114,6 +128,93 @@ struct MD5Impl
     {
         length = MD5_DIGEST_LENGTH
     };
+};
+
+template <>
+class OpenSSLProvider<MD5Impl> : public OpenSSLProviderBase<MD5Impl>
+{
+public:
+    static constexpr auto name = MD5Impl::name;
+    static constexpr auto length = MD5Impl::length;
+    static constexpr auto available_in_fips_mode = MD5Impl::available_in_fips_mode;
+    static constexpr bool has_batch_interface = true;
+
+    using OpenSSLProviderBase<MD5Impl>::OpenSSLProviderBase;
+    using OpenSSLProviderBase<MD5Impl>::apply;
+
+    void applyColumnString(
+        const ColumnString::Chars & data,
+        const ColumnString::Offsets & offsets,
+        ColumnFixedString::Chars & chars_to,
+        size_t input_rows_count)
+    {
+        auto get_row = [&](size_t row, const UInt8 *& begin, size_t & size)
+        {
+            const size_t current_offset = row == 0 ? 0 : offsets[row - 1];
+            begin = data.data() + current_offset;
+            size = offsets[row] - current_offset;
+        };
+
+        if (MD5IsaL::tryApply(input_rows_count, chars_to, get_row))
+            return;
+
+        ColumnString::Offset current_offset = 0;
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            apply(
+                reinterpret_cast<const char *>(data.data() + current_offset),
+                offsets[row] - current_offset,
+                reinterpret_cast<uint8_t *>(&chars_to[row * length]));
+            current_offset = offsets[row];
+        }
+    }
+
+    void applyColumnFixedString(
+        const ColumnFixedString::Chars & data,
+        size_t fixed_string_length,
+        ColumnFixedString::Chars & chars_to,
+        size_t input_rows_count)
+    {
+        auto get_row = [&](size_t row, const UInt8 *& begin, size_t & size)
+        {
+            begin = data.data() + row * fixed_string_length;
+            size = fixed_string_length;
+        };
+
+        if (MD5IsaL::tryApply(input_rows_count, chars_to, get_row))
+            return;
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            apply(
+                reinterpret_cast<const char *>(data.data() + row * fixed_string_length),
+                fixed_string_length,
+                reinterpret_cast<uint8_t *>(&chars_to[row * length]));
+        }
+    }
+
+    void applyIPv6(
+        const ColumnIPv6::Container & data,
+        ColumnFixedString::Chars & chars_to,
+        size_t input_rows_count)
+    {
+        auto get_row = [&](size_t row, const UInt8 *& begin, size_t & size)
+        {
+            begin = reinterpret_cast<const UInt8 *>(&data[row]);
+            size = sizeof(IPv6::UnderlyingType);
+        };
+
+        if (MD5IsaL::tryApply(input_rows_count, chars_to, get_row))
+            return;
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            apply(
+                reinterpret_cast<const char *>(&data[row]),
+                sizeof(IPv6::UnderlyingType),
+                reinterpret_cast<uint8_t *>(&chars_to[row * length]));
+        }
+    }
 };
 
 struct SHA1Impl
@@ -201,6 +302,7 @@ class GenericProvider
 public:
     static constexpr auto name = Impl::name;
     static constexpr auto length = Impl::length;
+    static constexpr bool has_batch_interface = false;
 
     void apply(const char* begin, size_t size, unsigned char* out_char_data)
     {
@@ -288,6 +390,12 @@ public:
             auto & chars_to = col_to->getChars();
             chars_to.resize(input_rows_count * Impl::length);
 
+            if constexpr (Impl::has_batch_interface)
+            {
+                hasher.applyColumnString(data, offsets, chars_to, input_rows_count);
+                return col_to;
+            }
+
             ColumnString::Offset current_offset = 0;
 
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -310,6 +418,13 @@ public:
             auto & chars_to = col_to->getChars();
             const auto length = col_from_fix->getN();
             chars_to.resize(input_rows_count * Impl::length);
+
+            if constexpr (Impl::has_batch_interface)
+            {
+                hasher.applyColumnFixedString(data, length, chars_to, input_rows_count);
+                return col_to;
+            }
+
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 hasher.apply(
@@ -328,6 +443,13 @@ public:
             auto & chars_to = col_to->getChars();
             const auto length = sizeof(IPv6::UnderlyingType);
             chars_to.resize(input_rows_count * Impl::length);
+
+            if constexpr (Impl::has_batch_interface)
+            {
+                hasher.applyIPv6(data, chars_to, input_rows_count);
+                return col_to;
+            }
+
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 hasher.apply(
