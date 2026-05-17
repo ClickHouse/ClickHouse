@@ -800,7 +800,7 @@ def read_docker_container_name(function_name, work_dir):
 def docker_container_pids_limit():
     limit = docker_resource_limits()["pids"]
     try:
-        return str(max(int(limit), pool_size() + 4))
+        return str(max(int(limit), pool_size() * 16))
     except ValueError:
         return limit
 
@@ -832,9 +832,10 @@ trap cleanup EXIT INT TERM
 
 mkfifo "$pipe_dir/in" "$pipe_dir/out" || exit 1
 pipe_name=$(basename "$pipe_dir")
+docker_log="$pipe_dir/docker.log"
 
 docker exec -w "$mount_dir" "$container" sh -c 'exec "$1" < "$2" > "$3"' sh \
-    "$mount_dir/user_func" "$mount_dir/$pipe_name/in" "$mount_dir/$pipe_name/out" < /dev/null &
+    "$mount_dir/user_func" "$mount_dir/$pipe_name/in" "$mount_dir/$pipe_name/out" < /dev/null > "$docker_log" 2>&1 &
 docker_pid=$!
 
 exec 5<&0
@@ -848,15 +849,24 @@ reader_pid=$!
 writer_status=0
 reader_status=0
 docker_status=0
+wait "$docker_pid" || docker_status=$?
+if [ "$docker_status" -ne 0 ]; then
+    if [ -s "$docker_log" ]; then
+        cat "$docker_log" >&2
+    fi
+    kill "$writer_pid" "$reader_pid" 2>/dev/null || true
+    wait "$writer_pid" 2>/dev/null || true
+    wait "$reader_pid" 2>/dev/null || true
+    exit "$docker_status"
+fi
 wait "$writer_pid" || writer_status=$?
 wait "$reader_pid" || reader_status=$?
-wait "$docker_pid" || docker_status=$?
 
 if [ "$writer_status" -ne 0 ]; then
     exit "$writer_status"
 fi
-if [ "$docker_status" -ne 0 ]; then
-    exit "$docker_status"
+if [ -s "$docker_log" ]; then
+    cat "$docker_log" >&2
 fi
 exit "$reader_status"
 """

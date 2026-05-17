@@ -5,6 +5,7 @@ docker_run_runtime_absent
 docker_gvisor_runtime_absent
 docker_container_name_present
 docker_fifo_runner_present
+docker_fifo_per_process_dir_present
 docker_fifo_mkfifo_present
 docker_fifo_detached_exec_absent
 docker_fifo_attached_exec_present
