@@ -3,6 +3,8 @@
 #include <Dictionaries/SSDCacheDictionaryStorage.h>
 #include <Common/filesystemHelpers.h>
 #include <Core/Settings.h>
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
@@ -225,6 +227,27 @@ DictionaryPtr createCacheDictionaryLayout(
         auto storage_configuration = parseSSDCacheStorageConfiguration(config, full_name, layout_type, dictionary_layout_prefix, dict_lifetime);
         if (created_from_ddl && !pathStartsWith(storage_configuration.file_path, global_context->getUserFilesPath()))
             throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside user files path", storage_configuration.file_path);
+
+        /// `SSDCacheDictionaryStorage` opens `storage_configuration.file_path` via
+        /// local POSIX I/O. With `user_files_policy` configured on a non-local disk
+        /// (for example `s3_plain`), `getUserFilesPath` resolves to the disk's local
+        /// metadata root, so the prefix check above would pass but the storage would
+        /// silently bypass the configured disk backend and write to local metadata.
+        /// Reject up front, mirroring other call sites that gate features on disk type.
+        if (created_from_ddl)
+        {
+            if (auto user_files_volume = global_context->getUserFilesVolume())
+            {
+                for (const auto & disk : user_files_volume->getDisks())
+                {
+                    if (disk->isRemote())
+                        throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
+                            "SSD cache dictionary storage is not supported "
+                            "with non-local `user_files_policy` disks (disk `{}` is remote)",
+                            disk->getName());
+                }
+            }
+        }
 
         storage = std::make_shared<SSDCacheDictionaryStorage<dictionary_key_type>>(storage_configuration);
     }
