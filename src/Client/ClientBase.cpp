@@ -366,8 +366,11 @@ public:
     void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 };
 
-/// Wrapper for write buffer to execute callback before flush
-/// Used to prevent progress flickering
+/// Wrapper for write buffer to execute callback before flush.
+/// Used to prevent progress flickering.
+/// The nested buffer is treated as a borrowed reference: this wrapper
+/// neither finalizes nor cancels it, because the nested buffer (e.g. the client's
+/// persistent `std_out`) is shared and reused across queries.
 class FlushCallbackWriteBuffer : public WriteBufferWithOwnMemoryDecorator
 {
 public:
@@ -383,11 +386,20 @@ public:
         if (on_flush_callback)
             on_flush_callback();
 
-        if (!out->isCanceled())
-            out->write(working_buffer.begin(), offset());
+        if (out->isCanceled())
+            return;
+
+        out->write(working_buffer.begin(), offset());
+        /// Propagate the explicit flush to the nested buffer so that small result blocks
+        /// are streamed to the underlying sink immediately instead of waiting for the
+        /// nested buffer to fill up.
+        out->next();
     }
 
     void finalizeImpl() override { next(); }
+
+    /// Do not propagate cancellation to the nested buffer.
+    void cancelImpl() noexcept override {}
 
 private:
     std::function<void()> on_flush_callback;
