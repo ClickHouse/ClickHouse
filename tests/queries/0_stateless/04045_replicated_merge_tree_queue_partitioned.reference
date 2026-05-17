@@ -35,7 +35,7 @@ Expression ((Project names + Projection))
   Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.rmtqp1)
     Indexes:
-      Partition Min-Max
+      Min-Max
         Condition: true
         Parts: 5/5
         Granules: 12/12
@@ -62,7 +62,7 @@ Expression ((Project names + Projection))
   Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.rmtqp1)
     Indexes:
-      Partition Min-Max
+      Min-Max
         Condition: true
         Parts: 5/5
         Granules: 12/12
