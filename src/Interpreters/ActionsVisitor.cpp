@@ -241,14 +241,30 @@ bool inFunctionComparesNulls(const String & name)
     return name == "nullIn" || name == "globalNullIn" || name == "notNullIn" || name == "globalNotNullIn";
 }
 
-ASTPtr makeArrayForNonConstantInRightOperand(const ASTPtr & right_operand, bool right_operand_is_array)
+bool isTupleType(const DataTypePtr & type)
+{
+    return type && typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
+}
+
+bool isTupleFunction(const ASTPtr & ast)
+{
+    const auto * function = ast->as<ASTFunction>();
+    return function && function->name == "tuple";
+}
+
+ASTPtr makeArrayForNonConstantInRightOperand(
+    const ASTPtr & right_operand,
+    bool right_operand_is_array,
+    bool right_operand_tuple_function_is_set,
+    const DataTypePtr & right_operand_type,
+    bool left_operand_is_tuple)
 {
     if (const auto * function = right_operand->as<ASTFunction>())
     {
         if (function->name == "array")
             return right_operand->clone();
 
-        if (function->name == "tuple")
+        if (function->name == "tuple" && right_operand_tuple_function_is_set)
         {
             auto array_function = makeASTFunction("array");
             auto & array_arguments = array_function->arguments->children;
@@ -262,6 +278,20 @@ ASTPtr makeArrayForNonConstantInRightOperand(const ASTPtr & right_operand, bool 
     if (right_operand_is_array)
         return right_operand->clone();
 
+    const auto * right_operand_tuple_type = right_operand_type
+        ? typeid_cast<const DataTypeTuple *>(removeNullable(right_operand_type).get())
+        : nullptr;
+    if (right_operand_tuple_type && !left_operand_is_tuple)
+    {
+        auto array_function = makeASTFunction("array");
+        auto & array_arguments = array_function->arguments->children;
+        array_arguments.reserve(right_operand_tuple_type->getElements().size());
+        for (size_t i = 0; i != right_operand_tuple_type->getElements().size(); ++i)
+            array_arguments.push_back(
+                makeASTFunction("tupleElement", right_operand->clone(), make_intrusive<ASTLiteral>(static_cast<UInt64>(i + 1))));
+        return array_function;
+    }
+
     return makeASTFunction("array", right_operand->clone());
 }
 
@@ -272,7 +302,12 @@ ASTPtr makeFunctionCall(const String & function_name, ASTs arguments)
     return function;
 }
 
-ASTPtr makeNonConstantInReplacement(const ASTFunction & node, bool right_operand_is_array)
+ASTPtr makeNonConstantInReplacement(
+    const ASTFunction & node,
+    bool right_operand_is_array,
+    bool right_operand_tuple_function_is_set,
+    const DataTypePtr & right_operand_type,
+    bool left_operand_is_tuple)
 {
     const auto & arguments = node.arguments->children;
     const auto & left_operand = arguments.at(0);
@@ -280,7 +315,12 @@ ASTPtr makeNonConstantInReplacement(const ASTFunction & node, bool right_operand
 
     auto has_function = makeASTFunction(
         "has",
-        makeArrayForNonConstantInRightOperand(right_operand, right_operand_is_array),
+        makeArrayForNonConstantInRightOperand(
+            right_operand,
+            right_operand_is_array,
+            right_operand_tuple_function_is_set,
+            right_operand_type,
+            left_operand_is_tuple),
         left_operand->clone());
 
     ASTPtr result = has_function;
@@ -857,21 +897,64 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
         visit(node.arguments->children.at(0), data);
 
+        DataTypePtr left_argument_type;
+        if (auto name_and_type = getNameAndTypeFromAST(node.arguments->children.at(0), data))
+            left_argument_type = name_and_type->type;
+        const bool left_argument_is_tuple = isTupleType(left_argument_type) || isTupleFunction(node.arguments->children.at(0));
+
         const auto & right_argument = node.arguments->children.at(1);
         if (!right_argument->as<ASTSubquery>() && !right_argument->as<ASTTableIdentifier>() && hasIdentifiers(right_argument))
         {
             if (!data.only_consts)
             {
                 bool right_argument_is_array = false;
+                bool right_argument_tuple_function_is_set = false;
+                DataTypePtr right_argument_type;
                 const auto * right_argument_function = right_argument->as<ASTFunction>();
-                if (!right_argument_function || (right_argument_function->name != "array" && right_argument_function->name != "tuple"))
+                if (right_argument_function && right_argument_function->name == "tuple")
+                {
+                    if (!left_argument_is_tuple)
+                    {
+                        right_argument_tuple_function_is_set = true;
+                    }
+                    else
+                    {
+                        visit(right_argument, data);
+                        if (auto name_and_type = getNameAndTypeFromAST(right_argument, data))
+                            right_argument_type = name_and_type->type;
+
+                        for (const auto & child : right_argument_function->arguments->children)
+                        {
+                            if (isTupleFunction(child))
+                            {
+                                right_argument_tuple_function_is_set = true;
+                                break;
+                            }
+
+                            if (auto name_and_type = getNameAndTypeFromAST(child, data); name_and_type && isTupleType(name_and_type->type))
+                            {
+                                right_argument_tuple_function_is_set = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                else if (!right_argument_function || right_argument_function->name != "array")
                 {
                     visit(right_argument, data);
                     if (auto name_and_type = getNameAndTypeFromAST(right_argument, data))
+                    {
+                        right_argument_type = name_and_type->type;
                         right_argument_is_array = typeid_cast<const DataTypeArray *>(name_and_type->type.get()) != nullptr;
+                    }
                 }
 
-                auto replacement = makeNonConstantInReplacement(node, right_argument_is_array);
+                auto replacement = makeNonConstantInReplacement(
+                    node,
+                    right_argument_is_array,
+                    right_argument_tuple_function_is_set,
+                    right_argument_type,
+                    left_argument_is_tuple);
                 visit(replacement, data);
 
                 auto replacement_name = replacement->getColumnName();

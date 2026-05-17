@@ -235,20 +235,43 @@ QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
     auto array_function_node = std::make_shared<FunctionNode>("array");
     auto array_arguments_list = std::make_shared<ListNode>();
 
+    QueryTreeNodes array_elements;
+    if (tuple_args.size() == 1
+        && !isTuple(removeNullable(in_first_argument->getResultType()))
+        && isTuple(removeNullable(tuple_args[0]->getResultType())))
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(tuple_args[0]->getResultType()).get());
+        array_elements.reserve(tuple_type->getElements().size());
+        for (size_t i = 0; i != tuple_type->getElements().size(); ++i)
+        {
+            auto tuple_element_function = std::make_shared<FunctionNode>("tupleElement");
+            tuple_element_function->getArguments().getNodes().push_back(tuple_args[0]);
+            tuple_element_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(i + 1)));
+
+            QueryTreeNodePtr tuple_element = tuple_element_function;
+            resolveFunction(tuple_element, scope);
+            array_elements.push_back(std::move(tuple_element));
+        }
+    }
+    else
+    {
+        array_elements = tuple_args;
+    }
+
     /// Use the supertype of the LHS and all tuple elements, to support cases like
     /// `toUInt8(232) IN (1000, number)`. If no supertype exists, keep the old
     /// behaviour and let per-element `CAST` handle or reject the mismatch.
     DataTypes arg_types;
-    arg_types.reserve(tuple_args.size() + 1);
+    arg_types.reserve(array_elements.size() + 1);
     arg_types.push_back(in_first_argument->getResultType());
-    for (const auto & arg : tuple_args)
+    for (const auto & arg : array_elements)
         arg_types.push_back(arg->getResultType());
 
     DataTypePtr common_type = tryGetLeastSupertype(arg_types);
     if (!common_type)
         common_type = in_first_argument->getResultType();
 
-    bool has_null = std::any_of(tuple_args.begin(), tuple_args.end(),
+    bool has_null = std::any_of(array_elements.begin(), array_elements.end(),
         [](const auto & arg) { return isNullConstant(arg); }) || isNullConstant(in_first_argument);
 
     if ((has_null || !scope.context->getSettingsRef()[Setting::transform_null_in])
@@ -256,7 +279,7 @@ QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
         && !isNullableOrLowCardinalityNullable(common_type))
         common_type = makeNullableOrLowCardinalityNullable(common_type);
 
-    for (const auto & arg : tuple_args)
+    for (const auto & arg : array_elements)
         array_arguments_list->getNodes().push_back(castNodeToType(arg, common_type, scope));
 
     array_function_node->getArgumentsNode() = array_arguments_list;
@@ -1087,7 +1110,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// the type of the second argument
                 bool is_array_type = (candidate_name == "array") ||
                     (non_const_set_candidate->isResolved() && isArray(non_const_set_candidate->getResultType()));
-                bool is_tuple_type = (candidate_name == "tuple");
+                bool is_tuple_function = (candidate_name == "tuple");
+                bool is_tuple_type = is_tuple_function ||
+                    (non_const_set_candidate->isResolved() && isTuple(removeNullable(non_const_set_candidate->getResultType())));
                 bool is_not_array_or_tuple_type = non_const_set_candidate->isResolved() &&
                     !isArray(non_const_set_candidate->getResultType()) &&
                     !isTuple(non_const_set_candidate->getResultType());
@@ -1102,7 +1127,21 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// Lambdas are rejected later by getLambdaArgumentTypes() with a proper error
                 if (is_tuple_type && in_first_argument->getNodeType() != QueryTreeNodeType::LAMBDA)
                 {
-                    auto & tuple_args = non_const_set_candidate->getArguments().getNodes();
+                    QueryTreeNodes tuple_args;
+                    if (is_tuple_function)
+                    {
+                        const bool left_is_tuple = isTuple(removeNullable(in_first_argument->getResultType()));
+                        const auto & candidate_arguments = non_const_set_candidate->getArguments().getNodes();
+                        const bool tuple_function_is_set = !left_is_tuple || std::any_of(candidate_arguments.begin(), candidate_arguments.end(),
+                            [](const auto & arg) { return isTuple(removeNullable(arg->getResultType())); });
+
+                        if (tuple_function_is_set)
+                            tuple_args = candidate_arguments;
+                        else
+                            tuple_args = {fn_args[1]};
+                    }
+                    else
+                        tuple_args = {fn_args[1]};
                     const bool left_is_null = isNullConstant(in_first_argument);
 
                     /// handling for NULL IN (tuple)

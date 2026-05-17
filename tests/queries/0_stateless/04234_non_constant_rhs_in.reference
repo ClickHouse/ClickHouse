@@ -40,6 +40,18 @@ SELECT number, (number % 2, number % 3) IN ((number % 3, number % 2), (1, 1)), (
 3	0	1
 4	0	1
 5	0	1
+SELECT number, if(number >= 0, tuple(number, number + 1), tuple(0, 0)) AS t, number IN (t), (number + 1) IN (t), (number + 2) IN (t), (number, number + 1) IN (t) FROM numbers(3) ORDER BY number;
+0	(0,1)	1	1	0	1
+1	(1,2)	1	1	0	1
+2	(2,3)	1	1	0	1
+SELECT number, tuple(number, number + 1) AS t, number IN (t), (number + 1) IN (t), (number + 2) IN (t), (number, number + 1) IN (t) FROM numbers(3) ORDER BY number;
+0	(0,1)	1	1	0	1
+1	(1,2)	1	1	0	1
+2	(2,3)	1	1	0	1
+SELECT number, (number, number + 1) IN ((number, number + 1)), (number, number + 2) IN ((number, number + 1)) FROM numbers(3) ORDER BY number;
+0	1	0
+1	1	0
+2	1	0
 SELECT x IN (y, 1), x NOT IN (y, 1), x IN [y, 1], x NOT IN [y, 1]
 FROM (SELECT materialize(NULL) AS x, materialize(2) AS y);
 \N	\N	\N	\N
@@ -87,6 +99,18 @@ SELECT number, (number % 2, number % 3) IN ((number % 3, number % 2), (1, 1)), (
 3	0	1
 4	0	1
 5	0	1
+SELECT number, if(number >= 0, tuple(number, number + 1), tuple(0, 0)) AS t, number IN (t), (number + 1) IN (t), (number + 2) IN (t), (number, number + 1) IN (t) FROM numbers(3) ORDER BY number;
+0	(0,1)	1	1	0	1
+1	(1,2)	1	1	0	1
+2	(2,3)	1	1	0	1
+SELECT number, tuple(number, number + 1) AS t, number IN (t), (number + 1) IN (t), (number + 2) IN (t), (number, number + 1) IN (t) FROM numbers(3) ORDER BY number;
+0	(0,1)	1	1	0	1
+1	(1,2)	1	1	0	1
+2	(2,3)	1	1	0	1
+SELECT number, (number, number + 1) IN ((number, number + 1)), (number, number + 2) IN ((number, number + 1)) FROM numbers(3) ORDER BY number;
+0	1	0
+1	1	0
+2	1	0
 SELECT x IN (y, 1), x NOT IN (y, 1), x IN [y, 1], x NOT IN [y, 1]
 FROM (SELECT materialize(NULL) AS x, materialize(2) AS y);
 \N	\N	\N	\N
