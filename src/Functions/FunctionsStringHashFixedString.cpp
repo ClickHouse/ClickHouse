@@ -142,6 +142,22 @@ public:
     using OpenSSLProviderBase<MD5Impl>::OpenSSLProviderBase;
     using OpenSSLProviderBase<MD5Impl>::apply;
 
+private:
+    template <typename GetRow, typename ApplyFallback>
+    void applyBatchOrScalar(
+        const GetRow & get_row,
+        const ApplyFallback & apply_fallback,
+        ColumnFixedString::Chars & chars_to,
+        size_t input_rows_count)
+    {
+        if (MD5IsaL::tryApply(input_rows_count, chars_to, get_row))
+            return;
+
+        apply_fallback();
+    }
+
+public:
+
     void applyColumnString(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
@@ -155,18 +171,22 @@ public:
             size = offsets[row] - current_offset;
         };
 
-        if (MD5IsaL::tryApply(input_rows_count, chars_to, get_row))
-            return;
-
-        ColumnString::Offset current_offset = 0;
-        for (size_t row = 0; row < input_rows_count; ++row)
-        {
-            apply(
-                reinterpret_cast<const char *>(data.data() + current_offset),
-                offsets[row] - current_offset,
-                reinterpret_cast<uint8_t *>(&chars_to[row * length]));
-            current_offset = offsets[row];
-        }
+        applyBatchOrScalar(
+            get_row,
+            [&]
+            {
+                ColumnString::Offset current_offset = 0;
+                for (size_t row = 0; row < input_rows_count; ++row)
+                {
+                    apply(
+                        reinterpret_cast<const char *>(data.data() + current_offset),
+                        offsets[row] - current_offset,
+                        reinterpret_cast<uint8_t *>(&chars_to[row * length]));
+                    current_offset = offsets[row];
+                }
+            },
+            chars_to,
+            input_rows_count);
     }
 
     void applyColumnFixedString(
@@ -181,16 +201,20 @@ public:
             size = fixed_string_length;
         };
 
-        if (MD5IsaL::tryApply(input_rows_count, chars_to, get_row))
-            return;
-
-        for (size_t row = 0; row < input_rows_count; ++row)
-        {
-            apply(
-                reinterpret_cast<const char *>(data.data() + row * fixed_string_length),
-                fixed_string_length,
-                reinterpret_cast<uint8_t *>(&chars_to[row * length]));
-        }
+        applyBatchOrScalar(
+            get_row,
+            [&]
+            {
+                for (size_t row = 0; row < input_rows_count; ++row)
+                {
+                    apply(
+                        reinterpret_cast<const char *>(data.data() + row * fixed_string_length),
+                        fixed_string_length,
+                        reinterpret_cast<uint8_t *>(&chars_to[row * length]));
+                }
+            },
+            chars_to,
+            input_rows_count);
     }
 
     void applyIPv6(
@@ -204,16 +228,20 @@ public:
             size = sizeof(IPv6::UnderlyingType);
         };
 
-        if (MD5IsaL::tryApply(input_rows_count, chars_to, get_row))
-            return;
-
-        for (size_t row = 0; row < input_rows_count; ++row)
-        {
-            apply(
-                reinterpret_cast<const char *>(&data[row]),
-                sizeof(IPv6::UnderlyingType),
-                reinterpret_cast<uint8_t *>(&chars_to[row * length]));
-        }
+        applyBatchOrScalar(
+            get_row,
+            [&]
+            {
+                for (size_t row = 0; row < input_rows_count; ++row)
+                {
+                    apply(
+                        reinterpret_cast<const char *>(&data[row]),
+                        sizeof(IPv6::UnderlyingType),
+                        reinterpret_cast<uint8_t *>(&chars_to[row * length]));
+                }
+            },
+            chars_to,
+            input_rows_count);
     }
 };
 

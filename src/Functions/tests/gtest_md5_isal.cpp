@@ -62,6 +62,22 @@ ColumnFixedString::Chars applyRows(const std::vector<std::string> & rows, bool &
     return output;
 }
 
+void expectRejectedWithoutTouchingOutput(const std::vector<std::string> & rows, UInt8 fill_byte)
+{
+    ColumnFixedString::Chars output(rows.size() * MD5IsaL::digest_size, fill_byte);
+
+    auto get_row = [&](size_t row, const UInt8 *& begin, size_t & size)
+    {
+        begin = reinterpret_cast<const UInt8 *>(rows[row].data());
+        size = rows[row].size();
+    };
+
+    ASSERT_FALSE(MD5IsaL::tryApply(rows.size(), output, get_row));
+
+    for (const auto value : output)
+        EXPECT_EQ(fill_byte, value);
+}
+
 void assertDigests(const std::vector<MD5Case> & cases)
 {
     std::vector<std::string> rows;
@@ -115,23 +131,9 @@ TEST(MD5IsaL, SmallBatchFallsBackToScalar)
     /// caller can use the cheaper scalar OpenSSL path.
     ASSERT_GT(MD5IsaL::min_batch_size, 1u);
 
-    const std::vector<std::string> rows(MD5IsaL::min_batch_size - 1, "abc");
-    ColumnFixedString::Chars output;
-    output.resize(rows.size() * MD5IsaL::digest_size);
-    std::fill(output.begin(), output.end(), static_cast<UInt8>(0xCD));
-
-    auto get_row = [&](size_t row, const UInt8 *& begin, size_t & size)
-    {
-        begin = reinterpret_cast<const UInt8 *>(rows[row].data());
-        size = rows[row].size();
-    };
-
-    EXPECT_FALSE(MD5IsaL::tryApply(rows.size(), output, get_row));
-
     /// Rejection must leave the output buffer untouched so the scalar fallback
     /// can fill it without first having to clear stale partial writes.
-    for (const auto value : output)
-        EXPECT_EQ(0xCDu, static_cast<unsigned>(value));
+    expectRejectedWithoutTouchingOutput(std::vector<std::string>(MD5IsaL::min_batch_size - 1, "abc"), 0xCD);
 }
 
 TEST(MD5IsaL, LargeBatchSpansMultipleWaves)
@@ -227,20 +229,7 @@ TEST(MD5IsaL, UnsupportedBuildLeavesFallbackToCaller)
     }
 
     std::vector<std::string> rows = {"abc", std::string(64, 'x')};
-    ColumnFixedString::Chars output;
-    output.resize(rows.size() * MD5IsaL::digest_size);
-    std::fill(output.begin(), output.end(), static_cast<UInt8>(0xAB));
-
-    auto get_row = [&](size_t row, const UInt8 *& begin, size_t & size)
-    {
-        begin = reinterpret_cast<const UInt8 *>(rows[row].data());
-        size = rows[row].size();
-    };
-
-    ASSERT_FALSE(MD5IsaL::tryApply(rows.size(), output, get_row));
-
-    for (const auto value : output)
-        EXPECT_EQ(0xABu, static_cast<unsigned>(value));
+    expectRejectedWithoutTouchingOutput(rows, 0xAB);
 }
 
 }
