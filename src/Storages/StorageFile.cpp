@@ -1623,7 +1623,7 @@ Chunk StorageFileSource::generate()
             }
 
             /// Apply UTF BOM detection/conversion for text formats to all read buffers
-            if (read_buf && !files_iterator->isReadFromArchive() && FormatFactory::instance().shouldDetectUTFBOM(storage->format_name))
+            if (read_buf && FormatFactory::instance().shouldDetectUTFBOM(storage->format_name))
                 read_buf = std::make_unique<UTFConvertingReadBuffer>(std::move(read_buf));
 
             size_t file_num = 0;

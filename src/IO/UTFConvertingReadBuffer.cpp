@@ -264,7 +264,7 @@ bool UTFConvertingReadBuffer::convertFromUTF16()
     char * output_ptr = memory.data();
     char * output_end = memory.data() + memory.size();
 
-    while (output_ptr + 4 <= output_end) /// Ensure space for maximum UTF-8 sequence (4 bytes)
+    while (output_ptr + 6 <= output_end) /// Ensure space for maximum possible emission (6 bytes)
     {
         /// Handle pending high surrogate first
         if (pending_high_surrogate != 0)
