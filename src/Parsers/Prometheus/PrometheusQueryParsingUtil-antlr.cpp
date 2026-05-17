@@ -340,7 +340,9 @@ namespace
                 case MatcherType::RE:
                 case MatcherType::NRE:
                 {
-                    re2::RE2 regexp(matcher.label_value);
+                    re2::RE2::Options options;
+                    options.set_log_errors(false);
+                    re2::RE2 regexp(matcher.label_value, options);
                     if (!regexp.ok())
                     {
                         error_listener.setError(
