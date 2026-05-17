@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 echo "SELECT
-1" | ${CLICKHOUSE_BENCHMARK} --iterations 1 --concurrency 1 --multiquery \
+1" | ${CLICKHOUSE_BENCHMARK} --iterations 1 --concurrency 1 --queries-format=script \
     2>&1 | grep -q "Queries executed: 1" && echo "OK: Single multiline query"
 
 # Test multiple multiline queries separated by semicolon
@@ -15,29 +15,34 @@ echo "SELECT
 SELECT
 2;
 SELECT
-3" | ${CLICKHOUSE_BENCHMARK} --iterations 1 --concurrency 1 --multiquery \
+3" | ${CLICKHOUSE_BENCHMARK} --iterations 1 --concurrency 1 --queries-format=script \
     2>&1 | grep -q "Loaded 3 queries" && echo "OK: Multiple multiline queries"
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE IF NOT EXISTS t (a UInt8) engine = Memory"
 
 echo "INSERT INTO t FORMAT Values (1), (2);
-SELECT 1;" | ${CLICKHOUSE_BENCHMARK} --iterations 1 --concurrency 1 --multiquery \
+SELECT 1;" | ${CLICKHOUSE_BENCHMARK} --iterations 1 --concurrency 1 --queries-format=script \
     2>&1 | grep -q "Loaded 2 queries" && echo "OK: Insert FORMAT Values"
-
-echo "SELECT
-1" | ${CLICKHOUSE_BENCHMARK} --iterations 1 --concurrency 1 -m \
-    2>&1 | grep -q "Queries executed: 1" && echo "OK: Short option -m"
 
 # Test that semicolons inside comments don't split queries
 echo "SELECT
 -- comment with ; semicolon
 1;
-SELECT /* block comment; with semicolon */ 2" | ${CLICKHOUSE_BENCHMARK} --iterations 1 --concurrency 1 --multiquery \
+SELECT /* block comment; with semicolon */ 2" | ${CLICKHOUSE_BENCHMARK} --iterations 1 --concurrency 1 --queries-format=script \
     2>&1 | grep -q "Loaded 2 queries" && echo "OK: Semicolons in comments ignored"
 
-# Test default mode still works (one query per line)
+# Test default mode still works (one query per line, tab-escaped)
 echo "SELECT 1
 SELECT 2" | ${CLICKHOUSE_BENCHMARK} --iterations 1 --concurrency 1 \
-    2>&1 | grep -q "Loaded 2 queries" && echo "OK: Default mode (line-by-line)"
+    2>&1 | grep -q "Loaded 2 queries" && echo "OK: Default mode (tsv)"
+
+# Test that explicit --queries-format=tsv behaves the same as the default
+echo "SELECT 1
+SELECT 2" | ${CLICKHOUSE_BENCHMARK} --iterations 1 --concurrency 1 --queries-format=tsv \
+    2>&1 | grep -q "Loaded 2 queries" && echo "OK: Explicit tsv mode"
+
+# Unknown value must be rejected
+echo "SELECT 1" | ${CLICKHOUSE_BENCHMARK} --iterations 1 --concurrency 1 --queries-format=bogus \
+    2>&1 | grep -q "Unknown value for --queries-format" && echo "OK: Unknown format rejected"
 
 echo "All multiline tests passed"
