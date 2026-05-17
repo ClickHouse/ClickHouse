@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -56,6 +57,18 @@ public:
         /// Variadic over T1..Tn; the type-function ellipsis needs the variable index to
         /// build the group-to-repeat, hence the explicit `T1` rather than bare `T`.
         return "(T1, ...) -> leastSupertype(T1, ...)";
+    }
+
+    /// Cap the arity at 1024 like the legacy `getReturnTypeImpl` did. The DSL
+    /// signature has no upper-bound matcher, so enforce it here before
+    /// delegating to the DSL for the actual return-type computation.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        constexpr size_t max_args = 1024;
+        if (arguments.size() > max_args)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires at most {} arguments, got {}", getName(), max_args, arguments.size());
+        return IFunction::getReturnTypeImpl(arguments);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
