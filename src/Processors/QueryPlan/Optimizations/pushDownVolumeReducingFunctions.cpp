@@ -426,17 +426,14 @@ std::pair<bool, bool> getJoinPushdownSides(const JoinOperator & join_op)
             return {false, false};
 
         case JoinKind::Left:
-            if (join_op.strictness == JoinStrictness::Anti)
-                push_to_left = false;
-            else
-                push_to_right = false;
+            /// `LEFT` (and `LEFT ANTI`/`SEMI`) preserves left-side rows; only left-side
+            /// columns flow safely to the output for `ANTI`/`SEMI`. Either way the
+            /// preserved (push-eligible) side is the left one.
+            push_to_right = false;
             break;
 
         case JoinKind::Right:
-            if (join_op.strictness == JoinStrictness::Anti)
-                push_to_right = false;
-            else
-                push_to_left = false;
+            push_to_left = false;
             break;
 
         default:
