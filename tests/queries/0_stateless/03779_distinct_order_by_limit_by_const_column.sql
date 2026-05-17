@@ -39,3 +39,18 @@ SELECT number AS n, 'grp' AS g FROM numbers(5) ORDER BY n LIMIT 2 BY g SETTINGS 
 
 -- Constant-folded expression in LIMIT BY
 SELECT number AS n, 1 + 1 AS two FROM numbers(5) ORDER BY n LIMIT 1 BY two SETTINGS enable_analyzer=1;
+
+-- Regression for the redefinition guard in `finalizeInputAndOutputColumns`:
+-- when a subquery redefines a column alias to a different constant value, the
+-- outer (redefined) value must be preserved, not silently replaced by the
+-- upstream INPUT. Without the guard, the COLUMN-to-INPUT substitution would
+-- restore the inner value.
+SELECT 'new' AS my_field FROM (SELECT 'old' AS my_field) ORDER BY 1 LIMIT 1 BY my_field SETTINGS enable_analyzer=1;
+SELECT DISTINCT 'new' AS my_field FROM (SELECT 'old' AS my_field, number FROM numbers(3)) ORDER BY 1 LIMIT 1 BY my_field SETTINGS enable_analyzer=1;
+
+-- Same constant value but different types: `toUInt8(1)` upstream vs `toUInt16(1)`
+-- in the outer scope. The fields compare equal but the types differ, so the
+-- type-equality part of the guard must prevent the substitution to preserve
+-- the redefined type.
+SELECT toUInt16(1) AS x, number FROM (SELECT toUInt8(1) AS x, number FROM numbers(3)) ORDER BY number LIMIT 1 BY x SETTINGS enable_analyzer=1;
+SELECT toTypeName(x) FROM (SELECT toUInt16(1) AS x FROM (SELECT toUInt8(1) AS x, number FROM numbers(3)) ORDER BY number LIMIT 1 BY x) SETTINGS enable_analyzer=1;

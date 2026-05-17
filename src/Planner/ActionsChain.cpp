@@ -74,13 +74,18 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
                 {
                     const auto * input_node = it->second;
 
-                    /// Only replace if both nodes carry the same constant value.
-                    /// This ensures we only affect `duplicate_const_columns` pairs
-                    /// and not column redefinitions where the value changed.
+                    /// Only replace if both nodes carry the same constant value
+                    /// AND have the same result type. This ensures we only affect
+                    /// `duplicate_const_columns` pairs and not column redefinitions
+                    /// where the value or type changed (e.g. `toUInt8(1) AS x` vs
+                    /// `toUInt16(1) AS x`, where values compare equal but types differ).
                     bool same_const_value = input_node->column
                         && output_node->column
                         && isColumnConst(*input_node->column)
                         && isColumnConst(*output_node->column)
+                        && input_node->result_type
+                        && output_node->result_type
+                        && input_node->result_type->equals(*output_node->result_type)
                         && assert_cast<const ColumnConst &>(*input_node->column).getField()
                             == assert_cast<const ColumnConst &>(*output_node->column).getField();
 
