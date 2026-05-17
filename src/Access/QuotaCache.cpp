@@ -74,6 +74,13 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool th
         }
         case QuotaKeyType::FORWARDED_IP_ADDRESS:
         {
+            /// Fast path: when no prefix masking is configured, return the raw address
+            /// without parsing into `Poco::Net::IPAddress`. This matches pre-prefix-bits
+            /// behavior and avoids extra work on the per-query hot path for users who
+            /// did not opt into prefix masking.
+            if (!quota->ipv4_prefix_bits && !quota->ipv6_prefix_bits)
+                return params.forwarded_address;
+
             if (!params.forwarded_address.empty())
             {
                 try
