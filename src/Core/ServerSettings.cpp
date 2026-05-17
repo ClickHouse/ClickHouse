@@ -2161,7 +2161,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             }
             catch (...) // NOLINT(bugprone-empty-catch)
             {
-                /// Best-effort scan: ignore parse failures (broken or non-config XML in the dir).
+                /// Best-effort scan: ignore parse failures (broken or non-config XML in the dir). Ok.
             }
         };
 
@@ -2224,7 +2224,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             }
             catch (...) // NOLINT(bugprone-empty-catch)
             {
-                /// Best-effort: tolerate a missing or malformed include source.
+                /// Best-effort: tolerate a missing or malformed include source. Ok.
             }
         }
     }
