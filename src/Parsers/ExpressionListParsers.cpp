@@ -594,6 +594,14 @@ public:
         operands.push_back(std::move(op));
     }
 
+    /// Peek the top operand without popping it. Returns nullptr if empty.
+    const IAST * peekOperand() const
+    {
+        if (operands.empty())
+            return nullptr;
+        return operands.back().get();
+    }
+
     void pushResult(ASTPtr op)
     {
         elements.push_back(std::move(op));
@@ -3295,6 +3303,28 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
             else
             {
                 subquery_function_type = SubqueryFunctionType::NONE;
+            }
+        }
+
+        /// Backward compatibility for `any(x) = any(y)` and similar shapes:
+        /// when the left-hand side (top of operand stack) is itself an
+        /// `any`/`some`/`all` aggregate function call, the user is comparing
+        /// aggregate results, not asking for PostgreSQL ANY/ALL on an array.
+        /// In the non-subquery case we skip the rewrite and let the `any(...)`
+        /// on the right be parsed as a regular function call.
+        if (subquery_function_type != SubqueryFunctionType::NONE && !is_subquery)
+        {
+            if (const auto * lhs = layers.back()->peekOperand())
+            {
+                if (const auto * func = lhs->as<ASTFunction>())
+                {
+                    const auto name_lower = Poco::toLower(func->name);
+                    if (name_lower == "any" || name_lower == "some" || name_lower == "all")
+                    {
+                        pos = old_pos;
+                        subquery_function_type = SubqueryFunctionType::NONE;
+                    }
+                }
             }
         }
 

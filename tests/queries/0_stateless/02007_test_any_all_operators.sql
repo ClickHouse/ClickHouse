@@ -24,5 +24,5 @@ select 11 <= all (select number from numbers(11));
 select 11 < all (select 11 from numbers(10));
 select 11 > all (select 11 from numbers(10));
 select 11 >= all (select 11 from numbers(10));
-select sum(number) = any(number) from numbers(1) group by number;
-select 1 == any (1);
+select sum(number) = max(number) from numbers(1) group by number;
+select 1 == any (select 1);
