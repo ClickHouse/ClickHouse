@@ -157,6 +157,9 @@ private:
         /// Also we can jump over mutation when we download mutated part from other replica.
         bool is_done = false;
 
+        /// Time when this replica completed the mutation. Unfinished mutations have zero finish time
+        time_t finish_time = 0;
+
         String latest_failed_part;
         MergeTreePartInfo latest_failed_part_info;
         time_t latest_fail_time = 0;
@@ -177,6 +180,8 @@ private:
     std::unordered_map<String, std::map<Int64, MutationStatus *>> mutations_by_partition;
     /// Znode ID of the latest mutation that is done.
     String mutation_pointer;
+    /// Finish time of the mutation at mutation_pointer, persisted in Keeper under replica_path/mutation_finish_time.
+    time_t mutation_pointer_finish_time = 0;
 
     /// Provides only one simultaneous call to pullLogsToQueue.
     std::mutex pull_logs_to_queue_mutex;

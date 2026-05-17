@@ -6,6 +6,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/TransactionLog.h>
 #include <Backups/BackupEntryFromMemory.h>
+#include <Common/Exception.h>
 
 #include <utility>
 
@@ -50,6 +51,7 @@ UInt64 MergeTreeMutationEntry::parseFileName(const String & file_name_)
 MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number,
                                                const TransactionID & tid_, const WriteSettings & settings)
     : create_time(time(nullptr))
+    , finish_time(0)
     , commands(std::make_shared<MutationCommands>(std::move(commands_)))
     , disk(std::move(disk_))
     , path_prefix(path_prefix_)
@@ -115,6 +117,15 @@ void MergeTreeMutationEntry::writeCSN(CSN csn_)
     out->finalize();
 }
 
+void MergeTreeMutationEntry::writeFinishTime(time_t finish_time_)
+{
+    finish_time = finish_time_;
+    auto out = disk->writeFile(path_prefix + file_name, 256, WriteMode::Append);
+    *out << "finish time: " << LocalDateTime(finish_time, DateLUT::serverTimezoneInstance()) << "\n";
+    out->finalize();
+    out->sync();
+}
+
 MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_)
     : commands(std::make_shared<MutationCommands>())
     , disk(std::move(disk_))
@@ -137,20 +148,50 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     commands->readText(*buf, false);
     *buf >> "\n";
 
-    if (buf->eof())
-    {
-        tid = Tx::NonTransactionalTID;
-        csn = Tx::NonTransactionalCSN;
-    }
-    else
-    {
-        *buf >> "tid: ";
-        tid = TransactionID::read(*buf);
-        *buf >> "\n";
+    /// Set default values for remaining fields if they do not exist in the file
+    tid = Tx::NonTransactionalTID;
+    csn = Tx::NonTransactionalCSN;
+    /// For backward compatibility in old mutation files, the finish time is initialised with zero
+    finish_time = 0;
 
-        if (!buf->eof())
+    /// `checkString` advances the buffer even on a partial match. Use this helper
+    /// to detect optional field names without changing the parser position.
+    /// Restore buffer position is safe because the buffer is only few hundred bytes
+    auto check_string_no_advance = [](const char * s, ReadBuffer & buffer) -> bool
+    {
+        char * pos = buffer.position();
+        bool result = checkString(s, buffer);
+        buffer.position() = pos;
+        return result;
+    };
+
+    while (!buf->eof())
+    {
+        if (check_string_no_advance("tid: ", *buf))
+        {
+            *buf >> "tid: ";
+            tid = TransactionID::read(*buf);
+            *buf >> "\n";
+        }
+        else if (check_string_no_advance("csn: ", *buf))
         {
             *buf >> "csn: " >> csn >> "\n";
+        }
+        else if (check_string_no_advance("finish time: ", *buf))
+        {
+            *buf >> "finish time: ";
+            LocalDateTime finish_time_dt;
+            *buf >> finish_time_dt >> "\n";
+            finish_time = makeDateTime(DateLUT::serverTimezoneInstance(),
+                finish_time_dt.year(), finish_time_dt.month(), finish_time_dt.day(),
+                finish_time_dt.hour(), finish_time_dt.minute(), finish_time_dt.second());
+        }
+        else
+        {
+            String unexpected_field;
+            readStringUntilNewlineInto(unexpected_field, *buf);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot parse mutation entry {}, unexpected field after commands: {}", file_name, unexpected_field);
         }
     }
 

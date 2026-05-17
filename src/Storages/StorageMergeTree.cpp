@@ -671,13 +671,14 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
 
         incrementMutationsCounters(mutation_counters, *it->second.commands);
+        /// Immediately mark some mutations as finished if they don't have any parts to process
+        markFinishedMutationsUnlocked(lock);
     }
 
     LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
     background_operations_assignee.trigger();
     return version;
 }
-
 
 void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr result_part, bool is_successful, const String & exception_message, const String & error_code_name)
 {
@@ -723,6 +724,9 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
                 }
             }
         }
+
+        if (is_successful)
+            markFinishedMutationsUnlocked(lock);
     }
 
     std::unique_lock lock(mutation_wait_mutex);
@@ -920,6 +924,36 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     return getIncompleteMutationsStatusUnlocked(mutation_version, lock, mutation_ids, from_another_mutation);
 }
 
+size_t StorageMergeTree::markFinishedMutationsUnlocked(std::lock_guard<std::mutex> &)
+{
+    auto end_it = current_mutations_by_version.end();
+
+    /// If the table has no active parts, all mutations are considered finished and there are no parts to mutate
+    if (std::optional<Int64> min_version = getMinPartDataVersion())
+        end_it = current_mutations_by_version.upper_bound(*min_version);
+
+    size_t done_count = 0;
+    for (auto it = current_mutations_by_version.begin(); it != end_it; ++it)
+    {
+        auto & entry = it->second;
+
+        /// stop at first transactional mutation
+        if (!entry.tid.isNonTransactional())
+            break;
+
+        if (!entry.finish_time)
+            entry.writeFinishTime(time(nullptr));
+
+        if (!entry.is_done)
+        {
+            entry.is_done = true;
+            decrementMutationsCounters(mutation_counters, *entry.commands);
+        }
+        ++done_count;
+    }
+    return done_count;
+}
+
 std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsStatusUnlocked(
     Int64 mutation_version, std::unique_lock<std::mutex> & /*lock*/, std::set<String> * mutation_ids, bool from_another_mutation) const
 {
@@ -928,9 +962,8 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     if (current_mutation_it == current_mutations_by_version.end())
         return {};
 
-    MergeTreeMutationStatus result{.is_done = false};
-
     const auto & mutation_entry = current_mutation_it->second;
+    MergeTreeMutationStatus result{.finish_time = mutation_entry.finish_time, .is_done = false};
 
     auto txn = tryGetTransactionForMutation(mutation_entry, log.load());
     /// There's no way a transaction may finish before a mutation that was started by the transaction.
@@ -1102,6 +1135,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 entry.file_name,
                 command.ast->formatWithSecretsOneLine(),
                 entry.create_time,
+                entry.finish_time,
                 block_numbers_map,
                 parts_in_progress_names,
                 parts_to_do_names,
@@ -1846,38 +1880,13 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        auto end_it = current_mutations_by_version.end();
-        auto begin_it = current_mutations_by_version.begin();
-
-        if (std::optional<Int64> min_version = getMinPartDataVersion())
-            end_it = current_mutations_by_version.upper_bound(*min_version);
-
-        size_t done_count = 0;
-        for (auto it = begin_it; it != end_it; ++it)
-        {
-            auto & entry = it->second;
-
-            if (!entry.tid.isNonTransactional())
-            {
-                end_it = it;
-                break;
-            }
-
-            if (!entry.is_done)
-            {
-                entry.is_done = true;
-                decrementMutationsCounters(mutation_counters, *entry.commands);
-            }
-
-            ++done_count;
-        }
-
+        auto done_count = markFinishedMutationsUnlocked(lock);
         if (done_count <= finished_mutations_to_keep)
             return 0;
 
         size_t to_delete_count = done_count - finished_mutations_to_keep;
 
-        auto it = begin_it;
+        auto it = current_mutations_by_version.begin();
         for (size_t i = 0; i < to_delete_count; ++i)
         {
             const auto & tid = it->second.tid;

@@ -220,6 +220,12 @@ private:
     void waitForMutation(Int64 version, const String & mutation_id, bool wait_for_another_mutation = false);
     void setMutationCSN(const String & mutation_id, CSN csn) override;
 
+    /// Marks non-transactional mutations that no longer have active parts to process as finished
+    /// Must be called while holding `currently_processing_in_background_mutex`
+    /// Sets `finish_time` only once, when the mutation is first observed as finished, and updates mutation counters
+    /// Returns the number of leading finished non-transactional mutations
+    size_t markFinishedMutationsUnlocked(std::lock_guard<std::mutex> & /* currently_processing_in_background_mutex_lock */);
+
     friend struct CurrentlyMergingPartsTagger;
     friend class MergeTreeMergePredicate;
     friend struct PlainCommittingBlockHolder;

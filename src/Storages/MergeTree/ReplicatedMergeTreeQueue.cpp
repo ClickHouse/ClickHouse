@@ -209,7 +209,16 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
         {  /// Mutation pointer is a part of "state" and must be updated with state mutex
             std::lock_guard lock(state_mutex);
-            zookeeper->tryGet(fs::path(replica_path) / "mutation_pointer", mutation_pointer);
+            auto responses = zookeeper->tryGet(std::vector<std::string>{
+                (fs::path(replica_path) / "mutation_pointer").string(),
+                (fs::path(replica_path) / "mutation_finish_time").string(),
+            });
+
+            if (responses[0].error == Coordination::Error::ZOK)
+                mutation_pointer = responses[0].data;
+
+            if (responses[1].error == Coordination::Error::ZOK && !responses[1].data.empty())
+                mutation_pointer_finish_time = parse<time_t>(responses[1].data);
         }
     }
 
@@ -2462,6 +2471,8 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             {
                 LOG_TRACE(log, "Marking mutation {} done because it is <= mutation_pointer ({})", znode, mutation_pointer);
                 mutation.is_done = true;
+                if (!mutation.finish_time)
+                    mutation.finish_time = mutation_pointer_finish_time ? mutation_pointer_finish_time : time(nullptr);
                 mutation.latest_fail_reason.clear();
                 mutation.latest_fail_error_code_name.clear();
                 alter_sequence.finishDataAlter(mutation.entry->alter_version, lock);
@@ -2510,11 +2521,16 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
 
     if (!finished.empty())
     {
-        zookeeper->set(fs::path(replica_path) / "mutation_pointer", finished.back()->znode_name);
+        time_t now = time(nullptr);
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "mutation_pointer", finished.back()->znode_name, -1));
+        ops.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "mutation_finish_time", toString(now), -1));
+        zookeeper->multi(ops);
 
         std::lock_guard lock(state_mutex);
 
         mutation_pointer = finished.back()->znode_name;
+        mutation_pointer_finish_time = now;
 
         for (const ReplicatedMergeTreeMutationEntry * entry : finished)
         {
@@ -2523,6 +2539,8 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
             {
                 LOG_TRACE(log, "Mutation {} is done", entry->znode_name);
                 it->second.is_done = true;
+                if (!it->second.finish_time)
+                    it->second.finish_time = now;
                 it->second.latest_fail_reason.clear();
                 it->second.latest_fail_error_code_name.clear();
                 if (entry->isAlterMutation())
@@ -2640,6 +2658,7 @@ std::optional<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getIncompleteMu
     const MutationStatus & status = current_mutation_it->second;
     MergeTreeMutationStatus result
     {
+        .finish_time = status.finish_time,
         .is_done = status.is_done,
         .latest_failed_part = status.latest_failed_part,
         .latest_fail_time = status.latest_fail_time,
@@ -2708,6 +2727,7 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
                 entry.znode_name,
                 buf.str(),
                 entry.create_time,
+                status.finish_time,
                 entry.block_numbers,
                 parts_in_progress,
                 parts_to_mutate,

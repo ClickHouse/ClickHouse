@@ -1106,6 +1106,8 @@ bool StorageReplicatedMergeTree::createTableIfNotExistsAttempt(const StorageMeta
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/mutation_pointer", "",
             zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/mutation_finish_time", "",
+            zkutil::CreateMode::Persistent));
 
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/creator_info", toString(getStorageID().uuid) + "|" + toString(ServerUUID::get()),
             zkutil::CreateMode::Persistent));
@@ -1272,6 +1274,8 @@ void StorageReplicatedMergeTree::createReplicaAttempt(const StorageMetadataPtr &
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/max_processed_insert_time", "",
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/mutation_pointer", "",
+            zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/mutation_finish_time", "",
             zkutil::CreateMode::Persistent));
 
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/creator_info", creator_info,
@@ -1497,6 +1501,7 @@ bool StorageReplicatedMergeTree::dropReplica(
         ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/metadata", -1));
         ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/metadata_version", -1));
         ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/mutation_pointer", -1));
+        ops.emplace_back(zkutil::makeRemoveRequest(remote_replica_path + "/mutation_finish_time", -1));
         Coordination::Responses res;
         code = zookeeper->tryMulti(ops, res);
         if (code != Coordination::Error::ZOK)
