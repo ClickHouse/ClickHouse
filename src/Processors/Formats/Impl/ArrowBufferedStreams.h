@@ -131,6 +131,34 @@ private:
     ARROW_DISALLOW_COPY_AND_ASSIGN(ArrowInputStreamFromReadBuffer);
 };
 
+/// By default, arrow allocates memory using posix_memalign(). Our posix_memalign
+/// interceptor tracks memory, but cannot throw on `MEMORY_LIMIT_EXCEEDED` (throwing
+/// from `malloc`/`posix_memalign` is not allowed because callers, including inside
+/// arrow/parquet, do not expect it). This adapter routes arrow/parquet allocations
+/// through ClickHouse's `Allocator<false>`, which *can* throw
+/// `MEMORY_LIMIT_EXCEEDED`; we catch it and convert to `arrow::Status::OutOfMemory`
+/// so arrow unwinds via its normal error path.
+class ArrowMemoryPool : public arrow::MemoryPool
+{
+public:
+    static ArrowMemoryPool * instance();
+
+    arrow::Status Allocate(int64_t size, int64_t alignment, uint8_t ** out) override;
+    arrow::Status Reallocate(int64_t old_size, int64_t new_size, int64_t alignment, uint8_t ** ptr) override;
+    void Free(uint8_t * buffer, int64_t size, int64_t alignment) override;
+
+    std::string backend_name() const override { return "clickhouse"; }
+
+    int64_t bytes_allocated() const override { return stats.bytes_allocated(); }
+    int64_t total_bytes_allocated() const override { return stats.total_bytes_allocated(); }
+    int64_t num_allocations() const override { return stats.num_allocations(); }
+
+private:
+    ArrowMemoryPool() = default;
+
+    arrow::internal::MemoryPoolStats stats;
+};
+
 std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
     ReadBuffer & in,
     const FormatSettings & settings,

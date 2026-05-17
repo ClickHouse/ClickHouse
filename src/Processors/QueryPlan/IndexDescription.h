@@ -13,12 +13,13 @@ namespace DB
 enum class IndexType : uint8_t
 {
     None,
-    PartitionMinMax,
+    MinMax,
     Partition,
     PrimaryKey,
     Skip,
     PrimaryKeyExpand,
-    Statistics
+    Statistics,
+    NonIntersectingSplit,
 };
 
 struct DistributedIndexStat
@@ -62,8 +63,8 @@ inline const char * indexTypeToString(IndexType type)
     {
         case IndexType::None:
             return "None";
-        case IndexType::PartitionMinMax:
-            return "Partition Min-Max";
+        case IndexType::MinMax:
+            return "Min-Max";
         case IndexType::Partition:
             return "Partition";
         case IndexType::Statistics:
@@ -74,6 +75,8 @@ inline const char * indexTypeToString(IndexType type)
             return "Skip";
         case IndexType::PrimaryKeyExpand:
             return "PrimaryKeyExpand";
+        case IndexType::NonIntersectingSplit:
+            return "NonIntersectingSplit";
     }
 }
 

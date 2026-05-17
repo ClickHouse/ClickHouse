@@ -1,6 +1,7 @@
 #include <Storages/StorageLog.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageLogSettings.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/VirtualColumnUtils.h>
 
 #include <Columns/IColumn.h>
@@ -285,15 +286,10 @@ void LogSource::fillPhysicalColumns(Columns & result_columns, size_t max_rows_to
     }
 }
 
-void LogSource::fillVirtualColumns(Columns & result_columns, UInt64 num_rows) const
+void LogSource::fillVirtualColumns([[maybe_unused]] Columns & result_columns, [[maybe_unused]] UInt64 num_rows) const
 {
-    for (const auto & col : virtual_columns)
-    {
-        if (col.name == "_table")
-            result_columns.emplace_back(col.type->createColumnConst(num_rows, storage->getStorageID().getTableName())->convertToFullColumnIfConst());
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual column: '{}'", col.name);
-    }
+    if (!virtual_columns.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual columns: '{}'", virtual_columns.getNames());
 }
 
 void LogSource::readPrefix(const NameAndTypePair & name_and_type, ISerialization::SubstreamsCache & cache, ISerialization::SubstreamsDeserializeStatesCache & deserialize_state_cache)
@@ -584,12 +580,12 @@ CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, Compr
             : default_codec;
     };
 
-    const auto & columns = metadata_snapshot->getColumns();
+    const auto & columns = metadata_snapshot->columns;
     if (const auto * column_desc = columns.tryGet(column_name))
         return get_codec_or_default(*column_desc);
 
-    const auto & virtual_columns = storage.getVirtualsPtr();
-    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
+    const auto & virtual_columns = metadata_snapshot->virtuals;
+    if (const auto * virtual_desc = virtual_columns.tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
         return get_codec_or_default(*virtual_desc);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
@@ -724,7 +720,7 @@ StorageLog::StorageLog(
     const String & comment,
     LoadingStrictnessLevel mode,
     ContextMutablePtr context_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , WithMutableContext(context_)
     , engine_name(engine_name_)
     , disk(std::move(disk_))
@@ -739,8 +735,8 @@ StorageLog::StorageLog(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 
     if (relative_path_.empty())
         throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Storage {} requires data path", getName());
@@ -782,7 +778,8 @@ StorageLog::StorageLog(
 VirtualColumnsDescription StorageLog::createVirtuals()
 {
     VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
     return desc;
 }
 
@@ -1030,7 +1027,7 @@ Pipe StorageLog::createReadingPipe(
 
     auto [physical_column_names, virtual_column_names] = VirtualColumnUtils::splitPhysicalAndVirtualColumnNames(column_names, storage_snapshot);
     auto physical_columns = Nested::convertToSubcolumns(storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), physical_column_names));
-    auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(), virtual_column_names);
+    auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader), virtual_column_names);
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
@@ -1061,7 +1058,7 @@ Pipe StorageLog::createReadingPipe(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-void StorageLog::read(
+void StorageLog::readImpl(
     QueryPlan & plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -1117,7 +1114,7 @@ IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
 
     ColumnSizeByName column_sizes;
 
-    for (const auto & column : getInMemoryMetadata().getColumns().getAllPhysical())
+    for (const auto & column : getInMemoryMetadataPtr(getContext(), false)->getColumns().getAllPhysical())
     {
         ISerialization::StreamCallback stream_callback = [&, this] (const ISerialization::SubstreamPath & substream_path)
         {
@@ -1221,7 +1218,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     /// columns.txt
     backup_entries_collector.addBackupEntry(
         data_path_in_backup_fs / "columns.txt",
-        std::make_unique<BackupEntryFromMemory>(getInMemoryMetadata().getColumns().getAllPhysical().toString()));
+        std::make_unique<BackupEntryFromMemory>(getInMemoryMetadataPtr(getContext(), false)->getColumns().getAllPhysical().toString()));
 
     /// count.txt
     if (use_marks_file)

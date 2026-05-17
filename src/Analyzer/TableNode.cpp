@@ -57,7 +57,7 @@ TableNode::TableNode(StoragePtr storage_, const ContextPtr & context)
     : TableNode(
           storage_,
           storage_->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]),
-          storage_->getStorageSnapshot(storage_->getInMemoryMetadataPtr(), context))
+          storage_->getStorageSnapshot(storage_->getInMemoryMetadataPtr(context, false), context))
 {
 }
 
@@ -90,7 +90,7 @@ void TableNode::updateStorage(StoragePtr storage_value, const ContextPtr & conte
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
     storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
+    storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(context, false), context);
 }
 
 void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
