@@ -93,7 +93,7 @@ spec.loader.exec_module(module)
 
 os.environ.pop("CLICKHOUSE_C_DRIVER_CPUS", None)
 os.environ["CLICKHOUSE_C_DRIVER_POOL_SIZE"] = "7"
-print("docker_default_cpus_scaled" if module.docker_resource_limits()["cpus"] == "7" else "docker_default_cpus_bad")
+print("docker_default_cpus_per_worker" if module.docker_resource_limits()["cpus"] == "1.0" else "docker_default_cpus_bad")
 
 os.environ["CLICKHOUSE_C_DRIVER_CPUS"] = "1.5"
 print("docker_cpu_override_preserved" if module.docker_resource_limits()["cpus"] == "1.5" else "docker_cpu_override_bad")
@@ -112,7 +112,8 @@ test -x "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_ru
 grep -q 'pipe_dir=$(mktemp -d "${work_dir}/fifo.XXXXXX")' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_per_process_dir_present" || echo "docker_fifo_per_process_dir_missing"
 grep -q 'mkfifo "$pipe_dir/in" "$pipe_dir/out"' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_mkfifo_present" || echo "docker_fifo_mkfifo_missing"
 grep -q 'docker exec -d' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_detached_exec_present" || echo "docker_fifo_detached_exec_absent"
-grep -q 'docker exec -w' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_attached_exec_present" || echo "docker_fifo_attached_exec_missing"
+grep -q 'docker exec -w' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_exec_present" || echo "docker_fifo_exec_absent"
+grep -q 'docker run --rm --name "$container"' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_run_present" || echo "docker_fifo_run_missing"
 grep -q '< /dev/null > "$docker_log" 2>&1 &' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_docker_stdin_closed" || echo "docker_fifo_docker_stdin_open"
 grep -q 'cat <&5 > "$pipe_dir/in"' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_writer_stdin_present" || echo "docker_fifo_writer_stdin_missing"
 grep -q '<execute_direct>0</execute_direct>' "$WORK_DIR/docker_runtime.xml" && echo "docker_execute_shell" || echo "docker_execute_direct"

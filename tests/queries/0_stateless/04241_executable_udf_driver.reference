@@ -1,5 +1,5 @@
 -- driver runtime commands
-docker_default_cpus_scaled
+docker_default_cpus_per_worker
 docker_cpu_override_preserved
 docker_fifo_runtime_present
 docker_exec_runtime_absent
@@ -10,7 +10,8 @@ docker_fifo_runner_present
 docker_fifo_per_process_dir_present
 docker_fifo_mkfifo_present
 docker_fifo_detached_exec_absent
-docker_fifo_attached_exec_present
+docker_fifo_exec_absent
+docker_fifo_run_present
 docker_fifo_docker_stdin_closed
 docker_fifo_writer_stdin_present
 docker_execute_direct

@@ -712,7 +712,7 @@ def docker_image_for_run():
 def docker_resource_limits():
     return {
         "memory": os.environ.get("CLICKHOUSE_C_DRIVER_MEMORY", "256m"),
-        "cpus": os.environ.get("CLICKHOUSE_C_DRIVER_CPUS", str(pool_size())),
+        "cpus": os.environ.get("CLICKHOUSE_C_DRIVER_CPUS", "1.0"),
         "pids": os.environ.get("CLICKHOUSE_C_DRIVER_PIDS", "64"),
     }
 
@@ -800,21 +800,33 @@ def read_docker_container_name(function_name, work_dir):
 def docker_container_pids_limit():
     limit = docker_resource_limits()["pids"]
     try:
-        return str(max(int(limit), pool_size() * 16))
+        return str(max(int(limit), 16))
     except ValueError:
         return limit
 
 
-def write_docker_fifo_runner(container_name, work_dir):
+def write_docker_fifo_runner(container_prefix, work_dir):
     runner_path = docker_fifo_runner_path(work_dir)
+    image = docker_image_for_run()
+    limits = docker_resource_limits()
+    user = docker_user()
+    pids_limit = docker_container_pids_limit()
     script = f"""#!/bin/sh
 set -u
 
-container={shell_join([container_name])}
+container_prefix={shell_join([container_prefix])}
 work_dir={shell_join([work_dir])}
 mount_dir=/work
+image={shell_join([image])}
+user={shell_join([user])}
+memory={shell_join([limits["memory"]])}
+cpus={shell_join([limits["cpus"]])}
+pids_limit={shell_join([pids_limit])}
 
 pipe_dir=$(mktemp -d "${{work_dir}}/fifo.XXXXXX") || exit 1
+pipe_name=$(basename "$pipe_dir")
+container="${{container_prefix}}_$$_${{pipe_name}}"
+docker_log="$pipe_dir/docker.log"
 cleanup()
 {{
     if [ "${{writer_pid:-}}" ]; then
@@ -826,15 +838,17 @@ cleanup()
     if [ "${{docker_pid:-}}" ]; then
         kill "$docker_pid" 2>/dev/null || true
     fi
+    docker rm -f "$container" >/dev/null 2>&1 || true
     rm -rf "$pipe_dir"
 }}
 trap cleanup EXIT INT TERM
 
 mkfifo "$pipe_dir/in" "$pipe_dir/out" || exit 1
-pipe_name=$(basename "$pipe_dir")
-docker_log="$pipe_dir/docker.log"
 
-docker exec -w "$mount_dir" "$container" sh -c 'exec "$1" < "$2" > "$3"' sh \
+docker run --rm --name "$container" --log-driver=none --network=none --read-only \
+    --tmpfs=/tmp:rw,size=16m --cap-drop=ALL --user "$user" --memory="$memory" \
+    --cpus="$cpus" --pids-limit="$pids_limit" -v "$work_dir:/work:rw" -w "$mount_dir" \
+    "$image" sh -c 'exec "$1" < "$2" > "$3"' sh \
     "$mount_dir/user_func" "$mount_dir/$pipe_name/in" "$mount_dir/$pipe_name/out" < /dev/null > "$docker_log" 2>&1 &
 docker_pid=$!
 
@@ -885,33 +899,13 @@ def start_docker_container(function_name, work_dir):
     if os.environ.get("CLICKHOUSE_C_DRIVER_SKIP_DOCKER_CONTAINER") == "1":
         return
 
-    image = docker_image_for_run()
-    limits = docker_resource_limits()
-    user = docker_user()
-
-    subprocess.run(["docker", "rm", "-f", name], capture_output=True, text=True)
-    cmd = [
-        "docker", "run", "-d",
-        "--name", name,
-        "--log-driver=none",
-        "--network=none",
-        "--read-only",
-        "--tmpfs=/tmp:rw,size=16m",
-        "--cap-drop=ALL",
-        "--user", user,
-        f"--memory={limits['memory']}",
-        f"--cpus={limits['cpus']}",
-        f"--pids-limit={docker_container_pids_limit()}",
-        "-v", f"{work_dir}:/work:rw",
-        image,
-        "sleep", "2147483647",
-    ]
-    run(cmd)
-
 
 def stop_docker_container(function_name, work_dir):
     name = read_docker_container_name(function_name, work_dir)
-    subprocess.run(["docker", "rm", "-f", name], capture_output=True, text=True)
+    result = subprocess.run(["docker", "ps", "-aq", "--filter", f"name={name}"], capture_output=True, text=True)
+    container_ids = [line for line in result.stdout.splitlines() if line]
+    if container_ids:
+        subprocess.run(["docker", "rm", "-f", *container_ids], capture_output=True, text=True)
 
 
 def should_compile_locally(runtime):
