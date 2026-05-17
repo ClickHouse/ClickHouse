@@ -4153,6 +4153,11 @@ def run_diagnose_from_artifacts(args, stop_testing):
             # Override settings with the saved artifact values (disable randomization)
             test_case.effective_settings = settings
             test_case.effective_merge_tree_settings = mt_settings
+            # Diagnostics must be deterministic: the `randomize_detach` state and
+            # `reattach_tables_before_query_execution_probability` are not captured
+            # in the saved artifact, so replaying with them still enabled adds extra
+            # nondeterminism and can yield false "not reproducible" conclusions.
+            test_case.randomize_detach = False
 
             client_options = get_additional_client_options(args)
 
