@@ -4,7 +4,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <IO/MMappedFile.h>
 
 

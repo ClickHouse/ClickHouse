@@ -1,7 +1,6 @@
 #pragma once
 
 #include <IO/StdStreamBufFromReadBuffer.h>
-#include <iostream>
 #include <memory>
 
 
@@ -14,8 +13,8 @@ class StdIStreamFromReadBuffer : public std::istream
 {
 public:
     using Base = std::istream;
-    StdIStreamFromReadBuffer(std::unique_ptr<ReadBuffer> buf, size_t size);
-    StdIStreamFromReadBuffer(ReadBuffer & buf, size_t size);
+    StdIStreamFromReadBuffer(std::unique_ptr<ReadBuffer> buf, size_t size) : Base(&stream_buf), stream_buf(std::move(buf), size) { }
+    StdIStreamFromReadBuffer(ReadBuffer & buf, size_t size) : Base(&stream_buf), stream_buf(buf, size) { }
     StdStreamBufFromReadBuffer * rdbuf() const { return const_cast<StdStreamBufFromReadBuffer *>(&stream_buf); }
 
 private:
@@ -28,8 +27,8 @@ class StdStreamFromReadBuffer : public std::iostream
 {
 public:
     using Base = std::iostream;
-    StdStreamFromReadBuffer(std::unique_ptr<ReadBuffer> buf, size_t size);
-    StdStreamFromReadBuffer(ReadBuffer & buf, size_t size);
+    StdStreamFromReadBuffer(std::unique_ptr<ReadBuffer> buf, size_t size) : Base(&stream_buf), stream_buf(std::move(buf), size) { }
+    StdStreamFromReadBuffer(ReadBuffer & buf, size_t size) : Base(&stream_buf), stream_buf(buf, size) { }
     StdStreamBufFromReadBuffer * rdbuf() const { return const_cast<StdStreamBufFromReadBuffer *>(&stream_buf); }
 
 private:

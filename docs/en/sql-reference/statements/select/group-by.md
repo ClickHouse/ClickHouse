@@ -3,8 +3,9 @@ description: 'Documentation for GROUP BY Clause'
 sidebar_label: 'GROUP BY'
 slug: /sql-reference/statements/select/group-by
 title: 'GROUP BY Clause'
-doc_type: 'reference'
 ---
+
+# GROUP BY Clause
 
 `GROUP BY` clause switches the `SELECT` query into an aggregation mode, which works as follows:
 
@@ -77,7 +78,9 @@ Consider the table t:
 └──────┴───────┴─────┘
 ```
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT year, month, day, count(*) FROM t GROUP BY ROLLUP(year, month, day);
 ```
 As `GROUP BY` section has three key expressions, the result contains four tables with subtotals "rolled up" from right to left:
@@ -87,7 +90,7 @@ As `GROUP BY` section has three key expressions, the result contains four tables
 - `GROUP BY year` (now `month, day` columns are both filled with zeros);
 - and totals (and all three key expression columns are zeros).
 
-```text title="Response"
+```text
 ┌─year─┬─month─┬─day─┬─count()─┐
 │ 2020 │    10 │  15 │       1 │
 │ 2020 │     1 │   5 │       1 │
@@ -110,7 +113,7 @@ As `GROUP BY` section has three key expressions, the result contains four tables
 └──────┴───────┴─────┴─────────┘
 ```
 The same query also can be written using `WITH` keyword.
-```sql title="Query"
+```sql
 SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 ```
 
@@ -143,7 +146,9 @@ Consider the table t:
 └──────┴───────┴─────┘
 ```
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT year, month, day, count(*) FROM t GROUP BY CUBE(year, month, day);
 ```
 
@@ -160,7 +165,7 @@ As `GROUP BY` section has three key expressions, the result contains eight table
 
 Columns, excluded from `GROUP BY`, are filled with zeros.
 
-```text title="Response"
+```text
 ┌─year─┬─month─┬─day─┬─count()─┐
 │ 2020 │    10 │  15 │       1 │
 │ 2020 │     1 │   5 │       1 │
@@ -203,7 +208,7 @@ Columns, excluded from `GROUP BY`, are filled with zeros.
 └──────┴───────┴─────┴─────────┘
 ```
 The same query also can be written using `WITH` keyword.
-```sql title="Query"
+```sql
 SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 ```
 

@@ -3,7 +3,7 @@
 #include <Dictionaries/PolygonDictionary.h>
 #include <Dictionaries/PolygonDictionaryUtils.h>
 
-#include <Common/VectorWithMemoryTracking.h>
+#include <vector>
 
 namespace DB
 {
@@ -55,7 +55,7 @@ public:
 private:
     bool find(const Point & point, size_t & polygon_index) const override;
 
-    VectorWithMemoryTracking<SlabsPolygonIndex> buckets;
+    std::vector<SlabsPolygonIndex> buckets;
     GridRoot<FinalCell> grid;
 
     const size_t min_intersections;
