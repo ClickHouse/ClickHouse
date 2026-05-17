@@ -22,10 +22,12 @@
 # `send_logs_level=warning` while capturing stderr.
 #
 # After the fix the catch in `tryGetCluster` / `tryGetAllGroupsCluster` /
-# `tryGetReplicasInfo` logs at `<Information>` -- still visible in normal
-# server logs but below the client log forwarding threshold -- so the
-# captured stderr is empty. Without the fix the same script prints one or
-# more lines matching `Code: 999. Coordination::Exception` or
+# `tryGetReplicasInfo` logs the expected coordination/connection errors
+# (`KEEPER_EXCEPTION`, `ALL_CONNECTION_TRIES_FAILED`) at `<Information>`
+# -- still visible in normal server logs but below the client log
+# forwarding threshold -- so the captured stderr is empty. Without the
+# fix the same script prints one or more lines matching
+# `Code: 999. Coordination::Exception` or
 # `Code: 279. DB::Exception: No active replicas`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -34,6 +36,29 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DB="rdb_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 ZK_PATH="/test/04252/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+METADATA_FILE=""
+
+# Cleanup. `DROP DATABASE` here would try to remove this replica from
+# `/replicas` in Keeper, which we deleted above, so it fails. Removing the
+# database the conventional way also fails because the keeper-client tool
+# cannot escape the `|` character in `shard1|replica1` to recreate the
+# missing znodes. Instead:
+#   1) detach the database from the local catalog (works regardless of the
+#      Keeper state),
+#   2) delete the on-disk metadata file directly so the orphan won't be
+#      reattached on the next server start,
+#   3) clean up the Keeper subtree.
+#
+# Must run on both the success and failure paths -- this test deliberately
+# leaves the Replicated database in a non-droppable state, and skipping
+# cleanup makes any subsequent invocation of the test fail at
+# `CREATE DATABASE` because the previous database is still attached.
+cleanup() {
+    $CLICKHOUSE_CLIENT --query "DETACH DATABASE ${DB} SYNC" 2>/dev/null || true
+    [[ -n "${METADATA_FILE}" && -f "${METADATA_FILE}" ]] && rm -f "${METADATA_FILE}"
+    $CLICKHOUSE_KEEPER_CLIENT --query "rmr ${ZK_PATH}" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
 
 # Make sure no leftover state from a previous run interferes.
 $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS ${DB} SYNC" 2>/dev/null || true
@@ -67,17 +92,3 @@ if [[ "${result}" != "1" ]]; then
 fi
 
 echo "OK"
-
-# Cleanup. `DROP DATABASE` here would try to remove this replica from
-# `/replicas` in Keeper, which we deleted above, so it fails. Removing the
-# database the conventional way also fails because the keeper-client tool
-# cannot escape the `|` character in `shard1|replica1` to recreate the
-# missing znodes. Instead:
-#   1) detach the database from the local catalog (works regardless of the
-#      Keeper state),
-#   2) delete the on-disk metadata file directly so the orphan won't be
-#      reattached on the next server start,
-#   3) clean up the Keeper subtree.
-$CLICKHOUSE_CLIENT --query "DETACH DATABASE ${DB} SYNC" 2>/dev/null || true
-[[ -n "${METADATA_FILE}" && -f "${METADATA_FILE}" ]] && rm -f "${METADATA_FILE}"
-$CLICKHOUSE_KEEPER_CLIENT --query "rmr ${ZK_PATH}" >/dev/null 2>&1 || true
