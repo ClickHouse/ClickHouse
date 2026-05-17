@@ -284,7 +284,7 @@ static bool hasConnectionToDifferentProcessorChain(
         if (!output.isConnected())
             continue;
 
-        const auto target_processor = &output.getInputPort().getProcessor();
+        const auto * const target_processor = &output.getInputPort().getProcessor();
         auto target_chain = processor_chain_indexes.find(target_processor);
         if (target_chain != processor_chain_indexes.end() && target_chain->second != source_chain_index)
             return true;
