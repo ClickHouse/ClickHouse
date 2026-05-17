@@ -115,7 +115,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         size_t max_line_length = options["max_line_length"].as<size_t>();
         bool obfuscate = options.contains("obfuscate");
         bool backslash = options.contains("backslash");
-        bool rainbow_parentheses = !options.count("no_rainbow_parentheses");
+        bool rainbow_parentheses = !options.contains("no_rainbow_parentheses");
         bool allow_settings_after_format_in_insert = options.contains("allow_settings_after_format_in_insert");
         bool show_secrets = options["show_secrets"].as<bool>();
         bool semicolon_inline = options.contains("semicolons_inline");

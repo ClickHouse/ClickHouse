@@ -412,9 +412,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
                 brace_stack.push_back(*highlight_token_iterator);
                 auto color = default_colormap[current_color % default_colormap.size()];
                 if (!rainbow_parentheses)
-                {
                     color = default_colormap[0];
-                }
                 color_stack.push_back(color);
                 current_color++;
 
@@ -462,9 +460,8 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
                 /// highlight both the opening and closing round braces with a brighter color.
                 /// Use color zero if rainbow parentheses disabled.
                 auto bright_color = bright_colormap.at(color_stack.back());
-                if (!rainbow_parentheses) {
+                if (!rainbow_parentheses)
                     bright_color = bright_colormap.at(default_colormap[0]);
-                }
                 colors[highlight_pos] = bright_color;
                 colors[matching_brace_pos] = bright_color;
                 active_matching_brace = std::make_tuple(highlight_pos, matching_brace_pos);
