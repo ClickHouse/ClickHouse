@@ -35,6 +35,19 @@ struct ParquetBucketSplitter : public IBucketSplitter
     std::vector<FileBucketInfoPtr> splitToBucketsByCount(size_t target_count, ReadBuffer & buf, const FormatSettings & format_settings_) override;
 };
 
+/// Cache-aware single-file split. Parses the Parquet footer via `Parquet::Reader::readFileMetaData`
+/// (the same path the input format uses) and stores the result in the `ParquetMetadataCache` under
+/// the `(file_path, cache_etag)` key, so the per-bucket sources created by the caller hit the cache
+/// instead of re-parsing the footer. If `metadata_cache` is null or the key components are empty,
+/// metadata is parsed without caching.
+std::vector<FileBucketInfoPtr> splitParquetFileWithCache(
+    size_t target_count,
+    const String & file_path,
+    const String & cache_etag,
+    ReadBuffer & buf,
+    const FormatSettings & format_settings,
+    ParquetMetadataCachePtr metadata_cache);
+
 class ParquetV3BlockInputFormat : public IInputFormat
 {
 public:

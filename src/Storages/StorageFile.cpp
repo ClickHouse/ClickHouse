@@ -39,6 +39,11 @@
 #include <Formats/ReadSchemaUtils.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
+#if USE_PARQUET
+#include <boost/algorithm/string/predicate.hpp>
+#include <Processors/Formats/Impl/ParquetMetadataCache.h>
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#endif
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -1988,16 +1993,50 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         && FormatFactory::instance().checkParallelizeOutputAfterReading(storage->format_name, ctx)
         && files_iterator->getFiles().size() == 1)
     {
-        auto splitter = FormatFactory::instance().getSplitter(storage->format_name);
         single_file_path = files_iterator->getFiles().front();
         struct stat file_stat = getFileStat(single_file_path, false, -1, storage->getName());
         if (file_stat.st_size > 0)
         {
             auto buf = createReadBuffer(
                 single_file_path, file_stat, false, -1, storage->compression_method, ctx);
-            auto buckets = splitter->splitToBucketsByCount(
-                max_num_streams, *buf,
-                storage->format_settings.value_or(getFormatSettings(ctx)));
+            const auto & format_settings = storage->format_settings.value_or(getFormatSettings(ctx));
+            std::vector<FileBucketInfoPtr> buckets;
+
+#if USE_PARQUET
+            if (boost::iequals(storage->format_name, "Parquet"))
+            {
+                /// Build the same `(file_path, etag)` key `StorageFileSource` uses when it later
+                /// fetches metadata via `ParquetMetadataCache`, so the per-bucket sources hit the
+                /// cache and don't re-parse the footer. The etag mirrors `current_file_cache_version`
+                /// (sub-second mtime + inode + size) for in-place-rewrite safety.
+#if defined(OS_DARWIN)
+                const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
+                const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
+#else
+                const auto mtim_sec = file_stat.st_mtim.tv_sec;
+                const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
+#endif
+                String cache_etag = fmt::format(
+                    "{}.{:09}_{}_{}",
+                    static_cast<Int64>(mtim_sec),
+                    static_cast<Int64>(mtim_nsec),
+                    static_cast<Int64>(file_stat.st_ino),
+                    file_stat.st_size);
+
+                buckets = splitParquetFileWithCache(
+                    max_num_streams,
+                    single_file_path,
+                    cache_etag,
+                    *buf,
+                    format_settings,
+                    ctx->tryGetParquetMetadataCache());
+            }
+            else
+#endif
+            {
+                auto splitter = FormatFactory::instance().getSplitter(storage->format_name);
+                buckets = splitter->splitToBucketsByCount(max_num_streams, *buf, format_settings);
+            }
 
             if (buckets.size() >= 2)
             {

@@ -338,34 +338,37 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
     return result;
 }
 
-std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBucketsByCount(size_t target_count, ReadBuffer & buf, const FormatSettings & format_settings_)
+namespace
 {
-    std::atomic<int> is_stopped = false;
-    auto arrow_file = asArrowFile(buf, format_settings_, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, nullptr);
-    auto metadata = parquet::ReadMetaData(arrow_file);
-    const size_t num_row_groups = metadata->num_row_groups();
 
+/// Computes the bucket layout for one Parquet file from already-parsed metadata.
+/// No I/O — the caller is responsible for getting the `FileMetaData`. Kept in
+/// one place so the splitter (Arrow-style `ReadBuffer` API) and the cache-aware
+/// helper share the same row-group-distribution policy.
+///
+/// Distributes row groups across at most `target_count` contiguous chunks. Each
+/// chunk becomes a single `ParquetFileBucketInfo` containing several row groups,
+/// so the caller gets one source per chunk and no row group is dropped.
+///
+/// We also require each chunk to cover at least `min_row_groups_per_chunk` row
+/// groups: parallelising a file with very few row groups across all available
+/// threads multiplies the per-bucket metadata-parse / prefetcher-setup overhead
+/// without giving each source enough work to amortise it. For "short" queries
+/// over a smallish single Parquet file this can be a >2x slowdown vs reading the
+/// file with a single source (see `tests/performance/clickbench_parquet_short.xml`).
+/// Large files (many row groups) still get max parallelism.
+///
+/// The floor is tuned empirically against `clickbench_parquet_short` on the
+/// synthetic 20-row-group test file: splitting that file into 2 buckets cost
+/// ~1-3 ms of per-bucket setup, which is 18-37 % of the single-source runtime
+/// for these queries. A floor of 16 keeps that 20-row-group file as a single
+/// source, while a real `hits.parquet` (hundreds of row groups) still gets
+/// fan-out up to `max_threads`.
+std::vector<FileBucketInfoPtr> computeBucketsByCount(size_t target_count, size_t num_row_groups)
+{
     if (target_count == 0 || num_row_groups == 0)
         return {};
 
-    /// Distribute row groups across at most target_count contiguous chunks. Each
-    /// chunk becomes a single ParquetFileBucketInfo containing several row groups,
-    /// so the caller gets one source per chunk and no row group is dropped.
-    ///
-    /// We also require each chunk to cover at least `min_row_groups_per_chunk` row
-    /// groups: parallelising a file with very few row groups across all available
-    /// threads multiplies the per-bucket metadata-parse / prefetcher-setup overhead
-    /// without giving each source enough work to amortise it. For "short" queries
-    /// over a smallish single Parquet file this can be a >2x slowdown vs reading the
-    /// file with a single source (see `tests/performance/clickbench_parquet_short.xml`).
-    /// Large files (many row groups) still get max parallelism.
-    ///
-    /// The floor is tuned empirically against `clickbench_parquet_short` on the
-    /// synthetic 20-row-group test file: splitting that file into 2 buckets cost
-    /// ~1-3 ms of per-bucket setup, which is 18-37 % of the single-source runtime
-    /// for these queries. A floor of 16 keeps that 20-row-group file as a single
-    /// source, while a real `hits.parquet` (hundreds of row groups) still gets
-    /// fan-out up to `max_threads`.
     static constexpr size_t min_row_groups_per_chunk = 16;
     const size_t max_chunks_by_row_groups = std::max<size_t>(1, num_row_groups / min_row_groups_per_chunk);
     const size_t num_chunks = std::min({target_count, num_row_groups, max_chunks_by_row_groups});
@@ -382,6 +385,48 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBucketsByCount(size
         result.push_back(std::make_shared<ParquetFileBucketInfo>(ids));
     }
     return result;
+}
+
+/// Reads the Parquet footer via the native reader (the same path `ParquetV3BlockInputFormat`
+/// takes). Returned metadata can be stored directly in `ParquetMetadataCache`.
+parquet::format::FileMetaData parseFileMetadataNative(ReadBuffer & buf, const FormatSettings & format_settings)
+{
+    Parquet::Prefetcher prefetcher;
+    auto read_options = convertReadOptions(format_settings);
+    prefetcher.init(&buf, read_options, /*parser_shared_resources_=*/ nullptr);
+    return Parquet::Reader::readFileMetaData(prefetcher);
+}
+
+}
+
+std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBucketsByCount(size_t target_count, ReadBuffer & buf, const FormatSettings & format_settings_)
+{
+    auto file_metadata = parseFileMetadataNative(buf, format_settings_);
+    return computeBucketsByCount(target_count, file_metadata.row_groups.size());
+}
+
+std::vector<FileBucketInfoPtr> splitParquetFileWithCache(
+    size_t target_count,
+    const String & file_path,
+    const String & cache_etag,
+    ReadBuffer & buf,
+    const FormatSettings & format_settings,
+    ParquetMetadataCachePtr metadata_cache)
+{
+    size_t num_row_groups = 0;
+    if (metadata_cache && !file_path.empty() && !cache_etag.empty())
+    {
+        auto key = ParquetMetadataCache::createKey(file_path, cache_etag);
+        auto file_metadata = metadata_cache->getOrSetMetadata(
+            key, [&] { return parseFileMetadataNative(buf, format_settings); });
+        num_row_groups = file_metadata.row_groups.size();
+    }
+    else
+    {
+        auto file_metadata = parseFileMetadataNative(buf, format_settings);
+        num_row_groups = file_metadata.row_groups.size();
+    }
+    return computeBucketsByCount(target_count, num_row_groups);
 }
 
 void registerInputFormatParquet(FormatFactory & factory)
