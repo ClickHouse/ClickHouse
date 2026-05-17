@@ -68,11 +68,25 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     for (const auto & col : sorting_step->getSortDescription())
         sort_columns.insert(col.column_name);
 
+    /// Check that all sorting columns are present in the expression's outputs.
+    /// They may be missing if the plan was transformed by another optimization
+    /// (e.g. `convertJoinToIn` can introduce qualified column names like `ty.c0`
+    /// that are not in the expression DAG).
+    const auto & expression = expression_step->getExpression();
+    {
+        NameSet output_names;
+        for (const auto * output : expression.getOutputs())
+            output_names.insert(output->result_name);
+        for (const auto & sort_column : sort_columns)
+            if (!output_names.contains(sort_column))
+                return 0;
+    }
+
     /// Do not lift volume-reducing functions above sorting — they should stay closer to
     /// the data source so that large columns are replaced by small results before sorting.
     /// Without this, `tryExecuteFunctionsAfterSorting` and `tryPushDownVolumeReducingFunctions`
     /// would fight each other in an infinite loop.
-    for (const auto * output : expression_step->getExpression().getOutputs())
+    for (const auto * output : expression.getOutputs())
     {
         const auto * node = output;
         while (node->type == ActionsDAG::ActionType::ALIAS)
@@ -82,7 +96,7 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
             sort_columns.insert(output->result_name);
     }
 
-    auto [needed_for_sorting, unneeded_for_sorting, _] = expression_step->getExpression().splitActionsBySortingDescription(sort_columns);
+    auto [needed_for_sorting, unneeded_for_sorting, _] = expression.splitActionsBySortingDescription(sort_columns);
 
     // No calculations can be postponed.
     if (unneeded_for_sorting.trivial())

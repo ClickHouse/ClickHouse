@@ -1,9 +1,11 @@
 #include <Generator.h>
+
+#include <fmt/ranges.h>
+#include <random>
+#include <filesystem>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <random>
-#include <filesystem>
 #include <Poco/Util/AbstractConfiguration.h>
 
 using namespace Coordination;
@@ -15,9 +17,18 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+Coordination::ACLs getDefaultACLs()
+{
+    Coordination::ACL acl;
+    acl.permissions = Coordination::ACL::All;
+    acl.scheme = "world";
+    acl.id = "anyone";
+    return {std::move(acl)};
+}
+
 namespace
 {
-std::string generateRandomString(size_t length)
+std::string generateRandomString(size_t length, pcg64 & rng)
 {
     if (length == 0)
         return "";
@@ -26,8 +37,7 @@ std::string generateRandomString(size_t length)
         "abcdefghijklmnopqrstuvwxyz"
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-    static pcg64 rng(randomSeed());
-    static std::uniform_int_distribution<size_t> pick(0, sizeof(chars) - 2);
+    std::uniform_int_distribution<size_t> pick(0, sizeof(chars) - 2);
 
     std::string s;
 
@@ -79,7 +89,6 @@ uint64_t NumberGetter::getNumber() const
         return *number;
 
     const auto & range = std::get<NumberRange>(value);
-    static pcg64 rng(randomSeed());
     return std::uniform_int_distribution<uint64_t>(range.min_value, range.max_value)(rng);
 }
 
@@ -105,8 +114,8 @@ std::string StringGetter::getString() const
     if (const auto * string = std::get_if<std::string>(&value))
         return *string;
 
-    const auto number_getter = std::get<NumberGetter>(value);
-    return generateRandomString(number_getter.getNumber());
+    const auto & number_getter = std::get<NumberGetter>(value);
+    return generateRandomString(number_getter.getNumber(), rng);
 }
 
 std::string StringGetter::description() const
@@ -114,13 +123,20 @@ std::string StringGetter::description() const
     if (const auto * string = std::get_if<std::string>(&value))
         return *string;
 
-    const auto number_getter = std::get<NumberGetter>(value);
+    const auto & number_getter = std::get<NumberGetter>(value);
     return fmt::format("random string with size of {}", number_getter.description());
 }
 
 bool StringGetter::isRandom() const
 {
     return std::holds_alternative<NumberGetter>(value);
+}
+
+void StringGetter::setSeed(uint64_t seed)
+{
+    rng.seed(seed);
+    if (auto * number_getter = std::get_if<NumberGetter>(&value))
+        number_getter->setSeed(seed + 1000003);
 }
 
 PathGetter PathGetter::fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config)
@@ -138,12 +154,20 @@ PathGetter PathGetter::fromConfig(const std::string & key, const Poco::Util::Abs
 
         const auto current_path_key_string = key + "." + path_key;
         const auto children_of_key = current_path_key_string + ".children_of";
+        const auto tagged_key = current_path_key_string + ".tagged";
         if (config.has(children_of_key))
         {
             auto parent_node = config.getString(children_of_key);
             if (parent_node.empty() || parent_node[0] != '/')
                 throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid path for request generator: '{}'", parent_node);
             path_getter.parent_paths.push_back(std::move(parent_node));
+        }
+        else if (config.has(tagged_key))
+        {
+            auto tag_name = config.getString(tagged_key);
+            if (tag_name.empty())
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Empty tag name for request generator in key '{}'", current_path_key_string);
+            path_getter.tag_names.push_back(std::move(tag_name));
         }
         else
         {
@@ -156,11 +180,15 @@ PathGetter PathGetter::fromConfig(const std::string & key, const Poco::Util::Abs
         }
     }
 
-    path_getter.path_picker = std::uniform_int_distribution<size_t>(0, path_getter.paths.size() - 1);
+    if (path_getter.paths.empty() && path_getter.parent_paths.empty() && path_getter.tag_names.empty())
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "PathGetter has no paths configured for key '{}'", key);
+
+    if (!path_getter.paths.empty())
+        path_getter.path_picker = std::uniform_int_distribution<size_t>(0, path_getter.paths.size() - 1);
     return path_getter;
 }
 
-void PathGetter::initialize(Coordination::ZooKeeper & zookeeper)
+void PathGetter::initialize(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths)
 {
     for (const auto & parent_path : parent_paths)
     {
@@ -180,6 +208,29 @@ void PathGetter::initialize(Coordination::ZooKeeper & zookeeper)
             paths.push_back(std::filesystem::path(parent_path) / child);
     }
 
+    for (const auto & tag_name : tag_names)
+    {
+        if (!tagged_paths)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Tag '{}' referenced but no tagged paths available (is setup missing?)", tag_name);
+
+        auto it = tagged_paths->find(tag_name);
+        if (it == tagged_paths->end())
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "Tag '{}' not found in setup. Available tags: {}",
+                tag_name,
+                tagged_paths->empty() ? "(none)" : fmt::to_string(fmt::join(*tagged_paths | std::views::keys, ", ")));
+
+        for (const auto & path : it->second)
+            paths.push_back(path);
+    }
+
+    if (paths.empty())
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "PathGetter has no paths after initialization. "
+            "Check that children_of targets have children, tagged nodes exist, or add explicit path entries");
+
     path_picker = std::uniform_int_distribution<size_t>(0, paths.size() - 1);
     initialized = true;
 }
@@ -192,7 +243,6 @@ std::string PathGetter::getPath() const
     if (paths.size() == 1)
         return paths[0];
 
-    static pcg64 rng(randomSeed());
     return paths[path_picker(rng)];
 }
 
@@ -204,6 +254,13 @@ std::string PathGetter::description() const
         if (!description.empty())
             description += ", ";
         description += fmt::format("children of {}", path);
+    }
+
+    for (const auto & tag_name : tag_names)
+    {
+        if (!description.empty())
+            description += ", ";
+        description += fmt::format("tagged \"{}\"", tag_name);
     }
 
     for (const auto & path : paths)
@@ -250,10 +307,10 @@ RequestGetter RequestGetter::fromConfig(const std::string & key, const Poco::Uti
         }
         else
         {
-            if (for_multi)
+            if (for_multi && (generator_key.starts_with("size") || generator_key.starts_with("weight")))
                 continue;
 
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown generator {}", key + "." + generator_key);
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown generator '{}' in key '{}'", generator_key, key);
         }
 
         request_generator->getFromConfig(key + "." + generator_key, config);
@@ -288,20 +345,13 @@ RequestGetter RequestGetter::fromConfig(const std::string & key, const Poco::Uti
 
 RequestGeneratorPtr RequestGetter::getRequestGenerator() const
 {
-    static pcg64 rng(randomSeed());
-
     auto random_number = request_generator_picker(rng);
 
     if (weights.empty())
         return request_generators[random_number];
 
-    for (size_t i = 0; i < request_generators.size(); ++i)
-    {
-        if (random_number <= weights[i])
-            return request_generators[i];
-    }
-
-    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid number generated: {}", random_number);
+    auto it = std::lower_bound(weights.begin(), weights.end(), random_number);
+    return request_generators[it - weights.begin()];
 }
 
 std::string RequestGetter::description() const
@@ -314,10 +364,23 @@ std::string RequestGetter::description() const
     return description + guard;
 }
 
-void RequestGetter::startup(Coordination::ZooKeeper & zookeeper)
+void RequestGetter::startup(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths)
 {
     for (const auto & request_generator : request_generators)
-        request_generator->startup(zookeeper);
+        request_generator->startup(zookeeper, tagged_paths);
+}
+
+void RequestGetter::setSeed(uint64_t seed)
+{
+    rng.seed(seed);
+    for (size_t i = 0; i < request_generators.size(); ++i)
+        request_generators[i]->setSeed(seed + i + 1);
+}
+
+void RequestGetter::setWatchCallback(Coordination::WatchCallbackPtr callback)
+{
+    for (auto & gen : request_generators)
+        gen->setWatchCallback(callback);
 }
 
 const std::vector<RequestGeneratorPtr> & RequestGetter::requestGenerators() const
@@ -328,7 +391,11 @@ const std::vector<RequestGeneratorPtr> & RequestGetter::requestGenerators() cons
 void RequestGenerator::getFromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config)
 {
     if (config.has(key + ".weight"))
+    {
         weight = config.getUInt64(key + ".weight");
+        if (weight == 0)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Generator weight must be >= 1, got 0 for key '{}'", key);
+    }
     getFromConfigImpl(key, config);
 }
 
@@ -343,9 +410,20 @@ ZooKeeperRequestWithCallbacks RequestGenerator::generate(const Coordination::ACL
     return generateImpl(acls);
 }
 
-void RequestGenerator::startup(Coordination::ZooKeeper & zookeeper)
+void RequestGenerator::startup(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths)
 {
-    startupImpl(zookeeper);
+    startupImpl(zookeeper, tagged_paths);
+}
+
+void RequestGenerator::setSeed(uint64_t seed)
+{
+    setSeedImpl(seed);
+}
+
+void RequestGenerator::setWatchCallback(Coordination::WatchCallbackPtr callback)
+{
+    watch_callback_ptr = callback;
+    setWatchCallbackImpl(std::move(callback));
 }
 
 size_t RequestGenerator::getWeight() const
@@ -360,6 +438,9 @@ CreateRequestGenerator::CreateRequestGenerator()
 
 void CreateRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
 {
+    if (config.has(key + ".watch_probability"))
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "watch_probability is not supported for create requests (key '{}')", key);
+
     parent_path = PathGetter::fromConfig(key, config);
 
     name = StringGetter(NumberGetter::fromConfig(key + ".name_length", config, 5));
@@ -368,7 +449,11 @@ void CreateRequestGenerator::getFromConfigImpl(const std::string & key, const Po
         data = StringGetter::fromConfig(key + ".data", config);
 
     if (config.has(key + ".remove_factor"))
+    {
         remove_factor = config.getDouble(key + ".remove_factor");
+        if (*remove_factor < 0.0 || *remove_factor > 1.0)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "remove_factor must be in [0.0, 1.0], got {}", *remove_factor);
+    }
 }
 
 std::string CreateRequestGenerator::descriptionImpl()
@@ -389,9 +474,18 @@ std::string CreateRequestGenerator::descriptionImpl()
         remove_factor_string);
 }
 
-void CreateRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
+void CreateRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths)
 {
-    parent_path.initialize(zookeeper);
+    parent_path.initialize(zookeeper, tagged_paths);
+}
+
+void CreateRequestGenerator::setSeedImpl(uint64_t seed)
+{
+    rng.seed(seed);
+    parent_path.setSeed(seed + 100003);
+    name.setSeed(seed + 200003);
+    if (data)
+        data->setSeed(seed + 300007);
 }
 
 ZooKeeperRequestWithCallbacks CreateRequestGenerator::generateImpl(const Coordination::ACLs & acls)
@@ -399,13 +493,27 @@ ZooKeeperRequestWithCallbacks CreateRequestGenerator::generateImpl(const Coordin
     if (remove_factor.has_value() && remove_picker(rng) < *remove_factor)
     {
         std::lock_guard lock(paths_mutex);
-        if (!paths_created.empty())
+        if (!paths_created_vec.empty())
         {
             auto request = std::make_shared<ZooKeeperRemoveRequest>();
-            auto it = paths_created.begin();
-            request->path = *it;
-            paths_created.erase(it);
-            return {.request = request, .on_success_callbacks = {}};
+
+            /// Pick a random element via swap-and-pop
+            std::uniform_int_distribution<size_t> pick(0, paths_created_vec.size() - 1);
+            size_t idx = pick(rng);
+
+            request->path = paths_created_vec[idx];
+
+            /// Swap with last, update index of swapped element, pop
+            size_t last = paths_created_vec.size() - 1;
+            if (idx != last)
+            {
+                paths_created_index[paths_created_vec[last]] = idx;
+                std::swap(paths_created_vec[idx], paths_created_vec[last]);
+            }
+            paths_created_index.erase(request->path);
+            paths_created_vec.pop_back();
+
+            return {.request = request, .on_success_callbacks = {}, .on_failure_callbacks = {}};
         }
     }
 
@@ -415,9 +523,20 @@ ZooKeeperRequestWithCallbacks CreateRequestGenerator::generateImpl(const Coordin
     std::string node_candidate = std::filesystem::path(parent_path.getPath()) / name.getString();
 
     {
+        static constexpr size_t max_name_generation_retries = 1000;
         std::lock_guard lock(paths_mutex);
-        while (paths_created.contains(node_candidate) || paths_pending.contains(node_candidate))
+        size_t retries = 0;
+        while (paths_created_index.contains(node_candidate) || paths_pending.contains(node_candidate))
+        {
+            if (++retries > max_name_generation_retries)
+                throw DB::Exception(
+                    DB::ErrorCodes::BAD_ARGUMENTS,
+                    "Failed to generate unique path after {} retries for parent '{}'. "
+                    "Increase name_length or reduce create volume",
+                    max_name_generation_retries,
+                    parent_path.getPath());
             node_candidate = std::filesystem::path(parent_path.getPath()) / name.getString();
+        }
 
         paths_pending.insert(node_candidate);
     }
@@ -427,18 +546,28 @@ ZooKeeperRequestWithCallbacks CreateRequestGenerator::generateImpl(const Coordin
     if (data)
         request->data = data->getString();
 
-    const auto on_success = [&, candidate = std::move(node_candidate)] mutable
+    const auto on_success = [&, candidate = node_candidate] mutable
     {
         std::lock_guard lock(paths_mutex);
         paths_pending.erase(candidate);
-        paths_created.insert(std::move(candidate));
+        paths_created_index[candidate] = paths_created_vec.size();
+        paths_created_vec.push_back(std::move(candidate));
     };
 
-    return {.request = request, .on_success_callbacks = {std::move(on_success)}};
+    const auto on_failure = [&, candidate = std::move(node_candidate)]
+    {
+        std::lock_guard lock(paths_mutex);
+        paths_pending.erase(candidate);
+    };
+
+    return {.request = request, .on_success_callbacks = {std::move(on_success)}, .on_failure_callbacks = {std::move(on_failure)}};
 }
 
 void SetRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
 {
+    if (config.has(key + ".watch_probability"))
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "watch_probability is not supported for set requests (key '{}')", key);
+
     path = PathGetter::fromConfig(key, config);
 
     data = StringGetter::fromConfig(key + ".data", config);
@@ -459,66 +588,115 @@ ZooKeeperRequestWithCallbacks SetRequestGenerator::generateImpl(const Coordinati
     auto request = std::make_shared<ZooKeeperSetRequest>();
     request->path = path.getPath();
     request->data = data.getString();
-    return {.request = request, .on_success_callbacks = {}};
+    return {.request = request, .on_success_callbacks = {}, .on_failure_callbacks = {}};
 }
 
-void SetRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
+void SetRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths)
 {
-    path.initialize(zookeeper);
+    path.initialize(zookeeper, tagged_paths);
+}
+
+void SetRequestGenerator::setSeedImpl(uint64_t seed)
+{
+    path.setSeed(seed + 100003);
+    data.setSeed(seed + 200003);
 }
 
 void GetRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
 {
     path = PathGetter::fromConfig(key, config);
+
+    if (config.has(key + ".watch_probability"))
+    {
+        watch_probability = config.getDouble(key + ".watch_probability");
+        if (*watch_probability < 0.0 || *watch_probability > 1.0)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "watch_probability must be in [0.0, 1.0], got {}", *watch_probability);
+    }
 }
 
 std::string GetRequestGenerator::descriptionImpl()
 {
+    std::string watch_string = watch_probability.has_value() ? fmt::format("\n- watch probability: {}", *watch_probability) : "";
     return fmt::format(
         "Get Request Generator\n"
-        "- path(s) to get: {}",
-        path.description());
+        "- path(s) to get: {}{}",
+        path.description(),
+        watch_string);
 }
 
 ZooKeeperRequestWithCallbacks GetRequestGenerator::generateImpl(const Coordination::ACLs & /*acls*/)
 {
     auto request = std::make_shared<ZooKeeperGetRequest>();
     request->path = path.getPath();
-    return {.request = request, .on_success_callbacks = {}};
+    if (watch_probability.has_value() && watch_picker(watch_rng) < *watch_probability)
+    {
+        request->has_watch = true;
+        request->watch_callback = watch_callback_ptr;
+    }
+    return {.request = request, .on_success_callbacks = {}, .on_failure_callbacks = {}};
 }
 
-void GetRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
+void GetRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths)
 {
-    path.initialize(zookeeper);
+    path.initialize(zookeeper, tagged_paths);
+}
+
+void GetRequestGenerator::setSeedImpl(uint64_t seed)
+{
+    path.setSeed(seed + 100003);
+    watch_rng.seed(seed + 400009);
 }
 
 void ListRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
 {
     path = PathGetter::fromConfig(key, config);
+
+    if (config.has(key + ".watch_probability"))
+    {
+        watch_probability = config.getDouble(key + ".watch_probability");
+        if (*watch_probability < 0.0 || *watch_probability > 1.0)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "watch_probability must be in [0.0, 1.0], got {}", *watch_probability);
+    }
 }
 
 std::string ListRequestGenerator::descriptionImpl()
 {
+    std::string watch_string = watch_probability.has_value() ? fmt::format("\n- watch probability: {}", *watch_probability) : "";
     return fmt::format(
         "List Request Generator\n"
-        "- path(s) to get: {}",
-        path.description());
+        "- path(s) to list: {}{}",
+        path.description(),
+        watch_string);
 }
 
 ZooKeeperRequestWithCallbacks ListRequestGenerator::generateImpl(const Coordination::ACLs & /*acls*/)
 {
     auto request = std::make_shared<ZooKeeperFilteredListRequest>();
     request->path = path.getPath();
-    return {.request = request, .on_success_callbacks = {}};
+    if (watch_probability.has_value() && watch_picker(watch_rng) < *watch_probability)
+    {
+        request->has_watch = true;
+        request->watch_callback = watch_callback_ptr;
+    }
+    return {.request = request, .on_success_callbacks = {}, .on_failure_callbacks = {}};
 }
 
-void ListRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
+void ListRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths)
 {
-    path.initialize(zookeeper);
+    path.initialize(zookeeper, tagged_paths);
+}
+
+void ListRequestGenerator::setSeedImpl(uint64_t seed)
+{
+    path.setSeed(seed + 100003);
+    watch_rng.seed(seed + 400009);
 }
 
 void MultiRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
 {
+    if (config.has(key + ".watch_probability"))
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "watch_probability is not supported on multi requests directly; set it on individual get/list sub-requests instead (key '{}')", key);
+
     if (config.has(key + ".size"))
         size = NumberGetter::fromConfig(key + ".size", config);
 
@@ -540,6 +718,7 @@ ZooKeeperRequestWithCallbacks MultiRequestGenerator::generateImpl(const Coordina
 {
     Coordination::Requests ops;
     std::vector<std::function<void()>> on_success_callbacks;
+    std::vector<std::function<void()>> on_failure_callbacks;
 
     if (size)
     {
@@ -554,6 +733,11 @@ ZooKeeperRequestWithCallbacks MultiRequestGenerator::generateImpl(const Coordina
                 std::make_move_iterator(request_with_callbacks.on_success_callbacks.begin()),
                 std::make_move_iterator(request_with_callbacks.on_success_callbacks.end())
             );
+            on_failure_callbacks.insert(
+                on_failure_callbacks.end(),
+                std::make_move_iterator(request_with_callbacks.on_failure_callbacks.begin()),
+                std::make_move_iterator(request_with_callbacks.on_failure_callbacks.end())
+            );
         }
     }
     else
@@ -567,36 +751,65 @@ ZooKeeperRequestWithCallbacks MultiRequestGenerator::generateImpl(const Coordina
                 std::make_move_iterator(request_with_callbacks.on_success_callbacks.begin()),
                 std::make_move_iterator(request_with_callbacks.on_success_callbacks.end())
             );
+            on_failure_callbacks.insert(
+                on_failure_callbacks.end(),
+                std::make_move_iterator(request_with_callbacks.on_failure_callbacks.begin()),
+                std::make_move_iterator(request_with_callbacks.on_failure_callbacks.end())
+            );
         }
     }
 
-    return {.request = std::make_shared<ZooKeeperMultiRequest>(ops, acls), .on_success_callbacks = std::move(on_success_callbacks)};
+    return {
+        .request = std::make_shared<ZooKeeperMultiRequest>(ops, acls),
+        .on_success_callbacks = std::move(on_success_callbacks),
+        .on_failure_callbacks = std::move(on_failure_callbacks)};
 }
 
-void MultiRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper)
+void MultiRequestGenerator::startupImpl(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths)
 {
-    request_getter.startup(zookeeper);
+    request_getter.startup(zookeeper, tagged_paths);
 }
 
-Generator::Generator(const Poco::Util::AbstractConfiguration & config)
+void MultiRequestGenerator::setWatchCallbackImpl(Coordination::WatchCallbackPtr callback)
 {
-    Coordination::ACL acl;
-    acl.permissions = Coordination::ACL::All;
-    acl.scheme = "world";
-    acl.id = "anyone";
-    default_acls.emplace_back(std::move(acl));
+    request_getter.setWatchCallback(std::move(callback));
+}
 
-    std::cerr << "---- Collecting request generators ----" << std::endl;
+void MultiRequestGenerator::setSeedImpl(uint64_t seed)
+{
+    /// Use a large offset to avoid seed collisions with sibling generators.
+    /// Without this, the inner RequestGetter distributes sub-seeds as seed + i + 1,
+    /// which collides with the outer RequestGetter using the same scheme.
+    request_getter.setSeed(seed + 500009);
+    if (size)
+        size->setSeed(seed + 100003);
+}
+
+void Generator::startup(const Poco::Util::AbstractConfiguration & config, Coordination::ZooKeeper & zookeeper, size_t thread_idx, const TaggedPaths * tagged_paths)
+{
+    if (config.has("generator.seed"))
+        seed = config.getUInt64("generator.seed") + thread_idx;
+    else
+        seed = randomSeed();
+
+    default_acls = getDefaultACLs();
+
     static const std::string requests_key = "generator.requests";
     request_getter = RequestGetter::fromConfig(requests_key, config);
-    std::cerr << request_getter.description() << std::endl;
-    std::cerr << "---- Done collecting request generators ----\n" << std::endl;
+    request_getter.setSeed(seed);
+
+    if (thread_idx == 0)
+    {
+        std::cerr << "Generator seed: " << seed << std::endl;
+        std::cerr << request_getter.description() << std::endl;
+    }
+
+    request_getter.startup(zookeeper, tagged_paths);
 }
 
-void Generator::startup(Coordination::ZooKeeper & zookeeper)
+void Generator::setWatchCallback(Coordination::WatchCallbackPtr callback)
 {
-    std::cerr << "---- Initializing generators ----" << std::endl;
-    request_getter.startup(zookeeper);
+    request_getter.setWatchCallback(std::move(callback));
 }
 
 ZooKeeperRequestWithCallbacks Generator::generate()

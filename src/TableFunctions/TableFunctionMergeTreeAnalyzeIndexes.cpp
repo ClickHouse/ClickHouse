@@ -1,7 +1,12 @@
 #include <DataTypes/DataTypeArray.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeString.h>
+#include <Core/NamesAndTypes.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Storages/StorageMergeTreeAnalyzeIndexes.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -9,6 +14,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/quoteString.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
 namespace
@@ -29,9 +35,47 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
+}
+
+/// Both `['a', 'b']` and `array('a', 'b')` are parsed as `_CAST(['a', 'b'], 'Array(String)')` with analyzer.
+/// While for non-analyzer there is no _CAST
+std::vector<String> extractParts(const ASTPtr & argument, const ContextPtr & context)
+{
+    ASTPtr array = argument;
+    if (const auto * func = array->as<ASTFunction>())
+    {
+        if (func->name == "_CAST" && func->arguments) /// _CAST([], 'Array(String)')
+            array = func->arguments->children.at(0);
+        else if (func->name == "array") /// array(ExpressionList)
+            array = func->arguments;
+        else
+            array = ASTPtr();
+    }
+
+    if (array)
+    {
+        if (const auto * literal = array->as<ASTLiteral>())
+        {
+            std::vector<String> result;
+            for (const auto & element : literal->value.safeGet<Array>())
+                result.push_back(element.safeGet<String>());
+            return result;
+        }
+
+        if (const auto * expr_list = array->as<ASTExpressionList>())
+        {
+            std::vector<String> result;
+            for (const auto & element : expr_list->children)
+                result.push_back(evaluateConstantExpressionAsLiteral(element, context)->as<ASTLiteral &>().value.safeGet<String>());
+            return result;
+        }
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parts must be an array of strings, got: {}", argument->formatForLogging());
 }
 
 class TableFunctionMergeTreeAnalyzeIndexes : public ITableFunction
@@ -68,11 +112,11 @@ private:
     /// a) vector search with large vector indexes
     /// b) top-k using only minmax index (e.g SELECT * FROM youtube ORDER BY dislike_count LIMIT 10)
     /// These 2 cannot be packaged in the 'predicate'
-    void parseArgumentsForOptimizations(const ASTs & args, ContextPtr context);
+    void parseArgumentsForOptimizations(const ASTs & args, ContextPtr context, size_t start_index);
 
     const bool resolve_by_uuid;
     StorageID source_table_id{StorageID::createEmpty()};
-    String parts_regexp;
+    std::vector<String> parts;
     ASTPtr predicate;
     OptionalVectorSearchParameters vector_search_parameters;
 };
@@ -104,7 +148,7 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsUUID(const ASTs & args_
     /// clang-tidy suggest to use args.empty() over args.size() < 1, which looks wrong here, but OK, let's use empty()
     if (args.empty() || args.size() > 5)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Table function '{}' must have at from 1 to 3 or 5 arguments (UUID, condition[, parts_regexp], [, optimization, args_array]), got: {}", getName(), args.size());
+            "Table function '{}' must have from 1 to 3 or 5 arguments (UUID, condition[, parts_array], [, optimization, args_array]), got: {}", getName(), args.size());
 
     args[0] = evaluateConstantExpressionAsLiteral(args[0], context);
     auto uuid = parseFromString<UUID>(checkAndGetLiteralArgument<String>(args[0], "UUID"));
@@ -113,13 +157,14 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsUUID(const ASTs & args_
         predicate = args[1]->clone();
 
     if (args.size() > 2)
-    {
-        args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(args[2], context);
-        parts_regexp = checkAndGetLiteralArgument<String>(args[2], "parts_regexp");
-    }
+        parts = extractParts(args[2], context);
 
     if (args.size() > 3)
-        parseArgumentsForOptimizations(args, context);
+    {
+        if (args.size() < 5)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Not enough arguments: no args_array for optimization");
+        parseArgumentsForOptimizations(args, context, 3);
+    }
 
     source_table_id = StorageID{/*database=*/ "", /*table=*/ "", uuid};
 }
@@ -127,9 +172,9 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsUUID(const ASTs & args_
 void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsDatabaseTable(const ASTs & args_func, ContextPtr context)
 {
     ASTs & args = args_func.at(0)->children;
-    if (args.size() < 2 || args.size() > 4)
+    if (args.size() < 2 || args.size() > 6)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Table function '{}' must have at from 2 to 4 arguments (database, table, condition[, parts_regexp]), got: {}", getName(), args.size());
+            "Table function '{}' must have from 2 to 4 or 6 arguments (database, table, condition[, parts_array], [, optimization, args_array]), got: {}", getName(), args.size());
 
     args[0] = evaluateConstantExpressionForDatabaseName(args[0], context);
     auto database = checkAndGetLiteralArgument<String>(args[0], "database");
@@ -141,45 +186,43 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsDatabaseTable(const AST
         predicate = args[2]->clone();
 
     if (args.size() > 3)
-    {
-        args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(args[3], context);
-        parts_regexp = checkAndGetLiteralArgument<String>(args[3], "parts_regexp");
-    }
+        parts = extractParts(args[3], context);
 
-    if (args.size() > 3)
-        parseArgumentsForOptimizations(args, context);
+    if (args.size() > 4)
+    {
+        if (args.size() < 6)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Not enough arguments: no args_array for optimization");
+        parseArgumentsForOptimizations(args, context, 4);
+    }
 
     source_table_id = StorageID{database, table};
 }
 
-void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsForOptimizations(const ASTs & args, ContextPtr /*context*/)
+void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsForOptimizations(const ASTs & args, ContextPtr context, size_t start_index)
 {
-    if (args.size() == 5)
+    auto optimization = checkAndGetLiteralArgument<String>(args[start_index++], "extra_optimization");
+    if (optimization == "vector_search_index_analysis")
     {
-        auto optimization = checkAndGetLiteralArgument<String>(args[3], "extra_optimization");
-        if (optimization == "vector_search_index_analysis")
+        auto cast_node = args[start_index++]->children.at(0);
+        auto vector_search_args = evaluateConstantExpressionAsLiteral(cast_node->children.at(0), context)->as<ASTLiteral &>().value.safeGet<Array>();
+        if (vector_search_args.size() != 6)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "vector_search_index_analysis requires 6 arguments");
+
+        Array field_array = vector_search_args[3].safeGet<Array>();
+        std::vector<Float64> reference_vector;
+        for (const auto & field_array_value : field_array)
         {
-            auto cast_node = args[4]->children.at(0);
-            auto vector_search_args = cast_node->children.at(0)->as<ASTLiteral>()->value.safeGet<Array>();
-            if (vector_search_args.size() != 6)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "vector_search_index_analysis requires 6 arguments");
-
-            Array field_array = vector_search_args[3].safeGet<Array>();
-            std::vector<Float64> reference_vector;
-            for (const auto & field_array_value : field_array)
-            {
-                Float64 float64 = field_array_value.safeGet<Float64>();
-                reference_vector.push_back(float64);
-            }
-
-            vector_search_parameters = VectorSearchParameters{vector_search_args[0].safeGet<String>(), /// column
-                vector_search_args[1].safeGet<String>(), /// distance function
-                vector_search_args[2].safeGet<UInt64>(), /// limit
-                reference_vector, /// search vector
-                static_cast<bool>(vector_search_args[4].safeGet<bool>()), /// additional filters
-                static_cast<bool>(vector_search_args[5].safeGet<bool>())}; /// return distances
+            Float64 float64 = field_array_value.safeGet<Float64>();
+            reference_vector.push_back(float64);
         }
+
+        vector_search_parameters = VectorSearchParameters{vector_search_args[0].safeGet<String>(), /// column
+            vector_search_args[1].safeGet<String>(), /// distance function
+            vector_search_args[2].safeGet<UInt64>(), /// limit
+            reference_vector, /// search vector
+            static_cast<bool>(vector_search_args[4].safeGet<bool>()), /// additional filters
+            static_cast<bool>(vector_search_args[5].safeGet<bool>())}; /// return distances
     }
 }
 
@@ -220,7 +263,7 @@ StoragePtr TableFunctionMergeTreeAnalyzeIndexes::executeImpl(
         std::move(storage_id),
         std::move(source_table),
         std::move(columns),
-        parts_regexp,
+        parts,
         predicate,
         vector_search_parameters);
     res->startup();
@@ -233,7 +276,7 @@ void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory
         []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndexes>(/* resolve_by_uuid_= */ false); },
         {
             .description = "Internal function for index analysis",
-            .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), mt_table, predicate[, 'parts_regexp'])", ""}},
+            .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), mt_table, predicate[, ['part1', 'part2']])", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = true}
@@ -243,7 +286,7 @@ void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory
         []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndexes>(/* resolve_by_uuid_= */ true); },
         {
             .description = "Internal function for index analysis",
-            .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexesUUID('table_uuid', predicate[, 'parts_regexp'])", ""}},
+            .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexesUUID('table_uuid', predicate[, ['part1', 'part2']])", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = true}

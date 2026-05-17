@@ -1,20 +1,27 @@
 import glob
+import json as json_module
 import os
+import signal
 import subprocess
 import sys
 import time
+import threading
 import traceback
 import uuid
 from collections import defaultdict
 from pathlib import Path
+from typing import List
 
+from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
-temp_dir = f"{Utils.cwd()}/ci/tmp"
+repo_dir = Utils.cwd()
+temp_dir = f"{repo_dir}/ci/tmp"
+p_temp_dir = Path(temp_dir)
 
 LOG_EXPORT_CONFIG_TEMPLATE = """
 remote_servers:
@@ -32,20 +39,11 @@ CLICKHOUSE_CI_LOGS_USER = "ci"
 
 
 class ClickHouseProc:
-    BACKUPS_XML = """
-<clickhouse>
-    <backups>
-        <type>local</type>
-        <path>{CH_RUNTIME_DIR}/var/lib/clickhouse/disks/backups/</path>
-    </backups>
-</clickhouse>
-"""
     MINIO_LOG = f"{temp_dir}/minio.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
     KAFKA_LOG = f"{temp_dir}/kafka.log"
     LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_rows_to_read=0 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
     DMESG_LOG = f"{temp_dir}/dmesg.log"
-    GDB_LOG = f"{temp_dir}/gdb.log"
     # TODO: run servers in  dedicated wds to keep trash localised
     WD0 = f"{temp_dir}/ft_wd0"
     WD1 = f"{temp_dir}/ft_wd1"
@@ -54,12 +52,18 @@ class ClickHouseProc:
     CH_LOCAL_ERR_LOG = f"{temp_dir}/clickhouse-local.err.log"
 
     def __init__(
-        self, fast_test=False, is_db_replicated=False, is_shared_catalog=False
+        self,
+        is_db_replicated=False,
+        is_shared_catalog=False,
+        is_per_test_coverage=False,
+        ch_config_dir="/etc/clickhouse-server",
+        ch_var_lib_dir="/var/lib/clickhouse",
     ):
         self.is_db_replicated = is_db_replicated
         self.is_shared_catalog = is_shared_catalog
-        self.ch_config_dir = f"/etc/clickhouse-server"
-        self.ch_var_lib_dir = f"/var/lib/clickhouse"
+        self.is_per_test_coverage = is_per_test_coverage
+        self.ch_config_dir = ch_config_dir
+        self.ch_var_lib_dir = ch_var_lib_dir
         self.run_path0 = f"{temp_dir}/run_r0"
         self.run_path1 = f"{temp_dir}/run_r1"
         self.run_path2 = f"{temp_dir}/run_r2"
@@ -94,7 +98,6 @@ class ClickHouseProc:
         self.proc_2 = None
         self.pid = 0
         nproc = int(Utils.cpu_count() / 2)
-        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{self.test_output_file}\""
         self.minio_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
@@ -110,18 +113,32 @@ class ClickHouseProc:
             "CLICKHOUSE_SCHEMA_FILES", f"{self.ch_var_lib_dir}/format_schemas"
         )
         Utils.set_env("CLICKHOUSE_USER_FILES", f"{self.user_files_path}")
-        # if not fast_test:
-        #     with open(f"{self.ch_config_dir}/config.d/backups.xml", "w") as file:
-        #         file.write(self.BACKUPS_XML)
-        self.clean_logs()
+        Utils.clean_dir(Path(self.log_dir))
 
-    def clean_logs(self):
-        Shell.check(
-            f"rm -rf {self.log_dir}",
-            verbose=True,
-        )
-        Shell.check(f"mkdir -p {self.log_dir}", verbose=True, strict=True)
-        return self
+    # there should be one install and one start method instead of many for each job
+    # job specifics should be a part of the job
+    def install_configs(self):
+        Path(f"{self.ch_config_dir}/config.d").mkdir(parents=True, exist_ok=True)
+        with open(f"{self.ch_config_dir}/config.d/storage_conf_backups.xml", "w") as file:
+            file.write(f"""
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <backups>
+                <type>local</type>
+                <path>{self.ch_var_lib_dir}/disks/backups/</path>
+            </backups>
+        </disks>
+    </storage_configuration>
+</clickhouse>
+""")
+        with open(f"{self.ch_config_dir}/config.d/filesystem_caches_path.xml", "w") as file:
+            file.write(f"""
+<clickhouse>
+    <filesystem_caches_path>{self.ch_var_lib_dir}/filesystem_caches/</filesystem_caches_path>
+    <custom_cached_disks_base_directory replace="replace">{self.ch_var_lib_dir}/filesystem_caches/</custom_cached_disks_base_directory>
+</clickhouse>
+""")
 
     def start_minio(self, test_type):
         os.environ["TEMP_DIR"] = f"{Utils.cwd()}/ci/tmp"
@@ -146,15 +163,30 @@ class ClickHouseProc:
         return False
 
     def start_azurite(self):
+        # Raise the open files limit before launching azurite-rs.
+        # Each concurrent test query opens a TCP connection plus an in-memory
+        # blob handle, and the default soft limit (1024) was exhausted under
+        # parallel load, causing `accept error: Too many open files`.
+        # Fall back to the hard limit if 1048576 cannot be set.
         command = (
-            f"cd {temp_dir} && azurite-rs --host 0.0.0.0 --blob-port 10000 --silent --in-memory",
+            f"cd {temp_dir} && "
+            "(ulimit -n 1048576 2>/dev/null || ulimit -n $(ulimit -Hn)) && "
+            "azurite-rs --host 0.0.0.0 --blob-port 10000 --silent --in-memory"
         )
         with open(self.AZURITE_LOG, "w") as log_file:
             self.azurite_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT, shell=True
             )
         print(f"Started azurite-rs asynchronously with PID {self.azurite_proc.pid}")
-        return True
+
+        if Shell.check(
+            "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:10000/ | grep -qE '400|200'",
+            verbose=False,
+            retries=6,
+        ):
+            return True
+        print("Failed to start azurite-rs")
+        return False
 
     def start_kafka(self):
         command = [
@@ -164,9 +196,7 @@ class ClickHouseProc:
             self.kafka_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT
             )
-        print(
-            f"Started setup_kafka.sh asynchronously with PID {self.kafka_proc.pid}"
-        )
+        print(f"Started setup_kafka.sh asynchronously with PID {self.kafka_proc.pid}")
 
         for _ in range(60):
             res = Shell.check(
@@ -195,31 +225,30 @@ class ClickHouseProc:
 
         os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY"] = "1"
         os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY"] = "1"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = (
-            "1"
-        )
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = "1"
         os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY"] = "1"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = (
-            "0.001"
-        )
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = "0.001"
         os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY"] = "0.001"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = "0.001"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = "0.001"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = (
-            "0.001"
-        )
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = (
-            "0.001"
-        )
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = (
-            "10000"
-        )
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = "10000"
         os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = (
-            "10000"
-        )
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = (
-            "10000"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = "10000"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
+
+    @staticmethod
+    def set_memory_ratio(ratio):
+        config = f"""<clickhouse>
+    <max_server_memory_usage_to_ram_ratio>{ratio}</max_server_memory_usage_to_ram_ratio>
+</clickhouse>
+"""
+        file_path = "/etc/clickhouse-server/config.d/max_server_memory_usage_to_ram_ratio.xml"
+        with open(file_path, "w") as f:
+            f.write(config)
+        print(
+            f"Set max_server_memory_usage_to_ram_ratio to {ratio} in {file_path}"
         )
 
     def _install_light(self):
@@ -244,6 +273,7 @@ class ClickHouseProc:
             res = res and Shell.check(command, verbose=True)
         if not res:
             print("Failed to install ClickHouse config")
+
         return res
 
     def start_light(self):
@@ -307,25 +337,10 @@ profiles:
     <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
 </clickhouse>
 """
-        c2 = """
-<clickhouse>
-    <core_dump>
-        <!-- 100GiB -->
-        <size_limit>107374182400</size_limit>
-    </core_dump>
-    <!-- NOTE: no need to configure core_path,
-    since clickhouse is not started as daemon (via clickhouse start)
-    -->
-    <core_path>$PWD</core_path>
-</clickhouse>
-"""
         file_path = f"{temp_dir}/config.d/max_server_memory_usage_to_ram_ratio.xml"
         with open(file_path, "w") as file:
             file.write(c1)
 
-        file_path = f"{temp_dir}/config.d/core.xml"
-        with open(file_path, "w") as file:
-            file.write(c2)
         res = True
         for command in commands:
             res = res and Shell.check(command, verbose=True)
@@ -428,26 +443,19 @@ profiles:
 
         print(f"Starting ClickHouse server replica {replica_num}, command: {command}")
 
-        Shell.check(f"rm {pid_file}")
-        Shell.check(
-            f"rm -rf {run_path} && mkdir -p {run_path}",
-            verbose=True,
-            strict=True,
-        )
-
-        Shell.check(
-            f"rm -rf {temp_dir}/jemalloc_profiles && mkdir -p {temp_dir}/jemalloc_profiles",
-            verbose=True,
-            strict=True,
-        )
+        Path(pid_file).unlink(missing_ok=True)
+        Utils.clean_dir(Path(run_path))
+        Utils.clean_dir(p_temp_dir / "jemalloc_profiles")
 
         replicas = 3 if self.is_db_replicated else 1
         tsan_memory_limit_mb = (
             Utils.physical_memory() * 65 // 100 // 1024 // 1024 // replicas
         )
 
-        # set profile file for the server
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-server-%m.profraw"
+        # set profile file for the server (not needed for per-test coverage,
+        # which uses system.coverage_log instead of .profraw files)
+        if not self.is_per_test_coverage:
+            os.environ["LLVM_PROFILE_FILE"] = f"ft-server-%m.profraw"
 
         env = os.environ.copy()
         env["TSAN_OPTIONS"] = " ".join(
@@ -543,20 +551,38 @@ profiles:
 
         # Restart minio with a timeout to avoid hanging forever (see #97647).
         # If the restart hangs, kill minio and start it again.
+        # We use Popen with start_new_session=True so that on timeout we can
+        # kill the entire process group, avoiding orphaned child processes
+        # that would block communicate() indefinitely (see #98466).
         restart_timeout = 60
         try:
             print(f"Restarting clickminio (timeout {restart_timeout}s)")
-            result = subprocess.run(
-                "/mc admin service restart clickminio --wait --json 2>&1 | jq -r .status",
-                shell=True,
+            proc = subprocess.Popen(
+                [
+                    "/mc",
+                    "admin",
+                    "service",
+                    "restart",
+                    "clickminio",
+                    "--wait",
+                    "--json",
+                ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                timeout=restart_timeout,
-                executable="/bin/bash",
+                start_new_session=True,
             )
-            status = result.stdout.strip()
-        except subprocess.TimeoutExpired:
+            try:
+                stdout, _ = proc.communicate(timeout=restart_timeout)
+            except subprocess.TimeoutExpired:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                proc.communicate()
+                raise
+            try:
+                status = json_module.loads(stdout).get("status", "")
+            except (json_module.JSONDecodeError, AttributeError):
+                status = stdout.strip()
+        except (subprocess.TimeoutExpired, OSError):
             print(
                 f"WARNING: minio restart timed out after {restart_timeout}s, killing and restarting"
             )
@@ -568,9 +594,7 @@ profiles:
             )
             # Wait for minio to be ready
             for _ in range(30):
-                if Shell.check(
-                    "/mc ls clickminio/test", verbose=False
-                ):
+                if Shell.check("/mc ls clickminio/test", verbose=False):
                     status = "success"
                     break
                 time.sleep(1)
@@ -672,7 +696,11 @@ MAX_EXECUTION_TIME=1800
 clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "CREATE DATABASE datasets"
 clickhouse-client < ./tests/docker_scripts/create.sql
+bash ./tests/docker_scripts/create_tpcds.sh
+bash ./tests/docker_scripts/create_tpch.sh
 clickhouse-client --query "SHOW TABLES FROM datasets"
+clickhouse-client --query "SHOW TABLES FROM tpcds"
+clickhouse-client --query "SHOW TABLES FROM tpch"
 
 clickhouse-client --query "CREATE DATABASE test"
 clickhouse-client --query "SHOW TABLES FROM test"
@@ -688,6 +716,7 @@ if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TR
     clickhouse-client --max_estimated_execution_time 0 --max_execution_time "$MAX_EXECUTION_TIME" --max_memory_usage 25G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
     clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
     clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
+    # Note: `tpcds` and `tpch` databases are NOT dropped here as they are used by stateful tests.
 else
     clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
     clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
@@ -718,13 +747,49 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         else:
             return False
 
-    def run_fast_test(self, test=""):
-        if Path(self.test_output_file).exists():
-            Path(self.test_output_file).unlink()
-        exit_code = Shell.run(self.fast_test_command.format(TEST=test), verbose=True)
-        return exit_code == 0
+    def run_test(self, cmd, timeout=7200):
+        print(f"Run test: [{cmd}]")
+        with open(self.test_output_file, "w") as f:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                bufsize=1,  # line-buffered
+                shell=True,
+                text=True,
+                errors="ignore",
+                start_new_session=True,
+            )
 
-    def terminate(self):
+            def _reader():
+                for line in process.stdout:
+                    print(line, end="")
+                    f.write(line)
+
+            reader_thread = threading.Thread(target=_reader)
+            reader_thread.start()
+
+            try:
+                process.wait(timeout=timeout)
+                reader_thread.join()
+                return process.returncode == 0
+            except subprocess.TimeoutExpired:
+                print(
+                    f"ERROR: fast test timed out after {timeout}s, killing process group"
+                )
+                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                process.wait()
+                reader_thread.join()
+                return False
+            finally:
+                # Kill any test processes that survived clickhouse-test's own cleanup
+                # (e.g. if it was killed with SIGKILL before its signal handlers ran).
+                # clickhouse-test writes the group pid file itself on startup; --cleanup
+                # reads it and kills all orphaned test process groups.
+                _clickhouse_test = Path(__file__).resolve().parent.parent.parent.parent / "tests" / "clickhouse-test"
+                subprocess.run([sys.executable, str(_clickhouse_test), "--cleanup"], check=False)
+
+    def terminate(self, force=False):
         if self.minio_proc:
             # remove the webhook so it doesn't spam with errors once we stop ClickHouse
             Shell.check(
@@ -757,14 +822,28 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             (self.proc_2, self.pid_file_replica_2, self.pid_2, self.run_path2),
         ):
             if proc and pid:
-                if not Shell.check(
+                if force:
+                    # Use clickhouse stop --force when this issue is fixed
+                    # https://github.com/ClickHouse/ClickHouse/issues/99142
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=10)
+                        continue
+                    except subprocess.TimeoutExpired:
+                        pass
+                elif Shell.check(
                     f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill >/dev/null",
                     verbose=True,
                 ):
-                    print(
-                        "Failed to stop ClickHouse process gracefully - send ABRT signal to generate core file"
-                    )
-                    Shell.check(f"kill -ABRT {pid}")
+                    continue
+                print(
+                    f"Failed to stop ClickHouse process {pid} gracefully - send TRAP signal to generate core file"
+                )
+                proc.send_signal(signal.SIGTRAP)
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
 
         return self
 
@@ -781,8 +860,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         try:
             res = self._get_logs_archives_server()
             res += self._get_jemalloc_profiles()
-            if Path(self.GDB_LOG).exists():
-                res.append(self.GDB_LOG)
             if all:
                 res += self.debug_artifacts
                 res += self.dump_system_tables()
@@ -805,21 +882,16 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         except Exception as e:
             print(f"WARNING: Failed to collect logs: {e}")
             traceback.print_exc()
-            info.add_workflow_report_message(
-                f"Failed to collect all logs in job [{info.job_name}], ex [{e}], see job.log"
+            info.add_workflow_warning(
+                f"Failed to collect all logs, ex [{e}], see job.log"
             )
         return res
 
-    def _collect_core_dumps(self):
-        # Find at most 3 core.* files in the current directory (non-recursive)
-        cmd = "find . -maxdepth 1 -type f -name 'core.*' | head -n 3"
-        core_files = Shell.get_output(cmd, verbose=True).splitlines()
-        if len(core_files) > 3:
-            print(
-                f"WARNING: Only 3 out of {len(core_files)} core files will be uploaded: [{core_files}]"
-            )
-            core_files = core_files[0:3]
-        return [Utils.compress_zst(f) for f in core_files if Path(f).is_file()]
+    def _collect_core_dumps(self) -> List[str]:
+        result = []
+        for run_dir in sorted(p_temp_dir.glob("run_r*")):
+            result.extend(ClickHouseService.collect_cores(run_dir))
+        return result
 
     @classmethod
     def _get_logs_archive_coordination(cls):
@@ -906,7 +978,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         results.append(
             Result.from_commands_run(
                 name="Exception in test runner",
-                command=f"! awk 'found && /^[^[:space:]]/ {{ print; exit }} /^Traceback \(most recent call last\):/ {{ found=1 }} found {{ print }}' {temp_dir}/job.log | head -n 100 | tee /dev/stderr | grep -q .",
+                command=rf"! awk 'found && /^[^[:space:]]/ {{ print; exit }} /^Traceback \(most recent call last\):/ {{ found=1 }} found {{ print }}' {temp_dir}/job.log | head -n 100 | tee /dev/stderr | grep -q .",
             )
         )
 
@@ -921,6 +993,9 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         sanitizer_hits = Shell.get_output(
             f"sed -n '/.*anitizer/,${{p}}' {self.log_dir}/stderr*.log 2>/dev/null | "
             f'grep -a -v "ASan doesn\'t fully support makecontext/swapcontext functions" | '
+            f'grep -a -v "ASan is ignoring requested __asan_handle_no_return" | '
+            f'grep -a -v "False positive error reports may follow" | '
+            f'grep -a -v "For details see https://github.com/google/sanitizers" | '
             "head -n 1 || true"
         )
         fatal_hits = Shell.get_output(
@@ -936,7 +1011,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                     Result.create_from(
                         name="Sanitizer assert or Fatal messages in server logs",
                         info="no server logs found",
-                        status=Result.StatusExtended.FAIL,
+                        status=Result.Status.FAIL,
                         labels=[Result.Label.BLOCKER],  # to explicitly block the merge
                     )
                 )
@@ -952,7 +1027,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         Result.create_from(
                             name=name,
                             info=description,
-                            status=Result.StatusExtended.FAIL,
+                            status=Result.Status.FAIL,
                             files=files,
                             labels=[
                                 Result.Label.BLOCKER
@@ -964,7 +1039,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         Result.create_from(
                             name="Failed to parse sanitizer/fatal failure from server logs",
                             info=traceback.format_exc(),
-                            status=Result.StatusExtended.FAIL,
+                            status=Result.Status.FAIL,
                             labels=[
                                 Result.Label.BLOCKER
                             ],  # to explicitly block the merge
@@ -1000,98 +1075,13 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             print("WARNING: dmesg not enabled")
         else:
             results.append(oom_check)
-        if Path(self.GDB_LOG).is_file():
-            results.append(
-                Result.from_commands_run(
-                    name="Found signal in gdb.log",
-                    command=f"! cat {self.GDB_LOG} | grep -a -C3 ' received signal ' | tee /dev/stderr | grep -q .",
-                )
-            )
         # convert statuses to CH tests notation
         for result in results:
             if result.is_ok():
-                result.set_status(Result.StatusExtended.OK)
+                result.set_status(Result.Status.OK)
             else:
-                result.set_status(Result.StatusExtended.FAIL)
+                result.set_status(Result.Status.FAIL)
         return results
-
-    def collect_core_dumps(self):
-        Shell.check(
-            f"find {self.run_path0}/.. -type f -maxdepth 1 -name 'core.*' | while read -r core; do zstd --threads=0 \"$core\"; done"
-        )
-        core_files = []
-        for core in glob.iglob(f"{self.run_path0}/../core.*.zst"):
-            core_files.append(core)
-        return core_files
-
-    def _prepare_gdb_script(self):
-        rtmin = Shell.get_output("kill -l SIGRTMIN")
-        script = """\
-set follow-fork-mode parent
-handle SIGHUP nostop noprint pass
-handle SIGINT nostop noprint pass
-handle SIGQUIT nostop noprint pass
-handle SIGPIPE nostop noprint pass
-handle SIGTERM nostop noprint pass
-handle SIGUSR1 nostop noprint pass
-handle SIGUSR2 nostop noprint pass
-handle SIG{RTMIN} nostop noprint pass
-info signals
-# safeExit is called if graceful shutdown times out. Print stack traces in that case.
-break safeExit
-continue
-thread apply all backtrace
-backtrace full
-info registers
-p "top 1 KiB of the stack:"
-p/x *(uint64_t[128]*)"'$sp'"
-maintenance info sections
-disassemble /s
-up
-disassemble /s
-up
-disassemble /s
-p \"done\"
-detach
-quit
-""".format(RTMIN=rtmin)
-        with open(f"{temp_dir}/script.gdb", "w") as file:
-            file.write(script)
-        return f"{temp_dir}/script.gdb"
-
-    def attach_gdb(self):
-        Shell.check(f"rm {self.GDB_LOG}", verbose=True)
-        script_path = self._prepare_gdb_script()
-        assert self.pid, "ClickHouse not started"
-        # FIXME Hung check may work incorrectly because of attached gdb
-        # We cannot attach another gdb to get stacktraces if some queries hung
-        command = f"gdb -batch -command {script_path} -p {self.pid}"
-        print(f"Attach gdb to PID {self.pid}, command: [{command}]")
-        with open(self.GDB_LOG, "w") as log_file:
-            self.gdb_proc = subprocess.Popen(
-                command,
-                shell=True,
-                stdout=log_file,
-                stderr=log_file,
-            )
-        time.sleep(2)
-        time.sleep(1000)
-        self.gdb_proc.poll()
-        attached = False
-        if self.gdb_proc.returncode is not None:
-            print("ERROR: Failed to attach gdb")
-        else:
-            for i in range(60):
-                attached = Shell.check(
-                    f"clickhouse-client --query \"SELECT 'Connected to clickhouse-server after attaching gdb'\"",
-                    verbose=True,
-                )
-                if attached:
-                    break
-                time.sleep(1)
-        if not attached:
-            self.debug_artifacts += [script_path]
-        return attached
 
     def dump_system_tables(self):
         # Stop server so we can safely read data with clickhouse-local.
@@ -1142,9 +1132,7 @@ quit
         #
         command_args_post = f"-- --zookeeper.implementation=testkeeper"
 
-        Shell.check(
-            f"rm -rf {temp_dir}/system_tables && mkdir -p {temp_dir}/system_tables"
-        )
+        Utils.clean_dir(p_temp_dir / "system_tables")
         res = True
 
         self.restore_system_metadata_files_from_remote_database_disk()
@@ -1159,7 +1147,7 @@ quit
             for cache_status_path in cache_status_files:
                 Shell.check(f"rm {cache_status_path}", verbose=True)
 
-        scraping_system_table = Result(name=f"Scraping system tables", status="OK")
+        scraping_system_table = Result(name=f"Scraping system tables", status=Result.Status.OK)
         for table in TABLES:
             path_arg = f" --path {self.run_path0}"
             res, stdout, stderr = Shell.get_res_stdout_stderr(
@@ -1239,7 +1227,7 @@ quit
                         )
 
         if scraping_system_table.info:
-            scraping_system_table.set_status(Result.StatusExtended.FAIL)
+            scraping_system_table.set_status(Result.Status.FAIL)
             self.extra_tests_results.append(scraping_system_table)
         return [f for f in glob.glob(f"{temp_dir}/system_tables/*.tsv")]
 
@@ -1365,6 +1353,8 @@ if __name__ == "__main__":
             param = sys.argv[2]
             assert param in ["stateless"]
             res = ch.start_minio(param)
+        elif command == "start_azurite":
+            res = ch.start_azurite()
         else:
             raise ValueError(f"Unknown command: {command}")
     except Exception as e:

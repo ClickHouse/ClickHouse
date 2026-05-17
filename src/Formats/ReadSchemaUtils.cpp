@@ -12,6 +12,8 @@
 #include <Common/assert_cast.h>
 #include <base/scope_guard.h>
 
+#include <stdexcept>
+
 namespace DB
 {
 namespace Setting
@@ -346,7 +348,7 @@ try
 
                         break;
                     }
-                    catch (...)
+                    catch (const std::exception &)
                     {
                         /// We failed to infer the schema for this format.
                         /// Recreate read buffer or rollback to the beginning of the data
@@ -383,7 +385,7 @@ try
                             if (!tmp_names_and_types.empty())
                                 format_to_schema[formats_set_to_detect[i]] = tmp_names_and_types;
                         }
-                        catch (...) // NOLINT(bugprone-empty-catch)
+                        catch (const std::exception &) // NOLINT(bugprone-empty-catch)
                         {
                             /// Try next format.
                         }
@@ -527,7 +529,7 @@ try
         if (!stateless_schema_reader->hasStrictOrderOfColumns() && !insertion_table.empty())
         {
             auto storage = DatabaseCatalog::instance().getTable(insertion_table, context);
-            auto metadata = storage->getInMemoryMetadataPtr();
+            auto metadata = storage->getInMemoryMetadataPtr(context, false);
             auto names_in_storage = metadata->getColumns().getNamesOfPhysical();
             auto ordered_list = getOrderedColumnsList(names_and_types, names_in_storage);
             if (ordered_list)

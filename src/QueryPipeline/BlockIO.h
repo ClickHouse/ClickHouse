@@ -1,7 +1,7 @@
 #pragma once
 
 #include <functional>
-#include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <IO/Progress.h>
@@ -18,6 +18,10 @@ struct QueryPipelineFinalizedInfo
     std::optional<ResultProgress> result_progress;
     std::vector<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos;
     String pipeline_dump;
+
+    /// Set to true when finalization of a buffered query result cache write threw.
+    /// Used to downgrade `query_result_cache_usage` in `query_log` from `Write` to `None`.
+    bool query_result_cache_write_failed = false;
 };
 
 struct BlockIO
@@ -60,7 +64,7 @@ struct BlockIO
     bool null_format = false;
 
     /// Needed to optionally detach from the thread group on destruction
-    CurrentThread::QueryScope query_scope;
+    QueryScope query_scope;
 
     void onFinish(std::chrono::system_clock::time_point finish_time = std::chrono::system_clock::now());
     void onException(bool log_as_error=true);

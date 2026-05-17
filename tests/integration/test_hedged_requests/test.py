@@ -288,7 +288,13 @@ def test_send_data(started_cluster):
     if NODES["node"].is_built_with_thread_sanitizer():
         pytest.skip("Hedged requests don't work under Thread Sanitizer")
 
-    update_configs(node_1_sleep_in_send_data=sleep_time)
+    # Add a small delay to node_3 to ensure node_2 always wins the race
+    # when node_1 is slow in send_data. Without this, under heavy load (e.g., MSan builds),
+    # node_3 can occasionally respond before node_2.
+    update_configs(
+        node_1_sleep_in_send_data=sleep_time,
+        node_3_sleep_in_send_tables_status=1000,
+    )
     check_query(expected_replica="node_2")
     check_changing_replica_events(1)
 

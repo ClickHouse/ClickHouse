@@ -22,6 +22,7 @@
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
 
 #include <base/getPageSize.h>
+#include <base/memcmpSmall.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/formatReadable.h>
@@ -42,6 +43,12 @@ namespace ErrorCodes
 
 /// These functions will be provided to the linker of JIT code,
 /// so it can call them to work with big integers on platforms without native support.
+///
+/// IMPORTANT: every libcall is registered as a signed/unsigned pair. LLVM picks the
+/// signed or unsigned variant based on whether the IR uses `fptosi`/`sitofp`/`sdiv`/`srem`
+/// or `fptoui`/`uitofp`/`udiv`/`urem`. Forgetting the unsigned half compiles fine but
+/// fails the JIT link at run time with `Could not find symbol __fixunsdfti` (or similar).
+/// Keep the lists below symmetric.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wbit-int-extension"
 #pragma clang diagnostic ignored "-Wreserved-identifier"
@@ -52,9 +59,13 @@ using BitUInt128 = unsigned _BitInt(128);
 /// NOLINTBEGIN
 extern "C" BitInt128 __divti3(BitInt128, BitInt128);
 extern "C" BitInt128 __modti3(BitInt128, BitInt128);
+extern "C" BitUInt128 __udivti3(BitUInt128, BitUInt128);
+extern "C" BitUInt128 __umodti3(BitUInt128, BitUInt128);
 
 extern "C" BitInt128 __fixsfti(float);
 extern "C" BitInt128 __fixdfti(double);
+extern "C" BitUInt128 __fixunssfti(float);
+extern "C" BitUInt128 __fixunsdfti(double);
 
 extern "C" float __floattisf(BitInt128);
 extern "C" float __floatuntisf(BitUInt128);
@@ -392,13 +403,19 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("memset", reinterpret_cast<void *>(&memset));
     symbol_resolver->registerSymbol("memcpy", reinterpret_cast<void *>(&memcpy));
     symbol_resolver->registerSymbol("memcmp", reinterpret_cast<void *>(&memcmp));
+    symbol_resolver->registerSymbol("memcmpSmallCharsAllowOverflow15", reinterpret_cast<void *>(&memcmpSmallCharsAllowOverflow15));
 
     symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(static_cast<double (*)(double, double)>(&fmod)));
+    /// Signed and unsigned variants must be kept together: see the comment above the extern declarations.
     symbol_resolver->registerSymbol("__divti3", reinterpret_cast<void *>(&__divti3));
     symbol_resolver->registerSymbol("__modti3", reinterpret_cast<void *>(&__modti3));
+    symbol_resolver->registerSymbol("__udivti3", reinterpret_cast<void *>(&__udivti3));
+    symbol_resolver->registerSymbol("__umodti3", reinterpret_cast<void *>(&__umodti3));
 
     symbol_resolver->registerSymbol("__fixsfti", reinterpret_cast<void *>(&__fixsfti));
     symbol_resolver->registerSymbol("__fixdfti", reinterpret_cast<void *>(&__fixdfti));
+    symbol_resolver->registerSymbol("__fixunssfti", reinterpret_cast<void *>(&__fixunssfti));
+    symbol_resolver->registerSymbol("__fixunsdfti", reinterpret_cast<void *>(&__fixunsdfti));
 
     symbol_resolver->registerSymbol("__floattisf", reinterpret_cast<void *>(&__floattisf));
     symbol_resolver->registerSymbol("__floatuntisf", reinterpret_cast<void *>(&__floatuntisf));
@@ -522,13 +539,12 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     llvm::CGSCCAnalysisManager cgam;
     llvm::ModuleAnalysisManager mam;
 
-    auto target_analysis = machine->getTargetIRAnalysis();
-    fam.registerPass([&] { return target_analysis; });
-
     llvm::PipelineTuningOptions pto;
     pto.SLPVectorization = true;
 
-    llvm::PassBuilder pb(nullptr, pto);
+    /// Pass the actual TargetMachine so that all optimization passes
+    /// (including target-specific ones) have proper target information.
+    llvm::PassBuilder pb(machine.get(), pto);
 
     pb.registerModuleAnalyses(mam);
     pb.registerCGSCCAnalyses(cgam);
@@ -552,10 +568,10 @@ std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
 
     std::string error;
     auto cpu = llvm::sys::getHostCPUName();
-    auto triple = llvm::sys::getProcessTriple();
-    const auto * target = llvm::TargetRegistry::lookupTarget(triple, error);
+    auto triple = llvm::Triple(llvm::sys::getProcessTriple());
+    const auto * target = llvm::TargetRegistry::lookupTarget(triple.str(), error);
     if (!target)
-        throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot find target triple {} error: {}", triple, error);
+        throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot find target triple {} error: {}", triple.str(), error);
 
     llvm::SubtargetFeatures features;
     for (const auto & f : llvm::sys::getHostCPUFeatures())

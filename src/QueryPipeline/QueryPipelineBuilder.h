@@ -39,6 +39,9 @@ using SetAndKeyPtr = std::shared_ptr<SetAndKey>;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
+struct MaterializedCTE;
+using MaterializedCTEPtr = std::shared_ptr<MaterializedCTE>;
+
 class QueryPipelineBuilder
 {
 public:
@@ -89,9 +92,6 @@ public:
     /// Forget about current totals and extremes. It is needed before aggregation, cause they will be calculated again.
     void dropTotalsAndExtremes();
 
-    /// Will read from this stream after all data was read from other streams.
-    void addDelayedStream(ProcessorPtr source);
-
     void addMergingAggregatedMemoryEfficientTransform(
         AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number);
 
@@ -114,6 +114,15 @@ public:
         QueryPipelineBuilderPtr left,
         QueryPipelineBuilderPtr right,
         ProcessorPtr transform,
+        Processors * collected_processors);
+
+    /// Select one of two data pipelines based on a signal pipeline.
+    /// All three pipelines are resized to single streams.
+    /// Creates InputSelectorTransform internally.
+    static QueryPipelineBuilderPtr selectPipeline(
+        QueryPipelineBuilderPtr signal,
+        QueryPipelineBuilderPtr true_pipeline,
+        QueryPipelineBuilderPtr false_pipeline,
         Processors * collected_processors);
 
     /// Join two pipelines together using JoinPtr.
@@ -167,6 +176,10 @@ public:
         const SizeLimits & limits,
         PreparedSetsCachePtr prepared_sets_cache);
 
+    void addMaterializingCTETransform(
+        SharedHeader res_header,
+        MaterializedCTEPtr materialized_cte);
+
     PipelineExecutorPtr execute();
 
     size_t getNumStreams() const { return pipe.numOutputPorts(); }
@@ -210,6 +223,12 @@ public:
         return concurrency_control;
     }
 
+    /// Whether the read step deliberately reduced the number of streams below max_threads
+    /// (e.g. ReadFromMergeTree chose fewer streams because the data is small).
+    /// This is used by AggregatingStep to decide whether to cap post-aggregation resize.
+    void setReadStreamCountWasReduced(bool value) { read_stream_count_was_reduced = value; }
+    bool getReadStreamCountWasReduced() const { return read_stream_count_was_reduced; }
+
     void addResources(const QueryPlanResourceHolder & resources_) { resources.append(resources_); }
     void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }
     void addContext(ContextPtr context) { resources.interpreter_context.emplace_back(std::move(context)); }
@@ -229,6 +248,7 @@ private:
     size_t max_threads = 0;
 
     bool concurrency_control = false;
+    bool read_stream_count_was_reduced = false;
 
     QueryStatusPtr process_list_element;
     ProgressCallback progress_callback = nullptr;

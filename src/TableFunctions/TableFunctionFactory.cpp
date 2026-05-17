@@ -78,7 +78,7 @@ TableFunctionPtr TableFunctionFactory::tryGet(
 
     if (CurrentThread::isInitialized())
     {
-        auto query_context = CurrentThread::get().getQueryContext();
+        auto query_context = CurrentThread::get().tryGetQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::TableFunction, name);
     }
@@ -88,7 +88,10 @@ TableFunctionPtr TableFunctionFactory::tryGet(
 
 bool TableFunctionFactory::isTableFunctionName(const std::string & name) const
 {
-    return table_functions.contains(name);
+    String canonical_name = getAliasToOrName(name);
+    if (table_functions.contains(canonical_name))
+        return true;
+    return case_insensitive_table_functions.contains(Poco::toLower(canonical_name));
 }
 
 std::optional<FunctionDocumentation> TableFunctionFactory::tryGetDocumentation(const String & name) const
