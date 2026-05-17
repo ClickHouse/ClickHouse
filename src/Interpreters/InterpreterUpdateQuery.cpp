@@ -23,7 +23,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;

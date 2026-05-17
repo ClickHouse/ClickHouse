@@ -56,7 +56,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
-    extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int TABLE_NOT_EMPTY;
 }
