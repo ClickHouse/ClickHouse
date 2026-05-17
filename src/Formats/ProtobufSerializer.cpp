@@ -2491,9 +2491,9 @@ namespace
             {
                 for (size_t i : collections::range(tuple_size))
                 {
-                    auto element_column = column_tuple.getColumnPtr(i)->assumeMutable();
-                    if (element_column->size() > old_size)
-                        element_column->popBack(element_column->size() - old_size);
+                    auto & element_column = borrowColumnRef(column_tuple.getColumnPtr(i));
+                    if (element_column.size() > old_size)
+                        element_column.popBack(element_column.size() - old_size);
                 }
                 throw;
             }
