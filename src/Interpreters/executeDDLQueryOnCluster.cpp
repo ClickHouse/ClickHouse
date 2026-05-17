@@ -20,6 +20,9 @@
 #include <Processors/Sinks/EmptySink.h>
 #include <base/sort.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 
 namespace DB

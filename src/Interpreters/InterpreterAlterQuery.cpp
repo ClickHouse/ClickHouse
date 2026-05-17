@@ -17,6 +17,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/MutationsDateTimeLiteralVisitor.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -26,15 +27,16 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
+#include <Storages/ExecuteCommands.h>
 #include <Storages/StorageKeeperMap.h>
+#include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
-
-#include <boost/range/algorithm_ext/push_back.hpp>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
@@ -42,13 +44,19 @@
 
 namespace DB
 {
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
+}
+
 namespace Setting
 {
-    extern const SettingsBool allow_statistics;
     extern const SettingsBool fsync_metadata;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsAlterUpdateMode alter_update_mode;
     extern const SettingsBool enable_lightweight_update;
+    extern const SettingsTimezone session_timezone;
 }
 
 namespace ServerSetting
@@ -59,7 +67,6 @@ namespace ServerSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_QUERY;
     extern const int NOT_IMPLEMENTED;
     extern const int TABLE_IS_READ_ONLY;
     extern const int BAD_ARGUMENTS;
@@ -69,10 +76,273 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+namespace
+{
+
+using CommandSegment = std::variant<AlterCommands, MutationCommands, PartitionCommands, ExecuteCommands>;
+using CommandSegments = std::vector<CommandSegment>;
+
+struct SegmentsHolder
+{
+    CommandSegments segments;
+
+    template <class SegmentType>
+    SegmentType & take()
+    {
+        if (segments.empty() || !std::holds_alternative<SegmentType>(segments.back()))
+            segments.emplace_back(SegmentType{});
+
+        return std::get<SegmentType>(segments.back());
+    }
+};
+
+template <class CommandsType>
+bool hasCommands(const CommandSegments & segments)
+{
+    return std::ranges::any_of(segments, [](const auto & segment) { return std::holds_alternative<CommandsType>(segment); });
+}
+
+CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
+{
+    SegmentsHolder segments_holder;
+    const auto & settings = context->getSettingsRef();
+
+    for (const auto & child : alter.command_list->children)
+    {
+        auto * command_ast = child->as<ASTAlterCommand>();
+        if (command_ast->type == ASTAlterCommand::EXECUTE_COMMAND)
+        {
+            segments_holder.take<ExecuteCommands>().push_back(command_ast);
+        }
+        else if (auto alter_command = AlterCommand::parse(command_ast))
+        {
+            segments_holder.take<AlterCommands>().push_back(std::move(alter_command.value()));
+        }
+        else if (auto partition_command = PartitionCommand::parse(command_ast))
+        {
+            segments_holder.take<PartitionCommands>().push_back(std::move(partition_command.value()));
+        }
+        else if (auto mutation_command = MutationCommand::parse(*command_ast))
+        {
+            if (mutation_command->type == MutationCommand::UPDATE || mutation_command->type == MutationCommand::DELETE)
+            {
+                /// TODO: add a check for result query size.
+                auto rewritten_command_ast = replaceNonDeterministicToScalars(*command_ast, context);
+                if (rewritten_command_ast)
+                {
+                    auto * new_alter_command = rewritten_command_ast->as<ASTAlterCommand>();
+                    mutation_command = MutationCommand::parse(*new_alter_command);
+                    if (!mutation_command)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Alter command '{}' is rewritten to invalid command '{}'",
+                            command_ast->formatForErrorMessage(), rewritten_command_ast->formatForErrorMessage());
+                }
+            }
+
+            /// When session_timezone is set, string literals compared to DateTime columns
+            /// must be wrapped with explicit timezone to avoid misinterpretation in the
+            /// background mutation thread which lacks the session context.
+            const auto & session_tz = settings[Setting::session_timezone].value;
+            if (!session_tz.empty())
+            {
+                const auto & source_ast = *mutation_command->ast->as<ASTAlterCommand>();
+                auto tz_rewritten_ast = rewriteDateTimeLiteralsWithTimezone(
+                    source_ast, table->getInMemoryMetadataPtr(context, true)->columns, session_tz);
+                if (tz_rewritten_ast)
+                {
+                    auto * tz_alter_command = tz_rewritten_ast->as<ASTAlterCommand>();
+                    mutation_command = MutationCommand::parse(*tz_alter_command);
+                    if (!mutation_command)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Alter command '{}' is rewritten to invalid command '{}'",
+                            source_ast.formatForErrorMessage(), tz_rewritten_ast->formatForErrorMessage());
+                }
+            }
+
+            segments_holder.take<MutationCommands>().push_back(std::move(mutation_command.value()));
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
+    }
+
+    return std::move(segments_holder.segments);
+}
+
+void validateSegmentsCombination(CommandSegments & segments)
+{
+    size_t partition_commands_count = 0;
+    size_t partition_commands_segments_count = 0;
+    size_t execute_commands_count = 0;
+    for (auto & segment : segments)
+    {
+        if (auto * partition_commands = std::get_if<PartitionCommands>(&segment))
+        {
+            partition_commands_count += partition_commands->size();
+            partition_commands_segments_count += 1;
+        }
+        else if (auto * execute_commands = std::get_if<ExecuteCommands>(&segment))
+        {
+            execute_commands_count += execute_commands->size();
+        }
+    }
+
+    if (partition_commands_count != 0 && execute_commands_count != 0)
+        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Partition and Execute commands can not be used together");
+
+    if (partition_commands_count != 0)
+        if (partition_commands_segments_count != 1)
+            throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Partition commands must be sequential in alter query");
+
+    if (execute_commands_count > 0)
+        if (execute_commands_count != 1)
+            throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Execute commands should not be combined");
+}
+
+void validateMutationsAllowed(const CommandSegments & segments, const DatabasePtr & database, const ContextPtr & context)
+{
+    if (!context->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
+        return;
+
+    if (database->getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE)
+        return;
+
+    for (const auto & segment : segments)
+    {
+        if (const auto * mutation_commands = std::get_if<MutationCommands>(&segment))
+            if (mutation_commands->hasNonEmptyMutationCommands())
+                throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Mutations are prohibited");
+
+        if (std::holds_alternative<PartitionCommands>(segment))
+            throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Mutations are prohibited");
+    }
+}
+
+void validateReplicatedDatabaseSegments(const CommandSegments & segments, const DatabasePtr & database)
+{
+    if (!typeid_cast<DatabaseReplicated *>(database.get()))
+        return;
+
+    if (segments.size() != 1)
+        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED,
+            "For Replicated databases it's not allowed to execute ALTERs of different types in single query");
+
+    for (const auto & segment : segments)
+        if (const auto * alter_commands = std::get_if<AlterCommands>(&segment))
+            if (alter_commands->hasNonReplicatedAlterCommand() && !alter_commands->areNonReplicatedAlterCommands())
+                throw Exception(ErrorCodes::QUERY_IS_PROHIBITED,
+                    "For Replicated databases it's not allowed "
+                    "to execute ALTERs of different types (replicated and non replicated) in single query");
+}
+
+std::optional<BlockIO> tryRewriteToLightweightUpdate(CommandSegments & segments, const StoragePtr & table, const ContextPtr & context, const ASTPtr & query_ptr)
+{
+    bool has_update_commands = false;
+    for (const auto & segment : segments)
+        if (const auto * mutation_commands = std::get_if<MutationCommands>(&segment))
+            has_update_commands |= mutation_commands->hasAnyUpdateCommand();
+
+    if (!has_update_commands)
+        return std::nullopt;
+
+    const auto & settings = context->getSettingsRef();
+    const auto alter_update_mode = settings[Setting::alter_update_mode];
+    if (alter_update_mode == AlterUpdateMode::HEAVY)
+        return std::nullopt;
+
+    const auto throw_if_needed = [&](const auto & reason) -> std::optional<BlockIO>
+    {
+        if (alter_update_mode == AlterUpdateMode::LIGHTWEIGHT_FORCE)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Setting alter_update_mode='{}' but cannot execute query '{}' as a lightweight update. {}",
+                alter_update_mode.toString(), query_ptr->formatForErrorMessage(), reason);
+
+        LOG_INFO(getLogger("InterpreterAlterQuery"), "Will not execute '{}' as a lightweight update. {}", query_ptr->formatForErrorMessage(), reason);
+        return std::nullopt;
+    };
+
+    if (hasCommands<AlterCommands>(segments) || hasCommands<PartitionCommands>(segments) || hasCommands<ExecuteCommands>(segments))
+        return throw_if_needed("Not only update commands were passed to alter");
+
+    chassert(segments.size() == 1);
+    const MutationCommands & mutation_commands = std::get<MutationCommands>(segments.at(0));
+
+    if (!settings[Setting::enable_lightweight_update])
+        return throw_if_needed("Lightweight updates are not allowed. Set 'enable_lightweight_update = 1' to allow them");
+
+    if (!mutation_commands.hasOnlyUpdateCommands())
+        return throw_if_needed("Query has non UPDATE commands");
+
+    if (auto supports = table->supportsLightweightUpdate(); !supports)
+        return throw_if_needed(supports.error().text);
+
+    LOG_DEBUG(getLogger("InterpreterAlterQuery"), "Will execute query '{}' as a lightweight update", query_ptr->formatForErrorMessage());
+
+    BlockIO res;
+    res.pipeline = table->updateLightweight(mutation_commands, context);
+    res.pipeline.addStorageHolder(table);
+    return res;
+}
+
+BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table, const ContextPtr & context)
+{
+    BlockIO res;
+    const auto & settings = context->getSettingsRef();
+
+    for (auto & segment : segments)
+    {
+        if (auto * alter_commands = std::get_if<AlterCommands>(&segment))
+        {
+            auto alter_lock = table->lockForAlter(settings[Setting::lock_acquire_timeout]);
+            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+            alter_commands->validate(table, context);
+
+            bool share_nested = true;
+            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+                share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
+            alter_commands->prepare(*metadata_snapshot, share_nested);
+            table->checkAlterIsPossible(*alter_commands, context);
+            table->alter(*alter_commands, context, alter_lock);
+        }
+        else if (auto * mutation_commands = std::get_if<MutationCommands>(&segment))
+        {
+            if (mutation_commands->hasNonEmptyMutationCommands())
+            {
+                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+                table->checkMutationIsPossible(*mutation_commands, settings);
+                MutationsInterpreter::Settings mutation_settings(false);
+                MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
+                table->mutate(*mutation_commands, context);
+            }
+        }
+        else if (auto * partition_commands = std::get_if<PartitionCommands>(&segment))
+        {
+            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+            table->checkAlterPartitionIsPossible(*partition_commands, metadata_snapshot, settings, context);
+            auto partition_commands_pipe = table->alterPartition(metadata_snapshot, *partition_commands, context);
+            if (!partition_commands_pipe.empty())
+                res.pipeline = QueryPipeline(std::move(partition_commands_pipe));
+        }
+        else if (auto * execute_commands = std::get_if<ExecuteCommands>(&segment))
+        {
+            for (const auto * execute_command : *execute_commands)
+            {
+                ASTPtr args_ast = execute_command->execute_args ? execute_command->execute_args->ptr() : nullptr;
+                auto execute_pipe = table->executeCommand(execute_command->execute_command_name, args_ast, context);
+                if (!execute_pipe.empty())
+                    res.pipeline = QueryPipeline(std::move(execute_pipe));
+            }
+        }
+    }
+
+    return res;
+}
+
+}
+
 InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_) : WithMutableContext(context_), query_ptr(query_ptr_)
 {
 }
-
 
 BlockIO InterpreterAlterQuery::execute()
 {
@@ -178,196 +448,16 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
 
-    AlterCommands alter_commands;
-    PartitionCommands partition_commands;
-    MutationCommands mutation_commands;
-    std::vector<const ASTAlterCommand *> execute_commands;
+    auto segments = parseAlterCommandSegments(alter, table, getContext());
+    validateSegmentsCombination(segments);
+    validateMutationsAllowed(segments, database, getContext());
+    validateReplicatedDatabaseSegments(segments, database);
 
-    for (const auto & child : alter.command_list->children)
-    {
-        auto * command_ast = child->as<ASTAlterCommand>();
-        if (command_ast->type == ASTAlterCommand::EXECUTE_COMMAND)
-        {
-            execute_commands.push_back(command_ast);
-        }
-        else if (auto alter_command = AlterCommand::parse(command_ast))
-        {
-            alter_commands.emplace_back(std::move(*alter_command));
-        }
-        else if (auto partition_command = PartitionCommand::parse(command_ast))
-        {
-            partition_commands.emplace_back(std::move(*partition_command));
-        }
-        else if (auto mut_command = MutationCommand::parse(*command_ast))
-        {
-            if (mut_command->type == MutationCommand::UPDATE || mut_command->type == MutationCommand::DELETE)
-            {
-                /// TODO: add a check for result query size.
-                auto rewritten_command_ast = replaceNonDeterministicToScalars(*command_ast, getContext());
-                if (rewritten_command_ast)
-                {
-                    auto * new_alter_command = rewritten_command_ast->as<ASTAlterCommand>();
-                    mut_command = MutationCommand::parse(*new_alter_command);
-                    if (!mut_command)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Alter command '{}' is rewritten to invalid command '{}'",
-                            command_ast->formatForErrorMessage(), rewritten_command_ast->formatForErrorMessage());
-                }
-            }
+    if (auto lightweight_result = tryRewriteToLightweightUpdate(segments, table, getContext(), query_ptr))
+        return std::move(lightweight_result.value());
 
-            mutation_commands.emplace_back(std::move(*mut_command));
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
-
-        if (!settings[Setting::allow_statistics] && (
-            command_ast->type == ASTAlterCommand::ADD_STATISTICS ||
-            command_ast->type == ASTAlterCommand::DROP_STATISTICS ||
-            command_ast->type == ASTAlterCommand::MATERIALIZE_STATISTICS))
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistic is disabled. Turn on allow_statistics");
-    }
-
-    if (typeid_cast<DatabaseReplicated *>(database.get()))
-    {
-        int command_types_count = !mutation_commands.empty() + !partition_commands.empty() + !alter_commands.empty();
-        bool mixed_settings_amd_metadata_alter = alter_commands.hasNonReplicatedAlterCommand() && !alter_commands.areNonReplicatedAlterCommands();
-        if (1 < command_types_count || mixed_settings_amd_metadata_alter)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "For Replicated databases it's not allowed "
-                                                         "to execute ALTERs of different types (replicated and non replicated) in single query");
-    }
-
-    /// Check for conflicts between RENAME COLUMN and UPDATE/DELETE operations.
-    /// If a column is both renamed and used in UPDATE/DELETE in the same ALTER, we must fail early
-    /// to ensure atomicity - otherwise RENAME would succeed but UPDATE/DELETE would fail,
-    /// leaving the table in an unexpected state. See issue #70678.
-    if (!alter_commands.empty() && mutation_commands.hasNonEmptyMutationCommands())
-    {
-        NameSet columns_to_rename;
-        for (const auto & command : alter_commands)
-            if (command.type == AlterCommand::RENAME_COLUMN)
-                columns_to_rename.insert(command.column_name);
-
-        if (!columns_to_rename.empty())
-        {
-            /// Check UPDATE columns
-            NameSet updated_columns = mutation_commands.getAllUpdatedColumns();
-            for (const auto & column_name : columns_to_rename)
-            {
-                if (updated_columns.contains(column_name))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot UPDATE column {} and RENAME it in the same ALTER query. "
-                        "Please split into separate ALTER statements.",
-                        backQuote(column_name));
-            }
-
-            /// Check DELETE/UPDATE predicates for references to renamed columns
-            for (const auto & command : mutation_commands)
-            {
-                if (command.predicate)
-                {
-                    auto identifiers = IdentifiersCollector::collect(command.predicate);
-                    for (const auto * identifier : identifiers)
-                    {
-                        auto column_name = IdentifierSemantic::getColumnName(*identifier);
-                        if (column_name && columns_to_rename.contains(*column_name))
-                        {
-                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Cannot use column {} in {} predicate and RENAME it in the same ALTER query. "
-                                "Please split into separate ALTER statements.",
-                                backQuote(*column_name),
-                                command.type == MutationCommand::DELETE ? "DELETE" : "UPDATE");
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (mutation_commands.hasNonEmptyMutationCommands() || !partition_commands.empty())
-    {
-        if (getContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
-            && table_id.getDatabaseName() != DatabaseCatalog::SYSTEM_DATABASE)
-            throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Mutations are prohibited");
-    }
-
-    if (mutation_commands.hasAnyUpdateCommand())
-    {
-        auto supports_lightweight_update = [&] -> std::expected<void, PreformattedMessage>
-        {
-            if (!settings[Setting::enable_lightweight_update])
-                return std::unexpected(PreformattedMessage::create("Lightweight updates are not allowed. Set 'enable_lightweight_update = 1' to allow them"));
-
-            if (!alter_commands.empty() || !partition_commands.empty() || !mutation_commands.hasOnlyUpdateCommands())
-                return std::unexpected(PreformattedMessage::create("Query has non UPDATE commands"));
-
-            return table->supportsLightweightUpdate();
-        }();
-
-        auto alter_update_mode = settings[Setting::alter_update_mode];
-        if (!supports_lightweight_update && alter_update_mode == AlterUpdateMode::LIGHTWEIGHT_FORCE)
-        {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Setting alter_update_mode='{}' but cannot execute query '{}' as a lightweight update. {}",
-                alter_update_mode.toString(), query_ptr->formatForErrorMessage(), supports_lightweight_update.error().text);
-        }
-        else if (supports_lightweight_update && alter_update_mode != AlterUpdateMode::HEAVY)
-        {
-            LOG_DEBUG(getLogger("InterpreterAlterQuery"), "Will execute query '{}' as a lightweight update", query_ptr->formatForErrorMessage());
-            res.pipeline = table->updateLightweight(mutation_commands, getContext());
-            res.pipeline.addStorageHolder(table);
-            return res;
-        }
-    }
-
-    if (!alter_commands.empty())
-    {
-        auto alter_lock = table->lockForAlter(settings[Setting::lock_acquire_timeout]);
-        StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
-        alter_commands.validate(table, getContext());
-        alter_commands.prepare(metadata);
-        table->checkAlterIsPossible(alter_commands, getContext());
-        table->alter(alter_commands, getContext(), alter_lock);
-    }
-
-    /// Get newest metadata_snapshot after execute ALTER command, in order to
-    /// support like materialize index in the same ALTER query that creates it.
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
-
-    if (mutation_commands.hasNonEmptyMutationCommands())
-    {
-        for (const auto & command : mutation_commands)
-        {
-            /// Check it after alter finished, so we can add TTL and materialize TTL in the same ALTER query.
-            if (command.type == MutationCommand::MATERIALIZE_TTL && !metadata_snapshot->hasAnyTTL())
-                throw Exception(ErrorCodes::INCORRECT_QUERY,
-                    "Cannot MATERIALIZE TTL as there is no TTL set for table {}", table->getStorageID().getNameForLogs());
-        }
-
-        table->checkMutationIsPossible(mutation_commands, settings);
-        MutationsInterpreter::Settings mutation_settings(false);
-        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
-        table->mutate(mutation_commands, getContext());
-    }
-
-    if (!partition_commands.empty())
-    {
-        table->checkAlterPartitionIsPossible(partition_commands, metadata_snapshot, settings, getContext());
-        auto partition_commands_pipe = table->alterPartition(metadata_snapshot, partition_commands, getContext());
-        if (!partition_commands_pipe.empty())
-            res.pipeline = QueryPipeline(std::move(partition_commands_pipe));
-    }
-
-    for (const auto * execute_command : execute_commands)
-    {
-        ASTPtr args_ast = execute_command->execute_args ? execute_command->execute_args->ptr() : nullptr;
-        auto execute_pipe = table->executeCommand(execute_command->execute_command_name, args_ast, getContext());
-        if (!execute_pipe.empty())
-            res.pipeline = QueryPipeline(std::move(execute_pipe));
-    }
-
-    return res;
+    return runCommandSegments(segments, table, getContext());
 }
-
 
 BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
 {
@@ -436,10 +526,10 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess() const
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
     for (const auto & child : alter.command_list->children)
-        boost::range::push_back(required_access, getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable()));
+        required_access.append_range(getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable()));
+
     return required_access;
 }
-
 
 AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const ASTAlterCommand & command, const String & database, const String & table)
 {

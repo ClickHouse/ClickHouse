@@ -17,15 +17,23 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-template <typename Name, bool is_desc>
 class FunctionKqlArraySort : public IFunction
 {
 public:
-    static constexpr auto name = Name::name;
-    explicit FunctionKqlArraySort(ContextPtr context_) : context(context_) { }
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionKqlArraySort>(context); }
+    explicit FunctionKqlArraySort(ContextPtr context, const String & name_, bool is_desc_)
+        : function_name(name_)
+        , length_func(FunctionFactory::instance().get("length", context))
+        , array_resize_func(FunctionFactory::instance().get("arrayResize", context))
+        , array_zip_func(FunctionFactory::instance().get("arrayZip", context))
+        , sort_func(FunctionFactory::instance().get(is_desc_ ? "arrayReverseSort" : "arraySort", context))
+        , tuple_element_func(FunctionFactory::instance().get("tupleElement", context))
+        , index_of_func(FunctionFactory::instance().get("indexOf", context))
+        , array_slice_func(FunctionFactory::instance().get("arraySlice", context))
+        , array_concat_func(FunctionFactory::instance().get("arrayConcat", context))
+    {
+    }
 
-    String getName() const override { return name; }
+    String getName() const override { return function_name; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -95,8 +103,6 @@ public:
         ColumnPtr first_array_column;
         DataTypes nested_types;
 
-        String sort_function = is_desc ? "arrayReverseSort" : "arraySort";
-
         for (size_t i = 0; i < array_count; ++i)
         {
             ColumnPtr holder = arguments[i].column->convertToFullColumnIfConst();
@@ -124,14 +130,14 @@ public:
                 /// This ensures each row is processed independently: mismatched array lengths
                 /// in one row don't affect other rows.
                 ColumnsWithTypeAndName length_args = {{first_array_column, arguments[0].type, ""}};
-                auto lengths = FunctionFactory::instance().get("length", context)
+                auto lengths = length_func
                     ->build(length_args)->execute(length_args, std::make_shared<DataTypeUInt64>(), input_rows_count, /* dry_run = */ false);
 
                 ColumnsWithTypeAndName resize_args = {
                     arguments[i],
                     {lengths, std::make_shared<DataTypeUInt64>(), ""}
                 };
-                auto resized = FunctionFactory::instance().get("arrayResize", context)
+                auto resized = array_resize_func
                     ->build(resize_args)->execute(resize_args, arguments[i].type, input_rows_count, /* dry_run = */ false);
                 new_args.push_back({resized, arguments[i].type, arguments[i].name});
             }
@@ -140,11 +146,11 @@ public:
         }
 
         auto zipped
-            = FunctionFactory::instance().get("arrayZip", context)->build(new_args)->execute(new_args, result_type, input_rows_count, /* dry_run = */ false);
+            = array_zip_func->build(new_args)->execute(new_args, result_type, input_rows_count, /* dry_run = */ false);
 
         ColumnsWithTypeAndName sort_arg({{zipped, std::make_shared<DataTypeArray>(result_type), "zipped"}});
         auto sorted_tuple
-            = FunctionFactory::instance().get(sort_function, context)->build(sort_arg)->execute(sort_arg, result_type, input_rows_count, /* dry_run = */ false);
+            = sort_func->build(sort_arg)->execute(sort_arg, result_type, input_rows_count, /* dry_run = */ false);
 
         Columns tuple_columns(array_count);
         for (size_t i = 0; i < array_count; ++i)
@@ -152,8 +158,7 @@ public:
             ColumnsWithTypeAndName untuple_args(
                 {{ColumnWithTypeAndName(sorted_tuple, std::make_shared<DataTypeArray>(result_type), "sorted")},
                  {DataTypeUInt8().createColumnConst(1, toField(UInt8(i + 1))), std::make_shared<DataTypeUInt8>(), ""}});
-            auto tuple_column = FunctionFactory::instance()
-                                    .get("tupleElement", context)
+            auto tuple_column = tuple_element_func
                                     ->build(untuple_args)
                                     ->execute(untuple_args, result_type, input_rows_count, /* dry_run = */ false);
             tuple_column = tuple_column->convertToFullColumnIfConst();
@@ -189,8 +194,7 @@ public:
             auto null_index_datetype = std::make_shared<DataTypeUInt64>();
 
             ColumnWithTypeAndName slice_index{nullptr, null_index_datetype, ""};
-            slice_index.column = FunctionFactory::instance()
-                                     .get("indexOf", context)
+            slice_index.column = index_of_func
                                      ->build(indexof_args)
                                      ->execute(indexof_args, result_type, input_rows_count, /* dry_run = */ false);
 
@@ -200,7 +204,7 @@ public:
                 ColumnWithTypeAndName slice_index_len{nullptr, null_index_datetype, ""};
                 slice_index_len.column = DataTypeUInt64().createColumnConst(1, toField(UInt64(null_index_in_array - 1)));
 
-                auto fun_slice = FunctionFactory::instance().get("arraySlice", context);
+                auto fun_slice = array_slice_func;
 
                 for (size_t i = 0; i < array_count; ++i)
                 {
@@ -219,8 +223,7 @@ public:
                         fun_slice->build(slice_args_right)->execute(slice_args_right, arg_type, input_rows_count, /* dry_run = */ false), arg_type, ""};
 
                     ColumnsWithTypeAndName arr_cancat({arr_right, arr_left});
-                    auto out_tmp = FunctionFactory::instance()
-                                       .get("arrayConcat", context)
+                    auto out_tmp = array_concat_func
                                        ->build(arr_cancat)
                                        ->execute(arr_cancat, arg_type, input_rows_count, /* dry_run = */ false);
                     adjusted_columns[i] = std::move(out_tmp);
@@ -232,21 +235,16 @@ public:
     }
 
 private:
-    ContextPtr context;
+    String function_name;
+    FunctionOverloadResolverPtr length_func;
+    FunctionOverloadResolverPtr array_resize_func;
+    FunctionOverloadResolverPtr array_zip_func;
+    FunctionOverloadResolverPtr sort_func;
+    FunctionOverloadResolverPtr tuple_element_func;
+    FunctionOverloadResolverPtr index_of_func;
+    FunctionOverloadResolverPtr array_slice_func;
+    FunctionOverloadResolverPtr array_concat_func;
 };
-
-struct NameKqlArraySortAsc
-{
-    static constexpr auto name = "kql_array_sort_asc";
-};
-
-struct NameKqlArraySortDesc
-{
-    static constexpr auto name = "kql_array_sort_desc";
-};
-
-using FunctionKqlArraySortAsc = FunctionKqlArraySort<NameKqlArraySortAsc, false>;
-using FunctionKqlArraySortDesc = FunctionKqlArraySort<NameKqlArraySortDesc, true>;
 
 REGISTER_FUNCTION(KqlArraySort)
 {
@@ -265,7 +263,10 @@ Sorts one or more arrays in ascending order. The first array is sorted, and subs
     FunctionDocumentation::Category category_asc = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation_asc = {description_asc, syntax_asc, arguments_asc, {}, returned_value_asc, examples_asc, introduced_in_asc, category_asc};
 
-    factory.registerFunction<FunctionKqlArraySortAsc>(documentation_asc);
+    factory.registerFunction("kql_array_sort_asc", [](ContextPtr context) -> FunctionPtr
+    {
+        return std::make_shared<FunctionKqlArraySort>(context, "kql_array_sort_asc", /* is_desc = */ false);
+    }, documentation_asc);
 
     FunctionDocumentation::Description description_desc = R"(
 Sorts one or more arrays in descending order. The first array is sorted, and subsequent arrays are reordered to match the first array's sorted order. Null values are placed at the end. This is a KQL (Kusto Query Language) compatibility function.
@@ -282,7 +283,10 @@ Sorts one or more arrays in descending order. The first array is sorted, and sub
     FunctionDocumentation::Category category_desc = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation_desc = {description_desc, syntax_desc, arguments_desc, {}, returned_value_desc, examples_desc, introduced_in_desc, category_desc};
 
-    factory.registerFunction<FunctionKqlArraySortDesc>(documentation_desc);
+    factory.registerFunction("kql_array_sort_desc", [](ContextPtr context) -> FunctionPtr
+    {
+        return std::make_shared<FunctionKqlArraySort>(context, "kql_array_sort_desc", /* is_desc = */ true);
+    }, documentation_desc);
 }
 
 }

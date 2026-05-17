@@ -8,6 +8,8 @@
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/HashTable/Hash.h>
 
+#include <Common/FailPoint.h>
+
 #include <vector>
 
 
@@ -23,8 +25,14 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int CANNOT_ALLOCATE_MEMORY;
 extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
+namespace FailPoints
+{
+extern const char space_saving_copy_arena_throw[];
 }
 
 /*
@@ -336,12 +344,37 @@ public:
         readVarUInt(alpha_size, rb);
 
         size_t expected_capacity = alpha_map.size();
-        if (alpha_size != expected_capacity)
+
+        /// A smaller-than-expected alpha map is not produced by any known
+        /// version (the writers always allocate at least nextAlphaSize(reserved)
+        /// before serialize), so treat it as data corruption.
+        if (alpha_size < expected_capacity)
             throw DB::Exception(
                 DB::ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                 "Found incorrect alpha vector size (Passed: {}. Expected: {})",
                 alpha_size,
                 expected_capacity);
+
+        /// A larger-than-expected alpha map can come from states written by
+        /// versions before the readAlphaMap fix: those used `push_back` while
+        /// AggregateFunctionTopKGeneric::deserialize had already pre-allocated
+        /// the alpha map via `set.resize(...)`, so every read+rewrite cycle
+        /// grew alpha_size by `nextAlphaSize(min(size + 1, reserved))`. The
+        /// stored values are indexed against the writer's alpha_map.size(),
+        /// not ours, so they are no longer addressable by `hash & (size - 1)`
+        /// and would corrupt the algorithm. Drain them and start with the
+        /// zero-initialized alpha_map left by `resize(...)` — a valid (just
+        /// less precise) starting point. The next merge or rewrite re-emits
+        /// a state with the right size and self-heals the part.
+        if (alpha_size > expected_capacity)
+        {
+            for (size_t i = 0; i < alpha_size; ++i)
+            {
+                UInt64 alpha = 0;
+                readVarUInt(alpha, rb);
+            }
+            return;
+        }
 
         for (size_t i = 0; i < alpha_size; ++i)
         {
@@ -438,9 +471,29 @@ private:
 
         if constexpr (std::is_same_v<TKey, std::string_view>)
         {
-            /// Need to copy the keys into our own arena
-            for (auto & counter : counter_list)
-                counter.key = arena.emplace(counter.key);
+            /// Copy each key into our own arena. If arena.emplace throws
+            /// (e.g. under OOM), keys [copied..end) still reference rhs arena.
+            /// Truncate to the successfully-copied prefix so that
+            /// destroyElements does not double-free the rhs-owned keys.
+            size_t copied = 0;
+            try
+            {
+                for (size_t i = 0; i < counter_list.size(); ++i)
+                {
+                    counter_list[i].key = arena.emplace(counter_list[i].key);
+                    ++copied;
+                    fiu_do_on(FailPoints::space_saving_copy_arena_throw,
+                    {
+                        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY,
+                            "Injected fault in SpaceSaving operator=");
+                    });
+                }
+            }
+            catch (...)
+            {
+                counter_list.resize(copied);
+                throw;
+            }
         }
         truncateIfNeeded(true);
 

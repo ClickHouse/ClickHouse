@@ -13,6 +13,7 @@ SET use_skip_indexes = 1;
 SET optimize_or_like_chain = 0;
 SET optimize_extract_common_expressions = 1;
 SET optimize_substitute_columns = 0;
+SET use_primary_key = 1;
 
 DROP TABLE IF EXISTS tab;
 
