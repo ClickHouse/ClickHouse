@@ -372,11 +372,10 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
         if (target_obj->has("inner_engine"))
         {
             auto engine_obj = target_obj->getObject("inner_engine");
-            if (engine_obj)
-            {
-                target.inner_engine = IAST::createFromJSON(*engine_obj);
-                children.push_back(target.inner_engine);
-            }
+            if (!engine_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'inner_engine' is not an object at index {} in 'targets' array during AST JSON deserialization", i);
+            target.inner_engine = IAST::createFromJSON(*engine_obj);
+            children.push_back(target.inner_engine);
         }
         targets.push_back(std::move(target));
     }
