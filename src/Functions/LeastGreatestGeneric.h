@@ -169,6 +169,19 @@ public:
         return getLeastSupertype(types);
     }
 
+    /// Bypass the DSL — the `(A1 : Any, ...) -> leastSupertype(A1, ...)` signature
+    /// is documentation-only and does not capture the cross-type numeric widening
+    /// performed by the two-argument specialization (e.g. signed + unsigned mixes
+    /// that `getLeastSupertype` rejects but `FunctionBinaryArithmetic` resolves).
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & arg : arguments)
+            types.push_back(arg.type);
+        return getReturnTypeImpl(types);
+    }
+
 private:
     ContextPtr context;
     bool legacy_null_behavior;
