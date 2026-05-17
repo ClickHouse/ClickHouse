@@ -15,6 +15,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
+#include <Common/thread_local_rng.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
@@ -29,7 +30,6 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <random>
 #include <ranges>
 
 namespace ProfileEvents
@@ -328,9 +328,7 @@ std::vector<UInt64> MergeTreeIndexAggregatorVectorSpann::selectCentroidsRandom()
     for (size_t i = 0; i < n; ++i)
         all_ids[i] = i;
 
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::shuffle(all_ids.begin(), all_ids.end(), gen);
+    std::shuffle(all_ids.begin(), all_ids.end(), thread_local_rng);
     all_ids.resize(num_centroids);
     std::ranges::sort(all_ids);
     return all_ids;
