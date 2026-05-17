@@ -33,13 +33,11 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 
 Execute the following query using [command-line client](../../../interfaces/client.md):
 
-```bash
+```bash title="Query"
 clickhouse-client --query="SELECT 1,'ABC' INTO OUTFILE 'select.gz' FORMAT CSV;"
 zcat select.gz 
 ```
 
-Result:
-
-```text
+```text title="Response"
 1,"ABC"
 ```
