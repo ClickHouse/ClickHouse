@@ -80,6 +80,7 @@ namespace Setting
     extern const SettingsString temporary_files_codec;
     extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsBool enable_lazy_columns_replication;
+    extern const SettingsBool enable_software_prefetch_in_join;
     extern const SettingsUInt64 max_bytes_before_external_join;
     extern const SettingsDouble max_bytes_ratio_before_external_join;
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
@@ -224,6 +225,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , allow_join_sorting(settings[Setting::allow_experimental_join_right_table_sorting])
     , allow_dynamic_type_in_join_keys(settings[Setting::allow_dynamic_type_in_join_keys])
     , enable_lazy_columns_replication(settings[Setting::enable_lazy_columns_replication])
+    , enable_software_prefetch_in_join(settings[Setting::enable_software_prefetch_in_join])
     , max_bytes_before_external_join(JoinSettings::getMaxBytesBeforeExternalJoin(
           settings[Setting::max_bytes_before_external_join],
           settings[Setting::max_bytes_ratio_before_external_join]))
@@ -258,6 +260,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , allow_join_sorting(settings.allow_experimental_join_right_table_sorting)
     , allow_dynamic_type_in_join_keys(settings.allow_dynamic_type_in_join_keys)
     , enable_lazy_columns_replication(settings.enable_lazy_columns_replication)
+    , enable_software_prefetch_in_join(settings.enable_software_prefetch_in_join)
     , max_bytes_before_external_join(settings.getEffectiveMaxBytesBeforeExternalJoin())
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
     , min_columns_for_hash_join_row_store(settings.min_columns_for_hash_join_row_store)
