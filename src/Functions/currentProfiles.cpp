@@ -48,8 +48,28 @@ namespace
 
         explicit FunctionProfiles(const ContextPtr & context_, Kind kind_)
             : kind(kind_)
-            , context(context_)
-        {}
+        {
+            const auto & manager = context_->getAccessControl();
+
+            std::vector<UUID> profile_ids;
+
+            switch (kind)
+            {
+                case Kind::currentProfiles:
+                    profile_ids = context_->getCurrentProfiles();
+                    break;
+                case Kind::enabledProfiles:
+                    profile_ids = context_->getEnabledProfiles();
+                    break;
+                case Kind::defaultProfiles:
+                    const auto user = context_->getAccess()->tryGetUser();
+                    if (user)
+                        profile_ids = user->settings.toProfileIDs();
+                    break;
+            }
+
+            profile_names = manager.tryReadNames(profile_ids);
+        }
 
         size_t getNumberOfArguments() const override { return 0; }
         bool isDeterministic() const override { return false; }
@@ -61,8 +81,6 @@ namespace
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
         {
-            std::call_once(initialized_flag, [&]{ initialize(); });
-
             auto col_res = ColumnArray::create(ColumnString::create());
             ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
             ColumnArray::Offsets & res_offsets = col_res->getOffsets();
@@ -73,35 +91,8 @@ namespace
         }
 
     private:
-        void initialize() const
-        {
-            const auto & manager = context->getAccessControl();
-
-            std::vector<UUID> profile_ids;
-
-            switch (kind)
-            {
-                case Kind::currentProfiles:
-                    profile_ids = context->getCurrentProfiles();
-                    break;
-                case Kind::enabledProfiles:
-                    profile_ids = context->getEnabledProfiles();
-                    break;
-                case Kind::defaultProfiles:
-                    const auto user = context->getAccess()->tryGetUser();
-                    if (user)
-                        profile_ids = user->settings.toProfileIDs();
-                    break;
-            }
-
-            profile_names = manager.tryReadNames(profile_ids);
-        }
-
-        mutable std::once_flag initialized_flag;
-
         Kind kind;
-        ContextPtr context;
-        mutable Strings profile_names;
+        Strings profile_names;
     };
 }
 
