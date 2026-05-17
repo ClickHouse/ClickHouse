@@ -187,3 +187,30 @@ SELECT COUNT(*) FROM (
     ) t WHERE explain like '%FUNCTION in%';
 
 DROP TABLE tab_lc;
+
+-- The rewrite changes the function name on the FunctionNode (has -> in) and swaps
+-- argument node pointers. The output column header for the SELECT clause is fixed
+-- during initial analysis (calculateFunctionProjectionName) BEFORE this pass runs
+-- and stored on the QueryNode's projection_columns, so the visible header must still
+-- be `has(<array>, <expr>)` after rewrite. Aliases on the FunctionNode and on each
+-- argument travel with the (reused) nodes, so they must remain referenceable.
+
+SET optimize_rewrite_has_to_in = 1;
+
+-- Output column header without an explicit alias must read `has([1, 2, 3], number)`.
+DESCRIBE (SELECT has([1, 2, 3], number) FROM numbers(1));
+
+-- Explicit alias on the has() expression itself must be preserved.
+DESCRIBE (SELECT has([1, 2, 3], number) AS h FROM numbers(1));
+
+-- Aliases on the array and on the needle must show up in the projection name and
+-- remain referenceable as separate columns in the same SELECT list.
+SELECT [1, 2, 3] AS arr, 2 AS elem, has(arr, elem) FROM numbers(1) FORMAT TSVWithNames;
+
+-- An alias introduced inside has() arguments must still be referenceable in the
+-- same SELECT list after the rewrite swaps the argument positions.
+SELECT has([1, 2, 3] AS arr2, materialize(2) AS elem2), arr2, elem2 FROM numbers(1) FORMAT TSVWithNames;
+
+-- Alias on the has() expression must be usable in ORDER BY / GROUP BY / HAVING
+-- after the rewrite (the FunctionNode is reused, so the alias travels with it).
+SELECT has([1, 2, 3], number) AS h, count() FROM numbers(5) GROUP BY h ORDER BY h FORMAT TSVWithNames;

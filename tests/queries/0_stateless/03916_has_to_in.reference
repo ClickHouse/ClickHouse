@@ -35,3 +35,12 @@
 2
 2
 0
+has([1, 2, 3], number)	UInt8					
+h	UInt8					
+arr	elem	has(arr, elem)
+[1,2,3]	2	1
+has(arr2, elem2)	arr2	elem2
+1	[1,2,3]	2
+h	count()
+0	2
+1	3
