@@ -124,6 +124,28 @@ DROP TABLE t_ttl_lc_datetime;
 
 SET allow_suspicious_low_cardinality_types = 0;
 
+-- Case 9a: `Nullable(Date)` — the `Nullable` wrapper must be preserved during widening,
+-- otherwise the analyzer sees the column as non-null and `isNull` / `ifNull` get
+-- constant-folded, silently changing TTL decisions for `NULL` rows.
+DROP TABLE IF EXISTS t_ttl_nullable_date;
+CREATE TABLE t_ttl_nullable_date (day Nullable(Date), value UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_nullable_key = 1;
+INSERT INTO t_ttl_nullable_date VALUES ('2024-01-01', 1), (NULL, 2), ('2025-12-31', 3);
+ALTER TABLE t_ttl_nullable_date MODIFY TTL ifNull(day, toDate('1970-01-02')) + toIntervalDay(46000);
+OPTIMIZE TABLE t_ttl_nullable_date FINAL;
+-- All rows retained: TTL resolves to year ~2150 for non-null and to ~2095 for the NULL row
+-- (1970-01-02 + 46000 days).
+SELECT count() FROM t_ttl_nullable_date;
+DROP TABLE t_ttl_nullable_date;
+
+-- Case 9b: `Nullable(DateTime)` — same check for the 32-bit timestamp path. Without
+-- preserving `Nullable`, `isNull(ts)` would be constant-folded to `false`.
+DROP TABLE IF EXISTS t_ttl_nullable_datetime;
+CREATE TABLE t_ttl_nullable_datetime (ts Nullable(DateTime), value UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_nullable_key = 1;
+INSERT INTO t_ttl_nullable_datetime VALUES ('2034-01-01 00:00:00', 1), (NULL, 2);
+ALTER TABLE t_ttl_nullable_datetime MODIFY TTL ifNull(ts, toDateTime('2034-01-01 00:00:00')) + INTERVAL 100 YEAR;
+SELECT count() FROM t_ttl_nullable_datetime;
+DROP TABLE t_ttl_nullable_datetime;
+
 -- Case 10: a lambda parameter that shadows a table column must keep its lambda-local
 -- type. The TTL expression contains `arrayFilter(day -> day != '', arr)` where the
 -- lambda's `day` is a String element of `arr`, not the `Date` column `day`. Because the

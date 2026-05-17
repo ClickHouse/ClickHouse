@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -126,28 +127,40 @@ using FindAggregateFunctionVisitor = InDepthNodeVisitor<FindAggregateFunctionFin
 /// `column + INTERVAL ...` is performed in the 64-bit domain and cannot silently
 /// wrap on overflow. The original timezone is preserved so calendar transforms
 /// (`addMonths` / `addYears`) and DST boundaries produce the user-expected results.
-/// At runtime, `ITTLAlgorithm::executeExpressionAndGetColumn` casts the narrow source
-/// columns to these widened types before invoking the expression.
+///
+/// `Nullable` is preserved: dropping it would let the analyzer treat the column as
+/// non-null, which constant-folds `isNull` / `ifNull` and silently changes TTL
+/// decisions for rows that are actually `NULL` (for both rows-TTL and `DELETE WHERE`).
+/// `LowCardinality` is dropped because `LowCardinality(DateTime64)` is not allowed
+/// in the type system; the runtime cast in `ITTLAlgorithm::executeExpressionAndGetColumn`
+/// converts the original `LC` column to the widened type.
 NamesAndTypesList widenTemporalColumns(const NamesAndTypesList & columns)
 {
     NamesAndTypesList result;
     for (const auto & col : columns)
     {
         const auto inner = removeLowCardinalityAndNullable(col.type);
+        DataTypePtr widened;
         if (isDate(inner))
         {
-            result.emplace_back(col.name, std::make_shared<DataTypeDate32>());
+            widened = std::make_shared<DataTypeDate32>();
         }
         else if (isDateTime(inner))
         {
             const auto & dt = typeid_cast<const DataTypeDateTime &>(*inner);
             const String & tz = dt.getTimeZone().getTimeZone();
-            result.emplace_back(col.name, std::make_shared<DataTypeDateTime64>(0, tz));
+            widened = std::make_shared<DataTypeDateTime64>(0, tz);
         }
         else
         {
             result.emplace_back(col);
+            continue;
         }
+
+        if (isNullableOrLowCardinalityNullable(col.type))
+            widened = std::make_shared<DataTypeNullable>(widened);
+
+        result.emplace_back(col.name, widened);
     }
     return result;
 }
