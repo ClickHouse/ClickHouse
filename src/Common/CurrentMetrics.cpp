@@ -329,7 +329,7 @@
     M(ParquetMetadataCacheBytes, "Size of the Parquet metadata cache in bytes") \
     M(ParquetMetadataCacheFiles, "Number of cached files in the Parquet metadata cache") \
     M(AvroSchemaCacheBytes, "Size of the Avro schema cache in bytes") \
-    M(AvroSchemaCacheCells, "Number of cached Avro schemas") \
+    M(AvroSchemaCacheCells, "Number of cached Avro schemas, including both registered and fetched schemas.") \
     M(AvroSchemaRegistryCacheBytes, "Size of the Avro schema registry cache in bytes") \
     M(AvroSchemaRegistryCacheCells, "Number of entries in Avro schema registry cache") \
     M(HiveFilesCacheBytes, "Size of the hive cache in bytes") \
