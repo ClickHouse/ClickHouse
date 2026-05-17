@@ -7,7 +7,7 @@ title: 'Query Rewrite Rules'
 doc_type: 'reference'
 ---
 
-# Query Rewrite Rules
+# Query Rewrite Rules {#query-rewrite-rules}
 
 Query Rewrite Rules provide capabilities to create, alter and drop rules which allow users to rewrite or reject specific queries.
 
