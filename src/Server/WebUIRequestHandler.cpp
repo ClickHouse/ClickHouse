@@ -46,6 +46,10 @@ constexpr unsigned char resource_addon_web_links_js[] =
 {
 #embed "../../programs/server/js/addon-web-links.min.js"
 };
+constexpr unsigned char resource_viz_standalone_js[] =
+{
+#embed "../../programs/server/js/viz-standalone.js"
+};
 constexpr unsigned char resource_binary_html[] =
 {
 #embed "../../programs/server/binary.html"
@@ -126,6 +130,7 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
         {"/js/xterm.min.css", resource_xterm_css, std::size(resource_xterm_css), "text/css; charset=UTF-8"},
         {"/js/addon-fit.min.js", resource_addon_fit_js, std::size(resource_addon_fit_js), "application/javascript; charset=UTF-8"},
         {"/js/addon-web-links.min.js", resource_addon_web_links_js, std::size(resource_addon_web_links_js), "application/javascript; charset=UTF-8"},
+        {"/js/viz-standalone.js", resource_viz_standalone_js, std::size(resource_viz_standalone_js), "application/javascript; charset=UTF-8"},
     };
 
     for (const auto & resource : resources)
