@@ -429,6 +429,16 @@ public:
     /// Returns the parameters passed to the constructor as is.
     const Array & getParameters() const override { return parameters; }
 
+    /// Whether DataTypeAggregateFunction::getName() should print parameters with ::Type
+    /// suffixes so the type name round-trips losslessly. Default false.
+    virtual bool shouldPrintParametersWithTypes() const
+    {
+        /// Combinators propagate the wrapped function's answer.
+        if (auto nested = getNestedFunction())
+            return nested->shouldPrintParametersWithTypes();
+        return false;
+    }
+
     // Any aggregate function can be calculated over a window, but there are some
     // window functions such as rank() that require a different interface, e.g.
     // because they don't respect the window frame, or need to be notified when

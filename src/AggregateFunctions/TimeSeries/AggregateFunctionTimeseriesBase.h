@@ -51,6 +51,10 @@ public:
         return Traits::getName();
     }
 
+    /// Timeseries parameters may carry DecimalField (from toDateTime64(...) casts), whose
+    /// default printed form collides with String literals — so we print parameters with ::Type.
+    bool shouldPrintParametersWithTypes() const override { return true; }
+
     using Bucket = typename Traits::Bucket;
 
     struct State
