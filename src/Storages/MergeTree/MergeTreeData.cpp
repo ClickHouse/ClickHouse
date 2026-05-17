@@ -1785,20 +1785,25 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
     if (!current_ptr)
         current_ptr = std::make_shared<Node>(MergeTreePartInfo{}, "", disk);
 
-    /// Possible rollback states for a part, determined solely from txn_version.txt on disk.
-    /// We intentionally do NOT consult TransactionLog::getCSN here. A return value of UnknownCSN from
-    /// that call is ambiguous in this context: it can mean the transaction was rolled back, is still in
-    /// progress, or was committed long enough ago that its log entry was cleaned up (tail_ptr advanced
-    /// past it). Acting on the ambiguous case to erase a tree-resident part or skip the incoming one
-    /// risks removing the wrong part. loadDataPart resolves the ambiguity after the tree is built — it
-    /// calls TransactionLog::getCSN and writes the resolved CSN back to disk, so on a subsequent load
-    /// the file will already contain Tx::RolledBackCSN and the intersection is resolved unambiguously.
+    /// Possible rollback states for a part, determined from txn_version.txt on disk and, when the
+    /// on-disk CSN is still Tx::UnknownCSN, from TransactionLog.
+    ///
+    /// Resolution is eager (not deferred to loadDataPart) because loadDataPart only runs on
+    /// top-level nodes of the loading tree. If we leave an incoming committed peer out of the tree
+    /// when the existing tree-resident part has an unresolved CSN, and loadDataPart later resolves
+    /// the existing part to RolledBackCSN, the incoming part is permanently lost for this startup.
+    ///
+    /// The TransactionLog lookup follows the same logic as `VersionMetadata::tryGetCSN`: if the tid
+    /// has no CSN and no running transaction, treat it as rolled back. The only residual ambiguous
+    /// case is "committed long ago and pruned past tail_ptr without the on-disk CSN being flushed
+    /// back" — this is a rare corruption-class state and is resolved here as RolledBack, which
+    /// favors keeping the unambiguously committed peer.
     enum class RollbackStatus
     {
-        RolledBack,  /// creation_csn == Tx::RolledBackCSN on disk → definitively rolled back
-        Committed,   /// creation_csn is a known committed CSN on disk → definitively committed
-        NoMetadata,  /// txn_version.txt does not exist → prehistoric (non-transactional) part
-        UnknownCSN,  /// file exists but creation_csn == Tx::UnknownCSN → transaction in-flight
+        RolledBack,  /// definitively rolled back
+        Committed,   /// definitively committed
+        NoMetadata,  /// txn_version.txt does not exist → non-transactional part
+        UnknownCSN,  /// transaction is still running and creation_csn is not yet known
         Unreadable,  /// file exists but could not be parsed → corruption or partial write in progress
     };
 
@@ -1817,10 +1822,24 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             auto buf = part_disk->readFile(version_path, ReadSettings{});
             version_info.readFromBuffer(*buf, /*one_line=*/false);
 
-            const CSN csn = version_info.creation_csn;
+            CSN csn = version_info.creation_csn;
             if (csn == Tx::RolledBackCSN)
                 return RollbackStatus::RolledBack;
             if (csn != Tx::UnknownCSN)
+                return RollbackStatus::Committed;
+
+            /// On-disk CSN is unresolved — consult TransactionLog (mirrors VersionMetadata::tryGetCSN).
+            csn = TransactionLog::getCSN(version_info.creation_tid);
+            if (!csn
+                && TransactionLog::instance().tryGetRunningTransaction(version_info.creation_tid.getHash()) == nullptr)
+            {
+                csn = TransactionLog::getCSN(version_info.creation_tid);  /// re-check after the race window
+                if (!csn)
+                    return RollbackStatus::RolledBack;
+            }
+            if (csn == Tx::RolledBackCSN)
+                return RollbackStatus::RolledBack;
+            if (csn)
                 return RollbackStatus::Committed;
 
             return RollbackStatus::UnknownCSN;
@@ -1903,12 +1922,13 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
                 }
                 if (incoming_status == RollbackStatus::UnknownCSN || existing_status == RollbackStatus::UnknownCSN)
                 {
-                    /// At least one part has an unresolved transaction (creation_csn not yet written to disk).
-                    /// loadDataPart will resolve the status after the tree is built. Conservatively skip the
-                    /// incoming part to preserve the tree-resident one.
+                    /// At least one part is still being created by a running transaction (TransactionLog
+                    /// has no CSN and `tryGetRunningTransaction` returned non-null in `read_txn_status`).
+                    /// Skip the incoming part — the in-flight transaction will commit or roll back later,
+                    /// and a subsequent load will resolve the intersection unambiguously.
                     LOG_WARNING(
                         getLogger("MergeTreeData"),
-                        "Skipping part {} (intersects part {}): transaction status not yet resolved",
+                        "Skipping part {} (intersects part {}): transaction is still in flight",
                         name,
                         prev->second->name);
                     return;
@@ -1978,9 +1998,10 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
                 }
                 if (incoming_status == RollbackStatus::UnknownCSN || existing_status == RollbackStatus::UnknownCSN)
                 {
+                    /// See the equivalent branch in the `prev` arm above.
                     LOG_WARNING(
                         getLogger("MergeTreeData"),
-                        "Skipping part {} (intersects part {}): transaction status not yet resolved",
+                        "Skipping part {} (intersects part {}): transaction is still in flight",
                         name,
                         it->second->name);
                     return;
