@@ -82,6 +82,22 @@ run() {
 }
 
 echo "-- driver runtime commands"
+python3 - "$DRIVER_DIR/c_driver_common.py" <<'PY'
+import importlib.util
+import os
+import sys
+
+spec = importlib.util.spec_from_file_location("c_driver_common", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+os.environ.pop("CLICKHOUSE_C_DRIVER_CPUS", None)
+os.environ["CLICKHOUSE_C_DRIVER_POOL_SIZE"] = "7"
+print("docker_default_cpus_scaled" if module.docker_resource_limits()["cpus"] == "7" else "docker_default_cpus_bad")
+
+os.environ["CLICKHOUSE_C_DRIVER_CPUS"] = "1.5"
+print("docker_cpu_override_preserved" if module.docker_resource_limits()["cpus"] == "1.5" else "docker_cpu_override_bad")
+PY
 mkdir -p "$WORK_DIR/docker_runtime" "$WORK_DIR/gvisor_runtime" "$WORK_DIR/unsafe_runtime"
 (
     cd "$WORK_DIR/docker_runtime" &&

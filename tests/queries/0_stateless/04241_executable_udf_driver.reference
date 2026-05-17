@@ -1,4 +1,6 @@
 -- driver runtime commands
+docker_default_cpus_scaled
+docker_cpu_override_preserved
 docker_fifo_runtime_present
 docker_exec_runtime_absent
 docker_run_runtime_absent

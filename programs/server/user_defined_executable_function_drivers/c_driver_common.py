@@ -712,7 +712,7 @@ def docker_image_for_run():
 def docker_resource_limits():
     return {
         "memory": os.environ.get("CLICKHOUSE_C_DRIVER_MEMORY", "256m"),
-        "cpus": os.environ.get("CLICKHOUSE_C_DRIVER_CPUS", "1.0"),
+        "cpus": os.environ.get("CLICKHOUSE_C_DRIVER_CPUS", str(pool_size())),
         "pids": os.environ.get("CLICKHOUSE_C_DRIVER_PIDS", "64"),
     }
 
