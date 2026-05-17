@@ -342,6 +342,25 @@ bool UTFConvertingReadBuffer::convertFromUTF16()
         }
     }
 
+    /// Handle incomplete sequences at EOF
+    /// If we have a pending high surrogate or incomplete bytes, emit replacement character
+    if (output_ptr + 4 <= output_end)
+    {
+        if (pending_high_surrogate != 0)
+        {
+            size_t bytes = encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
+            output_ptr += bytes;
+            pending_high_surrogate = 0;
+        }
+        else if (!pending_bytes.empty())
+        {
+            /// Incomplete UTF-16 code unit at EOF
+            size_t bytes = encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
+            output_ptr += bytes;
+            pending_bytes.clear();
+        }
+    }
+
     size_t written = output_ptr - memory.data();
     if (written > 0)
     {
@@ -370,6 +389,16 @@ bool UTFConvertingReadBuffer::convertFromUTF32()
 
         size_t bytes = encodeUTF8(code_point, output_ptr);
         output_ptr += bytes;
+    }
+
+    /// Handle incomplete sequences at EOF
+    /// If we have leftover incomplete bytes, emit replacement character
+    if (output_ptr + 4 <= output_end && !pending_bytes.empty())
+    {
+        /// Incomplete UTF-32 code point at EOF
+        size_t bytes = encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
+        output_ptr += bytes;
+        pending_bytes.clear();
     }
 
     size_t written = output_ptr - memory.data();

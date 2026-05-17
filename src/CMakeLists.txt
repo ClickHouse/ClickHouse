@@ -221,7 +221,9 @@ endif ()
 
 add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources}
         IO/UTFConvertingReadBuffer.h
-        IO/UTFConvertingReadBuffer.cpp)
+        IO/UTFConvertingReadBuffer.cpp
+        IO/UTFBOMDetection.h
+        IO/UTFBOMDetection.cpp)
 
 if (ENABLE_CLICKHOUSE_DISTRIBUTED_CACHE)
     target_compile_definitions(clickhouse_common_io PUBLIC ENABLE_DISTRIBUTED_CACHE=1)
