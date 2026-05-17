@@ -1071,6 +1071,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
     const auto & description = sorting.getSortDescription();
     size_t limit = sorting.getLimit();
+    const size_t query_limit = limit;
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
@@ -1125,7 +1126,8 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
             bool can_read = reading->requestReadingInOrder(
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
-                order_info.input_order->limit);
+                order_info.input_order->limit,
+                query_limit);
 
             if (!can_read)
                 return nullptr;
@@ -1146,7 +1148,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
         if (order_info.input_order)
         {
-            bool can_read = merge->requestReadingInOrder(order_info.input_order);
+            bool can_read = merge->requestReadingInOrder(order_info.input_order, query_limit);
             if (!can_read)
                 return nullptr;
 
