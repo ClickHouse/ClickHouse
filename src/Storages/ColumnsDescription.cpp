@@ -1200,11 +1200,10 @@ ColumnsDescription clearDefaultExpressions(const ColumnsDescription & columns)
 {
     ColumnsDescription result;
 
-    for (const auto & column_name : columns.getAllRegisteredNames())
+    for (const auto & column : columns.getAll())
     {
-        const auto & source_column = columns.get(column_name);
-        ColumnDescription column(source_column.name, source_column.type);
-        result.add(std::move(column));
+        ColumnDescription column_description(column.name, column.type);
+        result.add(std::move(column_description));
     }
 
     return result;
