@@ -97,7 +97,15 @@ function test_distributed_push_down_limit_1()
         --optimize_skip_unused_shards 1
         --optimize_distributed_group_by_sharding_key 1
     )
-    test_distributed_push_down_limit_with_query_log "${args[@]}"
+    # Use --format Null because the selected `key` values are not deterministic when
+    # both shards have overlapping data (this test uses `remote('127.{2,3}', ...)` so
+    # both shards return the same rows). With `optimize_distributed_group_by_sharding_key=1`
+    # the coordinator does NOT deduplicate across shards under the assumption that data
+    # is partitioned by the sharding key. Depending on per-shard delivery timing the
+    # coordinator can take e.g. `0,0,1,2,...,8` instead of `0..9` before LIMIT 10 fires.
+    # The check we actually care about is `read_rows = 40` per shard (i.e. the LIMIT was
+    # pushed down — without it each shard reads 100 rows, see the push_down_limit=0 case).
+    test_distributed_push_down_limit_with_query_log "${args[@]}" --format Null
 }
 
 function test_distributed_push_down_limit_1_offset()
@@ -141,7 +149,8 @@ function main()
     for ((i = 0; i < max_tries; ++i)); do
         out=$(test_distributed_push_down_limit_1)
         out_lines=( $out )
-        if [[ ${#out_lines[@]} -gt 2 ]] && [[ ${out_lines[-1]} = 40 ]] && [[ ${out_lines[-2]} = 40 ]]; then
+        # With --format Null the only output is the xargs'd `read_rows` (two values, one per shard).
+        if [[ ${#out_lines[@]} -eq 2 ]] && [[ ${out_lines[-1]} = 40 ]] && [[ ${out_lines[-2]} = 40 ]]; then
             break
         fi
     done
