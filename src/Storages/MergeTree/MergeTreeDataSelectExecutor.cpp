@@ -619,19 +619,18 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     const Settings & settings = context->getSettingsRef();
     DataTypes minmax_columns_types;
 
-    if (metadata_snapshot->hasPartitionKey())
-    {
-        chassert(minmax_idx_condition && partition_pruner);
-        const auto & partition_key = metadata_snapshot->getPartitionKey();
-        minmax_columns_types = MergeTreeData::getMinMaxColumnsTypes(partition_key);
+    if (minmax_idx_condition)
+        minmax_columns_types = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data.getSettings()).getTypes();
 
-        if (settings[Setting::force_index_by_date] && (minmax_idx_condition->alwaysUnknownOrTrue() && partition_pruner->isUseless()))
-        {
-            auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
-            throw Exception(ErrorCodes::INDEX_NOT_USED,
-                "Neither MinMax index by columns ({}) nor partition expr is used and setting 'force_index_by_date' is set",
-                fmt::join(minmax_columns_names, ", "));
-        }
+    if (metadata_snapshot->hasPartitionKey() && settings[Setting::force_index_by_date]
+        && (!minmax_idx_condition || minmax_idx_condition->alwaysUnknownOrTrue())
+        && (!partition_pruner || partition_pruner->isUseless()))
+    {
+        const auto & partition_key = metadata_snapshot->getPartitionKey();
+        const auto & partition_columns_names = partition_key.expression->getRequiredColumns();
+        throw Exception(ErrorCodes::INDEX_NOT_USED,
+            "Neither MinMax index by columns ({}) nor partition expr is used and setting 'force_index_by_date' is set",
+            fmt::join(partition_columns_names, ", "));
     }
 
     auto query_context = context->hasQueryContext() ? context->getQueryContext() : context;
@@ -670,7 +669,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     {
         auto description = minmax_idx_condition->getDescription();
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
-            .type = ReadFromMergeTree::IndexType::PartitionMinMax,
+            .type = ReadFromMergeTree::IndexType::MinMax,
             .condition = std::move(description.condition),
             .used_keys = std::move(description.used_keys),
             .num_parts_after = part_filter_counters.num_parts_after_minmax,
@@ -2007,10 +2006,25 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     {
         if (use_skip_indexes_for_disjunctions && key_condition_rpn_template)
         {
-            return [range_begin, &partial_disjunction_result](size_t position, bool element_result, bool is_unknown)
+            const size_t max_position = std::min(key_condition_rpn_template->getRPN().size(), MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT);
+            return [range_begin, max_position, &partial_disjunction_result](size_t position, bool element_result, bool is_unknown)
             {
-                if (!is_unknown)
-                    partial_disjunction_result[(range_begin * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT) + position] = element_result;
+                /// Index conditions may have extra condition-local RPN nodes after rewrites.
+                /// `mergePartialResultsForDisjunctions` reads only positions from
+                /// `key_condition_rpn_template`, so leave extra positions at the default.
+                if (is_unknown || position >= max_position)
+                    return;
+
+                const auto bit_index = (range_begin * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT) + position;
+                if (bit_index >= partial_disjunction_result.size())
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Partial disjunction result bit index {} is out of range, bitset size: {}, mark: {}, position: {}",
+                        bit_index, partial_disjunction_result.size(), range_begin, position);
+                }
+
+                partial_disjunction_result[bit_index] = element_result;
             };
         }
         return nullptr;
@@ -2215,7 +2229,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
         counters.num_initial_selected_granules += num_granules;
 
         if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(
-                part->minmax_idx->hyperrectangle, minmax_columns_types).can_be_true)
+                part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
 
         counters.num_parts_after_minmax += 1;
@@ -2281,7 +2295,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             counters.num_initial_selected_granules += num_granules;
 
             if (minmax_idx_condition
-                && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx->hyperrectangle, minmax_columns_types)
+                && !minmax_idx_condition->checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types)
                         .can_be_true)
                 continue;
 
