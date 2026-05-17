@@ -7,7 +7,7 @@ Expression ((Project names + Projection))
   Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.partition_id_folding)
     Indexes:
-      Partition Min-Max
+      Min-Max
         Condition: true
         Parts: 3/3
         Granules: 9/9

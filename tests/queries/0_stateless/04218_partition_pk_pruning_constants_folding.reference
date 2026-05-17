@@ -7,7 +7,7 @@ Expression ((Project names + Projection))
   Filter ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.partition_pk_folding)
     Indexes:
-      Partition Min-Max
+      Min-Max
         Keys:
           a
         Condition: or((a in [3, 3]), or((a in [2, 2]), (a in [1, 1])))
