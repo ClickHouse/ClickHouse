@@ -620,14 +620,15 @@ void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, s
 /// Fills column values from list of blocks and row numbers
 /// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
 template <typename ColumnType>
-static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers)
+static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers)
 {
-    const auto & columns = columns_with_row_numbers.columns;
-    const auto & row_numbers = columns_with_row_numbers.row_numbers;
-    chassert(columns.size() == row_numbers.size());
+    const auto * columns = columns_with_row_numbers.columns.data();
+    const auto * row_numbers = columns_with_row_numbers.row_numbers.data();
+    const size_t n = columns_with_row_numbers.columns.size();
+    chassert(columns_with_row_numbers.row_numbers.size() == n);
 
-    col->reserve(col->size() + columns.size());
-    for (size_t j = 0; j < columns.size(); ++j)
+    col->reserve(col->size() + n);
+    for (size_t j = 0; j < n; ++j)
     {
         if (columns[j])
         {
@@ -644,14 +645,14 @@ static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePt
 }
 
 /// Fills column values from list of blocks and row numbers
-void IColumn::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers)
+void IColumn::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers)
 {
     fillColumnFromBlocksAndRowNumbers(this, type, source_column_index_in_block, columns_with_row_numbers);
 }
 
 /// Fills column values from list of blocks and row numbers
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers)
+void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers)
 {
     auto & self = static_cast<Derived &>(*this);
     fillColumnFromBlocksAndRowNumbers(&self, type, source_column_index_in_block, columns_with_row_numbers);
