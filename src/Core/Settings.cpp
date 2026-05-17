@@ -792,6 +792,16 @@ Whether to read from the columns cache when `use_columns_cache` is enabled. Acce
     DECLARE(Bool, enable_writes_to_columns_cache, true, R"(
 Whether to write to the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
 )", BETA) \
+    DECLARE(UInt64, columns_cache_max_estimated_compressed_bytes_to_write_to_cache, 0, R"(
+If the total compressed bytes estimated to be read by a query exceeds this value, writes to the columns cache are inhibited for the entire query. Keeps a single large scan from displacing useful data from the cache.
+
+A value of `0` means use half of the server-level `columns_cache_size`.
+)", BETA) \
+    DECLARE(UInt64, columns_cache_max_bytes_to_write_to_cache, 0, R"(
+Maximum total bytes that a single query may write to the columns cache. The amount of data written to the cache during the query is counted, and once it exceeds this value, further cache writes for the rest of the query are skipped.
+
+A value of `0` means use half of the server-level `columns_cache_size`.
+)", BETA) \
     DECLARE(Bool, replace_running_query, false, R"(
 When using the HTTP interface, the 'query_id' parameter can be passed. This is any string that serves as the query identifier.
 If a query from the same user with the same 'query_id' already exists at this time, the behaviour depends on the 'replace_running_query' parameter.

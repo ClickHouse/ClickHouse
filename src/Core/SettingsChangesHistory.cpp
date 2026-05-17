@@ -71,6 +71,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_columns_cache", false, true, "New setting to enable columns cache for MergeTree tables, on by default"},
             {"enable_reads_from_columns_cache", true, true, "New setting to control reading from columns cache"},
             {"enable_writes_to_columns_cache", true, true, "New setting to control writing to columns cache"},
+            {"columns_cache_max_estimated_compressed_bytes_to_write_to_cache", 0, 0, "New setting: cap on the estimated compressed bytes a query reads to permit columns cache writes (0 = half of columns_cache_size)."},
+            {"columns_cache_max_bytes_to_write_to_cache", 0, 0, "New setting: per-query cap on bytes written to the columns cache (0 = half of columns_cache_size)."},
             {"dynamic_disk_allow_from_env", false, false, "New setting to allow `from_env` substitutions in dynamic disk configuration (the `disk()` function). Disabled by default for security."},
             {"dynamic_disk_allow_include", false, false, "New setting to allow `include` in dynamic disk configuration (the `disk()` function). Disabled by default."},
             {"dynamic_disk_allow_from_zk", false, false, "New setting to allow `from_zk` substitutions in dynamic disk configuration (the `disk()` function). Disabled by default."},

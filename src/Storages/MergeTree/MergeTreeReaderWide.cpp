@@ -553,7 +553,22 @@ size_t MergeTreeReaderWide::readRows(
 
                             auto entry = std::make_shared<ColumnsCacheEntry>(
                                 ColumnsCacheEntry{std::move(column_to_cache), rows_to_cache});
+
+                            /// Per-query runtime cap: stop writing once the pool has spent its budget.
+                            /// Slight overshoot under concurrency is acceptable — the budget is advisory.
+                            const auto & bytes_written = settings.columns_cache_bytes_written_so_far;
+                            const size_t max_bytes = settings.columns_cache_max_bytes_to_write_to_cache;
+                            if (max_bytes > 0 && bytes_written && bytes_written->load(std::memory_order_relaxed) >= max_bytes)
+                            {
+                                LOG_TEST(log, "Skipping cache write: per-query budget exhausted ({} >= {})",
+                                    bytes_written->load(std::memory_order_relaxed), max_bytes);
+                                continue;
+                            }
+
+                            const size_t entry_weight = ColumnsCacheWeightFunction{}(*entry);
                             columns_cache->set(cache_key, entry);
+                            if (bytes_written)
+                                bytes_written->fetch_add(entry_weight, std::memory_order_relaxed);
 
                             LOG_TEST(log, "Cached column: {}, row_begin={}, row_end={}, rows={}",
                                 columns_to_read[pos].name, cache_row_begin, column_row_end, rows_to_cache);

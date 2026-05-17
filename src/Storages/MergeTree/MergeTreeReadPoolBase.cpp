@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
@@ -19,11 +20,72 @@ namespace Setting
     extern const SettingsBool apply_deleted_mask;
     extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
+    extern const SettingsUInt64 columns_cache_max_estimated_compressed_bytes_to_write_to_cache;
+    extern const SettingsUInt64 columns_cache_max_bytes_to_write_to_cache;
 }
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+
+static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & columns_to_read, const Settings & settings);
+
+/// Compute the per-pool columns cache write policy from the parts/columns to be read.
+/// Two budgets:
+///   - estimate budget: if the total compressed bytes the read is expected to fetch
+///     exceeds it, disable cache writes for the whole pool, so a single large scan
+///     does not displace useful data from the cache.
+///   - runtime budget: a per-pool atomic counter shared across readers; once it
+///     reaches the budget, further writes for this pool are skipped.
+/// Either value of 0 means "use half of the server-level columns_cache_size".
+static MergeTreeReaderSettings adjustReaderSettingsForColumnsCacheWrites(
+    MergeTreeReaderSettings settings,
+    const RangesInDataParts & parts,
+    const Names & columns,
+    const Settings & query_settings,
+    const ColumnsCachePtr & columns_cache,
+    bool use_columns_cache)
+{
+    if (!use_columns_cache || !columns_cache || !settings.enable_columns_cache_writes)
+        return settings;
+
+    const size_t cache_size = columns_cache->maxSizeInBytes();
+    if (cache_size == 0)
+    {
+        settings.enable_columns_cache_writes = false;
+        return settings;
+    }
+
+    /// Don't apply the estimate gate when the caller passed no columns (e.g. some
+    /// projection paths build the column list later). getSizeOfColumns falls back
+    /// to the whole-part size in that case, which would falsely trip the gate.
+    if (!columns.empty())
+    {
+        size_t estimate_budget = query_settings[Setting::columns_cache_max_estimated_compressed_bytes_to_write_to_cache];
+        if (estimate_budget == 0)
+            estimate_budget = cache_size / 2;
+
+        size_t estimated_bytes = 0;
+        for (const auto & part : parts)
+        {
+            estimated_bytes += getSizeOfColumns(*part.data_part, columns, query_settings);
+            if (estimated_bytes > estimate_budget)
+            {
+                settings.enable_columns_cache_writes = false;
+                return settings;
+            }
+        }
+    }
+
+    size_t runtime_budget = query_settings[Setting::columns_cache_max_bytes_to_write_to_cache];
+    if (runtime_budget == 0)
+        runtime_budget = cache_size / 2;
+
+    settings.columns_cache_max_bytes_to_write_to_cache = runtime_budget;
+    settings.columns_cache_bytes_written_so_far = std::make_shared<std::atomic<size_t>>(0);
+    return settings;
 }
 
 
@@ -50,7 +112,13 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , row_level_filter(row_level_filter_)
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
-    , reader_settings(reader_settings_)
+    , reader_settings(adjustReaderSettingsForColumnsCacheWrites(
+          reader_settings_,
+          parts_ranges,
+          column_names_,
+          context_->getSettingsRef(),
+          pool_settings_.use_columns_cache ? context_->getGlobalContext()->getColumnsCache() : nullptr,
+          pool_settings_.use_columns_cache))
     , column_names(column_names_)
     , pool_settings(pool_settings_)
     , block_size_params(block_size_params_)
