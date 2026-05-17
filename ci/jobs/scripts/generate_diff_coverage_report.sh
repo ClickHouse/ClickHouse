@@ -92,6 +92,11 @@ if [ "$current_sf_count" -eq 0 ] && [ "$baseline_sf_count" -eq 0 ]; then
   exit 0
 fi
 
+if [ "$current_sf_count" -eq 0 ]; then
+  echo "Current coverage is empty for changed files (tests may have been removed or disabled). Skipping genhtml — LBC analysis will run separately."
+  exit 0
+fi
+
 echo "Workspace path: $WORKSPACE_PATH"
 
 HEADER_TITLE="differential coverage report"

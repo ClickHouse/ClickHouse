@@ -311,7 +311,7 @@ MergeTreeReaderWide::FileStreams::iterator MergeTreeReaderWide::addStream(const 
 
     auto stream_settings = settings;
     stream_settings.is_low_cardinality_dictionary = ISerialization::isLowCardinalityDictionarySubcolumn(substream_path);
-    stream_settings.is_dynamic_or_object_structure = ISerialization::isDynamicOrObjectStructureSubcolumn(substream_path);
+    stream_settings.is_metadata_file = ISerialization::isMetadataStream(substream_path);
 
     auto create_stream = [&]<typename Stream>()
     {
@@ -354,9 +354,9 @@ ReadBuffer * MergeTreeReaderWide::getStream(
                 ErrorCodes::LOGICAL_ERROR,
                 "Stream {} for column {} with type {} is not found",
                 ISerialization::getFileNameForStream(
-                    name_and_type.type->getName(), substream_path, ISerialization::StreamFileNameSettings(*storage_settings)),
+                    name_and_type.name, substream_path, ISerialization::StreamFileNameSettings(*storage_settings)),
                     name_and_type.name,
-                    column->type->getName());
+                    name_and_type.type->getName());
         }
 
         return nullptr;

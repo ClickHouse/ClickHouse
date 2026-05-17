@@ -19,6 +19,9 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <IO/ReadBufferFromString.h>
 
 namespace DB
 {
@@ -294,7 +297,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     try
     {
         bool read = true;
-        if (bool default_value = checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf); default_value)
+        if (checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("DEFAULT", *buf))
         {
             column.insertDefault();
             read = false;
@@ -312,7 +315,6 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
 
         rollback_on_exception = true;
 
-        skipWhitespaceIfAny(*buf);
         assertDelimiterAfterValue(column_idx);
         return read;
     }
@@ -325,9 +327,35 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         if (rollback_on_exception)
             column.popBack(1);
 
+        buf->rollbackToCheckpoint();
+
+        /// We might hit something like ('{\'key1\':1, \'key2\':10}') which is valid, but escaped text
+        /// for Map/Array/Tuple. Try reading it here rather than falling back to the more expensive
+        /// expression parser.
+        if (!buf->eof() && *buf->position() == '\'')
+        {
+            WhichDataType which(removeNullable(removeLowCardinality(types[column_idx])));
+            if (which.isMap() || which.isArray() || which.isTuple())
+            {
+                String string_value;
+                const bool parsed_string = tryReadQuotedStringWithSQLStyle(string_value, *buf)
+                    && checkDelimiterAfterValue(column_idx);
+
+                if (parsed_string)
+                {
+                    ReadBufferFromString in_buffer(string_value);
+                    if (serializations[column_idx]->tryDeserializeWholeText(column, in_buffer, format_settings))
+                        return true;
+                }
+
+                /// Deserialization failed or delimiter not found after the string
+                /// Rollback and let the SQL parser handle it.
+                buf->rollbackToCheckpoint();
+            }
+        }
+
         /// Switch to SQL parser and don't try to use streaming parser for complex expressions
         /// Note: Throwing exceptions for each expression may be very slow because of stacktraces
-        buf->rollbackToCheckpoint();
         return parseExpression(column, column_idx);
     }
 }
@@ -576,7 +604,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Insert value into the column.
     /// For Dynamic type we cannot just insert Field as we lose information about the data type.
     /// Instead try to create a column with single element and cast it to the destination type.
-    if (type.hasDynamicSubcolumns())
+    if (type.hasDynamicStructure())
     {
         auto const_column = value_raw.second->createColumnConst(1, expression_value);
         auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
