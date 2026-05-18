@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -215,6 +216,25 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSet
         auto plan = future_set->build(optimization_settings.network_transfer_limits, optimization_settings.prepared_sets_cache);
         if (!plan)
             continue;
+
+        /// The set's plan was built by the Planner under `forceMaterializeCTE`,
+        /// which plants a safety-net `DelayedMaterializingCTEsStep` at the top of
+        /// the source plan to allow `buildSetInplace` / `buildOrderedSetInplace`
+        /// to materialize the referenced CTEs synchronously. Here we are
+        /// attaching the plan for *runtime* set construction; at runtime, the
+        /// outer `MaterializingCTEsStep` in the main query plan will materialize
+        /// each referenced CTE before this set's pipeline runs (the
+        /// MaterializingCTEsStep wraps the main pipeline whose CreatingSetsStep
+        /// runs this set's pipeline via `addPipelineBefore`). The safety-net
+        /// here is therefore redundant — strip it so the runtime plan stays
+        /// lean.
+        ///
+        /// Important: do NOT recurse into nested `DelayedCreatingSetsStep`
+        /// source plans. Nested IN-subqueries may be consumed by
+        /// `buildSetInplace` / `buildOrderedSetInplace` during the
+        /// `plan->optimize(...)` below, and those paths *need* the safety-net
+        /// to claim and materialize the CTE inplace.
+        removeTopLevelDelayedMaterializingCTEsStep(*plan);
 
         plan->optimize(optimization_settings);
         plans.emplace_back(std::move(plan));
