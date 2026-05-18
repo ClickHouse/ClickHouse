@@ -14,6 +14,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/PerformanceAdaptors.h>
 #include <base/IPv4andIPv6.h>
+#include <base/unaligned.h>
 
 #include <Common/TargetSpecific.h>
 
@@ -59,7 +60,7 @@ size_t md5PadFinalBlocks(const uint8_t * data, size_t len, uint8_t * out)
     out[tail] = 0x80;
 
     uint64_t bit_len = static_cast<uint64_t>(len) * 8;
-    std::memcpy(out + final_count * 64 - 8, &bit_len, 8);
+    unalignedStoreLittleEndian<uint64_t>(out + final_count * 64 - 8, bit_len);
 
     return final_count;
 }
@@ -358,24 +359,22 @@ DECLARE_MULTITARGET_CODE(
             {
                 if (blk + 1 == num_blocks[j])
                 {
-                    uint32_t digest[4];
-                    digest[0] = extractLane<Ops>(a1, j);
-                    digest[1] = extractLane<Ops>(b1, j);
-                    digest[2] = extractLane<Ops>(c1, j);
-                    digest[3] = extractLane<Ops>(d1, j);
-                    std::memcpy(output + j * 16, digest, 16);
+                    uint8_t * out = output + j * 16;
+                    unalignedStoreLittleEndian<uint32_t>(out,      extractLane<Ops>(a1, j));
+                    unalignedStoreLittleEndian<uint32_t>(out + 4,  extractLane<Ops>(b1, j));
+                    unalignedStoreLittleEndian<uint32_t>(out + 8,  extractLane<Ops>(c1, j));
+                    unalignedStoreLittleEndian<uint32_t>(out + 12, extractLane<Ops>(d1, j));
                 }
             }
             for (size_t j = 0; j < count2; ++j)
             {
                 if (blk + 1 == num_blocks[N + j])
                 {
-                    uint32_t digest[4];
-                    digest[0] = extractLane<Ops>(a2, j);
-                    digest[1] = extractLane<Ops>(b2, j);
-                    digest[2] = extractLane<Ops>(c2, j);
-                    digest[3] = extractLane<Ops>(d2, j);
-                    std::memcpy(output + (N + j) * 16, digest, 16);
+                    uint8_t * out = output + (N + j) * 16;
+                    unalignedStoreLittleEndian<uint32_t>(out,      extractLane<Ops>(a2, j));
+                    unalignedStoreLittleEndian<uint32_t>(out + 4,  extractLane<Ops>(b2, j));
+                    unalignedStoreLittleEndian<uint32_t>(out + 8,  extractLane<Ops>(c2, j));
+                    unalignedStoreLittleEndian<uint32_t>(out + 12, extractLane<Ops>(d2, j));
                 }
             }
         }
@@ -545,8 +544,8 @@ struct ScalarMD5Ops
     {
         for (int i = 0; i < 16; ++i)
         {
-            std::memcpy(&msg[i].v[0], block_ptrs[0] + i * 4, 4);
-            std::memcpy(&msg[i].v[1], block_ptrs[1] + i * 4, 4);
+            msg[i].v[0] = unalignedLoadLittleEndian<uint32_t>(block_ptrs[0] + i * 4);
+            msg[i].v[1] = unalignedLoadLittleEndian<uint32_t>(block_ptrs[1] + i * 4);
         }
     }
 };
