@@ -383,25 +383,22 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                     "ReadPipeline: distributed cache requires ObjectStorageSource");
 
             /// The fallback must be a full Gather reader — same chain as the non-DC path.
-            /// ReadBufferFromDistributedCache calls set() on the fallback with its own
-            /// internal_buffer before reading, and Gather propagates it to per-object buffers.
+            /// `ReadBufferFromDistributedCache::readFromFallbackBuffer` calls
+            /// `buffer->set(internal_buffer.begin(), internal_buffer.size())` on the fallback,
+            /// so the fallback must accept an external buffer (use_external_buffer=true).
+            /// Copy, not move: fallback may be called multiple times (e.g. after
+            /// connection pool exhaustion on different read ranges).
             auto fallback_creator = [gather_creator, objects = source->objects,
-                                     captured_settings = settings, effective_buffer_size]() mutable
+                                     captured_settings = settings]() mutable
                 -> std::unique_ptr<ReadBufferFromFileBase>
             {
-                /// The fallback Gather must use use_external_buffer=false and manage its
-                /// own buffer. When DC falls back, it calls set() on the fallback with
-                /// DC's own internal_buffer — which may be empty when DC itself uses
-                /// external buffer mode. A self-buffered Gather works independently.
-                /// Copy, not move: fallback may be called multiple times (e.g. after
-                /// connection pool exhaustion on different read ranges).
                 auto creator_copy = gather_creator;
                 return std::make_unique<ReadBufferFromRemoteFSGather>(
                     std::move(creator_copy),
                     objects,
                     captured_settings.remote_read_min_bytes_for_seek,
-                    /* use_external_buffer */ false,
-                    effective_buffer_size);
+                    /* use_external_buffer */ true,
+                    /* buffer_size */ 0);
             };
 
             impl = DistributedCache::readWithDistributedCache(
@@ -581,19 +578,21 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                     "Use needGather() to enable the gather path which handles both stages");
 
             /// Fallback: read directly from object storage (same as non-DC path).
-            /// use_external_buffer=false because DC calls set() on the fallback with its
-            /// own internal_buffer which may be empty in external buffer mode.
+            /// `ReadBufferFromDistributedCache::readFromFallbackBuffer` calls
+            /// `buffer->set(internal_buffer.begin(), internal_buffer.size())` on the fallback,
+            /// so the fallback must accept an external buffer (use_external_buffer=true).
             auto fallback_creator = [storage = dc_obj_source->storage,
                                      captured_object = source->objects.at(0),
                                      captured_settings = settings]()
                 -> std::unique_ptr<ReadBufferFromFileBase>
             {
-                return storage->readObject(captured_object, captured_settings, {},
-                    /* use_external_buffer */ false, /* restrict_seek */ false);
+                return storage->readObject(captured_object, captured_settings, read_hint,
+                    /* use_external_buffer */ true, /* restrict_seek */ false);
             };
 
-            /// DC manages its own buffer (reads from TCP). Same as the gather path.
-            bool use_ext_buf_for_dc = false;
+            /// DC uses external buffer mode when a downstream stage (memory cache or
+            /// async prefetch) wraps it — matches the gather path and master behavior.
+            bool use_ext_buf_for_dc = memory_cache.has_value() || async_prefetch.has_value();
             impl = DistributedCache::readWithDistributedCache(
                 source->objects.at(0).remote_path,
                 source->objects,
@@ -627,7 +626,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         auto page_cache_read_settings = settings;
         if (memory_cache->page_cache_settings)
         {
-            auto & pcs = *memory_cache->page_cache_settings;
+            const auto & pcs = *memory_cache->page_cache_settings;
             page_cache_read_settings.read_from_page_cache_if_exists_otherwise_bypass_cache = pcs.read_from_page_cache_if_exists_otherwise_bypass_cache;
             page_cache_read_settings.page_cache_inject_eviction = pcs.page_cache_inject_eviction;
             page_cache_read_settings.page_cache_block_size = pcs.page_cache_block_size;
