@@ -139,16 +139,16 @@ bool urlWithGlobs(const String & uri)
     return (uri.contains('{') && uri.contains('}')) || uri.contains('|');
 }
 
-bool urlPathHasListableGlobs(const String & uri)
+bool urlPathHasListableGlobs(std::string_view uri)
 {
     const size_t scheme_pos = uri.find("://");
-    const size_t authority_start = (scheme_pos == String::npos) ? 0 : scheme_pos + 3;
+    const size_t authority_start = (scheme_pos == std::string_view::npos) ? 0 : scheme_pos + 3;
     const size_t path_start = uri.find('/', authority_start);
-    if (path_start == String::npos)
+    if (path_start == std::string_view::npos)
         return false;
 
     const size_t path_end = uri.find_first_of("?#", path_start);
-    const auto path = uri.substr(path_start, path_end - path_start);
+    const auto path = uri.substr(path_start, path_end == std::string_view::npos ? std::string_view::npos : path_end - path_start);
     return path.contains('*');
 }
 

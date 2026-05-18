@@ -16,6 +16,8 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Poco/URI.h>
 
+#include <string_view>
+
 
 namespace DB
 {
@@ -29,7 +31,7 @@ class NamedCollection;
 struct StorageID;
 class PullingPipelineExecutor;
 
-bool urlPathHasListableGlobs(const String & uri);
+bool urlPathHasListableGlobs(std::string_view uri);
 
 /**
  * This class represents table engine for external urls.
