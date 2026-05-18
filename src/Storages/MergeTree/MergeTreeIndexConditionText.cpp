@@ -68,6 +68,16 @@ SipHash TextSearchQuery::getHash() const
         hash.update(token);
     }
 
+    /// Phrase semantics depend on the original token order (with duplicates).
+    /// For phrase queries, `tokens` is sorted+deduplicated for granule pruning,
+    /// so phrases like "a b" and "b a" would otherwise share the same hash.
+    hash.update(ordered_tokens.size());
+    for (const auto & token : ordered_tokens)
+    {
+        hash.update(token.size());
+        hash.update(token);
+    }
+
     if (!patterns.empty())
     {
         hash.update(patterns.size());
