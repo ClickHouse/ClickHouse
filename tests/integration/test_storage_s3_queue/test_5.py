@@ -1045,11 +1045,14 @@ def test_cancel_during_commit_on_select(started_cluster):
         "SYSTEM ENABLE FAILPOINT object_storage_queue_cancel_in_generate"
     )
     try:
-        # The SELECT will throw QUERY_WAS_CANCELLED via the failpoint; swallow it.
-        try:
-            node.query(f"SELECT count() FROM {table_name}")
-        except Exception:
-            pass
+        # The SELECT MUST throw QUERY_WAS_CANCELLED via the failpoint. Assert this
+        # explicitly so that if the failpoint silently does not fire (and the SELECT
+        # returns normally), the test fails instead of trivially passing the
+        # `Failed count == 0` check below.
+        error = node.query_and_get_error(f"SELECT count() FROM {table_name}")
+        assert "QUERY_WAS_CANCELLED" in error, (
+            f"Expected QUERY_WAS_CANCELLED from failpoint, got: {error}"
+        )
     finally:
         node.query(
             "SYSTEM DISABLE FAILPOINT object_storage_queue_cancel_in_generate"
@@ -1142,9 +1145,33 @@ def test_shutdown_dedup_off_no_duplicates(started_cluster):
         format=format,
     )
 
-    # Give the streaming task time to start the first file and hit the 5-second
-    # parking point before restart_clickhouse fires shutdown.
-    time.sleep(1)
+    # Wait deterministically for the failpoint to park the source mid-file.
+    # `object_storage_queue_sleep_in_generate` fires after `processed_rows > 0`,
+    # i.e. after the first chunk has been pulled. Polling
+    # `system.s3queue_metadata_cache` for a file in `Processing` state with
+    # rows already counted means the source is currently sleeping at the
+    # failpoint — `restart_clickhouse()` after this point reliably enters the
+    # dedup-off shutdown branch this PR protects. Without the wait, a
+    # fixed-duration sleep can fire restart before streaming has scheduled,
+    # making the test pass trivially.
+    deadline = time.time() + 30
+    parked = False
+    while time.time() < deadline:
+        in_progress = int(
+            node.query(
+                f"SELECT count() FROM system.s3queue_metadata_cache "
+                f"WHERE zookeeper_path ilike '%{table_name}%' "
+                f"AND status = 'Processing' AND rows_processed > 0"
+            )
+        )
+        if in_progress >= 1:
+            parked = True
+            break
+        time.sleep(0.1)
+    assert parked, (
+        "object_storage_queue_sleep_in_generate failpoint did not park the "
+        "source within 30s — test cannot exercise the dedup-off shutdown path."
+    )
     node.restart_clickhouse()
 
     # Wait for all files to reach Processed state after the restart.
