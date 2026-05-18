@@ -1224,6 +1224,8 @@ QTCreator
 Qaph
 Qoph
 Quantile
+QueriesMemoryUsage
+QueriesPeakMemoryUsage
 QueryCacheBytes
 QueryCacheEntries
 QueryCacheHits
@@ -3383,6 +3385,8 @@ redisstreams
 refcounter
 refreshable
 regexpExtract
+regexpInstr
+regexpPosition
 regexpQuoteMeta
 regionHierarchy
 regionIn
