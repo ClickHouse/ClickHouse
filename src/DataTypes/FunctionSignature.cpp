@@ -322,7 +322,12 @@ struct ArgumentDescription
     bool match(const DataTypePtr & type, const ColumnPtr & column, Variables & vars, size_t iteration,
         size_t arg_num, std::string & out_reason) const
     {
-        if (is_const && (!column || !isColumnConst(*column)))
+        /// `column == nullptr` means the caller has no column information (e.g.
+        /// `getReturnTypeImpl(DataTypes)` reached us through the legacy types-only
+        /// path). In that mode we can't decide constness, so skip the check and
+        /// the const-value capture — both would reject every const-constrained
+        /// signature on this path otherwise.
+        if (is_const && column && !isColumnConst(*column))
         {
             out_reason = "argument " + DB::toString(arg_num + 1) + (argument_name.name.empty() ? "" : " (" + argument_name.name + ")")
                 + " must be " + toString() + ", but it is not constant";
@@ -332,7 +337,7 @@ struct ArgumentDescription
         if (!argument_name.name.empty())
         {
             auto key = argument_name.incrementIndex(iteration);
-            if (is_const && !vars.assignOrCheck(key, typeid_cast<const ColumnConst &>(*column).getField(), arg_num, out_reason))
+            if (is_const && column && !vars.assignOrCheck(key, typeid_cast<const ColumnConst &>(*column).getField(), arg_num, out_reason))
             {
                 return false;
             }
