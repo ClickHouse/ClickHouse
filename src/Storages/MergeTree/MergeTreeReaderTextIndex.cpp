@@ -782,13 +782,15 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
     {
         const auto & remaining_tokens = granule->getRemainingTokens();
 
-        /// Build `PostingListCursorMap` for query tokens. Cursors are cached across `fillColumn` calls.
-        /// Backward `readRows` jumps drop the cursor cache at the reader level (see the `from_mark < current_mark` branch).
+        /// Build `PostingListCursorMap` for query tokens. Cursors are cached per `(column, token)`
+        /// to keep mutable forward-only state isolated; backward jumps drop the cache in `readRows`.
+        auto & column_cursors = lazy_cursors[column_name];
         PostingListCursorMap cursor_map;
+
         for (const auto & token : search_query->tokens)
         {
-            auto cursor_it = lazy_cursors.find(token);
-            if (cursor_it != lazy_cursors.end())
+            auto cursor_it = column_cursors.find(token);
+            if (cursor_it != column_cursors.end())
             {
                 cursor_map[token] = cursor_it->second;
                 continue;
@@ -799,7 +801,7 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
                 continue;
 
             auto cursor = makeLazyCursor(token, *info_it->second);
-            lazy_cursors.emplace(token, cursor);
+            column_cursors.emplace(token, cursor);
             cursor_map[token] = std::move(cursor);
         }
 

@@ -122,14 +122,10 @@ private:
     bool use_lazy_mode = false;
     float lazy_density_threshold = 0.5f;
 
-    /// Cached per-token lazy cursors. Reused across `fillColumn` calls so the decoded
-    /// segment payload, parsed block index, and (when adjacent marks fall in the same
-    /// block) the decoded packed block are amortized over many marks. Pre-decoded
-    /// embedded postings and the materialized rare-token bitmap live inside the cursor
-    /// and are likewise produced once.
-    /// Forward-only: `readRows` clears this map when it detects a backward jump
-    /// (`from_mark < current_mark`); also cleared on granule reload.
-    absl::flat_hash_map<String, PostingListCursorPtr> lazy_cursors;
+    /// Cached lazy cursors keyed by `(virtual column name, token)`. Cursors are forward-only and
+    /// hold mutable segment/block position, so they must not be shared across columns.
+    /// Cleared on granule reload and on backward `readRows` jumps (`from_mark < current_mark`).
+    absl::flat_hash_map<String, absl::flat_hash_map<String, PostingListCursorPtr>> lazy_cursors;
 };
 
 }
