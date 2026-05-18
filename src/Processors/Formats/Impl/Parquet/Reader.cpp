@@ -337,6 +337,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             }
             catch (...)
             {
+                if (options.format.parquet.allow_geoparquet_parser)
+                    throw;
                 LOG_WARNING(getLogger("ParquetReader"), "Failed to parse GeoParquet metadata, spatial pruning and geo type resolution disabled: {}", getCurrentExceptionMessage(false));
             }
             break;
