@@ -322,7 +322,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             });
         }
 
-        pipeline.transform([&](const OutputPortRawPtrs & ports)
+        pipeline.transform([&](OutputPortRawPtrs ports)
         {
             assert(streams * grouping_sets_size == ports.size());
             Processors processors;
