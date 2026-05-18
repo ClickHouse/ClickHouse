@@ -218,6 +218,7 @@ private:
             }
         }
         updateDataSize(INSERT_OR_REPLACE, key.size(), new_value_size, old_value_size, remove_old);
+        optimizeIfNeeded();
     }
 
 public:
@@ -250,6 +251,9 @@ public:
         chassert(inserted);
         itr->setActiveInMap();
         updateDataSize(INSERT_OR_REPLACE, key.size(), value_size, 0);
+        /// `optimizeIfNeeded` may rehash and invalidate `it`, so re-find after the call.
+        if (optimizeIfNeeded())
+            it = map.find(itr->key);
         return std::make_pair(it, true);
     }
 
@@ -409,10 +413,14 @@ public:
         optimizeIfNeeded();
     }
 
-    void optimizeIfNeeded()
+    bool optimizeIfNeeded()
     {
         if (min_load_factor > 0 && map.load_factor() < min_load_factor && map.size() > min_node_count_for_auto_optimize)
+        {
             optimize();
+            return true;
+        }
+        return false;
     }
 
     void clear()
