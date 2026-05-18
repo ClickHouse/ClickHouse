@@ -30,6 +30,8 @@ err6="${CLICKHOUSE_TMP}/04219_err6_${CLICKHOUSE_DATABASE}.txt"
 tty7="${CLICKHOUSE_TMP}/04219_tty7_${CLICKHOUSE_DATABASE}.txt"
 tty8="${CLICKHOUSE_TMP}/04219_tty8_${CLICKHOUSE_DATABASE}.txt"
 tty9="${CLICKHOUSE_TMP}/04219_tty9_${CLICKHOUSE_DATABASE}.txt"
+tty10="${CLICKHOUSE_TMP}/04219_tty10_${CLICKHOUSE_DATABASE}.txt"
+tty11="${CLICKHOUSE_TMP}/04219_tty11_${CLICKHOUSE_DATABASE}.txt"
 
 # -----------------------------------------------------------------------------
 # Non-TTY cases (stderr redirected to a regular file). With the TTY guard, the
@@ -99,4 +101,30 @@ echo "8. clickhouse-client --chime 0, slow query, pty stderr: $(bel_count "$tty8
 /usr/bin/script -qc "${CLICKHOUSE_CLIENT} --chime 10 -q 'SELECT sleep(0.1) FORMAT Null'" /dev/null > "$tty9" 2>&1
 echo "9. clickhouse-client --chime 10, fast query (0.1s < 10s threshold), pty stderr: $(bel_count "$tty9")"
 
-rm -f "$err1" "$err2" "$err3" "$err4" "$err5" "$err6" "$tty7" "$tty8" "$tty9"
+# Case 10: no `--chime` flag, slow query (~6s > default 5s threshold), stderr
+# attached to a pty — expect `BEL`. This verifies the advertised default-on
+# behaviour: when `--chime` is omitted the client must still emit `BEL` once a
+# query exceeds the default 5-second threshold. Cases 3 and 5 only cover the
+# non-TTY suppression branch and would silently pass if `implicit_value` /
+# `default_value` regressed to `0` (i.e. accidentally disabled by default).
+/usr/bin/script -qc "${CLICKHOUSE_CLIENT} -q 'SELECT sleepEachRow(2) FROM numbers(3) FORMAT Null SETTINGS function_sleep_max_microseconds_per_block = 0'" /dev/null > "$tty10" 2>&1
+echo "10. clickhouse-client (no --chime), slow query (~6s > default 5s threshold), pty stderr: $(bel_count "$tty10")"
+
+# Case 11: `--chime 1`, slow query that ends in an error, stderr attached to a
+# pty — expect `BEL` on the error path AND verify the query actually failed
+# (non-zero exit + `'expected error'` in the captured stream). This is the only
+# place where the "chime on error in TTY" contract is exercised: case 4 covers
+# the non-TTY suppression branch and would still pass if a regression emitted
+# `BEL` only on success and silently dropped it on errors.
+/usr/bin/script -eqc "${CLICKHOUSE_CLIENT} --chime 1 -q \"SELECT sleep(1.5), throwIf(1 = 1, 'expected error')\"" /dev/null > "$tty11" 2>&1
+rc=$?
+if [ "$rc" -eq 0 ]; then
+    case11_status="FAIL: query unexpectedly succeeded"
+elif ! grep -q 'expected error' "$tty11"; then
+    case11_status="FAIL: missing 'expected error' message in pty output"
+else
+    case11_status=$(bel_count "$tty11")
+fi
+echo "11. clickhouse-client --chime 1, slow query then error, pty stderr: $case11_status"
+
+rm -f "$err1" "$err2" "$err3" "$err4" "$err5" "$err6" "$tty7" "$tty8" "$tty9" "$tty10" "$tty11"
