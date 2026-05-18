@@ -728,7 +728,7 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
                     writeSlice(array_source.getWhole(), sink);
                     for (size_t i = array_size; i < length; ++i)
                     {
-                        if (i % CANCELLATION_CHECK_INTERVAL == 0)
+                        if ((i - array_size) % CANCELLATION_CHECK_INTERVAL == 0)
                             CurrentThread::throwIfQueryCancelled();
                         writeSlice(value_source.getWhole(), sink);
                     }
@@ -747,7 +747,7 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
                 {
                     for (size_t i = array_size; i < length; ++i)
                     {
-                        if (i % CANCELLATION_CHECK_INTERVAL == 0)
+                        if ((i - array_size) % CANCELLATION_CHECK_INTERVAL == 0)
                             CurrentThread::throwIfQueryCancelled();
                         writeSlice(value_source.getWhole(), sink);
                     }
@@ -785,7 +785,7 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
                 writeSlice(array_source.getWhole(), sink);
                 for (size_t i = array_size; i < length; ++i)
                 {
-                    if (i % CANCELLATION_CHECK_INTERVAL == 0)
+                    if ((i - array_size) % CANCELLATION_CHECK_INTERVAL == 0)
                         CurrentThread::throwIfQueryCancelled();
                     writeSlice(value_source.getWhole(), sink);
                 }
@@ -804,7 +804,7 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
             {
                 for (size_t i = array_size; i < length; ++i)
                 {
-                    if (i % CANCELLATION_CHECK_INTERVAL == 0)
+                    if ((i - array_size) % CANCELLATION_CHECK_INTERVAL == 0)
                         CurrentThread::throwIfQueryCancelled();
                     writeSlice(value_source.getWhole(), sink);
                 }
