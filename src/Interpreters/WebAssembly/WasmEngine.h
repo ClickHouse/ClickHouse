@@ -68,7 +68,7 @@ public:
 class IWasmEngine
 {
 public:
-    virtual std::unique_ptr<WasmModule> compileModule(std::string_view wasm_code) const = 0;
+    virtual std::unique_ptr<WasmModule> compileModule(std::string_view module_name, std::string_view wasm_code) const = 0;
     virtual ~IWasmEngine() = default;
 };
 

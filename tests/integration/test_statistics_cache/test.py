@@ -4,14 +4,14 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-ch1 = cluster.add_instance("ch1", stay_alive=True)
-r1  = cluster.add_instance("r1", with_zookeeper=True, stay_alive=True)
-r2  = cluster.add_instance("r2", with_zookeeper=True, stay_alive=True)
+ch1 = cluster.add_instance("ch1", stay_alive=True, user_configs=["config/config.xml"])
+r1  = cluster.add_instance("r1", with_zookeeper=True, stay_alive=True, user_configs=["config/config.xml"])
+r2  = cluster.add_instance("r2", with_zookeeper=True, stay_alive=True, user_configs=["config/config.xml"])
 
 TEST_DB = f"db_sc_{uuid.uuid4().hex[:6]}"
 SET_PREFIX = f"""\
 USE {TEST_DB};
-SET allow_experimental_statistics = 1;
+SET allow_statistics = 1;
 SET use_statistics = 1;
 SET mutations_sync = 2;
 SET log_queries = 1;
@@ -67,7 +67,7 @@ def _create_tbl(node, name, interval):
         CREATE TABLE {name} (k UInt32, v Float64)
         ENGINE=MergeTree
         ORDER BY k
-        SETTINGS refresh_statistics_interval = {interval}
+        SETTINGS refresh_statistics_interval = {interval}, auto_statistics_types = ''
     """)
     _query(node, f"INSERT INTO {name} SELECT number, toFloat64(rand())/4294967296.0 FROM numbers({ROWS_SMALL})")
     _query_retry(node, f"ALTER TABLE {name} ADD STATISTICS v TYPE TDigest")

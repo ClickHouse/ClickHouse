@@ -8,9 +8,6 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Crypto/OpenSSLInitializer.h>
 
-#if defined(SANITIZE_COVERAGE)
-#    include <Common/Coverage.h>
-#endif
 
 #include "config.h"
 #include "config_tools.h"
@@ -37,6 +34,21 @@ const char * __asan_default_options()
 const char * __lsan_default_options()
 {
     return "max_allocation_size_mb=32768";
+}
+const char * __lsan_default_suppressions()
+{
+    /// OpenSSL intentionally does not free all global state at exit.
+    /// These are known false positives from OpenSSL provider and EVP initialization.
+    return "leak:ossl_provider_new\n"
+           "leak:OSSL_PROVIDER_try_load_ex\n"
+           "leak:ossl_rand_ctx_new\n"
+           "leak:OSSL_LIB_CTX_new\n"
+           "leak:ossl_legacy_provider_init\n"
+           /// OpenSSL EVP method objects are cached globally and never freed at exit.
+           /// Triggered when S3 client initializes HMAC (AWS SDK -> OpenSSL HMAC_Init_ex).
+           "leak:evp_md_new\n"
+           "leak:construct_evp_method\n"
+           "leak:CRYPTO_THREAD_lock_new\n";
 }
 #endif
 
@@ -78,15 +90,23 @@ int mainEntryClickHouseGitImport(int argc, char ** argv);
 int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
 int mainEntryClickHouseSU(int argc, char ** argv);
+int mainEntryClickHouseDockerInit(int argc, char ** argv);
 int mainEntryClickHouseServer(int argc, char ** argv);
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 int mainEntryClickHouseZooKeeperDumpTree(int argc, char ** argv);
 int mainEntryClickHouseZooKeeperRemoveByList(int argc, char ** argv);
 
-int mainEntryClickHouseHashBinary(int, char **)
+int mainEntryClickHouseHashBinary(int argc, char ** argv)
 {
-    /// Intentionally without newline. So you can run:
-    /// objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse
+    if (argc > 1 && (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0))
+    {
+        std::cout << "Usage: clickhouse hash-binary\n"
+                     "Prints hash of ClickHouse binary.\n"
+                     "  -h, --help   Print this message\n"
+                     "Result is intentionally without newline. So you can run:\n"
+                     "objcopy --add-section .clickhouse.hash=<(./clickhouse hash-binary) clickhouse\n\n"
+                     "Current binary hash: ";
+    }
     std::cout << getHashOfLoadedBinaryHex();
     return 0;
 }
@@ -128,6 +148,21 @@ namespace
 
 using MainFunc = int (*)(int, char**);
 
+/// Forward declaration, since clickhouse_applications is defined after this function.
+void printHelp(std::ostream & out);
+
+int mainEntryHelp(int, char **)
+{
+    printHelp(std::cout);
+    return 0;
+}
+
+int printHelpOnError(int, char **)
+{
+    printHelp(std::cerr);
+    return -1;
+}
+
 /// Add an item here to register new application.
 /// This list has a "priority" - e.g. we need to disambiguate clickhouse --format being
 /// either clickouse-format or clickhouse-{local, client} --format.
@@ -149,6 +184,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"git-import", mainEntryClickHouseGitImport},
     {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
     {"su", mainEntryClickHouseSU},
+    {"docker-init", mainEntryClickHouseDockerInit},
     {"hash-binary", mainEntryClickHouseHashBinary},
     {"disks", mainEntryClickHouseDisks},
     {"check-marks", mainEntryClickHouseCheckMarks},
@@ -179,14 +215,15 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"stop", mainEntryClickHouseStop},
     {"status", mainEntryClickHouseStatus},
     {"restart", mainEntryClickHouseRestart},
+    // help
+    {"help", mainEntryHelp},
 };
 
-int printHelp(int, char **)
+void printHelp(std::ostream & out)
 {
-    std::cerr << "Use one of the following commands:" << std::endl;
-    for (auto & application : clickhouse_applications)
-        std::cerr << "clickhouse " << application.first << " [args] " << std::endl;
-    return -1;
+    out << "Use one of the following commands:" << std::endl;
+    for (const auto & application : clickhouse_applications)
+        out << "clickhouse " << application.first << " [args] " << std::endl;
 }
 
 /// Add an item here to register a new short name
@@ -262,15 +299,15 @@ extern "C"
 /// Some of these messages are non-actionable for the users, such as:
 /// <jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
 #if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
-extern "C" void (*malloc_message)(void *, const char *s);
-__attribute__((constructor(0))) void init_je_malloc_message() { malloc_message = [](void *, const char *){}; }
+extern "C" void (*je_malloc_message)(void *, const char *s);
+__attribute__((constructor(0))) void init_je_malloc_message() { je_malloc_message = [](void *, const char *){}; }
 #elif USE_JEMALLOC
 #include <unordered_set>
 /// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create
-extern "C" void (*malloc_message)(void *, const char * s);
+extern "C" void (*je_malloc_message)(void *, const char * s);
 __attribute__((constructor(0))) void init_je_malloc_message()
 {
-    malloc_message = [](void *, const char * str)
+    je_malloc_message = [](void *, const char * str)
     {
         using namespace std::literals;
         static const std::unordered_set<std::string_view> ignore_messages{
@@ -331,7 +368,7 @@ int main(int argc_, char ** argv_)
     std::vector<char *> argv(argv_, argv_ + argc_);
 
     /// Print a basic help if nothing was matched
-    MainFunc main_func = printHelp;
+    MainFunc main_func = printHelpOnError;
 
     for (auto & application : clickhouse_applications)
     {
@@ -342,9 +379,21 @@ int main(int argc_, char ** argv_)
         }
     }
 
+    /// Top-level --help / -h / -? (as the sole argument) should show the dispatcher
+    /// help listing all subcommands and exit with code 0. Without this carve-out,
+    /// `--help` would match the `startsWith(argv[i], "-h")` rule below and be routed
+    /// into clickhouse-client, which treats anything starting with "-h" as a --host
+    /// specification and fails.
+    if (main_func == printHelpOnError && argv.size() == 2)
+    {
+        std::string_view arg(argv[1]);
+        if (arg == "--help" || arg == "-h" || arg == "-?")
+            main_func = mainEntryHelp;
+    }
+
     /// If host/port arguments are passed to clickhouse/ch shortcuts,
     /// interpret it as clickhouse-client invocation for usability.
-    if (main_func == printHelp && argv.size() >= 2)
+    if (main_func == printHelpOnError && argv.size() >= 2)
     {
         for (size_t i = 1, num_args = argv.size(); i < num_args; ++i)
         {
@@ -369,7 +418,7 @@ int main(int argc_, char ** argv_)
     ///     clickhouse /tmp/repro --enable-analyzer
     ///
     std::error_code ec;
-    if (main_func == printHelp && !argv.empty()
+    if (main_func == printHelpOnError && !argv.empty()
         && (argv.size() < 2 || argv[1] != std::string_view("--help"))
         && (argv.size() == 1 || argv[1][0] == '-' || std::string_view(argv[1]).contains(' ')
             || std::filesystem::is_regular_file(std::filesystem::path{argv[1]}, ec)))
@@ -386,7 +435,7 @@ int main(int argc_, char ** argv_)
     /// We detect file-like arguments by the presence of `/` (path separator)
     /// or `.` (file extension), which distinguishes them from mistyped subcommand
     /// names like "clickhouse sever" where the generic help is appropriate.
-    if (main_func == printHelp && argv.size() >= 2)
+    if (main_func == printHelpOnError && argv.size() >= 2)
     {
         std::string_view arg(argv[1]);
         if (arg.contains('/') || arg.contains('.'))
@@ -398,10 +447,6 @@ int main(int argc_, char ** argv_)
     }
 
     int exit_code = main_func(static_cast<int>(argv.size()), argv.data());
-
-#if defined(SANITIZE_COVERAGE)
-    dumpCoverage();
-#endif
 
     return exit_code;
 }
