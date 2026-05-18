@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# Tags: atomic-database, memory-engine
+# Tags: atomic-database, memory-engine, long
+# ^ `long`: this test exercises many `REFRESH EVERY 1 SECOND` views with
+# `sleepEachRow(1)` source data, multiple `SYSTEM WAIT VIEW` calls and
+# poll loops. Median wall time on the `Fast test` job is ~13s with rare
+# spikes past the 60s per-test timeout under CI load. The `long` tag keeps
+# the test out of `Fast test` (which runs with `--no-long`) while still
+# letting it run on all other stateless test configurations.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
