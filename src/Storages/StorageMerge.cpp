@@ -709,13 +709,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 if (storage->isView() && storage->as<StorageView>() && storage->as<StorageView>()->isParameterizedView())
                     throw Exception(ErrorCodes::STORAGE_REQUIRES_PARAMETER, "Parameterized view can't be queried through a Merge table.");
 
-                /// An `Alias` storage whose target table has been dropped returns
-                /// empty in-memory metadata (it has no columns of its own). When a
-                /// `Merge` regexp happens to match such a dangling alias, surface a
-                /// clear `UNKNOWN_TABLE` error rather than the internal
-                /// `LOGICAL_ERROR` "Table has no columns.". This can be reached via
-                /// a TOCTOU race when the target table is dropped between the
-                /// `getSelectedTables` lock and the metadata snapshot read here.
+                /// An `Alias` storage whose target table has been dropped returns empty in-memory metadata
                 if (storage->getName() == "Alias")
                     throw Exception(
                         ErrorCodes::UNKNOWN_TABLE,
