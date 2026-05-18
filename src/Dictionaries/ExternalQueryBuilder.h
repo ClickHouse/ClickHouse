@@ -65,7 +65,7 @@ struct ExternalQueryBuilder
 
 
 protected:
-    FormatSettings format_settings;
+    const FormatSettings format_settings = {};
 
     virtual void composeLoadAllQuery(WriteBuffer & out) const;
 

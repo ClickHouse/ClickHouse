@@ -53,7 +53,6 @@ public:
     const VirtualColumnDescription & getDescription(const String & name, VirtualsKind kind, VirtualsMaterializationPlace place) const;
 
     Block getSampleBlock(VirtualsKind kind, VirtualsMaterializationPlace place) const;
-    ColumnsDescription toColumnsDescription(VirtualsKind kind, VirtualsMaterializationPlace place) const;
 
 private:
     Container container;
