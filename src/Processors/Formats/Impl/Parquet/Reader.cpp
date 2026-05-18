@@ -413,7 +413,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             /// input_format_parquet_allow_missing_columns = 0 with stale metadata.
             bool all_bbox_in_schema = true;
             for (const String * col : bbox_col_ptrs)
-                if (!schema_leaf_paths.count(*col))
+                if (!schema_leaf_paths.contains(*col))
                 { all_bbox_in_schema = false; break; }
             if (!all_bbox_in_schema)
             { geostats_spatial_filters.push_back(sf); continue; }
