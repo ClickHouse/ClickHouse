@@ -146,24 +146,54 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedMaterializingCTEsStep::makePlansF
 
 void removeTopLevelDelayedMaterializingCTEsStep(QueryPlan & plan)
 {
+    /// Strip *all* consecutive `DelayedMaterializingCTEsStep` nodes from the
+    /// top of `plan`'s materialization chain. The Planner stacks one per
+    /// dependency level when `force_materialize_cte` is set
+    /// (`addBuildSubqueriesForMaterializedCTEsIfNeeded` pushes one step per
+    /// `ctes_by_level` entry on top of the plan), so an IN-subquery that
+    /// transitively references a chain of CTEs has multiple safety-net steps
+    /// stacked. We must strip them all — leaving any one in place would let
+    /// the inner step claim the corresponding CTE in the wrong scope when the
+    /// recursive `plan->optimize` below invokes `resolveMaterializingCTEs`.
+    ///
+    /// When called from `DelayedCreatingSetsStep::makePlansForSets`, the plan
+    /// has already been wrapped by `FutureSetFromSubquery::build` with a
+    /// `CreatingSetStep` at the root, so the safety-net chain begins at the
+    /// root's single child. Otherwise the chain starts at the root itself.
     auto * root = plan.getRootNode();
     if (!root)
         return;
 
-    auto * delayed = typeid_cast<DelayedMaterializingCTEsStep *>(root->step.get());
-    if (!delayed)
-        return;
+    QueryPlan::Node * parent_of_target = nullptr;
+    QueryPlan::Node * target = root;
+    if (!typeid_cast<DelayedMaterializingCTEsStep *>(target->step.get()))
+    {
+        /// Skip past one wrapper step (e.g. `CreatingSetStep` from
+        /// `FutureSetFromSubquery::build`) to reach the safety-net chain
+        /// below it.
+        if (root->children.size() != 1)
+            return;
+        if (!typeid_cast<DelayedMaterializingCTEsStep *>(root->children.front()->step.get()))
+            return;
+        parent_of_target = root;
+        target = root->children.front();
+    }
 
-    /// `DelayedMaterializingCTEsStep` is a single-input passthrough at the
-    /// plan level — it has exactly one child (the wrapped body of the
-    /// IN-subquery). Replace the root with that child.
-    if (root->children.size() != 1)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Expected DelayedMaterializingCTEsStep to have exactly one child, got {}",
-            root->children.size());
+    while (typeid_cast<DelayedMaterializingCTEsStep *>(target->step.get()))
+    {
+        if (target->children.size() != 1)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected DelayedMaterializingCTEsStep to have exactly one child, got {}",
+                target->children.size());
 
-    plan.replaceRootNode(root->children.front());
+        auto * next = target->children.front();
+        if (parent_of_target)
+            parent_of_target->children[0] = next;
+        else
+            plan.replaceRootNode(next);
+        target = next;
+    }
 }
 
 }
