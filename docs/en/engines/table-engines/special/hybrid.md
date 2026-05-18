@@ -103,6 +103,10 @@ ALTER TABLE tiered MODIFY SETTING
     hybrid_watermark_cold = '2025-08-01';
 ```
 
+### Inspecting current watermarks
+
+Current effective watermark values are exposed through [`system.hybrid_watermarks`](../../../operations/system-tables/hybrid_watermarks.md). One row per declared `hybridParam()` name; a diagnostic row with `last_exception` is emitted if the metadata read fails.
+
 ### Restrictions
 
 - Only `hybrid_watermark_*` settings are accepted on Hybrid tables. Regular `DistributedSettings` (e.g. `bytes_to_delay_insert`) are rejected.

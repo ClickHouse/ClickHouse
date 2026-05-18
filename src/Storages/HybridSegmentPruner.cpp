@@ -45,6 +45,7 @@ KeyDescription buildIdentityKey(const NamesAndTypesList & comparable_cols, Conte
     return KeyDescription::getKeyFromAST(
         makeIdentityKeyAST(names),
         ColumnsDescription{comparable_cols},
+        /*virtuals=*/ {},
         context);
 }
 
@@ -80,7 +81,7 @@ bool HybridSegmentPruner::canBePruned(const ASTPtr & substituted_segment_predica
     auto sample = namesAndTypesFromKey(identity_key);
     auto syntax_result = TreeRewriter(context).analyze(segment_ast, sample);
     auto segment_dag = ExpressionAnalyzer(segment_ast, syntax_result, context).getActionsDAG(true);
-    ActionsDAGWithInversionPushDown segment_filter(segment_dag.getOutputs().at(0), context);
+    ActionsDAGWithInversionPushDown segment_filter(segment_dag.getOutputs().at(0), context, /* boolean_context */ true);
 
     KeyCondition segment_condition(
         segment_filter, context,

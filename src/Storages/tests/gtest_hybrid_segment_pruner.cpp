@@ -52,7 +52,7 @@ bool canPrune(const std::string & where_text, const std::string & segment_text)
     /// can point to an input column instead of the predicate.
     auto dag = ExpressionAnalyzer(where_ast, syntax_result, context).getActionsDAG(true);
 
-    ActionsDAGWithInversionPushDown inverted(dag.getOutputs().at(0), context);
+    ActionsDAGWithInversionPushDown inverted(dag.getOutputs().at(0), context, /* boolean_context */ true);
     HybridSegmentPruner pruner(inverted, cols, context);
 
     return pruner.canBePruned(parseExpression(segment_text));

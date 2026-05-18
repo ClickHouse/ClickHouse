@@ -925,7 +925,7 @@ ColumnNameToColumnNodeMap buildColumnNodesForTableExpression(const QueryTreeNode
 
     // Rebuild per-column nodes (including ALIAS expressions) for the replacement table expression.
     const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-    auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals();
+    auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
     if (storage_snapshot->storage.supportsSubcolumns())
         get_column_options.withSubcolumns();
 
@@ -1328,7 +1328,7 @@ StorageDistributed::HybridPruningVerdict StorageDistributed::computeHybridPrunin
 
     NamesAndTypesList hybrid_columns = storage_snapshot->metadata->getColumns().getAllPhysical();
     ActionsDAGWithInversionPushDown inverted_dag(
-        query_info.filter_actions_dag->getOutputs().at(0), local_context);
+        query_info.filter_actions_dag->getOutputs().at(0), local_context, /* boolean_context */ true);
     HybridSegmentPruner pruner(inverted_dag, hybrid_columns, local_context);
     if (pruner.isUseless())
         return verdict;
@@ -1994,6 +1994,13 @@ static std::unordered_map<String, String> collectHybridParamTypes(
     for (const auto & seg : segs)
         visitHybridParams(seg.predicate_ast, collect_hybrid_param);
     return result;
+}
+
+std::unordered_map<String, String> StorageDistributed::getDeclaredHybridParamTypes() const
+{
+    if (getName() != "Hybrid")
+        return {};
+    return collectHybridParamTypes(base_segment_predicate, segments);
 }
 
 void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
@@ -2731,8 +2738,14 @@ void StorageDistributed::setHybridLayout(std::vector<HybridSegment> segments_)
 
     auto virtuals = createVirtuals();
     // or _segment_index?
-    virtuals.addEphemeral("_table_index", std::make_shared<DataTypeUInt32>(), "Index of the table function in Hybrid (0 for main table, 1+ for additional segments)");
-    setVirtuals(virtuals);
+    virtuals.addEphemeral(
+        "_table_index",
+        std::make_shared<DataTypeUInt32>(),
+        "Index of the table function in Hybrid (0 for main table, 1+ for additional segments)",
+        VirtualsMaterializationPlace::Reader);
+
+    auto metadata_snapshot = getInMemoryMetadataPtr(nullptr, false);
+    setInMemoryMetadata(metadata_snapshot->withVirtuals(std::move(virtuals)));
 }
 
 void StorageDistributed::setCachedColumnsToCast(ColumnsDescription columns)
@@ -3086,6 +3099,7 @@ Since [`remote`](../../../sql-reference/table-functions/remote.md) and [`cluster
         .related = {"Merge"}});
 }
 
+void registerStorageHybrid(StorageFactory & factory);
 void registerStorageHybrid(StorageFactory & factory)
 {
     factory.registerStorage("Hybrid", [](const StorageFactory::Arguments & args) -> StoragePtr
@@ -3366,7 +3380,10 @@ void registerStorageHybrid(StorageFactory & factory)
                     ColumnsDescription segment_columns;
 
                     if (validated_table)
-                        segment_columns = validated_table->getInMemoryMetadataPtr(local_context, false)->getColumns();
+                    {
+                        auto segment_metadata = validated_table->getInMemoryMetadataPtr(local_context, false);
+                        segment_columns = segment_metadata->getColumns();
+                    }
 
                     validate_segment_schema(segment_columns, storage_id.getNameForLogs());
 
@@ -3478,7 +3495,8 @@ void registerStorageHybrid(StorageFactory & factory)
             ASTPtr settings_ptr = settings_ast;
             args.storage_def->set(args.storage_def->settings, settings_ptr);
 
-            StorageInMemoryMetadata metadata = distributed_storage->getInMemoryMetadata();
+            auto metadata_snapshot = distributed_storage->getInMemoryMetadataPtr(local_context, false);
+            StorageInMemoryMetadata metadata = *metadata_snapshot;
             metadata.setSettingsChanges(args.storage_def->settings->clone());
             distributed_storage->setInMemoryMetadata(metadata);
         }

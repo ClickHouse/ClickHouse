@@ -1,0 +1,28 @@
+--- Test 1: Healthy N=1
+1	t	hybrid_watermark_hot	2025-09-01	DateTime	
+1
+--- Test 2: ALTER refresh
+hybrid_watermark_hot	2025-10-01	DateTime
+1
+--- Test 3: Multi-watermark ordering
+hybrid_watermark_cold	2025-01-01	DateTime
+hybrid_watermark_hot	2025-10-01	DateTime
+2
+--- Test 4: Zero-declared Hybrid emits zero rows
+0
+--- Test 5: Non-Hybrid exclusion
+0
+--- Test 6: No diagnostic rows on healthy cluster
+0
+--- Test 7: last_exception path via failpoint
+t				1
+t3				1
+t_no_params				1
+1
+1
+--- Test 8: Healthy after failpoint disabled
+hybrid_watermark_hot	2025-10-01	DateTime	
+0
+--- Test 9: Temporary Hybrid table visibility
+	tmp_hybrid	hybrid_watermark_hot	2025-11-15	DateTime	
+1

@@ -180,6 +180,14 @@ public:
     MultiVersion<WatermarkParams>::Version getHybridWatermarkParams() const
     { return hybrid_watermark_params.get(); }
 
+    /// Returns (name -> declared type) for every `hybridParam()` call in the
+    /// stored Hybrid predicates. Empty for non-Hybrid tables.
+    ///
+    /// For any attached Hybrid table this returns a consistent map, because
+    /// registerStorageHybrid() rejects conflicting types for the same name at
+    /// factory time. The result is used by system.hybrid_watermarks.
+    std::unordered_map<String, String> getDeclaredHybridParamTypes() const;
+
     void loadHybridWatermarkParams(SettingsChanges & changes);
 
     /// Getter methods for ClusterProxy::executeQuery

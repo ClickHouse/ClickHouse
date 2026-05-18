@@ -687,18 +687,6 @@ public:
         return node;
     }
 
-    const ActionsDAG::Node * addAliasIfNecessary(const std::string & node_name, const ActionsDAG::Node * child)
-    {
-        auto it = node_name_to_node.find(node_name);
-        if (it != node_name_to_node.end())
-            return it->second;
-
-        const auto * node = &actions_dag.addAlias(*child, node_name);
-        node_name_to_node[node->result_name] = node;
-
-        return node;
-    }
-
 private:
     std::unordered_map<std::string_view, const ActionsDAG::Node *> node_name_to_node;
     ActionsDAG & actions_dag;
