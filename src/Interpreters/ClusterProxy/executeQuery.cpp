@@ -49,7 +49,7 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
-    extern const SettingsUInt64 limit;
+    extern const SettingsDouble limit;
     extern const SettingsLoadBalancing load_balancing;
     extern const SettingsUInt64 max_concurrent_queries_for_user;
     extern const SettingsUInt64 max_distributed_depth;
@@ -62,7 +62,7 @@ namespace Setting
     extern const SettingsUInt64 max_network_bytes;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
-    extern const SettingsUInt64 offset;
+    extern const SettingsDouble offset;
     extern const SettingsBool optimize_skip_unused_shards;
     extern const SettingsUInt64 optimize_skip_unused_shards_nesting;
     extern const SettingsBool optimize_skip_unused_shards_rewrite_in;
@@ -183,12 +183,12 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
         new_settings[Setting::skip_unavailable_shards].changed = true;
     }
 
-    if (settings[Setting::offset])
+    if (settings[Setting::offset] != 0)
     {
         new_settings[Setting::offset] = 0;
         new_settings[Setting::offset].changed = false;
     }
-    if (settings[Setting::limit])
+    if (settings[Setting::limit] != 0)
     {
         new_settings[Setting::limit] = 0;
         new_settings[Setting::limit].changed = false;

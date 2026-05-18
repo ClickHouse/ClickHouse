@@ -59,8 +59,8 @@ namespace Setting
     extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsJoinStrictness join_default_strictness;
     extern const SettingsBool enable_order_by_all;
-    extern const SettingsUInt64 limit;
-    extern const SettingsUInt64 offset;
+    extern const SettingsDouble limit;
+    extern const SettingsDouble offset;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsString implicit_table_at_top_level;
 }
@@ -270,12 +270,27 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     SettingsChanges settings_changes;
 
     /// We are going to remove settings LIMIT and OFFSET and
-    /// further replace them with corresponding expression nodes
-    UInt64 limit = 0;
-    UInt64 offset = 0;
+    /// further replace them with corresponding expression nodes.
+    /// `limit` / `offset` are `Double` settings — they may be negative or fractional, which is
+    /// passed through to ClickHouse's native negative/fractional `LIMIT`/`OFFSET` support.
+    Float64 limit = 0;
+    Float64 offset = 0;
+
+    auto field_to_float = [](const Field & f) -> Float64
+    {
+        if (f.getType() == Field::Types::Float64)
+            return f.safeGet<Float64>();
+        if (f.getType() == Field::Types::UInt64)
+            return static_cast<Float64>(f.safeGet<UInt64>());
+        if (f.getType() == Field::Types::Int64)
+            return static_cast<Float64>(f.safeGet<Int64>());
+        if (f.getType() == Field::Types::String)
+            return ::DB::parseFromString<Float64>(f.safeGet<String>());
+        return 0.0;
+    };
 
     /// Remove global settings limit and offset
-    if (const auto & settings_ref = updated_context->getSettingsRef(); settings_ref[Setting::limit] || settings_ref[Setting::offset])
+    if (const auto & settings_ref = updated_context->getSettingsRef(); settings_ref[Setting::limit] != 0 || settings_ref[Setting::offset] != 0)
     {
         Settings settings = updated_context->getSettingsCopy();
         limit = settings[Setting::limit];
@@ -292,12 +307,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         /// Remove expression settings limit and offset
         if (auto * limit_field = set_query.changes.tryGet("limit"))
         {
-            limit = limit_field->safeGet<UInt64>();
+            limit = field_to_float(*limit_field);
             set_query.changes.removeSetting("limit");
         }
         if (auto * offset_field = set_query.changes.tryGet("offset"))
         {
-            offset = offset_field->safeGet<UInt64>();
+            offset = field_to_float(*offset_field);
             set_query.changes.removeSetting("offset");
         }
 
@@ -538,19 +553,19 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
             current_query_tree->getLimit() = std::move(function_node);
         }
     }
-    else if (limit > 0)
+    else if (limit != 0)
         current_query_tree->getLimit() = std::make_shared<ConstantNode>(limit);
 
     /// Combine offset expression with offset setting into final offset expression
     auto select_offset = select_query_typed.limitOffset();
-    if (select_offset && offset)
+    if (select_offset && offset != 0)
     {
         auto function_node = std::make_shared<FunctionNode>("plus");
         function_node->getArguments().getNodes().push_back(buildExpression(select_offset, current_context));
         function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
         current_query_tree->getOffset() = std::move(function_node);
     }
-    else if (offset)
+    else if (offset != 0)
         current_query_tree->getOffset() = std::make_shared<ConstantNode>(offset);
     else if (select_offset)
         current_query_tree->getOffset() = buildExpression(select_offset, current_context);

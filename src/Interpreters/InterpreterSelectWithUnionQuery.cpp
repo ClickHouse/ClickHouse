@@ -38,12 +38,12 @@ namespace Setting
 {
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool exact_rows_before_limit;
-    extern const SettingsUInt64 limit;
+    extern const SettingsDouble limit;
     extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
-    extern const SettingsUInt64 offset;
+    extern const SettingsDouble offset;
     extern const SettingsBool optimize_distinct_in_order;
 }
 
@@ -67,7 +67,9 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     bool require_full_header = ast->hasNonDefaultUnionMode();
 
     const Settings & settings = context->getSettingsRef();
-    if (options.subquery_depth == 0 && (settings[Setting::limit] > 0 || settings[Setting::offset] > 0))
+    /// `limit` / `offset` settings are `Float` and may be negative or fractional. Any non-zero
+    /// value enables setting-driven LIMIT/OFFSET application below.
+    if (options.subquery_depth == 0 && (settings[Setting::limit] != 0 || settings[Setting::offset] != 0))
         settings_limit_offset_needed = true;
 
     size_t num_children = ast->list_of_selects->children.size();
@@ -118,41 +120,49 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
         if (!select_query->withFill() && !select_query->limit_with_ties)
         {
-            UInt64 limit_length = 0;
-            UInt64 limit_offset = 0;
+            /// `limit` / `offset` are `Float` settings — they may be negative or fractional, in
+            /// which case the value is passed through to SQL `LIMIT`/`OFFSET` and ClickHouse's
+            /// native support for those handles the semantics. For non-negative integers the
+            /// behavior matches the original combining logic (clamp the SQL `LIMIT`/`OFFSET` by
+            /// the setting).
+            const Float64 limit_setting = settings[Setting::limit];
+            const Float64 offset_setting = settings[Setting::offset];
 
             const ASTPtr limit_offset_ast = select_query->limitOffset();
             if (limit_offset_ast)
             {
-                limit_offset = evaluateConstantExpressionAsLiteral(limit_offset_ast, context)->as<ASTLiteral &>().value.safeGet<UInt64>();
-                UInt64 new_limit_offset = settings[Setting::offset] + limit_offset;
-                ASTPtr new_limit_offset_ast = make_intrusive<ASTLiteral>(new_limit_offset);
+                Float64 query_offset = static_cast<Float64>(
+                    evaluateConstantExpressionAsLiteral(limit_offset_ast, context)->as<ASTLiteral &>().value.safeGet<UInt64>());
+                Float64 new_limit_offset = offset_setting + query_offset;
+                ASTPtr new_limit_offset_ast = make_intrusive<ASTLiteral>(Field(new_limit_offset));
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
             }
-            else if (settings[Setting::offset])
+            else if (offset_setting != 0)
             {
-                ASTPtr new_limit_offset_ast = make_intrusive<ASTLiteral>(settings[Setting::offset].value);
+                ASTPtr new_limit_offset_ast = make_intrusive<ASTLiteral>(Field(offset_setting));
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
             }
 
             const ASTPtr limit_length_ast = select_query->limitLength();
             if (limit_length_ast)
             {
-                limit_length = evaluateConstantExpressionAsLiteral(limit_length_ast, context)->as<ASTLiteral &>().value.safeGet<UInt64>();
+                Float64 query_limit_length = static_cast<Float64>(
+                    evaluateConstantExpressionAsLiteral(limit_length_ast, context)->as<ASTLiteral &>().value.safeGet<UInt64>());
 
-                UInt64 new_limit_length = 0;
-                if (settings[Setting::offset] == 0)
-                    new_limit_length = std::min(limit_length, settings[Setting::limit].value);
-                else if (settings[Setting::offset] < limit_length)
-                    new_limit_length = settings[Setting::limit] ? std::min(settings[Setting::limit].value, limit_length - settings[Setting::offset].value)
-                                                       : (limit_length - settings[Setting::offset].value);
+                Float64 new_limit_length = 0;
+                if (offset_setting == 0)
+                    new_limit_length = std::min(query_limit_length, limit_setting);
+                else if (offset_setting < query_limit_length)
+                    new_limit_length = (limit_setting != 0)
+                        ? std::min(limit_setting, query_limit_length - offset_setting)
+                        : (query_limit_length - offset_setting);
 
-                ASTPtr new_limit_length_ast = make_intrusive<ASTLiteral>(new_limit_length);
+                ASTPtr new_limit_length_ast = make_intrusive<ASTLiteral>(Field(new_limit_length));
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
             }
-            else if (settings[Setting::limit])
+            else if (limit_setting != 0)
             {
-                ASTPtr new_limit_length_ast = make_intrusive<ASTLiteral>(settings[Setting::limit].value);
+                ASTPtr new_limit_length_ast = make_intrusive<ASTLiteral>(Field(limit_setting));
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
             }
 
@@ -370,16 +380,25 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
 
     if (settings_limit_offset_needed && !options.settings_limit_offset_done)
     {
-        if (settings[Setting::limit] > 0)
+        /// This fallback path is only taken for `WITH FILL` / `WITH TIES` queries where the
+        /// AST-level injection above is skipped. `LimitStep` / `OffsetStep` operate on `size_t`,
+        /// so negative or fractional setting values are not supported here — those values reach
+        /// the SQL-level `LIMIT`/`OFFSET` clause via the AST injection above instead.
+        const Float64 limit_setting = settings[Setting::limit];
+        const Float64 offset_setting = settings[Setting::offset];
+        if (limit_setting > 0)
         {
             auto limit = std::make_unique<LimitStep>(
-                query_plan.getCurrentHeader(), settings[Setting::limit], settings[Setting::offset], settings[Setting::exact_rows_before_limit]);
+                query_plan.getCurrentHeader(),
+                static_cast<size_t>(limit_setting),
+                static_cast<size_t>(offset_setting > 0 ? offset_setting : 0),
+                settings[Setting::exact_rows_before_limit]);
             limit->setStepDescription("LIMIT OFFSET for SETTINGS");
             query_plan.addStep(std::move(limit));
         }
-        else
+        else if (offset_setting > 0)
         {
-            auto offset = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), settings[Setting::offset]);
+            auto offset = std::make_unique<OffsetStep>(query_plan.getCurrentHeader(), static_cast<size_t>(offset_setting));
             offset->setStepDescription("OFFSET for SETTINGS");
             query_plan.addStep(std::move(offset));
         }

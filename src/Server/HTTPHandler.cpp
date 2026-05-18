@@ -92,9 +92,9 @@ namespace Setting
     extern const SettingsString default_format;
     extern const SettingsString database;
     extern const SettingsString implicit_table_at_top_level;
-    extern const SettingsUInt64 limit;
-    extern const SettingsUInt64 offset;
-    extern const SettingsUInt64 page;
+    extern const SettingsDouble limit;
+    extern const SettingsDouble offset;
+    extern const SettingsDouble page;
 }
 
 namespace ErrorCodes
@@ -650,10 +650,20 @@ void HTTPHandler::processQuery(
     /// they will be applied in ProcessList::insert() from executeQuery() itself.
     const auto & raw_query = getQuery(request, params, context);
 
-    /// Translate `page` setting into `offset`.
-    /// `page=N` with `limit=L` is equivalent to `offset = L * (N - 1)` and is only valid
-    /// when `limit` is set and `offset` is not.
-    UInt64 page_value = settings[Setting::page];
+    /// Translate `page` setting into `limit`/`offset`. All three of `limit`/`offset`/`page` are
+    /// `Double` settings so they may hold negative or fractional values (which `LIMIT`/`OFFSET`
+    /// accept natively).
+    ///
+    ///   - Positive page `N` with limit `L`: starts at offset `L * (N - 1)` and keeps `limit = L`
+    ///     — `page=1` is the first page, `page=2` is rows `L..2L`, etc.
+    ///   - Negative page `N` with limit `L`: count from the end. ClickHouse's negative `LIMIT`
+    ///     gives the last `|L|` rows, and stacking a negative `OFFSET` peels back further pages
+    ///     from the end. So we flip `limit` to `-L` and set `offset = L * (N + 1)`:
+    ///       `page=-1`  → `LIMIT -L OFFSET 0`   (the last page),
+    ///       `page=-2`  → `LIMIT -L OFFSET -L`  (the second-to-last page), etc.
+    ///   - Fractional pages compose naturally with fractional `limit` (e.g. `limit=0.25&page=3`
+    ///     is the third quarter of the result).
+    Float64 page_value = settings[Setting::page];
     if (page_value != 0)
     {
         if (settings[Setting::limit] == 0)
@@ -663,9 +673,17 @@ void HTTPHandler::processQuery(
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Setting `page` cannot be combined with `offset` (got page={}, offset={}).",
                 page_value, settings[Setting::offset].value);
-        UInt64 derived_offset = settings[Setting::limit] * (page_value - 1);
+        Float64 limit_value = settings[Setting::limit];
         SettingsChanges page_change;
-        page_change.setSetting("offset", derived_offset);
+        if (page_value > 0)
+        {
+            page_change.setSetting("offset", limit_value * (page_value - 1));
+        }
+        else
+        {
+            page_change.setSetting("limit", -limit_value);
+            page_change.setSetting("offset", limit_value * (page_value + 1));
+        }
         context->checkSettingsConstraints(page_change, SettingSource::QUERY);
         context->applySettingsChanges(page_change);
     }

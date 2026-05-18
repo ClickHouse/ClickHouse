@@ -28,6 +28,17 @@
 2	two
 -- limit=2&page=2
 3	three
+-- limit=-1 (negative: last row)
+3	three
+-- limit=0.5 (fractional: half of the rows)
+1	one
+2	two
+-- limit=0.5&offset=0.5 (fractional limit and offset)
+3	three
+-- limit=1&page=-1 (negative page: last page)
+3	three
+-- limit=1&page=-2 (negative page: second-to-last)
+2	two
 ===== query construction: select, order, sort, filter =====
 -- select=a
 1

@@ -41,7 +41,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.5",
         {
-            {"page", 0, 0, "New setting for paginated HTTP responses, equivalent to offset = limit * (page - 1)."},
+            {"page", 0, 0, "New setting for paginated HTTP responses, equivalent to offset = limit * (page - 1). Float so it can hold negative or fractional values (passed through to SQL `LIMIT`/`OFFSET`)."},
+            {"limit", 0, 0, "Type widened from UInt64 to Float to support negative and fractional values, passed through to ClickHouse's native negative/fractional `LIMIT` support."},
+            {"offset", 0, 0, "Type widened from UInt64 to Float to support negative and fractional values, passed through to ClickHouse's native negative/fractional `OFFSET` support."},
             {"select", "", "", "New setting to wrap a query in `SELECT <expr_list> FROM (<query>)`."},
             {"order", "", "", "New setting to add an ORDER BY clause around a query."},
             {"sort", "", "", "New setting to add a simple ORDER BY clause around a query."},
