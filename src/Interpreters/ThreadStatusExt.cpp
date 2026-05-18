@@ -603,7 +603,7 @@ void ThreadStatus::initPerformanceCounters()
         catch (...)
         {
             tryLogCurrentException(log);
-            taskstats.reset();
+            taskstats = nullptr;
         }
     }
 }
@@ -672,7 +672,7 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
         catch (...)
         {
             tryLogCurrentException(log);
-            taskstats.reset();
+            taskstats = nullptr;
         }
     }
 }
