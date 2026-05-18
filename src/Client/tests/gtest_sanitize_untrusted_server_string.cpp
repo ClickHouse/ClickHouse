@@ -76,6 +76,65 @@ TEST(SanitizeUntrustedServerString, EmptyString)
     EXPECT_TRUE(s.empty());
 }
 
+TEST(SanitizeUntrustedServerString, ReplacesUtf8EncodedC1Controls)
+{
+    /// C1 controls (U+0080..U+009F) carry 8-bit equivalents of ESC-prefixed
+    /// terminal introducers — U+009D is OSC, U+009C is ST. A hostile server can
+    /// reach them as their UTF-8 encoding `0xC2 0x80..0x9F`, bypassing a sanitizer
+    /// that only strips ESC (`0x1B`).
+    String s;
+    s.append("\xC2\x9D" "0;PWNED\xC2\x9C");      // 8-bit OSC ... ST
+    s.append("payload");
+    s.append("\xC2\x9B" "31m**INJECTED**\xC2\x9B" "0m");  // 8-bit CSI sequences
+
+    const size_t original_size = s.size();
+    sanitizeUntrustedServerString(s);
+
+    /// Length must not change — each 2-byte C1 encoding becomes "??".
+    EXPECT_EQ(s.size(), original_size);
+    /// All `0xC2` bytes that were paired with C1 must be gone.
+    EXPECT_EQ(s.find('\xC2'), std::string::npos);
+    /// Plain ASCII surrounding the payload survives.
+    EXPECT_NE(s.find("PWNED"), std::string::npos);
+    EXPECT_NE(s.find("payload"), std::string::npos);
+    EXPECT_NE(s.find("**INJECTED**"), std::string::npos);
+}
+
+TEST(SanitizeUntrustedServerString, PreservesUtf8WhoseContinuationByteIsInC1Range)
+{
+    /// Many valid UTF-8 sequences have a continuation byte in [0x80, 0x9F] —
+    /// stripping that range blindly would mangle them. The Cyrillic letter "П"
+    /// (U+041F) is encoded as `0xD0 0x9F`. It must survive.
+    const String original = "Привет";
+    String s = original;
+    sanitizeUntrustedServerString(s);
+    EXPECT_EQ(s, original);
+}
+
+TEST(SanitizeUntrustedServerString, PreservesUtf8WhoseLeadByteIs0xC2)
+{
+    /// `0xC2` is also the lead byte for legitimate Latin-1 supplement characters
+    /// in the U+00A0..U+00BF range (encoded `0xC2 0xA0..0xBF`). Those must
+    /// survive — only continuation bytes in [0x80, 0x9F] (the C1 range) trigger
+    /// replacement.
+    const String original = "non-breaking\xC2\xA0space \xC2\xBF\xC2\xA1";
+    String s = original;
+    sanitizeUntrustedServerString(s);
+    EXPECT_EQ(s, original);
+}
+
+TEST(SanitizeUntrustedServerString, HandlesTrailing0xC2)
+{
+    /// A stray `0xC2` at the very end (no continuation byte) is invalid UTF-8.
+    /// The sanitizer must not read past the end of the buffer; the byte is left
+    /// alone (it will render as U+FFFD).
+    String s;
+    s.push_back('\xC2');
+    sanitizeUntrustedServerString(s);
+    EXPECT_EQ(s.size(), 1u);
+    EXPECT_EQ(static_cast<unsigned char>(s[0]), 0xC2u);
+}
+
 TEST(SanitizeUntrustedServerString, MaxStringSizeCapIsTight)
 {
     /// 4 KiB is well above any legitimate server name / time zone / display name
