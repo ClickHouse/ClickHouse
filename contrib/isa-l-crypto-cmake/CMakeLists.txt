@@ -54,18 +54,12 @@ elseif (ARCH_AARCH64)
     set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -D__ASSEMBLY__")
 
     list(APPEND ISAL_CRYPTO_MD5_SOURCES
+        ${CMAKE_CURRENT_LIST_DIR}/md5_aarch64_asimd_dispatch.c
         ${ISAL_CRYPTO_SOURCE_DIR}/md5_mb/md5_ctx_base.c
         ${ISAL_CRYPTO_SOURCE_DIR}/md5_mb/aarch64/md5_ctx_aarch64_asimd.c
-        ${ISAL_CRYPTO_SOURCE_DIR}/md5_mb/aarch64/md5_mb_aarch64_dispatcher.c
         ${ISAL_CRYPTO_SOURCE_DIR}/md5_mb/aarch64/md5_mb_mgr_aarch64_asimd.c
         ${ISAL_CRYPTO_SOURCE_DIR}/md5_mb/aarch64/md5_mb_asimd_x4.S
         ${ISAL_CRYPTO_SOURCE_DIR}/md5_mb/aarch64/md5_mb_asimd_x1.S
-        ${ISAL_CRYPTO_SOURCE_DIR}/md5_mb/aarch64/md5_ctx_aarch64_sve.c
-        ${ISAL_CRYPTO_SOURCE_DIR}/md5_mb/aarch64/md5_mb_mgr_aarch64_sve.c
-        ${ISAL_CRYPTO_SOURCE_DIR}/md5_mb/aarch64/md5_ctx_aarch64_sve2.c
-        ${ISAL_CRYPTO_SOURCE_DIR}/md5_mb/aarch64/md5_mb_mgr_aarch64_sve2.c
-        ${ISAL_CRYPTO_SOURCE_DIR}/md5_mb/aarch64/md5_mb_sve.S
-        ${ISAL_CRYPTO_SOURCE_DIR}/md5_mb/aarch64/md5_mb_multibinary.S
     )
 endif ()
 
