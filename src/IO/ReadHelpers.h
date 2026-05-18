@@ -193,7 +193,7 @@ void readVectorBinary(std::vector<T, Alloc> & v, ReadBuffer & buf)
 
     v.resize(size);
 
-    if constexpr (is_trivially_serializable<T>)
+    if constexpr (is_trivially_serializable<T> && !std::is_same_v<T, bool>)
         readNBytes(reinterpret_cast<char *>(v.data()), size * sizeof(T), buf);
     else
         for (size_t i = 0; i < size; ++i)

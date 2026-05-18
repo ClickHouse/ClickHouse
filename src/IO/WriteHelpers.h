@@ -112,7 +112,7 @@ void writeVectorBinary(const std::vector<T, Alloc> & v, WriteBuffer & buf)
 {
     writeVarUInt(v.size(), buf);
 
-    if constexpr (is_trivially_serializable<T>)
+    if constexpr (is_trivially_serializable<T> && !std::is_same_v<T, bool>)
         buf.write(reinterpret_cast<const char *>(v.data()), v.size() * sizeof(T));
     else
         for (typename std::vector<T>::const_iterator it = v.begin(); it != v.end(); ++it)
