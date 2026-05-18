@@ -100,7 +100,6 @@ public:
         FLUSH_LOGS,
         FLUSH_DISTRIBUTED,
         FLUSH_ASYNC_INSERT_QUEUE,
-        FLUSH_OBJECT_STORAGE_QUEUE,
         STOP_DISTRIBUTED_SENDS,
         START_DISTRIBUTED_SENDS,
         START_THREAD_FUZZER,
@@ -118,7 +117,6 @@ public:
         STOP_CLEANUP,
         START_CLEANUP,
         RESET_COVERAGE,
-        SET_COVERAGE_TEST,
         REFRESH_VIEW,
         WAIT_VIEW,
         START_VIEW,
@@ -127,8 +125,6 @@ public:
         STOP_VIEW,
         STOP_VIEWS,
         STOP_REPLICATED_VIEW,
-        PAUSE_VIEW,
-        PAUSE_VIEWS,
         CANCEL_VIEW,
         TEST_VIEW,
         LOAD_PRIMARY_KEY,
@@ -192,8 +188,6 @@ public:
 
     String schema_cache_format;
 
-    String queue_path;
-
     String fail_point_name;
 
     enum class FailPointAction
@@ -205,8 +199,6 @@ public:
     FailPointAction fail_point_action = FailPointAction::UNSPECIFIED;
 
     String delta_kernel_tracing_level;
-
-    String coverage_test_name;
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
