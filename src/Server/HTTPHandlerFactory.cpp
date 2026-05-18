@@ -19,11 +19,20 @@
 #include <Server/ACME/Client.h>
 #endif
 
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool http_allow_database_as_path;
+    extern const SettingsBool http_allow_table_as_file;
+    extern const SettingsBool http_allow_filters_as_path;
+}
 
 namespace ErrorCodes
 {
@@ -440,7 +449,7 @@ void addDefaultHandlersFactory(
         return std::make_unique<DynamicQueryHandler>(server, HTTPHandlerConnectionConfig{}, "query");
     };
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
-    query_handler->addFilter([](const auto & request)
+    query_handler->addFilter([&server](const auto & request)
         {
             bool path_matches_get_or_head = startsWith(request.getURI(), "?")
                             || startsWith(request.getURI(), "/?")
@@ -454,7 +463,24 @@ void addDefaultHandlersFactory(
             bool is_post_or_options_request = request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
                                     || request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS;
 
-            return (path_matches_get_or_head && is_get_or_head_request) || (path_matches_post_or_options && is_post_or_options_request);
+            if ((path_matches_get_or_head && is_get_or_head_request)
+                || (path_matches_post_or_options && is_post_or_options_request))
+                return true;
+
+            /// Extended path matching: when any of the http_allow_* path features is enabled at the
+            /// server-default level, accept arbitrary paths starting with '/'. This is the catch-all
+            /// for the HTTP-as-file feature; other strict-path handlers (e.g. /ping, /play) are
+            /// registered before this one and take precedence.
+            const auto & default_settings = server.context()->getSettingsRef();
+            bool path_features_enabled = default_settings[Setting::http_allow_database_as_path]
+                                       || default_settings[Setting::http_allow_table_as_file]
+                                       || default_settings[Setting::http_allow_filters_as_path];
+            if (path_features_enabled
+                && (is_get_or_head_request || is_post_or_options_request)
+                && !request.getURI().empty() && request.getURI()[0] == '/')
+                return true;
+
+            return false;
         }
     );
     factory.addHandler(query_handler);

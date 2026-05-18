@@ -1,0 +1,114 @@
+===== http_allow_table_as_file =====
+-- /hits
+1	one
+2	two
+3	three
+-- /hits.JSONEachRow
+{"a":1,"b":"one"}
+{"a":2,"b":"two"}
+{"a":3,"b":"three"}
+-- /hits.CSV
+1,"one"
+2,"two"
+3,"three"
+-- /hits.CSV.gz (compressed payload, decompressed):
+1,"one"
+2,"two"
+3,"three"
+===== http_allow_database_as_path =====
+-- /<db>/hits
+1	one
+2	two
+3	three
+===== query construction: limit/offset/page =====
+-- limit=2
+1	one
+2	two
+-- limit=1&offset=1
+2	two
+-- limit=2&page=2
+3	three
+===== query construction: select, order, sort, filter =====
+-- select=a
+1
+2
+3
+-- order=-a
+3	three
+2	two
+1	one
+-- sort=-a
+3	three
+2	two
+1	one
+-- sort=a (default ASC)
+1	one
+2	two
+3	three
+-- filter=a>1
+2	two
+3	three
+-- filter=a>1&filter=b='two' (multiple)
+2	two
+===== http_allow_filters_as_unrecognized_url_parameters =====
+-- /hits?a=2
+2	two
+===== http_allow_filters_as_path =====
+-- /a=2/hits
+2	two
+-- /a>=2/hits (URL-encoded)
+2	two
+3	three
+-- /a<3/hits (URL-encoded)
+1	one
+2	two
+-- /a!=2/hits (URL-encoded)
+1	one
+3	three
+===== format / output_format / input_format / default_format =====
+-- format URL setting wins over path file extension (path=CSV, format=JSONEachRow):
+{"a":1,"b":"one"}
+{"a":2,"b":"two"}
+{"a":3,"b":"three"}
+-- default_format setting alone (no FORMAT clause, no path):
+1
+-- output_format wins over default_format:
+{"1":1}
+===== compression setting =====
+-- compression=gz on /?query (decompressed):
+1
+===== Content-Disposition: attachment for binary/compressed =====
+-- /hits.Parquet (binary):
+Content-Disposition: attachment; filename="hits.Parquet"
+-- /hits.CSV.gz (compressed):
+Content-Disposition: attachment; filename="hits.CSV.gz"
+-- /?compression=gz&query=... (compressed, no filename in path):
+Content-Disposition: attachment; filename="result.TabSeparated.gz"
+-- /?query=SELECT+1 (text TabSeparated, no disposition):
+(expected: no Content-Disposition above)
+===== implicit_table_at_top_level =====
+-- /hits?query=SELECT+a+(no FROM)
+1
+2
+3
+-- /hits.csv?query=SELECT+a+(no FROM, format from path)
+1
+2
+3
+===== compose: path-table + URL filters + order =====
+-- /hits?filter=a>1&order=-a
+3	three
+2	two
+===== error cases =====
+-- page without limit:
+Setting `page` requires `limit` to be set
+-- page with offset:
+Setting `page` cannot be combined with `offset`
+-- sort and order together:
+Settings `sort` and `order` cannot be specified together
+-- compression conflict (path .gz vs setting br):
+Conflicting compression
+-- sort with space:
+Invalid character ' ' in identifier
+-- compression without format in path:
+Unknown format

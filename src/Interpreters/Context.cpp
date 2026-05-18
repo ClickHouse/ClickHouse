@@ -277,6 +277,7 @@ namespace Setting
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool azure_allow_parallel_part_upload;
     extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsString default_format;
     extern const SettingsBool enable_filesystem_cache;
     extern const SettingsBool enable_filesystem_cache_log;
     extern const SettingsBool enable_filesystem_cache_on_write_operations;
@@ -3372,7 +3373,15 @@ void Context::setInsertionTable(StorageID db_and_table, std::optional<Names> col
 
 String Context::getDefaultFormat() const
 {
-    return default_format.empty() ? "TabSeparated" : default_format;
+    if (!default_format.empty())
+        return default_format;
+
+    const auto & settings_ref = getSettingsRef();
+    const String & default_format_setting = settings_ref[Setting::default_format];
+    if (!default_format_setting.empty())
+        return default_format_setting;
+
+    return "TabSeparated";
 }
 
 void Context::setDefaultFormat(const String & name)

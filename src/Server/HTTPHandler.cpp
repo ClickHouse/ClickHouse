@@ -1,4 +1,5 @@
 #include <Server/HTTPHandler.h>
+#include <Server/HTTPQueryConstructor.h>
 
 #include <Access/AccessControl.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -6,6 +7,10 @@
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <IO/CompressionMethod.h>
+#include <IO/WriteBufferFromString.h>
+#include <Poco/URI.h>
+#include <Common/quoteString.h>
 #include <Disks/StoragePolicy.h>
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/ConcatReadBuffer.h>
@@ -71,6 +76,24 @@ namespace Setting
     extern const SettingsUInt64 readonly;
     extern const SettingsBool send_progress_in_http_headers;
     extern const SettingsInt64 zstd_window_log_max;
+
+    extern const SettingsBool http_allow_database_as_path;
+    extern const SettingsBool http_allow_table_as_file;
+    extern const SettingsBool http_allow_filters_as_path;
+    extern const SettingsBool http_allow_filters_as_unrecognized_url_parameters;
+    extern const SettingsString compression;
+    extern const SettingsString select;
+    extern const SettingsString order;
+    extern const SettingsString sort;
+    extern const SettingsString filter;
+    extern const SettingsString format;
+    extern const SettingsString input_format;
+    extern const SettingsString output_format;
+    extern const SettingsString default_format;
+    extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsUInt64 limit;
+    extern const SettingsUInt64 offset;
+    extern const SettingsUInt64 page;
 }
 
 namespace ErrorCodes
@@ -84,6 +107,7 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int HTTP_LENGTH_REQUIRED;
     extern const int SESSION_ID_EMPTY;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -240,6 +264,44 @@ void HTTPHandler::processQuery(
         context->setCurrentRoles(roles);
 
     std::string database = request.get("X-ClickHouse-Database", params.get("database", ""));
+
+    /// Parse the URL path according to http_allow_database_as_path/table_as_file/filters_as_path settings.
+    /// We use the server-default settings (same as the request-routing filter), which is consistent
+    /// since users can't override the path-feature gating per-request anyway.
+    HTTPPathInfo path_info;
+    {
+        const String & raw_uri = request.getURI();
+        String path_only = raw_uri;
+        auto qmark = path_only.find('?');
+        if (qmark != String::npos)
+            path_only = path_only.substr(0, qmark);
+        /// URL-decode the path.
+        try
+        {
+            Poco::URI uri_obj(raw_uri);
+            path_only = uri_obj.getPath();
+        }
+        catch (const Poco::Exception &) // NOLINT(bugprone-empty-catch)
+        {
+            /// Fall back to the already-stripped raw path.
+        }
+
+        const auto & default_settings_for_path = server.context()->getSettingsRef();
+        path_info = parseHTTPPath(
+            path_only,
+            default_settings_for_path[Setting::http_allow_database_as_path],
+            default_settings_for_path[Setting::http_allow_table_as_file],
+            default_settings_for_path[Setting::http_allow_filters_as_path]);
+    }
+
+    /// Apply database from path if set (and not already overridden by `database` URL param/header).
+    if (!path_info.database.empty() && database.empty())
+        database = path_info.database;
+    else if (!path_info.database.empty() && !database.empty() && database != path_info.database)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Conflicting database specification: '{}' in URL path vs '{}' in URL parameter.",
+            path_info.database, database);
+
     if (!database.empty())
         context->setCurrentDatabase(database);
 
@@ -267,11 +329,15 @@ void HTTPHandler::processQuery(
         if (name.empty())
             return true;
 
-        /// Some parameters (database, default_format, everything used in the code above) do not
+        /// Some parameters (database, everything used in the code above) do not
         /// belong to the Settings class.
+        /// Note: `default_format` is also a setting; we still accept it here as a reserved name to preserve
+        /// the special URL handling above, but the setting itself will also work.
+        /// `filter` is a setting but multiple URL params named `filter` should be combined; we handle this
+        /// separately below.
         static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace", "role",
             "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session",
-            "database", "default_format"};
+            "database", "default_format", "filter"};
 
         if (reserved_param_names.contains(name))
             return true;
@@ -293,16 +359,37 @@ void HTTPHandler::processQuery(
         return false;
     };
 
+    auto is_known_setting = [&](const String & name) -> bool
+    {
+        return context->getAccessControl().isSettingNameAllowed(name);
+    };
+
+    /// Collect filter URL parameters and unrecognized parameters (as filters when enabled).
+    /// We need to consult the resolved settings to decide what to do with unrecognized params,
+    /// so we apply settings in two phases: first the recognized ones, then optionally add filters
+    /// from unrecognized ones.
+    std::vector<String> url_filters_from_params;
+    std::vector<std::pair<String, String>> deferred_unrecognized_params;
+
     /// Settings can be overridden in the query.
     SettingsChanges settings_changes;
     for (const auto & [key, value] : params)
     {
-        if (!param_could_be_skipped(key))
+        if (param_could_be_skipped(key))
         {
-            /// Other than query parameters are treated as settings.
-            if (!customizeQueryParam(context, key, value))
-                settings_changes.setSetting(key, value);
+            /// Specially handle `filter` URL params: collect them all (multiple allowed).
+            if (key == "filter")
+                url_filters_from_params.push_back("(" + value + ")");
+            continue;
         }
+        if (customizeQueryParam(context, key, value))
+            continue;
+        /// Recognized as a setting if it has a known setting name or starts with allowed prefixes.
+        /// Otherwise, defer for possible filter treatment.
+        if (is_known_setting(key))
+            settings_changes.setSetting(key, value);
+        else
+            deferred_unrecognized_params.emplace_back(key, value);
     }
 
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
@@ -314,11 +401,67 @@ void HTTPHandler::processQuery(
 
     const auto & settings = context->getSettingsRef();
 
+    /// Now we know the resolved settings. Decide what to do with unrecognized URL params:
+    /// - if http_allow_filters_as_unrecognized_url_parameters is true: treat them as filter expressions
+    /// - otherwise: pass them through as settings (which will likely fail with "unknown setting"),
+    ///   preserving the original behavior.
+    std::vector<String> url_filters_from_unrecognized;
+    if (settings[Setting::http_allow_filters_as_unrecognized_url_parameters])
+    {
+        for (const auto & [key, value] : deferred_unrecognized_params)
+        {
+            String f = parseURLParameterAsFilter(key, value);
+            if (!f.empty())
+                url_filters_from_unrecognized.push_back(f);
+        }
+    }
+    else
+    {
+        SettingsChanges extra_changes;
+        for (const auto & [key, value] : deferred_unrecognized_params)
+            extra_changes.setSetting(key, value);
+        if (!extra_changes.empty())
+        {
+            context->checkSettingsConstraints(extra_changes, SettingSource::QUERY);
+            context->applySettingsChanges(extra_changes);
+        }
+    }
+
     /// This parameter is used to tune the behavior of output formats (such as Native) for compatibility.
     if (params.has("client_protocol_version"))
     {
         UInt64 version_param = parse<UInt64>(params.get("client_protocol_version"));
         context->setClientProtocolVersion(version_param);
+    }
+
+    /// Apply compression from path (if no `compression` setting was specified explicitly).
+    SettingsChanges path_derived_changes;
+    if (!path_info.compression.empty())
+    {
+        const String & current_compression = settings[Setting::compression];
+        if (!current_compression.empty() && current_compression != path_info.compression)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Conflicting compression: '{}' in URL path vs '{}' in `compression` setting.",
+                path_info.compression, current_compression);
+        if (current_compression.empty())
+            path_derived_changes.setSetting("compression", path_info.compression);
+    }
+    /// Apply format from path (if no explicit `format`/`output_format` override exists).
+    if (!path_info.format.empty())
+    {
+        const String & format_override = settings[Setting::format];
+        const String & output_format_override = settings[Setting::output_format];
+        /// "When there is a format from the file extension and there is also an explicit override, the override wins."
+        if (format_override.empty() && output_format_override.empty())
+        {
+            /// Use as default_format so that queries without explicit FORMAT honor it.
+            path_derived_changes.setSetting("default_format", path_info.format);
+        }
+    }
+    if (!path_derived_changes.empty())
+    {
+        context->checkSettingsConstraints(path_derived_changes, SettingSource::QUERY);
+        context->applySettingsChanges(path_derived_changes);
     }
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
@@ -372,6 +515,29 @@ void HTTPHandler::processQuery(
             false);
         used_output.out_maybe_compressed = used_output.wrap_compressed_holder;
         used_output.out = used_output.wrap_compressed_holder;
+    }
+
+    /// Generic response-body compression from the `compression` setting (or URL path file extension).
+    /// This is independent of HTTP Content-Encoding — the bytes sent to the client are compressed
+    /// and the client is expected to decompress them.
+    const String & response_compression_name = settings[Setting::compression];
+    if (!response_compression_name.empty())
+    {
+        CompressionMethod response_compression_method = chooseCompressionMethod({}, response_compression_name);
+        if (response_compression_method == CompressionMethod::None)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Unknown compression method: '{}' in `compression` setting.", response_compression_name);
+        used_output.generic_compression_holder = wrapWriteBufferWithCompressionMethod(
+            used_output.out.get(),
+            response_compression_method,
+            static_cast<int>(http_zlib_compression_level),
+            0,
+            DBMS_DEFAULT_BUFFER_SIZE,
+            nullptr,
+            0,
+            false);
+        used_output.out_maybe_compressed = used_output.generic_compression_holder;
+        used_output.out = used_output.generic_compression_holder;
     }
 
     if (internal_compression)
@@ -451,7 +617,99 @@ void HTTPHandler::processQuery(
     /// NOTE: this may create pretty huge allocations that will not be accounted in trace_log,
     /// because memory_profiler_sample_probability/memory_profiler_step are not applied yet,
     /// they will be applied in ProcessList::insert() from executeQuery() itself.
-    const auto & query = getQuery(request, params, context);
+    const auto & raw_query = getQuery(request, params, context);
+
+    /// Translate `page` setting into `offset`.
+    /// `page=N` with `limit=L` is equivalent to `offset = L * (N - 1)` and is only valid
+    /// when `limit` is set and `offset` is not.
+    UInt64 page_value = settings[Setting::page];
+    if (page_value != 0)
+    {
+        if (settings[Setting::limit] == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting `page` requires `limit` to be set (got page={}, limit=0).", page_value);
+        if (settings[Setting::offset] != 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting `page` cannot be combined with `offset` (got page={}, offset={}).",
+                page_value, settings[Setting::offset].value);
+        UInt64 derived_offset = settings[Setting::limit] * (page_value - 1);
+        SettingsChanges page_change;
+        page_change.setSetting("offset", derived_offset);
+        context->checkSettingsConstraints(page_change, SettingSource::QUERY);
+        context->applySettingsChanges(page_change);
+    }
+
+    /// Validate that `sort` and `order` are not both specified.
+    if (!settings[Setting::sort].value.empty() && !settings[Setting::order].value.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Settings `sort` and `order` cannot be specified together.");
+
+    /// Build the combined filter expression.
+    /// Order: filter setting value (from session/profile/server default), then path filters,
+    /// then URL `filter` parameters, then unrecognized URL params interpreted as filters.
+    std::vector<String> all_filters;
+    if (!settings[Setting::filter].value.empty())
+        all_filters.push_back("(" + settings[Setting::filter].value + ")");
+    for (const auto & f : path_info.path_filters)
+        all_filters.push_back(f);
+    for (const auto & f : url_filters_from_params)
+        all_filters.push_back(f);
+    for (const auto & f : url_filters_from_unrecognized)
+        all_filters.push_back(f);
+
+    String combined_filter;
+    for (const auto & f : all_filters)
+    {
+        if (!combined_filter.empty())
+            combined_filter += " AND ";
+        combined_filter += f;
+    }
+
+    /// Compute ORDER BY clause from either `order` (free-form) or `sort` (simple, with +/- prefixes).
+    String order_clause;
+    if (!settings[Setting::order].value.empty())
+        order_clause = settings[Setting::order].value;
+    else if (!settings[Setting::sort].value.empty())
+        order_clause = convertSortToOrderBy(settings[Setting::sort].value);
+
+    /// Determine base query: from URL path table, or from `query` param (raw_query).
+    String final_query = raw_query;
+
+    if (!path_info.table.empty())
+    {
+        String qualified_table;
+        if (!path_info.database.empty())
+            qualified_table = backQuoteIfNeed(path_info.database) + "." + backQuoteIfNeed(path_info.table);
+        else
+            qualified_table = backQuoteIfNeed(path_info.table);
+
+        /// Always set implicit_table_at_top_level so a FROM-less SELECT (whether user-supplied
+        /// or auto-generated) picks up the table from the URL path.
+        SettingsChanges implicit_change;
+        implicit_change.setSetting("implicit_table_at_top_level", qualified_table);
+        context->checkSettingsConstraints(implicit_change, SettingSource::QUERY);
+        context->applySettingsChanges(implicit_change);
+
+        /// If there is no user-supplied query (URL param empty AND no body), generate a default one.
+        bool request_has_body = (request.getMethod() == HTTPRequest::HTTP_POST
+                                 || request.getMethod() == HTTPRequest::HTTP_PUT)
+                              && (request.getChunkedTransferEncoding() || request.getContentLength64() > 0);
+        if (raw_query.empty() && !request_has_body)
+            final_query = "SELECT * FROM " + qualified_table;
+    }
+
+    /// Wrap the final query with SELECT/WHERE/ORDER BY according to query-construction settings.
+    String select_expr = settings[Setting::select].value;
+    if (!select_expr.empty() || !combined_filter.empty() || !order_clause.empty())
+    {
+        if (final_query.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Query construction settings (`select`/`filter`/`order`/`sort`) require a base query — "
+                "specify a query or use `http_allow_table_as_file`.");
+        final_query = wrapHTTPQuery(final_query, select_expr, combined_filter, order_clause);
+    }
+
+    const String & query = final_query;
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
 
     used_output.out_holder->setSendProgress(settings[Setting::send_progress_in_http_headers]);
@@ -513,7 +771,11 @@ void HTTPHandler::processQuery(
 
     applyHTTPResponseHeaders(response, http_response_headers_override);
 
-    auto set_query_result = [&response, this] (const QueryResultDetails & details)
+    /// Capture data needed for Content-Disposition computation from the surrounding scope.
+    String disposition_filename = path_info.filename_for_disposition;
+    String disposition_compression = settings[Setting::compression];
+    auto set_query_result = [&response, this, disposition_filename, disposition_compression]
+        (const QueryResultDetails & details)
     {
         response.add("X-ClickHouse-Query-Id", details.query_id);
 
@@ -532,6 +794,38 @@ void HTTPHandler::processQuery(
 
         if (details.query_cache_entry_expires_at)
             response.add("Expires", std::format("{:%a, %d %b %Y %H:%M:%S} GMT", *details.query_cache_entry_expires_at));
+
+        /// Set Content-Disposition: attachment for binary/compressed responses.
+        bool response_is_binary = details.format && isBinaryOutputFormat(*details.format);
+        bool response_is_compressed = !disposition_compression.empty();
+        if (response_is_binary || response_is_compressed)
+        {
+            String filename = disposition_filename;
+            if (filename.empty())
+            {
+                filename = "result";
+                if (details.format)
+                {
+                    filename += ".";
+                    filename += *details.format;
+                }
+                if (response_is_compressed)
+                {
+                    filename += ".";
+                    filename += disposition_compression;
+                }
+            }
+            /// Sanitize filename: strip control and quote characters to avoid header injection.
+            String safe;
+            safe.reserve(filename.size());
+            for (char c : filename)
+            {
+                if (isControlASCII(static_cast<unsigned char>(c)) || c == '"' || c == '\\')
+                    continue;
+                safe += c;
+            }
+            response.set("Content-Disposition", "attachment; filename=\"" + safe + "\"");
+        }
 
         for (const auto & [name, value] : details.additional_headers)
             response.set(name, value);
@@ -1160,6 +1454,8 @@ void HTTPHandler::Output::finalize()
         out_delayed_and_compressed_holder->finalize();
     if (out_compressed_holder)
         out_compressed_holder->finalize();
+    if (generic_compression_holder)
+        generic_compression_holder->finalize();
     if (wrap_compressed_holder)
         wrap_compressed_holder->finalize();
     if (out_holder)
@@ -1176,6 +1472,8 @@ void HTTPHandler::Output::cancel()
         out_delayed_and_compressed_holder->cancel();
     if (out_compressed_holder)
         out_compressed_holder->cancel();
+    if (generic_compression_holder)
+        generic_compression_holder->cancel();
     if (wrap_compressed_holder)
         wrap_compressed_holder->cancel();
     if (out_holder)

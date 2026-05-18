@@ -199,6 +199,8 @@ namespace Setting
     extern const SettingsUInt64Auto insert_quorum;
     extern const SettingsBool insert_quorum_parallel;
     extern const SettingsBool ignore_format_null_for_explain;
+    extern const SettingsString format;
+    extern const SettingsString output_format;
 }
 
 namespace ServerSetting
@@ -2066,6 +2068,23 @@ std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalA
 }
 
 
+/// Resolve the output format taking into account explicit overrides via `format`/`output_format` settings.
+/// The override wins over the FORMAT clause in the query and over the default format from Context.
+static String resolveOutputFormatName(const ContextPtr & context, const ASTQueryWithOutput * ast_query_with_output)
+{
+    const auto & settings = context->getSettingsRef();
+    const String & format_override = settings[Setting::format];
+    const String & output_format_override = settings[Setting::output_format];
+
+    if (!output_format_override.empty())
+        return output_format_override;
+    if (!format_override.empty())
+        return format_override;
+    if (ast_query_with_output && ast_query_with_output->format_ast != nullptr)
+        return getIdentifierName(ast_query_with_output->format_ast);
+    return context->getDefaultFormat();
+}
+
 static bool isReadOnlyQuery(const ASTPtr & ast)
 {
     auto kind = ast->getQueryKind();
@@ -2239,9 +2258,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor, {}, result_details);
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
-        String format_name = ast_query_with_output->format_ast
-                ? getIdentifierName(ast_query_with_output->format_ast)
-                : context->getDefaultFormat();
+        String format_name = resolveOutputFormatName(context, ast_query_with_output);
 
         const bool ignore_null_for_explain = context->getSettingsRef()[Setting::ignore_format_null_for_explain];
         if (boost::iequals(format_name, "Null") && !(ast->as<ASTExplainQuery>() && ignore_null_for_explain))
@@ -2419,9 +2436,7 @@ void executeQuery(
             try
             {
                 const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
-                format_name = ast_query_with_output && ast_query_with_output->format_ast != nullptr
-                    ? getIdentifierName(ast_query_with_output->format_ast)
-                    : context->getDefaultFormat();
+                format_name = resolveOutputFormatName(context, ast_query_with_output);
 
                 output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
                 if (output_format && output_format->supportsWritingException())
@@ -2515,9 +2530,7 @@ void executeQuery(
         else if (pipeline.pulling())
         {
             const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
-            format_name = ast_query_with_output && ast_query_with_output->format_ast != nullptr
-                ? getIdentifierName(ast_query_with_output->format_ast)
-                : context->getDefaultFormat();
+            format_name = resolveOutputFormatName(context, ast_query_with_output);
 
             const bool ignore_null_for_explain = context->getSettingsRef()[Setting::ignore_format_null_for_explain];
             if (boost::iequals(format_name, "Null") && ast->as<ASTExplainQuery>() && ignore_null_for_explain)

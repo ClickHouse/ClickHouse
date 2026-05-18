@@ -79,6 +79,9 @@ private:
         std::shared_ptr<WriteBufferFromHTTPServerResponse> out_holder;
         /// If HTTP compression is enabled holds compression wrapper over original response buffer
         std::shared_ptr<WriteBuffer> wrap_compressed_holder;
+        /// If `compression` setting (or URL path file extension) is set, holds the generic compression wrapper.
+        /// Sits between the HTTP-encoding wrapper and the internal compression wrapper in the chain.
+        std::shared_ptr<WriteBuffer> generic_compression_holder;
         /// Points either to out_holder or to wrap_compressed_holder
         std::shared_ptr<WriteBuffer> out;
 

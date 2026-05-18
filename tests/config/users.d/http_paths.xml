@@ -1,0 +1,10 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <http_allow_database_as_path>1</http_allow_database_as_path>
+            <http_allow_table_as_file>1</http_allow_table_as_file>
+            <http_allow_filters_as_path>1</http_allow_filters_as_path>
+            <http_allow_filters_as_unrecognized_url_parameters>1</http_allow_filters_as_unrecognized_url_parameters>
+        </default>
+    </profiles>
+</clickhouse>
