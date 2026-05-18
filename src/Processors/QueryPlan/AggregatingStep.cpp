@@ -569,6 +569,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// Sharded aggregation: shard rows by hash(key) % N, then aggregate per shard independently.
     if (use_sharded_aggregation)
     {
+        /// TODO(nihalzp): Compare perf against always choosing a power of two.
         const size_t num_shards = transform_params->params.max_threads;
         const size_t num_streams = pipeline.getNumStreams();
 
