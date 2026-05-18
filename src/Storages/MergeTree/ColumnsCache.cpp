@@ -193,9 +193,23 @@ void ColumnsCache::set(const Key & key, const MappedPtr & mapped)
         if (prev_key.row_end > key.row_begin)
         {
             if (prev_key.row_begin <= key.row_begin && prev_key.row_end >= key.row_end)
-                return;
-            Base::remove(prev_key);
-            it = intervals.erase(prev);
+            {
+                /// The fast-path skip is only valid while the existing wider
+                /// interval is still in `Base`. LRU/SLRU eviction in `Base`
+                /// does not clean up `interval_index`, so a stale entry here
+                /// would otherwise cause us to skip the write indefinitely
+                /// (especially in writes-only mode, where `getIntersecting`
+                /// is not called and stale entries never get cleaned up
+                /// lazily).
+                if (Base::contains(prev_key))
+                    return;
+                it = intervals.erase(prev);
+            }
+            else
+            {
+                Base::remove(prev_key);
+                it = intervals.erase(prev);
+            }
         }
     }
 
@@ -204,8 +218,14 @@ void ColumnsCache::set(const Key & key, const MappedPtr & mapped)
     /// (because that entry is at `it`, not `prev`), so without this fast path the
     /// erase loop below would drop a wider containing interval like `[100, 200)`
     /// in favor of a narrower `[100, 150)`, reducing hit rate for later reads.
+    /// The skip is only valid while the existing entry is still in `Base`; see
+    /// the comment in the predecessor branch above.
     if (it != intervals.end() && it->first.first == key.row_begin && it->first.second >= key.row_end)
-        return;
+    {
+        if (Base::contains(it->second))
+            return;
+        it = intervals.erase(it);
+    }
 
     while (it != intervals.end() && it->first.first < key.row_end)
     {
