@@ -7,7 +7,6 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ExternalQueryBuilder.h>
 #include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/InvalidateQueryResponse.h>
 
 
 namespace Poco
@@ -84,7 +83,7 @@ private:
     Block sample_block;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
-    mutable InvalidateQueryResponse invalidate_query_response;
+    mutable std::string invalidate_query_response;
 
     BridgeHelperPtr bridge_helper;
     Poco::URI bridge_url;
