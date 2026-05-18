@@ -451,10 +451,57 @@ if not args.use_existing_tables:
             )
             sys.exit(1)
 
+    def strip_setting_from_query(query, setting_name):
+        """Strip a single MergeTree setting from a CREATE TABLE SETTINGS clause.
+
+        Used to make a CREATE TABLE backward-compatible with an older server
+        that does not know a newly-added MergeTree setting. The semantics on
+        the old server fall back to its default for that setting, which is
+        the desired behavior when the perf test wants to keep the old
+        behavior on the PR side by setting the value explicitly.
+        """
+        pattern = re.compile(
+            r"(\s*,\s*)?\b" + re.escape(setting_name) + r"\s*=\s*[^,;]+?(?=\s*(?:,|;|$))",
+            re.IGNORECASE,
+        )
+        stripped = pattern.sub("", query, count=1)
+        # Clean up a leading ", " that may remain when the dropped setting was
+        # the first one in the SETTINGS clause.
+        stripped = re.sub(r"\bSETTINGS\s*,\s*", "SETTINGS ", stripped, flags=re.IGNORECASE)
+        # Drop an empty SETTINGS clause (the only setting was the dropped one).
+        stripped = re.sub(r"\bSETTINGS\s*(;|$)", r"\1", stripped, flags=re.IGNORECASE)
+        return stripped
+
     def do_create(connection, index, queries):
         for q in queries:
-            connection.execute(q)
-            print(f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}")
+            current_query = q
+            while True:
+                try:
+                    connection.execute(current_query)
+                    print(
+                        f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(current_query)}"
+                    )
+                    break
+                except clickhouse_driver.errors.ServerException as e:
+                    # If the query uses a MergeTree setting that the server
+                    # does not know (e.g. a newly added setting present only
+                    # in the PR build), strip the setting and retry. The
+                    # server falls back to its own default, which matches the
+                    # intent on the old side of an A/B perf comparison.
+                    if e.code == 115:  # UNKNOWN_SETTING
+                        m = re.search(r"Unknown setting '([^']+)'", e.message)
+                        if m:
+                            unknown_setting = m.group(1)
+                            new_query = strip_setting_from_query(current_query, unknown_setting)
+                            if new_query != current_query:
+                                print(
+                                    f"warning\t{index}\tstripped unknown setting "
+                                    f"'{unknown_setting}' from create query",
+                                    file=sys.stderr,
+                                )
+                                current_query = new_query
+                                continue
+                    raise
 
     threads = [
         SafeThread(target=do_create, args=(connection, index, create_queries))
