@@ -119,7 +119,6 @@ struct ExportReplicatedMergeTreePartitionManifest
     size_t max_rows_per_file;
     MergeTreePartExportManifest::FileAlreadyExistsPolicy file_already_exists_policy;
     String filename_pattern;
-    bool lock_inside_the_task; /// todo temporary
     bool write_full_path_in_iceberg_metadata = false;
     String iceberg_metadata_json;
 
@@ -154,7 +153,6 @@ struct ExportReplicatedMergeTreePartitionManifest
         json.set("max_retries", max_retries);
         json.set("ttl_seconds", ttl_seconds);
         json.set("task_timeout_seconds", task_timeout_seconds);
-        json.set("lock_inside_the_task", lock_inside_the_task);
         json.set("write_full_path_in_iceberg_metadata", write_full_path_in_iceberg_metadata);
         std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         oss.exceptions(std::ios::failbit);
@@ -207,8 +205,6 @@ struct ExportReplicatedMergeTreePartitionManifest
 
             /// what to do if it's not a valid value?
         }
-
-        manifest.lock_inside_the_task = json->getValue<bool>("lock_inside_the_task");
 
         manifest.write_full_path_in_iceberg_metadata = json->getValue<bool>("write_full_path_in_iceberg_metadata");
 

@@ -494,7 +494,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"export_merge_tree_part_file_already_exists_policy", "skip", "skip", "New setting."},
             {"export_merge_tree_part_max_bytes_per_file", 0, 0, "New setting."},
             {"export_merge_tree_part_max_rows_per_file", 0, 0, "New setting."},
-            {"export_merge_tree_partition_lock_inside_the_task", false, false, "New setting."},
             {"export_merge_tree_partition_system_table_prefer_remote_information", true, true, "New setting."},
             {"export_merge_tree_part_throw_on_pending_mutations", true, true, "New setting."},
             {"export_merge_tree_part_throw_on_pending_patch_parts", true, true, "New setting."},
