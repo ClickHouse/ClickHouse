@@ -123,6 +123,16 @@ static void appendRightColumns(
     }
 
     bool is_asof_join = table_join.strictness() == JoinStrictness::Asof;
+    /// For `LEFT ANTI JOIN`, the block only contains unmatched left rows by construction,
+    /// so the right-side key columns must be filled with type defaults rather than copied
+    /// from the left key column. The usual `copyLeftKeyColumnToRight` path relies on the
+    /// invariant that, for the rows kept by the upstream filter, `left.key == right.key`
+    /// (which holds for `INNER`, `LEFT SEMI`, and the matched part of `LEFT JOIN`).
+    /// `LEFT ANTI` violates that invariant: the kept rows are exactly the rows where no
+    /// match was found, so copying the left key value into the right key column produces
+    /// wrong results (issue #99959). After `TableJoin::swapSides`, an original `RIGHT ANTI`
+    /// also reaches this code path with `kind() == Left` and is fixed by the same branch.
+    bool is_left_anti_join = table_join.kind() == JoinKind::Left && table_join.strictness() == JoinStrictness::Anti;
     std::vector<size_t> right_keys_to_replicate;
 
     /// Add join key columns from right block if needed.
@@ -133,10 +143,22 @@ static void appendRightColumns(
         if (is_asof_join && right_key.name == table_join.getOnlyClause().key_names_right.back())
             continue;
 
-        const auto & left_column = block.getByName(properties.required_right_keys_sources[i]);
         const auto & right_col_name = table_join.renamedRightColumnName(right_key.name);
-        const auto * filter_ptr = properties.need_filter ? nullptr : &filter;
-        auto right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column, filter_ptr);
+
+        ColumnWithTypeAndName right_col;
+        if (is_left_anti_join)
+        {
+            /// All rows in the block are unmatched: emit type defaults for the right key.
+            auto column = right_key.type->createColumn();
+            column->insertManyDefaults(block.rows());
+            right_col = ColumnWithTypeAndName(std::move(column), right_key.type, right_col_name);
+        }
+        else
+        {
+            const auto & left_column = block.getByName(properties.required_right_keys_sources[i]);
+            const auto * filter_ptr = properties.need_filter ? nullptr : &filter;
+            right_col = copyLeftKeyColumnToRight(right_key.type, right_col_name, left_column, filter_ptr);
+        }
         block.insert(std::move(right_col));
 
         if (!offsets.empty())
