@@ -86,6 +86,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_top_k_dynamic_filtering_for_variable_length_types", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."},
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
             {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
+            {"optimize_final_limit_pushdown", false, false, "New setting to push LIMIT into FINAL merge algorithms for early termination"},
+            {"optimize_final_sequential_partitions", false, false, "New setting to enable sequential partition processing for FINAL queries with LIMIT using minmax index ordering"},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
@@ -99,8 +101,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_rand_distribution_trials", 1'000'000'000, 1'000'000'000, "New setting to limit trial counts in random distribution functions, preventing hangs with extreme inputs."},
             {"max_rand_distribution_parameter", 1e6, 1e6, "New setting to limit shape parameters in random distribution functions, preventing hangs with extreme inputs."},
             {"optimize_truncate_order_by_after_group_by_keys", false, true, "Remove trailing ORDER BY elements once all GROUP BY keys are covered in the ORDER BY prefix."},
-            {"optimize_final_limit_pushdown", false, false, "New setting to push LIMIT into FINAL merge algorithms for early termination"},
-            {"optimize_final_sequential_partitions", false, false, "New setting to enable sequential partition processing for FINAL queries with LIMIT using minmax index ordering"},
             {"use_statistics_for_part_pruning", false, true, "New setting to use statistics for part pruning during query execution."},
             {"http_max_fields", 1000000, 1000, "Reduce default to limit pre-authentication memory usage by HTTP connections."},
             {"http_max_field_name_size", 131072, 4096, "Reduce default to limit pre-authentication memory usage by HTTP connections."},
