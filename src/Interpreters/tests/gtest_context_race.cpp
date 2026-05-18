@@ -7,6 +7,9 @@
 #include <thread>
 #include <atomic>
 #include <vector>
+#include <sstream>
+#include <Poco/AutoPtr.h>
+#include <Poco/Util/XMLConfiguration.h>
 
 using namespace DB;
 
@@ -163,4 +166,34 @@ TEST(Context, TableFunctionResultsCopyRace)
 
     copier.join();
     writer.join();
+}
+
+/// Regression test for a startup race between DNSCacheUpdater and ConfigReloader.
+///
+/// DNSCacheUpdater::run() can call Context::reloadClusterConfig() before the first
+/// ConfigReloader pass stores a ConfigurationPtr into shared->clusters_config.
+/// reloadClusterConfig() falls back to getConfigRef() and sets shared->clusters (non-null)
+/// but leaves shared->clusters_config null. When setClustersConfig() subsequently runs
+/// it used to dereference shared->clusters_config unconditionally whenever shared->clusters
+/// was non-null, throwing Poco::NullPointerException.
+///
+/// The fix adds a shared->clusters_config null-guard before the isSameConfiguration() call.
+/// This test reproduces the exact call order deterministically (no real threading needed)
+/// and fails without the fix.
+TEST(Context, SetClustersConfigAfterReloadClusterConfig)
+{
+    auto context = Context::createCopy(getContext().context);
+    context->makeGlobalContext();
+
+    /// Simulate DNSCacheUpdater firing before ConfigReloader: this populates
+    /// shared->clusters via the getConfigRef() fallback, leaving clusters_config null.
+    ASSERT_NO_THROW(context->reloadClusterConfig());
+
+    /// Now simulate the first ConfigReloader pass calling setClustersConfig().
+    /// Without the fix this throws Poco::NullPointerException because shared->clusters
+    /// is non-null but shared->clusters_config is still null.
+    std::string xml = "<clickhouse><remote_servers/></clickhouse>";
+    std::istringstream xml_stream(xml); // NOLINT(misc-const-correctness)
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(xml_stream);
+    ASSERT_NO_THROW(context->setClustersConfig(config, /*enable_discovery=*/false));
 }
