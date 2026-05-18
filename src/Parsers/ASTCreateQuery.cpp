@@ -17,6 +17,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 void ASTSQLSecurity::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     if (!type)
@@ -561,6 +566,11 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     child = r.readChild("refresh_strategy");
     if (child)
         set(refresh_strategy, child);
+
+    /// `formatQueryImpl` requires `table` for any non-database form and `database` for the database form.
+    /// Without one of them we fall into a `chassert(table); table->format(...)` path.
+    if (!table && !database)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`CreateQuery` must specify at least one of 'database' or 'table' during AST JSON deserialization");
 }
 
 void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
