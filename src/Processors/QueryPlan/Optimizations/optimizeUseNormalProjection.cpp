@@ -18,6 +18,7 @@
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST.h>
 #include <unordered_set>
 
@@ -122,12 +123,15 @@ static bool containsNonDeterministicFunctions(const ASTPtr & expr, ContextPtr co
 /// Safety guards:
 /// 1. Reject if projection WHERE contains aliases (may differ from analyzer representation)
 /// 2. Reject if projection WHERE contains non-deterministic functions (unsafe for implication)
+/// 3. Reject if projection has a non-empty WITH clause (aliases referenced by identifier in WHERE
+///    won't be detected by `containsAliases` and could cause false-positive matches)
 ///
 /// This is a conservative check — it may reject some valid cases (e.g., range implications),
 /// but it is safe: it will never incorrectly accept a query that doesn't match the projection.
 static bool doesQueryFilterImplyProjectionWhere(
     const ActionsDAG::Node * query_filter_node,
     const ASTPtr & projection_where,
+    const ASTPtr & projection_query_ast,
     ContextPtr context)
 {
     if (!projection_where)
@@ -147,6 +151,19 @@ static bool doesQueryFilterImplyProjectionWhere(
     /// so textual equality does not imply semantic equivalence.
     if (containsNonDeterministicFunctions(projection_where, context))
         return false;
+
+    /// Safety guard 3: reject if the projection has a non-empty WITH clause.
+    /// An identifier in projection WHERE could resolve to a CTE/alias defined in WITH,
+    /// in which case textual conjunct matching against the query's WHERE (where the same
+    /// identifier refers to a table column) would produce false-positive implications.
+    if (projection_query_ast)
+    {
+        if (const auto * projection_select = projection_query_ast->as<ASTSelectQuery>())
+        {
+            if (projection_select->with())
+                return false;
+        }
+    }
 
     /// Extract projection's WHERE conjuncts from the AST.
     std::vector<String> proj_conjuncts;
@@ -393,7 +410,7 @@ std::optional<String> optimizeUseNormalProjections(
         /// if the query's filter guarantees it won't need rows outside that subset.
         if (projection->where_clause_ast)
         {
-            if (!doesQueryFilterImplyProjectionWhere(query.filter_node, projection->where_clause_ast, context))
+            if (!doesQueryFilterImplyProjectionWhere(query.filter_node, projection->where_clause_ast, projection->query_ast, context))
             {
                 LOG_DEBUG(logger,
                     "Projection {} skipped: query WHERE does not imply projection WHERE",

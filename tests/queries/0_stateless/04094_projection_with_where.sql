@@ -68,3 +68,80 @@ SELECT count() FROM t_proj_where WHERE event_type = 'pageview';
 
 -- Cleanup
 DROP TABLE t_proj_where;
+
+-- Test 7: Projection with `WITH` clause must not produce wrong results.
+-- The implication check must be conservative when the projection has a `WITH` clause,
+-- because an identifier in projection `WHERE` can reference a CTE/alias that has a
+-- different meaning than a same-named table column referenced in the query's `WHERE`.
+SELECT 'Test 7: Projection with WITH clause';
+
+DROP TABLE IF EXISTS t_proj_with;
+
+CREATE TABLE t_proj_with
+(
+    a UInt8,
+    c UInt8
+)
+ENGINE = MergeTree
+ORDER BY a;
+
+INSERT INTO t_proj_with VALUES (1, 0), (2, 1), (3, 0);
+
+-- Projection where the identifier `c` in WHERE refers to the WITH-clause expression `(a = 1)`,
+-- not the table column `c`.
+ALTER TABLE t_proj_with ADD PROJECTION p_with
+(
+    WITH (a = 1) AS c
+    SELECT a, c
+    WHERE c
+    ORDER BY a
+);
+
+ALTER TABLE t_proj_with MATERIALIZE PROJECTION p_with;
+
+-- The query uses the table column `c` in WHERE. Result must reflect the table column,
+-- regardless of whether the optimizer considers projection `p_with`.
+SELECT a FROM t_proj_with WHERE c ORDER BY a;
+
+DROP TABLE t_proj_with;
+
+-- Test 8: Mutation must preserve the projection's WHERE during `DELETE WHERE` (lightweight delete).
+-- After deleting rows matching one predicate, the filtered projection must still contain
+-- only rows satisfying both the original projection predicate and the mutation condition.
+SELECT 'Test 8: Mutation with filtered projection';
+
+DROP TABLE IF EXISTS t_proj_mut;
+
+CREATE TABLE t_proj_mut
+(
+    time DateTime,
+    event_type String,
+    message String
+)
+ENGINE = MergeTree
+ORDER BY time
+SETTINGS lightweight_mutation_projection_mode = 'rebuild';
+
+ALTER TABLE t_proj_mut ADD PROJECTION proj_pageview_mut
+(
+    SELECT event_type, time, message
+    WHERE event_type = 'pageview'
+    ORDER BY time
+);
+
+INSERT INTO t_proj_mut VALUES
+    ('2024-01-01 00:00:00', 'pageview', 'a'),
+    ('2024-01-02 00:00:00', 'click',    'b'),
+    ('2024-01-03 00:00:00', 'pageview', 'c'),
+    ('2024-01-04 00:00:00', 'pageview', 'd');
+
+ALTER TABLE t_proj_mut MATERIALIZE PROJECTION proj_pageview_mut SETTINGS mutations_sync = 2;
+
+-- Delete one `pageview` row using a lightweight delete (`_row_exists` path),
+-- which triggers a projection rebuild because of `lightweight_mutation_projection_mode = 'rebuild'`.
+DELETE FROM t_proj_mut WHERE message = 'a' SETTINGS mutations_sync = 2;
+
+-- The query against the base table is the source of truth.
+SELECT time, message FROM t_proj_mut WHERE event_type = 'pageview' ORDER BY time;
+
+DROP TABLE t_proj_mut;

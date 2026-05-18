@@ -16,3 +16,8 @@ Test 5: Weaker (OR)
 2024-01-05 00:00:00	baz
 Test 6: Projection row count
 3
+Test 7: Projection with WITH clause
+2
+Test 8: Mutation with filtered projection
+2024-01-03 00:00:00	c
+2024-01-04 00:00:00	d
