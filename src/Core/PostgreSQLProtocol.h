@@ -1711,10 +1711,18 @@ public:
 
     void attachBindQuery(std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query)
     {
-        /// Per PostgreSQL extended-query protocol, a Bind message replaces any
-        /// existing portal of the same name. Since we keep a single bind slot,
-        /// simply overwrite it instead of failing — clients (e.g. Npgsql) issue
-        /// multiple Parse/Bind/Execute/Sync cycles per connection.
+        /// We only support the unnamed portal (an empty `portal_name`).
+        /// Reject named portals explicitly: with a single bind slot we cannot
+        /// keep their state correct, and silently overwriting would let
+        /// `Bind(p1, ...); Bind(p2, ...); Execute(p1)` return the result of `p2`.
+        if (!query->portal_name.empty())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Named portals are not supported in the PostgreSQL wire protocol, "
+                "got portal name '{}'", query->portal_name);
+
+        /// For the unnamed portal, a new `Bind` replaces the previous one
+        /// per the PostgreSQL extended-query protocol — clients such as Npgsql
+        /// issue multiple Parse/Bind/Execute/Sync cycles per connection.
         bind_query = std::move(query);
     }
 

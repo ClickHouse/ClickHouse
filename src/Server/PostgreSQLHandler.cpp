@@ -61,6 +61,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int SYNTAX_ERROR;
     extern const int OPENSSL_ERROR;
 }
@@ -839,6 +840,13 @@ void PostgreSQLHandler::processExecuteQuery()
         std::unique_ptr<PostgreSQLProtocol::Messaging::ExecuteQuery> query =
             message_transport->receive<PostgreSQLProtocol::Messaging::ExecuteQuery>();
 
+        /// Only the unnamed portal is supported; the corresponding rejection
+        /// for `Bind` lives in `PreparedStatemetsManager::attachBindQuery`.
+        if (!query->portal_name.empty())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Execute on a named portal is not supported in the PostgreSQL wire protocol, "
+                "got portal name '{}'", query->portal_name);
+
         pcg64_fast gen{randomSeed()};
         std::uniform_int_distribution<Int32> dis(0, INT32_MAX);
 
@@ -880,10 +888,20 @@ void PostgreSQLHandler::processCloseQuery()
             message_transport->receive<PostgreSQLProtocol::Messaging::CloseQuery>();
 
         /// 'S' means close a prepared statement, 'P' means close a portal.
-        /// Closing a portal should not deallocate the prepared statement,
+        /// Closing a portal must not deallocate the prepared statement,
         /// otherwise a later Bind/Execute on the same statement would fail.
         if (query->close_target == 'S')
+        {
             prepared_statements_manager.deleteStatement(query->function_name);
+        }
+        else if (query->close_target == 'P' && !query->function_name.empty())
+        {
+            /// Only the unnamed portal is supported; rejecting named portals
+            /// keeps the behaviour consistent with `Bind` and `Execute`.
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Close on a named portal is not supported in the PostgreSQL wire protocol, "
+                "got portal name '{}'", query->function_name);
+        }
 
         prepared_statements_manager.resetBindQuery();
 
@@ -909,9 +927,10 @@ void PostgreSQLHandler::processSyncQuery()
         std::unique_ptr<PostgreSQLProtocol::Messaging::SyncQuery> query =
             message_transport->receive<PostgreSQLProtocol::Messaging::SyncQuery>();
 
-        /// Per PostgreSQL protocol, Sync ends the current extended-query cycle
-        /// and destroys the unnamed portal, so the next Parse/Bind/Execute
-        /// pair starts from a clean state.
+        /// Per PostgreSQL protocol, `Sync` ends the current extended-query cycle
+        /// and destroys the unnamed portal. We only support the unnamed portal
+        /// (see `attachBindQuery`), so resetting the single bind slot is
+        /// equivalent — the next Parse/Bind/Execute pair starts from a clean state.
         prepared_statements_manager.resetBindQuery();
     }
     catch (const Exception & e)
