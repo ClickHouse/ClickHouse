@@ -7,6 +7,8 @@ title: 'cume_dist'
 doc_type: 'reference'
 ---
 
+# cume_dist
+
 Computes the cumulative distribution of a value within a group of values, i.e., the percentage of rows with values less than or equal to the current row's value. Can be used to determine relative standing of a value within a partition.
 
 **Syntax**

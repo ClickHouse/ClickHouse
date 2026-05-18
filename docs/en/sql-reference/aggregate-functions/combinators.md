@@ -7,6 +7,8 @@ title: 'Aggregate Function Combinators'
 doc_type: 'reference'
 ---
 
+# Aggregate function combinators
+
 The name of an aggregate function can have a suffix appended to it. This changes the way the aggregate function works.
 
 ## -If {#-if}
@@ -38,8 +40,7 @@ CREATE TABLE map_map(
     date Date,
     timeslot DateTime,
     status Map(String, UInt64)
-) ENGINE = MergeTree
-ORDER BY ();
+) ENGINE = Log;
 
 INSERT INTO map_map VALUES
     ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [10, 10, 10])),
