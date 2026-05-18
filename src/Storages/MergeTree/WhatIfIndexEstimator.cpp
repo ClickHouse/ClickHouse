@@ -219,10 +219,14 @@ bool tryEstimateEmpirical(
         QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
 
-        /// Feed every granule to the aggregator (matches what a real index would see),
-        /// but only count baseline marks in kept/skipped
+        /// One mark may arrive across several pulls (wide rows / byte-limited reads),
+        /// so advance bookkeeping by row count
+        const auto & part_index_granularity = part->index_granularity;
+        const size_t total_marks = part_index_granularity->getMarksCountWithoutFinal();
+
         auto aggregator = index_helper->createIndexAggregator();
-        size_t mark_idx = 0;
+        size_t current_mark = 0;
+        size_t rows_remaining_in_mark = total_marks > 0 ? part_index_granularity->getMarkRows(0) : 0;
         size_t data_granules_in_window = 0;
         size_t baseline_marks_in_window = 0;
 
@@ -236,18 +240,11 @@ bool tryEstimateEmpirical(
                 skipped_data_granules += baseline_marks_in_window;
         };
 
-        Block block;
-        while (executor.pull(block))
+        auto on_mark_finished = [&]
         {
-            if (block.rows() == 0)
-                continue;
-
-            size_t pos = 0;
-            aggregator->update(block, &pos, block.rows());
             ++data_granules_in_window;
-            if (mark_idx < in_baseline.size() && in_baseline[mark_idx])
+            if (current_mark < in_baseline.size() && in_baseline[current_mark])
                 ++baseline_marks_in_window;
-            ++mark_idx;
 
             if (data_granules_in_window >= skip_index_granularity)
             {
@@ -256,6 +253,29 @@ bool tryEstimateEmpirical(
                 data_granules_in_window = 0;
                 baseline_marks_in_window = 0;
             }
+
+            ++current_mark;
+            rows_remaining_in_mark = current_mark < total_marks
+                ? part_index_granularity->getMarkRows(current_mark)
+                : 0;
+        };
+
+        Block block;
+        while (executor.pull(block))
+        {
+            if (block.rows() == 0)
+                continue;
+
+            size_t pos = 0;
+            aggregator->update(block, &pos, block.rows());
+
+            if (block.rows() <= rows_remaining_in_mark)
+                rows_remaining_in_mark -= block.rows();
+            else
+                rows_remaining_in_mark = 0;
+
+            if (rows_remaining_in_mark == 0 && current_mark < total_marks)
+                on_mark_finished();
         }
 
         if (!aggregator->empty())
