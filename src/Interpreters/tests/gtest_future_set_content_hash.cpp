@@ -8,6 +8,7 @@
 #include <QueryPipeline/SizeLimits.h>
 
 #include <gtest/gtest.h>
+#include <thread>
 
 using namespace DB;
 
@@ -158,6 +159,56 @@ TEST(FutureSetContentHash, DuplicatesNormalized)
               contentHash(makeStringBlock({"a", "a"})));
     EXPECT_EQ(contentHash(makeStringBlock({"a", "b"})),
               contentHash(makeStringBlock({"a", "b", "a"})));
+}
+
+/// Empty IN list must not crash and must produce a stable hash.
+TEST(FutureSetContentHash, EmptySet)
+{
+    auto h1 = contentHash(makeStringBlock({}));
+    auto h2 = contentHash(makeStringBlock({}));
+    EXPECT_EQ(h1, h2);
+}
+
+/// Calling getContentHash() twice on the same instance must return the same value
+/// (the lazy callOnce path is idempotent).
+TEST(FutureSetContentHash, IdempotentOnSameInstance)
+{
+    auto future_set = std::make_shared<FutureSetFromTuple>(
+        FutureSet::Hash{}, nullptr, makeStringBlock({"b", "a", "c"}), false, SizeLimits{});
+    EXPECT_EQ(future_set->getContentHash(), future_set->getContentHash());
+}
+
+/// Calling getKeyColumns() before getContentHash() pre-fires fill_set_elements_once;
+/// the content hash must still be computed correctly afterwards.
+TEST(FutureSetContentHash, ContentHashAfterGetKeyColumns)
+{
+    auto future_set = std::make_shared<FutureSetFromTuple>(
+        FutureSet::Hash{}, nullptr, makeStringBlock({"b", "a"}), false, SizeLimits{});
+    future_set->getKeyColumns(); // fires fill_set_elements_once early
+    auto h1 = future_set->getContentHash();
+
+    auto h2 = contentHash(makeStringBlock({"a", "b"})); // fresh instance, same logical set
+    EXPECT_EQ(h1, h2);
+}
+
+/// Concurrent first calls to getContentHash() on the same instance must all return
+/// the same value (callOnce thread-safety).
+TEST(FutureSetContentHash, ThreadSafe)
+{
+    auto future_set = std::make_shared<FutureSetFromTuple>(
+        FutureSet::Hash{}, nullptr, makeStringBlock({"c", "a", "b"}), false, SizeLimits{});
+
+    constexpr int num_threads = 16;
+    std::vector<FutureSet::Hash> results(num_threads);
+    std::vector<std::thread> threads;
+    threads.reserve(num_threads);
+    for (int i = 0; i < num_threads; ++i)
+        threads.emplace_back([&, i] { results[i] = future_set->getContentHash(); });
+    for (auto & t : threads)
+        t.join();
+
+    for (int i = 1; i < num_threads; ++i)
+        EXPECT_EQ(results[0], results[i]);
 }
 
 /// With transform_null_in = false (the default), NULL-containing rows are skipped

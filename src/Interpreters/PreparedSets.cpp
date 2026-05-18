@@ -142,50 +142,12 @@ FutureSetFromTuple::FutureSetFromTuple(
         auto name = type->getName();
         hash = CityHash_v1_0_2::CityHash128WithSeed(name.data(), name.size(), hash);
     }
-
-    /// Compute a content-based hash. Used by the aggregate projection matcher
-    /// (actionsDAGUtils.cpp) to distinguish different IN-clause sets.
-    ///
-    /// We hash the normalized set elements (deduplicated, NULL-filtered, sorted) rather
-    /// than the raw input block so that permutations and duplicate inputs are equivalent.
-    /// getPermutation/updatePermutation operate by column index, so sets with repeated
-    /// element types (e.g. (String, String)) are handled correctly.
-    {
-        const Columns & normalized = getKeyColumns();
-        const DataTypes element_types = set->getElementsTypes();
-        const size_t normalized_rows = normalized.empty() ? 0 : normalized[0]->size();
-
-        IColumn::Permutation perm;
-        if (!normalized.empty() && normalized_rows > 0)
-        {
-            EqualRanges ranges{{0, normalized_rows}};
-            normalized[0]->getPermutation(
-                IColumn::PermutationSortDirection::Ascending,
-                IColumn::PermutationSortStability::Stable, 0, 1, perm);
-            for (size_t i = 1; i < normalized.size(); ++i)
-                normalized[i]->updatePermutation(
-                    IColumn::PermutationSortDirection::Ascending,
-                    IColumn::PermutationSortStability::Stable, 0, 1, perm, ranges);
-        }
-
-        SipHash siphasher;
-        for (size_t i = 0; i < normalized.size(); ++i)
-        {
-            const auto type_name = element_types[i]->getName();
-            siphasher.update(type_name.data(), type_name.size());
-            if (!perm.empty())
-                normalized[i]->permute(perm, 0)->updateHashFast(siphasher);
-            else
-                normalized[i]->updateHashFast(siphasher);
-        }
-        content_hash = getSipHash128AsPair(siphasher);
-    }
 }
 
 DataTypes FutureSetFromTuple::getTypes() const { return set->getElementsTypes(); }
 FutureSet::Hash FutureSetFromTuple::getHash() const { return hash; }
 
-void FutureSetFromTuple::fillSetElementsOnce()
+void FutureSetFromTuple::fillSetElementsOnce() const
 {
     callOnce(fill_set_elements_once, [this]
     {
@@ -194,10 +156,51 @@ void FutureSetFromTuple::fillSetElementsOnce()
     });
 }
 
-Columns FutureSetFromTuple::getKeyColumns()
+Columns FutureSetFromTuple::getKeyColumns() const
 {
     fillSetElementsOnce();
     return set->getSetElements();
+}
+
+FutureSet::Hash FutureSetFromTuple::getContentHash() const
+{
+    callOnce(content_hash_once, [this] { computeContentHash(); });
+    return content_hash;
+}
+
+void FutureSetFromTuple::computeContentHash() const
+{
+    /// Hash the normalized elements (deduplicated, NULL-filtered, sorted by value) so that
+    /// permutations and duplicate inputs produce the same hash. Used by the aggregate
+    /// projection matcher (actionsDAGUtils.cpp) to compare IN-clause sets.
+    const Columns normalized = getKeyColumns();
+    const DataTypes element_types = set->getElementsTypes();
+    const size_t normalized_rows = normalized.empty() ? 0 : normalized[0]->size();
+
+    IColumn::Permutation perm;
+    if (!normalized.empty() && normalized_rows > 0)
+    {
+        EqualRanges ranges{{0, normalized_rows}};
+        normalized[0]->getPermutation(
+            IColumn::PermutationSortDirection::Ascending,
+            IColumn::PermutationSortStability::Stable, 0, 1, perm);
+        for (size_t i = 1; i < normalized.size(); ++i)
+            normalized[i]->updatePermutation(
+                IColumn::PermutationSortDirection::Ascending,
+                IColumn::PermutationSortStability::Stable, 0, 1, perm, ranges);
+    }
+
+    SipHash siphasher;
+    for (size_t i = 0; i < normalized.size(); ++i)
+    {
+        const auto type_name = element_types[i]->getName();
+        siphasher.update(type_name.data(), type_name.size());
+        if (!perm.empty())
+            normalized[i]->permute(perm, 0)->updateHashFast(siphasher);
+        else
+            normalized[i]->updateHashFast(siphasher);
+    }
+    content_hash = getSipHash128AsPair(siphasher);
 }
 
 SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)

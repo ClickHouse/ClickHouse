@@ -107,18 +107,20 @@ public:
 
     DataTypes getTypes() const override;
     Hash getHash() const override;
-    Hash getContentHash() const override { return content_hash; }
+    Hash getContentHash() const override;
     ASTPtr getSourceAST() const override { return ast; }
-    Columns getKeyColumns();
+    Columns getKeyColumns() const;
 private:
-    void fillSetElementsOnce();
+    void fillSetElementsOnce() const;
+    void computeContentHash() const;
 
     Hash hash;
-    Hash content_hash{};
+    mutable Hash content_hash{};
     ASTPtr ast;
     SetPtr set;
-    SetKeyColumns set_key_columns;
-    OnceFlag fill_set_elements_once;
+    mutable SetKeyColumns set_key_columns;
+    mutable OnceFlag fill_set_elements_once;
+    mutable OnceFlag content_hash_once;
 };
 
 using FutureSetFromTuplePtr = std::shared_ptr<FutureSetFromTuple>;
