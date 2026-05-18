@@ -25,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 class FunctionULIDStringToDateTime : public IFunction
@@ -54,6 +55,19 @@ public:
         return
             "(String | FixedString, const tz String) -> DateTime64(3, tz)"
             " OR (String | FixedString) -> DateTime64(3)";
+    }
+
+    /// Restore the legacy `FixedString(26)` analyzer-time invariant; the DSL has no width matcher.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (const auto * fs = typeid_cast<const DataTypeFixedString *>(arguments[0].type.get()))
+        {
+            if (fs->getN() != ULID_LENGTH)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument 1 of function {}, expected String or FixedString({})",
+                    arguments[0].type->getName(), getName(), ULID_LENGTH);
+        }
+        return IFunction::getReturnTypeImpl(arguments);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
