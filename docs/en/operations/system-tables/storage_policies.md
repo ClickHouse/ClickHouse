@@ -28,35 +28,49 @@ Contains information about storage policies and volumes which are defined in [se
 
 ## Volume selection on `INSERT` {#volume-selection-on-insert}
 
-When a new data part is created by an `INSERT`, ClickHouse picks the
-destination volume of the policy in the following order. The first rule that
-matches wins; if it doesn't match, evaluation falls through to the next rule.
+When `INSERT` creates a new data part, ClickHouse picks a destination disk
+by trying the rules below in order. The first rule that matches **and can
+reserve space for the part** wins; otherwise (rule does not apply, no free
+space, or `max_data_part_size` exceeded) evaluation continues with the next
+rule.
 
-1. **TTL move rule** — if the table has a `TTL <expr> TO VOLUME 'X'` (or
-   `TO DISK 'X'`) clause whose `<expr>` already evaluates to a moment in the
-   past for the rows being inserted, **and** `perform_ttl_move_on_insert = 1`
-   (the default) on the **TTL destination volume** (for `TO DISK 'X'`, the
-   volume that contains disk `X`), the part is written directly to the
-   volume/disk named in the move rule.
-2. **`max_data_part_size`** of the candidate volume — a volume is skipped if
-   the part being created would exceed its `max_data_part_size`.
+1. **TTL move rule** — if a `TTL <expr> TO VOLUME 'X'` (or `TO DISK 'X'`)
+   clause is already in the past for the rows being inserted, **and**
+   `perform_ttl_move_on_insert = 1` (default) on the **TTL destination
+   volume** (for `TO DISK 'X'`, the volume containing disk `X`), the part
+   is written directly to that destination. If reservation there fails, the
+   insert falls back to steps 2–4; a warning is logged but the `INSERT`
+   does not fail for this reason alone.
+2. **`max_data_part_size`** — a volume rejects parts larger than its
+   `max_data_part_size`. This is checked per volume; it does not gate a
+   step-1 `TTL ... TO DISK 'X'` reservation, which targets the disk
+   directly.
 3. **`volume_priority`** — among the remaining volumes, the one with the
-   lowest `volume_priority` value is chosen. Volumes that did not declare
+   lowest `volume_priority` value is chosen. Volumes without an explicit
    `<volume_priority>` are ordered by their position in the configuration.
 4. **`load_balancing`** — once a volume is chosen, the disk inside that
    volume is selected according to its `load_balancing` policy
    (`round_robin` or `least_used`).
 
-:::note
-`perform_ttl_move_on_insert` is read from the **TTL destination** volume,
-not from the source volume. For a `TO DISK 'X'` rule, the flag is read from
-the volume that contains disk `X`. Setting it on any other volume of the
-policy has no effect on the insert path.
+:::note Override
+If `min_free_disk_bytes_to_perform_insert` or
+`min_free_disk_ratio_to_perform_insert` is non-zero, the precedence above
+is bypassed. `INSERT` tries only the volume with the lowest
+`volume_priority` and throws `NOT_ENOUGH_SPACE` if no disk in that volume
+meets the threshold. Inserts into the `system` database are exempt.
 :::
 
-To force inserts to honour `volume_priority` even when an "already expired"
-TTL move rule applies, set `perform_ttl_move_on_insert = 0` on the TTL
-destination volume (for `TO DISK 'X'`, on the volume that contains disk
-`X`). The part is then written to the priority-N volume first and moved to
-the TTL destination by a background move task. See the
+:::note
+`perform_ttl_move_on_insert` is read from the **TTL destination** volume,
+not from the source volume. For a `TO DISK 'X'` rule, the flag is read
+from the volume that contains disk `X`. Setting it on any other volume of
+the policy has no effect on the insert path.
+:::
+
+To force inserts to honour `volume_priority` even when an "already
+expired" TTL move rule applies, set `perform_ttl_move_on_insert = 0` on
+the TTL destination volume (for `TO DISK 'X'`, on the volume that contains
+disk `X`). The part is then written to the priority-N volume first and
+moved to the TTL destination by a background move task (observable via
+`system.moves`). See the
 [`perform_ttl_move_on_insert` setting on the MergeTree engine](/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes_configure).
