@@ -801,8 +801,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 if (element.getType() != Field::Types::String)
                     return false;
 
-                /// has/hasAll/hasAny compare raw array elements — bypass both transforms.
-                auto element_tokens = stringToTokens(element, false, false);
+                /// Preprocessor matches index build; postprocessor is bypassed (literal element semantics).
+                auto element_tokens = stringToTokens(element, true, false);
                 if (element_tokens.empty())
                     return false;
 
@@ -831,8 +831,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                     return false;
                 }
 
-                /// has/hasAll/hasAny compare raw array elements — bypass both transforms.
-                auto element_tokens = stringToTokens(element, false, false);
+                auto element_tokens = stringToTokens(element, true, false);
 
                 /// An element that tokenizes to nothing cannot be proven present by the index.
                 /// Bail out to keep the original predicate, same as tryPrepareSetForTextSearch does for IN.
@@ -1001,8 +1000,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "has")
     {
-        /// has() compares raw array elements — bypass both transforms.
-        auto tokens = stringToTokens(value_field, false, false);
+        /// Preprocessor matches index build; postprocessor is bypassed (literal element semantics).
+        auto tokens = stringToTokens(value_field, true, false);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;

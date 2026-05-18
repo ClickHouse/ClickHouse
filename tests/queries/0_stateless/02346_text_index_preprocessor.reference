@@ -189,3 +189,9 @@ Baz	3
 1
 0
 0
+17. Array tokenizer + preprocessor: has/hasAll/hasAny apply preprocessor on lookup.
+1
+1
+0
+0
+0

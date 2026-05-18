@@ -565,3 +565,28 @@ SELECT count() FROM tab WHERE hasToken(val, '2024');         -- 0
 SELECT count() FROM tab WHERE hasToken(val, '10');           -- 0
 
 DROP TABLE tab;
+
+SELECT '17. Array tokenizer + preprocessor: has/hasAll/hasAny apply preprocessor on lookup.';
+-- Index build always applies the preprocessor unconditionally. has/hasAll/hasAny must apply
+-- it on the lookup side too so the needle matches the stored (preprocessed) form.
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val Array(String),
+    INDEX idx(val) TYPE text(tokenizer = 'array', preprocessor = lower(val))
+) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, ['Foo', 'qux']), (2, ['BAR', 'baz']);
+
+-- Index stores preprocessed values: 'foo'/'qux' for row 1, 'bar'/'baz' for row 2.
+-- Lookup applies preprocessor to needle so 'Foo' -> 'foo', matching the stored form.
+SELECT count() FROM tab WHERE has(val, 'Foo');         -- 1 (preprocessor aligns needle with index; row-level finds literal 'Foo')
+SELECT count() FROM tab WHERE has(val, 'BAR');         -- 1
+SELECT count() FROM tab WHERE has(val, 'xyz');         -- 0
+-- Wrong capitalization: granule is kept (preprocessed 'foo' matches stored 'foo'), but
+-- row-level has() is a literal comparison so 'foo' does not match the stored element 'Foo'.
+SELECT count() FROM tab WHERE has(val, 'foo');         -- 0
+SELECT count() FROM tab WHERE has(val, 'bar');         -- 0
+
+DROP TABLE tab;
