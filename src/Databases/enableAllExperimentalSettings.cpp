@@ -19,6 +19,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_fuzz_query_functions", 1);
     context->setSetting("allow_experimental_hash_functions", 1);
     context->setSetting("allow_experimental_vector_similarity_index", 1);
+    context->setSetting("allow_experimental_vector_spann_index", 1);
     context->setSetting("allow_experimental_window_functions", 1);
     context->setSetting("allow_experimental_geo_types", 1);
     context->setSetting("allow_experimental_map_type", 1);

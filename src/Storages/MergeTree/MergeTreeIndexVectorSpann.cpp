@@ -53,6 +53,7 @@ namespace Setting
     extern const SettingsFloat vector_search_index_fetch_multiplier;
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
     extern const SettingsBool vector_search_with_rescoring;
+    extern const SettingsBool allow_experimental_vector_spann_index;
 }
 
 namespace ServerSetting
@@ -70,6 +71,7 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -561,7 +563,9 @@ void MergeTreeIndexAggregatorVectorSpann::update(const Block & block, size_t * p
         accumulated_row_ids.push_back(base_row_id + row);
         const size_t start = row == 0 ? 0 : column_array_offsets[row - 1];
         const size_t end = column_array_offsets[row];
-        accumulated_vectors.emplace_back(column_float_data.begin() + start, column_float_data.begin() + end);
+        std::vector<Float32> vec(column_float_data.begin() + start, column_float_data.begin() + end);
+        checkVectorIsSane(vec.data(), params.dimensions, params.scalar_kind, ErrorCodes::INCORRECT_DATA, "indexed vector");
+        accumulated_vectors.emplace_back(std::move(vec));
     }
 
     *pos += rows_read;
@@ -785,8 +789,23 @@ MergeTreeIndexPtr spannIndexCreator(const IndexDescription & index)
     return std::make_shared<MergeTreeIndexVectorSpann>(index, std::move(spann_params));
 }
 
-void spannIndexValidator(const IndexDescription & index, bool /* attach */)
+void spannIndexValidator(const IndexDescription & index, bool attach)
 {
+    if (!attach)
+    {
+        ContextPtr context = CurrentThread::tryGetQueryContext();
+        if (!context)
+            context = Context::getGlobalContextInstance();
+
+        if (!context || !context->getSettingsRef()[Setting::allow_experimental_vector_spann_index])
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "vector_spann index is an experimental feature. "
+                "Set setting `allow_experimental_vector_spann_index = 1` to enable it.");
+        }
+    }
+
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
     const bool has_three_args = (args.size() == 3);
     const bool has_seven_args = (args.size() == 7);
