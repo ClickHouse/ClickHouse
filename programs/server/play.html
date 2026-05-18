@@ -4158,6 +4158,12 @@ async function updateQueryParams()
         return;
     }
 
+    /// Bump the generation up-front so that any in-flight older runs (which only
+    /// check this counter after their `await tokenize`) see a newer value and bail
+    /// out — including the empty-query fast path below, where we would otherwise
+    /// clear state and return, and a stale older run could then overwrite it.
+    const generation = ++updateQueryParamsGeneration;
+
     const query = query_area.value;
     if (!query)
     {
@@ -4168,7 +4174,6 @@ async function updateQueryParams()
         return;
     }
 
-    const generation = ++updateQueryParamsGeneration;
     const tokens = await tokenize(query);
     if (generation !== updateQueryParamsGeneration) { return; }
     const params = extractQueryParams(tokens);
