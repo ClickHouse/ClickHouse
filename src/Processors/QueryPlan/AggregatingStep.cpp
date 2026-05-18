@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cstddef>
 #include <memory>
+#include <numeric>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -312,12 +313,22 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// TODO: Support this when we will have external aggregation
         && !should_produce_results_in_order_of_bucket_number
         /// Sharding is useful for high cardinality keys. For single-key, skip 1-byte types
-        /// (UInt8/Int8 have at most 256 distinct values) and LowCardinality.
-        /// For multi-key, the combined cardinality is typically high enough.
-        && (params.keys_size > 1
-            || (!WhichDataType(removeNullable(pipeline.getHeader().getByName(params.keys[0]).type)).isUInt8()
-                && !WhichDataType(removeNullable(pipeline.getHeader().getByName(params.keys[0]).type)).isInt8()
-                && !pipeline.getHeader().getByName(params.keys[0]).type->lowCardinality()));
+        /// (UInt8/Int8 have at most 256 distinct values) and LowCardinality. For multi-key, skip
+        /// if combined cardinality is low enough.
+        && std::accumulate(
+               params.keys.begin(),
+               params.keys.end(),
+               size_t{0},
+               [&](size_t sum, const String & key) -> size_t
+               {
+                   constexpr size_t threshold = 1;
+                   const auto & type = pipeline.getHeader().getByName(key).type;
+                   if (type->lowCardinality())
+                       return sum;
+                   const auto inner = removeNullable(type);
+                   return sum + (inner->haveMaximumSizeOfValue() ? inner->getMaximumSizeOfValueInMemory() : threshold + 1);
+               })
+            > 1;
 
     if (use_sharded_aggregation)
     {
