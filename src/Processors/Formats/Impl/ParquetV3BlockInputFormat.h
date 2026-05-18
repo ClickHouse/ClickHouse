@@ -32,7 +32,6 @@ struct ParquetBucketSplitter : public IBucketSplitter
 {
     ParquetBucketSplitter() = default;
     std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
-    std::vector<FileBucketInfoPtr> splitToBucketsByCount(size_t target_count, ReadBuffer & buf, const FormatSettings & format_settings_) override;
 };
 
 class ParquetV3BlockInputFormat : public IInputFormat
