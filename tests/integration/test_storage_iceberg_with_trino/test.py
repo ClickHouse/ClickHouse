@@ -306,3 +306,153 @@ def test_multiple_snapshots_and_nulls(iceberg_db):
         """,
     )
     assert agg.strip() == "4\t3\t3\t700", f"agg over two snapshots: {agg!r}"
+
+
+def test_v3_primitive_types(iceberg_db):
+    cluster = iceberg_db
+    node = cluster.instances["node1"]
+
+    table_name = f"types_table_{_get_uuid_str()}"
+    full = f"{CATALOG_DATABASE}.`{NAMESPACE}.{table_name}`"
+
+    node.query(
+        f"""
+        CREATE TABLE {full} (
+            id Int32,
+            i32 Int32,
+            i64 Int64,
+            f32 Float32,
+            f64 Float64,
+            d Date,
+            ts DateTime64(6),
+            ts_utc DateTime64(6, 'UTC'),
+            s String,
+            uid UUID,
+            opt Nullable(Int64)
+        )
+        {_engine_clause(table_name)}
+        SETTINGS iceberg_format_version = 3
+        """,
+        settings=WRITE_SETTINGS,
+    )
+
+    node.query(
+        f"""
+        INSERT INTO {full} VALUES
+            (1, 100,  1000000000000,  1.5,  2.5, '2024-06-15',
+             '2024-06-15 10:11:12.000000', '2024-06-15 10:11:12.000000',
+             'hello', '550e8400-e29b-41d4-a716-446655440000', 42),
+            (2, -100, -1000000000000, -1.5, -2.5, '1970-01-02',
+             '1970-01-02 00:00:00.123456', '1970-01-02 00:00:00.123456',
+             'world', '00000000-0000-0000-0000-000000000000', NULL)
+        """,
+        settings=WRITE_SETTINGS,
+    )
+
+    out = _trino_exec(
+        cluster,
+        f"""
+        SELECT
+            format('%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s',
+                id,
+                i32,
+                i64,
+                f32,
+                f64,
+                CAST(d AS varchar),
+                CAST(ts AS varchar),
+                CAST(ts_utc AS varchar),
+                s,
+                CAST(uid AS varchar),
+                COALESCE(CAST(opt AS varchar), 'null')
+            )
+        FROM "{NAMESPACE}"."{table_name}"
+        ORDER BY id
+        """,
+    )
+    expected = (
+        "1|100|1000000000000|1.5|2.5|2024-06-15|"
+        "2024-06-15 10:11:12.000000|2024-06-15 10:11:12.000000|"
+        "hello|550e8400-e29b-41d4-a716-446655440000|42\n"
+        "2|-100|-1000000000000|-1.5|-2.5|1970-01-02|"
+        "1970-01-02 00:00:00.123456|1970-01-02 00:00:00.123456|"
+        "world|00000000-0000-0000-0000-000000000000|null\n"
+    )
+    assert out == expected, f"primitive round-trip:\nexpected:\n{expected!r}\ngot:\n{out!r}"
+
+
+def test_v3_time_travel(iceberg_db):
+    cluster = iceberg_db
+    node = cluster.instances["node1"]
+
+    table_name = f"tt_table_{_get_uuid_str()}"
+    full = f"{CATALOG_DATABASE}.`{NAMESPACE}.{table_name}`"
+
+    node.query(
+        f"""
+        CREATE TABLE {full} (id Int32, value Int64)
+        {_engine_clause(table_name)}
+        SETTINGS iceberg_format_version = 3
+        """,
+        settings=WRITE_SETTINGS,
+    )
+    node.query(f"INSERT INTO {full} VALUES (1, 10)", settings=WRITE_SETTINGS)
+    node.query(f"INSERT INTO {full} VALUES (2, 20), (3, 30)", settings=WRITE_SETTINGS)
+    node.query(f"INSERT INTO {full} VALUES (4, 40)", settings=WRITE_SETTINGS)
+
+    snaps_out = _trino_exec(
+        cluster,
+        f'SELECT snapshot_id FROM "{NAMESPACE}"."{table_name}$snapshots" ORDER BY committed_at',
+    )
+    snap_ids = [line for line in snaps_out.strip().splitlines() if line]
+    assert len(snap_ids) == 3, f"expected 3 snapshots, got {snap_ids!r}"
+
+    for snap_id, expected_count, expected_sum in zip(
+        snap_ids, [1, 3, 4], [10, 60, 100]
+    ):
+        out = _trino_exec(
+            cluster,
+            f'SELECT count(*), sum(value) FROM "{NAMESPACE}"."{table_name}" '
+            f"FOR VERSION AS OF {snap_id}",
+        )
+        assert out.strip() == f"{expected_count}\t{expected_sum}", (
+            f"FOR VERSION AS OF {snap_id}: expected "
+            f"{expected_count}\\t{expected_sum}, got {out!r}"
+        )
+
+
+def test_v3_iceberg_system_tables(iceberg_db):
+    cluster = iceberg_db
+    node = cluster.instances["node1"]
+
+    table_name = f"meta_table_{_get_uuid_str()}"
+    full = f"{CATALOG_DATABASE}.`{NAMESPACE}.{table_name}`"
+
+    node.query(
+        f"""
+        CREATE TABLE {full} (id Int32, payload String)
+        {_engine_clause(table_name)}
+        SETTINGS iceberg_format_version = 3
+        """,
+        settings=WRITE_SETTINGS,
+    )
+    node.query(f"INSERT INTO {full} VALUES (1, 'a')", settings=WRITE_SETTINGS)
+    node.query(f"INSERT INTO {full} VALUES (2, 'b')", settings=WRITE_SETTINGS)
+
+    snaps = _trino_exec(
+        cluster,
+        f'SELECT count(*) FROM "{NAMESPACE}"."{table_name}$snapshots"',
+    )
+    assert snaps.strip() == "2", f"$snapshots count: {snaps!r}"
+
+    files = _trino_exec(
+        cluster,
+        f'SELECT count(*), sum(record_count) FROM "{NAMESPACE}"."{table_name}$files"',
+    )
+    assert files.strip() == "2\t2", f"$files count/sum(record_count): {files!r}"
+
+    history = _trino_exec(
+        cluster,
+        f'SELECT count(*) FROM "{NAMESPACE}"."{table_name}$history"',
+    )
+    assert history.strip() == "2", f"$history count: {history!r}"
