@@ -1,4 +1,6 @@
 #include <Columns/IColumn.h>
+#include <Common/BitHelpers.h>
+#include <Interpreters/JoinUtils.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/BufferedShardByHashTransform.h>
 
@@ -10,7 +12,6 @@ BufferedShardByHashTransform::BufferedShardByHashTransform(SharedHeader header, 
     , num_shards(num_shards_)
     , key_columns(std::move(key_columns_))
     , output_queues(num_shards)
-    , hash(0)
     , shard_columns(num_shards)
 {
     chassert(num_shards > 0);
@@ -133,23 +134,19 @@ void BufferedShardByHashTransform::generateOutputChunks()
     chassert(!columns.empty());
 
     /// Compute cheap weak hash for each row for routing
-    hash.reset(num_rows);
+    WeakHash32 hash(num_rows);
     for (auto column_number : key_columns)
         hash.update(columns[column_number]->getWeakHash32());
 
-    /// Partition rows by shard using Fibonacci hashing to derive shard bits that are
-    /// independent of the hash table's bucket selection (which uses the low bits via
-    /// hash & mask). Without mixing, all keys in a shard would share the same low bits,
-    /// causing them to cluster into a small subset of hash table buckets.
-    /// The golden ratio constant ensures thorough bit mixing with a single multiply.
-    /// Combine the mix with Lemire fastrange to map into [0, num_shards) without a divide.
-    static constexpr size_t fibonacci_hash_multiplier = 0x9e3779b97f4a7c15ULL;
-    const auto & hash_data = hash.getData();
-    selector.resize_exact(num_rows);
-    for (size_t row = 0; row < num_rows; ++row)
+    if (likely(isPowerOf2(num_shards)))
     {
-        const UInt64 mixed = static_cast<UInt64>(hash_data[row]) * fibonacci_hash_multiplier;
-        selector[row] = ((mixed >> 32) * num_shards) >> 32;
+        const size_t mask = num_shards - 1;
+        selector = JoinCommon::hashToSelector(hash, [mask](size_t h) { return h & mask; });
+    }
+    else
+    {
+        /// Use the "fastrange" method from Daniel Lemire:
+        selector = JoinCommon::hashToSelector(hash, [n = num_shards](size_t h) { return ((h & 0xFFFFFFFF) * n) >> 32; });
     }
 
     /// Physically split every column into N per-shard mutable columns.

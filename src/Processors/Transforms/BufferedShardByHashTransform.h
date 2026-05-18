@@ -8,7 +8,6 @@
 #include <Core/ColumnNumbers.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
-#include <Common/WeakHash.h>
 
 namespace DB
 {
@@ -57,8 +56,6 @@ private:
 
     /// Per-shard FIFO of chunks waiting to be pushed downstream. Bounded at MAX_QUEUE_LENGTH.
     std::vector<std::deque<Chunk>> output_queues;
-
-    WeakHash32 hash;
 
     /// Reused across input chunks to skip per-chunk reallocation.
     IColumn::Selector selector;
