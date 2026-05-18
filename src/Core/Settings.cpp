@@ -8790,7 +8790,28 @@ void Settings::addToProgramOptions(std::string_view setting_name, boost::program
 
 void Settings::addToProgramOptionsAsMultitokens(boost::program_options::options_description & options) const
 {
-    addProgramOptionsAsMultitokens(*impl, options);
+    /// Same duplicate-skip strategy as `Settings::addToProgramOptions` — see the comment there.
+    std::unordered_set<std::string> existing;
+    existing.reserve(options.options().size());
+    for (const auto & option : options.options())
+        existing.insert(option->long_name());
+
+    const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
+    for (const auto & field : impl->all())
+    {
+        std::string_view name = field.getName();
+        if (!existing.contains(std::string(name)))
+            addProgramOptionAsMultitoken(*impl, options, name, field);
+
+        if (auto it = settings_to_aliases.find(name); it != settings_to_aliases.end())
+        {
+            for (const auto alias : it->second)
+            {
+                if (!existing.contains(std::string(alias)))
+                    addProgramOptionAsMultitoken(*impl, options, alias, field);
+            }
+        }
+    }
 }
 
 void Settings::addToClientOptions(Poco::Util::LayeredConfiguration &config, const boost::program_options::variables_map &options, bool repeated_settings) const
@@ -8798,12 +8819,21 @@ void Settings::addToClientOptions(Poco::Util::LayeredConfiguration &config, cons
     for (const auto & setting : impl->all())
     {
         const auto & name = setting.getName();
-        if (options.contains(name))
+        if (!options.contains(name))
+            continue;
+        try
         {
             if (repeated_settings)
                 config.setString(name, options[name].as<Strings>().back());
             else
                 config.setString(name, options[name].as<String>());
+        }
+        catch (const boost::bad_any_cast &) // NOLINT(bugprone-empty-catch)
+        {
+            /// Ok: the setting and a client-side command-line option share a name but use different
+            /// value types in `boost::program_options` (e.g. the client's `--database`). The client
+            /// owns the option in that case; `addToProgramOptions[AsMultitokens]` already skipped
+            /// adding the setting variant, and we should not interpret the value here either.
         }
     }
 }

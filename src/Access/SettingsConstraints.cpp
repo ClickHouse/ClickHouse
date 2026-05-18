@@ -62,6 +62,16 @@ SettingSourceRestrictions getSettingSourceRestrictions(std::string_view name)
     return SettingSourceRestrictions(); // allows everything
 }
 
+/// Settings that are always allowed to change in readonly mode, regardless of the user profile's
+/// `<constraints>` block. These are typically per-request HTTP routing/format settings (formerly
+/// special URL parameters like `?database=` and `?default_format=`) that any client must be able
+/// to set on a GET request, even when upgrading from an older version whose `users.xml` does not
+/// yet declare them as `<changeable_in_readonly/>`.
+bool isAlwaysChangeableInReadonly(std::string_view name)
+{
+    return name == "database" || name == "default_format";
+}
+
 }
 
 SettingsConstraints::SettingsConstraints(const AccessControl & access_control_) : access_control(&access_control_)
@@ -506,7 +516,10 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     auto it = constraints.find(resolved_name);
     if (current_settings[Setting::readonly] == 1)
     {
-        if (it == constraints.end() || it->second.writability != SettingConstraintWritability::CHANGEABLE_IN_READONLY)
+        const bool changeable_in_readonly = (it != constraints.end()
+                && it->second.writability == SettingConstraintWritability::CHANGEABLE_IN_READONLY)
+            || isAlwaysChangeableInReadonly(resolved_name);
+        if (!changeable_in_readonly)
             return Checker(PreformattedMessage::create("Cannot modify '{}' setting in readonly mode", setting_name),
                            ErrorCodes::READONLY);
     }
