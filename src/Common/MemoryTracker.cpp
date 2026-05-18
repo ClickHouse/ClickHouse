@@ -269,7 +269,7 @@ void incrementAllocationWithoutCheck(Int64 size)
     }
 }
 
-AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker, double _sample_probability)
+AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, MemoryTracker * query_tracker, double _sample_probability)
 {
     if (size < 0)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Negative size ({}) is passed to MemoryTracker. It is a bug.", size);
@@ -298,7 +298,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         if (auto * loaded_next = parent.load(std::memory_order_relaxed))
         {
             MemoryTracker * tracker = level == VariableContext::Process ? this : query_tracker;
-            return loaded_next->allocImpl(size, throw_if_memory_exceeded, tracker, _sample_probability);
+            return loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability);
         }
 
         return AllocationTrace(_sample_probability);
@@ -336,7 +336,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
     std::bernoulli_distribution fault(current_fault_probability);
     if (unlikely(current_fault_probability > 0.0 && fault(thread_local_rng)))
     {
-        if (memoryTrackerCanThrow(level, true) && throw_if_memory_exceeded)
+        if (memoryTrackerCanThrow(level, true) && enforce_memory_limit)
         {
             /// Revert
             amount.fetch_sub(size, std::memory_order_relaxed);
@@ -376,7 +376,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
                     flush_prefix = nullptr;
                 if (!flush_prefix)
                 {
-                    if (throw_if_memory_exceeded)
+                    if (enforce_memory_limit)
                         LOG_WARNING(getLogger("MemoryTracker"), "Cannot flush memory profile, empty prefix");
                 }
                 else if (jemalloc_flush_profile_on_memory_exceeded_interval_s)
@@ -388,7 +388,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
                         && last_flush_time.compare_exchange_strong(last, now, std::memory_order_relaxed))
                     {
                         auto flushed_profile = DB::Jemalloc::flushProfile(flush_prefix);
-                        if (throw_if_memory_exceeded)
+                        if (enforce_memory_limit)
                             LOG_INFO(getLogger("MemoryTracker"), "Flushed memory profile to {} after total memory exceeded", flushed_profile);
                     }
                 }
@@ -398,7 +398,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
                     if (flush_count.fetch_add(1, std::memory_order_relaxed) < 100)
                     {
                         auto flushed_profile = DB::Jemalloc::flushProfile(flush_prefix);
-                        if (throw_if_memory_exceeded)
+                        if (enforce_memory_limit)
                             LOG_INFO(getLogger("MemoryTracker"), "Flushed memory profile to {} after total memory exceeded", flushed_profile);
                     }
                 }
@@ -409,7 +409,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         /// Try to evict from userspace page cache or kill a lower-priority query to free up memory.
         /// These operations are relatively slow, so we do them only if memoryTrackerCanThrow;
         /// otherwise all allocations may get slow when above memory limit.
-        if (memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
+        if (memoryTrackerCanThrow(level, false) && enforce_memory_limit)
         {
             OvercommitResult overcommit_result = OvercommitResult::NONE;
 
@@ -473,7 +473,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
     /// updating peak will be inaccurate.
     if (!memory_limit_exceeded_ignored)
     {
-        if (throw_if_memory_exceeded)
+        if (enforce_memory_limit)
         {
             /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
@@ -506,7 +506,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
     {
         MemoryTracker * tracker = level == VariableContext::Process ? this : query_tracker;
-        return loaded_next->allocImpl(size, throw_if_memory_exceeded, tracker, _sample_probability);
+        return loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability);
     }
 
     return AllocationTrace(_sample_probability);
@@ -515,7 +515,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
 void MemoryTracker::adjustWithUntrackedMemory(Int64 untracked_memory)
 {
     if (untracked_memory > 0)
-        std::ignore = allocImpl(untracked_memory, /*throw_if_memory_exceeded*/ false);
+        std::ignore = allocImpl(untracked_memory, /*enforce_memory_limit*/ false);
     else
         std::ignore = free(-untracked_memory);
 }

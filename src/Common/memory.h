@@ -105,9 +105,24 @@ inline ALWAYS_INLINE size_t getActualAllocationSize(size_t size, TAlign... align
     return actual_size;
 }
 
+/// Throwing variant — used by the throwing `operator new` overloads. The
+/// tracker may raise `MEMORY_LIMIT_EXCEEDED` when the allocation size is at
+/// least `min_allocation_size_to_throw_on_memory_limit`.
 template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
 inline ALWAYS_INLINE size_t trackMemory(std::size_t size, AllocationTrace & trace, TAlign... align)
+{
+    std::size_t actual_size = getActualAllocationSize(size, align...);
+    trace = CurrentMemoryTracker::allocThrow(actual_size);
+    return actual_size;
+}
+
+/// Nothrow variant — call sites spell it out via `std::nothrow`, matching the
+/// standard `operator new(..., std::nothrow_t)` convention. The tracker never
+/// raises through this path.
+template <std::same_as<std::align_val_t>... TAlign>
+requires DB::OptionalArgument<TAlign...>
+inline ALWAYS_INLINE size_t trackMemory(std::size_t size, AllocationTrace & trace, std::nothrow_t, TAlign... align)
 {
     std::size_t actual_size = getActualAllocationSize(size, align...);
     trace = CurrentMemoryTracker::allocNoThrow(actual_size);
