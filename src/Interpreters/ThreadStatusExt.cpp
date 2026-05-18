@@ -602,7 +602,7 @@ void ThreadStatus::initPerformanceCounters()
         }
         catch (...)
         {
-            tryLogCurrentException(log);
+            tryLogCurrentException(log, "Failed to reset taskstats counters, disabling for this thread", LogsLevel::warning);
             taskstats = nullptr;
         }
     }
@@ -671,7 +671,7 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
         }
         catch (...)
         {
-            tryLogCurrentException(log);
+            tryLogCurrentException(log, "Failed to reset taskstats counters, disabling for this thread", LogsLevel::warning);
             taskstats = nullptr;
         }
     }
