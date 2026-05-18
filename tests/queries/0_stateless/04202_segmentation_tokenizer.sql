@@ -169,3 +169,32 @@ SELECT id FROM tab_ts WHERE ts LIKE '%2024%' ORDER BY id;
 SELECT id FROM tab_ts WHERE ts LIKE '%1999%' ORDER BY id;
 
 DROP TABLE tab_ts;
+
+SELECT 'cross major boundary';
+
+DROP TABLE IF EXISTS tab_pair;
+
+CREATE TABLE tab_pair
+(
+    id    UInt32,
+    pair  String,
+    INDEX idx(pair) TYPE text(tokenizer = segmentation) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab_pair VALUES
+    (1, '192.168.1.4, 10.0.0.5'),
+    (2, '1.10.0.0'),
+    (3, 'https://a.example.com/x, https://b.example.com/y'),
+    (4, 'x.https://b.example.com/y');
+
+SELECT id FROM tab_pair WHERE pair LIKE '%1.4%' ORDER BY id;
+SELECT id FROM tab_pair WHERE pair LIKE '%10.0%' ORDER BY id;
+SELECT id FROM tab_pair WHERE pair LIKE '%a.example.com/x%' ORDER BY id;
+
+SELECT id FROM tab_pair WHERE pair LIKE '%4.10%' ORDER BY id;
+SELECT id FROM tab_pair WHERE pair LIKE '%1.4.10%' ORDER BY id;
+SELECT id FROM tab_pair WHERE pair LIKE '%x.https%' ORDER BY id;
+
+DROP TABLE tab_pair;

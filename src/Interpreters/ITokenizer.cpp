@@ -458,9 +458,9 @@ String SparseGramsTokenizer::getDescription() const
 
 std::pair<size_t, size_t> SegmentationTokenizer::convertPartPositionsToTokensPositions(size_t part_start, size_t part_count) const
 {
-    const size_t token_start = part_starts[part_start];
+    const size_t token_start = minor_part_starts[part_start];
     const size_t last_part = part_start + part_count - 1;
-    const size_t token_end = part_starts[last_part] + part_lengths[last_part];
+    const size_t token_end = minor_part_starts[last_part] + minor_part_lengths[last_part];
     return {token_start, token_end - token_start};
 }
 
@@ -471,22 +471,30 @@ void SegmentationTokenizer::buildStateIfNeeded(const char * data, size_t length)
 
     previous_data = data;
     previous_len = length;
-    part_starts.clear();
-    part_lengths.clear();
+    major_part_index.clear();
+    minor_part_starts.clear();
+    minor_part_lengths.clear();
+    
     current_part_i = 0;
     current_part_j = 1;
 
     size_t part_begin = 0;
+    size_t cur_major_part_index = 0;
     for (size_t i = 0; i <= length; ++i)
     {
-        if (i == length || isSplitChar(data[i]))
+        if (i == length || isMajorSplitChar(data[i]) || isMinorSplitChar(data[i]))
         {
             if (i > part_begin)
             {
-                part_starts.push_back(part_begin);
-                part_lengths.push_back(i - part_begin);
+                minor_part_starts.push_back(part_begin);
+                minor_part_lengths.push_back(i - part_begin);
+                major_part_index.push_back(cur_major_part_index);
             }
             part_begin = i + 1;
+            if (isMajorSplitChar(data[i]))
+            {
+                ++cur_major_part_index;
+            }
         }
     }
 }
@@ -495,7 +503,7 @@ bool SegmentationTokenizer::nextInString(const char * data, size_t length, size_
 {
     buildStateIfNeeded(data, length);
 
-    const size_t n_parts = part_starts.size();
+    const size_t n_parts = minor_part_starts.size();
 
     if (current_part_i >= n_parts)
         return false;
@@ -505,7 +513,7 @@ bool SegmentationTokenizer::nextInString(const char * data, size_t length, size_
     token_length = tl;
 
     ++current_part_j;
-    if (current_part_j > n_parts)
+    if (current_part_j > n_parts || major_part_index[current_part_i] != major_part_index[current_part_j - 1])
     {
         ++current_part_i;
         current_part_j = current_part_i + 1;
@@ -516,35 +524,48 @@ bool SegmentationTokenizer::nextInString(const char * data, size_t length, size_
 
 bool SegmentationTokenizer::nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const
 {
+    token.clear();
+    bool escaped = false;
     while (pos < length)
     {
-        if (data[pos] == '%' || data[pos] == '_')
+        const char c = data[pos];
+        if (!escaped && (c == '%' || c == '_'))
         {
+            while (!token.empty() && isSplitChar(token.back()))
+                token.pop_back();
+            if (!token.empty())
+                return true;
             ++pos;
-            continue;
         }
-        if (data[pos] == '\\')
+        else if (!escaped && c == '\\')
         {
-            if (pos + 1 < length)
-                pos += 2;
-            else
-                ++pos;
-            continue;
+            escaped = true;
+            ++pos;
         }
-
-        token.clear();
-        while (pos < length && data[pos] != '%' && data[pos] != '_' && data[pos] != '\\')
-            token.push_back(data[pos++]);
-
-        while (!token.empty() && isSplitChar(token.front()))
-            token.erase(token.begin());
-        while (!token.empty() && isSplitChar(token.back()))
-            token.pop_back();
-
-        if (!token.empty())
-            return true;
+        else if (isMajorSplitChar(c))
+        {
+            while (!token.empty() && isSplitChar(token.back()))
+                token.pop_back();
+            ++pos;
+            if (!token.empty())
+                return true;
+        }
+        else
+        {
+            if (token.empty() && isSplitChar(c))
+            {
+                ++pos;
+                escaped = false;
+                continue;
+            }
+            token += c;
+            ++pos;
+            escaped = false;
+        }
     }
-    return false;
+    while (!token.empty() && isSplitChar(token.back()))
+        token.pop_back();
+    return !token.empty();
 }
 
 void SegmentationTokenizer::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool /*is_prefix*/, bool /*is_suffix*/) const

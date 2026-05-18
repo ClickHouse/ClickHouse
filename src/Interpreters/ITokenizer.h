@@ -383,17 +383,33 @@ struct SegmentationTokenizer final : public ITokenizerHelper<SegmentationTokeniz
 private:
     std::pair<size_t, size_t> convertPartPositionsToTokensPositions(size_t part_start, size_t part_count) const;
 
-    static constexpr const char split_chars[] = {'.', ',', ':', '-', '/', ' '};
-    static bool isSplitChar(char c)
+    static constexpr const char major_split_chars[] = {',', ' '};
+    static constexpr const char minor_split_chars[] = {'.', ':', '-', '/'};
+    static bool isMajorSplitChar(char c)
     {
-        for (char s : split_chars)
+        for (char s : major_split_chars)
             if (c == s)
                 return true;
         return false;
     }
 
-    mutable std::vector<size_t> part_starts;
-    mutable std::vector<size_t> part_lengths;
+    static bool isMinorSplitChar(char c)
+    {
+        for (char s : minor_split_chars)
+            if (c == s)
+                return true;
+        return false;
+    }
+
+    static bool isSplitChar(char c)
+    {
+        return isMajorSplitChar(c) || isMinorSplitChar(c);
+    }
+
+
+    mutable std::vector<size_t> minor_part_starts;
+    mutable std::vector<size_t> minor_part_lengths;
+    mutable std::vector<size_t> major_part_index;
 
     void buildStateIfNeeded(const char * data, size_t length) const;
 
