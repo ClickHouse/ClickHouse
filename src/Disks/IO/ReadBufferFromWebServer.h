@@ -10,6 +10,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 
+#include <vector>
 
 namespace DB
 {
@@ -29,13 +30,22 @@ public:
         size_t read_until_position = 0,
         HTTPHeaderEntries headers_ = {});
 
+    explicit ReadBufferFromWebServer(
+        std::vector<String> urls_,
+        ContextPtr context_,
+        size_t file_size_,
+        const ReadSettings & settings_ = {},
+        bool use_external_buffer_ = false,
+        size_t read_until_position = 0,
+        HTTPHeaderEntries headers_ = {});
+
     bool nextImpl() override;
 
     off_t seek(off_t off, int whence) override;
 
     off_t getPosition() override;
 
-    String getFileName() const override { return url; }
+    String getFileName() const override { return current_url.empty() ? urls.front() : current_url; }
 
     void setReadUntilPosition(size_t position) override;
 
@@ -52,7 +62,8 @@ private:
     LoggerPtr log;
     ContextPtr context;
 
-    const String url;
+    const std::vector<String> urls;
+    String current_url;
     size_t buf_size;
 
     std::unique_ptr<SeekableReadBuffer> impl;

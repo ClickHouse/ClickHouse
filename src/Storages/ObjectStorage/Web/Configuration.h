@@ -96,12 +96,11 @@ protected:
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 
 private:
-    void initializeFromParsedArguments(WebStorageParsedArguments && parsed_arguments);
-    void setNamespaceFromURL();
+    void initializeFromParsedArguments(WebStorageParsedArguments && parsed_arguments, ContextPtr context);
+    void setNamespaceFromURL(ContextPtr context);
 
     String raw_url;
-    String base_url;
-    String query_fragment;
+    WebObjectStorage::URLOptions url_options;
     String namespace_prefix;
     Path path;
     Paths paths;

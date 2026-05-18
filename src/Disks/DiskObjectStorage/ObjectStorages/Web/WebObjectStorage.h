@@ -8,6 +8,7 @@
 #include <list>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 namespace Poco
 {
@@ -23,9 +24,23 @@ class WebObjectStorage : public IObjectStorage, public WithContext
     friend class MetadataStorageFromStaticFilesWebServerTransaction;
 
 public:
+    struct URL
+    {
+        String base_url;
+        String query_fragment;
+    };
+
+    using URLOptions = std::vector<URL>;
+
     WebObjectStorage(
         const String & url_,
         const String & query_fragment_,
+        ContextPtr context_,
+        HTTPHeaderEntries headers_ = {},
+        size_t max_directories_to_read_ = 0);
+
+    WebObjectStorage(
+        URLOptions url_options_,
         ContextPtr context_,
         HTTPHeaderEntries headers_ = {},
         size_t max_directories_to_read_ = 0);
@@ -34,13 +49,15 @@ public:
 
     ObjectStorageType getType() const override { return ObjectStorageType::Web; }
 
-    std::string getCommonKeyPrefix() const override { return url; }
+    std::string getCommonKeyPrefix() const override { return getBaseURL(); }
 
-    std::string getDescription() const override { return url; }
+    std::string getDescription() const override { return getBaseURL(); }
 
-    const String & getBaseURL() const { return url; }
-    const String & getQueryFragment() const { return query_fragment; }
+    const String & getBaseURL() const { return url_options.front().base_url; }
+    const String & getQueryFragment() const { return url_options.front().query_fragment; }
+    const URLOptions & getURLOptions() const { return url_options; }
     const HTTPHeaderEntries & getHeaders() const { return headers; }
+    std::vector<String> buildURLs(const std::string & path) const;
 
     bool exists(const StoredObject & object) const override;
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
@@ -88,6 +105,7 @@ protected:
     [[noreturn]] static void throwNotAllowed();
     bool exists(const std::string & path) const;
     std::string buildURL(const std::string & path) const;
+    static std::string buildURL(const URL & url_option, const std::string & path);
 
 private:
     enum class HeadSupport
@@ -102,8 +120,7 @@ private:
 
     static constexpr size_t max_head_support_cache_size = 65536;
 
-    const String url;
-    const String query_fragment;
+    const URLOptions url_options;
     const HTTPHeaderEntries headers;
     const size_t max_directories_to_read;
     mutable std::mutex head_support_mutex;

@@ -93,12 +93,7 @@ namespace
 MetadataStorageFromIndexPages::MetadataStorageFromIndexPages(const WebObjectStorage & object_storage_)
     : object_storage(object_storage_)
     , log(getLogger("MetadataStorageFromIndexPages"))
-    , base_uri(object_storage.getBaseURL())
 {
-    auto base_path = base_uri.getPath();
-    base_uri.setPath(ensureTrailingSlash(base_path));
-    base_uri.setQuery({});
-    base_uri.setFragment({});
 }
 
 MetadataTransactionPtr MetadataStorageFromIndexPages::createTransaction()
@@ -176,24 +171,9 @@ std::optional<StoredObjects> MetadataStorageFromIndexPages::getStorageObjectsIfE
     return StoredObjects{StoredObject(path, path, metadata->size_bytes)};
 }
 
-std::string MetadataStorageFromIndexPages::makeListingURL(const std::string & path) const
+std::vector<std::string> MetadataStorageFromIndexPages::makeListingURLs(const std::string & path) const
 {
-    Poco::URI path_uri(ensureTrailingSlashInPath(stripLeadingSlash(path)), false);
-    auto listing_uri = base_uri;
-    listing_uri.setPath(ensureTrailingSlash(base_uri.getPath()) + stripLeadingSlash(path_uri.getPath()));
-
-    Poco::URI source_uri(object_storage.getBaseURL() + object_storage.getQueryFragment(), false);
-    if (!path_uri.getRawQuery().empty())
-        listing_uri.setQuery(path_uri.getRawQuery());
-    else
-        listing_uri.setQuery(source_uri.getRawQuery());
-
-    if (!path_uri.getFragment().empty())
-        listing_uri.setFragment(path_uri.getFragment());
-    else
-        listing_uri.setFragment(source_uri.getFragment());
-
-    return listing_uri.toString();
+    return object_storage.buildURLs(ensureTrailingSlashInPath(stripLeadingSlash(path)));
 }
 
 std::string MetadataStorageFromIndexPages::readIndexPage(const std::string & url) const
@@ -220,12 +200,16 @@ std::string MetadataStorageFromIndexPages::readIndexPage(const std::string & url
 }
 
 std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
-    const std::string & page_body, const std::string & listing_url, const std::string & path) const
+    const std::string & page_body,
+    const std::string & listing_url,
+    const std::string & base_url,
+    const std::string & path) const
 {
     std::vector<std::string> result;
     std::unordered_set<std::string> seen_relative;
     const auto & regex = getURLRegex();
     const Poco::URI listing_uri(listing_url, false);
+    const Poco::URI base_uri(base_url, false);
     re2::StringPiece input(page_body);
     re2::StringPiece match;
     bool found_valid_href_url = false;
@@ -337,25 +321,50 @@ bool MetadataStorageFromIndexPages::tryListDirectory(const std::string & path, s
 {
     const auto normalized_path = ensureTrailingSlashInPath(stripLeadingSlash(path));
     const auto path_prefix = getPathPrefixForMatching(normalized_path);
-    const auto listing_url = makeListingURL(normalized_path);
-    try
+
+    std::exception_ptr last_exception;
+    bool has_not_found = false;
+    const auto listing_urls = makeListingURLs(normalized_path);
+    const auto & url_options = object_storage.getURLOptions();
+    for (size_t i = 0; i != listing_urls.size(); ++i)
     {
-        auto body = readIndexPage(listing_url);
-        result = extractURLs(body, listing_url, path_prefix);
-        return true;
+        const auto & listing_url = listing_urls[i];
+        try
+        {
+            auto body = readIndexPage(listing_url);
+            result = extractURLs(body, listing_url, url_options[i].base_url, path_prefix);
+            return true;
+        }
+        catch (const HTTPException & e)
+        {
+            if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+            {
+                has_not_found = true;
+                continue;
+            }
+            last_exception = std::current_exception();
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
+                last_exception = std::make_exception_ptr(
+                    Exception(ErrorCodes::BAD_ARGUMENTS, "Index page '{}' exceeds max_http_index_page_size", listing_url));
+            else
+                last_exception = std::current_exception();
+        }
+        catch (...)
+        {
+            last_exception = std::current_exception();
+        }
     }
-    catch (const HTTPException & e)
-    {
-        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
-            return false;
-        throw;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index page '{}' exceeds max_http_index_page_size", listing_url);
-        throw;
-    }
+
+    if (last_exception)
+        std::rethrow_exception(last_exception);
+
+    if (has_not_found)
+        return false;
+
+    return false;
 }
 
 }

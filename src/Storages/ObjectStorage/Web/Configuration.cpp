@@ -2,6 +2,7 @@
 
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Common/parseRemoteDescription.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -92,7 +93,8 @@ StorageObjectStorageQuerySettings StorageWebConfiguration::getQuerySettings(cons
 void StorageWebConfiguration::check(ContextPtr context)
 {
     StorageObjectStorageConfiguration::check(context);
-    context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(raw_url, false));
+    for (const auto & url_option : url_options)
+        context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(url_option.base_url + url_option.query_fragment, false));
     context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_from_ast);
 }
 
@@ -100,8 +102,7 @@ ObjectStoragePtr StorageWebConfiguration::createObjectStorage(ContextPtr context
 {
     assertInitialized();
     return std::make_shared<WebObjectStorage>(
-        base_url,
-        query_fragment,
+        url_options,
         context,
         headers_from_ast,
         context->getSettingsRef()[Setting::url_wildcard_max_directories_to_read]);
@@ -173,13 +174,13 @@ void StorageWebConfiguration::addStructureAndFormatToArgsIfNeeded(
     }
 }
 
-void StorageWebConfiguration::initializeFromParsedArguments(WebStorageParsedArguments && parsed_arguments)
+void StorageWebConfiguration::initializeFromParsedArguments(WebStorageParsedArguments && parsed_arguments, ContextPtr context)
 {
     StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
     raw_url = parsed_arguments.url;
     headers_from_ast = std::move(parsed_arguments.headers_from_ast);
 
-    setNamespaceFromURL();
+    setNamespaceFromURL(context);
     paths = {path};
     setPathForRead(path);
 }
@@ -188,14 +189,14 @@ void StorageWebConfiguration::fromNamedCollection(const NamedCollection & collec
 {
     WebStorageParsedArguments parsed_arguments;
     parsed_arguments.fromNamedCollection(collection, context);
-    initializeFromParsedArguments(std::move(parsed_arguments));
+    initializeFromParsedArguments(std::move(parsed_arguments), context);
 }
 
 void StorageWebConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
     WebStorageParsedArguments parsed_arguments;
     parsed_arguments.fromAST(args, context, with_structure);
-    initializeFromParsedArguments(std::move(parsed_arguments));
+    initializeFromParsedArguments(std::move(parsed_arguments), context);
 }
 
 void StorageWebConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
@@ -204,33 +205,51 @@ void StorageWebConfiguration::fromDisk(const String & disk_name, ASTs & args, Co
     parsed_arguments.fromAST(args, context, with_structure);
     if (parsed_arguments.url.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "URL is required for disk {}", disk_name);
-    initializeFromParsedArguments(std::move(parsed_arguments));
+    initializeFromParsedArguments(std::move(parsed_arguments), context);
 }
 
-void StorageWebConfiguration::setNamespaceFromURL()
+void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
 {
-    Poco::URI uri(raw_url, false);
+    const auto url_options_from_remote_description = parseRemoteDescription(
+        raw_url,
+        0,
+        raw_url.size(),
+        '|',
+        context->getSettingsRef()[Setting::glob_expansion_max_elements],
+        "url");
 
-    namespace_prefix = uri.getHost();
-    if (uri.getPort())
-        namespace_prefix += ":" + std::to_string(uri.getPort());
+    url_options.clear();
+    url_options.reserve(url_options_from_remote_description.size());
 
-    base_url = uri.getScheme() + "://" + uri.getAuthority() + "/";
-    path.path = uri.getPath();
-    if (!path.path.empty())
+    for (const auto & url_option : url_options_from_remote_description)
     {
-        const auto first_non_slash = path.path.find_first_not_of('/');
-        if (first_non_slash == String::npos)
-            path.path.clear();
-        else if (first_non_slash > 0)
-            path.path.erase(0, first_non_slash);
-    }
+        Poco::URI uri(url_option, false);
 
-    query_fragment.clear();
-    if (!uri.getRawQuery().empty())
-        query_fragment = "?" + uri.getRawQuery();
-    if (!uri.getFragment().empty())
-        query_fragment += "#" + uri.getFragment();
+        if (url_options.empty())
+        {
+            namespace_prefix = uri.getHost();
+            if (uri.getPort())
+                namespace_prefix += ":" + std::to_string(uri.getPort());
+
+            path.path = uri.getPath();
+            if (!path.path.empty())
+            {
+                const auto first_non_slash = path.path.find_first_not_of('/');
+                if (first_non_slash == String::npos)
+                    path.path.clear();
+                else if (first_non_slash > 0)
+                    path.path.erase(0, first_non_slash);
+            }
+        }
+
+        String query_fragment;
+        if (!uri.getRawQuery().empty())
+            query_fragment = "?" + uri.getRawQuery();
+        if (!uri.getFragment().empty())
+            query_fragment += "#" + uri.getFragment();
+
+        url_options.push_back({.base_url = uri.getScheme() + "://" + uri.getAuthority() + "/", .query_fragment = std::move(query_fragment)});
+    }
 }
 
 }

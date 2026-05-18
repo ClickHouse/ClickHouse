@@ -15,11 +15,14 @@ class MetadataStorageFromIndexPages final : public IMetadataStorage
 private:
     const WebObjectStorage & object_storage;
     LoggerPtr log;
-    Poco::URI base_uri;
 
-    std::string makeListingURL(const std::string & path) const;
+    std::vector<std::string> makeListingURLs(const std::string & path) const;
     std::string readIndexPage(const std::string & url) const;
-    std::vector<std::string> extractURLs(const std::string & page_body, const std::string & listing_url, const std::string & path) const;
+    std::vector<std::string> extractURLs(
+        const std::string & page_body,
+        const std::string & listing_url,
+        const std::string & base_url,
+        const std::string & path) const;
 
     bool tryListDirectory(const std::string & path, std::vector<std::string> & result) const;
 

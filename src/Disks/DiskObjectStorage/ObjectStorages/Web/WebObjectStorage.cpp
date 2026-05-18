@@ -67,13 +67,27 @@ WebObjectStorage::WebObjectStorage(
     ContextPtr context_,
     HTTPHeaderEntries headers_,
     size_t max_directories_to_read_)
+    : WebObjectStorage(
+        URLOptions{{.base_url = url_, .query_fragment = query_fragment_}},
+        context_,
+        std::move(headers_),
+        max_directories_to_read_)
+{
+}
+
+WebObjectStorage::WebObjectStorage(
+    URLOptions url_options_,
+    ContextPtr context_,
+    HTTPHeaderEntries headers_,
+    size_t max_directories_to_read_)
     : WithContext(context_->getGlobalContext())
-    , url(url_)
-    , query_fragment(query_fragment_)
+    , url_options(std::move(url_options_))
     , headers(std::move(headers_))
     , max_directories_to_read(max_directories_to_read_)
     , log(getLogger("WebObjectStorage"))
 {
+    if (url_options.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least one URL option is required");
 }
 
 bool WebObjectStorage::exists(const StoredObject & object) const
@@ -143,12 +157,15 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     const ReadSettings & read_settings,
     std::optional<size_t>) const
 {
+    auto urls = buildURLs(object.remote_path);
+    const bool use_external_buffer = read_settings.remote_read_buffer_use_external_buffer && urls.size() == 1;
+
     return std::make_unique<ReadBufferFromWebServer>(
-        buildURL(object.remote_path),
+        std::move(urls),
         getContext(),
         object.bytes_size,
         read_settings,
-        read_settings.remote_read_buffer_use_external_buffer,
+        use_external_buffer,
         /* read_until_position */ 0,
         headers);
 }
@@ -206,70 +223,97 @@ ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & path, boo
 
 std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
 {
-    const Poco::URI uri(buildURL(path), false);
     Poco::Net::HTTPBasicCredentials credentials{};
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(
         getContext()->getSettingsRef(),
         getContext()->getServerSettings());
 
-    auto create_probe_buffer = [&](const String & method)
+    auto get_metadata_from_uri = [&](const Poco::URI & uri) -> std::optional<ObjectMetadata>
     {
-        return BuilderRWBufferFromHTTP(uri)
-            .withConnectionGroup(HTTPConnectionGroupType::DISK)
-            .withMethod(method)
-            .withSettings(getContext()->getReadSettings())
-            .withTimeouts(timeouts)
-            .withHostFilter(&getContext()->getRemoteHostFilter())
-            .withSkipNotFound(true)
-            .withDelayInit(false)
-            .withHeaders(headers)
-            .create(credentials);
+        auto create_probe_buffer = [&](const String & method)
+        {
+            return BuilderRWBufferFromHTTP(uri)
+                .withConnectionGroup(HTTPConnectionGroupType::DISK)
+                .withMethod(method)
+                .withSettings(getContext()->getReadSettings())
+                .withTimeouts(timeouts)
+                .withHostFilter(&getContext()->getRemoteHostFilter())
+                .withSkipNotFound(true)
+                .withDelayInit(false)
+                .withHeaders(headers)
+                .create(credentials);
+        };
+
+        std::unique_ptr<ReadWriteBufferFromHTTP> response_buf;
+        const auto head_support = getHeadSupportForOrigin(uri);
+        if (head_support == HeadSupport::Unsupported)
+        {
+            response_buf = create_probe_buffer(Poco::Net::HTTPRequest::HTTP_GET);
+        }
+        else
+        {
+            try
+            {
+                response_buf = create_probe_buffer(Poco::Net::HTTPRequest::HTTP_HEAD);
+                setHeadSupportForOrigin(uri, HeadSupport::Supported);
+            }
+            catch (const HTTPException & e)
+            {
+                if (
+                    e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_METHOD_NOT_ALLOWED
+                    || e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_IMPLEMENTED)
+                {
+                    setHeadSupportForOrigin(uri, HeadSupport::Unsupported);
+                    response_buf = create_probe_buffer(Poco::Net::HTTPRequest::HTTP_GET);
+                }
+                else
+                {
+                    throw;
+                }
+            }
+        }
+
+        if (response_buf->hasNotFoundURL())
+            return std::nullopt;
+
+        ObjectMetadata metadata;
+        auto file_info = response_buf->getFileInfo();
+        if (file_info.file_size)
+            metadata.size_bytes = *file_info.file_size;
+        if (file_info.last_modified)
+            metadata.last_modified = Poco::Timestamp::fromEpochTime(*file_info.last_modified);
+        for (const auto & header : response_buf->getResponseHeaders())
+        {
+            const auto & tuple = header.safeGet<Tuple>();
+            metadata.attributes.emplace(tuple[0].safeGet<String>(), tuple[1].safeGet<String>());
+        }
+        return metadata;
     };
 
-    std::unique_ptr<ReadWriteBufferFromHTTP> response_buf;
-    const auto head_support = getHeadSupportForOrigin(uri);
-    if (head_support == HeadSupport::Unsupported)
-    {
-        response_buf = create_probe_buffer(Poco::Net::HTTPRequest::HTTP_GET);
-    }
-    else
+    std::exception_ptr last_exception;
+    bool has_not_found = false;
+    for (const auto & url : buildURLs(path))
     {
         try
         {
-            response_buf = create_probe_buffer(Poco::Net::HTTPRequest::HTTP_HEAD);
-            setHeadSupportForOrigin(uri, HeadSupport::Supported);
+            auto metadata = get_metadata_from_uri(Poco::URI(url, false));
+            if (metadata)
+                return metadata;
+            has_not_found = true;
         }
-        catch (const HTTPException & e)
+        catch (...)
         {
-            if (
-                e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_METHOD_NOT_ALLOWED
-                || e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_IMPLEMENTED)
-            {
-                setHeadSupportForOrigin(uri, HeadSupport::Unsupported);
-                response_buf = create_probe_buffer(Poco::Net::HTTPRequest::HTTP_GET);
-            }
-            else
-            {
-                throw;
-            }
+            last_exception = std::current_exception();
         }
     }
 
-    if (response_buf->hasNotFoundURL())
+    if (last_exception)
+        std::rethrow_exception(last_exception);
+
+    if (has_not_found)
         return std::nullopt;
 
-    ObjectMetadata metadata;
-    auto file_info = response_buf->getFileInfo();
-    if (file_info.file_size)
-        metadata.size_bytes = *file_info.file_size;
-    if (file_info.last_modified)
-        metadata.last_modified = Poco::Timestamp::fromEpochTime(*file_info.last_modified);
-    for (const auto & header : response_buf->getResponseHeaders())
-    {
-        const auto & tuple = header.safeGet<Tuple>();
-        metadata.attributes.emplace(tuple[0].safeGet<String>(), tuple[1].safeGet<String>());
-    }
-    return metadata;
+    return std::nullopt;
 }
 
 WebObjectStorage::HeadSupport WebObjectStorage::getHeadSupportForOrigin(const Poco::URI & uri) const
@@ -309,10 +353,24 @@ void WebObjectStorage::setHeadSupportForOrigin(const Poco::URI & uri, HeadSuppor
 
 std::string WebObjectStorage::buildURL(const std::string & path) const
 {
-    if (path.empty())
-        return url + query_fragment;
+    return buildURL(url_options.front(), path);
+}
 
-    Poco::URI base_uri(url, false);
+std::vector<String> WebObjectStorage::buildURLs(const std::string & path) const
+{
+    std::vector<String> result;
+    result.reserve(url_options.size());
+    for (const auto & url_option : url_options)
+        result.push_back(buildURL(url_option, path));
+    return result;
+}
+
+std::string WebObjectStorage::buildURL(const URL & url_option, const std::string & path)
+{
+    if (path.empty())
+        return url_option.base_url + url_option.query_fragment;
+
+    Poco::URI base_uri(url_option.base_url, false);
     auto base_path = base_uri.getPath();
     if (!base_path.ends_with('/'))
         base_path += '/';
@@ -320,7 +378,7 @@ std::string WebObjectStorage::buildURL(const std::string & path) const
     Poco::URI path_uri(stripLeadingSlashes(path), false);
     base_uri.setPath(base_path + stripLeadingSlashes(path_uri.getPath()));
 
-    Poco::URI source_uri(url + query_fragment, false);
+    Poco::URI source_uri(url_option.base_url + url_option.query_fragment, false);
     if (!path_uri.getRawQuery().empty())
         base_uri.setQuery(path_uri.getRawQuery());
     else

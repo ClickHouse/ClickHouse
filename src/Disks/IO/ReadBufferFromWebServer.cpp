@@ -19,6 +19,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
@@ -33,22 +34,43 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     bool use_external_buffer_,
     size_t read_until_position_,
     HTTPHeaderEntries headers_)
+    : ReadBufferFromWebServer(
+        std::vector<String>{url_},
+        context_,
+        file_size_,
+        settings_,
+        use_external_buffer_,
+        read_until_position_,
+        std::move(headers_))
+{
+}
+
+ReadBufferFromWebServer::ReadBufferFromWebServer(
+    std::vector<String> urls_,
+    ContextPtr context_,
+    size_t file_size_,
+    const ReadSettings & settings_,
+    bool use_external_buffer_,
+    size_t read_until_position_,
+    HTTPHeaderEntries headers_)
     : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
     , log(getLogger("ReadBufferFromWebServer"))
     , context(context_)
-    , url(url_)
+    , urls(std::move(urls_))
+    , current_url(urls.empty() ? "" : urls.front())
     , buf_size(settings_.remote_fs_buffer_size)
     , read_settings(settings_)
     , headers(std::move(headers_))
     , use_external_buffer(use_external_buffer_)
     , read_until_position(read_until_position_)
 {
+    if (urls.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least one URL option is required");
 }
 
 
 std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
 {
-    Poco::URI uri(url);
     if (read_until_position)
     {
         if (read_until_position < offset)
@@ -62,22 +84,54 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
     connection_timeouts.withConnectionTimeout(std::max<Poco::Timespan>(settings[Setting::http_connection_timeout], Poco::Timespan(20, 0)));
     connection_timeouts.withReceiveTimeout(std::max<Poco::Timespan>(settings[Setting::http_receive_timeout], Poco::Timespan(20, 0)));
 
-    auto res = BuilderRWBufferFromHTTP(uri)
-                   .withConnectionGroup(HTTPConnectionGroupType::DISK)
-                   .withSettings(read_settings)
-                   .withTimeouts(connection_timeouts)
-                   .withBufSize(buf_size)
-                   .withHostFilter(&context->getRemoteHostFilter())
-                   .withHeaders(headers)
-                   .withExternalBuf(use_external_buffer)
-                   .create(credentials);
+    std::exception_ptr last_exception;
+    for (const auto & url : urls)
+    {
+        Poco::URI uri(url);
+        try
+        {
+            if (urls.size() > 1)
+            {
+                BuilderRWBufferFromHTTP(uri)
+                    .withConnectionGroup(HTTPConnectionGroupType::DISK)
+                    .withSettings(read_settings)
+                    .withTimeouts(connection_timeouts)
+                    .withBufSize(buf_size)
+                    .withHostFilter(&context->getRemoteHostFilter())
+                    .withHeaders(headers)
+                    .withExternalBuf(false)
+                    .withDelayInit(false)
+                    .create(credentials);
+            }
 
-    if (read_until_position)
-        res->setReadUntilPosition(read_until_position);
-    if (offset)
-        res->seek(offset, SEEK_SET);
+            auto res = BuilderRWBufferFromHTTP(uri)
+                           .withConnectionGroup(HTTPConnectionGroupType::DISK)
+                           .withSettings(read_settings)
+                           .withTimeouts(connection_timeouts)
+                           .withBufSize(buf_size)
+                           .withHostFilter(&context->getRemoteHostFilter())
+                           .withHeaders(headers)
+                           .withExternalBuf(use_external_buffer)
+                           .create(credentials);
 
-    return res;
+            if (read_until_position)
+                res->setReadUntilPosition(read_until_position);
+            if (offset)
+                res->seek(offset, SEEK_SET);
+
+            current_url = url;
+            return res;
+        }
+        catch (...)
+        {
+            last_exception = std::current_exception();
+        }
+    }
+
+    if (last_exception)
+        std::rethrow_exception(last_exception);
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least one URL option is required");
 }
 
 
