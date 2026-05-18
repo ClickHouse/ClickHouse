@@ -142,8 +142,8 @@ def test_cpu_user_microseconds(started_cluster):
         "SELECT count() FROM (SELECT test_pool_udf_cpu(number) FROM numbers(2000))",
         qid,
     )
-    cpu = _profile_event_value(qid, "ExecutableUserDefinedFunctionCPUUserMicroseconds")
-    assert cpu > 0, f"Expected CPUUserMicroseconds > 0, got {cpu}"
+    cpu = _profile_event_value(qid, "ExecutableUserDefinedFunctionUserTimeMicroseconds")
+    assert cpu > 0, f"Expected UserTimeMicroseconds > 0, got {cpu}"
 
 
 def test_memory_usage_byte_seconds(started_cluster):
