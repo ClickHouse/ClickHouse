@@ -105,7 +105,9 @@ inline void readNBytes(char * output, size_t size, ReadBuffer & buf)
 {
     /// If the whole value fits in buffer do not call readStrict and copy with
     /// __builtin_memcpy since it is faster than generic memcpy for small copies.
-    if (buf.position() && buf.position() + size <= buf.buffer().end()) [[likely]]
+    /// Use a difference-based check to avoid pointer overflow UB when `size` is large
+    /// (e.g. when reading a whole vector at once via readVectorBinary).
+    if (buf.position() && size <= static_cast<size_t>(buf.buffer().end() - buf.position())) [[likely]]
     {
         __builtin_memcpy(output, buf.position(), size);
         buf.position() += size;
