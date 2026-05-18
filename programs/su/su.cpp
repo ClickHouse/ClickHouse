@@ -56,7 +56,8 @@ static void setUserAndGroup(std::string arg_uid, std::string arg_gid)
     gid_t gid = 0;
     if (!arg_gid.empty())
     {
-        if (!tryParse(gid, arg_gid) || gid == 0)
+        bool parsed_numeric = tryParse(gid, arg_gid);
+        if (!parsed_numeric || gid == 0)
         {
             group entry{};
             group * result{};
@@ -66,8 +67,12 @@ static void setUserAndGroup(std::string arg_uid, std::string arg_gid)
 
             if (!result)
             {
-                if (0 != getgrgid_r(gid, &entry, buf.get(), buf_size, &result))
-                    throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'getgrnam_r' to obtain gid from group name ({})", arg_gid);
+                /// Only retry as a numeric gid when the input actually parsed as a
+                /// number. Otherwise `gid` is still 0 and `getgrgid_r(0)` would
+                /// silently resolve to the root group, masking a typo in the
+                /// requested group name.
+                if (parsed_numeric && 0 != getgrgid_r(gid, &entry, buf.get(), buf_size, &result))
+                    throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'getgrgid_r' to obtain gid ({})", gid);
 
                 if (!result)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Group {} is not found in the system", arg_gid);
@@ -95,15 +100,19 @@ static void setUserAndGroup(std::string arg_uid, std::string arg_gid)
         passwd entry{};
         passwd * result{};
 
-        if (!tryParse(uid, arg_uid) || uid == 0)
+        bool parsed_numeric = tryParse(uid, arg_uid);
+        if (!parsed_numeric || uid == 0)
         {
             if (0 != getpwnam_r(arg_uid.data(), &entry, buf.get(), buf_size, &result))
                 throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'getpwnam_r' to obtain uid from user name ({})", arg_uid);
 
             if (!result)
             {
-                if (0 != getpwuid_r(uid, &entry, buf.get(), buf_size, &result))
-                    throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'getpwuid_r' to obtain uid from user name ({})", uid);
+                /// Only retry as a numeric uid when the input actually parsed as a
+                /// number. Otherwise `uid` is still 0 and `getpwuid_r(0)` would
+                /// silently resolve to root, defeating the requested privilege drop.
+                if (parsed_numeric && 0 != getpwuid_r(uid, &entry, buf.get(), buf_size, &result))
+                    throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'getpwuid_r' to obtain user name from uid ({})", uid);
 
                 if (!result)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "User {} is not found in the system", arg_uid);
