@@ -148,6 +148,19 @@ public:
         return "(FixedString, [Int8 | UInt8]) -> String";
     }
 
+    /// Restore the legacy `FixedString(16)` analyzer-time invariant; the DSL has no width matcher.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (const auto * fs = typeid_cast<const DataTypeFixedString *>(arguments[0].type.get()))
+        {
+            if (fs->getN() != uuid_bytes_length)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument 1 of function {}, expected FixedString({})",
+                    arguments[0].type->getName(), getName(), uuid_bytes_length);
+        }
+        return IFunction::getReturnTypeImpl(arguments);
+    }
+
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
@@ -213,6 +226,19 @@ public:
     {
         /// See `FunctionUUIDNumToString::getSignatureString` for why `[Int8 | UInt8]`.
         return "(String | FixedString, [Int8 | UInt8]) -> FixedString(16)";
+    }
+
+    /// Restore the legacy `FixedString(36)` analyzer-time invariant; the DSL has no width matcher.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (const auto * fs = typeid_cast<const DataTypeFixedString *>(arguments[0].type.get()))
+        {
+            if (fs->getN() != uuid_text_length)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument 1 of function {}, expected FixedString({})",
+                    arguments[0].type->getName(), getName(), uuid_text_length);
+        }
+        return IFunction::getReturnTypeImpl(arguments);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
