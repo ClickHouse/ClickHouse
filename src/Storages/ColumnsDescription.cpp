@@ -1030,6 +1030,22 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
 namespace
 {
 
+/// Recursively check if an AST tree contains any subquery nodes at any depth.
+/// Used during DDL validation to reject subqueries nested inside function arguments
+/// in DEFAULT/ALIAS/MATERIALIZED expressions (e.g. `ALIAS toString((SELECT ...))`)
+/// that the previous shallow check on direct children would miss.
+bool hasSubqueryInTree(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+    if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSubquery>())
+        return true;
+    for (const auto & child : ast->children)
+        if (hasSubqueryInTree(child))
+            return true;
+    return false;
+}
+
 NamesAndTypesList getColumnsForAsteriskMatcher(const ColumnsDescription & columns, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
@@ -1454,7 +1470,7 @@ std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default
     }
 
     for (const auto & child : default_expr_list->children)
-        if (child->as<ASTSelectQuery>() || child->as<ASTSelectWithUnionQuery>() || child->as<ASTSubquery>())
+        if (hasSubqueryInTree(child))
             throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Select query is not allowed in columns DEFAULT expression");
 
     expandColumnMatchersImpl(default_expr_list, columns, context);
