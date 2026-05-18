@@ -9,6 +9,9 @@ With idx_b (minmax, hypothetical):
 0
 --- drop/recreate: re-creating the index purges the stale entry ---
 1
+--- rename + reuse: DROP on the new table does not touch the renamed one ---
+BAD_ARGUMENTS
+1
 --- IF NOT EXISTS is silent on duplicate ---
 1
 --- DROP IF EXISTS is silent on missing ---

@@ -22,8 +22,8 @@
   skip_ratio:   100.0%
   sampled_marks:    50 / 100
 --- empirical with existing real index ---
-  skip_ratio:   98.0%
-  sampled_marks:    50 / 100
+  skip_ratio:   100.0%
+  sampled_marks:    1 / 100
 --- proof: only baseline granules materialized ---
   skip_ratio:   100.0%
   source:           empirical

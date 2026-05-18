@@ -66,6 +66,23 @@ $CLICKHOUSE_CLIENT -n -q "
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_stale"
 
+# RENAME + reuse: don't touch the entry for the renamed table
+echo "--- rename + reuse: DROP on the new table does not touch the renamed one ---"
+$CLICKHOUSE_CLIENT -n -q "
+    DROP TABLE IF EXISTS t_hypo_rn;
+    DROP TABLE IF EXISTS t_hypo_rn2;
+    CREATE TABLE t_hypo_rn (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_rn (b) TYPE minmax GRANULARITY 1;
+    RENAME TABLE t_hypo_rn TO t_hypo_rn2;
+    CREATE TABLE t_hypo_rn (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    DROP HYPOTHETICAL INDEX idx_b ON t_hypo_rn;
+" 2>&1 | grep -m1 -o 'BAD_ARGUMENTS'
+
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.hypothetical_indexes WHERE table = 't_hypo_rn'"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_rn"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_rn2"
+
 # =========================================================
 # IF NOT EXISTS is silent on duplicate; second CREATE with no IF errors
 # =========================================================
