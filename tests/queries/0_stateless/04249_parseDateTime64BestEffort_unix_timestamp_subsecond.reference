@@ -1,0 +1,18 @@
+toDateTime64 cast (cast_string_to_date_time_mode = best_effort)
+2026-05-18 09:02:48.417585
+2026-05-18 09:02:48.417585845
+parseDateTime64BestEffort
+2026-05-18 09:02:48.417585
+2026-05-18 09:02:48.417585845
+scale promotion: microsecond digits, nanosecond scale
+2026-05-18 09:02:48.417585000
+scale truncation: nanosecond digits, microsecond scale
+2026-05-18 09:02:48.417585
+parseDateTime64BestEffortOrNull / OrZero
+2026-05-18 09:02:48.417585845
+2026-05-18 09:02:48.417585845
+non-const
+2026-05-18 09:02:48.417585845
+parseDateTime64BestEffortUS
+2026-05-18 09:02:48.417585
+2026-05-18 09:02:48.417585845

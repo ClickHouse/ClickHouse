@@ -213,6 +213,38 @@ ReturnType parseDateTimeBestEffortImpl(
                 }
                 return ReturnType(true);
             }
+            if (num_digits == 16 && !year && !has_time)
+            {
+                /// This is unix timestamp with microsecond.
+                readDecimalNumber<10>(res, digits);
+                if (fractional)
+                {
+                    fractional->digits = 6;
+                    readDecimalNumber<6>(fractional->value, digits + 10);
+                }
+                else if constexpr (strict)
+                {
+                    /// Fractional part is not allowed.
+                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected fractional part");
+                }
+                return ReturnType(true);
+            }
+            if (num_digits == 19 && !year && !has_time)
+            {
+                /// This is unix timestamp with nanosecond.
+                readDecimalNumber<10>(res, digits);
+                if (fractional)
+                {
+                    fractional->digits = 9;
+                    readDecimalNumber<9>(fractional->value, digits + 10);
+                }
+                else if constexpr (strict)
+                {
+                    /// Fractional part is not allowed.
+                    return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected fractional part");
+                }
+                return ReturnType(true);
+            }
             if (num_digits == 10 && !year && !has_time)
             {
                 if constexpr (strict)
