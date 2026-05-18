@@ -1,0 +1,1524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ClickHouse Schema Visualizer</title>
+    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDExIDEwIj48c3R5bGU+LmJne2ZpbGw6I2ZmMH0ub3tmaWxsOiMwMDB9PC9zdHlsZT48cmVjdCBjbGFzcz0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiLz48cGF0aCBkPSJNMSwxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik0zLDEgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTUsMSBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNNywxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik05LDQuMjUgaDEgdjEuNSBoLTEgeiIgY2xhc3M9Im8iLz48L3N2Zz4K">
+    <style>
+        :root {
+            --color: black;
+            --background: #f5f5f5;
+            --card-background: white;
+            --border-color: #ddd;
+            --header-background: #FCFF74;
+            --header-text: black;
+            --shadow-color: rgba(0, 0, 0, 0.1);
+            --error-color: #dc3545;
+            --success-color: #28a745;
+            --warning-color: #b58900;
+            --muted: #6A6A6A;
+            --table-header-bg: #f8f9fa;
+            --table-hover-bg: #fffce0;
+            --btn-primary-bg: black;
+            --btn-primary-color: white;
+            --accent: #FCFF74;
+            --accent-hover: #f0f24a;
+            /// Engine palette — yellow stays the brand, supporting colors stay distinct enough
+            /// to scan a complex graph at a glance.
+            --header-mt: #B58900;          /// dark yellow (MergeTree / table — anchored on the brand color)
+            --header-mt-text: black;
+            --header-mv: #6A1B9A;
+            --header-mv-text: white;
+            --header-rmv: #AD1457;
+            --header-rmv-text: white;
+            --header-dict: #0277BD;
+            --header-dict-text: white;
+            --header-distributed: #E65100;
+            --header-distributed-text: white;
+            --header-view: #455A64;
+            --header-view-text: white;
+            --header-other: #5D4037;
+            --header-other-text: white;
+            --column-key: #B71C1C;
+            --column-default: #2E7D32;
+            --column-type: #6A6A6A;
+            --link: #999999;
+            --link-mv: #6A1B9A;
+            --link-dict: #0277BD;
+            --link-distributed: #E65100;
+            --link-highlight: #B58900;
+            --db-bg: #FFFEF0;
+            --db-border: #E0D060;
+        }
+        [data-theme="dark"] {
+            --color: white;
+            --background: #151C2C;
+            --card-background: #1b2834;
+            --border-color: #444;
+            --header-background: #2a2a2a;
+            --header-text: #FCFF74;
+            --shadow-color: rgba(0, 0, 0, 0.3);
+            --error-color: #F66;
+            --success-color: #4ade80;
+            --warning-color: #facc15;
+            --muted: #aaaaaa;
+            --table-header-bg: #2a3f5f;
+            --table-hover-bg: #2a3f5f;
+            --btn-primary-bg: #FCFF74;
+            --btn-primary-color: black;
+            --accent: #FCFF74;
+            --accent-hover: #e8eb6a;
+            --header-mt: #FCFF74;
+            --header-mt-text: black;
+            --header-mv: #AB47BC;
+            --header-mv-text: white;
+            --header-rmv: #EC407A;
+            --header-rmv-text: white;
+            --header-dict: #29B6F6;
+            --header-dict-text: black;
+            --header-distributed: #FF8A65;
+            --header-distributed-text: black;
+            --header-view: #90A4AE;
+            --header-view-text: black;
+            --header-other: #A1887F;
+            --header-other-text: black;
+            --column-key: #EF5350;
+            --column-default: #66BB6A;
+            --column-type: #BBBBBB;
+            --link: #666666;
+            --link-mv: #CE93D8;
+            --link-dict: #4FC3F7;
+            --link-distributed: #FF8A65;
+            --link-highlight: #FCFF74;
+            --db-bg: #1d2a18;
+            --db-border: #555533;
+        }
+        * { box-sizing: border-box; }
+        html, body { height: 100%; }
+        body {
+            font-family: Liberation Sans, DejaVu Sans, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: var(--background);
+            color: var(--color);
+        }
+        .header {
+            background: var(--header-background);
+            color: var(--header-text);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px var(--shadow-color);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 1.5rem;
+        }
+        .controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .connection-params {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .connection-params input {
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: var(--card-background);
+            color: var(--color);
+            font-size: 0.85rem;
+            font-family: inherit;
+            box-shadow: 1px 1px 0 var(--shadow-color);
+            transition: border-color 0.2s;
+        }
+        .connection-params input:focus {
+            outline: none;
+            border-color: var(--btn-primary-bg);
+        }
+        #url { width: 320px; }
+        #user, #password { width: 110px; }
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: opacity 0.2s;
+            font-family: inherit;
+        }
+        .btn:hover { opacity: 0.8; }
+        .btn-primary {
+            background: var(--btn-primary-bg);
+            color: var(--btn-primary-color);
+        }
+        .btn-secondary {
+            background: var(--border-color);
+            color: var(--color);
+        }
+        .btn-toggle {
+            background: var(--card-background);
+            color: var(--color);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 0.45rem 0.75rem;
+            font-size: 0.85rem;
+            font-family: inherit;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+        }
+        .btn-toggle:hover { opacity: 0.85; }
+        .btn-toggle.active {
+            background: var(--btn-primary-bg);
+            color: var(--btn-primary-color);
+            border-color: var(--btn-primary-bg);
+        }
+        .theme-toggle {
+            background: none;
+            border: 1px solid var(--border-color);
+            color: var(--header-text);
+            font-size: 1.2rem;
+            cursor: pointer;
+            padding: 0.4rem 0.6rem;
+            border-radius: 4px;
+            line-height: 1;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 1.5rem 2rem 2rem;
+        }
+        .section {
+            background: var(--card-background);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem 1.25rem;
+            margin-bottom: 1.25rem;
+            box-shadow: 0 2px 4px var(--shadow-color);
+        }
+        .filter-row {
+            display: flex;
+            gap: 0.6rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .filter-row select,
+        .filter-row input[type="text"] {
+            padding: 0.45rem 0.7rem;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: var(--card-background);
+            color: var(--color);
+            font-size: 0.85rem;
+            font-family: inherit;
+            box-shadow: 1px 1px 0 var(--shadow-color);
+        }
+        .filter-row select:focus,
+        .filter-row input[type="text"]:focus {
+            outline: none;
+            border-color: var(--btn-primary-bg);
+        }
+        #search { min-width: 16rem; }
+        #db-filter { min-width: 12rem; }
+
+        .legend {
+            display: flex;
+            gap: 0.9rem;
+            align-items: center;
+            font-size: 0.78rem;
+            flex-wrap: wrap;
+            padding-top: 0.7rem;
+            border-top: 1px solid var(--border-color);
+            margin-top: 0.7rem;
+        }
+        .legend-item { display: inline-flex; align-items: center; gap: 0.35rem; }
+        .legend-swatch {
+            display: inline-block;
+            width: 0.9rem;
+            height: 0.9rem;
+            border-radius: 2px;
+            border: 1px solid rgba(0,0,0,0.2);
+        }
+        .legend-line {
+            display: inline-block;
+            width: 1.6rem;
+            height: 2px;
+        }
+
+        #status {
+            margin-left: auto;
+            font-family: Monaco, Consolas, monospace;
+            font-size: 0.8rem;
+            opacity: 0.8;
+            white-space: pre-wrap;
+        }
+        #status.error {
+            color: var(--error-color);
+            opacity: 1;
+            font-weight: 600;
+        }
+
+        .graph-container {
+            position: relative;
+            background: var(--card-background);
+            color: var(--color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 0;
+            box-shadow: 0 2px 4px var(--shadow-color);
+            overflow: hidden;
+        }
+        #viewport {
+            position: relative;
+            overflow: auto;
+            background: var(--card-background);
+            height: calc(100vh - 18rem);
+            min-height: 24rem;
+            border-radius: 8px;
+        }
+        #canvas-wrap {
+            position: relative;
+            min-width: 100%;
+            min-height: 100%;
+        }
+        #canvas {
+            position: relative;
+            transform-origin: 0 0;
+        }
+        #links-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            overflow: visible;
+        }
+        .db-group {
+            position: absolute;
+            border: 2px dashed var(--db-border);
+            background: color-mix(in srgb, var(--db-bg) 60%, transparent);
+            border-radius: 8px;
+            pointer-events: none;
+        }
+        .db-label {
+            position: absolute;
+            top: 0.4rem;
+            left: 0.8rem;
+            color: var(--color);
+            background: var(--header-background);
+            padding: 0.05rem 0.5rem;
+            font-weight: 700;
+            font-size: 0.95rem;
+            pointer-events: auto;
+            user-select: none;
+            border-radius: 3px;
+            box-shadow: 1px 1px 0 var(--shadow-color);
+        }
+
+        .node {
+            position: absolute;
+            background: var(--card-background);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            box-shadow: 0 1px 3px var(--shadow-color);
+            font-size: 0.78rem;
+            min-width: 13rem;
+            max-width: 19rem;
+            cursor: pointer;
+            transition: box-shadow 0.15s, border-color 0.15s, transform 0.15s;
+        }
+        .node:hover {
+            box-shadow: 0 4px 12px var(--shadow-color);
+            transform: translateY(-1px);
+            z-index: 5;
+        }
+        .node.selected {
+            border-color: var(--btn-primary-bg);
+            box-shadow: 0 0 0 3px var(--accent), 0 4px 10px var(--shadow-color);
+            z-index: 6;
+        }
+        .node.highlighted {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px var(--accent);
+            z-index: 6;
+        }
+        .node.dimmed { opacity: 0.25; }
+
+        .node-header {
+            padding: 0.35rem 0.55rem;
+            border-radius: 5px 5px 0 0;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .node-name {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex: 1;
+            font-family: Monaco, Consolas, monospace;
+        }
+        .node-kind {
+            font-size: 0.7rem;
+            opacity: 0.85;
+            white-space: nowrap;
+            font-family: Monaco, Consolas, monospace;
+        }
+
+        .node-mt .node-header { background: var(--header-mt); color: var(--header-mt-text); }
+        .node-mv .node-header { background: var(--header-mv); color: var(--header-mv-text); }
+        .node-rmv .node-header { background: var(--header-rmv); color: var(--header-rmv-text); }
+        .node-dict .node-header { background: var(--header-dict); color: var(--header-dict-text); }
+        .node-distributed .node-header { background: var(--header-distributed); color: var(--header-distributed-text); }
+        .node-view .node-header { background: var(--header-view); color: var(--header-view-text); }
+        .node-other .node-header { background: var(--header-other); color: var(--header-other-text); }
+
+        .node-columns {
+            padding: 0.25rem 0.55rem;
+            max-height: 16rem;
+            overflow-y: auto;
+        }
+        .node-columns.collapsed { display: none; }
+        .column {
+            display: flex;
+            justify-content: space-between;
+            gap: 0.5rem;
+            font-family: Monaco, Consolas, monospace;
+            font-size: 0.78rem;
+            line-height: 1.45;
+            border-bottom: 1px dotted var(--border-color);
+        }
+        .column:last-child { border-bottom: none; }
+        .column-name { color: var(--color); }
+        .column-name.key { color: var(--column-key); font-weight: 600; }
+        .column-name.default { color: var(--column-default); }
+        .column-type {
+            color: var(--column-type);
+            font-size: 0.72rem;
+            text-align: right;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 50%;
+        }
+        .node-stats {
+            padding: 0.2rem 0.55rem;
+            background: var(--table-header-bg);
+            border-top: 1px solid var(--border-color);
+            border-radius: 0 0 5px 5px;
+            font-size: 0.72rem;
+            color: var(--muted);
+            display: flex;
+            justify-content: space-between;
+            font-family: Monaco, Consolas, monospace;
+        }
+
+        #sidebar {
+            position: fixed;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 30rem;
+            background: var(--card-background);
+            border-left: 4px solid var(--header-background);
+            padding: 1rem 1.25rem;
+            overflow-y: auto;
+            z-index: 200;
+            display: none;
+            box-shadow: -6px 0 18px var(--shadow-color);
+        }
+        #sidebar.open { display: block; }
+        #sidebar h2 {
+            font-size: 1.05rem;
+            margin: 0 0 0.6rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: Monaco, Consolas, monospace;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--header-background);
+        }
+        #sidebar h3 {
+            font-size: 0.8rem;
+            margin: 1rem 0 0.4rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+        #sidebar pre {
+            background: var(--table-header-bg);
+            border: 1px solid var(--border-color);
+            padding: 0.6rem 0.75rem;
+            font-size: 0.78rem;
+            font-family: Monaco, Consolas, monospace;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            border-radius: 4px;
+        }
+        #sidebar table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+            font-family: Monaco, Consolas, monospace;
+        }
+        #sidebar table td {
+            padding: 0.2rem 0.4rem;
+            border-bottom: 1px dotted var(--border-color);
+            vertical-align: top;
+        }
+        #sidebar table td:first-child {
+            color: var(--muted);
+            white-space: nowrap;
+            width: 36%;
+        }
+        #sidebar .close {
+            background: transparent;
+            border: none;
+            color: var(--muted);
+            cursor: pointer;
+            font-size: 1.4rem;
+            line-height: 1;
+        }
+        #sidebar .close:hover { color: var(--color); }
+        #sidebar a {
+            color: var(--btn-primary-bg);
+            cursor: pointer;
+            text-decoration: underline;
+            font-family: Monaco, Consolas, monospace;
+        }
+        #sidebar .related-table {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            padding: 0.2rem 0;
+        }
+
+        #empty {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: var(--muted);
+            font-size: 1rem;
+            text-align: center;
+            font-style: italic;
+        }
+        #empty.hidden { display: none; }
+        #empty .hint { font-size: 0.85rem; margin-top: 0.5rem; opacity: 0.75; }
+
+        .arrow {
+            fill: none;
+            stroke: var(--link);
+            stroke-width: 1.4px;
+            opacity: 0.85;
+        }
+        .arrow.mv { stroke: var(--link-mv); }
+        .arrow.dict { stroke: var(--link-dict); }
+        .arrow.distributed { stroke: var(--link-distributed); }
+        .arrow.highlighted { stroke: var(--link-highlight); stroke-width: 2.4px; opacity: 1; }
+        .arrow.dimmed { opacity: 0.1; }
+
+        .arrowhead { fill: var(--link); }
+        .arrowhead.mv { fill: var(--link-mv); }
+        .arrowhead.dict { fill: var(--link-dict); }
+        .arrowhead.distributed { fill: var(--link-distributed); }
+        .arrowhead.highlighted { fill: var(--link-highlight); }
+
+        #zoom-controls {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            display: flex;
+            gap: 0.3rem;
+            background: var(--card-background);
+            border: 1px solid var(--border-color);
+            padding: 0.3rem;
+            border-radius: 6px;
+            z-index: 50;
+            box-shadow: 0 2px 6px var(--shadow-color);
+        }
+        #zoom-controls button {
+            background: var(--header-background);
+            color: black;
+            border: 1px solid var(--border-color);
+            width: 2.1rem;
+            height: 2.1rem;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 4px;
+        }
+        #zoom-controls button:hover { opacity: 0.85; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>ClickHouse Schema Visualizer</h1>
+    <div class="controls">
+        <div class="connection-params">
+            <input id="url" type="text" placeholder="URL" spellcheck="false">
+            <input id="user" type="text" placeholder="user" spellcheck="false">
+            <input id="password" type="password" placeholder="password">
+        </div>
+        <button id="load" class="btn btn-primary">Load</button>
+        <button id="theme-toggle" class="theme-toggle" title="Toggle theme">🌘</button>
+    </div>
+</div>
+
+<div class="container">
+    <div class="section">
+        <div class="filter-row">
+            <input id="search" type="text" placeholder="🔍 Search table or column…" spellcheck="false">
+            <select id="db-filter"><option value="">All databases</option></select>
+            <button id="toggle-columns" class="btn-toggle active">Columns</button>
+            <button id="toggle-system" class="btn-toggle">System tables</button>
+            <button id="relayout" class="btn btn-secondary">Re-layout</button>
+            <span id="status"></span>
+        </div>
+        <div class="legend">
+            <span class="legend-item"><span class="legend-swatch" style="background:var(--header-mt)"></span>MergeTree / Table</span>
+            <span class="legend-item"><span class="legend-swatch" style="background:var(--header-mv)"></span>Materialized View</span>
+            <span class="legend-item"><span class="legend-swatch" style="background:var(--header-rmv)"></span>Refreshable MV</span>
+            <span class="legend-item"><span class="legend-swatch" style="background:var(--header-dict)"></span>Dictionary</span>
+            <span class="legend-item"><span class="legend-swatch" style="background:var(--header-distributed)"></span>Distributed</span>
+            <span class="legend-item"><span class="legend-swatch" style="background:var(--header-view)"></span>View</span>
+            <span class="legend-item"><span class="legend-line" style="background:var(--link-mv)"></span>MV flow</span>
+            <span class="legend-item"><span class="legend-line" style="background:var(--link-dict)"></span>Dictionary source</span>
+            <span class="legend-item"><span class="legend-line" style="background:var(--link-distributed)"></span>Distributed shard</span>
+        </div>
+    </div>
+
+    <div class="graph-container">
+        <div id="viewport">
+            <div id="canvas-wrap">
+                <div id="canvas">
+                    <svg id="links-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+                </div>
+            </div>
+            <div id="empty">
+                Press <b>Load</b> to fetch the schema from this server.
+                <div class="hint">Click a node to see details, drag a node to move it.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<aside id="sidebar">
+    <h2><span id="sidebar-title"></span><button class="close" id="sidebar-close">×</button></h2>
+    <div id="sidebar-content"></div>
+</aside>
+
+<div id="zoom-controls">
+    <button id="zoom-out" title="Zoom out">−</button>
+    <button id="zoom-reset" title="Reset zoom">⌂</button>
+    <button id="zoom-in" title="Zoom in">+</button>
+</div>
+
+<script>
+'use strict';
+
+const $ = id => document.getElementById(id);
+
+if (!$('url').value)
+    $('url').value = location.protocol !== 'file:' ? location.origin : 'http://localhost:8123/';
+if (!$('user').value) {
+    const u = new URL(window.location).searchParams.get('user');
+    $('user').value = u || 'default';
+}
+
+let theme = window.localStorage.getItem('theme') || 'light';
+function setTheme(t) {
+    theme = t;
+    document.documentElement.setAttribute('data-theme', t);
+    window.localStorage.setItem('theme', t);
+    $('theme-toggle').textContent = t === 'dark' ? '☀️' : '🌘';
+}
+setTheme(theme);
+$('theme-toggle').onclick = () => setTheme(theme === 'dark' ? 'light' : 'dark');
+
+const state = {
+    tables: [],
+    columnsByTable: new Map(),
+    dictSources: new Map(),
+    refreshes: new Map(),
+    nodes: new Map(),
+    nodesByDb: new Map(),
+    edges: [],
+    showColumns: true,
+    showSystem: false,
+    dbFilter: '',
+    selectedKey: null,
+    zoom: 1.0,
+};
+
+function setStatus(text, isError) {
+    $('status').textContent = text;
+    $('status').classList.toggle('error', !!isError);
+}
+
+function fullName(db, t) { return db + '.' + t; }
+
+async function chQuery(query) {
+    const host = $('url').value.replace(/\/+$/, '');
+    const user = $('user').value;
+    const password = $('password').value;
+    const params = new URLSearchParams();
+    params.set('default_format', 'JSONCompactEachRowWithNamesAndTypes');
+    if (location.protocol === 'file:') params.set('add_http_cors_header', '1');
+    if (user) params.set('user', user);
+    if (password) params.set('password', password);
+
+    const resp = await fetch(host + '/?' + params.toString(), {
+        method: 'POST',
+        body: query,
+        headers: { 'Authorization': 'never' },
+    });
+    const text = await resp.text();
+    if (!resp.ok) throw new Error(text);
+
+    /// JSONCompactEachRowWithNamesAndTypes: one row per line; first row = names, second = types, rest = data
+    const lines = text.split('\n').filter(l => l.length);
+    if (lines.length < 2) return { columns: [], rows: [] };
+    const names = JSON.parse(lines[0]);
+    const types = JSON.parse(lines[1]);
+    const rows = [];
+    for (let i = 2; i < lines.length; i++) {
+        const arr = JSON.parse(lines[i]);
+        const obj = {};
+        for (let j = 0; j < names.length; j++) obj[names[j]] = arr[j];
+        rows.push(obj);
+    }
+    return { columns: names, types, rows };
+}
+
+function engineKind(engine) {
+    if (!engine) return 'other';
+    if (engine === 'Dictionary') return 'dict';
+    if (engine === 'Distributed') return 'distributed';
+    if (engine === 'View') return 'view';
+    if (engine === 'LiveView' || engine === 'WindowView') return 'view';
+    if (engine === 'MaterializedView') return 'mv';
+    if (engine.includes('MergeTree')) return 'mt';
+    return 'other';
+}
+
+async function loadAll() {
+    setStatus('Loading tables...');
+    const sysFilter = state.showSystem
+        ? ''
+        : "WHERE database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')";
+
+    const tablesQ = `
+        SELECT
+            database,
+            name,
+            engine,
+            engine_full,
+            create_table_query,
+            sorting_key,
+            primary_key,
+            partition_key,
+            sampling_key,
+            total_rows,
+            total_bytes,
+            comment,
+            arrayMap((d, t) -> concat(d, '.', t), dependencies_database, dependencies_table) AS dependents,
+            arrayMap((d, t) -> concat(d, '.', t), loading_dependencies_database, loading_dependencies_table) AS depends_on
+        FROM system.tables
+        ${sysFilter}
+        ORDER BY database, name
+    `;
+
+    const columnsQ = `
+        SELECT database, table, name, type,
+               (is_in_primary_key OR is_in_sorting_key) AS is_key,
+               default_kind != '' AS has_default
+        FROM system.columns
+        ${sysFilter}
+        ORDER BY database, table, position
+    `;
+
+    const dictsQ = `
+        SELECT database, name, source
+        FROM system.dictionaries
+        WHERE status = 'LOADED' OR status = 'NOT_LOADED' OR status = 'LOADING'
+    `;
+
+    const refreshesQ = `
+        SELECT database, view, status, last_success_time, next_refresh_time, exception
+        FROM system.view_refreshes
+    `;
+
+    let tablesRes;
+    try {
+        tablesRes = await chQuery(tablesQ);
+    } catch (e) {
+        setStatus('Failed: ' + e.message, true);
+        return;
+    }
+
+    let columnsRes = { rows: [] };
+    try { columnsRes = await chQuery(columnsQ); } catch (e) { console.warn(e); }
+
+    let dictsRes = { rows: [] };
+    try { dictsRes = await chQuery(dictsQ); } catch (e) { console.warn(e); }
+
+    let refreshesRes = { rows: [] };
+    try { refreshesRes = await chQuery(refreshesQ); } catch (e) { /// table may not exist
+        console.info('system.view_refreshes not available:', e.message);
+    }
+
+    state.tables = tablesRes.rows;
+    state.columnsByTable = new Map();
+    for (const c of columnsRes.rows) {
+        const k = fullName(c.database, c.table);
+        if (!state.columnsByTable.has(k)) state.columnsByTable.set(k, []);
+        state.columnsByTable.get(k).push(c);
+    }
+
+    state.dictSources = new Map();
+    for (const d of dictsRes.rows) {
+        state.dictSources.set(fullName(d.database, d.name), d.source);
+    }
+
+    state.refreshes = new Map();
+    for (const r of refreshesRes.rows) {
+        state.refreshes.set(fullName(r.database, r.view), r);
+    }
+
+    setStatus(`Loaded ${state.tables.length} tables, ${columnsRes.rows.length} columns.`);
+    buildGraph();
+    updateDbFilter();
+    render();
+}
+
+function buildGraph() {
+    const nodes = new Map();
+    const nodesByDb = new Map();
+    for (const t of state.tables) {
+        const key = fullName(t.database, t.name);
+        const isRefreshable = state.refreshes.has(key);
+        const kind = isRefreshable ? 'rmv' : engineKind(t.engine);
+        const node = {
+            key,
+            database: t.database,
+            name: t.name,
+            engine: t.engine,
+            engineFull: t.engine_full,
+            kind,
+            createQuery: t.create_table_query,
+            sortingKey: t.sorting_key,
+            primaryKey: t.primary_key,
+            partitionKey: t.partition_key,
+            samplingKey: t.sampling_key,
+            totalRows: t.total_rows,
+            totalBytes: t.total_bytes,
+            comment: t.comment,
+            dependents: t.dependents || [],
+            dependsOn: t.depends_on || [],
+            columns: state.columnsByTable.get(key) || [],
+            dictSource: state.dictSources.get(key),
+            refresh: state.refreshes.get(key),
+            x: 0, y: 0, w: 0, h: 0,
+            depth: 0,
+        };
+        nodes.set(key, node);
+        if (!nodesByDb.has(t.database)) nodesByDb.set(t.database, []);
+        nodesByDb.get(t.database).push(node);
+    }
+
+    /// Edges: for each table, draw arrows source -> target.
+    /// Use loading_dependencies (depends_on) and dependents (already gives forward direction).
+    const edges = [];
+    const seen = new Set();
+    function addEdge(from, to, kind) {
+        if (!nodes.has(from) || !nodes.has(to)) return;
+        if (from === to) return;
+        const k = from + '\x00' + to;
+        if (seen.has(k)) return;
+        seen.add(k);
+        edges.push({ from, to, kind });
+    }
+
+    /// Extracts the TO target of an MV from a CREATE statement.
+    /// Matches: TO `db`.`tbl`, TO db.tbl, TO db.`tbl`, etc. Stops at AS or `(`.
+    function parseMvTarget(node) {
+        const q = node.createQuery || '';
+        const re = /\bTO\s+(?:`([^`]+)`|([A-Za-z_][\w]*))\s*\.\s*(?:`([^`]+)`|([A-Za-z_][\w]*))/i;
+        const m = q.match(re);
+        if (!m) return null;
+        const db = m[1] || m[2];
+        const t = m[3] || m[4];
+        return db + '.' + t;
+    }
+
+    for (const node of nodes.values()) {
+        /// MV/RMV: SELECT FROM dependsOn, write to dependents
+        const isMv = node.kind === 'mv' || node.kind === 'rmv';
+        for (const dep of node.dependsOn) {
+            if (isMv) addEdge(dep, node.key, 'mv');
+            else if (node.kind === 'dict') addEdge(dep, node.key, 'dict');
+            else if (node.kind === 'distributed') addEdge(dep, node.key, 'distributed');
+            else addEdge(dep, node.key, 'normal');
+        }
+        for (const dep of node.dependents) {
+            /// "Tables that depend on me"; for MV the target table is here.
+            if (isMv) addEdge(node.key, dep, 'mv');
+            else if (nodes.get(dep) && (nodes.get(dep).kind === 'mv' || nodes.get(dep).kind === 'rmv'))
+                addEdge(node.key, dep, 'mv');
+            else if (nodes.get(dep) && nodes.get(dep).kind === 'dict')
+                addEdge(node.key, dep, 'dict');
+            else if (nodes.get(dep) && nodes.get(dep).kind === 'distributed')
+                addEdge(node.key, dep, 'distributed');
+            else
+                addEdge(node.key, dep, 'normal');
+        }
+        /// Parse TO target for MVs (ClickHouse doesn't track this edge in system.tables).
+        if (isMv) {
+            const target = parseMvTarget(node);
+            if (target) addEdge(node.key, target, 'mv');
+        }
+    }
+
+    state.nodes = nodes;
+    state.nodesByDb = nodesByDb;
+    state.edges = edges;
+}
+
+function updateDbFilter() {
+    const sel = $('db-filter');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">All databases</option>';
+    const dbs = Array.from(state.nodesByDb.keys()).sort();
+    for (const db of dbs) {
+        const o = document.createElement('option');
+        o.value = db;
+        o.textContent = `${db} (${state.nodesByDb.get(db).length})`;
+        sel.appendChild(o);
+    }
+    sel.value = dbs.includes(cur) ? cur : '';
+    state.dbFilter = sel.value;
+}
+
+/// Compute longest-path layering for a subgraph (one database).
+function layoutDatabase(dbNodes, edges) {
+    const inDb = new Set(dbNodes.map(n => n.key));
+    /// Restrict edges to within database; cross-DB edges are drawn but ignored for layering.
+    const adjOut = new Map();
+    const adjIn = new Map();
+    for (const n of dbNodes) { adjOut.set(n.key, []); adjIn.set(n.key, []); }
+    for (const e of edges) {
+        if (inDb.has(e.from) && inDb.has(e.to)) {
+            adjOut.get(e.from).push(e.to);
+            adjIn.get(e.to).push(e.from);
+        }
+    }
+
+    /// Longest-path layering (topological), tolerate cycles by capping depth.
+    const depth = new Map();
+    const visiting = new Set();
+    function dfs(k, stack) {
+        if (depth.has(k)) return depth.get(k);
+        if (visiting.has(k)) return 0;
+        visiting.add(k);
+        let d = 0;
+        for (const u of adjIn.get(k) || []) {
+            if (stack.has(u)) continue;
+            stack.add(u);
+            d = Math.max(d, dfs(u, stack) + 1);
+            stack.delete(u);
+        }
+        visiting.delete(k);
+        depth.set(k, d);
+        return d;
+    }
+    for (const n of dbNodes) dfs(n.key, new Set([n.key]));
+
+    /// Group by depth.
+    const layers = new Map();
+    let maxDepth = 0;
+    for (const n of dbNodes) {
+        const d = depth.get(n.key) || 0;
+        if (!layers.has(d)) layers.set(d, []);
+        layers.get(d).push(n);
+        if (d > maxDepth) maxDepth = d;
+    }
+
+    /// Order within layer alphabetically initially, then apply barycenter for crossing reduction.
+    for (const arr of layers.values()) arr.sort((a, b) => a.name.localeCompare(b.name));
+
+    for (let iter = 0; iter < 8; iter++) {
+        for (let d = 1; d <= maxDepth; d++) {
+            const layer = layers.get(d) || [];
+            const prev = layers.get(d - 1) || [];
+            const prevIdx = new Map();
+            prev.forEach((n, i) => prevIdx.set(n.key, i));
+            for (const n of layer) {
+                const ins = (adjIn.get(n.key) || []).filter(k => prevIdx.has(k)).map(k => prevIdx.get(k));
+                n._bary = ins.length ? ins.reduce((a, b) => a + b, 0) / ins.length : prevIdx.size / 2;
+            }
+            layer.sort((a, b) => (a._bary - b._bary) || a.name.localeCompare(b.name));
+        }
+        for (let d = maxDepth - 1; d >= 0; d--) {
+            const layer = layers.get(d) || [];
+            const next = layers.get(d + 1) || [];
+            const nextIdx = new Map();
+            next.forEach((n, i) => nextIdx.set(n.key, i));
+            for (const n of layer) {
+                const outs = (adjOut.get(n.key) || []).filter(k => nextIdx.has(k)).map(k => nextIdx.get(k));
+                n._bary = outs.length ? outs.reduce((a, b) => a + b, 0) / outs.length : nextIdx.size / 2;
+            }
+            layer.sort((a, b) => (a._bary - b._bary) || a.name.localeCompare(b.name));
+        }
+    }
+
+    return { layers, maxDepth };
+}
+
+function estimateNodeSize(node) {
+    const showCols = state.showColumns;
+    const colCount = showCols ? Math.min(node.columns.length, 14) : 0;
+    const w = 220;
+    const h = 36 + colCount * 17 + (node.totalRows != null && node.totalRows !== '0' ? 20 : 0);
+    return { w, h };
+}
+
+function layoutAll() {
+    /// For each visible db, compute layered layout; place dbs in a wrapping grid.
+    const visibleDbs = Array.from(state.nodesByDb.keys())
+        .filter(db => !state.dbFilter || state.dbFilter === db)
+        .sort();
+
+    const LAYER_W = 260;
+    const NODE_GAP_X = 30;
+    const NODE_GAP_Y = 16;
+    const DB_PADDING = 24;
+    const DB_PADDING_TOP = 40;  /// extra space for the .db-label inside the section
+    const DB_GAP = 40;
+
+    /// Pre-size nodes.
+    for (const n of state.nodes.values()) {
+        const s = estimateNodeSize(n);
+        n.w = s.w;
+        n.h = s.h;
+    }
+
+    const sections = [];
+    for (const db of visibleDbs) {
+        const dbNodes = state.nodesByDb.get(db);
+        const { layers, maxDepth } = layoutDatabase(dbNodes, state.edges);
+
+        /// Position nodes within section, with (0,0) at section origin.
+        const layerHeights = new Map();
+        for (let d = 0; d <= maxDepth; d++) {
+            const layer = layers.get(d) || [];
+            let y = 0;
+            for (const n of layer) {
+                n._rx = d * (LAYER_W + NODE_GAP_X);
+                n._ry = y;
+                y += n.h + NODE_GAP_Y;
+            }
+            layerHeights.set(d, y);
+        }
+        const sectionW = Math.max(0, (maxDepth + 1) * LAYER_W + maxDepth * NODE_GAP_X);
+        const sectionH = Math.max(...Array.from(layerHeights.values()), 0);
+
+        sections.push({ db, nodes: dbNodes, w: sectionW + DB_PADDING * 2, h: sectionH + DB_PADDING_TOP + DB_PADDING });
+    }
+
+    /// Pack sections in a wrapping grid that fills viewport width.
+    const MARGIN = 24;
+    const viewportW = $('viewport').clientWidth - MARGIN * 2;
+    let cursorX = MARGIN, cursorY = MARGIN, rowH = 0;
+    for (const s of sections) {
+        if (cursorX > MARGIN && cursorX + s.w > viewportW + MARGIN) {
+            cursorX = MARGIN;
+            cursorY += rowH + DB_GAP;
+            rowH = 0;
+        }
+        s.x = cursorX;
+        s.y = cursorY;
+        for (const n of s.nodes) {
+            n.x = cursorX + DB_PADDING + (n._rx || 0);
+            n.y = cursorY + DB_PADDING_TOP + (n._ry || 0);
+        }
+        cursorX += s.w + DB_GAP;
+        rowH = Math.max(rowH, s.h);
+    }
+
+    state.sections = sections;
+}
+
+function fmtBytes(n) {
+    if (n == null) return '';
+    n = Number(n);
+    if (!isFinite(n) || n === 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+    let u = 0;
+    while (n >= 1024 && u < units.length - 1) { n /= 1024; u++; }
+    return n.toFixed(n < 10 ? 2 : (n < 100 ? 1 : 0)) + ' ' + units[u];
+}
+function fmtRows(n) {
+    if (n == null) return '';
+    n = Number(n);
+    if (!isFinite(n) || n === 0) return '';
+    if (n >= 1e12) return (n / 1e12).toFixed(2) + 'T';
+    if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(2) + 'K';
+    return String(n);
+}
+
+function render() {
+    const canvas = $('canvas');
+    const svg = $('links-svg');
+    /// Remove existing nodes/sections (keep svg).
+    Array.from(canvas.querySelectorAll('.node, .db-group')).forEach(e => e.remove());
+
+    if (!state.tables.length) {
+        $('empty').classList.remove('hidden');
+        svg.innerHTML = '';
+        return;
+    }
+    $('empty').classList.add('hidden');
+
+    layoutAll();
+
+    const search = $('search').value.trim().toLowerCase();
+    const filtered = new Set();
+    if (search) {
+        for (const n of state.nodes.values()) {
+            if (n.key.toLowerCase().includes(search)) filtered.add(n.key);
+            else if (n.columns.some(c => c.name.toLowerCase().includes(search))) filtered.add(n.key);
+        }
+    }
+
+    let maxX = 0, maxY = 0;
+
+    for (const s of state.sections) {
+        const g = document.createElement('div');
+        g.className = 'db-group';
+        g.style.left = s.x + 'px';
+        g.style.top = s.y + 'px';
+        g.style.width = s.w + 'px';
+        g.style.height = s.h + 'px';
+        const label = document.createElement('div');
+        label.className = 'db-label';
+        label.textContent = s.db;
+        g.appendChild(label);
+        canvas.appendChild(g);
+    }
+
+    for (const n of state.nodes.values()) {
+        if (state.dbFilter && n.database !== state.dbFilter) continue;
+        if (!n.w) continue;
+        const el = document.createElement('div');
+        el.className = 'node node-' + n.kind;
+        el.dataset.key = n.key;
+        el.style.left = n.x + 'px';
+        el.style.top = n.y + 'px';
+        el.style.width = n.w + 'px';
+        if (state.selectedKey === n.key) el.classList.add('selected');
+        if (search && !filtered.has(n.key)) el.classList.add('dimmed');
+
+        const header = document.createElement('div');
+        header.className = 'node-header';
+        const nameEl = document.createElement('span');
+        nameEl.className = 'node-name';
+        nameEl.title = n.key;
+        nameEl.textContent = n.name;
+        const kindEl = document.createElement('span');
+        kindEl.className = 'node-kind';
+        kindEl.textContent = n.kind === 'rmv' ? 'Refreshable MV' : (n.engine || '');
+        header.appendChild(nameEl);
+        header.appendChild(kindEl);
+        el.appendChild(header);
+
+        if (state.showColumns && n.columns.length) {
+            const cols = document.createElement('div');
+            cols.className = 'node-columns';
+            const maxShow = 14;
+            const slice = n.columns.slice(0, maxShow);
+            for (const c of slice) {
+                const row = document.createElement('div');
+                row.className = 'column';
+                const cn = document.createElement('span');
+                cn.className = 'column-name';
+                if (c.is_key === 1 || c.is_key === true) cn.classList.add('key');
+                else if (c.has_default === 1 || c.has_default === true) cn.classList.add('default');
+                cn.textContent = c.name;
+                const ct = document.createElement('span');
+                ct.className = 'column-type';
+                ct.title = c.type;
+                ct.textContent = c.type;
+                row.appendChild(cn);
+                row.appendChild(ct);
+                cols.appendChild(row);
+            }
+            if (n.columns.length > maxShow) {
+                const more = document.createElement('div');
+                more.className = 'column';
+                more.style.color = 'var(--muted)';
+                more.style.fontStyle = 'italic';
+                more.textContent = `… ${n.columns.length - maxShow} more`;
+                cols.appendChild(more);
+            }
+            el.appendChild(cols);
+        }
+
+        if (n.totalRows && Number(n.totalRows) > 0) {
+            const stats = document.createElement('div');
+            stats.className = 'node-stats';
+            const r = document.createElement('span');
+            r.textContent = fmtRows(n.totalRows) + ' rows';
+            const b = document.createElement('span');
+            b.textContent = fmtBytes(n.totalBytes);
+            stats.appendChild(r);
+            stats.appendChild(b);
+            el.appendChild(stats);
+        }
+
+        el.addEventListener('click', e => {
+            e.stopPropagation();
+            selectNode(n.key);
+        });
+
+        attachDrag(el, n);
+
+        canvas.appendChild(el);
+        maxX = Math.max(maxX, n.x + n.w);
+        maxY = Math.max(maxY, n.y + n.h);
+    }
+
+    /// Now after nodes are in DOM, measure actual heights (column lists can vary slightly).
+    for (const el of canvas.querySelectorAll('.node')) {
+        const k = el.dataset.key;
+        const node = state.nodes.get(k);
+        if (node) {
+            node.h = el.offsetHeight;
+            node.w = el.offsetWidth;
+            maxX = Math.max(maxX, node.x + node.w);
+            maxY = Math.max(maxY, node.y + node.h);
+        }
+    }
+
+    /// Update section bounds based on actual node sizes.
+    for (const g of canvas.querySelectorAll('.db-group')) {
+        /// Find max extents within section.
+        const lbl = g.querySelector('.db-label').textContent;
+        let mx = 0, my = 0;
+        const sx = parseFloat(g.style.left), sy = parseFloat(g.style.top);
+        for (const n of state.nodesByDb.get(lbl) || []) {
+            if (state.dbFilter && n.database !== state.dbFilter) continue;
+            mx = Math.max(mx, n.x + n.w - sx);
+            my = Math.max(my, n.y + n.h - sy);
+        }
+        g.style.width = (mx + 24) + 'px';
+        g.style.height = (my + 24) + 'px';
+    }
+
+    drawEdges();
+
+    canvas.style.width = (maxX + 60) + 'px';
+    canvas.style.height = (maxY + 60) + 'px';
+    svg.setAttribute('width', maxX + 60);
+    svg.setAttribute('height', maxY + 60);
+}
+
+function drawEdges() {
+    const svg = $('links-svg');
+    svg.innerHTML = '';
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    svg.appendChild(defs);
+
+    const visible = new Set();
+    for (const n of state.nodes.values()) {
+        if (!state.dbFilter || n.database === state.dbFilter) visible.add(n.key);
+    }
+
+    const search = $('search').value.trim().toLowerCase();
+    const filtered = new Set();
+    if (search) {
+        for (const n of state.nodes.values()) {
+            if (n.key.toLowerCase().includes(search) ||
+                n.columns.some(c => c.name.toLowerCase().includes(search))) filtered.add(n.key);
+        }
+    }
+
+    /// Build adjacency for highlighting.
+    const incoming = new Map(), outgoing = new Map();
+    for (const e of state.edges) {
+        if (!visible.has(e.from) || !visible.has(e.to)) continue;
+        if (!incoming.has(e.to)) incoming.set(e.to, []);
+        if (!outgoing.has(e.from)) outgoing.set(e.from, []);
+        incoming.get(e.to).push(e.from);
+        outgoing.get(e.from).push(e.to);
+    }
+    state._incoming = incoming;
+    state._outgoing = outgoing;
+
+    for (const e of state.edges) {
+        if (!visible.has(e.from) || !visible.has(e.to)) continue;
+        const a = state.nodes.get(e.from);
+        const b = state.nodes.get(e.to);
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        const kindClass = e.kind === 'normal' ? '' : e.kind;
+        path.setAttribute('class', 'arrow ' + kindClass);
+        path.setAttribute('data-from', e.from);
+        path.setAttribute('data-to', e.to);
+
+        const x1 = a.x + a.w;
+        const y1 = a.y + a.h / 2;
+        const x2 = b.x;
+        const y2 = b.y + b.h / 2;
+        const dx = Math.max(40, (x2 - x1) / 2);
+        const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2 - 8} ${y2}`;
+        path.setAttribute('d', d);
+        svg.appendChild(path);
+
+        /// Arrowhead.
+        const ah = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        ah.setAttribute('class', 'arrowhead ' + kindClass);
+        ah.setAttribute('data-from', e.from);
+        ah.setAttribute('data-to', e.to);
+        const angle = Math.atan2(y2 - y1, (x2 - 8) - (x1 + dx));
+        const hx = x2 - 4, hy = y2;
+        const len = 8, sp = 4;
+        const p1x = hx - len * Math.cos(angle) + sp * Math.sin(angle);
+        const p1y = hy - len * Math.sin(angle) - sp * Math.cos(angle);
+        const p2x = hx - len * Math.cos(angle) - sp * Math.sin(angle);
+        const p2y = hy - len * Math.sin(angle) + sp * Math.cos(angle);
+        ah.setAttribute('points', `${hx},${hy} ${p1x},${p1y} ${p2x},${p2y}`);
+        svg.appendChild(ah);
+
+        if (search) {
+            if (!filtered.has(e.from) && !filtered.has(e.to)) {
+                path.classList.add('dimmed');
+                ah.classList.add('dimmed');
+            }
+        }
+    }
+}
+
+function highlightSelection(key) {
+    const ins = state._incoming?.get(key) || [];
+    const outs = state._outgoing?.get(key) || [];
+    const relevant = new Set([key, ...ins, ...outs]);
+    for (const el of document.querySelectorAll('.node')) {
+        el.classList.remove('highlighted', 'dimmed', 'selected');
+        if (el.dataset.key === key) el.classList.add('selected');
+        else if (relevant.has(el.dataset.key)) el.classList.add('highlighted');
+        else el.classList.add('dimmed');
+    }
+    for (const p of document.querySelectorAll('.arrow, .arrowhead')) {
+        p.classList.remove('highlighted', 'dimmed');
+        const from = p.getAttribute('data-from');
+        const to = p.getAttribute('data-to');
+        if (from === key || to === key) p.classList.add('highlighted');
+        else p.classList.add('dimmed');
+    }
+}
+
+function clearHighlight() {
+    for (const el of document.querySelectorAll('.node'))
+        el.classList.remove('highlighted', 'dimmed', 'selected');
+    for (const p of document.querySelectorAll('.arrow, .arrowhead'))
+        p.classList.remove('highlighted', 'dimmed');
+    state.selectedKey = null;
+    $('sidebar').classList.remove('open');
+}
+
+function selectNode(key) {
+    state.selectedKey = key;
+    highlightSelection(key);
+    showSidebar(key);
+}
+
+function showSidebar(key) {
+    const n = state.nodes.get(key);
+    if (!n) return;
+    $('sidebar-title').textContent = n.key;
+    const c = $('sidebar-content');
+    c.innerHTML = '';
+
+    const tbl = document.createElement('table');
+    const rows = [
+        ['Database', n.database],
+        ['Name', n.name],
+        ['Engine', n.engineFull || n.engine],
+    ];
+    if (n.partitionKey) rows.push(['Partition by', n.partitionKey]);
+    if (n.sortingKey) rows.push(['Order by', n.sortingKey]);
+    if (n.primaryKey && n.primaryKey !== n.sortingKey) rows.push(['Primary key', n.primaryKey]);
+    if (n.samplingKey) rows.push(['Sample by', n.samplingKey]);
+    if (n.totalRows && Number(n.totalRows) > 0) rows.push(['Rows', fmtRows(n.totalRows)]);
+    if (n.totalBytes && Number(n.totalBytes) > 0) rows.push(['Bytes', fmtBytes(n.totalBytes)]);
+    if (n.comment) rows.push(['Comment', n.comment]);
+    if (n.refresh) {
+        rows.push(['Refresh status', n.refresh.status]);
+        if (n.refresh.last_success_time) rows.push(['Last refresh', n.refresh.last_success_time]);
+        if (n.refresh.next_refresh_time) rows.push(['Next refresh', n.refresh.next_refresh_time]);
+        if (n.refresh.exception) rows.push(['Refresh error', n.refresh.exception]);
+    }
+    if (n.dictSource) rows.push(['Dictionary source', n.dictSource]);
+    for (const [k, v] of rows) {
+        const tr = document.createElement('tr');
+        const td1 = document.createElement('td'); td1.textContent = k;
+        const td2 = document.createElement('td'); td2.textContent = v == null ? '' : String(v);
+        tr.appendChild(td1); tr.appendChild(td2);
+        tbl.appendChild(tr);
+    }
+    c.appendChild(tbl);
+
+    if (n.columns.length) {
+        const h = document.createElement('h3');
+        h.textContent = `Columns (${n.columns.length})`;
+        c.appendChild(h);
+        const ct = document.createElement('table');
+        for (const col of n.columns) {
+            const tr = document.createElement('tr');
+            const td1 = document.createElement('td');
+            td1.textContent = col.name;
+            if (col.is_key === 1 || col.is_key === true) td1.style.color = 'var(--column-key)';
+            const td2 = document.createElement('td');
+            td2.textContent = col.type;
+            td2.style.color = 'var(--muted)';
+            td2.style.whiteSpace = 'normal';
+            td2.style.wordBreak = 'break-word';
+            tr.appendChild(td1); tr.appendChild(td2);
+            ct.appendChild(tr);
+        }
+        c.appendChild(ct);
+    }
+
+    const ins = state._incoming?.get(key) || [];
+    const outs = state._outgoing?.get(key) || [];
+    if (ins.length) {
+        const h = document.createElement('h3');
+        h.textContent = `Reads from (${ins.length})`;
+        c.appendChild(h);
+        const wrap = document.createElement('div');
+        wrap.className = 'related-table';
+        for (const k of ins) {
+            const a = document.createElement('a');
+            a.textContent = k;
+            a.onclick = () => selectNode(k);
+            wrap.appendChild(a);
+        }
+        c.appendChild(wrap);
+    }
+    if (outs.length) {
+        const h = document.createElement('h3');
+        h.textContent = `Writes to / depended on by (${outs.length})`;
+        c.appendChild(h);
+        const wrap = document.createElement('div');
+        wrap.className = 'related-table';
+        for (const k of outs) {
+            const a = document.createElement('a');
+            a.textContent = k;
+            a.onclick = () => selectNode(k);
+            wrap.appendChild(a);
+        }
+        c.appendChild(wrap);
+    }
+
+    if (n.createQuery) {
+        const h = document.createElement('h3');
+        h.textContent = 'CREATE statement';
+        c.appendChild(h);
+        const pre = document.createElement('pre');
+        pre.textContent = n.createQuery;
+        c.appendChild(pre);
+    }
+
+    $('sidebar').classList.add('open');
+}
+
+function attachDrag(el, node) {
+    let startX, startY, origX, origY, dragging = false;
+    el.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        dragging = false;
+        startX = e.clientX; startY = e.clientY;
+        origX = node.x; origY = node.y;
+        const onMove = (ev) => {
+            const dx = (ev.clientX - startX) / state.zoom;
+            const dy = (ev.clientY - startY) / state.zoom;
+            if (!dragging && Math.abs(dx) + Math.abs(dy) > 4) dragging = true;
+            if (!dragging) return;
+            node.x = origX + dx;
+            node.y = origY + dy;
+            el.style.left = node.x + 'px';
+            el.style.top = node.y + 'px';
+            drawEdges();
+        };
+        const onUp = () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+            if (dragging) {
+                /// Suppress the click after a drag.
+                const stopClick = (ev) => { ev.stopPropagation(); el.removeEventListener('click', stopClick, true); };
+                el.addEventListener('click', stopClick, true);
+            }
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+    });
+}
+
+function applyZoom() {
+    $('canvas').style.transform = `scale(${state.zoom})`;
+}
+$('zoom-in').onclick = () => { state.zoom = Math.min(2, state.zoom * 1.2); applyZoom(); };
+$('zoom-out').onclick = () => { state.zoom = Math.max(0.2, state.zoom / 1.2); applyZoom(); };
+$('zoom-reset').onclick = () => { state.zoom = 1; applyZoom(); };
+
+$('load').onclick = loadAll;
+$('relayout').onclick = render;
+$('db-filter').onchange = (e) => { state.dbFilter = e.target.value; render(); };
+$('toggle-columns').onclick = (e) => {
+    state.showColumns = !state.showColumns;
+    e.target.classList.toggle('active', state.showColumns);
+    render();
+};
+$('toggle-system').onclick = (e) => {
+    state.showSystem = !state.showSystem;
+    e.target.classList.toggle('active', state.showSystem);
+    loadAll();
+};
+let searchTimer;
+$('search').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(render, 200);
+});
+$('sidebar-close').onclick = clearHighlight;
+$('viewport').addEventListener('click', clearHighlight);
+
+state.showColumns = $('toggle-columns').classList.contains('active');
+state.showSystem = $('toggle-system').classList.contains('active');
+
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') clearHighlight();
+});
+
+/// Auto-load if same-origin (location.protocol !== 'file:') and user is default.
+if (location.protocol !== 'file:') {
+    loadAll();
+}
+</script>
+</body>
+</html>
