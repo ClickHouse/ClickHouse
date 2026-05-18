@@ -19,6 +19,7 @@
 #include <Common/ErrnoException.h>
 #include <Common/ShellCommand.h>
 #include <Common/formatReadable.h>
+#include <Common/shellQuote.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/OpenSSLHelpers.h>
 #include <base/sleep.h>
@@ -102,25 +103,6 @@ static constexpr auto DEFAULT_CLICKHOUSE_BRIDGE_GROUP = "clickhouse-bridge";
 using namespace DB;
 namespace po = boost::program_options;
 namespace fs = std::filesystem;
-
-
-/// POSIX-compliant single-quote escaping: wrap in single quotes and replace any
-/// embedded single quote with '\''. Safe against arbitrary byte content.
-static std::string shellQuote(std::string_view s)
-{
-    std::string out;
-    out.reserve(s.size() + 2);
-    out.push_back('\'');
-    for (char c : s)
-    {
-        if (c == '\'')
-            out.append("'\\''");
-        else
-            out.push_back(c);
-    }
-    out.push_back('\'');
-    return out;
-}
 
 
 static auto executeScript(const std::string & command, bool throw_on_error = false)
@@ -215,7 +197,9 @@ static std::string formatWithSudo(std::string command, bool needed = true)
 
 #if defined(OS_FREEBSD)
     /// FreeBSD does not have 'sudo' installed.
-    return fmt::format("su -m root -c '{}'", command);
+    /// `su -c` takes a single shell command string, so quote the whole command
+    /// to keep embedded shell metacharacters from breaking the wrapper.
+    return fmt::format("su -m root -c {}", shellQuote(command));
 #else
     return fmt::format("sudo {}", command);
 #endif
