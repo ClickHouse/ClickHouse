@@ -19,6 +19,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
@@ -41,8 +42,6 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-class ICompressionCodec;
-using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 class Session;
 struct Settings;
 struct QueryPlanAndSets;

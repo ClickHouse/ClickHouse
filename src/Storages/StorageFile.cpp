@@ -37,7 +37,6 @@
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -50,7 +49,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
@@ -161,7 +159,7 @@ void listFilesWithRegexpMatchingImpl(
             /// We use fs::canonical to resolve the canonical path and check if the file does exists
             /// but the result path will be fs::absolute.
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-            (void)fs::canonical(path_for_ls + for_match);
+            fs::canonical(path_for_ls + for_match);
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
             result.push_back(absolute_path.string());
@@ -200,14 +198,8 @@ void listFilesWithRegexpMatchingImpl(
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
 
     const fs::directory_iterator end;
-    std::error_code ec;
-    for (fs::directory_iterator it(prefix_without_globs, ec); it != end; it.increment(ec))
+    for (fs::directory_iterator it(prefix_without_globs); it != end; ++it)
     {
-        if (ec)
-        {
-            return;
-        }
-
         const std::string full_path = it->path().string();
         const size_t last_slash = full_path.rfind('/');
         const String file_name = full_path.substr(last_slash);
@@ -217,13 +209,7 @@ void listFilesWithRegexpMatchingImpl(
         {
             if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
             {
-                total_bytes_to_read += it->file_size(ec);
-                if (ec)
-                {
-                    ec.clear();
-                    continue;
-                }
-
+                total_bytes_to_read += it->file_size();
                 result.push_back(it->path().string());
             }
         }
@@ -1134,13 +1120,13 @@ std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
 {
     /// Currently don't support prewhere for virtual columns, columns with default expressions,
     /// and columns taken from file path (hive partitioning).
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageFile::getColumnSizes() const
 {
     /// Reporting some fake sizes to enable prewhere optimization.
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getFakeColumnSizes();
+    return getInMemoryMetadataPtr()->getFakeColumnSizes();
 }
 
 bool StorageFile::prefersLargeBlocks() const
@@ -1281,7 +1267,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
         format_settings,
         args.getContext());
 
-    storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), format_settings, PartitionStrategyFactory::StrategyType::NONE, sample_path));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), format_settings, PartitionStrategyFactory::StrategyType::NONE, sample_path));
     setInMemoryMetadata(storage_metadata);
 
     supports_prewhere = format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, args.getContext(), format_settings);
@@ -1571,23 +1557,6 @@ Chunk StorageFileSource::generate()
                 current_file_size = file_stat.st_size;
                 current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
 
-                /// Build a sub-second-precision version token for the format metadata cache key.
-                /// `st_mtime` alone is second-resolution, so an in-place rewrite within the same
-                /// second that keeps the file size unchanged would otherwise reuse a stale entry.
-#if defined(OS_DARWIN)
-                const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-                const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
-#else
-                const auto mtim_sec = file_stat.st_mtim.tv_sec;
-                const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
-#endif
-                current_file_cache_version = fmt::format(
-                    "{}.{:09}_{}_{}",
-                    static_cast<Int64>(mtim_sec),
-                    static_cast<Int64>(mtim_nsec),
-                    static_cast<Int64>(file_stat.st_ino),
-                    file_stat.st_size);
-
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                     continue;
 
@@ -1605,60 +1574,18 @@ Chunk StorageFileSource::generate()
 
             chassert(file_num > 0);
 
-            /// For real local files, build a synthetic RelativePathWithMetadata so the
-            /// format-level metadata cache (e.g. Parquet footer cache) is reachable. The
-            /// "etag" is just any version identifier the cache compares for equality —
-            /// for local files we use the precomputed `current_file_cache_version`
-            /// (sub-second mtime + inode + size) so an in-place rewrite invalidates
-            /// the cache even when the new file has the same length and is written
-            /// within the same wall-clock second.
-            std::optional<RelativePathWithMetadata> object_with_metadata;
-            if (!storage->use_table_fd && !storage->archive_info && !current_path.empty()
-                && current_file_size.has_value() && current_file_last_modified.has_value()
-                && current_file_cache_version.has_value())
-            {
-                ObjectMetadata md;
-                md.size_bytes = *current_file_size;
-                md.last_modified = *current_file_last_modified;
-                md.etag = *current_file_cache_version;
-                object_with_metadata.emplace(current_path, std::move(md));
-            }
-
-            if (object_with_metadata.has_value())
-            {
-                input_format = FormatFactory::instance().getInputWithMetadata(
-                    storage->format_name,
-                    *read_buf,
-                    block_for_format,
-                    getContext(),
-                    max_block_size,
-                    object_with_metadata,
-                    storage->format_settings,
-                    parser_shared_resources,
-                    format_filter_info,
-                    /*is_remote_fs=*/false,
-                    CompressionMethod::None,
-                    need_only_count);
-            }
-            else
-            {
-                /// No usable metadata (e.g. archive entries, fd-backed storage, missing
-                /// stat info). Fall back to the regular creator — it doesn't trigger the
-                /// `getInputWithMetadata` chassert and the format-level metadata cache
-                /// just isn't consulted on this read.
-                input_format = FormatFactory::instance().getInput(
-                    storage->format_name,
-                    *read_buf,
-                    block_for_format,
-                    getContext(),
-                    max_block_size,
-                    storage->format_settings,
-                    parser_shared_resources,
-                    format_filter_info,
-                    /*is_remote_fs=*/false,
-                    CompressionMethod::None,
-                    need_only_count);
-            }
+            input_format = FormatFactory::instance().getInput(
+                storage->format_name,
+                *read_buf,
+                block_for_format,
+                getContext(),
+                max_block_size,
+                storage->format_settings,
+                parser_shared_resources,
+                format_filter_info,
+                /*is_remote_fs=*/false,
+                CompressionMethod::None,
+                need_only_count);
 
             input_format->setSerializationHints(serialization_hints);
 
@@ -1714,10 +1641,9 @@ Chunk StorageFileSource::generate()
                 chunk, requested_virtual_columns,
                 {
                     .path = current_path,
-                    .storage_id = storage->getStorageID(),
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
-                    .last_modified = current_file_last_modified,
+                    .last_modified = current_file_last_modified
                 }, getContext());
 
             return chunk;
@@ -1884,8 +1810,7 @@ void StorageFile::read(
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
 
     bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
-        && context->getSettingsRef()[Setting::optimize_count_from_files]
-        && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
+        && context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto reading = std::make_unique<ReadFromFile>(
         column_names,
@@ -1910,7 +1835,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->paths,
         storage->archive_info,
         predicate,
-        storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
+        storage->getVirtualsList(),
         info.hive_partition_columns_to_read_from_file_path,
         context,
         storage->distributed_processing);

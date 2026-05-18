@@ -8,7 +8,9 @@ title: 'Dictionary table engine'
 doc_type: 'reference'
 ---
 
-The `Dictionary` engine displays the [dictionary](../../../sql-reference/statements/create/dictionary/overview.md) data as a ClickHouse table.
+# Dictionary table engine
+
+The `Dictionary` engine displays the [dictionary](../../../sql-reference/statements/create/dictionary/index.md) data as a ClickHouse table.
 
 ## Example {#example}
 
