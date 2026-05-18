@@ -116,10 +116,15 @@ static void setUserAndGroup(std::string arg_uid, std::string arg_gid)
         else
         {
             /// Numeric, non-zero UID. Look up the passwd entry to obtain the user
-            /// name needed by initgroups(). If no entry exists we still proceed,
-            /// and the supplementary group list is cleared rather than populated
-            /// from /etc/group.
-            if (0 == getpwuid_r(uid, &entry, buf.get(), buf_size, &result) && result)
+            /// name needed by initgroups(). A nonzero return is a real NSS error
+            /// (ERANGE / ENOMEM / backend failure) and must be surfaced. The
+            /// "no entry" case (rc == 0, result == nullptr) is allowed: the
+            /// supplementary list will be cleared rather than populated from
+            /// /etc/group.
+            if (0 != getpwuid_r(uid, &entry, buf.get(), buf_size, &result))
+                throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'getpwuid_r' to obtain user name from uid ({})", uid);
+
+            if (result)
             {
                 user_name = entry.pw_name;
                 user_primary_gid = entry.pw_gid;
@@ -134,8 +139,12 @@ static void setUserAndGroup(std::string arg_uid, std::string arg_gid)
 
     /// Reset the supplementary group list before dropping privileges. Otherwise
     /// the dropped process silently inherits the caller's supplementary groups
-    /// (typically root's), defeating the intent of the privilege drop (CWE-273).
-    if (has_uid)
+    /// (typically root's), defeating the intent of the privilege drop.
+    /// initgroups()/setgroups() require CAP_SETGID, which a non-root caller does
+    /// not have; skip the reset in that case so same-identity no-op invocations
+    /// (e.g. `clickhouse su user:group` from inside a Docker `--user` container)
+    /// keep working.
+    if (has_uid && geteuid() == 0)
     {
         gid_t group_for_initgroups = has_gid ? gid : user_primary_gid;
 
