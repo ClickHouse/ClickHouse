@@ -294,7 +294,7 @@ std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_c
     return configuration->totalBytes(query_context);
 }
 
-void StorageObjectStorageCluster::updateQueryForDistributedEngineIfNeeded(ASTPtr & query, ContextPtr context, bool make_cluster_function)
+bool StorageObjectStorageCluster::updateQueryForDistributedEngineIfNeeded(ASTPtr & query, ContextPtr context, bool make_cluster_function)
 {
     // Change table engine on table function for distributed request
     // CREATE TABLE t (...) ENGINE=IcebergS3(...)
@@ -305,7 +305,7 @@ void StorageObjectStorageCluster::updateQueryForDistributedEngineIfNeeded(ASTPtr
 
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query || !select_query->tables())
-        return;
+        return false;
 
     auto * tables = select_query->tables()->as<ASTTablesInSelectQuery>();
 
@@ -318,10 +318,10 @@ void StorageObjectStorageCluster::updateQueryForDistributedEngineIfNeeded(ASTPtr
     auto * table_expression = tables->children[0]->as<ASTTablesInSelectQueryElement>()->table_expression->as<ASTTableExpression>();
 
     if (!table_expression)
-        return;
+        return false;
 
     if (!table_expression->database_and_table_name)
-        return;
+        return false;
 
     auto & table_identifier_typed = table_expression->database_and_table_name->as<ASTTableIdentifier &>();
 
@@ -394,34 +394,34 @@ void StorageObjectStorageCluster::updateQueryForDistributedEngineIfNeeded(ASTPtr
     table_expression->table_function = function_ast_ptr;
     table_expression->children[0] = function_ast_ptr;
 
-    if (make_cluster_function)
+    if (!make_cluster_function)
+        return false;
+
+    auto cluster_name = getClusterName(context);
+
+    if (cluster_name.empty())
     {
-        auto cluster_name = getClusterName(context);
-
-        if (cluster_name.empty())
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Can't be here without cluster name, no cluster name in query {}",
-                query->formatForLogging());
-        }
-
-        auto settings = select_query->settings();
-        if (settings)
-        {
-            auto & settings_ast = settings->as<ASTSetQuery &>();
-            settings_ast.changes.insertSetting("object_storage_cluster", cluster_name);
-        }
-        else
-        {
-            auto settings_ast_ptr = make_intrusive<ASTSetQuery>();
-            settings_ast_ptr->is_standalone = false;
-            settings_ast_ptr->changes.setSetting("object_storage_cluster", cluster_name);
-            select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_ast_ptr));
-        }
-
-        cluster_name_in_settings = true;
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Can't be here without cluster name, no cluster name in query {}",
+            query->formatForLogging());
     }
+
+    auto settings = select_query->settings();
+    if (settings)
+    {
+        auto & settings_ast = settings->as<ASTSetQuery &>();
+        settings_ast.changes.insertSetting("object_storage_cluster", cluster_name);
+    }
+    else
+    {
+        auto settings_ast_ptr = make_intrusive<ASTSetQuery>();
+        settings_ast_ptr->is_standalone = false;
+        settings_ast_ptr->changes.setSetting("object_storage_cluster", cluster_name);
+        select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_ast_ptr));
+    }
+
+    return true;
 }
 
 void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
@@ -430,7 +430,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     const ContextPtr & context,
     bool make_cluster_function)
 {
-    updateQueryForDistributedEngineIfNeeded(query, context, make_cluster_function);
+    bool cluster_name_added_to_settings = updateQueryForDistributedEngineIfNeeded(query, context, make_cluster_function);
 
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
@@ -455,7 +455,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     }
 
     ASTPtr object_storage_type_arg;
-    configuration->extractDynamicStorageType(args, context, &object_storage_type_arg, !cluster_name_in_settings);
+    configuration->extractDynamicStorageType(args, context, &object_storage_type_arg, !cluster_name_in_settings && !cluster_name_added_to_settings);
 
     ASTPtr settings_temporary_storage = nullptr;
     for (auto it = args.begin(); it != args.end(); ++it)
@@ -469,7 +469,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         }
     }
 
-    if (cluster_name_in_settings || !endsWith(table_function->name, "Cluster"))
+    if (cluster_name_in_settings || cluster_name_added_to_settings || !endsWith(table_function->name, "Cluster"))
     {
         configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->getFormat(), context, /*with_structure=*/true);
 

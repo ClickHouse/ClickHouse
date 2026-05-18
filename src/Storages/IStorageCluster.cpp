@@ -222,6 +222,10 @@ void IStorageCluster::updateQueryWithJoinToSendIfNeeded(
     {
     case ObjectStorageClusterJoinMode::LOCAL:
     {
+        if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "object_storage_cluster_join_mode!='allow' is not supported without allow_experimental_analyzer=true");
+
         auto info = getQueryTreeInfo(query_tree, context);
 
         if (info.has_join || info.has_cross_join || info.has_local_columns_in_where)
@@ -332,15 +336,15 @@ void IStorageCluster::read(
     {
         if (settings[Setting::object_storage_remote_initiator])
         {
+            auto remote_initiator_cluster_name = settings[Setting::object_storage_remote_initiator_cluster].value;
+            if (remote_initiator_cluster_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'object_storage_remote_initiator' can be used only with 'object_storage_remote_initiator_cluster' or 'object_storage_cluster'");
+
             /// rewrite query to execute `remote('remote_host', s3(...))`
             /// remote_host can execute query itself or make on-cluster query depends on own `object_storage_cluster` setting
             updateConfigurationIfNeeded(context);
             updateQueryWithJoinToSendIfNeeded(query_to_send, query_info.query_tree, context);
             updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context, /*make_cluster_function*/ false);
-
-            auto remote_initiator_cluster_name = settings[Setting::object_storage_remote_initiator_cluster].value;
-            if (remote_initiator_cluster_name.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'object_storage_remote_initiator' can be used only with 'object_storage_remote_initiator_cluster' or 'object_storage_cluster'");
 
             auto remote_initiator_cluster = getClusterImpl(context, remote_initiator_cluster_name);
             auto storage_and_context = convertToRemote(remote_initiator_cluster, context, remote_initiator_cluster_name, query_to_send);

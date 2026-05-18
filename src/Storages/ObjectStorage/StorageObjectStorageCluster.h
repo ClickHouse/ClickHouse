@@ -207,8 +207,9 @@ private:
     to
     SELECT * FROM s3(...) SETTINGS object_storage_cluster='cluster'
     to make distributed request over cluster 'cluster'.
+    Returns true if cluster name was added to settings.
     */
-    void updateQueryForDistributedEngineIfNeeded(ASTPtr & query, ContextPtr context, bool make_cluster_function);
+    bool updateQueryForDistributedEngineIfNeeded(ASTPtr & query, ContextPtr context, bool make_cluster_function);
 
     const String engine_name;
     StorageObjectStorageConfigurationPtr configuration;
