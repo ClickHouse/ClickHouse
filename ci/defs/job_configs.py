@@ -1379,14 +1379,11 @@ class JobConfigs:
             # content). Add new excludes here if more non-Mintlify content is
             # introduced under ./docs.
             exclude_paths=[
-                "./docs/.gitignore",
-                "./docs/.htmltest.yml",
                 "./docs/README.md",
                 "./docs/_description_templates/",
                 "./docs/_includes/",
                 "./docs/changelog_entry_guidelines.md",
                 "./docs/changelogs/",
-                "./docs/clean",
                 "./docs/en/",
             ],
         ),
