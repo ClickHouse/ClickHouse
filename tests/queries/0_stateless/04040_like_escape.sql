@@ -84,3 +84,15 @@ SELECT 'a\\b' LIKE 'a\\b';
 SELECT 'a\\b' LIKE 'a\\b' ESCAPE '\\';
 SELECT 'a_b' LIKE 'a\_b';
 SELECT 'a_b' LIKE 'a\_b' ESCAPE '\\';
+
+-- ESCAPE works when the pattern uses higher-priority operators (concat, etc.)
+SELECT '10%' LIKE '10' || '|%' ESCAPE '|';
+SELECT '10x' LIKE '10' || '|%' ESCAPE '|';
+SELECT 'abc' LIKE 'a' || 'b' || 'c' ESCAPE '#';
+SELECT 'abc' LIKE 'a' || '_' || 'c' ESCAPE '#';
+SELECT 'a_c' LIKE 'a' || '#_' || 'c' ESCAPE '#';
+SELECT '10%' NOT LIKE '10' || '|%' ESCAPE '|';
+SELECT '10%' ILIKE '10' || '|%' ESCAPE '|';
+SELECT 'ABC' ILIKE 'a' || '|%' ESCAPE '|';
+SELECT 'abc' NOT ILIKE 'a' || 'B' || 'c' ESCAPE '#';
+SELECT 'a1b' LIKE 'a' || toString(1) || 'b' ESCAPE '#';

@@ -3403,6 +3403,25 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     /// 'ESCAPE' can follow a LIKE expression: expr LIKE pattern ESCAPE char
     if (ParserKeyword(Keyword::ESCAPE).checkWithoutMoving(pos, stub))
     {
+        /// The pattern may use operators with priority strictly higher than `LIKE` (e.g.
+        /// `LIKE 'a' || 'b' ESCAPE '#'`). Fold those first so the top of the operator
+        /// stack becomes the `LIKE`/`ILIKE`/`NOT LIKE`/`NOT ILIKE` itself.
+        constexpr int like_priority = 9;
+        while (layers.back()->previousPriority() > like_priority)
+        {
+            Operator higher_op;
+            if (!layers.back()->popOperator(higher_op))
+                break;
+
+            auto function = makeASTFunction(higher_op);
+            if (!layers.back()->popLastNOperands(function->children[0]->children, higher_op.arity))
+            {
+                layers.back()->pushOperator(higher_op);
+                break;
+            }
+            layers.back()->pushOperand(function);
+        }
+
         Operator top_op;
         bool popped = layers.back()->popOperator(top_op);
 

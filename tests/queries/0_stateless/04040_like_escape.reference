@@ -33,3 +33,13 @@ SELECT x NOT ILIKE \'abc\' ESCAPE \'#\'
 1
 1
 1
+1
+0
+1
+1
+1
+0
+1
+0
+0
+1
