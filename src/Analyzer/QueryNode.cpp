@@ -511,12 +511,13 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
         /// Avoid `AS <name>` collisions for `SELECT *` over a JOIN, where both sides
         /// expose columns with the same bare name (e.g. `a` from `__table1.a` and
         /// `__table3.a`). Without this, re-resolving the dispatched AST on a remote
-        /// replica triggers MULTIPLE_EXPRESSIONS_FOR_ALIAS. Suppress only when the
-        /// current projection is a `ColumnNode` and an earlier projection used the
-        /// same name for a different (`!isEqual`) `ColumnNode` — other shapes
-        /// (functions, constants, alias-referring identifiers) keep their alias.
+        /// replica triggers MULTIPLE_EXPRESSIONS_FOR_ALIAS. Suppress the alias only
+        /// when the current projection is a `ColumnNode` and an earlier projection
+        /// used the same name for a `ColumnNode` with a different source — source
+        /// identity is checked explicitly because `ColumnNode::isEqualImpl` ignores
+        /// the column source.
         const auto & projection_nodes = projection.getNodes();
-        std::unordered_map<std::string_view, const IQueryTreeNode *> first_node_by_name;
+        std::unordered_map<std::string_view, const ColumnNode *> first_column_by_name;
         for (size_t i = 0; i < projection_expression_list_ast_children_size; ++i)
         {
             auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(projection_expression_list_ast.children[i].get());
@@ -524,13 +525,11 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
                 continue;
 
             const auto & column_name = projection_columns[i].name;
-            const auto * current_node = projection_nodes[i].get();
-            auto [it, inserted] = first_node_by_name.try_emplace(column_name, current_node);
-            if (!inserted)
+            const auto * current_column = projection_nodes[i]->as<ColumnNode>();
+            if (current_column)
             {
-                const auto * current_column = current_node->as<ColumnNode>();
-                const auto * first_column = it->second->as<ColumnNode>();
-                if (current_column && first_column && !it->second->isEqual(*current_node))
+                auto [it, inserted] = first_column_by_name.try_emplace(column_name, current_column);
+                if (!inserted && it->second->getColumnSourceOrNull() != current_column->getColumnSourceOrNull())
                     continue;
             }
 
