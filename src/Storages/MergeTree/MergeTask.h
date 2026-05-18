@@ -231,7 +231,7 @@ private:
         CompressionCodecPtr compression_codec{nullptr};
 
         NamesAndTypesList gathering_columns{};
-        NameSet merge_required_key_columns{};
+        NameSet merge_required_columns{};
         NamesAndTypesList merging_columns{};
         NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
