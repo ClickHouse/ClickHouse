@@ -1,0 +1,2734 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "maple",
+  "name": "ClickHouse Documentation",
+  "colors": {
+    "primary": "#1c1c1c",
+    "light": "#333431",
+    "dark": "#fdff75"
+  },
+  "background": {
+    "color": {
+      "dark": "#1D1D1D",
+      "light": "#FFFFFF"
+    }
+  },
+  "styling": {
+    "eyebrows": "breadcrumbs"
+  },
+  "interaction": {
+    "drilldown": false
+  },
+  "favicon": "/favicon.svg",
+  "banner": {
+    "content": "Introducing Managed ClickStack: Observability for OpenTelemetry at scale [Read more \u2192](https://clickhouse.com/blog)",
+    "dismissible": true
+  },
+  "scripts": [
+    {
+      "src": "/inject-product-headers.js"
+    },
+    {
+      "src": "/cookie-banner.js"
+    },
+    {
+      "src": "/custom-footer.js"
+    },
+    {
+      "src": "/navbar-cta.js"
+    },
+    {
+      "src": "/ask-ai-button.js"
+    },
+    {
+      "src": "/widget.js"
+    }
+  ],
+  "navigation": {},
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "fonts": {
+    "family": "Inter"
+  },
+  "navbar": {},
+  "redirects": [
+    {
+      "source": "/optimize/avoid-mutations",
+      "destination": "/concepts/best-practices/avoid-mutations"
+    },
+    {
+      "source": "/optimize/avoidoptimizefinal",
+      "destination": "/concepts/best-practices/avoid-optimize-final"
+    },
+    {
+      "source": "/optimize/partitioning-key",
+      "destination": "/concepts/best-practices/partitioning-keys"
+    },
+    {
+      "source": "/starter-guides",
+      "destination": "/get-started/quickstarts/home"
+    },
+    {
+      "source": "/introduction-clickhouse",
+      "destination": "/get-started/about/intro"
+    },
+    {
+      "source": "/install/quick-install-curl",
+      "destination": "/get-started/setup/self-managed/quick-install"
+    },
+    {
+      "source": "/integrations/clickpipes/secure-kinesis",
+      "destination": "/integrations/clickpipes/kinesis/auth"
+    },
+    {
+      "source": "/integrations/clickpipes/secure-rds",
+      "destination": "/integrations/clickpipes/postgres/auth"
+    },
+    {
+      "source": "/docs/en/cloud/manage/service-types",
+      "destination": "/products/cloud/features/cloud-tiers"
+    },
+    {
+      "source": "/cloud/reference/byoc/onboarding/customization",
+      "destination": "/products/bring-your-own-cloud/onboarding/customization-aws"
+    },
+    {
+      "source": "/knowledgebase/why-clickhouse-is-so-fast",
+      "destination": "/get-started/about/why-clickhouse-is-so-fast"
+    },
+    {
+      "source": "/faq/general/why-clickhouse-is-so-fast",
+      "destination": "/get-started/about/why-clickhouse-is-so-fast"
+    },
+    {
+      "source": "/integrations/data-formats/json",
+      "destination": "/integrations/connectors/data-ingestion/data-formats/json/intro"
+    },
+    {
+      "source": "/faq/marketplace",
+      "destination": "/products/cloud/reference/billing/marketplace/overview"
+    },
+    {
+      "source": "/native-protocol/compression",
+      "destination": "/guides/cloud-oss/data-modelling/compression/compression-modes"
+    },
+    {
+      "source": "/manage/backups",
+      "destination": "/products/cloud/guides/backups"
+    },
+    {
+      "source": "/manage/security/organization-activity",
+      "destination": "/products/cloud/reference/security/audit-logging"
+    },
+    {
+      "source": "/cloud/manage/cmek",
+      "destination": "/products/cloud/guides/security/cmek"
+    },
+    {
+      "source": "/manage/security/ip-access-list",
+      "destination": "/products/cloud/guides/security/connectivity/setting-ip-filters"
+    },
+    {
+      "source": "/faq/billing#faq",
+      "destination": "/products/cloud/reference/billing/billing-overview#faqs"
+    },
+    {
+      "source": "/guides/developer/lightweght-delete",
+      "destination": "/concepts/operations/delete/lightweight-delete"
+    },
+    {
+      "source": "/guides/developer/shared-merge-tree",
+      "destination": "/products/cloud/features/infrastructure/shared-merge-tree"
+    },
+    {
+      "source": "/integrations/data-ingestion",
+      "destination": "/reference/statements/insert-into"
+    },
+    {
+      "source": "/integrations/data-ingestion/kafka",
+      "destination": "/integrations/connectors/data-ingestion/kafka"
+    },
+    {
+      "source": "/integrations/data-ingestion/kafka/code",
+      "destination": "/integrations/connectors/data-ingestion/kafka"
+    },
+    {
+      "source": "/integrations/data-ingestion/kafka/code/connectors",
+      "destination": "/integrations/connectors/data-ingestion/kafka"
+    },
+    {
+      "source": "/integrations/deltalake",
+      "destination": "/reference/functions/table-functions/deltalake"
+    },
+    {
+      "source": "/integrations/hive",
+      "destination": "/reference/engines/table-engines/integrations/hive"
+    },
+    {
+      "source": "/integrations/hudi",
+      "destination": "/reference/engines/table-engines/integrations/hudi"
+    },
+    {
+      "source": "/integrations/iceberg",
+      "destination": "/reference/functions/table-functions/iceberg"
+    },
+    {
+      "source": "/integrations/mongodb",
+      "destination": "/reference/engines/table-engines/integrations/mongodb"
+    },
+    {
+      "source": "/integrations/nats",
+      "destination": "/reference/engines/table-engines/integrations/nats"
+    },
+    {
+      "source": "/integrations/rabbitmq",
+      "destination": "/reference/engines/table-engines/integrations/rabbitmq"
+    },
+    {
+      "source": "/integrations/redis",
+      "destination": "/reference/functions/table-functions/redis"
+    },
+    {
+      "source": "/integrations/rocksdb",
+      "destination": "/reference/engines/table-engines/integrations/embedded-rocksdb"
+    },
+    {
+      "source": "/integrations/sqlite",
+      "destination": "/reference/engines/table-engines/integrations/sqlite"
+    },
+    {
+      "source": "/integrations/connect-a-client",
+      "destination": "/integrations/connectors/data-integrations/drivers-and-interfaces/cli"
+    },
+    {
+      "source": "/cloud/sql-console",
+      "destination": "/integrations/connectors/data-integrations/sql-clients/sql-console"
+    },
+    {
+      "source": "/category/cloud-reference",
+      "destination": "/products/cloud/getting-started/intro"
+    },
+    {
+      "source": "/about-us/performance",
+      "destination": "/get-started/about/why-clickhouse-is-so-fast"
+    },
+    {
+      "source": "/operations/optimizing-performance",
+      "destination": "/concepts/features/performance/troubleshoot/sampling-query-profiler"
+    },
+    {
+      "source": "/guides/improving-query-performance/skipping-indexes",
+      "destination": "/concepts/features/performance/skip-indexes/skipping-indexes"
+    },
+    {
+      "source": "/guides",
+      "destination": "/get-started/oss/starter-guides/creating-tables"
+    },
+    {
+      "source": "/optimize/sparse-primary-indexes",
+      "destination": "/guides/cloud-oss/data-modelling/sparse-primary-indexes"
+    },
+    {
+      "source": "/guides/improving-query-performance/sparse-primary-indexes",
+      "destination": "/guides/cloud-oss/data-modelling/sparse-primary-indexes"
+    },
+    {
+      "source": "/guides/improving-query-performance/sparse-primary-indexes/sparse-primary-indexes-cardinality",
+      "destination": "/guides/cloud-oss/data-modelling/sparse-primary-indexes"
+    },
+    {
+      "source": "/guides/improving-query-performance/sparse-primary-indexes/sparse-primary-indexes-design",
+      "destination": "/guides/cloud-oss/data-modelling/sparse-primary-indexes"
+    },
+    {
+      "source": "/guides/improving-query-performance/sparse-primary-indexes/sparse-primary-indexes-intro",
+      "destination": "/guides/cloud-oss/data-modelling/sparse-primary-indexes"
+    },
+    {
+      "source": "/guides/improving-query-performance/sparse-primary-indexes/sparse-primary-indexes-multiple",
+      "destination": "/guides/cloud-oss/data-modelling/sparse-primary-indexes"
+    },
+    {
+      "source": "/guides/improving-query-performance/sparse-primary-indexes/sparse-primary-indexes-uuids",
+      "destination": "/guides/cloud-oss/data-modelling/sparse-primary-indexes"
+    },
+    {
+      "source": "/integrations/data-ingestion/dbms/",
+      "destination": "/integrations/connectors/home"
+    },
+    {
+      "source": "/integrations/data-ingestion/etl-tools",
+      "destination": "/integrations/connectors/home"
+    },
+    {
+      "source": "/integrations/intro",
+      "destination": "/integrations/connectors/home"
+    },
+    {
+      "source": "/integrations/migration/clickhouse-local",
+      "destination": "/get-started/setup/migration-guides/other-methods/clickhouse-local-etl"
+    },
+    {
+      "source": "/integrations/migration/clickhouse-to-cloud",
+      "destination": "/get-started/setup/migration-guides/oss-to-cloud/clickhouse-to-cloud"
+    },
+    {
+      "source": "/integrations/migration/etl-tool-to-clickhouse",
+      "destination": "/get-started/setup/migration-guides/other-methods/etl-tool-to-clickhouse"
+    },
+    {
+      "source": "/integrations/sql-clients/index",
+      "destination": "/integrations/connectors/home"
+    },
+    {
+      "source": "/interfaces",
+      "destination": "/integrations/connectors/data-integrations/drivers-and-interfaces/overview"
+    },
+    {
+      "source": "/native-protocol",
+      "destination": "/resources/contribute/native-protocol/basics"
+    },
+    {
+      "source": "/manage/users",
+      "destination": "/concepts/features/security/access-rights"
+    },
+    {
+      "source": "/manage",
+      "destination": "/concepts/features/security/access-rights"
+    },
+    {
+      "source": "/manage/configuration",
+      "destination": "/concepts/features/configuration/server-config/configuration-files"
+    },
+    {
+      "source": "/manage/replication-and-sharding",
+      "destination": "/guides/oss/deployment-and-scaling/keeper"
+    },
+    {
+      "source": "/integrations/sql-clients/datagrip",
+      "destination": "/integrations/connectors/data-integrations/sql-clients/datagrip"
+    },
+    {
+      "source": "/integrations/sql-clients/dbeaver",
+      "destination": "/integrations/connectors/data-integrations/sql-clients/dbeaver"
+    },
+    {
+      "source": "/integrations/sql-clients/qstudio",
+      "destination": "/integrations/connectors/data-integrations/sql-clients/qstudio"
+    },
+    {
+      "source": "/integrations/sql-clients/jupysql",
+      "destination": "/integrations/connectors/data-integrations/sql-clients/jupysql"
+    },
+    {
+      "source": "/integrations/sql-clients/tablum.io",
+      "destination": "/integrations/connectors/data-integrations/sql-clients/tablum"
+    },
+    {
+      "source": "/sql-reference/dictionaries/external-dictionaries",
+      "destination": "/reference/statements/create/dictionary"
+    },
+    {
+      "source": "/sql-reference/dictionaries/external-dictionaries/external-dicts",
+      "destination": "/reference/statements/create/dictionary"
+    },
+    {
+      "source": "/sql-reference/dictionaries/external-dictionaries/external-dicts-dict",
+      "destination": "/reference/statements/create/dictionary"
+    },
+    {
+      "source": "/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout",
+      "destination": "/reference/statements/create/dictionary/layouts/overview"
+    },
+    {
+      "source": "/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime",
+      "destination": "/reference/statements/create/dictionary/lifetime"
+    },
+    {
+      "source": "/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources",
+      "destination": "/reference/statements/create/dictionary/sources/overview"
+    },
+    {
+      "source": "/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure",
+      "destination": "/reference/statements/create/dictionary/attributes"
+    },
+    {
+      "source": "/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-hierarchical",
+      "destination": "/reference/statements/create/dictionary/layouts/hierarchical"
+    },
+    {
+      "source": "/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-polygon",
+      "destination": "/reference/statements/create/dictionary/layouts/polygon"
+    },
+    {
+      "source": "/sql-reference/dictionaries/external-dictionaries/regexp-tree",
+      "destination": "/reference/statements/create/dictionary/layouts/regexp-tree"
+    },
+    {
+      "source": "/sql-reference/dictionaries/internal-dicts",
+      "destination": "/reference/statements/create/dictionary/embedded"
+    },
+    {
+      "source": "/sql-reference/dictionaries",
+      "destination": "/reference/statements/create/dictionary"
+    },
+    {
+      "source": "/operations/clickhouse-keeper/",
+      "destination": "/guides/oss/deployment-and-scaling/keeper"
+    },
+    {
+      "source": "/connect-a-ui/grafana-and-clickhouse",
+      "destination": "/integrations/connectors/data-visualization/grafana"
+    },
+    {
+      "source": "/connect-a-ui/metabase-and-clickhouse",
+      "destination": "/integrations/connectors/data-visualization/metabase-and-clickhouse"
+    },
+    {
+      "source": "/connect-a-ui/mitzu-and-clickhouse",
+      "destination": "/integrations/connectors/data-visualization/community-integrations/mitzu-and-clickhouse"
+    },
+    {
+      "source": "/connect-a-ui/rocketbi-and-clickhouse",
+      "destination": "/integrations/connectors/data-visualization/community-integrations/rocketbi-and-clickhouse"
+    },
+    {
+      "source": "/connect-a-ui/superset-and-clickhouse",
+      "destination": "/integrations/connectors/data-visualization/superset-and-clickhouse"
+    },
+    {
+      "source": "/connect-a-ui/tableau-and-clickhouse",
+      "destination": "/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse"
+    },
+    {
+      "source": "/integrations/language-clients/javascript",
+      "destination": "/integrations/language-clients/js"
+    },
+    {
+      "source": "/integrations/language-clients/python/intro",
+      "destination": "/integrations/language-clients/python"
+    },
+    {
+      "source": "/integrations/language-clients/python/driver-api",
+      "destination": "/integrations/language-clients/python"
+    },
+    {
+      "source": "/integrations/language-clients/python/queries",
+      "destination": "/integrations/language-clients/python"
+    },
+    {
+      "source": "/integrations/language-clients/python/inserts",
+      "destination": "/integrations/language-clients/python"
+    },
+    {
+      "source": "/integrations/language-clients/python/options",
+      "destination": "/integrations/language-clients/python"
+    },
+    {
+      "source": "/integrations/go/intro",
+      "destination": "/integrations/language-clients/go"
+    },
+    {
+      "source": "/integrations/go/choosing-a-client",
+      "destination": "/integrations/language-clients/go"
+    },
+    {
+      "source": "/integrations/go/clickhouse-go",
+      "destination": "/integrations/language-clients/go"
+    },
+    {
+      "source": "/integrations/go/clickhouse-go/introduction",
+      "destination": "/integrations/language-clients/go"
+    },
+    {
+      "source": "/integrations/go/clickhouse-go/installation",
+      "destination": "/integrations/language-clients/go"
+    },
+    {
+      "source": "/integrations/go/clickhouse-go/clickhouse-api",
+      "destination": "/integrations/language-clients/go"
+    },
+    {
+      "source": "/integrations/go/clickhouse-go/database-sql-api",
+      "destination": "/integrations/language-clients/go"
+    },
+    {
+      "source": "/integrations/go/clickhouse-go/performance-tips",
+      "destination": "/integrations/language-clients/go"
+    },
+    {
+      "source": "/integrations/language-clients/java/r2dbc",
+      "destination": "/integrations/language-clients/java"
+    },
+    {
+      "source": "/integrations/nifi-and-clickhouse",
+      "destination": "/integrations/connectors/data-ingestion/etl-tools/nifi-and-clickhouse"
+    },
+    {
+      "source": "/integrations/kafka/intro",
+      "destination": "/integrations/connectors/data-ingestion/kafka"
+    },
+    {
+      "source": "/integrations/kafka/self-managed/connect-sink",
+      "destination": "/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink"
+    },
+    {
+      "source": "/integrations/kafka/self-managed/jdbc",
+      "destination": "/integrations/connectors/data-ingestion/kafka/kafka-connect-jdbc"
+    },
+    {
+      "source": "/integrations/kafka/self-managed/vector",
+      "destination": "/integrations/connectors/data-ingestion/kafka/kafka-vector"
+    },
+    {
+      "source": "/integrations/data-ingestion/kafka/cloud/msk/connect-sink",
+      "destination": "/integrations/connectors/data-ingestion/kafka/msk"
+    },
+    {
+      "source": "/integrations/s3/s3-intro",
+      "destination": "/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse"
+    },
+    {
+      "source": "/integrations/s3/s3-table-functions",
+      "destination": "/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse"
+    },
+    {
+      "source": "/integrations/s3/s3-table-engine",
+      "destination": "/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse"
+    },
+    {
+      "source": "/integrations/s3/s3-merge-tree",
+      "destination": "/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse"
+    },
+    {
+      "source": "/integrations/s3/s3-optimizing-performance",
+      "destination": "/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse"
+    },
+    {
+      "source": "/guides/sre/configuring-s3-for-clickhouse-use",
+      "destination": "/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse"
+    },
+    {
+      "source": "/guides/sre/s3-multi-region",
+      "destination": "/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse"
+    },
+    {
+      "source": "/integrations/s3/s3-minio",
+      "destination": "/integrations/connectors/data-ingestion/s3-minio"
+    },
+    {
+      "source": "/integrations/vector-to-clickhouse",
+      "destination": "/integrations/connectors/data-ingestion/etl-tools/vector-to-clickhouse"
+    },
+    {
+      "source": "/integrations/airbyte-and-clickhouse",
+      "destination": "/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse"
+    },
+    {
+      "source": "/integrations/postgresql/postgres-with-clickhouse",
+      "destination": "/integrations/connectors/data-sources/postgres"
+    },
+    {
+      "source": "/integrations/postgresql/postgres-with-clickhouse-database-engine",
+      "destination": "/integrations/connectors/data-sources/postgres"
+    },
+    {
+      "source": "/integrations/mqtt",
+      "destination": "/integrations/connectors/data-ingestion/emqx"
+    },
+    {
+      "source": "/integrations/emqx/emqx-intro",
+      "destination": "/integrations/connectors/data-ingestion/emqx"
+    },
+    {
+      "source": "/integrations/emqx/clickhouse-service-set-up",
+      "destination": "/integrations/connectors/data-ingestion/emqx"
+    },
+    {
+      "source": "/integrations/emqx/create-emqx-cloud-deployment",
+      "destination": "/integrations/connectors/data-ingestion/emqx"
+    },
+    {
+      "source": "/integrations/emqx/emqx-cloud-data-integration",
+      "destination": "/integrations/connectors/data-ingestion/emqx"
+    },
+    {
+      "source": "/integrations/emqx/workflow-samples",
+      "destination": "/integrations/connectors/data-ingestion/emqx"
+    },
+    {
+      "source": "/integrations/dbt/dbt-intro",
+      "destination": "/integrations/connectors/data-ingestion/etl-tools/dbt"
+    },
+    {
+      "source": "/integrations/dbt/dbt-setup",
+      "destination": "/integrations/connectors/data-ingestion/etl-tools/dbt"
+    },
+    {
+      "source": "/integrations/dbt/dbt-connecting",
+      "destination": "/integrations/connectors/data-ingestion/etl-tools/dbt"
+    },
+    {
+      "source": "/integrations/dbt/dbt-view-model",
+      "destination": "/integrations/connectors/data-ingestion/etl-tools/dbt"
+    },
+    {
+      "source": "/integrations/dbt/dbt-table-model",
+      "destination": "/integrations/connectors/data-ingestion/etl-tools/dbt"
+    },
+    {
+      "source": "/integrations/dbt/dbt-incremental-model",
+      "destination": "/integrations/connectors/data-ingestion/etl-tools/dbt"
+    },
+    {
+      "source": "/integrations/dbt/dbt-snapshot",
+      "destination": "/integrations/connectors/data-ingestion/etl-tools/dbt"
+    },
+    {
+      "source": "/integrations/dbt/dbt-seeds",
+      "destination": "/integrations/connectors/data-ingestion/etl-tools/dbt"
+    },
+    {
+      "source": "/integrations/dbt/dbt-limitations",
+      "destination": "/integrations/connectors/data-ingestion/etl-tools/dbt"
+    },
+    {
+      "source": "/development",
+      "destination": "/resources/contribute/developer-instruction"
+    },
+    {
+      "source": "/guides/sre/keeper/clickhouse-keeper-uuid",
+      "destination": "/guides/oss/deployment-and-scaling/keeper"
+    },
+    {
+      "source": "/guides/sre/user-management/alter-permissions",
+      "destination": "/concepts/features/security/access-rights"
+    },
+    {
+      "source": "/guides/sre/users-and-roles",
+      "destination": "/concepts/features/security/access-rights"
+    },
+    {
+      "source": "/integrations/data-formats/parquet-arrow-avro-orc",
+      "destination": "/integrations/connectors/data-ingestion/data-formats/parquet"
+    },
+    {
+      "source": "/guides/developer/working-with-json",
+      "destination": "/integrations/connectors/data-ingestion/data-formats/json/intro"
+    },
+    {
+      "source": "/guides/developer/working-with-json/json-intro",
+      "destination": "/integrations/connectors/data-ingestion/data-formats/json/intro"
+    },
+    {
+      "source": "/guides/developer/working-with-json/json-load-data",
+      "destination": "/integrations/connectors/data-ingestion/data-formats/json/intro"
+    },
+    {
+      "source": "/guides/developer/working-with-json/json-other-approaches",
+      "destination": "/integrations/connectors/data-ingestion/data-formats/json/intro"
+    },
+    {
+      "source": "/guides/developer/working-with-json/json-semi-structured",
+      "destination": "/integrations/connectors/data-ingestion/data-formats/json/intro"
+    },
+    {
+      "source": "/guides/developer/working-with-json/json-structured",
+      "destination": "/integrations/connectors/data-ingestion/data-formats/json/intro"
+    },
+    {
+      "source": "/get-started/sql-console/opening",
+      "destination": "/products/cloud/features/sql-console-features/sql-console"
+    },
+    {
+      "source": "/get-started/sql-console/exploring-tables",
+      "destination": "/products/cloud/features/sql-console-features/sql-console"
+    },
+    {
+      "source": "/get-started/sql-console/filtering",
+      "destination": "/products/cloud/features/sql-console-features/sql-console"
+    },
+    {
+      "source": "/get-started/sql-console/creating",
+      "destination": "/products/cloud/features/sql-console-features/sql-console"
+    },
+    {
+      "source": "/get-started/sql-console/advanced",
+      "destination": "/products/cloud/features/sql-console-features/sql-console"
+    },
+    {
+      "source": "/get-started/sql-console/visualizing",
+      "destination": "/products/cloud/features/sql-console-features/sql-console"
+    },
+    {
+      "source": "/connect-a-ui",
+      "destination": "/integrations/connectors/data-visualization"
+    },
+    {
+      "source": "/development/browse_code",
+      "destination": "/resources/contribute/developer-instruction"
+    },
+    {
+      "source": "/development/browse-code",
+      "destination": "/resources/contribute/developer-instruction"
+    },
+    {
+      "source": "/development/build_cross_arm",
+      "destination": "/resources/contribute/build-cross-arm"
+    },
+    {
+      "source": "/development/build_cross_osx",
+      "destination": "/resources/contribute/build-cross-osx"
+    },
+    {
+      "source": "/development/build_osx",
+      "destination": "/resources/contribute/build-osx"
+    },
+    {
+      "source": "/development/developer_instruction",
+      "destination": "/resources/contribute/developer-instruction"
+    },
+    {
+      "source": "/database_engines/",
+      "destination": "/reference/engines/database-engines"
+    },
+    {
+      "source": "/engines/database_engines/",
+      "destination": "/reference/engines/database-engines"
+    },
+    {
+      "source": "/database_engines/mysql",
+      "destination": "/reference/engines/database-engines/mysql"
+    },
+    {
+      "source": "/engines/database_engines/mysql",
+      "destination": "/reference/engines/database-engines/mysql"
+    },
+    {
+      "source": "/engines/table_engines",
+      "destination": "/reference/engines/table-engines"
+    },
+    {
+      "source": "/operations/table_engines",
+      "destination": "/reference/engines/table-engines"
+    },
+    {
+      "source": "/engines/table_engines/integrations",
+      "destination": "/reference/engines/table-engines/integrations"
+    },
+    {
+      "source": "/engines/table_engines/integrations/hdfs",
+      "destination": "/reference/engines/table-engines/integrations/hdfs"
+    },
+    {
+      "source": "/operations/table_engines/hdfs",
+      "destination": "/reference/engines/table-engines/integrations/hdfs"
+    },
+    {
+      "source": "/engines/table_engines/integrations/jdbc",
+      "destination": "/reference/engines/table-engines/integrations/jdbc"
+    },
+    {
+      "source": "/operations/table_engines/jdbc",
+      "destination": "/reference/engines/table-engines/integrations/jdbc"
+    },
+    {
+      "source": "/engines/table_engines/integrations/kafka",
+      "destination": "/reference/engines/table-engines/integrations/kafka"
+    },
+    {
+      "source": "/table_engines/replication",
+      "destination": "/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas"
+    },
+    {
+      "source": "/integrations/kafka/kafka-connect-http",
+      "destination": "/integrations/connectors/data-ingestion/kafka/confluent/kafka-connect-http"
+    },
+    {
+      "source": "/integrations/kafka/kafka-connect-options",
+      "destination": "/integrations/connectors/data-ingestion/kafka"
+    },
+    {
+      "source": "/operations/table_engines/kafka",
+      "destination": "/reference/engines/table-engines/integrations/kafka"
+    },
+    {
+      "source": "/integrations/kafka/kafka-intro",
+      "destination": "/integrations/connectors/data-ingestion/kafka"
+    },
+    {
+      "source": "/integrations/kafka/kafka-connect-intro",
+      "destination": "/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink"
+    },
+    {
+      "source": "/engines/table_engines/integrations/mysql",
+      "destination": "/reference/engines/table-engines/integrations/mysql"
+    },
+    {
+      "source": "/operations/table_engines/mysql",
+      "destination": "/reference/engines/table-engines/integrations/mysql"
+    },
+    {
+      "source": "/engines/table_engines/integrations/odbc",
+      "destination": "/reference/engines/table-engines/integrations/odbc"
+    },
+    {
+      "source": "/operations/table_engines/odbc",
+      "destination": "/reference/engines/table-engines/integrations/odbc"
+    },
+    {
+      "source": "/engines/table-engines/log-family/log-family",
+      "destination": "/reference/engines/table-engines/log-family"
+    },
+    {
+      "source": "/engines/table_engines/log_family",
+      "destination": "/reference/engines/table-engines/log-family"
+    },
+    {
+      "source": "/engines/table_engines/log_family/log",
+      "destination": "/reference/engines/table-engines/log-family/log"
+    },
+    {
+      "source": "/operations/table_engines/log",
+      "destination": "/reference/engines/table-engines/log-family/log"
+    },
+    {
+      "source": "/engines/table_engines/log_family/stripelog",
+      "destination": "/reference/engines/table-engines/log-family/stripelog"
+    },
+    {
+      "source": "/operations/table_engines/stripelog",
+      "destination": "/reference/engines/table-engines/log-family/stripelog"
+    },
+    {
+      "source": "/engines/table_engines/log_family/tinylog",
+      "destination": "/reference/engines/table-engines/log-family/tinylog"
+    },
+    {
+      "source": "/operations/table_engines/tinylog",
+      "destination": "/reference/engines/table-engines/log-family/tinylog"
+    },
+    {
+      "source": "/engines/table_engines/mergetree_family",
+      "destination": "/reference/engines/table-engines/mergetree-family"
+    },
+    {
+      "source": "/engines/table_engines/mergetree_family/aggregatingmergetree",
+      "destination": "/reference/engines/table-engines/mergetree-family/aggregatingmergetree"
+    },
+    {
+      "source": "/operations/table_engines/aggregatingmergetree",
+      "destination": "/reference/engines/table-engines/mergetree-family/aggregatingmergetree"
+    },
+    {
+      "source": "/engines/table_engines/mergetree_family/collapsingmergetree",
+      "destination": "/reference/engines/table-engines/mergetree-family/collapsingmergetree"
+    },
+    {
+      "source": "/operations/table_engines/collapsingmergetree",
+      "destination": "/reference/engines/table-engines/mergetree-family/collapsingmergetree"
+    },
+    {
+      "source": "/engines/table_engines/mergetree_family/custom_partitioning_key",
+      "destination": "/reference/engines/table-engines/mergetree-family/custom-partitioning-key"
+    },
+    {
+      "source": "/operations/table_engines/custom_partitioning_key",
+      "destination": "/reference/engines/table-engines/mergetree-family/custom-partitioning-key"
+    },
+    {
+      "source": "/engines/table_engines/mergetree_family/graphitemergetree",
+      "destination": "/reference/engines/table-engines/mergetree-family/graphitemergetree"
+    },
+    {
+      "source": "/operations/table_engines/graphitemergetree",
+      "destination": "/reference/engines/table-engines/mergetree-family/graphitemergetree"
+    },
+    {
+      "source": "/engines/table_engines/mergetree_family/replacingmergetree",
+      "destination": "/reference/engines/table-engines/mergetree-family/replacingmergetree"
+    },
+    {
+      "source": "/operations/table_engines/replacingmergetree",
+      "destination": "/reference/engines/table-engines/mergetree-family/replacingmergetree"
+    },
+    {
+      "source": "/engines/table_engines/mergetree_family/replication",
+      "destination": "/reference/engines/table-engines/mergetree-family/replication"
+    },
+    {
+      "source": "/operations/table_engines/replication",
+      "destination": "/reference/engines/table-engines/mergetree-family/replication"
+    },
+    {
+      "source": "/engines/table_engines/mergetree_family/summingmergetree",
+      "destination": "/reference/engines/table-engines/mergetree-family/summingmergetree"
+    },
+    {
+      "source": "/operations/table_engines/summingmergetree",
+      "destination": "/reference/engines/table-engines/mergetree-family/summingmergetree"
+    },
+    {
+      "source": "/engines/table_engines/mergetree_family/versionedcollapsingmergetree",
+      "destination": "/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree"
+    },
+    {
+      "source": "/operations/table_engines/versionedcollapsingmergetree",
+      "destination": "/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree"
+    },
+    {
+      "source": "/engines/table_engines/special",
+      "destination": "/reference/engines/table-engines/special"
+    },
+    {
+      "source": "/engines/table_engines/special/buffer",
+      "destination": "/reference/engines/table-engines/special/buffer"
+    },
+    {
+      "source": "/operations/table_engines/buffer",
+      "destination": "/reference/engines/table-engines/special/buffer"
+    },
+    {
+      "source": "/engines/table_engines/special/dictionary",
+      "destination": "/reference/engines/table-engines/special/dictionary"
+    },
+    {
+      "source": "/operations/table_engines/dictionary",
+      "destination": "/reference/engines/table-engines/special/dictionary"
+    },
+    {
+      "source": "/engines/table_engines/special/distributed",
+      "destination": "/reference/engines/table-engines/special/distributed"
+    },
+    {
+      "source": "/operations/table_engines/distributed",
+      "destination": "/reference/engines/table-engines/special/distributed"
+    },
+    {
+      "source": "/engines/table_engines/special/external_data",
+      "destination": "/reference/engines/table-engines/special/external-data"
+    },
+    {
+      "source": "/operations/table_engines/external_data",
+      "destination": "/reference/engines/table-engines/special/external-data"
+    },
+    {
+      "source": "/engines/table_engines/special/file",
+      "destination": "/reference/engines/table-engines/special/file"
+    },
+    {
+      "source": "/operations/table_engines/file",
+      "destination": "/reference/engines/table-engines/special/file"
+    },
+    {
+      "source": "/engines/table_engines/special/generate",
+      "destination": "/reference/engines/table-engines/special/generate"
+    },
+    {
+      "source": "/operations/table_engines/generate",
+      "destination": "/reference/engines/table-engines/special/generate"
+    },
+    {
+      "source": "/engines/table_engines/special/join",
+      "destination": "/reference/engines/table-engines/special/join"
+    },
+    {
+      "source": "/operations/table_engines/join",
+      "destination": "/reference/engines/table-engines/special/join"
+    },
+    {
+      "source": "/engines/table_engines/special/memory",
+      "destination": "/reference/engines/table-engines/special/memory"
+    },
+    {
+      "source": "/operations/table_engines/memory",
+      "destination": "/reference/engines/table-engines/special/memory"
+    },
+    {
+      "source": "/engines/table_engines/special/merge",
+      "destination": "/reference/engines/table-engines/special/merge"
+    },
+    {
+      "source": "/operations/table_engines/merge",
+      "destination": "/reference/engines/table-engines/special/merge"
+    },
+    {
+      "source": "/engines/table_engines/special/null",
+      "destination": "/reference/engines/table-engines/special/null"
+    },
+    {
+      "source": "/operations/table_engines/null",
+      "destination": "/reference/engines/table-engines/special/null"
+    },
+    {
+      "source": "/engines/table_engines/special/set",
+      "destination": "/reference/engines/table-engines/special/set"
+    },
+    {
+      "source": "/operations/table_engines/set",
+      "destination": "/reference/engines/table-engines/special/set"
+    },
+    {
+      "source": "/engines/table_engines/special/url",
+      "destination": "/reference/engines/table-engines/special/url"
+    },
+    {
+      "source": "/operations/table_engines/url",
+      "destination": "/reference/engines/table-engines/special/url"
+    },
+    {
+      "source": "/engines/table_engines/special/view",
+      "destination": "/reference/engines/table-engines/special/view"
+    },
+    {
+      "source": "/operations/table_engines/view",
+      "destination": "/reference/engines/table-engines/special/view"
+    },
+    {
+      "source": "/guides/ingest/tab_separated_values",
+      "destination": "/get-started/sample-datasets/nypd-complaint-data"
+    },
+    {
+      "source": "/getting_started/example_datasets",
+      "destination": "/get-started/sample-datasets"
+    },
+    {
+      "source": "/getting_started/example_datasets/amplab_benchmark",
+      "destination": "/get-started/sample-datasets/amplab-benchmark"
+    },
+    {
+      "source": "/getting_started/example_datasets/criteo",
+      "destination": "/get-started/sample-datasets/criteo"
+    },
+    {
+      "source": "/getting_started/example_datasets/metrica",
+      "destination": "/get-started/sample-datasets/anon-web-analytics-metrica"
+    },
+    {
+      "source": "/getting_started/example_datasets/nyc_taxi",
+      "destination": "/get-started/sample-datasets/nyc-taxi"
+    },
+    {
+      "source": "/getting_started/example_datasets/ontime",
+      "destination": "/get-started/sample-datasets/ontime"
+    },
+    {
+      "source": "/getting_started/example_datasets/star_schema",
+      "destination": "/get-started/sample-datasets/star-schema"
+    },
+    {
+      "source": "/getting_started/example_datasets/wikistat",
+      "destination": "/get-started/sample-datasets/wikistat"
+    },
+    {
+      "source": "/getting_started/install",
+      "destination": "/get-started/setup/self-managed/install"
+    },
+    {
+      "source": "/operations/requirements",
+      "destination": "/get-started/setup/self-managed/install"
+    },
+    {
+      "source": "/getting_started/playground",
+      "destination": "/get-started/sample-datasets/playground"
+    },
+    {
+      "source": "/getting_started/tutorial",
+      "destination": "/get-started/quickstarts/tutorial"
+    },
+    {
+      "source": "/guide",
+      "destination": "/products/cloud/guides/cloud-compatibility"
+    },
+    {
+      "source": "/guides/apply_catboost_model",
+      "destination": "/reference/functions/regular-functions/other-functions"
+    },
+    {
+      "source": "/guides/developer/apply-catboost-model",
+      "destination": "/reference/functions/regular-functions/other-functions"
+    },
+    {
+      "source": "/commercial/cloud",
+      "destination": "/products/cloud/getting-started/intro"
+    },
+    {
+      "source": "/formats",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/capnproto",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/csv",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/csvwithnames",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/json",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/jsoncompact",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/jsoneachrow",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/native",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/null",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/pretty",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/prettycompact",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/prettycompactmonoblock",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/prettynoescapes",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/prettyspace",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/rowbinary",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/tabseparated",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/tabseparatedraw",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/tabseparatedwithnames",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/tabseparatedwithnamesandtypes",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/tskv",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/values",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/vertical",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/verticalraw",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/formats/xml",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/interfaces/http_interface",
+      "destination": "/integrations/connectors/data-integrations/drivers-and-interfaces/http"
+    },
+    {
+      "source": "/interfaces/third_party",
+      "destination": "/integrations/connectors/data-integrations/drivers-and-interfaces/third-party"
+    },
+    {
+      "source": "/interfaces/third-party/client_libraries",
+      "destination": "/integrations/language-clients/third-party/client-libraries"
+    },
+    {
+      "source": "/interfaces/third-party_client_libraries",
+      "destination": "/integrations/language-clients/third-party/client-libraries"
+    },
+    {
+      "source": "/interfaces/third-party_gui",
+      "destination": "/integrations/connectors/tools/gui"
+    },
+    {
+      "source": "/introduction/distinctive_features",
+      "destination": "/get-started/about/distinctive-features"
+    },
+    {
+      "source": "/introduction/features_considered_disadvantages",
+      "destination": "/get-started/about/distinctive-features"
+    },
+    {
+      "source": "/introduction/ya_metrika_task",
+      "destination": "/resources/about/history"
+    },
+    {
+      "source": "/operations/access_rights",
+      "destination": "/concepts/features/security/access-rights"
+    },
+    {
+      "source": "/guides/sre/user-management/access-rights",
+      "destination": "/concepts/features/security/access-rights"
+    },
+    {
+      "source": "/operations/configuration_files",
+      "destination": "/concepts/features/configuration/server-config/configuration-files"
+    },
+    {
+      "source": "/operations/optimizing_performance",
+      "destination": "/concepts/features/performance/troubleshoot/sampling-query-profiler"
+    },
+    {
+      "source": "/operations/optimizing_performance/sampling_query_profiler",
+      "destination": "/concepts/features/performance/troubleshoot/sampling-query-profiler"
+    },
+    {
+      "source": "/operations/performance/sampling_query_profiler",
+      "destination": "/concepts/features/performance/troubleshoot/sampling-query-profiler"
+    },
+    {
+      "source": "/operations/performance_test",
+      "destination": "/concepts/features/performance/troubleshoot/performance-test"
+    },
+    {
+      "source": "/operations/server_configuration_parameters",
+      "destination": "/reference/settings/server-settings/settings"
+    },
+    {
+      "source": "/operations/server_settings",
+      "destination": "/reference/settings/server-settings/settings"
+    },
+    {
+      "source": "/operations/server_configuration_parameters/settings",
+      "destination": "/reference/settings/server-settings/settings"
+    },
+    {
+      "source": "/operations/server_settings/settings",
+      "destination": "/reference/settings/server-settings/settings"
+    },
+    {
+      "source": "/operations/settings/constraints_on_settings",
+      "destination": "/concepts/features/configuration/settings/constraints-on-settings"
+    },
+    {
+      "source": "/operations/settings/permissions_for_queries",
+      "destination": "/concepts/features/configuration/settings/permissions-for-queries"
+    },
+    {
+      "source": "/operations/settings/query_complexity",
+      "destination": "/concepts/features/configuration/settings/query-complexity"
+    },
+    {
+      "source": "/operations/settings/settings_profiles",
+      "destination": "/concepts/features/configuration/settings/settings-profiles"
+    },
+    {
+      "source": "/operations/settings/settings_users",
+      "destination": "/concepts/features/configuration/settings/settings-users"
+    },
+    {
+      "source": "/operations/system_tables",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/system_tables",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/system_tables/system.asynchronous_metrics",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/system_tables/system.clusters",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/system_tables/system.columns",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/system_tables/system.databases",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/system_tables/system.dictionaries",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/system_tables/system.events",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/system_tables/system.functions",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/system_tables/system.merges",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/system_tables/system.metrics",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/system_tables/system.numbers",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/system_tables/system.numbers_mt",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/system_tables/system.one",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/system_tables/system.parts",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/system_tables/system.processes",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/system_tables/system.replicas",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/system_tables/system.settings",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/system_tables/system.tables",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/system_tables/system.zookeeper",
+      "destination": "/reference/system-tables"
+    },
+    {
+      "source": "/operations/utils",
+      "destination": "/concepts/features/tools-and-utilities"
+    },
+    {
+      "source": "/operations/utils/clickhouse-benchmark",
+      "destination": "/concepts/features/tools-and-utilities/clickhouse-benchmark"
+    },
+    {
+      "source": "/operations/utils/clickhouse-local",
+      "destination": "/concepts/features/tools-and-utilities/clickhouse-local"
+    },
+    {
+      "source": "/utils",
+      "destination": "/concepts/features/tools-and-utilities"
+    },
+    {
+      "source": "/utils/clickhouse-local",
+      "destination": "/concepts/features/tools-and-utilities/clickhouse-local"
+    },
+    {
+      "source": "/query_language/agg_functions",
+      "destination": "/reference/functions/aggregate-functions"
+    },
+    {
+      "source": "/sql_reference/aggregate_functions",
+      "destination": "/reference/functions/aggregate-functions"
+    },
+    {
+      "source": "/query_language/agg_functions/combinators",
+      "destination": "/reference/functions/aggregate-functions/combinators"
+    },
+    {
+      "source": "/sql_reference/aggregate_functions/combinators",
+      "destination": "/reference/functions/aggregate-functions/combinators"
+    },
+    {
+      "source": "/query_language/agg_functions/parametric_functions",
+      "destination": "/reference/functions/aggregate-functions/parametric-functions"
+    },
+    {
+      "source": "/sql_reference/aggregate_functions/parametric_functions",
+      "destination": "/reference/functions/aggregate-functions/parametric-functions"
+    },
+    {
+      "source": "/query_language/agg_functions/reference",
+      "destination": "/reference/functions/aggregate-functions/reference"
+    },
+    {
+      "source": "/sql_reference/aggregate_functions/reference",
+      "destination": "/reference/functions/aggregate-functions/reference"
+    },
+    {
+      "source": "/data_types",
+      "destination": "/reference/data-types"
+    },
+    {
+      "source": "/sql_reference/data_types",
+      "destination": "/reference/data-types"
+    },
+    {
+      "source": "/data_types/nested_data_structures/aggregatefunction",
+      "destination": "/reference/data-types/aggregatefunction"
+    },
+    {
+      "source": "/sql_reference/data_types/aggregatefunction",
+      "destination": "/reference/data-types/aggregatefunction"
+    },
+    {
+      "source": "/data_types/array",
+      "destination": "/reference/data-types/array"
+    },
+    {
+      "source": "/sql_reference/data_types/array",
+      "destination": "/reference/data-types/array"
+    },
+    {
+      "source": "/data_types/boolean",
+      "destination": "/reference/data-types/boolean"
+    },
+    {
+      "source": "/sql_reference/data_types/boolean",
+      "destination": "/reference/data-types/boolean"
+    },
+    {
+      "source": "/data_types/date",
+      "destination": "/reference/data-types/date"
+    },
+    {
+      "source": "/sql_reference/data_types/date",
+      "destination": "/reference/data-types/date"
+    },
+    {
+      "source": "/data_types/datetime",
+      "destination": "/reference/data-types/datetime"
+    },
+    {
+      "source": "/sql_reference/data_types/datetime",
+      "destination": "/reference/data-types/datetime"
+    },
+    {
+      "source": "/data_types/datetime64",
+      "destination": "/reference/data-types/datetime64"
+    },
+    {
+      "source": "/sql_reference/data_types/datetime64",
+      "destination": "/reference/data-types/datetime64"
+    },
+    {
+      "source": "/data_types/decimal",
+      "destination": "/reference/data-types/decimal"
+    },
+    {
+      "source": "/sql_reference/data_types/decimal",
+      "destination": "/reference/data-types/decimal"
+    },
+    {
+      "source": "/sql-reference/data-types/domains/overview",
+      "destination": "/reference/data-types/domains"
+    },
+    {
+      "source": "/sql_reference/data_types/domains",
+      "destination": "/reference/data-types/domains"
+    },
+    {
+      "source": "/sql-reference/data_types/domains/ipv4",
+      "destination": "/reference/data-types/ipv4"
+    },
+    {
+      "source": "/data_types/domains/ipv4",
+      "destination": "/reference/data-types/ipv4"
+    },
+    {
+      "source": "/sql_reference/data_types/domains/ipv4",
+      "destination": "/reference/data-types/ipv4"
+    },
+    {
+      "source": "/sql-reference/data-types/domains/ipv6",
+      "destination": "/reference/data-types/ipv6"
+    },
+    {
+      "source": "/data_types/domains/ipv6",
+      "destination": "/reference/data-types/ipv6"
+    },
+    {
+      "source": "/sql_reference/data_types/domains/ipv6",
+      "destination": "/reference/data-types/ipv6"
+    },
+    {
+      "source": "/data_types/domains/overview",
+      "destination": "/reference/data-types/domains"
+    },
+    {
+      "source": "/sql_reference/data_types/domains/overview",
+      "destination": "/reference/data-types/domains"
+    },
+    {
+      "source": "/data_types/enum",
+      "destination": "/reference/data-types/enum"
+    },
+    {
+      "source": "/sql_reference/data_types/enum",
+      "destination": "/reference/data-types/enum"
+    },
+    {
+      "source": "/data_types/fixedstring",
+      "destination": "/reference/data-types/fixedstring"
+    },
+    {
+      "source": "/sql_reference/data_types/fixedstring",
+      "destination": "/reference/data-types/fixedstring"
+    },
+    {
+      "source": "/data_types/float",
+      "destination": "/reference/data-types/float"
+    },
+    {
+      "source": "/sql_reference/data_types/float",
+      "destination": "/reference/data-types/float"
+    },
+    {
+      "source": "/data_types/int_uint",
+      "destination": "/reference/data-types/int-uint"
+    },
+    {
+      "source": "/sql_reference/data_types/int_uint",
+      "destination": "/reference/data-types/int-uint"
+    },
+    {
+      "source": "/data_types/nested_data_structures",
+      "destination": "/reference/data-types/nested-data-structures"
+    },
+    {
+      "source": "/sql_reference/data_types/nested_data_structures",
+      "destination": "/reference/data-types/nested-data-structures"
+    },
+    {
+      "source": "/data_types/nested_data_structures/nested",
+      "destination": "/reference/data-types/nested-data-structures"
+    },
+    {
+      "source": "/sql_reference/data_types/nested_data_structures/nested",
+      "destination": "/reference/data-types/nested-data-structures"
+    },
+    {
+      "source": "/data_types/nullable",
+      "destination": "/reference/data-types/nullable"
+    },
+    {
+      "source": "/sql_reference/data_types/nullable",
+      "destination": "/reference/data-types/nullable"
+    },
+    {
+      "source": "/sql_reference/data_types/simpleaggregatefunction",
+      "destination": "/reference/data-types/simpleaggregatefunction"
+    },
+    {
+      "source": "/data_types/special_data_types",
+      "destination": "/reference/data-types/special-data-types"
+    },
+    {
+      "source": "/sql_reference/data_types/special_data_types",
+      "destination": "/reference/data-types/special-data-types"
+    },
+    {
+      "source": "/data_types/special_data_types/expression",
+      "destination": "/reference/data-types/special-data-types/expression"
+    },
+    {
+      "source": "/sql_reference/data_types/special_data_types/expression",
+      "destination": "/reference/data-types/special-data-types/expression"
+    },
+    {
+      "source": "/data_types/special_data_types/interval",
+      "destination": "/reference/data-types/special-data-types/interval"
+    },
+    {
+      "source": "/sql_reference/data_types/special_data_types/interval",
+      "destination": "/reference/data-types/special-data-types/interval"
+    },
+    {
+      "source": "/data_types/special_data_types/nothing",
+      "destination": "/reference/data-types/special-data-types/nothing"
+    },
+    {
+      "source": "/sql_reference/data_types/special_data_types/nothing",
+      "destination": "/reference/data-types/special-data-types/nothing"
+    },
+    {
+      "source": "/data_types/special_data_types/set",
+      "destination": "/reference/data-types/special-data-types/set"
+    },
+    {
+      "source": "/sql_reference/data_types/special_data_types/set",
+      "destination": "/reference/data-types/special-data-types/set"
+    },
+    {
+      "source": "/data_types/string",
+      "destination": "/reference/data-types/string"
+    },
+    {
+      "source": "/sql_reference/data_types/string",
+      "destination": "/reference/data-types/string"
+    },
+    {
+      "source": "/data_types/tuple",
+      "destination": "/reference/data-types/tuple"
+    },
+    {
+      "source": "/sql_reference/data_types/tuple",
+      "destination": "/reference/data-types/tuple"
+    },
+    {
+      "source": "/data_types/uuid",
+      "destination": "/reference/data-types/uuid"
+    },
+    {
+      "source": "/sql_reference/data_types/uuid",
+      "destination": "/reference/data-types/uuid"
+    },
+    {
+      "source": "/query_language/dicts",
+      "destination": "/reference/statements/create/dictionary"
+    },
+    {
+      "source": "/sql_reference/dictionaries",
+      "destination": "/reference/statements/create/dictionary"
+    },
+    {
+      "source": "/sql_reference/dictionaries/external_dictionaries",
+      "destination": "/reference/statements/create/dictionary"
+    },
+    {
+      "source": "/query_language/dicts/external_dicts",
+      "destination": "/reference/statements/create/dictionary"
+    },
+    {
+      "source": "/sql_reference/dictionaries/external_dictionaries/external_dicts",
+      "destination": "/reference/statements/create/dictionary"
+    },
+    {
+      "source": "/query_language/dicts/external_dicts_dict",
+      "destination": "/reference/statements/create/dictionary"
+    },
+    {
+      "source": "/sql_reference/dictionaries/external_dictionaries/external_dicts_dict",
+      "destination": "/reference/statements/create/dictionary"
+    },
+    {
+      "source": "/query_language/dicts/external_dicts_dict_hierarchical",
+      "destination": "/reference/statements/create/dictionary/layouts/hierarchical"
+    },
+    {
+      "source": "/sql_reference/dictionaries/external_dictionaries/external_dicts_dict_hierarchical",
+      "destination": "/reference/statements/create/dictionary/layouts/hierarchical"
+    },
+    {
+      "source": "/query_language/dicts/external_dicts_dict_layout",
+      "destination": "/reference/statements/create/dictionary/layouts/overview"
+    },
+    {
+      "source": "/sql_reference/dictionaries/external_dictionaries/external_dicts_dict_layout",
+      "destination": "/reference/statements/create/dictionary/layouts/overview"
+    },
+    {
+      "source": "/query_language/dicts/external_dicts_dict_lifetime",
+      "destination": "/reference/statements/create/dictionary/lifetime"
+    },
+    {
+      "source": "/sql_reference/dictionaries/external_dictionaries/external_dicts_dict_lifetime",
+      "destination": "/reference/statements/create/dictionary/lifetime"
+    },
+    {
+      "source": "/query_language/dicts/external_dicts_dict_sources",
+      "destination": "/reference/statements/create/dictionary/sources/overview"
+    },
+    {
+      "source": "/sql_reference/dictionaries/external_dictionaries/external_dicts_dict_sources",
+      "destination": "/reference/statements/create/dictionary/sources/overview"
+    },
+    {
+      "source": "/query_language/dicts/external_dicts_dict_structure",
+      "destination": "/reference/statements/create/dictionary/attributes"
+    },
+    {
+      "source": "/sql_reference/dictionaries/external_dictionaries/external_dicts_dict_structure",
+      "destination": "/reference/statements/create/dictionary/attributes"
+    },
+    {
+      "source": "/query_language/dicts/internal_dicts",
+      "destination": "/reference/statements/create/dictionary/embedded"
+    },
+    {
+      "source": "/sql_reference/dictionaries/internal_dicts",
+      "destination": "/reference/statements/create/dictionary/embedded"
+    },
+    {
+      "source": "/query_language/functions",
+      "destination": "/reference/functions/regular-functions"
+    },
+    {
+      "source": "/sql_reference/functions",
+      "destination": "/reference/functions/regular-functions"
+    },
+    {
+      "source": "/query_language/functions/arithmetic_functions",
+      "destination": "/reference/functions/regular-functions/arithmetic-functions"
+    },
+    {
+      "source": "/sql_reference/functions/arithmetic_functions",
+      "destination": "/reference/functions/regular-functions/arithmetic-functions"
+    },
+    {
+      "source": "/query_language/functions/array_functions",
+      "destination": "/reference/functions/regular-functions/array-functions"
+    },
+    {
+      "source": "/sql_reference/functions/array_functions",
+      "destination": "/reference/functions/regular-functions/array-functions"
+    },
+    {
+      "source": "/query_language/functions/array_join",
+      "destination": "/reference/functions/regular-functions/array-join"
+    },
+    {
+      "source": "/sql_reference/functions/array_join",
+      "destination": "/reference/functions/regular-functions/array-join"
+    },
+    {
+      "source": "/query_language/functions/bit_functions",
+      "destination": "/reference/functions/regular-functions/bit-functions"
+    },
+    {
+      "source": "/sql_reference/functions/bit_functions",
+      "destination": "/reference/functions/regular-functions/bit-functions"
+    },
+    {
+      "source": "/query_language/functions/bitmap_functions",
+      "destination": "/reference/functions/regular-functions/bitmap-functions"
+    },
+    {
+      "source": "/sql_reference/functions/bitmap_functions",
+      "destination": "/reference/functions/regular-functions/bitmap-functions"
+    },
+    {
+      "source": "/query_language/functions/comparison_functions",
+      "destination": "/reference/functions/regular-functions/comparison-functions"
+    },
+    {
+      "source": "/sql_reference/functions/comparison_functions",
+      "destination": "/reference/functions/regular-functions/comparison-functions"
+    },
+    {
+      "source": "/query_language/functions/conditional_functions",
+      "destination": "/reference/functions/regular-functions/conditional-functions"
+    },
+    {
+      "source": "/sql_reference/functions/conditional_functions",
+      "destination": "/reference/functions/regular-functions/conditional-functions"
+    },
+    {
+      "source": "/query_language/functions/date_time_functions",
+      "destination": "/reference/functions/regular-functions/date-time-functions"
+    },
+    {
+      "source": "/sql_reference/functions/date_time_functions",
+      "destination": "/reference/functions/regular-functions/date-time-functions"
+    },
+    {
+      "source": "/query_language/functions/encoding_functions",
+      "destination": "/reference/functions/regular-functions/encoding-functions"
+    },
+    {
+      "source": "/sql_reference/functions/encoding_functions",
+      "destination": "/reference/functions/regular-functions/encoding-functions"
+    },
+    {
+      "source": "/query_language/functions/ext_dict_functions",
+      "destination": "/reference/functions/regular-functions/ext-dict-functions"
+    },
+    {
+      "source": "/sql_reference/functions/ext_dict_functions",
+      "destination": "/reference/functions/regular-functions/ext-dict-functions"
+    },
+    {
+      "source": "/query_language/functions/functions_for_nulls",
+      "destination": "/reference/functions/regular-functions/functions-for-nulls"
+    },
+    {
+      "source": "/sql_reference/functions/functions_for_nulls",
+      "destination": "/reference/functions/regular-functions/functions-for-nulls"
+    },
+    {
+      "source": "/query_language/functions/geo",
+      "destination": "/reference/functions/regular-functions/geo"
+    },
+    {
+      "source": "/sql_reference/functions/geo",
+      "destination": "/reference/functions/regular-functions/geo"
+    },
+    {
+      "source": "/query_language/functions/hash_functions",
+      "destination": "/reference/functions/regular-functions/hash-functions"
+    },
+    {
+      "source": "/sql_reference/functions/hash_functions",
+      "destination": "/reference/functions/regular-functions/hash-functions"
+    },
+    {
+      "source": "/query_language/functions/in_functions",
+      "destination": "/reference/functions/regular-functions/in-functions"
+    },
+    {
+      "source": "/sql_reference/functions/in_functions",
+      "destination": "/reference/functions/regular-functions/in-functions"
+    },
+    {
+      "source": "/query_language/functions/introspection",
+      "destination": "/reference/functions/regular-functions/introspection"
+    },
+    {
+      "source": "/sql_reference/functions/introspection",
+      "destination": "/reference/functions/regular-functions/introspection"
+    },
+    {
+      "source": "/query_language/functions/ip_address_functions",
+      "destination": "/reference/functions/regular-functions/ip-address-functions"
+    },
+    {
+      "source": "/sql_reference/functions/ip_address_functions",
+      "destination": "/reference/functions/regular-functions/ip-address-functions"
+    },
+    {
+      "source": "/query_language/functions/json_functions",
+      "destination": "/reference/functions/regular-functions/json-functions"
+    },
+    {
+      "source": "/sql_reference/functions/json_functions",
+      "destination": "/reference/functions/regular-functions/json-functions"
+    },
+    {
+      "source": "/query_language/functions/logical_functions",
+      "destination": "/reference/functions/regular-functions/logical-functions"
+    },
+    {
+      "source": "/sql_reference/functions/logical_functions",
+      "destination": "/reference/functions/regular-functions/logical-functions"
+    },
+    {
+      "source": "/query_language/functions/machine_learning_functions",
+      "destination": "/reference/functions/regular-functions/machine-learning-functions"
+    },
+    {
+      "source": "/sql_reference/functions/machine_learning_functions",
+      "destination": "/reference/functions/regular-functions/machine-learning-functions"
+    },
+    {
+      "source": "/query_language/functions/math_functions",
+      "destination": "/reference/functions/regular-functions/math-functions"
+    },
+    {
+      "source": "/sql_reference/functions/math_functions",
+      "destination": "/reference/functions/regular-functions/math-functions"
+    },
+    {
+      "source": "/query_language/functions/other_functions",
+      "destination": "/reference/functions/regular-functions/other-functions"
+    },
+    {
+      "source": "/sql_reference/functions/other_functions",
+      "destination": "/reference/functions/regular-functions/other-functions"
+    },
+    {
+      "source": "/query_language/functions/random_functions",
+      "destination": "/reference/functions/regular-functions/random-functions"
+    },
+    {
+      "source": "/sql_reference/functions/random_functions",
+      "destination": "/reference/functions/regular-functions/random-functions"
+    },
+    {
+      "source": "/query_language/functions/rounding_functions",
+      "destination": "/reference/functions/regular-functions/rounding-functions"
+    },
+    {
+      "source": "/sql_reference/functions/rounding_functions",
+      "destination": "/reference/functions/regular-functions/rounding-functions"
+    },
+    {
+      "source": "/query_language/functions/splitting_merging_functions",
+      "destination": "/reference/functions/regular-functions/splitting-merging-functions"
+    },
+    {
+      "source": "/sql_reference/functions/splitting_merging_functions",
+      "destination": "/reference/functions/regular-functions/splitting-merging-functions"
+    },
+    {
+      "source": "/query_language/functions/string_functions",
+      "destination": "/reference/functions/regular-functions/string-functions"
+    },
+    {
+      "source": "/sql_reference/functions/string_functions",
+      "destination": "/reference/functions/regular-functions/string-functions"
+    },
+    {
+      "source": "/query_language/functions/string_replace_functions",
+      "destination": "/reference/functions/regular-functions/string-replace-functions"
+    },
+    {
+      "source": "/sql_reference/functions/string_replace_functions",
+      "destination": "/reference/functions/regular-functions/string-replace-functions"
+    },
+    {
+      "source": "/query_language/functions/string_search_functions",
+      "destination": "/reference/functions/regular-functions/string-search-functions"
+    },
+    {
+      "source": "/sql_reference/functions/string_search_functions",
+      "destination": "/reference/functions/regular-functions/string-search-functions"
+    },
+    {
+      "source": "/query_language/functions/type_conversion_functions",
+      "destination": "/reference/functions/regular-functions/type-conversion-functions"
+    },
+    {
+      "source": "/sql_reference/functions/type_conversion_functions",
+      "destination": "/reference/functions/regular-functions/type-conversion-functions"
+    },
+    {
+      "source": "/query_language/functions/url_functions",
+      "destination": "/reference/functions/regular-functions/url-functions"
+    },
+    {
+      "source": "/sql_reference/functions/url_functions",
+      "destination": "/reference/functions/regular-functions/url-functions"
+    },
+    {
+      "source": "/query_language/functions/uuid_functions",
+      "destination": "/reference/functions/regular-functions/uuid-functions"
+    },
+    {
+      "source": "/sql_reference/functions/uuid_functions",
+      "destination": "/reference/functions/regular-functions/uuid-functions"
+    },
+    {
+      "source": "/query_language/functions/ym_dict_functions",
+      "destination": "/reference/functions/regular-functions/embedded-dict-functions"
+    },
+    {
+      "source": "/sql_reference/functions/ym_dict_functions",
+      "destination": "/reference/functions/regular-functions/embedded-dict-functions"
+    },
+    {
+      "source": "/query_language/operators",
+      "destination": "/reference/operators"
+    },
+    {
+      "source": "/sql_reference/operators",
+      "destination": "/reference/operators"
+    },
+    {
+      "source": "/sql_reference/statements",
+      "destination": "/reference/statements"
+    },
+    {
+      "source": "/query_language/alter",
+      "destination": "/reference/statements/alter"
+    },
+    {
+      "source": "/sql_reference/statements/alter",
+      "destination": "/reference/statements/alter"
+    },
+    {
+      "source": "/sql-reference/statements/alter/index",
+      "destination": "/reference/statements/alter/skipping-index"
+    },
+    {
+      "source": "/query_language/create",
+      "destination": "/reference/statements/create"
+    },
+    {
+      "source": "/sql_reference/statements/create",
+      "destination": "/reference/statements/create"
+    },
+    {
+      "source": "/query_language/insert_into",
+      "destination": "/reference/statements/insert-into"
+    },
+    {
+      "source": "/sql_reference/statements/insert_into",
+      "destination": "/reference/statements/insert-into"
+    },
+    {
+      "source": "/query_language/misc",
+      "destination": "/reference/statements"
+    },
+    {
+      "source": "/sql-reference/statements/misc",
+      "destination": "/reference/statements"
+    },
+    {
+      "source": "/sql_reference/statements/misc",
+      "destination": "/reference/statements"
+    },
+    {
+      "source": "/query_language/select",
+      "destination": "/reference/statements/select"
+    },
+    {
+      "source": "/sql_reference/statements/select",
+      "destination": "/reference/statements/select"
+    },
+    {
+      "source": "/query_language/show",
+      "destination": "/reference/statements/show"
+    },
+    {
+      "source": "/sql_reference/statements/show",
+      "destination": "/reference/statements/show"
+    },
+    {
+      "source": "/query_language/system",
+      "destination": "/reference/statements/system"
+    },
+    {
+      "source": "/sql_reference/statements/system",
+      "destination": "/reference/statements/system"
+    },
+    {
+      "source": "/query_language/syntax",
+      "destination": "/reference/syntax"
+    },
+    {
+      "source": "/sql_reference/syntax",
+      "destination": "/reference/syntax"
+    },
+    {
+      "source": "/query_language/table_functions",
+      "destination": "/reference/functions/table-functions"
+    },
+    {
+      "source": "/sql_reference/table_functions",
+      "destination": "/reference/functions/table-functions"
+    },
+    {
+      "source": "/query_language/table_functions/file",
+      "destination": "/reference/functions/table-functions/file"
+    },
+    {
+      "source": "/sql_reference/table_functions/file",
+      "destination": "/reference/functions/table-functions/file"
+    },
+    {
+      "source": "/query_language/table_functions/generate",
+      "destination": "/reference/functions/table-functions/generate"
+    },
+    {
+      "source": "/sql_reference/table_functions/generate",
+      "destination": "/reference/functions/table-functions/generate"
+    },
+    {
+      "source": "/query_language/table_functions/hdfs",
+      "destination": "/reference/functions/table-functions/hdfs"
+    },
+    {
+      "source": "/sql_reference/table_functions/hdfs",
+      "destination": "/reference/functions/table-functions/hdfs"
+    },
+    {
+      "source": "/query_language/table_functions/input",
+      "destination": "/reference/functions/table-functions/input"
+    },
+    {
+      "source": "/sql_reference/table_functions/input",
+      "destination": "/reference/functions/table-functions/input"
+    },
+    {
+      "source": "/query_language/table_functions/jdbc",
+      "destination": "/reference/functions/table-functions/jdbc"
+    },
+    {
+      "source": "/sql_reference/table_functions/jdbc",
+      "destination": "/reference/functions/table-functions/jdbc"
+    },
+    {
+      "source": "/query_language/table_functions/merge",
+      "destination": "/reference/functions/table-functions/merge"
+    },
+    {
+      "source": "/sql_reference/table_functions/merge",
+      "destination": "/reference/functions/table-functions/merge"
+    },
+    {
+      "source": "/query_language/table_functions/mysql",
+      "destination": "/reference/functions/table-functions/mysql"
+    },
+    {
+      "source": "/sql_reference/table_functions/mysql",
+      "destination": "/reference/functions/table-functions/mysql"
+    },
+    {
+      "source": "/query_language/table_functions/numbers",
+      "destination": "/reference/functions/table-functions/numbers"
+    },
+    {
+      "source": "/sql_reference/table_functions/numbers",
+      "destination": "/reference/functions/table-functions/numbers"
+    },
+    {
+      "source": "/query_language/table_functions/odbc",
+      "destination": "/reference/functions/table-functions/odbc"
+    },
+    {
+      "source": "/sql_reference/table_functions/odbc",
+      "destination": "/reference/functions/table-functions/odbc"
+    },
+    {
+      "source": "/query_language/table_functions/remote",
+      "destination": "/reference/functions/table-functions/remote"
+    },
+    {
+      "source": "/sql_reference/table_functions/remote",
+      "destination": "/reference/functions/table-functions/remote"
+    },
+    {
+      "source": "/query_language/table_functions/url",
+      "destination": "/reference/functions/table-functions/url"
+    },
+    {
+      "source": "/sql_reference/table_functions/url",
+      "destination": "/reference/functions/table-functions/url"
+    },
+    {
+      "source": "/whats_new",
+      "destination": "/resources/changelogs/oss/2026"
+    },
+    {
+      "source": "/changelog",
+      "destination": "/resources/changelogs/oss/2026"
+    },
+    {
+      "source": "/whats_new/changelog",
+      "destination": "/resources/changelogs/oss/2026"
+    },
+    {
+      "source": "/changelog/2017",
+      "destination": "/resources/changelogs/oss/2017"
+    },
+    {
+      "source": "/whats_new/changelog/2017",
+      "destination": "/resources/changelogs/oss/2017"
+    },
+    {
+      "source": "/changelog/2018",
+      "destination": "/resources/changelogs/oss/2018"
+    },
+    {
+      "source": "/whats_new/changelog/2018",
+      "destination": "/resources/changelogs/oss/2018"
+    },
+    {
+      "source": "/changelog/2019",
+      "destination": "/resources/changelogs/oss/2019"
+    },
+    {
+      "source": "/whats_new/changelog/2019",
+      "destination": "/resources/changelogs/oss/2019"
+    },
+    {
+      "source": "/extended_roadmap",
+      "destination": "/resources/contribute/roadmap"
+    },
+    {
+      "source": "/roadmap",
+      "destination": "/resources/contribute/roadmap"
+    },
+    {
+      "source": "/whats_new/roadmap",
+      "destination": "/resources/contribute/roadmap"
+    },
+    {
+      "source": "/security_changelog",
+      "destination": "/resources/changelogs/security-changelog"
+    },
+    {
+      "source": "/whats_new/security_changelog",
+      "destination": "/resources/changelogs/security-changelog"
+    },
+    {
+      "source": "/introduction",
+      "destination": "/get-started/about/intro"
+    },
+    {
+      "source": "/introduction/adopters",
+      "destination": "/resources/about/adopters"
+    },
+    {
+      "source": "/introduction/distinctive-features",
+      "destination": "/get-started/about/distinctive-features"
+    },
+    {
+      "source": "/introduction/history",
+      "destination": "/resources/about/history"
+    },
+    {
+      "source": "/introduction/performance",
+      "destination": "/get-started/about/why-clickhouse-is-so-fast"
+    },
+    {
+      "source": "/getting-started/tutorial",
+      "destination": "/get-started/quickstarts/tutorial"
+    },
+    {
+      "source": "/getting-started/install",
+      "destination": "/get-started/setup/self-managed/install"
+    },
+    {
+      "source": "/faq/general/how-do-i-contribute-code-to-clickhouse",
+      "destination": "/resources/support-center/knowledge-base/general-faqs/how-do-i-contribute-code-to-clickhouse"
+    },
+    {
+      "source": "/manage/security",
+      "destination": "/concepts/features/security/configuring-ldap"
+    },
+    {
+      "source": "/single",
+      "destination": "/reference/statements/create/view"
+    },
+    {
+      "source": "/architecture/single-node-deployment",
+      "destination": "/get-started/setup/self-managed/install"
+    },
+    {
+      "source": "/home",
+      "destination": "/"
+    },
+    {
+      "source": "/chdb/data-formats",
+      "destination": "/products/chdb/reference/data-formats"
+    },
+    {
+      "source": "/chdb/sql-reference",
+      "destination": "/products/chdb/reference/sql-reference"
+    },
+    {
+      "source": "/get-started/query-endpoints",
+      "destination": "/products/cloud/guides/sql-console/query-endpoints"
+    },
+    {
+      "source": "/get-started/query-insights",
+      "destination": "/products/cloud/features/sql-console-features/query-insights"
+    },
+    {
+      "source": "/get-started/sql-console",
+      "destination": "/products/cloud/features/sql-console-features/sql-console"
+    },
+    {
+      "source": "/manage/billing",
+      "destination": "/products/cloud/reference/billing/billing-overview"
+    },
+    {
+      "source": "/cloud/manage/billing/overview#clickpipes-for-streaming-object-storage",
+      "destination": "/products/cloud/reference/billing/clickpipes/clickpipes-for-streaming-and-object-storage"
+    },
+    {
+      "source": "/integrations/clickpipes/object-storage",
+      "destination": "/integrations/clickpipes/object-storage/amazon-s3/get-started"
+    },
+    {
+      "source": "/integrations/clickpipes/object-storage/reference",
+      "destination": "/integrations/clickpipes/object-storage/amazon-s3/overview"
+    },
+    {
+      "source": "/cloud/marketplace",
+      "destination": "/products/cloud/reference/billing/marketplace"
+    },
+    {
+      "source": "/deletes",
+      "destination": "/concepts/operations/delete/overview"
+    },
+    {
+      "source": "/optimize",
+      "destination": "/guides/performance-and-monitoring"
+    },
+    {
+      "source": "/observability",
+      "destination": "/guides/observability"
+    },
+    {
+      "source": "/integrations/sql-clients/clickhouse-client-local",
+      "destination": "/integrations/connectors/data-integrations/drivers-and-interfaces/cli"
+    },
+    {
+      "source": "/sql-reference/dictionaries/external-dictionaries/external-dict",
+      "destination": "/reference/statements/create/dictionary/embedded"
+    },
+    {
+      "source": "/integrations/java/jdbc-driver",
+      "destination": "/integrations/language-clients/java/jdbc"
+    },
+    {
+      "source": "/integrations/sql-clients/cli",
+      "destination": "/integrations/connectors/data-integrations/drivers-and-interfaces/cli"
+    },
+    {
+      "source": "/operations/clickhouse-keeper",
+      "destination": "/concepts/features/tools-and-utilities/clickhouse-keeper-client"
+    },
+    {
+      "source": "/guides/sre/clickhouse-keeper",
+      "destination": "/guides/oss/deployment-and-scaling/keeper"
+    },
+    {
+      "source": "/operations/settings/merge-tree",
+      "destination": "/reference/settings/merge-tree-settings"
+    },
+    {
+      "source": "/operations/settings/merge-tree-setting",
+      "destination": "/reference/settings/merge-tree-settings"
+    },
+    {
+      "source": "/materialized-view",
+      "destination": "/concepts/features/materialized-views"
+    },
+    {
+      "source": "/cloud/manage/service-types",
+      "destination": "/products/cloud/features/cloud-tiers"
+    },
+    {
+      "source": "/integrations/dlt",
+      "destination": "/integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse"
+    },
+    {
+      "source": "/cloud/security/cloud-endpoints-api",
+      "destination": "/products/cloud/guides/sql-console/query-endpoints"
+    },
+    {
+      "source": "/operations/server-configuration-parameters",
+      "destination": "/reference/settings/server-settings/settings"
+    },
+    {
+      "source": "/intron",
+      "destination": "/get-started/about/intro"
+    },
+    {
+      "source": "/query_language/functions/string_functions/",
+      "destination": "/reference/functions/regular-functions/string-functions"
+    },
+    {
+      "source": "/integrations/language-clients/java/client-v2",
+      "destination": "/integrations/language-clients/java/client"
+    },
+    {
+      "source": "/integrations/language-clients/java/jdbc-v2",
+      "destination": "/integrations/language-clients/java/jdbc"
+    },
+    {
+      "source": "/pricing",
+      "destination": "/products/cloud/reference/billing/billing-overview"
+    },
+    {
+      "source": "/operations/input-output-formats",
+      "destination": "/reference/formats"
+    },
+    {
+      "source": "/cloud/connect",
+      "destination": "/products/cloud/features/sql-console-features/sql-console"
+    },
+    {
+      "source": "/engines/database-engines/materialized-mysql",
+      "destination": "/reference/engines/database-engines"
+    },
+    {
+      "source": "/sql-reference/aggregate-functions/reference/array_concat_agg",
+      "destination": "/reference/functions/aggregate-functions/reference/groupArrayArray"
+    },
+    {
+      "source": "/integrations/java/jdbc-v2",
+      "destination": "/integrations/language-clients/java/jdbc"
+    },
+    {
+      "source": "/integrations/java/client-v2",
+      "destination": "/integrations/language-clients/java/jdbc"
+    },
+    {
+      "source": "/interfaces/formats/Protobuf/Protobuf",
+      "destination": "/reference/formats/Protobuf/Protobuf"
+    },
+    {
+      "source": "/integrations/jdbc",
+      "destination": "/integrations/language-clients/java/jdbc"
+    },
+    {
+      "source": "/sql-reference/table-functions/generateSeries",
+      "destination": "/reference/functions/table-functions/generate_series"
+    },
+    {
+      "source": "/cloud/data-ingestion",
+      "destination": "/integrations/connectors/data-ingestion"
+    },
+    {
+      "source": "/migrations/postgres/en/migrations/postgresql",
+      "destination": "/get-started/setup/migration-guides/postgres/overview"
+    },
+    {
+      "source": "/sql-reference/data-types/bfloat16",
+      "destination": "/reference/data-types/float#bfloat16"
+    },
+    {
+      "source": "/cloud/reference/compute-compute-separation",
+      "destination": "/products/cloud/features/infrastructure/warehouses#what-is-compute-compute-separation"
+    },
+    {
+      "source": "/cloud/bestpractices/bulk-inserts",
+      "destination": "/concepts/best-practices/selecting-an-insert-strategy"
+    },
+    {
+      "source": "/cloud/bestpractices/asynchronous-inserts",
+      "destination": "/concepts/best-practices/use-materialized-views"
+    },
+    {
+      "source": "/cloud/bestpractices/avoid-mutations",
+      "destination": "/concepts/best-practices/avoid-mutations"
+    },
+    {
+      "source": "/cloud/bestpractices/avoid-nullable-columns",
+      "destination": "/concepts/best-practices/select-data-type"
+    },
+    {
+      "source": "/cloud/bestpractices/avoid-optimize-final",
+      "destination": "/concepts/best-practices/avoid-optimize-final"
+    },
+    {
+      "source": "/cloud/bestpractices/low-cardinality-partitioning-key",
+      "destination": "/concepts/best-practices/partitioning-keys"
+    },
+    {
+      "source": "/integrations/postgresql/postgres-vs-clickhouse",
+      "destination": "/get-started/setup/migration-guides/postgres/appendix"
+    },
+    {
+      "source": "/migrations/postgresql/designing-schemas",
+      "destination": "/get-started/setup/migration-guides/postgres/migration-guide/migration-guide-part3"
+    },
+    {
+      "source": "/category/engines",
+      "destination": "/reference/engines/engines"
+    },
+    {
+      "source": "/integrations/postgresql/data-type-mappings",
+      "destination": "/get-started/setup/migration-guides/postgres/appendix#data-type-mappings"
+    },
+    {
+      "source": "/operations/system-tables/error_log",
+      "destination": "/reference/system-tables/error_log"
+    },
+    {
+      "source": "/engines/table-engines/special/replicatedmergetree",
+      "destination": "/reference/engines/table-engines/mergetree-family/replication"
+    },
+    {
+      "source": "/integrations/language-clients/java/jdbc-v1",
+      "destination": "/integrations/language-clients/java/jdbc"
+    },
+    {
+      "source": "/engines/table-engines/integrations/google-cloud-storage",
+      "destination": "/reference/functions/table-functions/gcs"
+    },
+    {
+      "source": "/getting-started/example-datasets/reddit-comments",
+      "destination": "/get-started/sample-datasets"
+    },
+    {
+      "source": "/getting-started/example-datasets/recipes",
+      "destination": "/get-started/sample-datasets"
+    },
+    {
+      "source": "/development/adding_test_queries",
+      "destination": "/resources/contribute/tests#adding-a-new-test"
+    },
+    {
+      "source": "/cloud/get-started/cloud-quick-start",
+      "destination": "/get-started/setup/cloud"
+    },
+    {
+      "source": "/integrations/migration/upload-a-csv-file",
+      "destination": "/products/cloud/guides/migration/upload-a-csv-file"
+    },
+    {
+      "source": "/faq/troubleshooting",
+      "destination": "/resources/support-center/knowledge-base/cloud-services/unable-to-access-cloud-service"
+    },
+    {
+      "source": "/cloud/manage/jan-2025-faq/summary",
+      "destination": "/products/cloud/features/cloud-tiers"
+    },
+    {
+      "source": "/cloud/manage/jan-2025-faq/new-tiers",
+      "destination": "/products/cloud/features/cloud-tiers"
+    },
+    {
+      "source": "/cloud/manage/jan-2025-faq/scaling",
+      "destination": "/products/cloud/features/autoscaling/overview"
+    },
+    {
+      "source": "/cloud/manage/jan-2025-faq/backup",
+      "destination": "/products/cloud/guides/backups/review-and-restore-backups"
+    },
+    {
+      "source": "/cloud/manage/jan-2025-faq/pricing-dimensions",
+      "destination": "/products/cloud/features/cloud-tiers"
+    },
+    {
+      "source": "/cloud/manage/jan-2025-faq/billing",
+      "destination": "/products/cloud/reference/billing"
+    },
+    {
+      "source": "/cloud/manage/jan-2025-faq",
+      "destination": "/products/cloud/features/cloud-tiers"
+    },
+    {
+      "source": "/cloud/manage/jan-2025-faq/plan-migrations",
+      "destination": "/products/cloud/features/cloud-tiers"
+    },
+    {
+      "source": "/operations/system-tables/latency_log",
+      "destination": "/reference/system-tables/histogram_metrics"
+    },
+    {
+      "source": "/operations/system-tables/latency_buckets",
+      "destination": "/reference/system-tables/histogram_metrics"
+    },
+    {
+      "source": "/integrations/kafka/cloud/confluent/custom-connector-cloud",
+      "destination": "/integrations/connectors/data-ingestion/kafka/confluent/confluent-cloud"
+    },
+    {
+      "source": "/integrations/data-ingestion/clickpipes/mysql/parallel_initial_load",
+      "destination": "/integrations/clickpipes/mysql/parallel-initial-load"
+    },
+    {
+      "source": "/integrations/data-ingestion/clickpipes/postgres/parallel_initial_load",
+      "destination": "/integrations/clickpipes/postgres/parallel-initial-load"
+    },
+    {
+      "source": "/integrations/redshift",
+      "destination": "/get-started/setup/migration-guides/redshift/migration-guide"
+    },
+    {
+      "source": "/integrations/migration",
+      "destination": "/get-started/setup/migration-guides/overview"
+    },
+    {
+      "source": "/cloud/security/security-and-compliance",
+      "destination": "/products/cloud/reference/security/compliance-overview"
+    },
+    {
+      "source": "/cloud/manage",
+      "destination": "/products/cloud/features/admin-features/api"
+    },
+    {
+      "source": "/migrations/migrations",
+      "destination": "/get-started/setup/migration-guides/overview"
+    },
+    {
+      "source": "/cloud/security/personal-data-access",
+      "destination": "/products/cloud/reference/personal-data-access"
+    },
+    {
+      "source": "/cloud/security/cloud-access-management/overview",
+      "destination": "/products/cloud/guides/security/cloud-access-management/manage-database-users"
+    },
+    {
+      "source": "/cloud/security/cloud-access-management",
+      "destination": "/products/cloud/guides/security/cloud-access-management"
+    },
+    {
+      "source": "/cloud/guides/sql-console/config-sql-console-role-assignments",
+      "destination": "/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+    },
+    {
+      "source": "/cloud/security/secure-s3",
+      "destination": "/products/cloud/guides/data-sources/accessing-s3-data-securely"
+    },
+    {
+      "source": "/manage/security/cloud-endpoints-api",
+      "destination": "/products/cloud/guides/data-sources/cloud-endpoints-api"
+    },
+    {
+      "source": "/cloud/security/shared-responsibility-model",
+      "destination": "/products/cloud/reference/security/console-roles"
+    },
+    {
+      "source": "/cloud/security/cloud-authentication",
+      "destination": "/products/cloud/features/security#cloud-console-auth"
+    },
+    {
+      "source": "/cloud/security/private-link-overview",
+      "destination": "/products/cloud/guides/security/connectivity/private-networking"
+    },
+    {
+      "source": "/cloud/security/connectivity",
+      "destination": "/products/cloud/guides/security/connectivity/private-networking"
+    },
+    {
+      "source": "/cloud/guides/sql-console/configure-org-service-role-assignments",
+      "destination": "/products/cloud/guides/security/cloud-access-management"
+    },
+    {
+      "source": "/operations/system-tables/crash-log",
+      "destination": "/reference/system-tables/crash_log"
+    },
+    {
+      "source": "/operations/system-tables/current-roles",
+      "destination": "/reference/system-tables/current_roles"
+    },
+    {
+      "source": "/operations/system-tables/enabled-roles",
+      "destination": "/reference/system-tables/enabled_roles"
+    },
+    {
+      "source": "/operations/system-tables/role-grants",
+      "destination": "/reference/system-tables/role_grants"
+    },
+    {
+      "source": "/cloud/reference/byoc",
+      "destination": "/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+    },
+    {
+      "source": "/about-clickhouse",
+      "destination": "/get-started/about/intro"
+    },
+    {
+      "source": "/cloud/security/inviting-new-users",
+      "destination": "/products/cloud/guides/security/cloud-access-management/manage-cloud-users#invite-users"
+    },
+    {
+      "source": "/sql-reference/functions/time-series-analysis-functions",
+      "destination": "/reference/functions/regular-functions/time-series-functions"
+    },
+    {
+      "source": "/use-cases/observability/clickstack/ingesting-data/kubernetes",
+      "destination": "/products/clickstack/integration-examples/kubernetes"
+    },
+    {
+      "source": "/operations/backup",
+      "destination": "/concepts/features/backup-restore/overview"
+    },
+    {
+      "source": "/sql-reference/data-types/object-data-type",
+      "destination": "/reference/data-types/newjson"
+    },
+    {
+      "source": "/about-us/faq",
+      "destination": "/resources/support-center/knowledge-base/general-faqs/faq-index"
+    },
+    {
+      "source": "/engines/table-engines/mergetree-family/invertedindexes",
+      "destination": "/reference/engines/table-engines/mergetree-family/textindexes"
+    },
+    {
+      "source": "/guides/sre/configuring-ssl",
+      "destination": "/concepts/features/security/tls/configuring-tls"
+    },
+    {
+      "source": "/use-cases/observability/clickstack/deployment/hyperdx-clickhouse-cloud",
+      "destination": "/products/clickstack/deployment/managed"
+    },
+    {
+      "source": "/use-cases/observability/clickstack/demo-days/2026/04/03-04-2026",
+      "destination": "/products/clickstack/demo-days/2026/2026-04-03"
+    },
+    {
+      "source": "/use-cases/observability/clickstack/demo-days/2026/04/10-04-2026",
+      "destination": "/products/clickstack/demo-days/2026/2026-04-10"
+    },
+    {
+      "source": "/cloud/security/compliance/hipaa-onboarding#deploy-hippa-services",
+      "destination": "/products/cloud/guides/security/compliance/hipaa-onboarding#deploy-hipaa-services"
+    },
+    {
+      "source": "/operations/compression_codecs",
+      "destination": "/reference/statements/create/table#column_compression_codec"
+    },
+    {
+      "source": "/operations/server-configuration-parameters/users",
+      "destination": "/concepts/features/configuration/settings/settings-users"
+    },
+    {
+      "source": "/operations/performance",
+      "destination": "/concepts/features/performance/troubleshoot/sampling-query-profiler"
+    },
+    {
+      "source": "/operations/access-rights/users",
+      "destination": "/concepts/features/security/access-rights"
+    },
+    {
+      "source": "/operations/resource-management/resource_pools",
+      "destination": "/concepts/features/configuration/server-config/workload-scheduling"
+    },
+    {
+      "source": "/whats-new",
+      "destination": "/resources/changelogs/oss/2026"
+    },
+    {
+      "source": "/whats-new/TODO",
+      "destination": "/resources/changelogs/oss/2026"
+    },
+    {
+      "source": "/whats-new/cloud",
+      "destination": "/resources/changelogs/cloud"
+    },
+    {
+      "source": "/cloud/reference/byoc/faq/:path*",
+      "destination": "/products/bring-your-own-cloud/reference/faq"
+    },
+    {
+      "source": "/about-quotas-and-query-complexity",
+      "destination": "/resources/support-center/knowledge-base/configuration-settings/about-quotas-and-query-complexity"
+    },
+    {
+      "source": "/integrations/dbt/materialized-views",
+      "destination": "/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view"
+    },
+    {
+      "source": "/managing-data/update_mutations",
+      "destination": "/reference/statements/alter/update"
+    },
+    {
+      "source": "/sql-reference/formats",
+      "destination": "/reference/formats"
+    }
+  ],
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "perplexity",
+      "mcp",
+      "cursor",
+      "vscode"
+    ]
+  }
+}
