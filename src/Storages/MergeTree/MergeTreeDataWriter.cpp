@@ -876,7 +876,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     new_data_part->ttl_infos.update(move_ttl_infos);
 
-    auto compression_codec = data.getCompressionCodecForPart(0, new_data_part->ttl_infos, time(nullptr));
+    /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected at insert time;
+    /// recompression should happen during merges, not on the initial write path.
+    auto compression_codec = data.getCompressionCodecForPart(0, {}, time(nullptr));
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         block.rows(),
