@@ -215,7 +215,11 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
                                 array_index.size(), DBMS_DEFAULT_MAX_QUERY_SIZE);
                         ++pos;
                     }
-                    token = fmt::format("[ {0} >=0 ? {0} + 1 : {0}]", array_index);
+                    /// Bind `array_index` to a SQL alias once and reuse it. Otherwise the
+                    /// expression is duplicated three times in the generated SQL — which causes
+                    /// exponential memory growth when array indexing is nested.
+                    const auto alias = "_kql_array_index_" + generateUniqueIdentifier();
+                    token = fmt::format("[((({0}) AS {1}) >= 0 ? {1} + 1 : {1})]", array_index, alias);
                 }
                 else
                     token = String(pos->begin, pos->end);
@@ -433,7 +437,13 @@ String IParserKQLFunction::getExpression(IParser::Pos & pos)
             array_index += getExpression(pos);
             ++pos;
         }
-        arg = fmt::format("[ {0} >=0 ? {0} + 1 : {0}]", array_index);
+        /// Bind `array_index` to a SQL alias once and reuse it. Otherwise the
+        /// expression is duplicated three times in the generated SQL — which
+        /// causes exponential memory growth when array indexing is nested
+        /// (e.g. `a[a[a[...]]]`) and is also incorrect for non-deterministic
+        /// expressions because each fragment could observe a different value.
+        const auto alias = "_kql_array_index_" + generateUniqueIdentifier();
+        arg = fmt::format("[((({0}) AS {1}) >= 0 ? {1} + 1 : {1})]", array_index, alias);
     }
 
     /// If this was a timespan literal and it's NOT in an arithmetic context,

@@ -28,11 +28,11 @@ WAREHOUSE_NAME = "demo"
 def get_lakekeeper_local_url(cluster):
     return f"http://localhost:{cluster.iceberg_rest_catalog_port}"
 
-DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\n(\n    `id` Nullable(Float64),\n    `data` Nullable(String)\n)\nENGINE = Iceberg('http://minio:9000/warehouse-rest/data/', 'minio', '[HIDDEN]')\n"
+DEFAULT_CREATE_TABLE = "CREATE TABLE {}.`{}.{}`\n(\n    `id` Nullable(Float64),\n    `data` Nullable(String)\n)\nENGINE = Iceberg('http://minio1:9001/warehouse-rest/data/', 'minio', '[HIDDEN]')\n"
 
 
-def create_warehouse(cluster, minio_ip):
-    minio_endpoint = f"http://{minio_ip}:9000"
+def create_warehouse(cluster, minio_ip, minio_port):
+    minio_endpoint = f"http://{minio_ip}:{minio_port}"
 
     warehouse_data = {
         "warehouse-name": "demo",
@@ -76,8 +76,9 @@ def create_warehouse(cluster, minio_ip):
 
 
 def load_catalog_impl(started_cluster):
-    minio_ip = started_cluster.get_instance_ip('minio')
-    s3_endpoint = f"http://{minio_ip}:9000"
+    minio_ip = started_cluster.minio_ip
+    minio_port = started_cluster.minio_port
+    s3_endpoint = f"http://{minio_ip}:{minio_port}"
 
     return RestCatalog(
         name="my_catalog",
@@ -111,8 +112,9 @@ def started_cluster():
 
         time.sleep(15)
 
-        minio_ip = cluster.get_instance_ip('minio')
-        create_warehouse(cluster, minio_ip)
+        minio_ip = cluster.minio_ip
+        minio_port = cluster.minio_port
+        create_warehouse(cluster, minio_ip, minio_port)
 
         yield cluster
 
@@ -256,7 +258,7 @@ def create_clickhouse_iceberg_database(
     settings = {
         "catalog_type": "rest",
         "warehouse": "demo",
-        "storage_endpoint": "http://minio:9000/warehouse-rest",
+        "storage_endpoint": "http://minio1:9001/warehouse-rest",
     }
 
     settings.update(additional_settings)

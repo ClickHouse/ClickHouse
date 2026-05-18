@@ -11,12 +11,21 @@ INSERT INTO t_04229 SELECT number FROM numbers(100000);
 -- the `OverflowAny` count deterministic. The query has 100k distinct keys, so
 -- with the optimization the aggregator hits the 5-key cap and drops all the
 -- subsequent keys, incrementing `OverflowAny`.
+--
+-- `enable_parallel_replicas = 0` is pinned because `OptimizeTrivialGroupByLimitPass`
+-- runs in the analyzer on the initiator and mutates `max_rows_to_group_by` on the
+-- query's local context; this mutation does not propagate to remote replicas, so
+-- under CI's parallel-replicas randomization the aggregator on the remotes never
+-- sees the cap and `OverflowAny` stays at zero. The test verifies the optimization
+-- on the local-coordinator path where it is designed to fire.
 
 SELECT k FROM t_04229 GROUP BY k LIMIT 5 FORMAT Null
-SETTINGS optimize_trivial_group_by_limit_query = 1, max_threads = 1, log_comment = '04229_on';
+SETTINGS optimize_trivial_group_by_limit_query = 1, max_threads = 1,
+    enable_parallel_replicas = 0, log_comment = '04229_on';
 
 SELECT k FROM t_04229 GROUP BY k LIMIT 5 FORMAT Null
-SETTINGS optimize_trivial_group_by_limit_query = 0, max_threads = 1, log_comment = '04229_off';
+SETTINGS optimize_trivial_group_by_limit_query = 0, max_threads = 1,
+    enable_parallel_replicas = 0, log_comment = '04229_off';
 
 SYSTEM FLUSH LOGS query_log;
 

@@ -368,9 +368,12 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         if (level == VariableContext::Global && (jemalloc_flush_profile_on_memory_exceeded_interval_s || jemalloc_flush_profile_on_memory_exceeded))
         {
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-            if (DB::Jemalloc::getValue<bool>("prof.active"))
+            bool prof_active = false;
+            if (DB::Jemalloc::tryGetValue("prof.active", prof_active) && prof_active)
             {
-                auto * flush_prefix = DB::Jemalloc::getValue<char *>("opt.prof_prefix");
+                char * flush_prefix = nullptr;
+                if (!DB::Jemalloc::tryGetValue("opt.prof_prefix", flush_prefix))
+                    flush_prefix = nullptr;
                 if (!flush_prefix)
                 {
                     if (throw_if_memory_exceeded)
@@ -550,10 +553,13 @@ bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
             )
         {
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-            if (DB::Jemalloc::getValue<bool>("prof.active"))
+            bool prof_active = false;
+            if (DB::Jemalloc::tryGetValue("prof.active", prof_active) && prof_active)
             {
                 static std::atomic<uint64_t> previous_flushed_peak = 0;
-                auto * flush_prefix = DB::Jemalloc::getValue<char *>("opt.prof_prefix");
+                char * flush_prefix = nullptr;
+                if (!DB::Jemalloc::tryGetValue("opt.prof_prefix", flush_prefix))
+                    flush_prefix = nullptr;
                 if (!flush_prefix)
                 {
                     if (log_memory_usage)

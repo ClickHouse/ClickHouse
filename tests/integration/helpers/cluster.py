@@ -1790,6 +1790,9 @@ class ClickHouseCluster:
     def setup_hms_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_hms_catalog = True
         env_variables["HMS_CATALOG_PORT"] = str(self.hms_catalog_port)
+        env_variables["ICEBERG_HMS_CORE_SITE"] = p.join(
+            docker_compose_yml_dir, "hms_core_site_minio1.xml"
+        )
         self.base_cmd.extend(
             [
                 "--file",
@@ -1815,7 +1818,6 @@ class ClickHouseCluster:
         if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
             file_name = extra_parameters["docker_compose_file_name"]
         env_variables["ICEBERG_REST_CATALOG_PORT"] = str(self.iceberg_rest_catalog_port)
-        env_variables["ICEBERG_MINIO_PORT"] = str(self.iceberg_minio_port)
         self.base_cmd.extend(
             [
                 "--file",
@@ -2379,6 +2381,10 @@ class ClickHouseCluster:
             cmds.append(
                 self.setup_redis_cmd(instance, env_variables, docker_compose_yml_dir)
             )
+
+        # Iceberg/Glue/HMS catalogs use the standard MinIO (minio1) for S3 storage.
+        if with_iceberg_catalog or with_glue_catalog or with_hms_catalog:
+            with_minio = True
 
         if with_minio and not self.with_minio:
             cmds.append(
@@ -3261,6 +3267,48 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Minio to start")
 
+    def create_minio_buckets(self, buckets, set_public_policy=False):
+        """Create additional buckets on the standard MinIO (minio1).
+
+        Must be called after wait_minio_to_start() which sets self.minio_client.
+        """
+        assert self.minio_client is not None, (
+            "create_minio_buckets called before wait_minio_to_start"
+        )
+        for bucket in buckets:
+            if self.minio_client.bucket_exists(bucket):
+                delete_object_list = map(
+                    lambda x: x.object_name,
+                    self.minio_client.list_objects_v2(bucket, recursive=True),
+                )
+                errors = self.minio_client.remove_objects(bucket, delete_object_list)
+                for error in errors:
+                    logging.error(f"Error occurred when deleting object {error}")
+                self.minio_client.remove_bucket(bucket)
+            self.minio_client.make_bucket(bucket)
+            logging.info("S3 bucket '%s' created on standard MinIO", bucket)
+
+        if set_public_policy:
+            for bucket in buckets:
+                policy = json.dumps(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Principal": {"AWS": "*"},
+                                "Action": ["s3:*"],
+                                "Resource": [
+                                    f"arn:aws:s3:::{bucket}",
+                                    f"arn:aws:s3:::{bucket}/*",
+                                ],
+                            }
+                        ],
+                    }
+                )
+                self.minio_client.set_bucket_policy(bucket, policy)
+                logging.info("Public policy set on S3 bucket '%s'", bucket)
+
     def wait_azurite_to_start(self, timeout=180):
         from azure.storage.blob import BlobServiceClient
 
@@ -3880,23 +3928,44 @@ class ClickHouseCluster:
                 logging.info("Trying to connect to Minio...")
                 self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
 
+            # Catalogs use the standard MinIO (minio1). Create their
+            # buckets on it before starting the catalog services.
+            if self.with_glue_catalog or self.with_hms_catalog or self.with_iceberg_catalog:
+                catalog_buckets = []
+                if self.with_glue_catalog:
+                    catalog_buckets.append("warehouse-glue")
+                if self.with_hms_catalog:
+                    catalog_buckets.append("warehouse-hms")
+                if self.with_iceberg_catalog:
+                    catalog_buckets.extend(["warehouse-rest", "iceberg-data"])
+                self.create_minio_buckets(catalog_buckets, set_public_policy=True)
+
+                # Some catalogs (Nessie) vend an S3 endpoint to clients via the
+                # REST `loadTable` response. The hostname `minio1` is only
+                # resolvable inside the Docker network, so the host-side
+                # `pyiceberg` client cannot reach it. Re-export the env file
+                # with `MINIO_IP` set to the standard MinIO container's IP
+                # (resolvable from both the host and from other containers in
+                # the same Docker bridge network) so catalog compose files can
+                # vend a host-reachable URL.
+                if self.minio_ip:
+                    self.env_variables["MINIO_IP"] = self.minio_ip
+                    _create_env_file(self.env_file, self.env_variables)
+
             if self.with_glue_catalog and self.base_glue_catalog_cmd:
-                logging.info("Trying to connect to Minio for glue catalog...")
+                logging.info("Starting Glue catalog...")
                 subprocess_check_call(self.base_glue_catalog_cmd + common_opts)
                 self.up_called = True
-                self.wait_custom_minio_to_start(["warehouse-glue"], "minio", 9000)
 
             if self.with_hms_catalog and self.base_iceberg_hms_cmd:
-                logging.info("Trying to connect to Minio for hms catalog...")
+                logging.info("Starting HMS catalog...")
                 subprocess_check_call(self.base_iceberg_hms_cmd + common_opts)
                 self.up_called = True
-                self.wait_custom_minio_to_start(["warehouse-hms"], "minio", 9000)
 
             if self.with_iceberg_catalog and self.base_iceberg_catalog_cmd:
-                logging.info("Trying to connect to Minio for Iceberg catalog...")
+                logging.info("Starting Iceberg catalog...")
                 subprocess_check_call(self.base_iceberg_catalog_cmd + common_opts)
                 self.up_called = True
-                self.wait_custom_minio_to_start(["warehouse-rest"], "minio", 9000)
 
             if self.with_azurite and self.base_azurite_cmd:
                 azurite_start_cmd = self.base_azurite_cmd + common_opts
@@ -4223,62 +4292,154 @@ class ClickHouseCluster:
         therefore see the very first probe succeed, producing chronic
         flakes (see issues `#103819`, `#103820`).
 
-        For ClickHouse instances, poll a sibling ClickHouse node with a
-        tight `remote(<paused>:9000, system.one)` probe until it raises a
-        `QueryRuntimeException`. That event deterministically establishes
-        that fresh connections to the paused container can no longer
-        complete the ClickHouse handshake, which is the property every
-        existing caller actually depends on.
+        Probe strategy: open a fresh TCP connection from the test process
+        directly to `<instance>:9000` on every iteration, send one byte
+        that the ClickHouse native protocol treats as an unexpected
+        first packet (varint `0x05`, `Protocol::Client::TablesStatusRequest`
+        — anything other than `Hello`/`G`/`P`), and wait for the
+        server's response with a tight read timeout. A live ClickHouse
+        server immediately raises `UNEXPECTED_PACKET_FROM_CLIENT` from
+        `TCPHandler::receiveHello` and sends a `Server::Exception`
+        packet back, which we observe within milliseconds. A paused
+        server can complete the kernel-level handshake but cannot run
+        the `TCPHandler` accept/read/write loop in user space, so the
+        read times out and the probe declares the pause effective.
+
+        Why not reuse a sibling ClickHouse node and `remote()`? Each
+        ClickHouse server keeps a per-target connection pool keyed by
+        host/port/user/etc. (see `src/Client/ConnectionPool.h`). A cached
+        native-protocol connection to a paused node has a live kernel
+        socket, so `Connection::forceConnected` short-circuits to a
+        `ping(timeouts)` that can either succeed against stale buffered
+        data or block for `sync_request_timeout` (default 5s) rather than
+        the per-query `handshake_timeout_ms`. The probe ended up reporting
+        the paused node as reachable for its entire budget, even after
+        the freeze was fully in effect. By probing from the test process
+        directly we guarantee a fresh TCP+greeting handshake every
+        attempt and bypass that pool entirely. This was the chronic root
+        cause behind the `pause_container('node1') did not become
+        observably effective within 30.0s` reports on slow sanitizer
+        shards even after `wait_timeout` was raised to 90s.
 
         For non-ClickHouse containers (Kafka, MongoDB, etc.) we cannot
-        speak the application protocol from a sibling node, so we skip
-        the wait. The current Kafka callers do not assert on the timing
-        of the freeze — they wait for log lines that the paused side
-        emits well after the freeze is effective — so the absence of a
-        global probe is benign for them.
+        speak the native protocol on port 9000, so we skip the wait. The
+        current Kafka callers do not assert on the timing of the freeze
+        — they wait for log lines that the paused side emits well after
+        the freeze is effective — so the absence of a global probe is
+        benign for them.
         """
         if instance_name not in self.instances:
             return
-        probers = [
-            inst
-            for name, inst in self.instances.items()
-            if name != instance_name and inst.is_up
-        ]
-        if not probers:
+        instance = self.instances[instance_name]
+        addr = getattr(instance, "ip_address", None)
+        if not addr:
+            # The instance has not been started yet (or had its IP
+            # resolved). Without a routable address we cannot probe;
+            # fall back to the caller's expectation that the freeze is
+            # effective when `docker compose pause` returns.
             return
-        prober = probers[0]
+        port = 9000  # native TCP — the protocol every existing caller relies on
         deadline = time.time() + timeout
+        last_log = time.time()
+        iter_count = 0
+        last_outcome = "no probe attempted yet"
         while time.time() < deadline:
+            iter_count += 1
+            sock = None
             try:
-                prober.query(
-                    f"SELECT 1 FROM remote('{instance_name}:9000', system.one) "
-                    "SETTINGS connect_timeout_with_failover_ms=200, "
-                    "handshake_timeout_ms=200, "
-                    "connections_with_failover_max_tries=1",
-                    timeout=2,
-                )
-            except QueryRuntimeException:
+                # Fresh TCP connect every iteration — required to avoid
+                # any pooling/caching the test process or kernel might do.
+                sock = socket.create_connection((addr, port), timeout=0.5)
+                sock.settimeout(0.5)
+                # ClickHouse native server reads the client `Hello`
+                # packet first; the first byte on the wire is a varint
+                # packet type. `Hello` is `0x00`, so sending `\x00`
+                # would put the server into reading the rest of the
+                # `Hello` body (`client_name`, versions, user, etc.)
+                # and it would not reply until the full handshake is
+                # received — making a live server look identical to a
+                # frozen one. See `TCPHandler::receiveHello` in
+                # `src/Server/TCPHandler.cpp`.
+                #
+                # Instead, send a single-byte varint that is a valid
+                # client packet type but is NOT `Hello` (e.g. `0x05`,
+                # `Protocol::Client::TablesStatusRequest`). The server
+                # immediately raises `UNEXPECTED_PACKET_FROM_CLIENT`
+                # and sends a `Server::Exception` packet back to us
+                # before any further handshake reads, which we observe
+                # within milliseconds. A paused server cannot run the
+                # `TCPHandler` code path at all, so `recv` times out.
+                # We must also avoid `0x47` (`G`) and `0x50` (`P`),
+                # which the server treats as wrong-port HTTP requests.
+                try:
+                    sock.sendall(b"\x05")
+                except (BrokenPipeError, ConnectionResetError) as e:
+                    last_outcome = f"sendall raised {type(e).__name__}"
+                    return
+                try:
+                    data = sock.recv(4)
+                except socket.timeout:
+                    last_outcome = "recv timed out (server unresponsive)"
+                    return
+                if not data:
+                    last_outcome = "EOF on recv"
+                    return
+                last_outcome = f"server replied ({len(data)} bytes)"
+            except (socket.timeout, ConnectionError, OSError) as e:
+                # Kernel-level connect refused/timed out: pause is
+                # observably effective even at the TCP layer.
+                last_outcome = f"connect failed: {type(e).__name__}"
                 return
+            finally:
+                if sock is not None:
+                    try:
+                        sock.close()
+                    except OSError:
+                        pass
+            now = time.time()
+            if now - last_log >= 5.0:
+                logging.warning(
+                    "_wait_for_pause_effective(%s): not yet effective "
+                    "after %.1fs (%d iters); last probe outcome: %s",
+                    instance_name,
+                    now - (deadline - timeout),
+                    iter_count,
+                    last_outcome,
+                )
+                last_log = now
             time.sleep(0.1)
         raise Exception(
             f"pause_container({instance_name!r}) did not become observably "
-            f"effective within {timeout}s — connections to {instance_name} "
-            f"from {prober.name!r} still succeed"
+            f"effective within {timeout}s — connections to "
+            f"{instance_name}:{port} ({addr}) still succeed after "
+            f"{iter_count} probe iterations; last outcome: {last_outcome}"
         )
 
     @contextmanager
-    def pause_container(self, instance_name, wait_for_paused=True, wait_timeout=30.0):
+    def pause_container(self, instance_name, wait_for_paused=True, wait_timeout=90.0):
         """Use it as following:
         with cluster.pause_container(name):
             useful_stuff()
 
-        When `instance_name` refers to a ClickHouse instance and another
-        ClickHouse instance is available to probe with, this helper blocks
-        until the pause is observably effective for fresh TCP-plus-
-        ClickHouse-handshake connections, removing a chronic race where
-        Docker's cgroup freezer takes effect asynchronously with respect
-        to in-flight traffic. Set `wait_for_paused=False` to opt out and
+        When `instance_name` refers to a ClickHouse instance, this helper
+        blocks until the pause is observably effective for fresh
+        TCP-plus-ClickHouse-handshake connections, removing a chronic
+        race where Docker's cgroup freezer takes effect asynchronously
+        with respect to in-flight traffic. The probe runs from the test
+        process and uses raw sockets — it does not require a sibling
+        ClickHouse instance and bypasses any internal connection pooling
+        a sibling might have. Set `wait_for_paused=False` to opt out and
         keep the older non-blocking behavior.
+
+        The default `wait_timeout` is 90 seconds. In practice the freeze
+        becomes observable within milliseconds once `docker compose
+        pause` returns — each probe iteration is a fresh TCP connect +
+        one-byte send + read with a 0.5s read timeout, so the probe
+        normally exits on the very first iteration. The 90-second budget
+        is intentional safety margin for unusual conditions (cold
+        cgroups, heavily-overcommitted sanitizer shards, transient
+        kernel-level slowness during heavy CI load); the cost when the
+        freeze is already in effect is negligible.
 
         Cleanup: once the container has been paused (whether via
         `docker compose pause` or the `SIGSTOP` fallback), unpausing must
@@ -4310,7 +4471,11 @@ class ClickHouseCluster:
                 self._unpause_container(instance_name)
 
     @contextmanager
-    def pause_container_using_signal(self, instance_name, wait_for_paused=True, wait_timeout=30.0):
+    def pause_container_using_signal(self, instance_name, wait_for_paused=True, wait_timeout=90.0):
+        """Same semantics as `pause_container`, but always uses the
+        `SIGSTOP`/`SIGCONT` mechanism instead of `docker compose pause`.
+        See `pause_container` for the rationale behind the 90s default.
+        """
         self._pause_container_using_signal(instance_name)
         try:
             if wait_for_paused:

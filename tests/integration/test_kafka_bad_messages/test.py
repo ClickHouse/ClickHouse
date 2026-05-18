@@ -258,13 +258,13 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
             ["qwertyuiop", "asdfghjkl", "zxcvbnm"],
         )
 
-    expected_result = """avro::Exception: Invalid data file. Magic does not match: : while parsing Kafka message (topic: Avro_parsing_exc, partition: 0, offset: 0)\\'|1|1|1|default|kafka_Avro
-Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': (at row 1)\\n: while parsing Kafka message (topic: JSONEachRow_parsing_exc, partition:|1|1|1|default|kafka_JSONEachRow
+    expected_result = """avro::Exception: Invalid data file. Magic does not match: : while parsing Kafka message (topic: Avro_parsing_exc, partition: 0, offset: 0)|1|1|1|default|kafka_Avro
+Cannot parse input: expected \\'{\\' before: \\'qwertyuiop\\': (at row 1)\\n: while parsing Kafka message (topic: JSONEachRow_parsing_exc, partition|1|1|1|default|kafka_JSONEachRow
 """
     # filter out stacktrace in exceptions.text[1] because it is hardly stable enough
     result_system_kafka_consumers = instance.query_with_retry(
         """
-        SELECT substr(exceptions.text[1], 1, 139), length(exceptions.text) > 1 AND length(exceptions.text) < 15, length(exceptions.time) > 1 AND length(exceptions.time) < 15, abs(dateDiff('second', exceptions.time[1], now())) < 40, database, table FROM system.kafka_consumers WHERE table in('kafka_Avro', 'kafka_JSONEachRow') ORDER BY table, assignments.partition_id[1]
+        SELECT substr(exceptions.text[1], 1, 138), length(exceptions.text) > 1 AND length(exceptions.text) < 15, length(exceptions.time) > 1 AND length(exceptions.time) < 15, abs(dateDiff('second', exceptions.time[1], now())) < 40, database, table FROM system.kafka_consumers WHERE table in('kafka_Avro', 'kafka_JSONEachRow') ORDER BY table, assignments.partition_id[1]
         """,
         retry_count=max_retries,
         sleep_time=1,

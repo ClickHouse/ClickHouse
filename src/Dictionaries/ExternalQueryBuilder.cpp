@@ -41,6 +41,10 @@ ExternalQueryBuilder::ExternalQueryBuilder(
     , where(where_)
     , quoting_style(quoting_style_)
 {
+    // SQL-standard DBs (PostgreSQL, Cassandra, etc.) treat '\' as a literal character, so use '' escaping.
+    if (quoting_style == IdentifierQuotingStyle::DoubleQuotes)
+        format_settings.values.escape_quote_with_quote = true;
+
     if (table.empty() && query.empty())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Setting `table` or `query` must be non empty");
 

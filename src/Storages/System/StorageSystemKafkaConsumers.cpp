@@ -178,6 +178,9 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 
         for (const auto & consumer : safe_consumers.consumers)
         {
+            /// `StorageKafka2` may have empty slots when consumer creation failed in `startup`.
+            if (!consumer)
+                continue;
             auto consumer_stat = consumer->getStat();
 
             database.insertData(database_str.data(), database_str.size());
