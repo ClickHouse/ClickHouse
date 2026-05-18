@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Common/BitHelpers.h>
 #include <Interpreters/JoinUtils.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/BufferedShardByHashTransform.h>
@@ -138,16 +137,12 @@ void BufferedShardByHashTransform::generateOutputChunks()
     for (auto column_number : key_columns)
         hash.update(columns[column_number]->getWeakHash32());
 
-    if (likely(isPowerOf2(num_shards)))
-    {
-        const size_t mask = num_shards - 1;
-        selector = JoinCommon::hashToSelector(hash, [mask](size_t h) { return h & mask; });
-    }
-    else
-    {
-        /// Use the "fastrange" method from Daniel Lemire:
-        selector = JoinCommon::hashToSelector(hash, [n = num_shards](size_t h) { return ((h & 0xFFFFFFFF) * n) >> 32; });
-    }
+    /// Partition rows by shard using Lemire fastrange. The downstream hash table picks
+    /// buckets via hash & mask (low bits). Routing via the same low bits would make all
+    /// keys in a shard share the same low bits and cluster into a small subset of buckets.
+    /// Lemire's multiply-and-shift uses the whole 32-bit hash to map into [0, num_shards) without
+    /// a divide, so the shard decision depends on the whole hash.
+    selector = JoinCommon::hashToSelector(hash, [n = num_shards](size_t h) { return ((h & 0xFFFFFFFF) * n) >> 32; });
 
     /// Physically split every column into N per-shard mutable columns.
     /// Skip shards that received no rows.
