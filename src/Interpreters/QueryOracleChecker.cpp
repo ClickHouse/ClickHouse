@@ -38,7 +38,6 @@ extern const SettingsBool ast_fuzzer_oracle;
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
 extern const int AST_FUZZER_ORACLE_MISMATCH;
 }
 

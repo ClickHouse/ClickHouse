@@ -51,7 +51,6 @@ extern const int NOT_IMPLEMENTED;
 extern const int SYNTAX_ERROR;
 extern const int MEMORY_LIMIT_EXCEEDED;
 extern const int TOO_DEEP_RECURSION;
-extern const int LOGICAL_ERROR;
 extern const int AST_FUZZER_ORACLE_MISMATCH;
 extern const int BUZZHOUSE;
 using ErrorCode = int;
