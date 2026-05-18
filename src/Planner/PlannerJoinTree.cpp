@@ -470,8 +470,16 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         else if (query_node || union_node)
         {
             const auto & projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
+
+            if (projection_columns.empty())
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "Cannot read from subquery with empty projection");
+
             NamesAndTypesList projection_columns_list(projection_columns.begin(), projection_columns.end());
-            additional_column_to_read = ExpressionActions::getSmallestColumn(projection_columns_list);
+            /// Pass skip_subcolumns=false: subquery projection columns are full
+            /// query-level outputs (e.g. tup.a from CountDistinctPass rewrite),
+            /// not storage meta-subcolumns (.size0, .keys) that should be skipped.
+            additional_column_to_read = ExpressionActions::getSmallestColumn(projection_columns_list, /*skip_subcolumns=*/ false);
         }
         else
         {
