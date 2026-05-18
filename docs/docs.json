@@ -19,13 +19,17 @@
   "interaction": {
     "drilldown": false
   },
-  "favicon": "/favicon.svg",
+  "favicon": "/assets/favicon.svg",
   "banner": {
     "content": "Introducing Managed ClickStack: Observability for OpenTelemetry at scale [Read more \u2192](https://clickhouse.com/blog)",
     "dismissible": true
   },
   "scripts": [],
-  "navigation": {},
+  "navigation": {
+    "pages": [
+      "index"
+    ]
+  },
   "logo": {
     "light": "/logo/light.svg",
     "dark": "/logo/dark.svg"
