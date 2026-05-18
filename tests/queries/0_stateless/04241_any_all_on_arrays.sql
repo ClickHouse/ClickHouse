@@ -31,6 +31,14 @@ SELECT (3 <> ALL([1, 2, 4])) = (NOT has([1, 2, 4], 3));
 SELECT (5 < ANY([1, 2, 6])) = arrayExists(_a -> 5 < _a, [1, 2, 6]);
 SELECT (5 > ALL([1, 2, 3])) = arrayAll(_a -> 5 > _a, [1, 2, 3]);
 
+-- The lambda variable for the higher-order form must not collide with an
+-- identifier on the LHS, so the parser walks the LHS and suffixes `_a` until
+-- it finds a free name (`_a1`, `_a2`, ...).
+SELECT _a < ANY([2]) FROM (SELECT 1 AS _a);
+SELECT _a < ANY([0, 100]) FROM (SELECT 4 AS _a);
+SELECT (_a + _a1) < ANY([100]) FROM (SELECT 1 AS _a, 2 AS _a1);
+SELECT (_a + _a1 + _a2) < ANY([100]) FROM (SELECT 1 AS _a, 2 AS _a1, 3 AS _a2);
+
 -- Subquery form is still handled the old way (lowered to IN / NOT IN).
 SELECT 3 = ANY(SELECT number FROM numbers(5));
 SELECT 9 = ANY(SELECT number FROM numbers(5));

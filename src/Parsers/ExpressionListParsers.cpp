@@ -3307,7 +3307,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
                 }
                 else if (all_kw && is_not_equals)
                 {
-                    function = makeASTFunction("not", makeASTFunction("has", tmp, argument));
+                    function = makeASTOperator("not", makeASTFunction("has", tmp, argument));
                 }
                 else
                 {
