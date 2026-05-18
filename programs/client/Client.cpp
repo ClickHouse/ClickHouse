@@ -1095,6 +1095,11 @@ void Client::processConfig()
     multiline = config().has("multiline");
     print_stack_trace = config().getBool("stacktrace", false);
     default_database = config().getString("database", "");
+    /// `default_database` may have come from a config file (or a named connection in that file)
+    /// rather than the `--database` CLI option. The `database` setting needs to know either
+    /// way, so it ships with every query the client runs.
+    if (!default_database.empty() && !cmd_settings->isChanged("database"))
+        cmd_settings->set("database", default_database);
     inline_insert_data = config().getBool("inline-insert-data", false);
 
     if (inline_insert_data)

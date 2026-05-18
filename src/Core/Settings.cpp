@@ -8744,104 +8744,34 @@ void Settings::writeEmpty(WriteBuffer & out)
     BaseSettingsHelpers::writeString("", out);
 }
 
-namespace
-{
-    /// A handful of settings have short single-character CLI aliases that long predate the
-    /// settings themselves (`-d` for `--database`, `-f` for `--format`). When we register the
-    /// setting as a boost program option, we splice the short alias into the option name using
-    /// boost's `"name,short"` convention so a single registration handles both `--database` and
-    /// `-d` (no duplicate-skip plumbing needed in clickhouse-client/local).
-    char shortAliasForSetting(std::string_view name)
-    {
-        if (name == "database")
-            return 'd';
-        if (name == "format")
-            return 'f';
-        return '\0';
-    }
-
-    /// Build the option-description name string for `boost::program_options`. Long form is the
-    /// setting name; if there is a registered short alias, append `,X` so both `--name` and `-X`
-    /// reach the same notifier.
-    std::string optionNameForSetting(std::string_view name)
-    {
-        std::string result(name);
-        if (char short_alias = shortAliasForSetting(name))
-        {
-            result += ',';
-            result += short_alias;
-        }
-        return result;
-    }
-
-    template <typename T>
-    void addSettingOption(T & cmd_settings, boost::program_options::options_description & options, std::string_view name, const typename T::SettingFieldRef & field)
-    {
-        /// We can't go through `addProgramOption` because it uses `name` both for the
-        /// option-description name and for the notifier's `cmd_settings.set` call. Here we want
-        /// the option name to optionally include a short alias (`database,d`) while the notifier
-        /// still calls `cmd_settings.set("database", value)`.
-        std::string option_name = optionNameForSetting(name);
-        auto on_program_option = boost::function1<void, const std::string &>(
-            [&cmd_settings, name](const std::string & value) { cmd_settings.set(name, value); });
-        if (field.getTypeName() == "Bool")
-        {
-            options.add(boost::shared_ptr<boost::program_options::option_description>(
-                new boost::program_options::option_description(
-                    option_name.c_str(),
-                    boost::program_options::value<std::string>()->composing()->implicit_value("1")->notifier(on_program_option),
-                    field.getDescription().data()))); // NOLINT(bugprone-suspicious-stringview-data-usage)
-        }
-        else
-        {
-            options.add(boost::shared_ptr<boost::program_options::option_description>(
-                new boost::program_options::option_description(
-                    option_name.c_str(),
-                    boost::program_options::value<std::string>()->composing()->notifier(on_program_option),
-                    field.getDescription().data()))); // NOLINT(bugprone-suspicious-stringview-data-usage)
-        }
-    }
-
-    template <typename T>
-    void addSettingOptionAsMultitoken(T & cmd_settings, boost::program_options::options_description & options, std::string_view name, const typename T::SettingFieldRef & field)
-    {
-        std::string option_name = optionNameForSetting(name);
-        auto on_program_option = boost::function1<void, const Strings &>(
-            [&cmd_settings, name](const Strings & values) { cmd_settings.set(name, values.back()); });
-        if (field.getTypeName() == "Bool")
-        {
-            options.add(boost::shared_ptr<boost::program_options::option_description>(
-                new boost::program_options::option_description(
-                    option_name.c_str(),
-                    boost::program_options::value<Strings>()
-                        ->multitoken()
-                        ->composing()
-                        ->implicit_value(std::vector<std::string>{"1"}, "1")
-                        ->notifier(on_program_option),
-                    field.getDescription().data()))); // NOLINT(bugprone-suspicious-stringview-data-usage)
-        }
-        else
-        {
-            options.add(boost::shared_ptr<boost::program_options::option_description>(
-                new boost::program_options::option_description(
-                    option_name.c_str(),
-                    boost::program_options::value<Strings>()->multitoken()->composing()->notifier(on_program_option),
-                    field.getDescription().data()))); // NOLINT(bugprone-suspicious-stringview-data-usage)
-        }
-    }
-}
-
 void Settings::addToProgramOptions(boost::program_options::options_description & options)
 {
+    /// A few settings share a name with a client-side CLI option that's already registered (e.g.
+    /// `--database` / `-d` declared by `clickhouse-client` so the short alias appears in
+    /// `--help` next to the other main options). Skip the setting registration when the option
+    /// name is already taken — the client-side declaration is canonical for boost's parser, and
+    /// `ClientBase::addOptionsToTheClientConfiguration` copies the value into `cmd_settings`
+    /// after parsing so the setting still takes effect per query.
+    std::unordered_set<std::string> existing;
+    existing.reserve(options.options().size());
+    for (const auto & option : options.options())
+        existing.insert(option->long_name());
+
     const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
     for (const auto & field : impl->all())
     {
         std::string_view name = field.getName();
-        addSettingOption(*impl, options, name, field);
+        if (!existing.contains(std::string(name)))
+            addProgramOption(*impl, options, name, field);
 
         if (auto it = settings_to_aliases.find(name); it != settings_to_aliases.end())
+        {
             for (const auto alias : it->second)
-                addSettingOption(*impl, options, alias, field);
+            {
+                if (!existing.contains(std::string(alias)))
+                    addProgramOption(*impl, options, alias, field);
+            }
+        }
     }
 }
 
@@ -8861,15 +8791,27 @@ void Settings::addToProgramOptions(std::string_view setting_name, boost::program
 
 void Settings::addToProgramOptionsAsMultitokens(boost::program_options::options_description & options) const
 {
+    /// Same duplicate-skip strategy as `Settings::addToProgramOptions` — see the comment there.
+    std::unordered_set<std::string> existing;
+    existing.reserve(options.options().size());
+    for (const auto & option : options.options())
+        existing.insert(option->long_name());
+
     const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
     for (const auto & field : impl->all())
     {
         std::string_view name = field.getName();
-        addSettingOptionAsMultitoken(*impl, options, name, field);
+        if (!existing.contains(std::string(name)))
+            addProgramOptionAsMultitoken(*impl, options, name, field);
 
         if (auto it = settings_to_aliases.find(name); it != settings_to_aliases.end())
+        {
             for (const auto alias : it->second)
-                addSettingOptionAsMultitoken(*impl, options, alias, field);
+            {
+                if (!existing.contains(std::string(alias)))
+                    addProgramOptionAsMultitoken(*impl, options, alias, field);
+            }
+        }
     }
 }
 
@@ -8880,10 +8822,20 @@ void Settings::addToClientOptions(Poco::Util::LayeredConfiguration &config, cons
         const auto & name = setting.getName();
         if (!options.contains(name))
             continue;
-        if (repeated_settings)
-            config.setString(name, options[name].as<Strings>().back());
-        else
-            config.setString(name, options[name].as<String>());
+        try
+        {
+            if (repeated_settings)
+                config.setString(name, options[name].as<Strings>().back());
+            else
+                config.setString(name, options[name].as<String>());
+        }
+        catch (const boost::bad_any_cast &) // NOLINT(bugprone-empty-catch)
+        {
+            /// Ok: the setting and a client-side command-line option share a name but use different
+            /// `boost::program_options` value types (e.g. the client owns `--database`). The
+            /// duplicate-skip in `addToProgramOptions[AsMultitokens]` already declined to add the
+            /// setting variant, so reading the value here as the setting's type would also fail.
+        }
     }
 }
 

@@ -914,6 +914,17 @@ bool ClientBase::isFileDescriptorSuitableForInput(int fd)
 
 void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
 {
+    /// `format` / `output_format` / `input_format` may have been set in the client config file
+    /// (or a named connection) rather than passed on the command line. Mirror the configured
+    /// values into `cmd_settings` so the corresponding settings ship with every query the client
+    /// runs, matching the `--format`/`-f` CLI behavior.
+    if (getClientConfiguration().has("format") && !cmd_settings->isChanged("format"))
+        cmd_settings->set("format", getClientConfiguration().getString("format"));
+    if (getClientConfiguration().has("output-format") && !cmd_settings->isChanged("output_format"))
+        cmd_settings->set("output_format", getClientConfiguration().getString("output-format"));
+    if (getClientConfiguration().has("input-format") && !cmd_settings->isChanged("input_format"))
+        cmd_settings->set("input_format", getClientConfiguration().getString("input-format"));
+
     if (getClientConfiguration().has("output-format"))
     {
         default_output_format = getClientConfiguration().getString("output-format");
@@ -3365,8 +3376,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("queries-file", po::value<std::vector<std::string>>()->multitoken(), "File path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
         ("multiquery,n", "Obsolete, does nothing")
         ("multiline,m", "If specified, allow multi-line queries (Enter does not send the query)")
-        /// `--database` (and its `-d` short alias) is now registered by the `database` setting
-        /// itself, via `Settings::addToProgramOptions`. We do nothing here.
+        ("database,d", po::value<std::string>(), "Database")
         ("query_kind", po::value<std::string>()->default_value("initial_query"), "One of initial_query/secondary_query/no_query")
         ("query_id", po::value<std::string>(), "Query ID")
 
@@ -3391,7 +3401,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("log-level", po::value<std::string>(), "Log level")
         ("server_logs_file", po::value<std::string>(), "Write server logs to specified file")
 
-        /// `--format` (and `-f`) is registered by the `format` setting itself.
+        ("format,f", po::value<std::string>(), "Default input and output format. In clickhouse-client only the default output format.")
         ("output-format", po::value<std::string>(), "Default output format. Takes precedence over --format.")
         ("vertical,E", "Same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 
@@ -3449,11 +3459,16 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         queries = options["query"].as<std::vector<std::string>>();
     if (options.contains("query_id"))
         getClientConfiguration().setString("query_id", options["query_id"].as<std::string>());
-    /// `--database` and `-d` are now parsed by the `database` setting (registered in
-    /// `cmd_settings`). After parsing the value lives there; copy it into the client config so
-    /// the TCP connection seeds its initial `default_database` from the same value.
-    if (cmd_settings->isChanged("database"))
-        getClientConfiguration().setString("database", cmd_settings->get("database").safeGet<String>());
+    if (options.contains("database"))
+    {
+        const auto & db = options["database"].as<std::string>();
+        getClientConfiguration().setString("database", db);
+        /// Mirror the value into the `database` setting so it's also sent with every query
+        /// (this is what `?database=` does over HTTP). `Settings::addToProgramOptions` skips
+        /// registering the `database` setting as its own CLI option because the client-side
+        /// `--database,d` declaration above already owns that name; this is the bridge.
+        cmd_settings->set("database", db);
+    }
     if (options.contains("config-file"))
         getClientConfiguration().setString("config-file", options["config-file"].as<std::string>());
     if (options.contains("queries-file"))
@@ -3466,12 +3481,13 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setBool("multiline", true);
     if (options.contains("ignore-error"))
         getClientConfiguration().setBool("ignore-error", true);
-    /// `--format` (and `-f`) are now parsed by the `format` setting. Seed the client config's
-    /// default-format key from the setting value.
-    if (cmd_settings->isChanged("format"))
-        getClientConfiguration().setString("format", cmd_settings->get("format").safeGet<String>());
-    /// `--output-format` (hyphen) does not collide with the underscore-spelled `output_format`
-    /// setting, but the client still needs to seed its own config key and mirror to the setting.
+    if (options.contains("format"))
+    {
+        const auto & fmt = options["format"].as<std::string>();
+        getClientConfiguration().setString("format", fmt);
+        /// Mirror to the `format` setting (same rationale as `--database` above).
+        cmd_settings->set("format", fmt);
+    }
     if (options.contains("output-format"))
     {
         const auto & fmt = options["output-format"].as<std::string>();
