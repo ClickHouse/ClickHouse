@@ -1,4 +1,5 @@
--- Tags: no-random-settings
+-- Tags: no-random-settings, no-random-detach
+-- no-random-detach: combination of `max_rows_to_group_by` and `group_by_overflow_mode='any'` makes the result non-deterministic; DETACH/ATTACH amplifies the variance by changing part read order.
 
 create table if not exists t_group_by_lowcardinality(p_date Date, val LowCardinality(Nullable(String))) 
 engine=MergeTree() partition by p_date order by tuple();
