@@ -5,6 +5,7 @@
 set automatic_parallel_replicas_mode=0, enable_parallel_replicas=0;
 
 SET enable_analyzer = 1;
+SET use_columns_cache = 0;
 DROP TABLE IF EXISTS t_index_hint;
 
 CREATE TABLE t_index_hint (a UInt64, b UInt64)
