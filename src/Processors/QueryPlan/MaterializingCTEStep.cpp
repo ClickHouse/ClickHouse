@@ -144,4 +144,26 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedMaterializingCTEsStep::makePlansF
     return plans;
 }
 
+void removeTopLevelDelayedMaterializingCTEsStep(QueryPlan & plan)
+{
+    auto * root = plan.getRootNode();
+    if (!root)
+        return;
+
+    auto * delayed = typeid_cast<DelayedMaterializingCTEsStep *>(root->step.get());
+    if (!delayed)
+        return;
+
+    /// `DelayedMaterializingCTEsStep` is a single-input passthrough at the
+    /// plan level — it has exactly one child (the wrapped body of the
+    /// IN-subquery). Replace the root with that child.
+    if (root->children.size() != 1)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Expected DelayedMaterializingCTEsStep to have exactly one child, got {}",
+            root->children.size());
+
+    plan.replaceRootNode(root->children.front());
+}
+
 }

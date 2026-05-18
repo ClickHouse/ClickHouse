@@ -87,4 +87,17 @@ private:
     std::vector<MaterializedCTEPtr> ctes;
 };
 
+/// Strip a top-level `DelayedMaterializingCTEsStep` from `plan` if it has one.
+/// Used by `DelayedCreatingSetsStep::makePlansForSets` to remove the safety-net
+/// materialization step planted by `forceMaterializeCTE` in `Planner.cpp` when
+/// the set's plan is being attached for runtime execution (the outer
+/// `MaterializingCTEsStep` in the main query plan will materialize the CTE
+/// before this set's pipeline runs).
+///
+/// Only the immediate top-level `DelayedMaterializingCTEsStep` is removed.
+/// Nested set subquery plans, reached via `DelayedCreatingSetsStep` inside this
+/// plan, keep their own safety-nets — they may be consumed by `buildSetInplace`
+/// during the subsequent `plan->optimize` and need the safety-net to claim.
+void removeTopLevelDelayedMaterializingCTEsStep(QueryPlan & plan);
+
 }
