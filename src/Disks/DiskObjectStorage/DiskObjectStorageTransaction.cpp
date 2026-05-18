@@ -467,6 +467,9 @@ void DiskObjectStorageTransaction::copyFileImpl(
     const ReadSettings & read_settings,
     const WriteSettings & write_settings)
 {
+    const auto enriched_read_settings = updateIOSchedulingSettings(read_settings, read_resource_name, write_resource_name);
+    const auto enriched_write_settings = updateIOSchedulingSettings(write_settings, read_resource_name, write_resource_name);
+
     const auto blobs_to_copy = src_metadata_storage->getStorageObjects(from_file_path);
     const auto blobs_to_create = blobs_to_copy
                         | std::views::transform([&](const auto & from) { return StoredObject(metadata_transaction->generateObjectKeyForPath(to_file_path).serialize(), to_file_path, from.bytes_size); })
@@ -491,10 +494,10 @@ void DiskObjectStorageTransaction::copyFileImpl(
     {
         for (const auto [src_blob, dst_blob] : std::views::zip(blobs_to_copy, blobs_to_create))
         {
-            task_tracker.add([this, &src_object_storages, src_blob, dst_blob, location, src_local_location, &read_settings, &write_settings]
+            task_tracker.add([this, &src_object_storages, src_blob, dst_blob, location, src_local_location, enriched_read_settings, enriched_write_settings]
             {
                 src_object_storages->takePointingTo(src_local_location)->copyObjectToAnotherObjectStorage(
-                    src_blob, dst_blob, read_settings, write_settings, *object_storages->takePointingTo(location));
+                    src_blob, dst_blob, enriched_read_settings, enriched_write_settings, *object_storages->takePointingTo(location));
             });
         }
     }
@@ -517,9 +520,7 @@ void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, 
 
 void MultipleDisksObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
 {
-    const auto enriched_read_settings = updateIOSchedulingSettings(read_settings, read_resource_name, write_resource_name);
-    const auto enriched_write_settings = updateIOSchedulingSettings(write_settings, read_resource_name, write_resource_name);
-    copyFileImpl(source_metadata_storage, source_cluster, source_object_storages, from_file_path, to_file_path, enriched_read_settings, enriched_write_settings);
+    copyFileImpl(source_metadata_storage, source_cluster, source_object_storages, from_file_path, to_file_path, read_settings, write_settings);
 }
 
 void DiskObjectStorageTransaction::commit()
