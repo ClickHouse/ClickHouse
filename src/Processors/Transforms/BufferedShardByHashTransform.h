@@ -25,6 +25,12 @@ namespace DB
 /// So each output port has a FIFO queue. When a shard's port is busy, its chunk waits in
 /// the queue and gets pushed on the next prepare()/work() cycle. This allows other shards
 /// to continue processing without waiting for the slowest one.
+///
+/// TODO(nihalzp): A queue growing much faster than the others means the GROUP BY key
+/// distribution is skewed onto one shard. That means one of the Aggregating hash tables would
+/// be much bigger than the others, essentially serializing the pipeline. In that scenario, we could
+/// potentially detect the skew from queue sizes and switch to a fallback where shard_i sends only to
+/// AggregatingTransform_i % num_shards and then we merge at the end.
 class BufferedShardByHashTransform : public IProcessor
 {
 public:
