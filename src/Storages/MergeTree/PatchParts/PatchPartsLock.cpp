@@ -308,11 +308,12 @@ UpdateAffectedColumns getUpdateAffectedColumns(const MutationCommands & commands
 
     for (const auto & command : commands)
     {
-        auto query_tree = buildQueryTree(command.predicate(), context);
+        auto handle = command.accessAst();
+        auto query_tree = buildQueryTree(handle.getPredicate(), context);
         auto identifiers = collectIdentifiersFullNames(query_tree);
         std::move(identifiers.begin(), identifiers.end(), std::inserter(res.used, res.used.end()));
 
-        for (const auto & [name, ast] : command.columnToUpdateExpression())
+        for (const auto & [name, ast] : handle.getColumnToUpdateExpression())
         {
             res.updated.insert(name);
 

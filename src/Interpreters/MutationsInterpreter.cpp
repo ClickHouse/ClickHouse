@@ -201,14 +201,15 @@ IsStorageTouched isStorageTouchedByMutations(
         }
         else
         {
-            auto predicate = command.predicate();
+            auto handle = command.accessAst();
+            auto predicate = handle.getPredicate();
             if (!predicate) /// The command touches all rows.
             {
                 ProfileEvents::increment(ProfileEvents::MutationAffectedRowsUpperBound, source_part->rows_count);
                 return all_rows;
             }
 
-            auto partition = command.partition();
+            auto partition = handle.getPartition();
             if (partition)
             {
                 const String partition_id = storage_from_part->getPartitionIDFromQuery(partition, context);
@@ -278,7 +279,8 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
 )
 {
     ASTPtr partition_predicate_as_ast_func;
-    auto partition = command.partition();
+    auto handle = command.accessAst();
+    auto partition = handle.getPartition();
     if (partition)
     {
         String partition_id;
@@ -298,7 +300,7 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
         );
     }
 
-    auto predicate = command.predicate();
+    auto predicate = handle.getPredicate();
     if (predicate && partition)
         return makeASTOperator("and", std::move(predicate), std::move(partition_predicate_as_ast_func));
     return predicate ? predicate : partition_predicate_as_ast_func;
@@ -654,7 +656,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         if (command.type == MutationCommand::REWRITE_PARTS)
             has_rewrite_parts = true;
 
-        for (const auto & [name, _] : command.columnToUpdateExpression())
+        for (const auto & [name, _] : command.accessAst().getColumnToUpdateExpression())
         {
             if (name == RowExistsColumn::name)
             {
@@ -816,7 +818,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             addStageIfNeeded(command.mutation_version, false);
 
             NameSet affected_materialized;
-            auto column_to_update = command.columnToUpdateExpression();
+            auto column_to_update = command.accessAst().getColumnToUpdateExpression();
 
             for (const auto & [column_name, update_expr] : column_to_update)
             {
@@ -1251,7 +1253,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             throw Exception(
                 ErrorCodes::UNKNOWN_MUTATION_COMMAND,
                 "Unknown mutation command: {}",
-                !command.ast_text.empty() ? command.ast()->formatForLogging() : fmt::to_string(command.type));
+                !command.ast_text.empty() ? command.accessAst()->formatForLogging() : fmt::to_string(command.type));
         }
     }
 

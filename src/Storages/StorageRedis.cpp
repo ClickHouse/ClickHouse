@@ -651,7 +651,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
     }
 
     assert(commands.front().type == MutationCommand::Type::UPDATE);
-    if (commands.front().columnToUpdateExpression().contains(primary_key))
+    if (commands.front().accessAst().getColumnToUpdateExpression().contains(primary_key))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
 
     MutationsInterpreter::Settings settings(true);

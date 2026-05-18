@@ -126,7 +126,7 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
                 return true;
         }
 
-        for (const auto & [column_name, _] : command.columnToUpdateExpression())
+        for (const auto & [column_name, _] : command.accessAst().getColumnToUpdateExpression())
         {
             auto column = data_part->tryGetColumn(column_name);
             if (column && column->type->hasDynamicSubcolumns())
@@ -241,7 +241,7 @@ static void splitAndModifyMutationCommands(
                 || command.type == MutationCommand::Type::APPLY_PATCHES)
             {
                 for_interpreter.push_back(command);
-                for (const auto & [column_name, expr] : command.columnToUpdateExpression())
+                for (const auto & [column_name, expr] : command.accessAst().getColumnToUpdateExpression())
                     mutated_columns.emplace(column_name);
 
                 if (command.type == MutationCommand::Type::MATERIALIZE_TTL && suitable_for_ttl_optimization)
@@ -533,7 +533,7 @@ static bool isDeletedMaskUpdated(const MutationCommand & command, const NameSet 
 
     if (command.type == MutationCommand::UPDATE)
     {
-        auto column_to_update = command.columnToUpdateExpression();
+        auto column_to_update = command.accessAst().getColumnToUpdateExpression();
         return std::ranges::find_if(column_to_update, [](const auto & pair)
         {
             return pair.first == RowExistsColumn::name;
@@ -2603,7 +2603,7 @@ static bool canSkipConversionToVariant(const MergeTreeDataPartPtr & part, const 
 
 static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot, const MutationCommand & command, const ContextPtr & context)
 {
-    if (auto partition = command.partition())
+    if (auto partition = command.accessAst().getPartition())
     {
         auto command_partition_id = part->storage.getPartitionIDFromQuery(partition, context);
         if (part->info.getPartitionId() != command_partition_id)

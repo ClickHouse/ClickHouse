@@ -24,20 +24,15 @@ class ReadBuffer;
 struct MutationCommand
 {
     /// Serialized text of the whole command (output of `formatWithSecretsOneLine`).
-    /// The AST itself is not kept around - call `ast` to parse it on demand.
+    /// The AST itself is not kept around - call `accessAst` to parse it on demand.
     String ast_text = {};
 
-    /// Parser limits captured at the time `ast_text` was produced. Used by `ast`
-    /// (and the other accessors that delegate to it) so that on-demand re-parsing
-    /// uses the same limits as the original successful parse. They are deliberately
-    /// stored alongside the text instead of caching the parsed AST - the AST is
-    /// always parsed fresh on demand.
+    /// Parser limits captured at the time `ast_text` was produced. Used by
+    /// `accessAst` so that on-demand re-parsing uses the same limits as the
+    /// original successful parse. They are stored alongside the text instead
+    /// of caching the parsed AST - the AST is always parsed fresh on demand.
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
     UInt64 max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
-
-    /// Parses `ast_text` and returns the resulting AST.
-    /// Returns nullptr when `ast_text` is empty.
-    ASTPtr ast() const;
 
     enum Type
     {
@@ -63,17 +58,56 @@ struct MutationCommand
 
     Type type = EMPTY;
 
-    /// WHERE part of the mutation. Parsed on demand from `ast_text`.
-    /// Returns nullptr if `ast_text` is empty or the parsed command has no predicate.
-    ASTPtr predicate() const;
+    /// RAII handle returned by `accessAst`.
+    ///
+    /// On construction it parses `ast_text` once (using the command's
+    /// stored parser limits). The parsed AST is exposed for reading or
+    /// modifying. On destruction the (possibly modified) AST is formatted
+    /// back into the owning `MutationCommand::ast_text`, so any changes
+    /// made through the handle persist.
+    ///
+    /// All AST sub-fields (predicate, partition, update assignments) are
+    /// accessed through the same handle, so a single `accessAst` call is
+    /// enough to read several parts of the command without re-parsing.
+    ///
+    /// The handle is move-only. If constructed from a const `MutationCommand`
+    /// it does not write anything back on destruction.
+    class AccessedAst
+    {
+    public:
+        AccessedAst(MutationCommand * owner, ASTPtr ast);
+        ~AccessedAst() noexcept;
 
-    /// Columns with corresponding update expressions. Parsed on demand from `ast_text`.
-    /// Returns an empty map if `ast_text` is empty or the parsed command is not an UPDATE.
-    std::unordered_map<String, ASTPtr> columnToUpdateExpression() const;
+        AccessedAst(const AccessedAst &) = delete;
+        AccessedAst & operator=(const AccessedAst &) = delete;
+        AccessedAst(AccessedAst && other) noexcept;
+        AccessedAst & operator=(AccessedAst && other) noexcept;
 
-    /// Partition expression of the mutation. Parsed on demand from `ast_text`.
-    /// Returns nullptr if `ast_text` is empty or the parsed command has no partition.
-    ASTPtr partition() const;
+        explicit operator bool() const { return ast != nullptr; }
+
+        ASTPtr getAstPtr() const { return ast; }
+        ASTAlterCommand * operator->() const { return getAlter(); }
+        ASTAlterCommand & operator*() const { return *getAlter(); }
+
+        /// Clones of the corresponding sub-trees of the parsed alter command.
+        /// They are returned by value (cloned) so they remain valid after
+        /// the handle is destroyed.
+        ASTPtr getPredicate() const;
+        ASTPtr getPartition() const;
+        std::unordered_map<String, ASTPtr> getColumnToUpdateExpression() const;
+
+    private:
+        MutationCommand * owner;
+        ASTPtr ast;
+        ASTAlterCommand * getAlter() const;
+    };
+
+    /// Parses `ast_text` once and returns a RAII handle. Modifications made
+    /// through the handle are serialized back into `ast_text` when the handle
+    /// is destroyed. Use the same handle to read multiple sub-trees and avoid
+    /// re-parsing for each one.
+    AccessedAst accessAst();
+    AccessedAst accessAst() const;
 
     /// For MATERIALIZE INDEX and PROJECTION and STATISTICS
     String index_name = {};

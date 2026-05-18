@@ -1616,7 +1616,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
                 }
                 else
                 {
-                    commands_size += command.ast()->size();
+                    commands_size += command.accessAst().getAstPtr()->size();
                 }
             }
 

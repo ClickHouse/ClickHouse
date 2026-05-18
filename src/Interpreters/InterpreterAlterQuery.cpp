@@ -157,8 +157,8 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
             const auto & session_tz = settings[Setting::session_timezone].value;
             if (!session_tz.empty())
             {
-                auto source_ast_ptr = mutation_command->ast();
-                const auto & source_ast = *source_ast_ptr->as<ASTAlterCommand>();
+                auto handle = mutation_command->accessAst();
+                auto & source_ast = *handle;
                 auto tz_rewritten_ast = rewriteDateTimeLiteralsWithTimezone(
                     source_ast, table->getInMemoryMetadataPtr(context, true)->columns, session_tz);
                 if (tz_rewritten_ast)

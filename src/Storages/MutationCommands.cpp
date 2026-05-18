@@ -56,7 +56,7 @@ bool MutationCommand::affectsAllColumns() const
         || type == REWRITE_PARTS;
 }
 
-ASTPtr MutationCommand::ast() const
+static ASTPtr parseMutationCommandText(const String & ast_text, UInt64 max_parser_depth, UInt64 max_parser_backtracks)
 {
     if (ast_text.empty())
         return nullptr;
@@ -75,35 +75,67 @@ ASTPtr MutationCommand::ast() const
     return commands_ast->children[0];
 }
 
-ASTPtr MutationCommand::predicate() const
+MutationCommand::AccessedAst::AccessedAst(MutationCommand * owner_, ASTPtr ast_)
+    : owner(owner_), ast(std::move(ast_))
 {
-    auto command_ast = ast();
-    if (!command_ast)
-        return nullptr;
-    const auto * alter = command_ast->as<ASTAlterCommand>();
+}
+
+MutationCommand::AccessedAst::AccessedAst(AccessedAst && other) noexcept
+    : owner(std::exchange(other.owner, nullptr))
+    , ast(std::move(other.ast))
+{
+}
+
+MutationCommand::AccessedAst & MutationCommand::AccessedAst::operator=(AccessedAst && other) noexcept
+{
+    if (this != &other)
+    {
+        this->~AccessedAst();
+        owner = std::exchange(other.owner, nullptr);
+        ast = std::move(other.ast);
+    }
+    return *this;
+}
+
+MutationCommand::AccessedAst::~AccessedAst() noexcept
+{
+    if (!owner || !ast)
+        return;
+    try
+    {
+        owner->ast_text = ast->formatWithSecretsOneLine();
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// Destructors must not throw. The owning command keeps the previous text.
+    }
+}
+
+ASTAlterCommand * MutationCommand::AccessedAst::getAlter() const
+{
+    return ast ? ast->as<ASTAlterCommand>() : nullptr;
+}
+
+ASTPtr MutationCommand::AccessedAst::getPredicate() const
+{
+    const auto * alter = getAlter();
     if (!alter || !alter->predicate)
         return nullptr;
     return alter->predicate->clone();
 }
 
-ASTPtr MutationCommand::partition() const
+ASTPtr MutationCommand::AccessedAst::getPartition() const
 {
-    auto command_ast = ast();
-    if (!command_ast)
-        return nullptr;
-    const auto * alter = command_ast->as<ASTAlterCommand>();
+    const auto * alter = getAlter();
     if (!alter || !alter->partition)
         return nullptr;
     return alter->partition->clone();
 }
 
-std::unordered_map<String, ASTPtr> MutationCommand::columnToUpdateExpression() const
+std::unordered_map<String, ASTPtr> MutationCommand::AccessedAst::getColumnToUpdateExpression() const
 {
     std::unordered_map<String, ASTPtr> result;
-    auto command_ast = ast();
-    if (!command_ast)
-        return result;
-    const auto * alter = command_ast->as<ASTAlterCommand>();
+    const auto * alter = getAlter();
     if (!alter || !alter->update_assignments)
         return result;
     for (const auto & child : alter->update_assignments->children)
@@ -112,6 +144,17 @@ std::unordered_map<String, ASTPtr> MutationCommand::columnToUpdateExpression() c
         result.emplace(assignment.column_name, assignment.expression()->clone());
     }
     return result;
+}
+
+MutationCommand::AccessedAst MutationCommand::accessAst()
+{
+    return AccessedAst(this, parseMutationCommandText(ast_text, max_parser_depth, max_parser_backtracks));
+}
+
+MutationCommand::AccessedAst MutationCommand::accessAst() const
+{
+    /// Read-only access: do not write the AST back to ast_text on destruction.
+    return AccessedAst(nullptr, parseMutationCommandText(ast_text, max_parser_depth, max_parser_backtracks));
 }
 
 std::optional<MutationCommand> MutationCommand::parse(
@@ -275,7 +318,10 @@ boost::intrusive_ptr<ASTExpressionList> MutationCommands::ast(bool with_pure_met
     for (const MutationCommand & command : *this)
     {
         if (!command.isPureMetadataCommand() || with_pure_metadata_commands)
-            res->children.push_back(command.ast());
+        {
+            auto handle = command.accessAst();
+            res->children.push_back(handle.getAstPtr());
+        }
     }
     return res;
 }
@@ -345,8 +391,11 @@ NameSet MutationCommands::getAllUpdatedColumns() const
 {
     NameSet res;
     for (const auto & command : *this)
-        for (const auto & [column_name, _] : command.columnToUpdateExpression())
+    {
+        auto handle = command.accessAst();
+        for (const auto & [column_name, _] : handle.getColumnToUpdateExpression())
             res.insert(column_name);
+    }
     return res;
 }
 
