@@ -418,6 +418,11 @@ public:
     /// merge payload nullability into the skip mask it passes downstream.
     virtual bool preservesNullablePayloadForIf() const
     {
+        /// Propagate through transparent combinator wrappers so that combinator stacks
+        /// (e.g. `groupFormatDistinct`) inherit the property from the base function.
+        if (auto nested = getNestedFunction())
+            return nested->preservesNullablePayloadForIf();
+
         return false;
     }
 
