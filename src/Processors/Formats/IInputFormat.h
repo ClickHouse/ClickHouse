@@ -67,6 +67,11 @@ struct IBucketSplitter
     /// Returns information about the resulting buckets (see the structure above for details).
     virtual std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
 
+    /// Splits a file into approximately `target_count` buckets, each covering a roughly
+    /// equal slice of the file. Useful for parallelising one large file across N readers.
+    /// The result has at most `target_count` buckets and never drops any data.
+    virtual std::vector<FileBucketInfoPtr> splitToBucketsByCount(size_t target_count, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
+
     virtual ~IBucketSplitter() = default;
 };
 using BucketSplitter = std::shared_ptr<IBucketSplitter>;

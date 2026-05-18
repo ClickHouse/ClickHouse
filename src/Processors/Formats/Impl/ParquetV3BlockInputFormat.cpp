@@ -132,8 +132,23 @@ Chunk ParquetV3BlockInputFormat::read()
         temp_prefetcher.init(in, read_options, parser_shared_resources);
         parquet::format::FileMetaData file_metadata = getFileMetadata(temp_prefetcher);
 
+        size_t num_rows = 0;
+        if (buckets_to_read)
+        {
+            /// Only count rows in the assigned row groups. Otherwise multiple sources
+            /// reading buckets of the same file would each report the file's total.
+            for (size_t rg : buckets_to_read->row_group_ids)
+            {
+                if (rg < file_metadata.row_groups.size())
+                    num_rows += size_t(file_metadata.row_groups[rg].num_rows);
+            }
+        }
+        else
+        {
+            num_rows = size_t(file_metadata.num_rows);
+        }
 
-        auto chunk = getChunkForCount(size_t(file_metadata.num_rows));
+        auto chunk = getChunkForCount(num_rows);
         chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
 
         reported_count = true;
