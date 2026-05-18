@@ -39,6 +39,8 @@
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 
+#include <Parsers/ASTSelectQuery.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -2989,8 +2991,14 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                 auto hints = TypoCorrection::collectIdentifierTypoHints(unresolved_identifier, valid_identifiers);
 
                 std::string from_clause_hint;
-                if (auto * query_node = scope.scope_node->as<QueryNode>(); query_node && !query_node->getJoinTree())
-                    from_clause_hint = ". Note: the query does not have the FROM clause. Did you forget to add it?";
+                if (auto * query_node = scope.scope_node->as<QueryNode>())
+                {
+                    if (const auto & original_ast = query_node->getOriginalAST())
+                    {
+                        if (const auto * select_query = original_ast->as<ASTSelectQuery>(); select_query && !select_query->tables())
+                            from_clause_hint = ". Note: the query does not have the FROM clause. Did you forget to add it?";
+                    }
+                }
 
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier {} in scope {}{}{}",
                     toStringLowercase(IdentifierLookupContext::EXPRESSION),
