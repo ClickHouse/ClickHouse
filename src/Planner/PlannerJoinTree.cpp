@@ -299,22 +299,6 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
     return result;
 }
 
-/// Returns the effective row policy filter for the table, or nullptr if the
-/// table has no row policies for the current user or the combined filter is
-/// always-true. Mirrors the effective-filter check used by
-/// buildRowPolicyFilterIfNeeded.
-RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const ContextPtr & query_context)
-{
-    auto storage_id = storage->getStorageID();
-    if (!storage_id.hasDatabase())
-        return nullptr;
-    auto row_policy_filter = query_context->getRowPolicyFilter(
-        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-    if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
-        return nullptr;
-    return row_policy_filter;
-}
-
 bool applyTrivialCountIfPossible(
     QueryPlan & query_plan,
     SelectQueryInfo & select_query_info,

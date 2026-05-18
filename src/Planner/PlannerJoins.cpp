@@ -1069,6 +1069,12 @@ PreparedJoinStorage tryGetLookupJoinStorage(
     if (!storage)
         return {};
 
+    /// A `SELECT_FILTER` row policy on the right table would be applied during regular
+    /// join planning; the filled direct join built from the lookup index bypasses the
+    /// right query plan, so reject this optimization to preserve visibility.
+    if (getEffectiveRowPolicyFilter(storage, planner_context->getQueryContext()))
+        return {};
+
     PreparedJoinStorage result;
     if (const auto * table_expression_data = planner_context->getTableExpressionDataOrNull(table_expression))
     {

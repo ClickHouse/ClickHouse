@@ -23,8 +23,13 @@
 
 #include <Interpreters/WindowDescription.h>
 
+#include <Access/EnabledRowPolicies.h>
+
 namespace DB
 {
+
+class IStorage;
+using StoragePtr = std::shared_ptr<IStorage>;
 
 /// Dump query plan
 String dumpQueryPlan(const QueryPlan & query_plan);
@@ -123,5 +128,9 @@ bool optimizePlanForExists(QueryPlan & query_plan);
 QueryPlanStepPtr projectOnlyUsedColumns(
     const SharedHeader & stream_header,
     const ColumnIdentifiers & used_column_identifiers);
+
+/// Returns the effective `SELECT_FILTER` row policy for the table, or `nullptr` if
+/// there is no row policy for the current user or the combined filter is always-true.
+RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const ContextPtr & query_context);
 
 }

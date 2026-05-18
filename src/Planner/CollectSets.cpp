@@ -20,6 +20,7 @@
 #include <Interpreters/Set.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <optional>
@@ -74,6 +75,12 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
         if (!storage)
             return std::nullopt;
 
+        /// A `SELECT_FILTER` row policy on the right table would normally be applied
+        /// during regular subquery execution; the lookup fast path bypasses it, so
+        /// fall back to the regular subquery/set path to preserve visibility.
+        if (getEffectiveRowPolicyFilter(storage, planner_context.getQueryContext()))
+            return std::nullopt;
+
         auto columns_to_select = table_node->getStorageSnapshot()->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
         Names key_names;
         key_names.reserve(columns_to_select.size());
@@ -116,6 +123,9 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
 
     auto storage = std::dynamic_pointer_cast<MergeTreeData>(inner_table_node->getStorage());
     if (!storage)
+        return std::nullopt;
+
+    if (getEffectiveRowPolicyFilter(storage, planner_context.getQueryContext()))
         return std::nullopt;
 
     TableExpressionData::ColumnIdentifierToColumnName column_mapping;
