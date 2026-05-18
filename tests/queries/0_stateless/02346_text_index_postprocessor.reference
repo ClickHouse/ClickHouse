@@ -77,10 +77,10 @@ started	1
 1
 0
 0
-12. Array tokenizer + preprocessor: has() / hasAll() / hasAny() bypass the preprocessor.
+12. Array tokenizer + preprocessor: has() / hasAll() / hasAny() apply the preprocessor.
+1
 0
-0
-0
+1
 0
 1
 0

@@ -295,7 +295,10 @@ SELECT count() FROM tab WHERE has(val, 'xyz');   -- 0
 
 DROP TABLE tab;
 
-SELECT '12. Array tokenizer + preprocessor: has() / hasAll() / hasAny() bypass the preprocessor.';
+SELECT '12. Array tokenizer + preprocessor: has() / hasAll() / hasAny() apply the preprocessor.';
+-- Index build applies the preprocessor unconditionally (stores 'foo', 'bar', 'baz').
+-- has/hasAll/hasAny apply the preprocessor to the needle for the granule lookup, so
+-- 'Foo' -> 'foo' finds the right granule; row-level still does literal comparison.
 
 CREATE TABLE tab
 (
@@ -307,9 +310,8 @@ ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO tab VALUES (1, ['Foo']), (2, ['BAR']), (3, ['baz']);
 
--- The index stores preprocessed elements, but these functions use raw array semantics.
-SELECT count() FROM tab WHERE has(val, 'Foo');         -- 1
-SELECT count() FROM tab WHERE has(val, 'foo');         -- 0
+SELECT count() FROM tab WHERE has(val, 'Foo');         -- 1 (preprocessed needle 'foo' finds granule; literal 'Foo' matches row)
+SELECT count() FROM tab WHERE has(val, 'foo');         -- 0 (granule kept, but literal 'foo' ≠ 'Foo')
 SELECT count() FROM tab WHERE hasAll(val, ['BAR']);    -- 1
 SELECT count() FROM tab WHERE hasAll(val, ['bar']);    -- 0
 SELECT count() FROM tab WHERE hasAny(val, ['baz']);    -- 1
