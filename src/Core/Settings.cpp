@@ -6265,7 +6265,7 @@ Wraps the query as a subquery with an explicit `SELECT` expression list. When no
 Adds an `ORDER BY` clause to the query as a wrapping subquery. Accepts an arbitrary expression list.
 )", 0) \
     DECLARE(String, sort, "", R"(
-Adds a simple `ORDER BY` clause to the query as a wrapping subquery. Accepts a comma-separated list of identifiers with optional `+` (ASC) or `-` (DESC) prefix. Cannot be combined with `order`.
+Adds a simple `ORDER BY` clause to the query as a wrapping subquery. Accepts a comma-separated list of identifiers or positional column references (positive integers) with an optional `+` (ASC) or `-` (DESC) prefix. Example: `sort=a,-b` orders by `a` ascending and `b` descending; `sort=1,-2` orders by the first column ascending and the second descending. Cannot be combined with `order`.
 )", 0) \
     DECLARE(String, filter, "", R"(
 Adds a `WHERE` clause to the query as a wrapping subquery. Multiple filters are combined with AND. The HTTP interface allows multiple `filter` URL parameters which are combined with AND in order, and with the value of this setting.

@@ -330,18 +330,29 @@ String convertSortToOrderBy(const String & sort)
             direction = " ASC";
             name = item.substr(1);
         }
-        /// Validate that name is a simple identifier (no spaces or operators).
+        /// Validate that name is a simple identifier OR a positional reference (all digits).
         if (name.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty identifier in 'sort' setting");
-        for (char c : name)
+
+        bool all_digits = std::all_of(name.begin(), name.end(), isNumericASCII);
+        if (!all_digits)
         {
-            if (!isAlphaNumericASCII(c) && c != '_')
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid character '{}' in identifier '{}' in 'sort' setting. Use 'order' for complex expressions.", c, name);
+            for (char c : name)
+            {
+                if (!isAlphaNumericASCII(c) && c != '_')
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid character '{}' in identifier '{}' in 'sort' setting. Use 'order' for complex expressions.", c, name);
+            }
         }
+
         if (!result.empty())
             result += ", ";
-        result += backQuoteIfNeed(name);
+        /// Positional references (e.g. `sort=1,-2`) emit as bare numbers so `ORDER BY 1, 2 DESC`
+        /// refers to the first and second columns of the result set.
+        if (all_digits)
+            result += name;
+        else
+            result += backQuoteIfNeed(name);
         result += direction;
     };
 

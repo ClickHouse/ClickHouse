@@ -45,6 +45,14 @@
 1	one
 2	two
 3	three
+-- sort=1,-2 (positional: column 1 ASC, column 2 DESC)
+1	one
+2	two
+3	three
+-- sort=-1 (positional: column 1 DESC)
+3	three
+2	two
+1	one
 -- filter=a>1
 2	two
 3	three
