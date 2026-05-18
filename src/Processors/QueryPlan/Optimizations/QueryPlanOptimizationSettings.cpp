@@ -51,6 +51,7 @@ namespace Setting
     extern const SettingsBool query_plan_optimize_prewhere;
     extern const SettingsBool query_plan_push_down_limit;
     extern const SettingsBool query_plan_read_in_order_through_join;
+    extern const SettingsBool optimize_aggregation_in_order_limit;
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool query_plan_remove_redundant_distinct;
     extern const SettingsBool query_plan_remove_redundant_sorting;
@@ -183,6 +184,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes];
     enable_full_text_index = from[Setting::enable_full_text_index];
     read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
+    optimize_aggregation_in_order_limit = from[Setting::optimize_aggregation_in_order_limit];
     correlated_subqueries_use_in_memory_buffer = from[Setting::correlated_subqueries_use_in_memory_buffer]
         && from[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT;
 

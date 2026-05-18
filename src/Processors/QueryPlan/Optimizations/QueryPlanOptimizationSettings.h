@@ -86,6 +86,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_projection;
     bool use_query_condition_cache;
     bool read_in_order_through_join;
+    bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)

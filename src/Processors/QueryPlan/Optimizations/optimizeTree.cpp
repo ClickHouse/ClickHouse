@@ -508,7 +508,8 @@ void optimizeTreeSecondPass(
 
     /// Push LIMIT into aggregation-in-order when ORDER BY matches GROUP BY.
     /// Must run after applyOrder, which converts SortingStep to FinishSorting.
-    optimizeLimitForAggregationInOrder(root);
+    if (optimization_settings.optimize_aggregation_in_order_limit)
+        optimizeLimitForAggregationInOrder(root);
 
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);
