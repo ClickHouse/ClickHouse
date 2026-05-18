@@ -10,7 +10,10 @@
 -- inflate the baseline above the cap and trigger `MEMORY_LIMIT_EXCEEDED`
 -- spuriously. Pin settings to keep this regression deterministic.
 
-SET max_memory_usage = '160Mi';
+-- Bumped by 16 MiB to absorb the server-level
+-- `additional_memory_tracking_per_thread` speculative reservation
+-- (4 MiB × max_threads=4 below).
+SET max_memory_usage = '176Mi';
 SET max_bytes_before_external_join = '16Mi';
 SET grace_hash_join_initial_buckets = 1;
 

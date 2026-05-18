@@ -1,4 +1,5 @@
-SET max_memory_usage = 50000000;
+SET max_threads = 1; -- keep the `additional_memory_tracking_per_thread` reservation deterministic
+SET max_memory_usage = 54194304; -- 50 MB + 4 MiB to absorb `additional_memory_tracking_per_thread`
 SET join_algorithm = 'partial_merge';
 
 SELECT count(1) FROM (

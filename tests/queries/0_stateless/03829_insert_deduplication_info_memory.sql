@@ -10,10 +10,12 @@ CREATE TABLE t_dedup_memory (x UInt32, fat FixedString(10000)) ENGINE = MergeTre
 -- 10 000 rows * 10 000 bytes FixedString ≈ 100 MB of column data.
 -- With the bug, original_block doubles this to ~200 MB, exceeding the limit.
 -- Without the bug, only the data columns are held, fitting within the limit.
-SET max_memory_usage = '150M';
+-- The limit is bumped by 4 MiB to absorb the server-level
+-- `additional_memory_tracking_per_thread` speculative reservation.
+SET max_memory_usage = '154M';
 
 INSERT INTO t_dedup_memory SELECT number, toString(number) FROM numbers(10000)
-    SETTINGS max_insert_threads = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
+    SETTINGS max_insert_threads = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_threads = 1;
 
 SELECT count() FROM t_dedup_memory;
 

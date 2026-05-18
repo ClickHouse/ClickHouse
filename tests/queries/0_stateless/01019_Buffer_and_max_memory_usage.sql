@@ -23,7 +23,12 @@ CREATE TABLE buffer_ (key UInt64) Engine=Buffer(currentDatabase(), null_,
     80e6  /* max_bytes  */
 );
 
-SET max_memory_usage=10e6;
+-- Bump `max_memory_usage` to absorb the server-level
+-- `additional_memory_tracking_per_thread` speculative reservation (4 MiB
+-- per pipeline worker, default). With a single pipeline worker the offset
+-- is deterministic.
+SET max_threads=1;
+SET max_memory_usage=14194304; -- 10e6 + 4 MiB
 SET max_block_size=100e3;
 SET max_insert_threads=1;
 

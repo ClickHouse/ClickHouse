@@ -19,7 +19,10 @@ function execute()
 # TEST SETTINGS
 #
 TEST_01278_PARTS=9
-TEST_01278_MEMORY=$((100<<20))
+# Bump the memory cap by 4 MiB to absorb the server-level
+# `additional_memory_tracking_per_thread` speculative reservation per
+# pipeline worker (4 MiB default).
+TEST_01278_MEMORY=$(((100<<20) + (4<<20)))
 
 function cleanup()
 {

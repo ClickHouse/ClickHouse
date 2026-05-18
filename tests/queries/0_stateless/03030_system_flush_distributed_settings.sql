@@ -16,7 +16,9 @@ SET optimize_trivial_insert_select = 1;
 
 -- due to pushing to MV with aggregation the query needs ~300MiB
 -- but it will be done in background via "system flush distributed"
-insert into dist_in select number/100, number from system.numbers limit 3e6 settings max_block_size=3e6, max_memory_usage='100Mi';
+-- max_threads=1 keeps the `additional_memory_tracking_per_thread` speculative
+-- reservation (4 MiB default) to a single fixed offset against `max_memory_usage`
+insert into dist_in select number/100, number from system.numbers limit 3e6 settings max_block_size=3e6, max_memory_usage='104Mi', max_threads=1;
 system flush distributed dist_in; -- { serverError MEMORY_LIMIT_EXCEEDED }
 system flush distributed dist_in settings max_memory_usage=0;
 select count() from dist_out;
