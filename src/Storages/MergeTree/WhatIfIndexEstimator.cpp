@@ -102,7 +102,7 @@ void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTre
         collectReadSteps(child, steps);
 }
 
-/// Estimate skip ratio from column statistics (row-level selectivity as upper bound) - not accurate
+/// Estimate skip ratio from column statistics (row-level selectivity as upper bound)
 bool tryEstimateWithStatistics(
     WhatIfIndexEstimator::IndexResult & result,
     ReadFromMergeTree * read_step,
@@ -193,8 +193,7 @@ bool tryEstimateEmpirical(
         if (mark_ranges.empty())
             continue;
 
-        /// Read the whole part: `MergeTreeSequentialSource` sizes reads from mark 0, so
-        /// passing pruned ranges trips a `LOGICAL_ERROR` when marks are non-uniform
+        /// Read the whole part, pruned ranges trip a `LOGICAL_ERROR` on non-uniform marks
         std::vector<bool> in_baseline(part->getMarksCount(), false);
         for (const auto & range : mark_ranges)
             for (size_t m = range.begin; m < range.end && m < in_baseline.size(); ++m)
@@ -219,8 +218,7 @@ bool tryEstimateEmpirical(
         QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
 
-        /// One mark may arrive across several pulls (wide rows / byte-limited reads),
-        /// so advance bookkeeping by row count
+        /// One mark can arrive across multiple pulls, so advance by rows
         const auto & part_index_granularity = part->index_granularity;
         const size_t total_marks = part_index_granularity->getMarksCountWithoutFinal();
 
@@ -388,10 +386,10 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
 {
     auto settings = WhatIfSettings::fromAST(explain_settings);
 
-    /// Hypothetical indexes only exist on the initiator; with parallel replicas the
-    /// SELECT is dispatched remotely and the plan root isn't `ReadFromMergeTree`
+    /// Lock down inner `SETTINGS` so zcontract stays deterministic
     auto local_context = Context::createCopy(context);
     local_context->setSetting("enable_parallel_replicas", Field{UInt64{0}});
+    local_context->setSetting("use_skip_indexes_on_data_read", Field{UInt64{0}});
 
     SelectQueryOptions query_options;
     query_options.setExplain();
