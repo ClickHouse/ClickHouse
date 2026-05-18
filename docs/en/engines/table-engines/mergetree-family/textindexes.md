@@ -70,7 +70,7 @@ Text indexes can be used with any ClickHouse version >= 26.2, regardless of the 
 
 To create a text index use the following syntax:
 
-```sql
+```sql title="Query"
 CREATE TABLE table
 (
     key UInt64,
@@ -107,7 +107,7 @@ Columns of type [Nullable(T)](/sql-reference/data-types/nullable.md) and [LowCar
 
 Alternatively, to add a text index to an existing table:
 
-```sql
+```sql title="Query"
 ALTER TABLE table
     ADD INDEX text_idx(str) TYPE text(
                                 -- Mandatory parameters:
@@ -131,13 +131,13 @@ ALTER TABLE table
 
 If you add an index to an existing table, we recommend materializing the index for existing table parts (otherwise search on parts without index will fall back to slow brute-force scans).
 
-```sql
+```sql title="Query"
 ALTER TABLE table MATERIALIZE INDEX text_idx SETTINGS mutations_sync = 2;
 ```
 
 To remove a text index, please run
 
-```sql
+```sql title="Query"
 ALTER TABLE table DROP INDEX text_idx;
 ```
 
@@ -174,13 +174,11 @@ To understand how a tokenizer split the input string, you can use the [tokens](/
 
 Example:
 
-```sql
+```sql title="Query"
 SELECT tokens('abc def', 'ngrams', 3);
 ```
 
-Result:
-
-```result
+```result title="Response"
 ['abc','bc ','c d',' de','def']
 ```
 
@@ -220,7 +218,7 @@ Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasTok
 
 For example,
 
-```sql
+```sql title="Query"
 CREATE TABLE table
 (
     str String,
@@ -234,7 +232,7 @@ SELECT count() FROM table WHERE hasToken(str, 'Foo');
 
 is equivalent to:
 
-```sql
+```sql title="Query"
 CREATE TABLE table
 (
     str String,
@@ -250,7 +248,7 @@ In this case, the preprocessor expression transforms the array elements individu
 
 Example:
 
-```sql
+```sql title="Query"
 CREATE TABLE table
 (
     arr Array(String),
@@ -270,7 +268,7 @@ build on the map keys or values.
 
 Example:
 
-```sql
+```sql title="Query"
 CREATE TABLE table
 (
     map Map(String, String),
@@ -462,7 +460,7 @@ This can be seen in the table definition of a text index.
 
 Example:
 
-```sql
+```sql title="Query"
 CREATE TABLE table(
     k UInt64,
     s String,
@@ -473,9 +471,7 @@ ORDER BY k;
 SHOW CREATE TABLE table;
 ```
 
-Result:
-
-```result
+```result title="Response"
 ┌─statement──────────────────────────────────────────────────────────────┐
 │ CREATE TABLE default.table                                            ↴│
 │↳(                                                                     ↴│
@@ -837,7 +833,7 @@ There are two ways to reference a JSON subcolumn in an index expression:
 
 Example index definition:
 
-```sql
+```sql title="Query"
 CREATE TABLE sensor_data
 (
     data JSON(sensor_id String),
@@ -854,13 +850,11 @@ INSERT INTO sensor_data SELECT toJSONString(map('sensor_id', 'id_' || number, 'l
 
 Example query:
 
-```sql
+```sql title="Query"
 EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.sensor_id = 'id_5';
 ```
 
-Result:
-
-```text
+```text title="Response"
 ...
     Indexes:
       Skip
@@ -873,13 +867,11 @@ Result:
 
 Example query:
 
-```sql
+```sql title="Query"
 EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.location::String = 'room_5';
 ```
 
-Result:
-
-```text
+```text title="Response"
 ...
     Indexes:
       Skip
@@ -897,7 +889,7 @@ The index stores the set of JSON paths present in each granule and uses them to 
 
 Example index definition:
 
-```sql
+```sql title="Query"
 CREATE TABLE events
 (
     data JSON,
@@ -915,13 +907,11 @@ When a path exists only in one part, the index skips the other part.
 
 Example:
 
-```sql
+```sql title="Query"
 EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name = 'Alice';
 ```
 
-Result:
-
-```text
+```text title="Response"
 ...
     Indexes:
       Skip
@@ -936,11 +926,9 @@ When a path does not exist in any part, all parts and granules are skipped.
 
 Example:
 
-```sql
+```sql title="Query"
 EXPLAIN indexes = 1 SELECT * FROM events WHERE data.nonexistent = 1;
 ```
-
-Result:
 
 ```text title="Response"
 ...
@@ -957,13 +945,11 @@ Result:
 
 Example:
 
-```sql
+```sql title="Query"
 EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ...
     Indexes:
       Skip
@@ -1048,7 +1034,7 @@ Tokenizer separator characters in the phrase are ignored: `hasPhrase(text, 'quic
 
 #### Example {#text-index-phrase-search-example}
 
-```sql
+```sql title="Query"
 CREATE TABLE tab (
     id UInt32,
     text String,
@@ -1063,13 +1049,11 @@ INSERT INTO tab VALUES
     (3, 'weather in New Orleans');
 ```
 
-```sql
+```sql title="Query"
 SELECT id, text FROM tab WHERE hasPhrase(text, 'weather in New York');
 ```
 
-Result:
-
-```result
+```result title="Response"
    ┌─id─┬─text────────────────┐
 1. │  1 │ weather in New York │
    └────┴─────────────────────┘
