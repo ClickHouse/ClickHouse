@@ -48,11 +48,14 @@ static void setUserAndGroup(std::string arg_uid, std::string arg_gid)
     static constexpr size_t buf_size = 16384; /// Linux man page says it is enough. Nevertheless, we will check if it's not enough and throw.
     std::unique_ptr<char[]> buf(new char[buf_size]);
 
-    /// Set the group first, because if we set user, the privileges will be already dropped and we will not be able to set the group later.
+    /// Resolve the target group GID first, while we still have privileges.
+    /// The actual setgid() call is deferred until after initgroups() so we
+    /// can reset the supplementary group list before dropping privileges.
 
+    bool has_gid = false;
+    gid_t gid = 0;
     if (!arg_gid.empty())
     {
-        gid_t gid = 0;
         if (!tryParse(gid, arg_gid) || gid == 0)
         {
             group entry{};
@@ -76,19 +79,24 @@ static void setUserAndGroup(std::string arg_uid, std::string arg_gid)
         if (gid == 0 && getgid() != 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Group has id 0, but dropping privileges to gid 0 does not make sense");
 
-        if (0 != setgid(gid))
-            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'setgid' to user ({})", arg_gid);
+        has_gid = true;
     }
 
+    /// Resolve the target user UID and, where possible, the user name and primary
+    /// GID. We always consult the passwd database (even when arg_uid is numeric) so
+    /// that initgroups() can look up the user's supplementary group memberships.
+
+    bool has_uid = false;
+    uid_t uid = 0;
+    std::string user_name;
+    gid_t user_primary_gid = 0;
     if (!arg_uid.empty())
     {
-        /// Is it numeric id or name?
-        uid_t uid = 0;
+        passwd entry{};
+        passwd * result{};
+
         if (!tryParse(uid, arg_uid) || uid == 0)
         {
-            passwd entry{};
-            passwd * result{};
-
             if (0 != getpwnam_r(arg_uid.data(), &entry, buf.get(), buf_size, &result))
                 throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'getpwnam_r' to obtain uid from user name ({})", arg_uid);
 
@@ -102,11 +110,57 @@ static void setUserAndGroup(std::string arg_uid, std::string arg_gid)
             }
 
             uid = entry.pw_uid;
+            user_name = entry.pw_name;
+            user_primary_gid = entry.pw_gid;
+        }
+        else
+        {
+            /// Numeric, non-zero UID. Look up the passwd entry to obtain the user
+            /// name needed by initgroups(). If no entry exists we still proceed,
+            /// and the supplementary group list is cleared rather than populated
+            /// from /etc/group.
+            if (0 == getpwuid_r(uid, &entry, buf.get(), buf_size, &result) && result)
+            {
+                user_name = entry.pw_name;
+                user_primary_gid = entry.pw_gid;
+            }
         }
 
         if (uid == 0 && getuid() != 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "User has id 0, but dropping privileges to uid 0 does not make sense");
 
+        has_uid = true;
+    }
+
+    /// Reset the supplementary group list before dropping privileges. Otherwise
+    /// the dropped process silently inherits the caller's supplementary groups
+    /// (typically root's), defeating the intent of the privilege drop (CWE-273).
+    if (has_uid)
+    {
+        gid_t group_for_initgroups = has_gid ? gid : user_primary_gid;
+
+        if (!user_name.empty())
+        {
+            if (0 != initgroups(user_name.c_str(), group_for_initgroups))
+                throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'initgroups' for user ({})", user_name);
+        }
+        else
+        {
+            /// No passwd entry for this UID; clear supplementary groups entirely.
+            if (0 != setgroups(0, nullptr))
+                throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'setgroups' to clear supplementary groups");
+        }
+    }
+
+    /// Now drop privileges.
+    if (has_gid)
+    {
+        if (0 != setgid(gid))
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'setgid' to user ({})", arg_gid);
+    }
+
+    if (has_uid)
+    {
         if (0 != setuid(uid))
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot do 'setuid' to user ({})", arg_uid);
     }
