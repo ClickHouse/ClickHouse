@@ -4290,15 +4290,24 @@ document.getElementById('download-button').addEventListener('click', async funct
     /// The `/webterminal` endpoint lives on the ClickHouse server addressed by `url_elem.value`,
     /// which may differ from the page's own origin when the page is opened locally with `?url=...`.
     /// Resolve both the availability probe and the iframe `src` against the same configured server URL.
+    /// Returns `null` if the configured URL cannot be parsed, so the caller can treat the terminal
+    /// as unavailable instead of letting the exception abort `play.html` initialization.
     function getTerminalURL() {
-        return new URL('/webterminal', url_elem.value).href;
+        try {
+            return new URL('/webterminal', url_elem.value).href;
+        } catch (e) {
+            return null;
+        }
     }
 
     /// Hide the terminal icon if /webterminal is not available (gated by allow_experimental_webterminal).
     terminalIcon.style.display = 'none';
-    fetch(getTerminalURL(), {method: 'HEAD'}).then(function(resp) {
-        if (resp.ok) terminalIcon.style.display = '';
-    }).catch(function() {});
+    const terminalProbeURL = getTerminalURL();
+    if (terminalProbeURL) {
+        fetch(terminalProbeURL, {method: 'HEAD'}).then(function(resp) {
+            if (resp.ok) terminalIcon.style.display = '';
+        }).catch(function() {});
+    }
 
     function sendCredentialsToTerminal() {
         if (terminalIframe && terminalIframe.contentWindow && terminalOrigin) {
@@ -4319,6 +4328,11 @@ document.getElementById('download-button').addEventListener('click', async funct
 
     function activateTerminal() {
         if (terminalActive) return;
+        /// Bail out before mutating any state if the configured server URL is currently invalid.
+        /// The icon is only shown when the initial probe succeeded, so this can happen only if the
+        /// user edited `url_elem.value` to something unparseable between page load and this click.
+        const terminalSrc = terminalIframe ? null : getTerminalURL();
+        if (!terminalIframe && !terminalSrc) return;
         terminalActive = true;
         terminalIcon.classList.add('active');
         terminalPanel.classList.add('active');
@@ -4327,7 +4341,6 @@ document.getElementById('download-button').addEventListener('click', async funct
             terminalPanel.style.height = Math.round(window.innerHeight * 0.4) + 'px';
             terminalIframe = document.createElement('iframe');
             terminalIframe.id = 'terminal-iframe';
-            const terminalSrc = getTerminalURL();
             terminalOrigin = new URL(terminalSrc).origin;
             terminalIframe.src = terminalSrc;
             terminalIframe.addEventListener('load', sendCredentialsToTerminal);
