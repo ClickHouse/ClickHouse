@@ -19,4 +19,7 @@ SELECT prettyPrintJSON(''); -- { serverError BAD_ARGUMENTS }
 -- Embedded NUL bytes must not silently truncate the input
 SELECT prettyPrintJSON(concat('{"a":1}', char(0), 'garbage')); -- { serverError BAD_ARGUMENTS }
 SELECT length(prettyPrintJSON(concat(repeat('{"a":', 1000), '1', repeat('}', 1000)))) > 0;
+-- Extreme nesting depth: streaming Reader->PrettyWriter pipeline handles this
+-- without stack overflow. Use indent=0 to keep output size O(N) instead of O(N^2).
+SELECT length(prettyPrintJSON(concat(repeat('{"a":', 100000), '1', repeat('}', 100000)), 0)) > 0;
 SELECT prettyPrintJSON('{"a" : ' || number || '}', 2) FROM numbers(5);

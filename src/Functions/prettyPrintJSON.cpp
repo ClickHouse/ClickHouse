@@ -12,7 +12,8 @@
 /// Prevent stack overflow:
 #define RAPIDJSON_PARSE_DEFAULT_FLAGS (kParseIterativeFlag)
 
-#include <rapidjson/document.h>
+#include <rapidjson/reader.h>
+#include <rapidjson/memorystream.h>
 #include <rapidjson/prettywriter.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/error/en.h>
@@ -90,20 +91,23 @@ public:
                     "Invalid JSON string in function {}: embedded NULL byte",
                     getName());
 
-            rapidjson::Document document;
-            document.Parse(str_view.data(), str_view.size());
+            rapidjson::StringBuffer buffer;
+            rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);
+            writer.SetIndent(' ', indent_count);
 
-            if (document.HasParseError())
+            /// Stream JSON directly from Reader to PrettyWriter without building
+            /// a DOM. Both Reader (with kParseIterativeFlag) and PrettyWriter use
+            /// heap-allocated stacks, so arbitrarily deep nesting is safe.
+            rapidjson::MemoryStream ms(str_view.data(), str_view.size());
+            rapidjson::Reader reader;
+            auto parse_result = reader.Parse(ms, writer);
+
+            if (parse_result.IsError())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Invalid JSON string in function {}: {}",
                     getName(),
-                    rapidjson::GetParseError_En(document.GetParseError()));
-
-            rapidjson::StringBuffer buffer;
-            rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);
-            writer.SetIndent(' ', indent_count);
-            document.Accept(writer);
+                    rapidjson::GetParseError_En(parse_result.Code()));
 
             result->insertData(buffer.GetString(), buffer.GetSize());
         }
