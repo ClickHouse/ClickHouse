@@ -144,7 +144,7 @@ AggregatingStep::AggregatingStep(
     bool should_produce_results_in_order_of_bucket_number_,
     bool memory_bound_merging_of_aggregation_results_enabled_,
     bool explicit_sorting_required_for_aggregation_in_order_,
-    bool optimize_aggregation_by_sharding_)
+    bool enable_sharding_aggregator_)
     : ITransformingStep(
         input_header_,
         std::make_shared<const Block>(appendGroupingColumn(params_.getHeader(*input_header_, final_), params_.keys, !grouping_sets_params_.empty(), group_by_use_nulls_)),
@@ -164,7 +164,7 @@ AggregatingStep::AggregatingStep(
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
     , explicit_sorting_required_for_aggregation_in_order(explicit_sorting_required_for_aggregation_in_order_)
-    , optimize_aggregation_by_sharding(optimize_aggregation_by_sharding_)
+    , enable_sharding_aggregator(enable_sharding_aggregator_)
 {
 }
 
@@ -298,7 +298,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// As a result, same key from different rows will always go to the same shard and we can aggregate
     /// each shard independently without merge phase.
     /// Fast for high cardinality keys with evenly distributed data, but has overhead of sharding and is not optimal for low cardinality keys.
-    const bool use_sharded_aggregation = optimize_aggregation_by_sharding
+    const bool use_sharded_aggregation = enable_sharding_aggregator
         /// We may want to use this even in the case of `num_streams = 1`
         /// If `num_streams = 1`, then one stream can be split into N shards and processed in parallel.
         && params.max_threads > 1
@@ -1074,7 +1074,7 @@ QueryPlanStepPtr AggregatingStep::clone() const
         should_produce_results_in_order_of_bucket_number,
         memory_bound_merging_of_aggregation_results_enabled,
         explicit_sorting_required_for_aggregation_in_order,
-        optimize_aggregation_by_sharding
+        enable_sharding_aggregator
     );
 }
 

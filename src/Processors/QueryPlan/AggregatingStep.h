@@ -35,7 +35,7 @@ public:
         bool should_produce_results_in_order_of_bucket_number_,
         bool memory_bound_merging_of_aggregation_results_enabled_,
         bool explicit_sorting_required_for_aggregation_in_order_,
-        bool optimize_aggregation_by_sharding_);
+        bool enable_sharding_aggregator_);
 
     static Block appendGroupingColumn(const Block & block, const Names & keys, bool has_grouping, bool use_nulls);
 
@@ -136,7 +136,7 @@ private:
     const bool should_produce_results_in_order_of_bucket_number;
     bool memory_bound_merging_of_aggregation_results_enabled;
     bool explicit_sorting_required_for_aggregation_in_order;
-    bool optimize_aggregation_by_sharding;
+    bool enable_sharding_aggregator;
 
     Processors aggregating_in_order;
     Processors aggregating_sorted;

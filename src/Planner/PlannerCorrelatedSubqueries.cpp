@@ -385,7 +385,7 @@ QueryPlan decorrelateQueryPlan(
             aggeregating_step->shouldProduceResultsInBucketOrder(),
             aggeregating_step->usingMemoryBoundMerging(),
             aggeregating_step->explicitSortingRequired(),
-            false /*optimize_aggregation_by_sharding_*/
+            false /*enable_sharding_aggregator_*/
         );
         result_step->setStepDescription(*aggeregating_step);
 

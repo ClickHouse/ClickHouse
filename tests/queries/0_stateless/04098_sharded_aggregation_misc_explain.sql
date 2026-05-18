@@ -30,61 +30,61 @@ FROM numbers(300000);
 SELECT 'HAVING clause';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) AS s FROM test GROUP BY a HAVING s > 1000000
-    SETTINGS optimize_aggregation_by_sharding = 1
+    SETTINGS enable_sharding_aggregator = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 SELECT 'HAVING with count filter';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT a, count() AS cnt FROM test GROUP BY a HAVING cnt >= 3
-    SETTINGS optimize_aggregation_by_sharding = 1
+    SETTINGS enable_sharding_aggregator = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 SELECT 'HAVING with multiple aggregates';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) AS s, max(b) AS m FROM test GROUP BY a HAVING s > 500000 AND m > 100000
-    SETTINGS optimize_aggregation_by_sharding = 1
+    SETTINGS enable_sharding_aggregator = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 SELECT 'ORDER BY on aggregation result';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) AS s FROM test GROUP BY a ORDER BY s DESC LIMIT 10
-    SETTINGS optimize_aggregation_by_sharding = 1
+    SETTINGS enable_sharding_aggregator = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 SELECT 'ORDER BY key';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) AS s FROM test GROUP BY a ORDER BY a LIMIT 10
-    SETTINGS optimize_aggregation_by_sharding = 1
+    SETTINGS enable_sharding_aggregator = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 SELECT 'ORDER BY with LIMIT';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT b % 1000 AS k, sum(b) AS s FROM test GROUP BY k ORDER BY k LIMIT 20
-    SETTINGS optimize_aggregation_by_sharding = 1
+    SETTINGS enable_sharding_aggregator = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 SELECT 'quantile';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT a, quantile(b) FROM test GROUP BY a
-    SETTINGS optimize_aggregation_by_sharding = 1
+    SETTINGS enable_sharding_aggregator = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 SELECT 'quantileExact';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT a, quantileExact(b) FROM test GROUP BY a
-    SETTINGS optimize_aggregation_by_sharding = 1
+    SETTINGS enable_sharding_aggregator = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 SELECT 'median';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT a, median(b) FROM test GROUP BY a
-    SETTINGS optimize_aggregation_by_sharding = 1
+    SETTINGS enable_sharding_aggregator = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 SELECT 'quantiles (multiple quantile levels)';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT a, quantiles(0.25, 0.5, 0.75)(b) FROM test GROUP BY a
-    SETTINGS optimize_aggregation_by_sharding = 1
+    SETTINGS enable_sharding_aggregator = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 SELECT 'Skewed distribution (one dominant key)';
@@ -97,31 +97,31 @@ SELECT
 FROM numbers(300000);
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) FROM test_skewed GROUP BY a
-    SETTINGS optimize_aggregation_by_sharding = 1
+    SETTINGS enable_sharding_aggregator = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 SELECT 'Skewed distribution with multiple aggregates';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b), count(), max(b) FROM test_skewed GROUP BY a
-    SETTINGS optimize_aggregation_by_sharding = 1
+    SETTINGS enable_sharding_aggregator = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 SELECT 'max_threads = 2 (minimum parallelism)';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) FROM test GROUP BY a
-    SETTINGS optimize_aggregation_by_sharding = 1, max_threads = 2
+    SETTINGS enable_sharding_aggregator = 1, max_threads = 2
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 SELECT 'max_threads = 2 with count';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT a, count() FROM test GROUP BY a
-    SETTINGS optimize_aggregation_by_sharding = 1, max_threads = 2
+    SETTINGS enable_sharding_aggregator = 1, max_threads = 2
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 SELECT 'max_threads = 2 with Nullable key';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT nullable_key, sum(b) FROM test GROUP BY nullable_key
-    SETTINGS optimize_aggregation_by_sharding = 1, max_threads = 2
+    SETTINGS enable_sharding_aggregator = 1, max_threads = 2
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 DROP TABLE IF EXISTS test;

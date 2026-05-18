@@ -31,45 +31,45 @@ SELECT 'Base case: sharded aggregation is used';
 SELECT
     (SELECT sum(s), count() FROM
         (SELECT a, sum(b) AS s FROM test_sharded_agg_neg GROUP BY a
-         SETTINGS optimize_aggregation_by_sharding = 0, optimize_aggregation_in_order = 0))
+         SETTINGS enable_sharding_aggregator = 0, optimize_aggregation_in_order = 0))
     =
     (SELECT sum(s), count() FROM
         (SELECT a, sum(b) AS s FROM test_sharded_agg_neg GROUP BY a
-         SETTINGS optimize_aggregation_by_sharding = 1, optimize_aggregation_in_order = 0));
+         SETTINGS enable_sharding_aggregator = 1, optimize_aggregation_in_order = 0));
 
 SELECT 'Aggregation in order enabled, takes precedence over sharded aggregation';
 SELECT
     (SELECT sum(s), count() FROM
         (SELECT a, sum(b) AS s FROM test_sharded_agg_neg GROUP BY a
-         SETTINGS optimize_aggregation_by_sharding = 0, optimize_aggregation_in_order = 1))
+         SETTINGS enable_sharding_aggregator = 0, optimize_aggregation_in_order = 1))
     =
     (SELECT sum(s), count() FROM
         (SELECT a, sum(b) AS s FROM test_sharded_agg_neg GROUP BY a
-         SETTINGS optimize_aggregation_by_sharding = 1, optimize_aggregation_in_order = 1));
+         SETTINGS enable_sharding_aggregator = 1, optimize_aggregation_in_order = 1));
 
 SELECT 'No GROUP BY keys';
 SELECT
-    (SELECT sum(b) FROM test_sharded_agg_neg SETTINGS optimize_aggregation_by_sharding = 0)
+    (SELECT sum(b) FROM test_sharded_agg_neg SETTINGS enable_sharding_aggregator = 0)
     =
-    (SELECT sum(b) FROM test_sharded_agg_neg SETTINGS optimize_aggregation_by_sharding = 1);
+    (SELECT sum(b) FROM test_sharded_agg_neg SETTINGS enable_sharding_aggregator = 1);
 
 SELECT 'UInt8 key (too low cardinality for sharding)';
 SELECT
-    (SELECT sum(s), count() FROM (SELECT u8, sum(b) AS s FROM test_sharded_agg_neg GROUP BY u8 SETTINGS optimize_aggregation_by_sharding = 0))
+    (SELECT sum(s), count() FROM (SELECT u8, sum(b) AS s FROM test_sharded_agg_neg GROUP BY u8 SETTINGS enable_sharding_aggregator = 0))
     =
-    (SELECT sum(s), count() FROM (SELECT u8, sum(b) AS s FROM test_sharded_agg_neg GROUP BY u8 SETTINGS optimize_aggregation_by_sharding = 1));
+    (SELECT sum(s), count() FROM (SELECT u8, sum(b) AS s FROM test_sharded_agg_neg GROUP BY u8 SETTINGS enable_sharding_aggregator = 1));
 
 SELECT 'Int8 key (too low cardinality for sharding)';
 SELECT
-    (SELECT sum(s), count() FROM (SELECT toInt8(u8) AS k, sum(b) AS s FROM test_sharded_agg_neg GROUP BY k SETTINGS optimize_aggregation_by_sharding = 0))
+    (SELECT sum(s), count() FROM (SELECT toInt8(u8) AS k, sum(b) AS s FROM test_sharded_agg_neg GROUP BY k SETTINGS enable_sharding_aggregator = 0))
     =
-    (SELECT sum(s), count() FROM (SELECT toInt8(u8) AS k, sum(b) AS s FROM test_sharded_agg_neg GROUP BY k SETTINGS optimize_aggregation_by_sharding = 1));
+    (SELECT sum(s), count() FROM (SELECT toInt8(u8) AS k, sum(b) AS s FROM test_sharded_agg_neg GROUP BY k SETTINGS enable_sharding_aggregator = 1));
 
 SELECT 'LowCardinality key';
 SELECT
-    (SELECT sum(s), count() FROM (SELECT lc_key, sum(b) AS s FROM test_sharded_agg_neg GROUP BY lc_key SETTINGS optimize_aggregation_by_sharding = 0))
+    (SELECT sum(s), count() FROM (SELECT lc_key, sum(b) AS s FROM test_sharded_agg_neg GROUP BY lc_key SETTINGS enable_sharding_aggregator = 0))
     =
-    (SELECT sum(s), count() FROM (SELECT lc_key, sum(b) AS s FROM test_sharded_agg_neg GROUP BY lc_key SETTINGS optimize_aggregation_by_sharding = 1));
+    (SELECT sum(s), count() FROM (SELECT lc_key, sum(b) AS s FROM test_sharded_agg_neg GROUP BY lc_key SETTINGS enable_sharding_aggregator = 1));
 
 SELECT 'GROUPING SETS';
 SELECT
@@ -77,18 +77,18 @@ SELECT
         (SELECT sum(b) AS s
          FROM test_sharded_agg_neg
          GROUP BY GROUPING SETS ((a), (u8))
-         SETTINGS optimize_aggregation_by_sharding = 0))
+         SETTINGS enable_sharding_aggregator = 0))
     =
     (SELECT sum(s), count() FROM
         (SELECT sum(b) AS s
          FROM test_sharded_agg_neg
          GROUP BY GROUPING SETS ((a), (u8))
-         SETTINGS optimize_aggregation_by_sharding = 1));
+         SETTINGS enable_sharding_aggregator = 1));
 
 SELECT 'Single stream (max_threads = 1)';
 SELECT
-    (SELECT sum(s), count() FROM (SELECT a, sum(b) AS s FROM test_sharded_agg_neg GROUP BY a SETTINGS optimize_aggregation_by_sharding = 0, max_threads = 1))
+    (SELECT sum(s), count() FROM (SELECT a, sum(b) AS s FROM test_sharded_agg_neg GROUP BY a SETTINGS enable_sharding_aggregator = 0, max_threads = 1))
     =
-    (SELECT sum(s), count() FROM (SELECT a, sum(b) AS s FROM test_sharded_agg_neg GROUP BY a SETTINGS optimize_aggregation_by_sharding = 1, max_threads = 1));
+    (SELECT sum(s), count() FROM (SELECT a, sum(b) AS s FROM test_sharded_agg_neg GROUP BY a SETTINGS enable_sharding_aggregator = 1, max_threads = 1));
 
 DROP TABLE test_sharded_agg_neg;

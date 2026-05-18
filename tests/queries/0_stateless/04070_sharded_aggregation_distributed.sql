@@ -25,16 +25,16 @@ SELECT 'Distributed aggregation via remote(): correctness';
 SELECT
     (SELECT sum(s), count() FROM
         (SELECT a, sum(b) AS s FROM remote('127.0.0.{1,1}', currentDatabase(), test_sharded_agg_dist) GROUP BY a
-         SETTINGS optimize_aggregation_by_sharding = 0))
+         SETTINGS enable_sharding_aggregator = 0))
     =
     (SELECT sum(s), count() FROM
         (SELECT a, sum(b) AS s FROM remote('127.0.0.{1,1}', currentDatabase(), test_sharded_agg_dist) GROUP BY a
-         SETTINGS optimize_aggregation_by_sharding = 1));
+         SETTINGS enable_sharding_aggregator = 1));
 
 SELECT 'Distributed aggregation via remote(): no ScatterByHashTransform in pipeline';
 SELECT count() = 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) FROM remote('127.0.0.{1,1}', currentDatabase(), test_sharded_agg_dist) GROUP BY a
-    SETTINGS optimize_aggregation_by_sharding = 1
+    SETTINGS enable_sharding_aggregator = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
 DROP TABLE test_sharded_agg_dist;

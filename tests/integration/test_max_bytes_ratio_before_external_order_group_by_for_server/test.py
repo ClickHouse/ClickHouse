@@ -50,7 +50,7 @@ def test_max_bytes_ratio_before_external_group_by(node):
         # Sharded aggregation disables external group by (no spill support yet),
         # which would cause OOM in this test. Disable sharded aggregation for now.
         # Once sharded aggregation is turned off by default, remove this setting.
-        "optimize_aggregation_by_sharding": 0,
+        "enable_sharding_aggregator": 0,
     }
     node.query(query, settings=settings)
 

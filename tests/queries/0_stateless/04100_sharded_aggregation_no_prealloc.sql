@@ -1,4 +1,4 @@
-SET optimize_aggregation_by_sharding = 1;
+SET enable_sharding_aggregator = 1;
 
 DROP TABLE IF EXISTS test_no_prealloc_cube;
 CREATE TABLE test_no_prealloc_cube (a String, b UInt64) ENGINE = MergeTree ORDER BY tuple();

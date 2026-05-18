@@ -178,7 +178,7 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_sort_description;
     extern const SettingsBool multiple_joins_try_to_keep_original_names;
     extern const SettingsBool optimize_aggregation_in_order;
-    extern const SettingsBool optimize_aggregation_by_sharding;
+    extern const SettingsBool enable_sharding_aggregator;
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool optimize_uniq_to_count;
@@ -3015,7 +3015,7 @@ void InterpreterSelectQuery::executeAggregation(
         should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
         !group_by_info && settings[Setting::force_aggregation_in_order],
-        settings[Setting::optimize_aggregation_by_sharding]);
+        settings[Setting::enable_sharding_aggregator]);
     query_plan.addStep(std::move(aggregating_step));
 }
 

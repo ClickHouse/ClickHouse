@@ -1,5 +1,5 @@
 SET max_rows_to_group_by = 0;
-SET optimize_aggregation_by_sharding = 1;
+SET enable_sharding_aggregator = 1;
 
 DROP TABLE IF EXISTS test_sharded_nan;
 CREATE TABLE test_sharded_nan (k UInt64, v Float64)
