@@ -123,11 +123,19 @@ void CurrentThread::throwIfQueryCancelled()
         /// the wire or do redundant work in tight polling loops.
         if (auto cancel_callback = query_context->getInteractiveCancelCallback())
         {
+            /// Track context identity so the throttle resets on query boundaries: a worker thread
+            /// can run multiple queries back-to-back, and we don't want query A's recent poll to
+            /// suppress query B's first cancel check. Stored as `const void *` because we never
+            /// dereference it — pointer identity is enough, and a freed-then-reused address only
+            /// risks a single throttled poll (the same outcome as if A and B shared the slot).
+            static thread_local const void * last_query_context = nullptr;
             static thread_local std::chrono::steady_clock::time_point last_callback_at{};
+            const auto * current_query_context = static_cast<const void *>(query_context.get());
             const auto now = std::chrono::steady_clock::now();
             const auto period = std::chrono::microseconds(query_context->getSettingsRef()[Setting::interactive_delay]);
-            if (now - last_callback_at >= period)
+            if (current_query_context != last_query_context || now - last_callback_at >= period)
             {
+                last_query_context = current_query_context;
                 last_callback_at = now;
                 cancel_callback();
             }
