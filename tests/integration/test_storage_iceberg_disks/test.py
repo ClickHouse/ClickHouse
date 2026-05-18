@@ -82,7 +82,7 @@ def generate_cluster_def(common_path, port, azure_container):
                 <object_storage_type>azure_blob_storage</object_storage_type>
                 <storage_account_url>http://azurite1:{port}/devstoreaccount1</storage_account_url>
                 <container_name>{azure_container}</container_name>
-                <skip_access_check>false</skip_access_check>
+                <skip_access_check>true</skip_access_check>
                 <account_name>devstoreaccount1</account_name>
                 <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
             </disk_azure_common>
