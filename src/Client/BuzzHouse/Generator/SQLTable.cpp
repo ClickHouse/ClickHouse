@@ -978,7 +978,8 @@ void StatementGenerator::generateMergeTreeEngineDetails(
     {
         generateTableKey(rg, rel, b, false, te->mutable_partition_by());
     }
-    if (!entries.empty() && rg.nextSmallNumber() < 3)
+    /// TODO re-enable this once https://github.com/ClickHouse/ClickHouse/issues/104963 is fixed
+    if (!entries.empty() && rg.nextSmallNumber() < 1)
     {
         TableKey * ukey = te->mutable_unique_key();
         const uint32_t ncols = rg.randomInt<uint32_t>(1, std::min<uint32_t>(static_cast<uint32_t>(entries.size()), UINT32_C(3)));
