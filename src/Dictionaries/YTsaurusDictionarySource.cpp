@@ -247,6 +247,7 @@ BlockIO YTsarususDictionarySource::loadKeys(const Columns & key_columns, const V
               .settings = configuration->settings
             , .lookup_input_blocks = std::move(lookup_blocks)
             , .check_types_allow_nullable = true
+            , .lookup_throttler = lookup_throttler
         }
          , sample_block
          , max_block_size
