@@ -82,6 +82,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_top_k_dynamic_filtering_for_variable_length_types", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."},
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
             {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
+            {"optimize_aggregation_in_order_limit", true, true, "New setting to push the `LIMIT` into aggregation-in-order for early termination when the `ORDER BY` is a prefix of the `GROUP BY` sort description."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
