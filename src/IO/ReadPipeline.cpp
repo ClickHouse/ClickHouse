@@ -514,7 +514,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         auto page_cache_read_settings = settings;
         if (memory_cache->page_cache_settings)
         {
-            auto & pcs = *memory_cache->page_cache_settings;
+            const auto & pcs = *memory_cache->page_cache_settings;
             page_cache_read_settings.read_from_page_cache_if_exists_otherwise_bypass_cache = pcs.read_from_page_cache_if_exists_otherwise_bypass_cache;
             page_cache_read_settings.page_cache_inject_eviction = pcs.page_cache_inject_eviction;
             page_cache_read_settings.page_cache_block_size = pcs.page_cache_block_size;
