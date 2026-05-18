@@ -2,6 +2,7 @@
 
 #include <Analyzer/QueryNode.h>
 #include <Core/Settings.h>
+#include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -1945,7 +1946,8 @@ void ReadFromMergeTree::buildIndexes(
     [[maybe_unused]] const std::optional<TopKFilterInfo> top_k_filter_info,
     const ContextPtr & query_context,
     const SelectQueryInfo & query_info_,
-    const StorageMetadataPtr & metadata_snapshot)
+    const StorageMetadataPtr & metadata_snapshot,
+    bool skip_partition_pruning_)
 {
     indexes.reset();
 
@@ -1975,8 +1977,11 @@ void ReadFromMergeTree::buildIndexes(
         auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
         auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context));
 
-        indexes->minmax_idx_condition.emplace(filter_dag, query_context, minmax_columns_names, minmax_expression_actions);
-        indexes->partition_pruner.emplace(metadata_snapshot, filter_dag, query_context, false /* strict */);
+        /// pass empty filter when skipping partition pruning so the objects exist but useless
+        ActionsDAGWithInversionPushDown empty_filter(nullptr, query_context);
+        const auto & effective_filter = skip_partition_pruning_ ? empty_filter : filter_dag;
+        indexes->minmax_idx_condition.emplace(effective_filter, query_context, minmax_columns_names, minmax_expression_actions);
+        indexes->partition_pruner.emplace(metadata_snapshot, effective_filter, query_context, false /* strict */);
     }
 
     indexes->part_values
@@ -2173,6 +2178,27 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
         deferred_row_level_filter = query_info.row_level_filter;
     if (defer_prewhere)
         deferred_prewhere_info = query_info.prewhere_info;
+
+    /// don't prune partitions unless the partition key is determined by the sorting key
+    /// matters when FINAL merges across partitions
+    if (!doNotMergePartsAcrossPartitionsFinal() && storage_snapshot->metadata->hasPartitionKey())
+    {
+        const auto & partition_key = storage_snapshot->metadata->getPartitionKey();
+        const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
+        NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
+
+        const auto & partition_expr_names = partition_key.column_names;
+        bool exprs_match = std::all_of(
+            partition_expr_names.begin(), partition_expr_names.end(),
+            [&](const auto & expr_name) { return sorting_key_set.contains(expr_name); });
+
+        auto partition_required_columns = MergeTreeData::getMinMaxColumnsNames(partition_key);
+        bool columns_match = std::all_of(
+            partition_required_columns.begin(), partition_required_columns.end(),
+            [&](const auto & col) { return sorting_key_set.contains(col); });
+
+        skip_partition_pruning = !exprs_match && !columns_match;
+    }
 }
 
 void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
@@ -2198,18 +2224,41 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         deferFiltersAfterFinalIfNeeded();
         if (deferred_row_level_filter || deferred_prewhere_info)
         {
-            /// build a separate DAG for index analysis, without the deferred filter nodes
+            /// exclude deferred filters from index analysis, but keep sorting-key AND atoms
             NameSet deferred_column_names;
             if (deferred_row_level_filter)
                 deferred_column_names.insert(deferred_row_level_filter->column_name);
             if (deferred_prewhere_info)
                 deferred_column_names.insert(deferred_prewhere_info->prewhere_column_name);
 
+            const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
+            NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
+
             std::vector<const ActionsDAG::Node *> index_nodes;
+
+            /// collect sorting-key-only atoms from a (possibly nested) AND tree
+            std::function<void(const ActionsDAG::Node *)> collect_sorting_key_atoms =
+                [&](const ActionsDAG::Node * n)
+            {
+                if (isNodeOverSortingKey(n, sorting_key_set))
+                {
+                    index_nodes.push_back(n);
+                    return;
+                }
+                if (n->type == ActionsDAG::ActionType::FUNCTION
+                    && n->function_base && n->function_base->getName() == "and")
+                {
+                    for (const auto * child : n->children)
+                        collect_sorting_key_atoms(child);
+                }
+            };
+
             for (const auto * node : added_filter_nodes.nodes)
             {
                 if (!deferred_column_names.contains(node->result_name))
                     index_nodes.push_back(node);
+                else
+                    collect_sorting_key_atoms(node);
             }
 
             auto idx_dag = ActionsDAG::buildFilterActionsDAG(index_nodes, node_name_to_input);
@@ -2247,7 +2296,8 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             top_k_filter_info,
             context,
             query_info,
-            storage_snapshot->metadata);
+            storage_snapshot->metadata,
+            skip_partition_pruning);
     }
 }
 
@@ -2792,6 +2842,23 @@ bool ReadFromMergeTree::readsInOrder() const
 void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
     query_info.prewhere_info = prewhere_info_value;
+
+    /// Build sets for the new PREWHERE synchronously. PREWHERE is evaluated at the
+    /// storage level during data reading, before the pipeline-level CreatingSetsStep
+    /// has a chance to execute. If a condition with IN (subquery) was moved to PREWHERE
+    /// by optimizePrewhere after applyFilters already ran, the set would remain unbuilt
+    /// and cause a "Not-ready Set" error.
+    /// We must skip sets used in GLOBAL IN functions because ReadFromRemote needs to
+    /// attach external tables to those sets before they are built. Building them here
+    /// would cause "Trying to attach external table to a ready set" errors.
+    /// Only build sets when applyFilters has already been called for this step (indicated by
+    /// `indexes` being populated). The plan built by `considerEnablingParallelReplicas` for
+    /// statistics collection runs `optimizePrewhere` without `optimizePrimaryKeyConditionAndLimit`,
+    /// so `applyFilters` is skipped there and sets must not be built — the original plan's
+    /// `CreatingSetsStep` (added later via `addStepsToBuildSets`) handles them. Building here
+    /// would re-execute the IN-subquery and double-count its rows against `max_rows_to_read`.
+    if (query_info.prewhere_info && indexes.has_value())
+        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(query_info.prewhere_info->prewhere_actions, context);
 
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),

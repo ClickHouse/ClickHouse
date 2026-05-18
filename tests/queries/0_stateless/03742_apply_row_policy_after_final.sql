@@ -4,6 +4,8 @@
 DROP TABLE IF EXISTS tab;
 DROP ROW POLICY IF EXISTS pol1 ON tab;
 
+SET enable_analyzer = 1;
+
 CREATE TABLE tab (x UInt32, y String, version UInt32) ENGINE = ReplacingMergeTree(version) ORDER BY x;
 
 INSERT INTO tab VALUES (1, 'aaa', 1), (2, 'bbb', 1);
@@ -218,6 +220,7 @@ SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab_todate_policy FINAL PRE
 DROP ROW POLICY pol_todate ON tab_todate_policy;
 SET apply_row_policy_after_final = 0;
 DROP TABLE tab_todate_policy;
+
 SELECT '= compound row policy: sorting-key atom should be used for index analysis =';
 
 DROP TABLE IF EXISTS tab_compound;
