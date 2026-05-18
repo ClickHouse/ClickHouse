@@ -56,6 +56,13 @@ namespace ErrorCodes
 namespace
 {
     constexpr size_t DEFAULT_COPY_OBJECT_THREAD_POOL_SIZE = 16;
+
+    size_t getCopyObjectThreadPoolSize(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    {
+        /// A pool with `max_threads == 0` can accept jobs but never start workers, which makes
+        /// `TaskTracker::waitAll` block forever. Clamp to at least 1 so the pool always makes progress.
+        return std::max<size_t>(1, config.getUInt64(config_prefix + ".copy_object_thread_pool_size", DEFAULT_COPY_OBJECT_THREAD_POOL_SIZE));
+    }
 }
 
 DiskTransactionPtr DiskObjectStorage::createTransaction()
@@ -101,7 +108,7 @@ DiskObjectStorage::DiskObjectStorage(
         CurrentMetrics::DiskObjectStorageCopyObjectThreads,
         CurrentMetrics::DiskObjectStorageCopyObjectThreadsActive,
         CurrentMetrics::DiskObjectStorageCopyObjectThreadsScheduled,
-        config.getUInt64(config_prefix + ".copy_object_thread_pool_size", DEFAULT_COPY_OBJECT_THREAD_POOL_SIZE)))
+        getCopyObjectThreadPoolSize(config, config_prefix)))
     , read_resource_name_from_config(config.getString(config_prefix + ".read_resource", ""))
     , write_resource_name_from_config(config.getString(config_prefix + ".write_resource", ""))
     , enable_distributed_cache(config.getBool(config_prefix + ".enable_distributed_cache", true))
@@ -216,7 +223,7 @@ DiskObjectStorage::DiskObjectStorage(
     cluster->applyNewSettings(config, config_prefix);
     blob_killer->applyNewSettings(config, config_prefix + ".data_background_cleanup");
     blob_copier->applyNewSettings(config, config_prefix + ".data_background_replication");
-    copy_object_pool->setMaxThreads(config.getUInt64(config_prefix + ".copy_object_thread_pool_size", DEFAULT_COPY_OBJECT_THREAD_POOL_SIZE));
+    copy_object_pool->setMaxThreads(getCopyObjectThreadPoolSize(config, config_prefix));
 }
 
 DiskObjectStorage::~DiskObjectStorage()
@@ -978,7 +985,7 @@ void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration
     wait_blob_removal = config.getBool(config_prefix + ".wait_for_blob_removal", context->getServerSettings()[ServerSetting::disk_transaction_wait_for_blob_removal]);
     blob_killer->applyNewSettings(config, config_prefix + ".data_background_cleanup");
     blob_copier->applyNewSettings(config, config_prefix + ".data_background_replication");
-    copy_object_pool->setMaxThreads(config.getUInt64(config_prefix + ".copy_object_thread_pool_size", DEFAULT_COPY_OBJECT_THREAD_POOL_SIZE));
+    copy_object_pool->setMaxThreads(getCopyObjectThreadPoolSize(config, config_prefix));
 }
 
 #if USE_AWS_S3
