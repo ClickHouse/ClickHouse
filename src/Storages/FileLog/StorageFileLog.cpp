@@ -911,11 +911,11 @@ void registerStorageFileLog(StorageFactory & factory)
 
 bool StorageFileLog::updateFileInfos()
 {
-    if (file_infos.file_names.empty())
-        return false;
-
     if (!directory_watch)
     {
+        if (file_infos.file_names.empty())
+            return false;
+
         /// For table just watch one file, we can not use directory monitor to watch it
         if (!path_is_directory)
         {
@@ -931,6 +931,12 @@ bool StorageFileLog::updateFileInfos()
         }
         return false;
     }
+
+    /// We process directory watcher events even when `file_names` is empty. After
+    /// the only watched file is removed the cleanup loop empties `file_names`;
+    /// without consuming the watcher's queue here we would miss a subsequent
+    /// `DW_ITEM_ADDED`/`DW_ITEM_MOVED_TO` and never observe the recreated file.
+
     /// Do not need to hold file_status lock, since it will be holded
     /// by caller when call this function
     auto error = directory_watch->getErrorAndReset();
