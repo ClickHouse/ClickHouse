@@ -10965,7 +10965,7 @@ void MergeTreeData::triggerStreamingSubscriptionEnrichment() const
     background_streaming_assignee.trigger();
 }
 
-bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee &)
+bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee & assignee)
 {
     auto & manager = getStreamSubscriptionManager();
     if (manager.isEmpty())
@@ -10982,6 +10982,9 @@ bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee &)
     {
         any_enriched |= enrichSubscription(*subscription->as<MergeTreeBoundsSubscription>(), local_parts, promoters);
     });
+
+    if (any_enriched)
+        assignee.trigger();
 
     return any_enriched;
 }
