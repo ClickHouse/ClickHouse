@@ -193,11 +193,17 @@ std::atomic<bool> runner_stack_printed{false};
 /// to skip the expensive runner-stack dump when no timeout is imminent.
 std::atomic<int64_t> iteration_start_sec{0};
 
-/// `tests/fuzz/clickhouse_fuzzer.options` sets `timeout = 20`. Only kick off
-/// the runner-stack dump when we are within a couple of seconds of that limit,
-/// so the periodic 11-second SIGALRMs pass through without disturbing the
-/// runner thread.
-constexpr int64_t timeout_imminent_sec = 15;
+/// libfuzzer's `-timeout=N` value, parsed in `LLVMFuzzerInitialize`. Defaults
+/// to libfuzzer's own default of 1200 s. The wrapper dumps the runner stack
+/// only once `elapsed_sec >= unit_timeout_sec`, i.e. when the next forwarded
+/// SIGALRM is libfuzzer's actual timeout firing rather than a periodic tick.
+std::atomic<int64_t> unit_timeout_sec{1200};
+
+/// Per-iteration one-shot guard so concurrent SIGALRM deliveries can't run
+/// the slow runner-stack dump in parallel. Reset at the start of every
+/// `LLVMFuzzerTestOneInput` call so that the wrapper still fires on a real
+/// timeout in a later iteration if an earlier periodic alarm consumed it.
+std::atomic<bool> dump_started{false};
 
 /// SIGUSR1 handler installed on the runner thread — prints its own stack trace.
 void runnerStackTraceHandler(int /*sig*/, siginfo_t * /*info*/, void * /*context*/)
@@ -224,8 +230,8 @@ inline void signal_safe_sleep_ms(int ms)
 /// distinguish the two: the runner-stack dump shells out to llvm-symbolizer
 /// (slow, not async-signal-safe), and running it on every periodic alarm has
 /// caused real timeouts where the iteration would otherwise have completed in
-/// time. We skip the dump unless our own monotonic clock says we are within a
-/// few seconds of the configured `UnitTimeoutSec`. We also forward to
+/// time. We skip the dump unless our own monotonic clock matches libfuzzer's
+/// own timeout condition (`elapsed >= UnitTimeoutSec`). We also forward to
 /// libfuzzer's handler *without* permanently restoring it, so the wrapper
 /// continues to intercept later periodic alarms.
 void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
@@ -234,11 +240,13 @@ void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
     (void)clock_gettime(CLOCK_MONOTONIC, &ts);
     int64_t elapsed_sec = ts.tv_sec - iteration_start_sec.load(std::memory_order_acquire);
 
-    if (elapsed_sec >= timeout_imminent_sec)
+    /// libfuzzer's `AlarmCallback` itself only declares a timeout once
+    /// `elapsed > UnitTimeoutSec`. Use the same condition so the periodic
+    /// SIGALRMs at `UnitTimeoutSec / 2 + 1` seconds pass through untouched
+    /// regardless of the `-timeout=N` value. The next forwarded SIGALRM
+    /// after this check is libfuzzer's actual timeout that will `_Exit`.
+    if (elapsed_sec >= unit_timeout_sec.load(std::memory_order_acquire))
     {
-        /// Guard the slow dump so multiple concurrent SIGALRM deliveries
-        /// can't run it in parallel — only the first wins.
-        static std::atomic<bool> dump_started{false};
         bool expected = false;
         if (dump_started.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
         {
@@ -302,14 +310,25 @@ int LLVMFuzzerInitialize(const int *argc, char ***argv)
     // Initialize as a main thread
     DB::MainThreadStatus::getInstance();
 
-    // Collect clickhouse arguments
+    // Collect clickhouse arguments and pick up libfuzzer's `-timeout=N` so
+    // the SIGALRM wrapper can match libfuzzer's own timeout condition exactly.
     bool ignore = false;
     for (int i = 1; i < *argc; ++i)
         if (ignore)
             clickhouse_args.push_back((*argv)[i]);
         else
-            if (std::string_view arg{(*argv)[i]}; arg.substr(0, arg.find('=')) == "-ignore_remaining_args")
+        {
+            std::string_view arg{(*argv)[i]};
+            std::string_view flag{arg.begin(), std::ranges::find(arg, '=')};
+            if (flag == "-ignore_remaining_args")
                 ignore = true;
+            else if (flag == "-timeout" && flag.size() < arg.size())
+            {
+                int64_t t = std::atoi(arg.data() + flag.size() + 1);
+                if (t > 0)
+                    unit_timeout_sec.store(t, std::memory_order_release);
+            }
+        }
 
     {
         // Start clickhouse local
@@ -342,11 +361,14 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 {
     /// Mark the start of this iteration before installing/handling SIGALRM so
     /// `fuzzerSigalrmHandler` can tell a real timeout from libfuzzer's
-    /// periodic SIGALRM.
+    /// periodic SIGALRM. Also reset the one-shot dump guard so that the
+    /// wrapper still fires on a real timeout in this iteration even if an
+    /// earlier iteration's late `SIGALRM` already consumed it.
     {
         struct timespec ts;
         (void)clock_gettime(CLOCK_MONOTONIC, &ts);
         iteration_start_sec.store(ts.tv_sec, std::memory_order_release);
+        dump_started.store(false, std::memory_order_release);
     }
 
     /// Install our SIGALRM forwarder on the first call, after libfuzzer
