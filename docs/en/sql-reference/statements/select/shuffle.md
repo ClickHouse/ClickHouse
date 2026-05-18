@@ -6,11 +6,11 @@ title: 'SHUFFLE Clause'
 doc_type: 'reference'
 ---
 
-# SHUFFLE Clause
+# SHUFFLE Clause {#shuffle-clause}
 
-The `SHUFFLE` clause randomizes the order of rows in the final result of a `SELECT` query.
+The `SHUFFLE` clause returns rows from a `SELECT` query in randomized order.
 
-`SHUFFLE` is intended as an explicit, user-facing SQL clause for randomizing result row order. A common use case is returning random rows with `SHUFFLE LIMIT n`.
+`SHUFFLE` is intended as an explicit, user-facing SQL clause for randomizing result row order. A common use case is returning a random sample with `SHUFFLE LIMIT n`.
 
 `SHUFFLE` randomizes the rows of the query result, not the physical read order inside the storage engine. For example, a `MergeTree` table still uses its normal scan strategy; `SHUFFLE` is applied to the rows flowing through the query pipeline before they are returned to the user.
 
@@ -33,10 +33,10 @@ SHUFFLE
 
 ## Behavior {#behavior}
 
-- `SHUFFLE` randomizes the final result rows produced by the `SELECT`.
-- `SHUFFLE LIMIT n` returns exactly `n` random rows from the query result, or all rows if the input has fewer than `n` rows.
+- `SHUFFLE` returns the final result rows produced by the `SELECT` in randomized order.
+- `SHUFFLE LIMIT n` returns exactly `n` random rows from the query result, or all rows if the input has fewer than `n` rows. The returned sample is random, but its output order is not guaranteed to be random.
 
-`ORDER BY rand() LIMIT n` has the same high-level effect as `SHUFFLE LIMIT n`: it returns `n` random rows from the result. The difference is mainly syntax and execution strategy. For larger `n`, `SHUFFLE LIMIT n` can be more suitable because it does not need to sort the entire result set. However, `ORDER BY rand() LIMIT n` can still be competitive for very small `n`, especially when other optimizations such as lazy materialization apply.
+`ORDER BY rand() LIMIT n` also returns `n` random rows from the result and additionally orders them by the generated random value. `SHUFFLE LIMIT n` can avoid preserving that final random order and use lazy materialization where possible.
 
 If you need approximate percentage-based sampling instead of an exact row count, use storage-aware sampling such as [`SAMPLE`](./sample.md) when available, or Bernoulli-style predicates such as `WHERE randCanonical() < p`.
 
@@ -109,11 +109,11 @@ Example result:
 └────┴─────────┘
 ```
 
-This form can be more efficient than `ORDER BY rand() LIMIT 2` for larger `n`, because `SHUFFLE LIMIT` does not require a full sorting of all input rows.
+This form returns a random sample like `ORDER BY rand() LIMIT 2`, but it does not guarantee random output order.
 
 ## Notes {#notes}
 
-- `SHUFFLE LIMIT n` returns `n` random rows from the final query result after row order randomization.
+- `SHUFFLE LIMIT n` returns `n` random rows from the final query result. The output order of those rows is unspecified.
 - Set `allow_experimental_shuffle_query = 1` and `enable_analyzer = 1` to enable the clause.
 - If you want to use `SHUFFLE` as an alias, write `AS SHUFFLE`; otherwise `SHUFFLE` is parsed as the clause.
 - If you need deterministic ordering, use [`ORDER BY`](./order-by.md) instead.

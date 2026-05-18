@@ -423,7 +423,10 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     bool reading_in_order = sorting_step->getType() == SortingStep::Type::FinishSorting;
 
     const auto limit = limit_step->getLimit();
-    if (limit == 0 || (max_limit_for_lazy_materialization != 0 && limit > max_limit_for_lazy_materialization))
+    const auto & sort_description = sorting_step->getSortDescription();
+    const bool is_order_by_rand = sort_description.size() == 1 && sort_description[0].column_name == "rand()";
+    const bool allow_unordered_output = sorting_step->allowsUnorderedOutput();
+    if (limit == 0 || (!is_order_by_rand && !allow_unordered_output && max_limit_for_lazy_materialization != 0 && limit > max_limit_for_lazy_materialization))
         return false;
 
     StepStack steps_to_update;
@@ -607,7 +610,11 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     const auto & lhs_plan_header = main_plan.getCurrentHeader();
     const auto & rhs_plan_header = lazy_plan.getCurrentHeader();
 
-    auto join_lazy_columns = std::make_unique<JoinLazyColumnsStep>(lhs_plan_header, rhs_plan_header, lazy_materializing_rows);
+    auto join_lazy_columns = std::make_unique<JoinLazyColumnsStep>(
+        lhs_plan_header,
+        rhs_plan_header,
+        lazy_materializing_rows,
+        !allow_unordered_output);
 
     QueryPlan result_plan;
 

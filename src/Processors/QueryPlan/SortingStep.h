@@ -103,6 +103,8 @@ public:
     bool hasPartitions() const { return !partition_by_description.empty(); }
 
     bool isSortingForMergeJoin() const { return is_sorting_for_merge_join; }
+    bool allowsUnorderedOutput() const { return allow_unordered_output; }
+    void setAllowUnorderedOutput() { allow_unordered_output = true; }
 
     void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_, bool apply_virtual_row_conversions_);
 
@@ -170,6 +172,7 @@ private:
     bool always_read_till_end = false;
     bool use_buffering = false;
     bool apply_virtual_row_conversions = false;
+    bool allow_unordered_output = false;
 
     TopKThresholdTrackerPtr threshold_tracker;
 
