@@ -202,7 +202,7 @@ public:
 
                 if (process_list_element && process_list_element->isKilled())
                     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-                
+
                 const size_t row_start_offset = current_offset;
                 for (const auto & polygon : multi_polygon)
                 {
