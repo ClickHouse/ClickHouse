@@ -1,3 +1,12 @@
+-- Tags: no-stress
+-- ^ no-stress: the Stress test wraps every query with the server-side AST fuzzer.
+--   The fuzzer mutates `numbers(9)` in the INSERT into a much larger argument,
+--   and combined with `index_granularity = 1` plus `INDEX idx (value1) TYPE set(10)`
+--   each inserted row triggers a skip-index update, so the per-row cost explodes
+--   into many minutes — the `max_execution_time` cap inside `executeASTFuzzerQueries`
+--   marks the query as cancelled but the writer thread never observes it, tripping
+--   the post-test hung-check.
+
 DROP TABLE IF EXISTS t;
 
 CREATE TABLE t
