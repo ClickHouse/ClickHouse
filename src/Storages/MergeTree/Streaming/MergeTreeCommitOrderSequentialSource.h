@@ -41,6 +41,7 @@ public:
     int schedule() override;
     PipelineUpdate updatePipeline() override;
 
+    void onUpdatePorts() override;
     void onCancel() noexcept override;
 
 private:

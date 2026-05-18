@@ -341,6 +341,9 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
     if (canConstructReadingPipeline(subscription->snapshot(), last_emitted_positions))
         return Status::Ready;
 
+    if (!current_sub_pipeline.empty())
+        return Status::UpdatePipeline;
+
     return Status::Async;
 }
 
@@ -359,7 +362,7 @@ void MergeTreeCommitOrderSequentialSource::handlePipelineEnd()
 
 IProcessor::Status MergeTreeCommitOrderSequentialSource::prepare()
 {
-    const bool has_running_sub_pipeline = !inputs.empty() && !inputs.front().isFinished();
+    const bool has_running_sub_pipeline = !inputs.empty() && inputs.front().isConnected() && !inputs.front().isFinished();
     if (has_running_sub_pipeline)
         return handleRunningPipeline();
 
@@ -413,11 +416,11 @@ int MergeTreeCommitOrderSequentialSource::schedule()
 
 IProcessor::PipelineUpdate MergeTreeCommitOrderSequentialSource::updatePipeline()
 {
-    chassert(pending_snapshot.has_value());
+    chassert(pending_snapshot.has_value() || !current_sub_pipeline.empty());
 
     PipelineUpdate update;
 
-    /// Disconnect from the old snapshot reading plan
+    /// Tear down the previous snapshot reading sub-pipeline.
     if (!current_sub_pipeline.empty())
     {
         chassert(!inputs.empty());
@@ -430,27 +433,35 @@ IProcessor::PipelineUpdate MergeTreeCommitOrderSequentialSource::updatePipeline(
         current_resources.reset();
     }
 
-    /// Take next snapshot reading plan
-    auto sub_pipe = std::exchange(pending_snapshot, std::nullopt);
-    chassert(sub_pipe->numOutputPorts() == 1);
+    /// Attach the next snapshot reading sub-pipeline if one is ready.
+    if (pending_snapshot.has_value())
+    {
+        auto sub_pipe = std::exchange(pending_snapshot, std::nullopt);
+        chassert(sub_pipe->numOutputPorts() == 1);
 
-    /// Connect to new snapshot reading plan
-    if (inputs.empty())
-        inputs.emplace_back(*header, this);
+        if (inputs.empty())
+            inputs.emplace_back(*header, this);
 
-    auto * sub_output = sub_pipe->getOutputPort(0);
-    auto sub_processors = Pipe::detachProcessors(std::move(sub_pipe.value()));
+        auto * sub_output = sub_pipe->getOutputPort(0);
+        auto sub_processors = Pipe::detachProcessors(std::move(sub_pipe.value()));
 
-    auto & input = inputs.front();
-    connect(*sub_output, input);
-    input.reopen();
-    input.setNeeded();
+        auto & input = inputs.front();
+        connect(*sub_output, input);
+        input.reopen();
+        input.setNeeded();
 
-    /// Register next reading plan in pipeline extension
-    current_sub_pipeline = sub_processors;
-    current_resources = std::move(pending_resources);
-    update.to_add = std::move(sub_processors);
+        current_sub_pipeline = sub_processors;
+        current_resources = std::move(pending_resources);
+        update.to_add = std::move(sub_processors);
+    }
+
     return update;
+}
+
+void MergeTreeCommitOrderSequentialSource::onUpdatePorts()
+{
+    if (outputs.front().isFinished())
+        subscription->disable();
 }
 
 void MergeTreeCommitOrderSequentialSource::onCancel() noexcept
