@@ -5427,6 +5427,15 @@ Default value for Iceberg table property `history.expire.max-snapshot-age-ms` us
     DECLARE(Int64, iceberg_expire_default_max_ref_age_ms, std::numeric_limits<Int64>::max(), R"(
 Default value for Iceberg table property `history.expire.max-ref-age-ms` used by `expire_snapshots` when that property is absent.
 )", 0) \
+    DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 10_MiB, R"(
+Threshold for compaction data files in iceberg.
+)", 0) \
+    DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 10_GiB, R"(
+Threshold for compaction data files in iceberg.
+)", 0) \
+    DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(Expand commentComment on line R5383Resolved
+Threshold for compaction data files in iceberg.
+)", 0) \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
 
@@ -5445,6 +5454,12 @@ Possible values:
 
 - 0 - Disabled
 - 1 - Enabled
+)", 0) \
+    DECLARE(Seconds, iceberg_compaction_delay_bias, 60 * 60 * 3, R"(
+Minimum time of delay between 2 background compaction operations.
+)", 0) \
+    DECLARE(Seconds, iceberg_compaction_data_cleanup, 60 * 60 * 3, R"(
+The time after which the data will be deleted.
 )", 0) \
     DECLARE(Bool, use_query_cache, false, R"(
 If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable_reads_from_query_cache)
@@ -7959,6 +7974,9 @@ Allow experimental delta-kernel-rs implementation.
     DECLARE_WITH_ALIAS(Bool, allow_insert_into_iceberg, false, R"(
 Allow to execute `insert` queries into iceberg.
 )", BETA, allow_experimental_insert_into_iceberg) \
+    DECLARE(Bool, allow_experimental_cleanup_old_data_files_compaction, false, R"(
+Allow to clean up old data files during Iceberg compaction.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
 Allow to explicitly use 'OPTIMIZE' for iceberg tables.
 )", EXPERIMENTAL) \
