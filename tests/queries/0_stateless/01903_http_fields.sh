@@ -24,4 +24,13 @@ ${CLICKHOUSE_CURL} -sSv "${CLICKHOUSE_URL}&http_max_field_name_size=$(($DEFAULT_
 ${CLICKHOUSE_CURL} -sSv "${CLICKHOUSE_URL}&http_max_field_value_size=$(($DEFAULT_MAX_VALUE_SIZE+10))" -H @$CLICKHOUSE_TMP/short_long.txt -d 'SELECT 1' 2>&1 | grep -Fc '400 Bad Request'
 ${CLICKHOUSE_CURL} -sSv "${CLICKHOUSE_URL}&http_max_field_name_size=$(($DEFAULT_MAX_NAME_SIZE+10))" -H @$CLICKHOUSE_TMP/long_short.txt -d 'SELECT 1' 2>&1 | grep -Fc '400 Bad Request'
 
-# TODO: test that session context doesn't affect these settings either.
+# test that session context doesn't affect these settings either.
+SESSION_ID="${CLICKHOUSE_DATABASE}_test_01903"
+
+# Try to override the HTTP parsing limits within a session.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&session_id=${SESSION_ID}&http_max_field_name_size=$(($DEFAULT_MAX_NAME_SIZE+10))&http_max_field_value_size=$(($DEFAULT_MAX_VALUE_SIZE+10))" -d 'SELECT 1'
+
+# Test that the session context doesn't bypass the server's global limits for subsequent requests in the session.
+${CLICKHOUSE_CURL} -sSv "${CLICKHOUSE_URL}&session_id=${SESSION_ID}" -H @$CLICKHOUSE_TMP/long_name.txt -d 'SELECT 1' 2>&1 | grep -Fc '400 Bad Request'
+${CLICKHOUSE_CURL} -sSv "${CLICKHOUSE_URL}&session_id=${SESSION_ID}" -H @$CLICKHOUSE_TMP/short_long.txt -d 'SELECT 1' 2>&1 | grep -Fc '400 Bad Request'
+${CLICKHOUSE_CURL} -sSv "${CLICKHOUSE_URL}&session_id=${SESSION_ID}" -H @$CLICKHOUSE_TMP/long_short.txt -d 'SELECT 1' 2>&1 | grep -Fc '400 Bad Request'
