@@ -1325,6 +1325,7 @@ RestoreThreadsActive
 RetryStrategy
 Rish
 RoaringBitmap
+Roaringish
 RocksDB
 Rohingya
 Rollup
