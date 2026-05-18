@@ -45,12 +45,11 @@ SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
--- Code: 48. DB::Exception: Method serialize is not implemented for JoinStepLogicalLookup. (NOT_IMPLEMENTED) on remote node
 SELECT t0.Id, sum(sipHash64(t0.Payload)), count(), countIf(t1.Attribute != ''), sum(sipHash64(t1.Attribute)) AS attr_hash_sum
 FROM events AS t0
 JOIN attributes AS t1 ON t0.Id = t1.EventId
 GROUP BY t0.Id
-ORDER BY t0.Id SETTINGS parallel_replicas_local_plan=0; -- { serverError NOT_IMPLEMENTED }
+ORDER BY t0.Id;
 
 DROP TABLE IF EXISTS events;
 DROP TABLE IF EXISTS attributes;
