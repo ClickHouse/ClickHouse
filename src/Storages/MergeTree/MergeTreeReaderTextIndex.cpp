@@ -798,17 +798,18 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
 
             auto info_it = remaining_tokens.find(token);
             if (info_it == remaining_tokens.end())
-                continue;
+            {
+                /// ALL mode: if any query token is missing, the intersection is empty.
+                if (search_query->search_mode == TextSearchMode::All)
+                    return;
+                else
+                    continue;
+            }
 
             auto cursor = makeLazyCursor(token, *info_it->second);
             column_cursors.emplace(token, cursor);
             cursor_map[token] = std::move(cursor);
         }
-
-        /// ALL mode: if any query token is missing from the granule, the intersection
-        /// is empty — return all zeros (already filled by resize_fill above).
-        if (search_query->search_mode == TextSearchMode::All && cursor_map.size() < search_query->tokens.size())
-            return;
 
         /// Use lazy cursors for whatever tokens are available.
         if (!cursor_map.empty())
