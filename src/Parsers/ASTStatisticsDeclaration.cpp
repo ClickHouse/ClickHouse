@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ASTPtr ASTStatisticsDeclaration::clone() const
 {
     auto res = make_intrusive<ASTStatisticsDeclaration>();
@@ -59,8 +64,9 @@ void ASTStatisticsDeclaration::readJSON(const Poco::JSON::Object & json)
     JSONObjectReader r(json);
 
     auto child = r.readChild("columns");
-    if (child)
-        set(columns, child);
+    if (!child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'columns' field in `StatisticsDeclaration` during AST JSON deserialization");
+    set(columns, child);
 
     child = r.readChild("types");
     if (child)
