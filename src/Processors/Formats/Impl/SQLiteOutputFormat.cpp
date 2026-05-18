@@ -92,7 +92,7 @@ String makeCreateTableQuery(const Block & header, const String & table_name)
         writeChar(' ', query);
         writeString(sqliteTypeName(column.type), query);
 
-        if (!column.type->isNullable() && !column.type->isLowCardinalityNullable())
+        if (!canContainNull(*column.type))
             writeCString(" NOT NULL", query);
     }
 

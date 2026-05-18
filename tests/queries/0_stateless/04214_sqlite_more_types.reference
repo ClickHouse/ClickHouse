@@ -31,6 +31,9 @@ Nested data types roundtrip
 [(1,'a',{'k':['2024-01-01 00:00:00.123',NULL]})]	{'group':[(7,12.34,[('x',9),('y',NULL)])]}
 String bytes and complex DateTime roundtrip
 275C090A00	5	610062	3	{'Hello':'2020-01-01 00:00:00'}
+Dynamic and Variant NULL roundtrip
+1	\N	\N
+2	text	text
 Multi-block roundtrip
 0	[0,1]	{'k0':0}
 1	[1,2]	{'k1':1}

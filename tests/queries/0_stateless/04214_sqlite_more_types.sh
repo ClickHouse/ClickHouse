@@ -10,9 +10,10 @@ NUMERIC_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_numeric_XXXXXX.sqlite")
 COMPLEX_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_complex_XXXXXX.sqlite")
 NESTED_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_nested_XXXXXX.sqlite")
 SPECIAL_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_special_XXXXXX.sqlite")
+DYNAMIC_VARIANT_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_dynamic_variant_XXXXXX.sqlite")
 MULTIBLOCK_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_multiblock_XXXXXX.sqlite")
 EMPTY_DB=$(mktemp "$CLICKHOUSE_TMP/sqlite_more_types_empty_XXXXXX.sqlite")
-trap 'rm -f "$DB" "$NUMERIC_DB" "$COMPLEX_DB" "$NESTED_DB" "$SPECIAL_DB" "$MULTIBLOCK_DB" "$EMPTY_DB"' EXIT
+trap 'rm -f "$DB" "$NUMERIC_DB" "$COMPLEX_DB" "$NESTED_DB" "$SPECIAL_DB" "$DYNAMIC_VARIANT_DB" "$MULTIBLOCK_DB" "$EMPTY_DB"' EXIT
 
 STRUCTURE="c1 Enum8('a' = 1), c2 Enum16('b' = 1), c3 Date32, c4 Int128, c5 UInt128, c6 Int256, c7 UInt256, c8 Decimal32(2), c9 Decimal64(2), c10 Decimal128(2), c11 Decimal256(2), c12 UUID, c13 IPv4, c14 IPv6, c15 Bool, c16 Nullable(UInt256), c17 LowCardinality(String), c18 DateTime64(3, 'UTC'), c19 FixedString(4), c20 Date, c21 DateTime('UTC'), c22 LowCardinality(Nullable(String))"
 
@@ -155,6 +156,25 @@ ${CLICKHOUSE_LOCAL} \
     --input-format SQLite \
     --output-format TSV \
     --query "SELECT hex(s), length(s), hex(fs), length(fs), m FROM table" < "$SPECIAL_DB"
+
+${CLICKHOUSE_LOCAL} --query "
+    SELECT
+        1 AS id,
+        CAST(NULL, 'Dynamic') AS d,
+        CAST(NULL, 'Variant(String, UInt64)') AS v
+    UNION ALL
+    SELECT
+        2,
+        CAST('text', 'Dynamic'),
+        CAST('text', 'Variant(String, UInt64)')
+    FORMAT SQLite" > "$DYNAMIC_VARIANT_DB"
+
+echo "Dynamic and Variant NULL roundtrip"
+${CLICKHOUSE_LOCAL} \
+    --structure "id UInt8, d Dynamic, v Variant(String, UInt64)" \
+    --input-format SQLite \
+    --output-format TSV \
+    --query "SELECT * FROM table ORDER BY id" < "$DYNAMIC_VARIANT_DB"
 
 ${CLICKHOUSE_LOCAL} --max_block_size 2 --query "
     SELECT
