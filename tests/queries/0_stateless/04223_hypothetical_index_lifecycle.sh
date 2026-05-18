@@ -76,10 +76,9 @@ $CLICKHOUSE_CLIENT -n -q "
     RENAME TABLE t_hypo_rn TO t_hypo_rn2;
     CREATE TABLE t_hypo_rn (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
     DROP HYPOTHETICAL INDEX idx_b ON t_hypo_rn;
-    SELECT count() FROM system.hypothetical_indexes WHERE table = 't_hypo_rn';
-    DROP TABLE t_hypo_rn;
-    DROP TABLE t_hypo_rn2;
-" 2>&1 | grep -oE 'BAD_ARGUMENTS|^[0-9]+$'
+" 2>&1 | grep -m1 -o 'BAD_ARGUMENTS'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_rn"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_rn2"
 
 # =========================================================
 # IF NOT EXISTS is silent on duplicate; second CREATE with no IF errors
