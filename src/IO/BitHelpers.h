@@ -7,7 +7,6 @@
 #include <Common/Exception.h>
 
 #include <cstring>
-#include <cassert>
 
 
 namespace DB

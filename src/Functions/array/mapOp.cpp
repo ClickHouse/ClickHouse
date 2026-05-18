@@ -13,7 +13,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <base/arithmeticOverflow.h>
 
-#include <cassert>
 
 namespace DB
 {

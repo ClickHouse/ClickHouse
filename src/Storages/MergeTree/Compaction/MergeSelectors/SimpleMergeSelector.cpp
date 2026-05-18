@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cassert>
 #include <random>
 
 namespace DB

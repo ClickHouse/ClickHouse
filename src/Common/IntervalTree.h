@@ -3,7 +3,6 @@
 #include <base/defines.h>
 #include <base/sort.h>
 
-#include <cassert>
 #include <utility>
 #include <vector>
 

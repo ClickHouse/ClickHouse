@@ -44,7 +44,6 @@
 #include <IO/Operators.h>
 
 #include <algorithm>
-#include <cassert>
 #include <stack>
 
 #include <boost/geometry.hpp>

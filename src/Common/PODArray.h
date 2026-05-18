@@ -10,7 +10,6 @@
 #include <Common/memcpySmall.h>
 
 #include <algorithm>
-#include <cassert>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>

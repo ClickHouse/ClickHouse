@@ -22,7 +22,6 @@
 #include <Common/logger_useful.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
-#include <cassert>
 #include <unordered_set>
 
 

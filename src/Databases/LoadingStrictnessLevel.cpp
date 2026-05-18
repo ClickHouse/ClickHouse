@@ -1,7 +1,6 @@
 #include <Databases/LoadingStrictnessLevel.h>
 
 #include <base/defines.h>
-#include <cassert>
 
 namespace DB
 {

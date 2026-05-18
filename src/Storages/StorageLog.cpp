@@ -45,7 +45,6 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/IDiskTransaction.h>
 
-#include <cassert>
 #include <chrono>
 
 #include <boost/range/adaptor/map.hpp>

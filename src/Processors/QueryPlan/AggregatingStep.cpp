@@ -1,4 +1,3 @@
-#include <cassert>
 #include <cstddef>
 #include <memory>
 #include <Columns/ColumnConst.h>

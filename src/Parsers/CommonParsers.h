@@ -2,7 +2,6 @@
 
 #include <Parsers/IParserBase.h>
 
-#include <cassert>
 #include <string_view>
 #include <unordered_set>
 

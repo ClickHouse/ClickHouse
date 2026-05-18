@@ -4,7 +4,6 @@
 #include <string_view>
 #include <algorithm>
 
-#include <cassert>
 #include <cstring>
 #include <unistd.h>
 #include <poll.h>

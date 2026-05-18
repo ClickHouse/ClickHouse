@@ -11,7 +11,6 @@
 #include <base/defines.h>
 #include <Common/logger_useful.h>
 
-#include <cassert>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>

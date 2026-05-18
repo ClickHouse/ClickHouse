@@ -4,7 +4,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
-#include <cassert>
 #include <mutex>
 #include <shared_mutex>
 

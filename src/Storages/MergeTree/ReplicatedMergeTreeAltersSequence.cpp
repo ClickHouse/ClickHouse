@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAltersSequence.h>
-#include <cassert>
 
 namespace DB
 {

@@ -1,4 +1,3 @@
-#include <cassert>
 
 #include <Compression/CompressedReadBufferFromFile.h>
 

@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <utility>
 #include <atomic>
-#include <cassert>
 #include <base/defines.h>
 #include <base/types.h>
 #include <base/strong_typedef.h>

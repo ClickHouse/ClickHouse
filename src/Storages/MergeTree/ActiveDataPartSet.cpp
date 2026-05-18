@@ -2,7 +2,6 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <algorithm>
-#include <cassert>
 
 
 namespace DB

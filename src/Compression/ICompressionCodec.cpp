@@ -1,6 +1,5 @@
 #include <Compression/ICompressionCodec.h>
 
-#include <cassert>
 
 #include <Parsers/ASTFunction.h>
 #include <base/unaligned.h>

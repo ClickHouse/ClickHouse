@@ -64,7 +64,6 @@
 #    include <llvm/IR/IRBuilder.h>
 #endif
 
-#include <cassert>
 #include <ranges>
 
 namespace DB

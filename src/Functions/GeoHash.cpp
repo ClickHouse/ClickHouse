@@ -1,7 +1,6 @@
 #include <array>
 #include <base/defines.h>
 #include <cmath>
-#include <cassert>
 #include <Functions/GeoHash.h>
 
 

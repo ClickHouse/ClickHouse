@@ -4,7 +4,6 @@
 #include <base/types.h>
 #include <base/defines.h>
 
-#include <cassert>
 #include <atomic>
 #include <limits>
 #include <memory>

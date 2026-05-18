@@ -2,7 +2,6 @@
 
 #include <bit>
 #include <cstring>
-#include <cassert>
 #include <city.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>

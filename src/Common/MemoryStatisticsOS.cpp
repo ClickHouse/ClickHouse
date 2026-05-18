@@ -8,7 +8,6 @@
 #endif
 #include <fcntl.h>
 #include <unistd.h>
-#include <cassert>
 
 #include <Common/MemoryStatisticsOS.h>
 

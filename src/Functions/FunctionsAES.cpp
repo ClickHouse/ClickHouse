@@ -8,7 +8,6 @@
 #include <openssl/err.h>
 
 #include <string>
-#include <cassert>
 
 namespace DB
 {

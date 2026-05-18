@@ -7,7 +7,6 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstdint>
-#include <cassert>
 #include <type_traits>
 #include <memory>
 

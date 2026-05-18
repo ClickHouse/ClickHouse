@@ -12,7 +12,6 @@
 #include <IO/ReadBufferFromMemory.h>
 
 #include <algorithm>
-#include <cassert>
 #include <iterator>
 
 #include <boost/algorithm/string.hpp>

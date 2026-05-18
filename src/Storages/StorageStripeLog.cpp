@@ -48,7 +48,6 @@
 
 #include <base/insertAtEnd.h>
 
-#include <cassert>
 
 
 namespace DB

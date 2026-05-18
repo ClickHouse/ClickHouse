@@ -18,7 +18,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/defines.h>
 #include <base/sort.h>
-#include <cassert>
 #include <ranges>
 #include <shared_mutex>
 #include <Poco/Timestamp.h>

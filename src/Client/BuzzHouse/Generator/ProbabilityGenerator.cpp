@@ -2,7 +2,6 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 
-#include <cassert>
 #include <random>
 
 #include <base/defines.h>
