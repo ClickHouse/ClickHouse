@@ -899,8 +899,6 @@ bool IcebergStorageSink::initializeMetadata()
             object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
 
         object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
-        object_storage->removeObjectIfExists(StoredObject(resolver.resolve(metadata_info.path)));
-
         if (retry_because_of_metadata_conflict)
         {
             /// When retrying after a metadata conflict, we must read the actual latest
