@@ -1,7 +1,5 @@
 services:
   rest:
-    # apache/iceberg-rest-fixture 1.10.1 ships with iceberg-java 1.10 which supports
-    # parsing v3 `geometry`/`geography` schema types.
     image: apache/iceberg-rest-fixture:1.10.1
     ports:
       - "${ICEBERG_REST_CATALOG_PORT}:8181"
@@ -56,7 +54,6 @@ services:
     stop_grace_period: 5s
     cpus: 3
   trino:
-    # Trino >= 458 understands Iceberg v3 geometry/geography column types.
     image: trinodb/trino:474
     depends_on:
       rest:

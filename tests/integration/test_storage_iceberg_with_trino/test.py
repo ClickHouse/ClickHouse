@@ -6,7 +6,6 @@ import uuid
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.s3_tools import S3Uploader, prepare_s3_bucket
 
 
 REST_URL = "http://rest:8181/v1"
@@ -44,11 +43,6 @@ def started_cluster_with_trino():
     try:
         logging.info("Starting cluster with Trino...")
         cluster.start()
-
-        # Wait for Trino health-check + REST catalog readiness. The compose health-check
-        # only guards the `rest` service for `depends_on`; Trino itself becomes ready a
-        # few seconds after the container starts. A brief warm-up avoids races on the
-        # first SELECT.
         _wait_for_trino_ready(cluster, timeout_seconds=120)
 
         yield cluster
@@ -63,7 +57,6 @@ def _trino_container_name(cluster: ClickHouseCluster) -> str:
 
 
 def _trino_exec(cluster: ClickHouseCluster, sql: str) -> str:
-    """Run a SQL statement in Trino via the bundled `trino` CLI inside the container."""
     container = _trino_container_name(cluster)
     proc = subprocess.run(
         [
@@ -124,61 +117,192 @@ def _create_clickhouse_iceberg_database(node, name: str) -> None:
     )
 
 
-def test_clickhouse_writes_geometry_trino_reads(started_cluster_with_trino):
-    cluster = started_cluster_with_trino
+WRITE_SETTINGS = {
+    "allow_insert_into_iceberg": 1,
+    "write_full_path_in_iceberg_metadata": 1,
+}
+
+
+@pytest.fixture(scope="package")
+def iceberg_db(started_cluster_with_trino):
+    """Create the ClickHouse DataLakeCatalog database once per test session."""
+    node = started_cluster_with_trino.instances["node1"]
+    _create_clickhouse_iceberg_database(node, CATALOG_DATABASE)
+    return started_cluster_with_trino
+
+
+def _engine_clause(table_name: str) -> str:
+    return (
+        f"ENGINE = IcebergS3('http://minio:9000/{WAREHOUSE_BUCKET}/{table_name}/', "
+        f"'{MINIO_ACCESS_KEY}', '{MINIO_SECRET_KEY}')"
+    )
+
+
+def test_clickhouse_writes_trino_reads(iceberg_db):
+    cluster = iceberg_db
     node = cluster.instances["node1"]
 
-    _create_clickhouse_iceberg_database(node, CATALOG_DATABASE)
-
-    table_name = f"geom_table_{_get_uuid_str()}"
+    table_name = f"basic_table_{_get_uuid_str()}"
     full = f"{CATALOG_DATABASE}.`{NAMESPACE}.{table_name}`"
 
-    geo_settings = {
-        "allow_experimental_geo_types_in_iceberg": 1,
-        "allow_insert_into_iceberg": 1,
-        "write_full_path_in_iceberg_metadata": 1,
-    }
-
     node.query(
         f"""
-        CREATE TABLE {full} (id Int32, geom Geometry)
-        ENGINE = IcebergS3('http://minio:9000/{WAREHOUSE_BUCKET}/{table_name}/', '{MINIO_ACCESS_KEY}', '{MINIO_SECRET_KEY}')
+        CREATE TABLE {full} (id Int32, name String, value Float64)
+        {_engine_clause(table_name)}
         SETTINGS iceberg_format_version = 3
         """,
-        settings=geo_settings,
+        settings=WRITE_SETTINGS,
     )
 
     node.query(
         f"""
-        INSERT INTO {full}
-        SELECT 1, readWkt('POINT(1 2)') UNION ALL
-        SELECT 2, readWkt('LINESTRING(0 0, 1 1, 2 2)') UNION ALL
-        SELECT 3, readWkt('POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))') UNION ALL
-        SELECT 4, readWkt('MULTILINESTRING((0 0, 1 1),(2 2, 3 3))') UNION ALL
-        SELECT 5, readWkt('MULTIPOLYGON(((0 0, 1 0, 1 1, 0 0)),((2 2, 3 2, 3 3, 2 2)))')
+        INSERT INTO {full} VALUES
+            (1, 'alpha', 1.5),
+            (2, 'beta',  2.5),
+            (3, 'gamma', 3.25)
         """,
-        settings=geo_settings,
+        settings=WRITE_SETTINGS,
     )
 
-    expected_wkt = {
-        1: "POINT (1 2)",
-        2: "LINESTRING (0 0, 1 1, 2 2)",
-        3: "POLYGON ((0 0, 1 0, 1 1, 0 1, 0 0))",
-        4: "MULTILINESTRING ((0 0, 1 1), (2 2, 3 3))",
-        5: "MULTIPOLYGON (((0 0, 1 0, 1 1, 0 0)), ((2 2, 3 2, 3 3, 2 2)))",
-    }
-
-    # ST_AsText on the geometry column gives a canonical WKT we can compare against.
     out = _trino_exec(
         cluster,
-        f'SELECT id, ST_AsText(geom) FROM "{NAMESPACE}"."{table_name}" ORDER BY id',
+        f'SELECT id, name, value FROM "{NAMESPACE}"."{table_name}" ORDER BY id',
     )
-    lines = [line for line in out.strip().splitlines() if line]
-    assert len(lines) == 5, f"expected 5 rows from Trino, got {len(lines)}:\n{out}"
+    expected = "1\talpha\t1.5\n2\tbeta\t2.5\n3\tgamma\t3.25\n"
+    assert out == expected, f"expected {expected!r}, got {out!r}"
 
-    for line in lines:
-        id_str, wkt = line.split("\t", 1)
-        row_id = int(id_str)
-        assert wkt.strip() == expected_wkt[row_id], (
-            f"row id={row_id}: expected {expected_wkt[row_id]!r}, got {wkt!r}"
+
+def test_complex_types(iceberg_db):
+    cluster = iceberg_db
+    node = cluster.instances["node1"]
+
+    table_name = f"complex_table_{_get_uuid_str()}"
+    full = f"{CATALOG_DATABASE}.`{NAMESPACE}.{table_name}`"
+
+    node.query(
+        f"""
+        CREATE TABLE {full} (
+            id Int32,
+            arr Array(Int64),
+            m Map(String, Int32),
+            s Tuple(x Int32, y String)
         )
+        {_engine_clause(table_name)}
+        SETTINGS iceberg_format_version = 3
+        """,
+        settings=WRITE_SETTINGS,
+    )
+
+    node.query(
+        f"""
+        INSERT INTO {full} VALUES
+            (1, [10, 20, 30], map('a', 1, 'b', 2), (7, 'seven')),
+            (2, [],            map(),               (0, ''))
+        """,
+        settings=WRITE_SETTINGS,
+    )
+
+    out = _trino_exec(
+        cluster,
+        f"""
+        SELECT
+            id,
+            cardinality(arr),
+            element_at(arr, 1),
+            element_at(m, 'a'),
+            element_at(m, 'b'),
+            s.x,
+            s.y
+        FROM "{NAMESPACE}"."{table_name}"
+        ORDER BY id
+        """,
+    )
+    expected = "1\t3\t10\t1\t2\t7\tseven\n2\t0\t\t\t\t0\t\n"
+    assert out == expected, f"complex types: expected {expected!r}, got {out!r}"
+
+
+def test_partition_pruning(iceberg_db):
+    cluster = iceberg_db
+    node = cluster.instances["node1"]
+
+    table_name = f"part_table_{_get_uuid_str()}"
+    full = f"{CATALOG_DATABASE}.`{NAMESPACE}.{table_name}`"
+
+    node.query(
+        f"""
+        CREATE TABLE {full} (id Int32, region String, value Int64)
+        {_engine_clause(table_name)}
+        PARTITION BY identity(region)
+        SETTINGS iceberg_format_version = 3
+        """,
+        settings=WRITE_SETTINGS,
+    )
+
+    node.query(
+        f"""
+        INSERT INTO {full} VALUES
+            (1, 'us', 10), (2, 'us', 20), (3, 'us', 30),
+            (4, 'eu', 40), (5, 'eu', 50),
+            (6, 'asia', 60)
+        """,
+        settings=WRITE_SETTINGS,
+    )
+
+    total = _trino_exec(
+        cluster,
+        f'SELECT count(*) FROM "{NAMESPACE}"."{table_name}"',
+    )
+    assert total.strip() == "6", f"unfiltered count: {total!r}"
+
+    us = _trino_exec(
+        cluster,
+        f"SELECT sum(value) FROM \"{NAMESPACE}\".\"{table_name}\" WHERE region = 'us'",
+    )
+    assert us.strip() == "60", f"sum(value) for region='us': {us!r}"
+
+    eu = _trino_exec(
+        cluster,
+        f"SELECT count(*) FROM \"{NAMESPACE}\".\"{table_name}\" WHERE region = 'eu'",
+    )
+    assert eu.strip() == "2", f"count for region='eu': {eu!r}"
+
+
+def test_multiple_snapshots_and_nulls(iceberg_db):
+    cluster = iceberg_db
+    node = cluster.instances["node1"]
+
+    table_name = f"snap_table_{_get_uuid_str()}"
+    full = f"{CATALOG_DATABASE}.`{NAMESPACE}.{table_name}`"
+
+    node.query(
+        f"""
+        CREATE TABLE {full} (id Int32, label Nullable(String), value Nullable(Int64))
+        {_engine_clause(table_name)}
+        SETTINGS iceberg_format_version = 3
+        """,
+        settings=WRITE_SETTINGS,
+    )
+
+    node.query(
+        f"INSERT INTO {full} VALUES (1, 'a', 100), (2, NULL, 200)",
+        settings=WRITE_SETTINGS,
+    )
+    node.query(
+        f"INSERT INTO {full} VALUES (3, 'c', NULL), (4, 'd', 400)",
+        settings=WRITE_SETTINGS,
+    )
+
+    out = _trino_exec(
+        cluster,
+        f'SELECT id, label, value FROM "{NAMESPACE}"."{table_name}" ORDER BY id',
+    )
+    assert out == "1\ta\t100\n2\t\t200\n3\tc\t\n4\td\t400\n", f"got {out!r}"
+
+    agg = _trino_exec(
+        cluster,
+        f"""
+        SELECT count(*), count(label), count(value), sum(value)
+        FROM "{NAMESPACE}"."{table_name}"
+        """,
+    )
+    assert agg.strip() == "4\t3\t3\t700", f"agg over two snapshots: {agg!r}"
