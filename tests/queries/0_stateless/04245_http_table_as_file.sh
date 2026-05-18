@@ -83,6 +83,8 @@ echo "-- default_format setting alone (no FORMAT clause, no path):"
 http_get "${BASE_URL}/?query=SELECT%201&default_format=CSV"
 echo "-- output_format wins over default_format:"
 http_get "${BASE_URL}/?query=SELECT%201&default_format=CSV&output_format=JSONEachRow"
+echo "-- explicit default_format wins over path file extension (path .CSV, default_format=JSONEachRow):"
+http_get "${BASE_URL}/${DB}/hits.CSV?default_format=JSONEachRow"
 
 echo "===== compression setting ====="
 echo "-- compression=gz on /?query (decompressed):"

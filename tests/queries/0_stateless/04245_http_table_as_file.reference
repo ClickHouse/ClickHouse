@@ -83,6 +83,10 @@
 1
 -- output_format wins over default_format:
 {"1":1}
+-- explicit default_format wins over path file extension (path .CSV, default_format=JSONEachRow):
+{"a":1,"b":"one"}
+{"a":2,"b":"two"}
+{"a":3,"b":"three"}
 ===== compression setting =====
 -- compression=gz on /?query (decompressed):
 1

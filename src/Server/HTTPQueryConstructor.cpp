@@ -141,10 +141,10 @@ HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_
 
     if (!allow_database && !db_indices.empty())
     {
-        /// Non-filter components other than the table are not allowed when database is disabled.
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Unexpected path component '{}' in HTTP URL. Database name in path is disabled (set http_allow_database_as_path=1).",
-            components[db_indices.front()]);
+        /// Non-filter components other than the table cannot be claimed when `http_allow_database_as_path`
+        /// is off — leave them unclaimed and return an empty result. The path is effectively ignored
+        /// and the request proceeds as if it had hit the root URL.
+        return {};
     }
     if (db_indices.size() > 1)
     {
@@ -236,11 +236,11 @@ String parseURLParameterAsFilter(const String & name, const String & value)
 
     /// Case 1: HTMLForm splits a URL parameter on the first `=`. For two-character operators
     /// that end in `=` (`!=`, `>=`, `<=`), the operator's `=` ends up as that separator, leaving
-    /// the leading character of the operator stuck to the end of the name and the literal in `value`.
+    /// the leading character of the operator stuck to the end of the name and the literal in the value.
     /// Examples:
-    ///   `?a!=2` -> name="a!", value="2"  -> "a != 2"
-    ///   `?a>=2` -> name="a>", value="2"  -> "a >= 2"
-    ///   `?a<=2` -> name="a<", value="2"  -> "a <= 2"
+    ///   `?a!=2` -> name `a!` and value `2` -> `a != 2`
+    ///   `?a>=2` -> name `a>` and value `2` -> `a >= 2`
+    ///   `?a<=2` -> name `a<` and value `2` -> `a <= 2`
     if (name.size() > 1
         && (name.back() == '!' || name.back() == '>' || name.back() == '<'))
     {

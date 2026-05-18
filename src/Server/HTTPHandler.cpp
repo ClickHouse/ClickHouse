@@ -476,13 +476,14 @@ void HTTPHandler::processQuery(
         if (current_compression.empty())
             path_derived_changes.setSetting("compression", path_info.compression);
     }
-    /// Apply format from path (if no explicit `format`/`output_format` override exists).
+    /// Apply format from path (if no explicit `format`/`output_format`/`default_format` override exists).
+    /// "When there is a format from the file extension and there is also an explicit override, the override wins."
     if (!path_info.format.empty())
     {
         const String & format_override = settings[Setting::format];
         const String & output_format_override = settings[Setting::output_format];
-        /// "When there is a format from the file extension and there is also an explicit override, the override wins."
-        if (format_override.empty() && output_format_override.empty())
+        const String & default_format_setting = settings[Setting::default_format];
+        if (format_override.empty() && output_format_override.empty() && default_format_setting.empty())
         {
             /// Use as default_format so that queries without explicit FORMAT honor it.
             path_derived_changes.setSetting("default_format", path_info.format);

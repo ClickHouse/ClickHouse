@@ -19,20 +19,11 @@
 #include <Server/ACME/Client.h>
 #endif
 
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool http_allow_database_as_path;
-    extern const SettingsBool http_allow_table_as_file;
-    extern const SettingsBool http_allow_filters_as_path;
-}
 
 namespace ErrorCodes
 {
@@ -456,38 +447,30 @@ void addDefaultHandlersFactory(
         return std::make_unique<DynamicQueryHandler>(server, HTTPHandlerConnectionConfig{}, "query");
     };
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
-    query_handler->addFilter([&server](const auto & request)
+    query_handler->addFilter([](const auto & request)
         {
-            bool path_matches_get_or_head = startsWith(request.getURI(), "?")
-                            || startsWith(request.getURI(), "/?")
-                            || startsWith(request.getURI(), "/query?");
-            bool is_get_or_head_request = request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
-                            || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD;
+            /// This is the catch-all dynamic query handler. It accepts any GET/HEAD/POST/OPTIONS
+            /// request on any path starting with '/'. Strict-path handlers (e.g. `/ping`, `/play`,
+            /// `/metrics`) are registered before this one and take precedence. We cannot gate this
+            /// on `http_allow_*_as_path` settings here because routing happens before authentication
+            /// — those settings are then read per-user inside `HTTPHandler::processQuery`, where the
+            /// URL path is parsed only if the authenticated user has enabled at least one path feature.
+            const auto & uri = request.getURI();
+            const auto & method = request.getMethod();
+            bool is_get_or_head = method == Poco::Net::HTTPRequest::HTTP_GET
+                               || method == Poco::Net::HTTPRequest::HTTP_HEAD;
+            bool is_post_or_options = method == Poco::Net::HTTPRequest::HTTP_POST
+                                   || method == Poco::Net::HTTPRequest::HTTP_OPTIONS;
+            if (!is_get_or_head && !is_post_or_options)
+                return false;
 
-            bool path_matches_post_or_options = path_matches_get_or_head
-                             || request.getURI() == "/"
-                             || request.getURI().empty();
-            bool is_post_or_options_request = request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
-                                    || request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS;
-
-            if ((path_matches_get_or_head && is_get_or_head_request)
-                || (path_matches_post_or_options && is_post_or_options_request))
-                return true;
-
-            /// Extended path matching: when any of the http_allow_* path features is enabled at the
-            /// server-default level, accept arbitrary paths starting with '/'. This is the catch-all
-            /// for the HTTP-as-file feature; other strict-path handlers (e.g. /ping, /play, /metrics)
-            /// are registered before this one and take precedence.
-            const auto & default_settings = server.context()->getSettingsRef();
-            bool path_features_enabled = default_settings[Setting::http_allow_database_as_path]
-                                       || default_settings[Setting::http_allow_table_as_file]
-                                       || default_settings[Setting::http_allow_filters_as_path];
-            if (path_features_enabled
-                && (is_get_or_head_request || is_post_or_options_request)
-                && !request.getURI().empty() && request.getURI()[0] == '/')
-                return true;
-
-            return false;
+            /// Accept the original schemes (`?...`, `/?...`, `/query?...`, and an empty / "/" POST)
+            /// as well as any other path starting with `/` — those will be interpreted as
+            /// `database/table.format` only if the user has the matching `http_allow_*_as_path`
+            /// setting enabled.
+            return startsWith(uri, "?")
+                || startsWith(uri, "/")
+                || uri.empty();
         }
     );
     factory.addHandler(query_handler);
