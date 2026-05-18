@@ -6,7 +6,8 @@ DROP TABLE IF EXISTS t;
 CREATE TABLE t (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree
 PARTITION BY (a, b) ORDER BY c
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
-         part_minmax_index_columns = 'with_block_number_offset';
+         part_minmax_index_columns = 'with_block_number_offset',
+         add_minmax_index_for_numeric_columns = 0;
 
 SYSTEM STOP MERGES t;
 
