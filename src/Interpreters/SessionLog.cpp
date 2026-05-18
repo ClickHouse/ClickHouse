@@ -28,8 +28,6 @@
 
 #include <Poco/Net/SocketAddress.h>
 
-
-
 namespace
 {
 using namespace DB;

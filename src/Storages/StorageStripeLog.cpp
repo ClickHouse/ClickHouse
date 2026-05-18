@@ -48,8 +48,6 @@
 
 #include <base/insertAtEnd.h>
 
-
-
 namespace DB
 {
 namespace Setting
