@@ -57,5 +57,8 @@ ORDER BY length(s);
 -- IPv6 input
 SELECT hex(MD5(toIPv6('::1')));
 
+-- Long string: exercises many full blocks through the main loop (100000 bytes = 1562.5 blocks)
+SELECT hex(MD5(repeat('x', 100000)));
+
 -- Single row (tests batch size = 1)
 SELECT hex(MD5('single'));
