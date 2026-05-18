@@ -148,8 +148,10 @@ void optimizeUsePartAggregationCache(
     IASTHash query_hash = PartAggregationCache::calculateQueryHash(
         params.keys, params.aggregates, filter_dag_for_hash);
 
-    /// Include intermediate ExpressionStep actions in the hash to distinguish
-    /// queries with same GROUP BY but different column transformations.
+    /// Include the full intermediate ExpressionStep/FilterStep action DAGs in the hash.
+    /// Hashing only output names is not enough: two filters can share output column
+    /// names while computing different predicates, which would alias incompatible
+    /// queries to the same cache key and return cached states from a different query.
     if (!intermediate_actions.empty())
     {
         SipHash extra_hash;
@@ -157,10 +159,9 @@ void optimizeUsePartAggregationCache(
         extra_hash.update(query_hash.high64);
         for (const auto & action : intermediate_actions)
         {
-            for (const auto * output : action.actions->getActionsDAG().getOutputs())
-                extra_hash.update(output->result_name);
-            if (!action.filter_column_name.empty())
-                extra_hash.update(action.filter_column_name);
+            action.actions->getActionsDAG().updateHash(extra_hash);
+            extra_hash.update(action.filter_column_name);
+            extra_hash.update(action.remove_filter_column);
         }
         query_hash = getSipHash128AsPair(extra_hash);
     }

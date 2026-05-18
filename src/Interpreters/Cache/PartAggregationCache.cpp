@@ -38,9 +38,10 @@ IASTHash PartAggregationCache::calculateQueryHash(
 
     if (filter_dag)
     {
-        auto outputs = filter_dag->getOutputs();
-        for (const auto * output : outputs)
-            hash.update(output->result_name);
+        /// Hash the full filter DAG, not only output names. Two filters can share output
+        /// column names (e.g. an auto-generated `__filter`) while computing entirely
+        /// different predicates, so a name-only hash would alias incompatible queries.
+        filter_dag->updateHash(hash);
     }
 
     return getSipHash128AsPair(hash);
