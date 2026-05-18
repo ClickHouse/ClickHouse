@@ -111,9 +111,12 @@ For each CI failure:
 
 3. **Fix the failure:** Make the necessary code or test changes. Each fix should be a separate commit with a clear message explaining what was wrong and why.
 
-4. **Repeat** until all failures are addressed or confirmed as known issues with links to open issues/PRs.
+4. If the only failure is "CH Inc sync", fix it using the /fix-sync skill.
 
-If the only failure is "CH Inc Sync", fix it using the /fix-sync skill.
+5. If you are confident that the failure is unrelated to the changes, post a comment, asking @groeneai to investigate the failure:
+   @groeneai, investigate the failure: <link> and provide a fix in a separate PR. If the fix is already in progress, link it here. 
+
+6. **Repeat** until all failures are addressed or confirmed as known issues with links to open issues/PRs.
 
 ### 5. Address reviewer feedback
 
