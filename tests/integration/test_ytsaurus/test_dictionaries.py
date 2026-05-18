@@ -468,3 +468,40 @@ def test_yt_lookups_throttler(started_cluster):
     instance.query("DROP DICTIONARY yt_dict")
 
     yt.remove_table(path)
+
+
+def test_yt_lookups_unlimited_chunk_size(started_cluster):
+    """Regression test: `lookup_max_rows_per_query = 0` means unlimited (one chunk)."""
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
+    path = "//tmp/table"
+
+    yt.create_table(
+        path,
+        '{"id":1,"value":20}{"id":2,"value":40}{"id":3,"value":30}{"id":4, "value": 40}',
+        sorted_columns=("id"),
+        schema={"id": "uint64", "value": "int32"},
+        dynamic=True,
+    )
+
+    instance.query(f"""
+        CREATE DICTIONARY yt_dict(id UInt64, value Int32)
+        PRIMARY KEY id
+        SOURCE(
+            YTSAURUS(
+                http_proxy_urls '{yt_uri_helper.uri}'
+                cypress_path '{path}'
+                oauth_token '{yt_uri_helper.token}'
+                lookup_throttler_max_requests_per_second '0'
+                lookup_max_rows_per_query '0'
+                )
+            )
+        LAYOUT(CACHE(SIZE_IN_CELLS 10))
+        LIFETIME(MIN 0 MAX 1000)
+        """)
+    assert (
+        instance.query("SELECT dictGet('yt_dict', 'value', number + 1) FROM numbers(4)")
+        == "20\n40\n30\n40\n"
+    )
+    assert instance.query("SELECT dictGet('yt_dict', 'value', 3)") == "30\n"
+    instance.query("DROP DICTIONARY yt_dict")
+    yt.remove_table(path)
