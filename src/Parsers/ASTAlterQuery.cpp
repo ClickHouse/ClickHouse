@@ -890,8 +890,9 @@ void ASTAlterQuery::readJSON(const Poco::JSON::Object & json)
         alter_object = AlterObjectType::UNKNOWN;
 
     auto child = r.readChild("command_list");
-    if (child)
-        set(command_list, child);
+    if (!child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'command_list' field in `AlterQuery` during AST JSON deserialization");
+    set(command_list, child);
 }
 
 void ASTAlterQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
