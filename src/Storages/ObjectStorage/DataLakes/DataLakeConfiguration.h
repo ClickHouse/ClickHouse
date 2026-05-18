@@ -156,8 +156,6 @@ public:
 
     void checkMutationIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const MutationCommands & commands) override
     {
-        if (!current_metadata)
-            return;
         lazyInitializeIfNeeded(object_storage, context);
         current_metadata->checkMutationIsPossible(commands);
     }
