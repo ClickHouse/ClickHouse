@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ASTPtr ASTConstraintDeclaration::clone() const
 {
     auto res = make_intrusive<ASTConstraintDeclaration>();
@@ -40,8 +45,9 @@ void ASTConstraintDeclaration::readJSON(const Poco::JSON::Object & json)
     type = (constraint_type_str == "ASSUME") ? Type::ASSUME : Type::CHECK;
 
     auto child = r.readChild("expr");
-    if (child)
-        set(expr, child);
+    if (!child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'expr' field in `ConstraintDeclaration` during AST JSON deserialization");
+    set(expr, child);
 }
 
 void ASTConstraintDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
