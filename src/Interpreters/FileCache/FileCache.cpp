@@ -2532,23 +2532,25 @@ bool FileCache::doDynamicResizeImpl(
         for (const auto & candidate : key_candidates)
         {
             const auto & file_segment = candidate->file_segment;
+            /// Restore the original queue entry size. For partial segments it is reserved size.
+            const auto restored_size = candidate->size();
 
             LOG_DEBUG(
-                log, "Adding back file segment after failed eviction: {}:{}, size: {}",
-                file_segment->key(), file_segment->offset(), file_segment->getDownloadedSize());
+                log, "Adding back file segment after failed eviction: {}:{}, restored size: {}, downloaded size: {}",
+                file_segment->key(), file_segment->offset(), restored_size, file_segment->getDownloadedSize());
 
             auto original_queue_type = eviction_candidates.getOriginalQueueType(candidate.get());
 
             auto main_priority_iterator = main_priority->addForRestore(
                 key_metadata,
                 file_segment->offset(),
-                file_segment->getDownloadedSize(),
+                restored_size,
                 original_queue_type,
                 cache_write_lock,
                 &state_lock);
 
             candidate->setRemovedFlag(*locked_key, /* value */false);
-            file_segment->setQueueIterator(main_priority_iterator);
+            file_segment->restoreQueueIteratorAfterDelayedRemoval(main_priority_iterator);
         }
     }
 

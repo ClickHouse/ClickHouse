@@ -46,6 +46,13 @@ public:
     /// Check that we have substreams for all columns and they have the same order as in provided list.
     void validateColumns(const std::vector<String> & columns) const;
 
+    /// Check that all substream names have valid prefixes matching their column names.
+    /// Every substream for a column must start with escapeForFileName(column_name) (or
+    /// escapeForFileName(Nested::extractTableName(column_name)) for shared Nested offsets),
+    /// followed by '.', '%2E', or end-of-string.
+    /// Returns {invalid_substream, column_name} pair, or empty strings if all are valid.
+    std::pair<String, String> findInvalidSubstreamName() const;
+
     /// Merge 2 sets of columns substreams with specified columns order.
     /// If some column exists in both left and right we keep only substreams from the left.
     static ColumnsSubstreams merge(const ColumnsSubstreams & left, const ColumnsSubstreams & right, const std::vector<String> & columns_order);

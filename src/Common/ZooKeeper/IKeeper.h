@@ -762,6 +762,13 @@ public:
 
     virtual int64_t getLastZXIDSeen() const = 0;
 
+    /// Returns the timestamp (in microseconds since `steady_clock` epoch) of the
+    /// last data received from the server (any kind: response, heartbeat, or
+    /// watch event). Used by progress-based timeout logic in sync wrappers.
+    /// Returns 0 (epoch) by default, meaning implementations without progress
+    /// tracking will fall back to plain timeout.
+    virtual Int64 getLastReceivedTimestamp() const { return 0; }
+
     virtual String tryGetAvailabilityZone() { return ""; }
 
     using WatchCallbackCreator = std::function<WatchCallback()>;

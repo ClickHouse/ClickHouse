@@ -31,6 +31,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/intExp.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 
@@ -88,6 +89,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsBool fsync_after_insert;
     extern const MergeTreeSettingsBool fsync_part_directory;
+    extern const MergeTreeSettingsBool materialize_skip_indexes_on_merge;
+    extern const MergeTreeSettingsString exclude_materialize_skip_indexes_on_merge;
     extern const MergeTreeSettingsUInt64 min_free_disk_bytes_to_perform_insert;
     extern const MergeTreeSettingsFloat min_free_disk_ratio_to_perform_insert;
     extern const MergeTreeSettingsBool optimize_row_order;
@@ -365,6 +368,45 @@ void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActions
     }
 }
 
+MergeTreeIndices collectSkipIndicesToMaterialize(
+    const StorageMetadataPtr & metadata_snapshot,
+    bool materialize_skip_indexes,
+    const String & exclude_indexes_string,
+    const Settings & settings)
+{
+    MergeTreeIndices indices;
+    if (!materialize_skip_indexes)
+        return indices;
+
+    std::unordered_set<String> exclude_index_names;
+    if (!exclude_indexes_string.empty())
+        exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, settings);
+
+    /// Indices looking into virtual columns can't be correctly built at this stage.
+    auto is_virtual_column_index = [&metadata_snapshot](const IndexDescription & index)
+    {
+        for (const auto & required_column : index.column_names)
+            if (metadata_snapshot->isVirtualColumn(required_column))
+                return true;
+
+        return false;
+    };
+
+    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+    {
+        if (exclude_index_names.contains(index.name))
+            continue;
+
+        if (is_virtual_column_index(index))
+            continue;
+
+        indices.emplace_back(MergeTreeIndexFactory::instance().get(index));
+    }
+
+    return indices;
+}
+
+
 }
 
 void MergeTreeTemporaryPart::cancel()
@@ -592,7 +634,6 @@ Block MergeTreeDataWriter::mergeBlock(
     return header->cloneWithColumns(status.chunk.getColumns());
 }
 
-
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context)
 {
     auto partition_id = block.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
@@ -667,37 +708,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     std::string part_dir = temp_prefix + part_name;
     temp_part->temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
 
-    MergeTreeIndices indices;
-    /// Create skip indexes if setting materialize_skip_indexes_on_insert = true
-    if (global_settings[Setting::materialize_skip_indexes_on_insert])
-    {
-        const auto & index_descriptions = metadata_snapshot->getSecondaryIndices();
-        auto exclude_indexes_string = global_settings[Setting::exclude_materialize_skip_indexes_on_insert].toString();
-
-        /// Some indices were requested to not be build during insert.
-        std::unordered_set<String> exclude_index_names;
-        if (!exclude_indexes_string.empty())
-            exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, global_settings);
-
-        /// Indices looking into virtual columns can't be correctly build at this stage.
-        auto is_virtual_column_index = [metadata_snapshot](const IndexDescription & index)
-        {
-            for (const auto & required_column : index.column_names)
-                if (metadata_snapshot->isVirtualColumn(required_column))
-                    return true;
-
-            return false;
-        };
-
-        for (const auto & index : index_descriptions)
-        {
-            if (exclude_index_names.contains(index.name))
-                continue;
-            if (is_virtual_column_index(index))
-                continue;
-            indices.emplace_back(MergeTreeIndexFactory::instance().get(index));
-        }
-    }
+    auto indices = collectSkipIndicesToMaterialize(
+        metadata_snapshot,
+        global_settings[Setting::materialize_skip_indexes_on_insert],
+        global_settings[Setting::exclude_materialize_skip_indexes_on_insert].toString(),
+        global_settings);
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
@@ -949,7 +964,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         if (projection_block.rows())
         {
             auto proj_temp_part
-                = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false);
+                = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false, context);
             new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
 
             if (global_settings[Setting::finalize_projection_parts_synchronously])
@@ -995,6 +1010,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     LoggerPtr log,
     Block block,
     const ProjectionDescription & projection,
+    MergeTreeIndices indices,
     bool merge_is_needed)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
@@ -1114,7 +1130,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         data_settings,
         metadata_snapshot,
         columns,
-        MergeTreeIndices{},
+        indices,
         compression_codec,
         std::move(index_granularity_ptr),
         Tx::NonTransactionalTID,
@@ -1143,10 +1159,18 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
     Block block,
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
-    bool merge_is_needed)
+    bool merge_is_needed,
+    ContextPtr context)
 {
+    const auto & query_settings = context->getSettingsRef();
+    auto indices = collectSkipIndicesToMaterialize(
+        projection.metadata,
+        query_settings[Setting::materialize_skip_indexes_on_insert],
+        query_settings[Setting::exclude_materialize_skip_indexes_on_insert].toString(),
+        query_settings);
+
     return writeProjectionPartImpl(
-        projection.name, false /* is_temp */, parent_part, data, log, std::move(block), projection, merge_is_needed);
+        projection.name, false /* is_temp */, parent_part, data, log, std::move(block), projection, std::move(indices), merge_is_needed);
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -1157,11 +1181,19 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     Block block,
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
-    size_t block_num)
+    size_t block_num,
+    ContextPtr context)
 {
+    const auto & table_settings = data.getSettings();
+    auto indices = collectSkipIndicesToMaterialize(
+        projection.metadata,
+        (*table_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge],
+        (*table_settings)[MergeTreeSetting::exclude_materialize_skip_indexes_on_merge].toString(),
+        context->getSettingsRef());
+
     auto part_name = fmt::format("{}_{}", projection.name, block_num);
     auto new_part = writeProjectionPartImpl(
-        part_name, /*is_temp=*/ true, parent_part, data, log, std::move(block), projection, /*merge_is_needed=*/true);
+        part_name, /*is_temp=*/ true, parent_part, data, log, std::move(block), projection, std::move(indices), /*merge_is_needed=*/true);
 
     new_part->part->temp_projection_block_number = block_num;
     return new_part;

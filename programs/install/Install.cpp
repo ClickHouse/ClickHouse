@@ -19,6 +19,7 @@
 #include <Common/ErrnoException.h>
 #include <Common/ShellCommand.h>
 #include <Common/formatReadable.h>
+#include <Common/shellQuote.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/OpenSSLHelpers.h>
 #include <base/sleep.h>
@@ -104,25 +105,6 @@ namespace po = boost::program_options;
 namespace fs = std::filesystem;
 
 
-/// POSIX-compliant single-quote escaping: wrap in single quotes and replace any
-/// embedded single quote with '\''. Safe against arbitrary byte content.
-static std::string shellQuote(std::string_view s)
-{
-    std::string out;
-    out.reserve(s.size() + 2);
-    out.push_back('\'');
-    for (char c : s)
-    {
-        if (c == '\'')
-            out.append("'\\''");
-        else
-            out.push_back(c);
-    }
-    out.push_back('\'');
-    return out;
-}
-
-
 static auto executeScript(const std::string & command, bool throw_on_error = false)
 {
     auto sh = ShellCommand::execute(command);
@@ -158,7 +140,8 @@ static void changeOwnership(const String & file_name, const String & user_name, 
 {
     if (!user_name.empty() || !group_name.empty())
     {
-        std::string command = fmt::format("chown {} {}:{} '{}'", (recursive ? "-R" : ""), user_name, group_name, file_name);
+        std::string command = fmt::format("chown {} {}:{} {}",
+            (recursive ? "-R" : ""), shellQuote(user_name), shellQuote(group_name), shellQuote(file_name));
         fmt::print(" {}\n", command);
         executeScript(command);
     }
@@ -172,11 +155,11 @@ static void createGroup(const String & group_name)
         // TODO: implement.
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unable to create a group in macOS");
 #elif defined(OS_FREEBSD)
-        std::string command = fmt::format("pw groupadd {}", group_name);
+        std::string command = fmt::format("pw groupadd {}", shellQuote(group_name));
         fmt::print(" {}\n", command);
         executeScript(command);
 #else
-        std::string command = fmt::format("groupadd -r {}", group_name);
+        std::string command = fmt::format("groupadd -r {}", shellQuote(group_name));
         fmt::print(" {}\n", command);
         executeScript(command);
 #endif
@@ -192,14 +175,14 @@ static void createUser(const String & user_name, [[maybe_unused]] const String &
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unable to create a user in macOS");
 #elif defined(OS_FREEBSD)
         std::string command = group_name.empty()
-            ? fmt::format("pw useradd -s /bin/false -d /nonexistent -n {}", user_name)
-            : fmt::format("pw useradd -s /bin/false -d /nonexistent -g {} -n {}", group_name, user_name);
+            ? fmt::format("pw useradd -s /bin/false -d /nonexistent -n {}", shellQuote(user_name))
+            : fmt::format("pw useradd -s /bin/false -d /nonexistent -g {} -n {}", shellQuote(group_name), shellQuote(user_name));
         fmt::print(" {}\n", command);
         executeScript(command);
 #else
         std::string command = group_name.empty()
-            ? fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent --user-group {}", user_name)
-            : fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent -g {} {}", group_name, user_name);
+            ? fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent --user-group {}", shellQuote(user_name))
+            : fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent -g {} {}", shellQuote(group_name), shellQuote(user_name));
         fmt::print(" {}\n", command);
         executeScript(command);
 #endif
@@ -214,7 +197,9 @@ static std::string formatWithSudo(std::string command, bool needed = true)
 
 #if defined(OS_FREEBSD)
     /// FreeBSD does not have 'sudo' installed.
-    return fmt::format("su -m root -c '{}'", command);
+    /// `su -c` takes a single shell command string, so quote the whole command
+    /// to keep embedded shell metacharacters from breaking the wrapper.
+    return fmt::format("su -m root -c {}", shellQuote(command));
 #else
     return fmt::format("sudo {}", command);
 #endif
@@ -916,7 +901,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             " || echo \"Cannot set 'net_admin' or 'ipc_lock' or 'sys_nice' or 'net_bind_service' capability for clickhouse binary."
                 " This is optional. Taskstats accounting will be disabled."
                 " To enable taskstats accounting you may add the required capability later manually.\"",
-            fs::canonical(main_bin_path).string());
+            shellQuote(fs::canonical(main_bin_path).string()));
         executeScript(command);
 #endif
 

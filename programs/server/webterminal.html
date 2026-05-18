@@ -82,6 +82,9 @@
     var userFromURL = params.has('user');
     var inIframe = (window.parent !== window);
     var waitingForCredentials = false;
+    // First connection attempt uses the URL-supplied user (or `default`) with empty password.
+    // On failure we fall back to the interactive prompt or postMessage-supplied credentials.
+    var initialAutoAuth = true;
 
     function getWebSocketURL() {
         var loc = window.location;
@@ -299,6 +302,14 @@
                 // Handshake failed or server rejected authentication (close code 1008)
                 ws = null;
                 term.write('\r\x1b[2K');
+                if (initialAutoAuth) {
+                    initialAutoAuth = false;
+                    if (inIframe && !userFromURL) {
+                        // Embedded without URL credentials: defer to parent via postMessage.
+                        waitingForCredentials = true;
+                        return;
+                    }
+                }
                 promptCredentials();
             } else {
                 // Normal disconnect after session was active
@@ -323,6 +334,9 @@
 
         if (e.data.type === 'webterminal-credentials' && waitingForCredentials) {
             waitingForCredentials = false;
+            // Parent-supplied credentials are explicit; subsequent failures should prompt
+            // interactively rather than wait for another (one-shot) parent message.
+            initialAutoAuth = false;
             currentUser = e.data.user || 'default';
             currentPassword = e.data.password || '';
             userFromURL = true;
@@ -339,13 +353,17 @@
 
     // Start
     initTerminal();
-    if (inIframe && !params.has('user')) {
-        // When embedded in an iframe, wait for credentials from the parent via postMessage
+    if (inIframe && !userFromURL) {
+        // The parent (e.g. `play.html`) sends `webterminal-credentials` once on iframe `load`.
+        // Pre-arm the receiver so that message isn't dropped if it arrives before or during
+        // the initial auto-auth attempt; the in-flight connection is replaced when the message
+        // is processed.
         waitingForCredentials = true;
-    } else {
-        // Always start by prompting for the password; never auto-connect with a URL-supplied password
-        promptCredentials();
     }
+    // Try to connect automatically using the URL-supplied user (or `default`) with empty password.
+    // If the server rejects this, `ws.onclose` falls back to the interactive prompt or, when
+    // embedded in an iframe without a URL-supplied user, waits for credentials via postMessage.
+    attemptConnect();
     </script>
 </body>
 </html>

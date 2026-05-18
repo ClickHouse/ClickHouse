@@ -155,7 +155,7 @@ static size_t countCodePointsWithSeqLength(const String & query, const char * en
     return code_points;
 }
 
-void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context, int cursor_position)
+void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context, int cursor_position, bool rainbow_parentheses)
 {
     using namespace replxx;
 
@@ -390,8 +390,12 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
             if (highlight_token_iterator->type == TokenType::OpeningRoundBracket)
             {
                 /// On opening round bracket, remember the color we use for it.
-                color_stack.push_back(default_colormap[current_color % default_colormap.size()]);
+                /// Use color zero if rainbow parentheses disabled.
                 brace_stack.push_back(*highlight_token_iterator);
+                auto color = default_colormap[current_color % default_colormap.size()];
+                if (!rainbow_parentheses)
+                    color = default_colormap[0];
+                color_stack.push_back(color);
                 current_color++;
 
                 ++highlight_token_iterator;
@@ -436,7 +440,10 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
                 /// If the cursor is on one of the round braces,
                 /// highlight both the opening and closing round braces with a brighter color.
+                /// Use color zero if rainbow parentheses disabled.
                 auto bright_color = bright_colormap.at(color_stack.back());
+                if (!rainbow_parentheses)
+                    bright_color = bright_colormap.at(default_colormap[0]);
                 colors[highlight_pos] = bright_color;
                 colors[matching_brace_pos] = bright_color;
                 active_matching_brace = std::make_tuple(highlight_pos, matching_brace_pos);
@@ -505,12 +512,12 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     }
 }
 
-String highlighted(const String & query, const Context & context)
+String highlighted(const String & query, const Context & context, bool rainbow_parentheses)
 {
     const size_t num_code_points = countCodePointsWithSeqLength(query, query.data() + query.size());
 
     std::vector<replxx::Replxx::Color> colors(num_code_points, replxx::Replxx::Color::DEFAULT);
-    highlight(query, colors, context, 0);
+    highlight(query, colors, context, 0, rainbow_parentheses);
 
     String res;
     size_t query_size = query.size();

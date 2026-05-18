@@ -1863,7 +1863,7 @@ namespace ErrorCodes
     Enable persisting column _block_number for each row.
     )", 0, allow_experimental_block_number_column) \
     DECLARE(Bool, enable_block_offset_column, false, R"(
-    Persists virtual column `_block_number` on merges.
+    Persists virtual column `_block_offset` on merges.
     )", 0) \
     DECLARE(MergeTreePartMinMaxIndexColumns, part_minmax_index_columns, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY, R"(
     Selects which columns the per-part min-max index covers. Each value enables an additional group of columns on top of the previous one.

@@ -113,7 +113,7 @@ def test_log_to_exceptions(kafka_cluster, max_retries=20):
 
     logging.debug(f"system.kafka_consumers content: {system_kafka_consumers_content}")
     assert system_kafka_consumers_content.startswith(
-        f"[thrd:localhost:{non_existent_broker_port}/bootstrap]: localhost:{non_existent_broker_port}/bootstrap: Connect to ipv4#127.0.0.1:{non_existent_broker_port} failed: Connection refused"
+        f"[thrd:localhost:{non_existent_broker_port}/bootstrap]: 1/1 brokers are down"
     )
 
     instance.query("DROP TABLE foo_exceptions")
