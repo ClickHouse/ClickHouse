@@ -116,6 +116,11 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
         database_and_tables = child;
         children.push_back(database_and_tables);
     }
+
+    /// `formatQueryImpl` unconditionally dereferences `table` in the single-table branch.
+    /// Require at least one valid target so we cannot construct an AST that crashes on formatting.
+    if (!table && !database && !database_and_tables)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`DropQuery` must specify at least one of 'database', 'table', or 'database_and_tables' during AST JSON deserialization");
 }
 
 void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
