@@ -150,15 +150,11 @@ void ExchangeServer::addConnection(Poco::Net::StreamSocket socket)
     if (!body_buffer.empty())
         receiveAll(socket, body_buffer.data(), body_buffer.size(), "SourceHello body");
 
+    /// Parse only the version field first. Fields after it depend on the negotiated layout,
+    /// so peers on a different protocol version must not have their body further interpreted.
     ReadBufferFromMemory body_in(body_buffer.data(), body_buffer.size());
     UInt64 source_version = 0;
     readIntBinary(source_version, body_in);
-    String query_id;
-    readStringBinary(query_id, body_in);
-    String stream_name;
-    readStringBinary(stream_name, body_in);
-
-    LOG_TRACE(log, "Query id: {}, stream: {}, peer protocol version: {}", query_id, stream_name, source_version);
 
     WriteBufferFromOwnString reply_body;
     writeIntBinary(StreamingExchangeProtocol::PROTOCOL_VERSION, reply_body);
@@ -169,8 +165,6 @@ void ExchangeServer::addConnection(Poco::Net::StreamSocket socket)
         .packet_type = StreamingExchangeProtocol::PacketType::SinkHello,
         .bytes_size = reply_body_str.size(),
     };
-
-    const bool version_matches = (source_version == StreamingExchangeProtocol::PROTOCOL_VERSION);
 
     /// On version mismatch, send SinkHello on a best-effort basis so the peer can produce
     /// a precise diagnostic naming both versions, then throw locally. The connection is
@@ -186,7 +180,7 @@ void ExchangeServer::addConnection(Poco::Net::StreamSocket socket)
         out.cancel();
     };
 
-    if (!version_matches)
+    if (source_version != StreamingExchangeProtocol::PROTOCOL_VERSION)
     {
         try
         {
@@ -197,10 +191,18 @@ void ExchangeServer::addConnection(Poco::Net::StreamSocket socket)
             tryLogCurrentException(log, fmt::format("Failed to send SinkHello to {}", socket.peerAddress().toString()));
         }
         throw Exception(ErrorCodes::PROTOCOL_VERSION_MISMATCH,
-            "Streaming exchange protocol version mismatch from {} for stream {}: peer speaks version {}, this node speaks version {}",
-            socket.peerAddress().toString(), stream_name, source_version,
+            "Streaming exchange protocol version mismatch from {}: peer speaks version {}, this node speaks version {}",
+            socket.peerAddress().toString(), source_version,
             StreamingExchangeProtocol::PROTOCOL_VERSION);
     }
+
+    /// Versions match — body layout is known, parse the rest.
+    String query_id;
+    readStringBinary(query_id, body_in);
+    String stream_name;
+    readStringBinary(stream_name, body_in);
+
+    LOG_TRACE(log, "Query id: {}, stream: {}, peer protocol version: {}", query_id, stream_name, source_version);
 
     send_sink_hello();
 
