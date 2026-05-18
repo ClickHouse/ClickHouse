@@ -129,7 +129,8 @@ void DelayedMaterializingCTEsStep::optimizePlans(const QueryPlanOptimizationSett
         /// `cte->plan` can already be `nullptr` if a recursive `buildSetInplace`
         /// path won an earlier `is_materialization_planned` race and
         /// `std::move`d the plan out via `makePlansForCTEs`. Skip the call
-        /// rather than crashing; the materialization has already run inplace.
+        /// rather than throwing an exception; the materialization has
+        /// already run inplace.
         if (cte->plan)
             cte->plan->optimize(optimization_settings);
     }
