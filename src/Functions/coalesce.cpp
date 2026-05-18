@@ -96,6 +96,44 @@ public:
             " OR (T1, ..., E) -> leastSupertype(removeNullable(T1), ..., E)";
     }
 
+    /// Restore the legacy short-circuit semantics for type inference: stop at the first
+    /// non-nullable argument, and ignore trailing arguments for supertype computation.
+    /// The declarative signature `leastSupertype(removeNullable(T1), ..., E)` includes
+    /// all arguments, so a query like `coalesce(non_nullable_int, incompatible_type)`
+    /// previously type-checked (returning Int) but would now fail during analysis.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.empty())
+            return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+
+        DataTypes filtered_types;
+        filtered_types.reserve(arguments.size());
+        bool stopped_at_non_nullable = false;
+        for (const auto & arg : arguments)
+        {
+            if (arg.type->onlyNull())
+                continue;
+            if (!canContainNull(*arg.type))
+            {
+                filtered_types.push_back(arg.type);
+                stopped_at_non_nullable = true;
+                break;
+            }
+            filtered_types.push_back(removeNullable(arg.type));
+        }
+
+        if (filtered_types.empty())
+            return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+
+        DataTypePtr supertype = use_variant_as_common_type
+            ? getLeastSupertypeOrVariant(filtered_types)
+            : getLeastSupertype(filtered_types);
+
+        if (stopped_at_non_nullable)
+            return supertype;
+        return makeNullable(supertype);
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// coalesce(arg0, arg1, ..., argN) is essentially
