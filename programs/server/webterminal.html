@@ -345,6 +345,10 @@
     // A 'webterminal-hello' handshake lets the parent register its origin so the iframe
     // can post back even when the parent is cross-origin.
     window.addEventListener('message', function(e) {
+        // Only accept messages from the embedding parent window. Without this, any window
+        // from an allowed origin that obtains a reference to us (e.g. via window.open)
+        // could drive the credentials/refit handlers.
+        if (e.source !== window.parent) return;
         if (!isTrustedParentOrigin(e.origin)) return;
         if (!e.data) return;
 
