@@ -14,9 +14,11 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/castColumn.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -73,8 +75,13 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if (!WhichDataType(arguments[2].get()).isNativeInteger())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument 3 of function {}. Must be integer (values are converted to UInt32 for the H3 API)",
+                arguments[2]->getName(), getName());
+
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
@@ -102,13 +109,30 @@ public:
                 arguments[1].column->getName(), getName());
         const auto & data_resolution = col_resolution->getData();
 
+        /// H3 polygonToCellsExperimental expects uint32_t flags.
+        /// Fast path: UInt8 literals (0..3) and UInt32 columns (toUInt32); otherwise accurate cast to UInt32.
         auto col_flags_materialized = arguments[2].column->convertToFullColumnIfConst();
-        const auto * col_flags = checkAndGetColumn<ColumnUInt8>(col_flags_materialized.get());
-        if (!col_flags)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column type {} of argument 3 of function {}. Must be UInt8",
-                arguments[2].column->getName(), getName());
-        const auto & data_flags = col_flags->getData();
+
+        const ColumnUInt8::Container * flags_data_u8 = nullptr;
+        const ColumnUInt32::Container * flags_data_u32 = nullptr;
+        ColumnPtr flags_column_casted;
+
+        if (const auto * col_flags_u8 = checkAndGetColumn<ColumnUInt8>(col_flags_materialized.get()))
+            flags_data_u8 = &col_flags_u8->getData();
+        else if (const auto * col_flags_u32 = checkAndGetColumn<ColumnUInt32>(col_flags_materialized.get()))
+            flags_data_u32 = &col_flags_u32->getData();
+        else
+        {
+            flags_column_casted = castColumnAccurate(
+                {col_flags_materialized, arguments[2].type, {}},
+                std::make_shared<DataTypeUInt32>());
+            const auto * col_flags_u32_casted = checkAndGetColumn<ColumnUInt32>(flags_column_casted.get());
+            if (!col_flags_u32_casted)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column type {} of argument 3 of function {}. Must be integer",
+                    arguments[2].column->getName(), getName());
+            flags_data_u32 = &col_flags_u32_casted->getData();
+        }
 
         auto dst = ColumnArray::create(ColumnUInt64::create());
         auto & dst_data = dst->getData();
@@ -160,7 +184,9 @@ public:
                         "The argument 'resolution' ({}) of function {} is out of bounds (max {})",
                         toString(resolution), getName(), toString(MAX_H3_RES));
 
-                UInt32 flags = static_cast<UInt32>(data_flags[row]);
+                UInt32 flags = flags_data_u8
+                    ? static_cast<UInt32>((*flags_data_u8)[row])
+                    : (*flags_data_u32)[row];
                 if (flags >= CONTAINMENT_INVALID)
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                         "The argument 'flags' ({}) of function {} is invalid (must be 0..3: "
@@ -276,7 +302,8 @@ REGISTER_FUNCTION(h3PolygonToCellsWithContainment)
             "Returns the hexagons (at specified resolution) covering the provided geometry, "
             "using H3's experimental algorithm with selectable containment mode. "
             "Flags: 0=CONTAINMENT_CENTER, 1=CONTAINMENT_FULL, 2=CONTAINMENT_OVERLAPPING, "
-            "3=CONTAINMENT_OVERLAPPING_BBOX. See H3 docs.",
+            "3=CONTAINMENT_OVERLAPPING_BBOX. The flags argument is passed to the H3 API as UInt32; "
+            "use integer literals (0..3) or toUInt32. Other native integer types are converted with an accurate cast. See H3 docs.",
         .syntax = "h3PolygonToCellsWithContainment(geometry, resolution, flags)",
         .introduced_in = {26, 6},
         .category = FunctionDocumentation::Category::Geo});
