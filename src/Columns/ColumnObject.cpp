@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnCompressed.h>
@@ -269,7 +270,7 @@ void ColumnObject::get(size_t n, Field & res) const
     res = (*this)[n];
 }
 
-void ColumnObject::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+DataTypePtr ColumnObject::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     if (options.notFull(name_buf))
         name_buf << '{';
@@ -288,7 +289,7 @@ void ColumnObject::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t 
             else
                 name_buf << ", ";
             writeDoubleQuoted(path, name_buf);
-            column->getValueNameImpl(name_buf, n, options);
+            column->getValueNameAndTypeImpl(name_buf, n, options);
         }
     }
 
@@ -309,7 +310,7 @@ void ColumnObject::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t 
             else
                 name_buf << ", ";
             writeDoubleQuoted(path, name_buf);
-            column->getValueNameImpl(name_buf, n, options);
+            column->getValueNameAndTypeImpl(name_buf, n, options);
         }
     }
 
@@ -345,12 +346,14 @@ void ColumnObject::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t 
             const auto column = decoded_type->createColumn();
             decoded_type->getDefaultSerialization()->deserializeBinary(*column, buf, getFormatSettings());
 
-            column->getValueNameImpl(name_buf, 0, options);
+            column->getValueNameAndTypeImpl(name_buf, 0, options);
         }
     }
 
     if (options.notFull(name_buf))
         name_buf << "}";
+
+    return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
 }
 
 bool ColumnObject::isDefaultAt(size_t n) const
@@ -539,6 +542,7 @@ bool ColumnObject::tryInsert(const Field & x)
         for (const auto & path : new_dynamic_paths)
         {
             dynamic_paths_ptrs.erase(path);
+            sorted_dynamic_paths.erase(path);
             dynamic_paths.erase(path);
         }
 
@@ -574,6 +578,7 @@ bool ColumnObject::tryInsert(const Field & x)
         }
         else if (auto * dynamic_path_column = tryToAddNewDynamicPath(path))
         {
+            new_dynamic_paths.insert(String(path));
             if (!dynamic_path_column->tryInsert(value_field))
             {
                 restore_sizes();
@@ -1139,6 +1144,17 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
     }
 }
 
+void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    for (const auto & path : sorted_typed_paths)
+        typed_paths.find(path)->second->updateHashWithValueRange(begin, end, hash);
+
+    for (const auto & path : sorted_dynamic_paths)
+        dynamic_paths.find(path)->second->updateHashWithValueRange(begin, end, hash);
+
+    shared_data->updateHashWithValueRange(begin, end, hash);
+}
+
 WeakHash32 ColumnObject::getWeakHash32() const
 {
     WeakHash32 hash(size());
@@ -1172,7 +1188,7 @@ ColumnPtr ColumnObject::filter(const Filter & filt, ssize_t result_size_hint) co
         filtered_dynamic_paths[path] = column->filter(filt, result_size_hint);
 
     auto filtered_shared_data = shared_data->filter(filt, result_size_hint);
-    return ColumnObject::create(filtered_typed_paths, filtered_dynamic_paths, filtered_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types);
+    return ColumnObject::create(filtered_typed_paths, filtered_dynamic_paths, filtered_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
 void ColumnObject::filter(const Filter & filt)
@@ -1226,7 +1242,7 @@ ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const
         indexed_dynamic_paths[path] = column->index(indexes, limit);
 
     auto indexed_shared_data = shared_data->index(indexes, limit);
-    return ColumnObject::create(indexed_typed_paths, indexed_dynamic_paths, indexed_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types);
+    return ColumnObject::create(indexed_typed_paths, indexed_dynamic_paths, indexed_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
 ColumnPtr ColumnObject::replicate(const Offsets & replicate_offsets) const
@@ -1242,7 +1258,7 @@ ColumnPtr ColumnObject::replicate(const Offsets & replicate_offsets) const
         replicated_dynamic_paths[path] = column->replicate(replicate_offsets);
 
     auto replicated_shared_data = shared_data->replicate(replicate_offsets);
-    return ColumnObject::create(replicated_typed_paths, replicated_dynamic_paths, replicated_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types);
+    return ColumnObject::create(replicated_typed_paths, replicated_dynamic_paths, replicated_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
 MutableColumns ColumnObject::scatter(size_t num_columns, const Selector & selector) const
@@ -1273,7 +1289,7 @@ MutableColumns ColumnObject::scatter(size_t num_columns, const Selector & select
     MutableColumns result_columns;
     result_columns.reserve(num_columns);
     for (size_t i = 0; i != num_columns; ++i)
-        result_columns.emplace_back(ColumnObject::create(std::move(scattered_typed_paths[i]), std::move(scattered_dynamic_paths[i]), std::move(scattered_shared_data_columns[i]), max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types));
+        result_columns.emplace_back(ColumnObject::create(std::move(scattered_typed_paths[i]), std::move(scattered_dynamic_paths[i]), std::move(scattered_shared_data_columns[i]), max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics));
     return result_columns;
 }
 
@@ -1539,18 +1555,27 @@ bool ColumnObject::isFinalized() const
     return finalized;
 }
 
-void ColumnObject::getExtremes(DB::Field & min, DB::Field & max, size_t, size_t) const
+void ColumnObject::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
-    if (empty())
+    min = Object();
+    max = Object();
+
+    if (start >= end)
+        return;
+
+    size_t min_idx = start;
+    size_t max_idx = start;
+
+    for (size_t i = start + 1; i < end; ++i)
     {
-        min = Object();
-        max = Object();
+        if (compareAt(i, min_idx, *this, /* nan_direction_hint = */ 1) < 0)
+            min_idx = i;
+        else if (compareAt(i, max_idx, *this, /* nan_direction_hint = */ -1) > 0)
+            max_idx = i;
     }
-    else
-    {
-        get(0, min);
-        get(0, max);
-    }
+
+    get(min_idx, min);
+    get(max_idx, max);
 }
 
 void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_columns, size_t factor)

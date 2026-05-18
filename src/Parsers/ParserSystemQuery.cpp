@@ -12,7 +12,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/InstrumentationManager.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <base/EnumReflection.h>
 
@@ -193,12 +192,7 @@ enum class SystemQueryTargetType : uint8_t
             String zk_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
             if (!zk_path.empty() && zk_path[zk_path.size() - 1] == '/')
                 zk_path.pop_back();
-            if (!zk_path.empty())
-            {
-                res->full_replica_zk_path = std::move(zk_path);
-                res->zk_name = zkutil::extractZooKeeperName(res->full_replica_zk_path);
-                res->replica_zk_path = zkutil::extractZooKeeperPath(res->full_replica_zk_path, /*check_starts_with_slash*/false);
-            }
+            res->replica_zk_path = zk_path;
         }
         else
             return false;
@@ -421,6 +415,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
         case Type::RESTART_DISK:
+        case Type::CLEAR_DISK_METADATA_CACHE:
+        case Type::WAIT_BLOBS_CLEANUP:
         {
             if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Disk))
                 return false;
@@ -546,6 +542,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATED_VIEW:
         case Type::STOP_VIEW:
         case Type::STOP_REPLICATED_VIEW:
+        case Type::PAUSE_VIEW:
         case Type::CANCEL_VIEW:
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
@@ -553,6 +550,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
+        case Type::PAUSE_VIEWS:
         case Type::FREE_MEMORY:
             break;
 
@@ -644,12 +642,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (path_parser.parse(pos, ast, expected))
                 res->filesystem_cache_name = ast->as<ASTLiteral>()->value.safeGet<String>();
             if (!parseQueryWithOnCluster(res, pos, expected))
-                return false;
-            break;
-        }
-        case Type::CLEAR_DISK_METADATA_CACHE:
-        {
-            if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Disk))
                 return false;
             break;
         }

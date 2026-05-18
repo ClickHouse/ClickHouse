@@ -58,18 +58,18 @@ bool ClickHouseIntegratedDatabase::dropPeerTableOnRemote(const SQLTable & t)
 
 void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, CreateTable & newt)
 {
-    TableEngine & te = *newt.mutable_engine();
+    TableEngine & te = const_cast<TableEngine &>(newt.engine());
     const auto & teng = te.engine();
 
     if (te.has_setting_values() && rg.nextSmallNumber() < 10)
     {
         /// Swap table settings
         const auto & allSettings = allTableSettings.at(teng);
-        auto * svs = te.mutable_setting_values();
+        const auto & svs = te.setting_values();
 
-        for (int i = 0; i < svs->other_values_size() + 1; i++)
+        for (int i = 0; i < svs.other_values_size() + 1; i++)
         {
-            SetValue & sv = *(i == 0 ? svs->mutable_set_value() : svs->mutable_other_values(i - 1));
+            SetValue & sv = const_cast<SetValue &>(i == 0 ? svs.set_value() : svs.other_values(i - 1));
 
             if (allSettings.contains(sv.property()))
             {
@@ -125,7 +125,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
             {
                 if (rg.nextSmallNumber() < 9)
                 {
-                    TableKeyExpr & tke = *te.mutable_order()->mutable_exprs(i);
+                    TableKeyExpr & tke = const_cast<TableKeyExpr &>(te.order().exprs(i));
 
                     tke.set_asc_desc((!tke.has_asc_desc() || tke.asc_desc() == AscDesc::ASC) ? AscDesc::DESC : AscDesc::ASC);
                 }
@@ -143,16 +143,16 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
     if (newt.has_table_def())
     {
         std::vector<TableDefItem> items_to_keep;
-        TableDef & def = *newt.mutable_table_def();
+        TableDef & def = const_cast<TableDef &>(newt.table_def());
 
         for (int i = 0; i < def.table_defs_size(); i++)
         {
-            auto & next = *def.mutable_table_defs(i);
+            const auto & next = def.table_defs(i);
 
             if (next.has_col_def())
             {
-                ColumnDef & cdef = *next.mutable_col_def();
-                TopTypeName & ttn = *cdef.mutable_type()->mutable_type();
+                ColumnDef & cdef = const_cast<ColumnDef &>(next.col_def());
+                TopTypeName & ttn = const_cast<TopTypeName &>(cdef.type().type());
 
                 if (cdef.has_codecs() && rg.nextBool())
                 {
@@ -183,11 +183,11 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
                     else
                     {
                         const auto & allSettings = allTableSettings.at(teng);
-                        auto * svs = cdef.mutable_setting_values();
+                        const auto & svs = cdef.setting_values();
 
-                        for (int j = 0; j < svs->other_values_size() + 1; j++)
+                        for (int j = 0; j < svs.other_values_size() + 1; j++)
                         {
-                            SetValue & sv = *(j == 0 ? svs->mutable_set_value() : svs->mutable_other_values(j - 1));
+                            SetValue & sv = const_cast<SetValue &>(j == 0 ? svs.set_value() : svs.other_values(j - 1));
 
                             if (allSettings.contains(sv.property()))
                             {
@@ -261,7 +261,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             newt.CopyFrom(*ct);
 
             chassert(newt.has_est() && !newt.has_table_as());
-            ExprSchemaTable & est = *newt.mutable_est();
+            ExprSchemaTable & est = const_cast<ExprSchemaTable &>(newt.est());
             if (t.db)
             {
                 t.db->setName(est.mutable_database());
@@ -410,12 +410,9 @@ int MySQLIntegration::performQuery(const String & query)
     {
         MYSQL_RES * result = mysql_store_result(mysql_connection.get());
 
-        if (result)
-        {
-            while (mysql_fetch_row(result))
-                ;
-            mysql_free_result(result);
-        }
+        while (mysql_fetch_row(result))
+            ;
+        mysql_free_result(result);
     }
     return 0;
 }
@@ -811,7 +808,7 @@ int SQLiteIntegration::performQuery(const String & query)
         return 1;
     }
     out_file << query << std::endl;
-    if ((res = sqlite3_exec(sqlite_connection.get(), query.c_str(), nullptr, nullptr, &err_msg)) != SQLITE_OK)
+    if ((res = sqlite3_exec(sqlite_connection.get(), query.c_str(), nullptr, nullptr, &err_msg) != SQLITE_OK))
     {
         LOG_ERROR(fc.log, "SQLite query: {} Error: {}", query, err_msg);
         sqlite3_free(err_msg);
@@ -1341,7 +1338,7 @@ void MongoDBIntegration::documentAppendAnyValue(
         dynamic_cast<IntType *>(tp) || dynamic_cast<FloatType *>(tp) || dynamic_cast<DateType *>(tp) || dynamic_cast<DateTimeType *>(tp)
         || dynamic_cast<DecimalType *>(tp) || dynamic_cast<StringType *>(tp) || dynamic_cast<const BoolType *>(tp)
         || dynamic_cast<EnumType *>(tp) || dynamic_cast<UUIDType *>(tp) || dynamic_cast<IPv4Type *>(tp) || dynamic_cast<IPv6Type *>(tp)
-        || dynamic_cast<JSONType *>(tp) || dynamic_cast<GeoType *>(tp) || dynamic_cast<TimeType *>(tp))
+        || dynamic_cast<JSONType *>(tp) || dynamic_cast<GeoType *>(tp))
     {
         documentAppendBottomType<bsoncxx::v_noabi::builder::stream::document>(rg, cname, document, tp);
     }
@@ -1397,10 +1394,11 @@ bool MongoDBIntegration::performTableIntegration(
             }
             for (const auto & entry : entries)
             {
-                if (!miss_cols || rg.nextSmallNumber() >= 4)
+                if (miss_cols && rg.nextSmallNumber() < 4)
                 {
                     /// Sometimes the column is missing
-                    documentAppendAnyValue(rg, entry.columnPathRef(""), document, entry.getBottomType());
+                    documentAppendAnyValue(rg, entry.getBottomName(), document, entry.getBottomType());
+                    chassert(entry.path.size() == 1);
                 }
             }
             documents.emplace_back(document << bsoncxx::builder::stream::finalize);

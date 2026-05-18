@@ -602,6 +602,13 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
         if (function_name == "arrayJoin")
             return true;
 
+        /// Disallow GLOBAL IN conditions from being moved to PREWHERE.
+        /// GLOBAL IN sets are populated via external tables attached by `ReadFromRemote`;
+        /// they cannot be built synchronously during PREWHERE evaluation, which runs
+        /// before the pipeline-level `CreatingSetsStep` has a chance to execute.
+        if (functionIsGlobalInOperator(function_name))
+            return true;
+
         size_t arguments_size = function_node.getArgumentsSize();
         for (size_t i = 0; i < arguments_size; ++i)
         {

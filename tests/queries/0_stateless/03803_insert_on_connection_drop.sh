@@ -49,15 +49,13 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, part_log;"
 
 parts_count=$(${CLICKHOUSE_CLIENT} --query "
 SELECT count(*) 
-FROM system.part_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600
-  AND table = '${CLICKHOUSE_TABLE}'
+FROM system.part_log 
+WHERE table = '${CLICKHOUSE_TABLE}' 
   AND event_type = 'NewPart'
   AND query_id = (
-        SELECT argMax(query_id, event_time)
-        FROM system.query_log
-        WHERE event_date >= yesterday() AND event_time >= now() - 600
-          AND query LIKE CONCAT('%INSERT INTO ', '${CLICKHOUSE_TABLE}', '%')
+        SELECT argMax(query_id, event_time) 
+        FROM system.query_log 
+        WHERE query LIKE CONCAT('%INSERT INTO ', '${CLICKHOUSE_TABLE}', '%') 
           AND current_database = currentDatabase()
     )
 ")

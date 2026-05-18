@@ -428,7 +428,7 @@ const ActionsDAG::Node * addMonotonicChain(ActionsDAG & dag, const ActionsDAG::N
             args.push_back(&dag.addColumn({child->column, child->result_type, child->result_name}));
     }
 
-    return &dag.addFunction(node->function_base, std::move(args), {});
+    return &dag.addFunction(node->function_base, std::move(args), node->result_name);
 }
 
 struct SortingInputOrder

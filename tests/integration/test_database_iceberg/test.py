@@ -147,7 +147,6 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     assert minio_secret_key not in show_result
     assert "HIDDEN" in show_result
 
-
 def create_clickhouse_iceberg_table(
     started_cluster, node, database_name, table_name, schema, additional_settings={}
 ):
@@ -385,7 +384,7 @@ def test_hide_sensitive_info(started_cluster):
         started_cluster,
         node,
         CATALOG_NAME,
-        additional_settings={"auth_header": "SECRET_2"},
+        additional_settings={"auth_header": "Authorization: SECRET_2"},
     )
     assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
 
@@ -681,6 +680,91 @@ def test_not_specified_catalog_type(started_cluster):
     )
     assert "" == node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
 
+
+def test_system_tables_with_nullptr_table(started_cluster):
+    """
+    Test that querying system.tables does not crash when DataLake database
+    returns nullptr for some tables (e.g. when table metadata fetch fails).
+    Reproduces: https://github.com/ClickHouse/clickhouse-core-incidents/issues/1434
+    """
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    namespace = f"{root_namespace}_test_nullptr"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    table_name = "test_table"
+    create_table(catalog, namespace, table_name)
+
+    num_rows = 5
+    arrow_data = pa.table(
+        {
+            "datetime": [datetime.now() for _ in range(num_rows)],
+            "symbol": [f"sym_{i}" for i in range(num_rows)],
+            "bid": [float(i) for i in range(num_rows)],
+            "ask": [float(i + 1) for i in range(num_rows)],
+            "details": [{"created_by": f"user_{i}"} for i in range(num_rows)],
+        },
+        schema=pa.schema(
+            [
+                pa.field("datetime", pa.timestamp("us")),
+                pa.field("symbol", pa.string()),
+                pa.field("bid", pa.float64()),
+                pa.field("ask", pa.float64()),
+                pa.field(
+                    "details", pa.struct([pa.field("created_by", pa.string())])
+                ),
+            ]
+        ),
+    )
+    iceberg_table = catalog.load_table(f"{namespace}.{table_name}")
+    iceberg_table.append(arrow_data)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    ## Enable the failpoint so that tryGetTableImpl returns nullptr for all tables.
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_return_nullptr")
+
+    try:
+        ## This triggers getFilteredTables with engine_column populated (the crash site).
+        result = node.query(
+            f"SELECT engine FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        )
+        ## With the failpoint, all tables return nullptr so we get empty result.
+        assert result.strip() == ""
+
+        ## This triggers the fillData main loop path.
+        result = node.query(
+            f"SELECT * FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        )
+        assert result.strip() == ""
+
+        ## Also test with count() to exercise a different code path.
+        result = node.query(
+            f"SELECT count(engine) FROM system.tables WHERE database = '{CATALOG_NAME}' "
+            f"AND engine LIKE '%ReplicatedMergeTree' "
+            f"SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+        )
+        assert result.strip() == "0"
+    finally:
+        node.query(
+            "SYSTEM DISABLE FAILPOINT datalake_try_get_table_return_nullptr"
+        )
+
+    ## After disabling the failpoint, verify normal operation still works.
+    result = node.query(
+        f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' "
+        f"AND name ILIKE '%{table_name}%' "
+        f"SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+    )
+    assert int(result.strip()) > 0
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
 def test_gcs(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -703,3 +787,22 @@ def test_gcs(started_cluster):
             """
         )
         assert "Google cloud storage converts to S3" in str(err.value)
+
+
+def test_invalid_auth_header_format(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME};")
+    with pytest.raises(Exception) as err:
+        node.query(
+            f"""
+            SET allow_database_iceberg = 1;
+            CREATE DATABASE {CATALOG_NAME}
+            ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'dummy')
+            SETTINGS
+                catalog_type = 'rest',
+                warehouse = 'demo',
+                auth_header = 'wrong.header'
+            """
+        )
+    assert "Invalid auth header format" in str(err.value)

@@ -105,6 +105,8 @@ public:
     /// Sets settings for periodic updates.
     void enablePeriodicUpdates(bool enable);
 
+    void joinLoadingThreads();
+
     /// Returns the status of the object.
     /// If the object has not been loaded yet then the function returns Status::NOT_LOADED.
     /// If the specified name isn't found in the configuration then the function returns Status::NOT_EXIST.

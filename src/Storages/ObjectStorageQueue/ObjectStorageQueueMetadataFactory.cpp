@@ -28,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int TABLE_ALREADY_EXISTS;
 }
 
 ObjectStorageQueueFactory & ObjectStorageQueueFactory::instance()
@@ -45,7 +46,7 @@ void ObjectStorageQueueFactory::registerTable(const StorageID & storage)
 
     const bool inserted = storages.emplace(storage).second;
     if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table with storage id {} already registered", storage.getNameForLogs());
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table with storage id {} already registered", storage.getNameForLogs());
 
     LOG_TRACE(log, "Registered table: {}", storage.getNameForLogs());
 }

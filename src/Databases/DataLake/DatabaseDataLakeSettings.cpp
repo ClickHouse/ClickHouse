@@ -41,9 +41,10 @@ namespace ErrorCodes
     DECLARE(String, google_adc_client_secret, "", "Google Application Default Credentials client_secret for BigLake. Required if using ADC authentication instead of metadata service", 0) \
     DECLARE(String, google_adc_refresh_token, "", "Google Application Default Credentials refresh_token for BigLake. Required if using ADC authentication instead of metadata service", 0) \
     DECLARE(String, google_adc_quota_project_id, "", "Google Application Default Credentials quota_project_id for BigLake. Optional, used if google_project_id is not set", 0) \
-    DECLARE(String, google_adc_credentials_file, "", "Path to JSON file containing Google Application Default Credentials. If set, credentials will be loaded from this file. File should contain: type, client_id, client_secret, refresh_token, and optionally quota_project_id", 0) \
+    DECLARE(String, google_adc_credentials_file, "", "Deprecated setting, will throw an exception if used", 0) \
     DECLARE(String, dlf_access_key_id, "", "Access id of DLF token for Paimon REST Catalog", 0) \
     DECLARE(String, dlf_access_key_secret, "", "Access secret of DLF token for Paimon REST Catalog", 0) \
+    DECLARE(Bool, polaris_style_paths, true, "Enable Polaris/ADLS Gen2 path convention: the container name is prepended to the path in ABFSS locations (e.g. abfss://c@account/c/actual/path). When enabled, the redundant container prefix is stripped when building Azure HTTPS URLs. Disable if a real directory inside the container has the same name as the container itself.", 0) \
 
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS(M, ALIAS) \
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS) \

@@ -39,31 +39,28 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "26.3",
-        {
-            {"optimize_syntax_fuse_functions", false, true, "The optimization is production-ready"},
-            {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", false, true, "Allow calculating subcolumns sizes for merge tree reading to improve read tasks splitting"},
-            {"delta_lake_reload_schema_for_consistency", false, false, "New setting to control whether DeltaLake reloads schema before each query for consistency."},
-            {"use_partition_pruning", true, true, "New setting controlling whether MergeTree uses partition key for pruning. 'use_partition_key' is an alias for this setting."},
-            {"use_partition_key", true, true, "Alias for setting 'use_partition_pruning'."},
-            {"mysql_datatypes_support_level", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."},
-        });
         addSettingsChanges(settings_changes_history, "26.2",
         {
+            {"http_max_fields", 1000000, 1000, "Reduce default to limit pre-authentication memory usage by HTTP connections."},
+            {"http_max_field_name_size", 131072, 4096, "Reduce default to limit pre-authentication memory usage by HTTP connections."},
+            {"http_max_request_header_size", 0, 10485760, "New setting to limit total HTTP request header size before authentication."},
+            {"http_headers_read_timeout", 0, 30, "New setting to limit total time for reading HTTP request headers, protecting against slowloris attacks."},
             {"allow_fuzz_query_functions", false, false, "New setting to enable the fuzzQuery function."},
             {"ast_fuzzer_runs", 0, 0, "New setting to enable server-side AST fuzzer."},
             {"ast_fuzzer_any_query", false, false, "New setting to allow fuzzing all query types, not just read-only."},
             {"check_named_collection_dependencies", true, true, "New setting to check if dropping a named collection would break dependent tables."},
+            {"async_insert", false, true, "Enable async inserts by default."},
             {"deduplicate_blocks_in_dependent_materialized_views", false, true, "Enable deduplication for dependent materialized views by default."},
             {"deduplicate_insert", "backward_compatible_choice", "enable", "Enable deduplication for all sync and async inserts by default."},
-            {"deduplicate_insert", "backward_compatible_choice", "backward_compatible_choice", "New setting to control deduplication for INSERT queries."},
             {"enable_join_runtime_filters", false, true, "Enabled this optimization"},
             {"parallel_replicas_filter_pushdown", false, false, "New setting"},
             {"optimize_dry_run_check_part", true, true, "New setting"},
             {"parallel_non_joined_rows_processing", true, true, "New setting to enable parallel processing of non-joined rows in RIGHT/FULL parallel_hash joins."},
             {"enable_automatic_decision_for_merging_across_partitions_for_final", true, true, "New setting"},
-            {"enable_full_text_index", false, true, "The text index is now GA"},
-            {"allow_experimental_full_text_index", false, true, "The text index is now GA"},
+            {"enable_full_text_index", true, true, "The text index is now GA"},
+            {"allow_experimental_full_text_index", true, true, "The text index is now GA"},
+            {"query_plan_direct_read_from_text_index", true, true, "The text index is now GA"},
+            {"use_skip_indexes_on_data_read", true, true, "The text index is now GA"},
             {"use_page_cache_for_local_disks", false, false, "New setting to use userspace page cache for local disks"},
             {"use_page_cache_for_object_storage", false, false, "New setting to use userspace page cache for object storage table functions"},
             {"use_statistics_cache", false, true, "Enable statistics cache"},
@@ -78,6 +75,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"jemalloc_profile_text_symbolize_with_inline", true, true, "New setting to control whether to include inline frames when symbolizing jemalloc heap profile. When enabled, inline frames are included at the cost of slower symbolization; when disabled, they are skipped for faster output"},
             {"jemalloc_profile_text_collapsed_use_count", false, false, "New setting to aggregate by allocation count instead of bytes in the collapsed jemalloc heap profile format"},
             {"opentelemetry_start_keeper_trace_probability", "auto", "auto", "New setting"},
+            {"delta_lake_reload_schema_for_consistency", false, false, "New setting to control whether DeltaLake reloads schema before each query for consistency."},
+            {"allow_nullable_tuple_in_extracted_subcolumns", false, false, "New setting controlling whether extracted Tuple subcolumns can be nullable."},
+            {"functions_h3_default_if_invalid", true, false, "A new setting for legacy behaviour to allow invalid inputs to h3 functions"},
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {
@@ -102,7 +102,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
             {"check_conversion_from_numbers_to_enum", false, true, "New setting"},
             {"allow_experimental_nullable_tuple_type", false, false, "New experimental setting"},
-            {"use_skip_indexes_on_data_read", false, true, "Default enable"},
+            {"use_skip_indexes_on_data_read", true, true, "Default enable"},
             {"check_conversion_from_numbers_to_enum", false, false, "New setting"},
             {"archive_adaptive_buffer_max_size_bytes", 8 * 1024 * 1024, 8 * 1024 * 1024, "New setting"},
             {"type_json_allow_duplicated_key_with_literal_and_nested_object", false, false, "Add a new setting to allow duplicated paths in JSON type with literal and nested object"},
@@ -158,7 +158,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_use_clients_cache_for_read", true, true, "New setting"},
             {"distributed_cache_use_clients_cache_for_write", false, false, "New setting"},
             {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
-            {"enable_full_text_index", false, false, "Text index was moved to Beta."},
+            {"enable_full_text_index", true, false, "Text index was moved to Beta."},
             {"enable_shared_storage_snapshot_in_query", false, true, "Enable share storage snapshot in query by default"},
             {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
@@ -237,7 +237,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"input_format_protobuf_oneof_presence", false, false, "New setting"},
             {"iceberg_delete_data_on_drop", false, false, "New setting"},
-            {"use_skip_indexes_on_data_read", false, false, "New setting"},
+            {"use_skip_indexes_on_data_read", true, false, "New setting"},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             {"iceberg_metadata_log_level", "none", "none", "New setting."},
             {"iceberg_insert_max_rows_in_data_file", 1000000, 1000000, "New setting."},
@@ -716,7 +716,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"hdfs_throw_on_zero_files_match", false, false, "Allow to throw an error when ListObjects request cannot match any files in HDFS engine instead of empty query result"},
             {"azure_throw_on_zero_files_match", false, false, "Allow to throw an error when ListObjects request cannot match any files in AzureBlobStorage engine instead of empty query result"},
             {"s3_validate_request_settings", true, true, "Allow to disable S3 request settings validation"},
-            {"allow_experimental_full_text_index", false, false, "Enable experimental text index"},
+            {"allow_experimental_full_text_index", true, false, "Enable experimental text index"},
             {"azure_skip_empty_files", false, false, "Allow to skip empty files in azure table engine"},
             {"hdfs_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in HDFS table engine"},
             {"azure_ignore_file_doesnt_exist", false, false, "Allow to return 0 rows when the requested files don't exist instead of throwing an exception in AzureBlobStorage table engine"},
@@ -1071,11 +1071,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "26.3",
-        {
-            {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
-            {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
-        });
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {
             {"clone_replica_zookeeper_create_get_part_batch_size", 1, 100, "New setting"},
@@ -1084,8 +1079,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"distributed_index_analysis_min_indexes_bytes_to_activate", 1_GiB, 1_GiB, "New setting"},
             {"refresh_statistics_interval", 0, 300, "Enable statistics cache"},
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, true, "Limit part sizes even with min_age_to_force_merge_seconds by default"},
-            {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
-            {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, true, "Enable by default"},
+            {"shared_merge_tree_enable_automatic_empty_partitions_cleanup", false, true, "Enable by default"}
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {
