@@ -6,8 +6,6 @@ title: 'IN Operators'
 doc_type: 'reference'
 ---
 
-# IN Operators
-
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
 
 The left side of the operator is either a single column or a tuple.
@@ -34,15 +32,11 @@ cannot be performed, it returns [NULL](/operations/settings/formats#input_format
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT '1' IN (SELECT 1);
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─in('1', _subquery49)─┐
 │                    1 │
 └──────────────────────┘
@@ -56,7 +50,7 @@ The subquery may specify more than one column for filtering tuples.
 
 Example:
 
-```sql
+```sql title="Query"
 SELECT (CounterID, UserID) IN (SELECT CounterID, UserID FROM ...) FROM ...
 ```
 
@@ -65,7 +59,7 @@ The columns to the left and right of the `IN` operator should have the same type
 The `IN` operator and subquery may occur in any part of the query, including in aggregate functions and lambda functions.
 Example:
 
-```sql
+```sql title="Query"
 SELECT
     EventDate,
     avg(UserID IN
@@ -79,7 +73,7 @@ GROUP BY EventDate
 ORDER BY EventDate ASC
 ```
 
-```text
+```text title="Response"
 ┌──EventDate─┬────ratio─┐
 │ 2014-03-17 │        1 │
 │ 2014-03-18 │ 0.807696 │

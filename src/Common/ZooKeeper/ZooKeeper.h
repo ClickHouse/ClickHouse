@@ -23,6 +23,7 @@ namespace Poco::Net
     class SocketAddress;
 }
 
+
 namespace ProfileEvents
 {
     extern const Event CannotRemoveEphemeralNode;
@@ -189,10 +190,18 @@ class ZooKeeper
     /// ZooKeeperWithFaultInjection wants access to `impl` pointer to reimplement some async functions with faults
     friend class DB::ZooKeeperWithFaultInjection;
 
-    explicit ZooKeeper(ZooKeeperArgs args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_ = nullptr);
+    explicit ZooKeeper(
+        ZooKeeperArgs args_,
+        std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
+        std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_ = nullptr);
 
     /// Allows to keep info about availability zones when starting a new session
-    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl);
+    ZooKeeper(
+        const ZooKeeperArgs & args_,
+        std::shared_ptr<DB::ZooKeeperLog> zk_log_,
+        std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_,
+        Strings availability_zones_,
+        std::unique_ptr<Coordination::IKeeper> existing_impl);
 
     explicit ZooKeeper(std::unique_ptr<Coordination::IKeeper> existing_impl);
 
@@ -441,6 +450,8 @@ public:
     Coordination::Error trySync(const std::string & path, std::string & returned_path);
 
     Int64 getClientID() const;
+
+    Coordination::IKeeper::WatchesSnapshot getWatchesSnapshot() const;
 
     /// Remove the node with the subtree.
     /// If Keeper supports RemoveRecursive operation then it will be performed atomically.
@@ -696,6 +707,16 @@ private:
 
         return MultiReadResponses<TResponse, try_multi>{std::move(future_responses)};
     }
+
+    /// Wait for a future with progress-based timeout using session_timeout_ms.
+    /// On each iteration, waits up to session_timeout_ms for the future. If it
+    /// becomes ready, returns true. Otherwise, checks if the server made progress
+    /// (any received data via `getLastReceivedTimestamp`). If yes, waits another full
+    /// session_timeout_ms. If no progress for a full session_timeout_ms — gives up.
+    /// Worst-case latency: session_timeout_ms after no progress before returning false.
+    /// Defense-in-depth: only fires if the receive thread is stuck.
+    template <typename T>
+    bool waitForFutureWithProgress(std::future<T> & future) const;
 
     std::unique_ptr<Coordination::IKeeper> impl;
     mutable std::unique_ptr<Coordination::IKeeper> optimal_impl;
