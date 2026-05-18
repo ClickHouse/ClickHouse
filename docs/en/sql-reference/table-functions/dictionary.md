@@ -8,7 +8,9 @@ title: 'dictionary'
 doc_type: 'reference'
 ---
 
-Displays the [dictionary](../statements/create/dictionary/overview.md) data as a ClickHouse table. Works the same way as [Dictionary](../../engines/table-engines/special/dictionary.md) engine.
+# dictionary Table Function
+
+Displays the [dictionary](../statements/create/dictionary/index.md) data as a ClickHouse table. Works the same way as [Dictionary](../../engines/table-engines/special/dictionary.md) engine.
 
 ## Syntax {#syntax}
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: linux, no-asan, no-tsan, no-msan, no-ubsan
+# Tags: linux
 
 # Verify that the http_pool_tcp_buf_bytes histogram metric is populated when
 # there are active HTTP connection pool connections.
