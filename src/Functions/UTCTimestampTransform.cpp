@@ -54,6 +54,23 @@ namespace
                 " OR (T : DateTime64, const String) -> DateTime64(scaleOf(T))";
         }
 
+        /// Restore the legacy invariant that the first argument must not have an explicit
+        /// timezone. The DSL has no way to express "DateTime/DateTime64 without explicit tz",
+        /// so enforce it here before delegating to the DSL.
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+        {
+            if (!arguments.empty())
+            {
+                if (const auto * mixin = dynamic_cast<const TimezoneMixin *>(arguments[0].type.get()))
+                {
+                    if (mixin->hasExplicitTimeZone())
+                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Function {}'s 1st argument should not have explicit time zone.", function_name);
+                }
+            }
+            return IFunction::getReturnTypeImpl(arguments);
+        }
+
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             const ColumnWithTypeAndName & arg1 = arguments[0];
