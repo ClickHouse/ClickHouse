@@ -86,6 +86,10 @@ IProcessor::Status BufferChunksTransform::prepare()
                 num_buffered_rows += chunk.getNumRows();
                 num_buffered_bytes += chunk.bytes();
                 chunks.push(std::move(chunk));
+                /// The virtual row is now queued; downstream has not yet observed
+                /// it, so upstream must not push real chunks past the boundary
+                /// before the marker is forwarded.
+                input.setNotNeeded();
                 return Status::PortFull;
             }
             output.push(std::move(chunk));
