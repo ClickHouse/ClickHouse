@@ -637,6 +637,11 @@ void SortingStep::serialize(Serialization & ctx) const
     writeVarUInt(partition_by_description.size(), ctx.out);
 }
 
+QueryPlanStepPtr SortingStep::clone() const
+{
+    return std::make_unique<SortingStep>(*this);
+}
+
 QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
