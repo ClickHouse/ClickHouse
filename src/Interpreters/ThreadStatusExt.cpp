@@ -470,14 +470,7 @@ void ThreadStatus::detachFromGroup()
 
 #if USE_JEMALLOC
     if (std::exchange(jemalloc_profiler_enabled, false))
-    {
-        /// `prof.thread_active_init` / `thread.prof.active` are only available on jemalloc builds
-        /// with `JEMALLOC_PROF`. If either MIB is unavailable, the matching `setValue`/`getValue`
-        /// in `MibCache` is a no-op / would assert, so route the read through `tryGetValue` and
-        /// skip the per-thread reset entirely on builds without prof.
-        if (bool thread_active_init = false; Jemalloc::getThreadProfileInitMib().tryGetValue(thread_active_init))
-            Jemalloc::getThreadProfileActiveMib().setValue(thread_active_init);
-    }
+        Jemalloc::getThreadProfileActiveMib().setValue(Jemalloc::getThreadProfileInitMib().getValue());
     Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
 #endif
 
