@@ -1,13 +1,16 @@
 <clickhouse>
     <!-- A dynamic-query handler mounted under `/api/v1`. The handler strips the prefix
-         before parsing the remaining URL path for database/table/format/compression/filters. -->
+         before parsing the remaining URL path for database/table/format/compression/filters.
+
+         The element is named `rule_api_v1` instead of `rule` so it does not collide with the
+         `<rule>` element in `handlers.yaml` (which configures the `/upyachka` redirect for the
+         02998 test). The factory accepts any element name that starts with `rule`. -->
     <http_handlers>
-        <rule>
+        <rule_api_v1>
             <url_prefix>/api/v1</url_prefix>
             <handler>
                 <type>dynamic_query_handler</type>
             </handler>
-        </rule>
-        <defaults/>
+        </rule_api_v1>
     </http_handlers>
 </clickhouse>

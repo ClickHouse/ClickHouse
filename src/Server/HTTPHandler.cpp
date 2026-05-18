@@ -372,10 +372,6 @@ void HTTPHandler::processQuery(
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
 
-    /// Initialize query scope, once query_id is initialized.
-    /// (To track as much allocations as possible)
-    query_scope = QueryScope::create(context);
-
     const auto & settings = context->getSettingsRef();
 
     /// === URL path parsing happens after settings are applied ===
@@ -422,7 +418,10 @@ void HTTPHandler::processQuery(
     }
 
     /// Resolve the current database from the path and the `database` setting, in that order.
-    /// If both are specified and differ, that's an error.
+    /// If both are specified and differ, that's an error. We do this *before* `QueryScope::create`
+    /// — if `setCurrentDatabase` throws (e.g. the database doesn't exist), the exception unwinds
+    /// cleanly without leaving an in-flight query scope behind that would deadlock the response
+    /// buffers.
     {
         const String & database_setting = settings[Setting::database];
         String resolved_database = database_setting;
@@ -438,6 +437,10 @@ void HTTPHandler::processQuery(
         if (!resolved_database.empty())
             context->setCurrentDatabase(resolved_database);
     }
+
+    /// Initialize query scope, once query_id is initialized.
+    /// (To track as much allocations as possible)
+    query_scope = QueryScope::create(context);
 
     /// Now we know the resolved settings. Decide what to do with unrecognized URL params:
     /// - if http_allow_filters_as_unrecognized_url_parameters is true: treat them as filter expressions

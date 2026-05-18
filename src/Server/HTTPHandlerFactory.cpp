@@ -147,11 +147,18 @@ static inline auto createHandlersFactoryFromConfig(
         }
     }
 
+    /// Process configured rules first, then fall back to defaults. This guarantees that a
+    /// configured rule (e.g. a redirect for `/upyachka` or a dynamic-query handler under a URL
+    /// prefix like `/api/v1`) takes precedence over the built-in catch-all dynamic handler that
+    /// `<defaults/>` registers. Without this ordering, when the config is split across multiple
+    /// files (config.d/) the merged child-key iteration order is not insertion order, and the
+    /// default catch-all may be registered before the user's rule, breaking it.
+    bool has_defaults = std::find(keys.begin(), keys.end(), "defaults") != keys.end();
     for (const auto & key : keys)
     {
         if (key == "defaults")
         {
-            addDefaultHandlersFactory(*main_handler_factory, server, config, async_metrics);
+            /// Defer.
         }
         else if (startsWith(key, "rule"))
         {
@@ -279,6 +286,11 @@ static inline auto createHandlersFactoryFromConfig(
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: "
                 "{}.{}, must be 'rule' or 'defaults'", prefix, key);
     }
+
+    /// All configured rules are now registered. Add defaults (which includes the catch-all
+    /// dynamic-query handler) last so they only match what the configured rules didn't.
+    if (has_defaults)
+        addDefaultHandlersFactory(*main_handler_factory, server, config, async_metrics);
 
     return main_handler_factory;
 }
