@@ -887,6 +887,37 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
                 t_obj->getValue<String>("table"));
         }
     }
+    /// Validate per-`type` required fields so the deserialized AST cannot reach
+    /// a null-dereference path in `formatImpl`.
+    switch (type)
+    {
+        case Type::SCHEDULE_MERGE:
+            if (!table)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM SCHEDULE_MERGE` requires 'table' during AST JSON deserialization");
+            if (!scheduled_merge_parts)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM SCHEDULE_MERGE` requires 'scheduled_merge_parts' during AST JSON deserialization");
+            break;
+        case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+        case Type::REFRESH_VIEW:
+        case Type::START_VIEW:
+        case Type::START_REPLICATED_VIEW:
+        case Type::STOP_VIEW:
+        case Type::STOP_REPLICATED_VIEW:
+        case Type::PAUSE_VIEW:
+        case Type::CANCEL_VIEW:
+        case Type::WAIT_VIEW:
+        case Type::TEST_VIEW:
+            if (!table)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM {}` requires 'table' during AST JSON deserialization", typeToString(type));
+            break;
+        case Type::SYNC_DATABASE_REPLICA:
+            if (!database)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM SYNC_DATABASE_REPLICA` requires 'database' during AST JSON deserialization");
+            break;
+        default:
+            break;
+    }
+
     if (r.has("server_type"))
     {
         auto srv_obj = r.getNestedObject("server_type");
