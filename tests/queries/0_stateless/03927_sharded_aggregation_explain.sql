@@ -189,14 +189,6 @@ SELECT count() > 0 FROM (
     SETTINGS enable_sharding_aggregator = 1
 ) WHERE explain LIKE '%ShardByHashTransform%';
 
-SELECT 'Empty table';
-DROP TABLE IF EXISTS test_empty;
-CREATE TABLE test_empty (a String, b UInt64) ENGINE = MergeTree ORDER BY tuple();
-SELECT count() > 0 FROM (
-    EXPLAIN PIPELINE SELECT a, sum(b) FROM test_empty GROUP BY a
-    SETTINGS enable_sharding_aggregator = 1
-) WHERE explain LIKE '%ShardByHashTransform%';
-
 SELECT 'Large hash table (exercises prefetch path)';
 DROP TABLE IF EXISTS test_large;
 CREATE TABLE test_large (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple();
@@ -246,8 +238,11 @@ ENGINE = MergeTree
 ORDER BY tuple()
 SETTINGS ratio_of_defaults_for_sparse_serialization = 0.1;
 
-INSERT INTO test_sparse_argument VALUES
-    ('x', 0), ('y', 1), ('z', 0);
+INSERT INTO test_sparse_argument
+SELECT
+    toString(number % 1000) AS a,
+    if(number % 10 = 0, number, 0) AS b
+FROM numbers(300000);
 
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) FROM test_sparse_argument GROUP BY a

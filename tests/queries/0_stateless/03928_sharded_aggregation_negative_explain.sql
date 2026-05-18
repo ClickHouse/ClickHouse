@@ -87,6 +87,21 @@ SELECT count() = 0 FROM (
     SETTINGS enable_sharding_aggregator = 1, max_threads = 1
 ) WHERE explain LIKE '%ShardByHashTransform%';
 
+SELECT 'Single stream from upstream (max_streams_for_merge_tree_reading = 1)';
+SELECT count() = 0 FROM (
+    EXPLAIN PIPELINE SELECT a, sum(b) FROM test_sharded_agg_neg GROUP BY a
+    SETTINGS enable_sharding_aggregator = 1, max_streams_for_merge_tree_reading = 1
+) WHERE explain LIKE '%ShardByHashTransform%';
+
+SELECT 'Empty table (num_streams = 1)';
+DROP TABLE IF EXISTS test_empty;
+CREATE TABLE test_empty (a String, b UInt64) ENGINE = MergeTree ORDER BY tuple();
+SELECT count() = 0 FROM (
+    EXPLAIN PIPELINE SELECT a, sum(b) FROM test_empty GROUP BY a
+    SETTINGS enable_sharding_aggregator = 1
+) WHERE explain LIKE '%ShardByHashTransform%';
+DROP TABLE test_empty;
+
 SELECT 'max_rows_to_group_by';
 SELECT count() = 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) FROM test_sharded_agg_neg GROUP BY a

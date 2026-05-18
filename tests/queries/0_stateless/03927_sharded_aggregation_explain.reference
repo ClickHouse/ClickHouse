@@ -52,8 +52,6 @@ WITH TOTALS
 1
 count(non_nullable_column)
 1
-Empty table
-1
 Large hash table (exercises prefetch path)
 1
 Table Sparse
