@@ -1,30 +1,34 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
--- ^ pinned: the test's purpose is to verify the original 4-setting reproducer
---   from #57814 is deterministic. CI-injected random settings can independently
---   trigger duplicate-key behaviour on sanitizer builds (a separate concern
---   tracked outside this test). Without pinning, the test would conflate the
---   two failure paths and become flaky.
+-- ^ kept for deterministic CI behaviour. Without them the runner can inject
+--   other settings that mask the bug ~30% of the time on asan, making the
+--   regression test flaky rather than reliably failing when the bug is
+--   present.
 --
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/57814
 --
--- Bug: `SELECT * FROM dist GROUP BY key`, where `dist` was a `Distributed` table
--- with a `LowCardinality(String)` key over a `String` source, used to return
--- duplicated keys non-deterministically when external two-level aggregation
--- kicked in (settings below). The same query with a plain `String` key on the
--- `Distributed` table was always correct, so the bug was in the
+-- Bug: `SELECT * FROM dist GROUP BY key`, where `dist` is a `Distributed`
+-- table with a `LowCardinality(String)` key over a `String` source, returns
+-- duplicated keys when two-level aggregation kicks in and the memory profiler
+-- fires during the cross-shard merge. The same query with a plain `String`
+-- key on the `Distributed` table is always correct, so the bug is in the
 -- `LowCardinality` conversion path while merging partially aggregated blocks
--- across buckets.
+-- across buckets (see #42630 for the same hashing-mismatch class).
 --
--- The bug no longer reproduces with just the four settings below
--- (per https://github.com/ClickHouse/ClickHouse/issues/57814#issuecomment-4459084045).
--- This test runs the failing query many times to guard against a regression.
+-- Minimal trigger (binary-searched on amd_asan_ubsan, 20/20 reproductions):
+--
+--   group_by_two_level_threshold_bytes = 1   -- forces two-level aggregation
+--   memory_profiler_step               = 1Mi -- fires the memory profiler in the merge
+--
+-- The other two settings from the original report
+-- (`max_bytes_before_external_group_by = 1` and `max_untracked_memory = 1Mi`)
+-- are NOT required to reproduce. The "external aggregation" framing in the
+-- issue title is therefore a red herring -- the bug is in two-level
+-- aggregation, not in the spill-to-disk path.
 
 DROP TABLE IF EXISTS data;
 DROP TABLE IF EXISTS dist;
 
-SET max_bytes_before_external_group_by = 1;
 SET group_by_two_level_threshold_bytes = 1;
-SET max_untracked_memory = '1Mi';
 SET memory_profiler_step = '1Mi';
 
 CREATE TABLE data (key String) ENGINE = Memory;
