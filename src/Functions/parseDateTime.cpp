@@ -506,7 +506,7 @@ namespace
             /// Because the scale argument for parseDateTime*() is constant, always throw an exception (don't allow continuing to the
             /// next row like in other set* functions)
             if (parse_syntax_ == ParseSyntax::MySQL && scale_ != 6)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be 6)", scale_);
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be 6)", scale);
             else if (parse_syntax_ == ParseSyntax::Joda && scale_ > 6)
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be [0, 6])", scale_);
 
