@@ -116,10 +116,20 @@ void DelayedMaterializingCTEsStep::optimizePlans(const QueryPlanOptimizationSett
 {
     for (const auto & cte : ctes)
     {
-        /// The same MaterializedCTE pointer can be referenced by both the
-        /// outer step (in the main plan) and a safety-net step (inside an
-        /// IN-subquery plan). The recursive `buildSetInplace` path might
-        /// have already moved a CTE's plan out via `makePlansForCTEs`.
+        /// Multiple `DelayedMaterializingCTEsStep` instances can reference the
+        /// same `MaterializedCTE` (e.g. a UNION-level step plus one per UNION
+        /// branch, all planted by `addBuildSubqueriesForMaterializedCTEsIfNeeded`).
+        /// The first step to reach this CTE in `resolveMaterializingCTEs`'s
+        /// pass 1 claims the optimize call; subsequent steps skip. Pattern
+        /// parallel to the `is_materialization_planned` claim in
+        /// `makePlansForCTEs`.
+        if (cte->is_plan_optimized.exchange(true))
+            continue;
+
+        /// `cte->plan` can already be `nullptr` if a recursive `buildSetInplace`
+        /// path won an earlier `is_materialization_planned` race and
+        /// `std::move`d the plan out via `makePlansForCTEs`. Skip the call
+        /// rather than crashing; the materialization has already run inplace.
         if (cte->plan)
             cte->plan->optimize(optimization_settings);
     }
