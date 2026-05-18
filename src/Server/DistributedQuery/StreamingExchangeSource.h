@@ -66,7 +66,7 @@ private:
         ReceivingBody,
     } packet_receive_state = ReceivingHeader;
 
-    StreamingExchangeProtocol::DataPacketHeader current_packet_header;
+    StreamingExchangeProtocol::PacketHeader current_packet_header;
     size_t current_packet_header_bytes_filled = 0;
 
     std::vector<char> current_packet_body;

@@ -269,7 +269,7 @@ void StreamingExchangeSink::consume(Chunk chunk)
     /// Write packet header stub.
     /// The actual size will be calculated and overwritten after the chuck is serialized
     const ssize_t packet_header_offset = out->count();
-    StreamingExchangeProtocol::DataPacketHeader packet_header{.packet_type = StreamingExchangeProtocol::PacketType::Data, .bytes_size = 0};
+    StreamingExchangeProtocol::PacketHeader packet_header{.packet_type = StreamingExchangeProtocol::PacketType::Data, .bytes_size = 0};
     out->write(reinterpret_cast<const char*>(&packet_header), sizeof(packet_header));
 
     const bool final_chunk = chunk.empty();
@@ -299,15 +299,15 @@ void StreamingExchangeSink::consume(Chunk chunk)
     {
         /// `out` is a WriteBufferFromString to we can rely on count() for getting curretn position in the buffer.
         const ssize_t end_of_packet_offset = out->count();
-        const ssize_t packet_data_size = end_of_packet_offset - packet_header_offset - sizeof(StreamingExchangeProtocol::DataPacketHeader);
+        const ssize_t packet_data_size = end_of_packet_offset - packet_header_offset - sizeof(StreamingExchangeProtocol::PacketHeader);
 
         if (packet_data_size < 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid packet data size: {}", packet_data_size);
 
         /// Fill bytes_size field using memcpy because packet header address in the buffer might not be properly aligned.
         char * packet_header_start = const_cast<char*>(out->stringView().data()) + packet_header_offset;
-        static_assert(sizeof(StreamingExchangeProtocol::DataPacketHeader::bytes_size) == sizeof(packet_data_size));
-        memcpy(packet_header_start + offsetof(StreamingExchangeProtocol::DataPacketHeader, bytes_size), &packet_data_size, sizeof(packet_data_size));
+        static_assert(sizeof(StreamingExchangeProtocol::PacketHeader::bytes_size) == sizeof(packet_data_size));
+        memcpy(packet_header_start + offsetof(StreamingExchangeProtocol::PacketHeader, bytes_size), &packet_data_size, sizeof(packet_data_size));
 
         LOG_TEST(log, "Packet with {} bytes was added to exchange stream {}", packet_data_size, stream_name);
     }

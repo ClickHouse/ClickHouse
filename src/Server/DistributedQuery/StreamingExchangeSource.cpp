@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
+    extern const int PROTOCOL_VERSION_MISMATCH;
 }
 
 StreamingExchangeSource::~StreamingExchangeSource()
@@ -50,23 +51,67 @@ void StreamingExchangeSource::connect()
 
 void StreamingExchangeSource::sendHello()
 {
+    WriteBufferFromOwnString body;
+    writeIntBinary(StreamingExchangeProtocol::PROTOCOL_VERSION, body);
+    writeStringBinary(query_id, body);
+    writeStringBinary(stream_name, body);
+    body.finalize();
+    const std::string & body_str = body.str();
+
+    StreamingExchangeProtocol::PacketHeader header{
+        .packet_type = StreamingExchangeProtocol::PacketType::SourceHello,
+        .bytes_size = body_str.size(),
+    };
+
     WriteBufferFromPocoSocket hello_out(*socket);
-    writeIntBinary(StreamingExchangeProtocol::PacketType::SourceHello, hello_out);
-    writeStringBinary(query_id, hello_out);
-    writeStringBinary(stream_name, hello_out);
+    hello_out.write(reinterpret_cast<const char *>(&header), sizeof(header));
+    if (!body_str.empty())
+        hello_out.write(body_str.data(), body_str.size());
     hello_out.next();
     hello_out.cancel();
 }
 
 void StreamingExchangeSource::receiveHello()
 {
-    UInt64 packet_type = 0;
+    StreamingExchangeProtocol::PacketHeader header{};
     size_t position = 0;
-    readFromSocket(reinterpret_cast<char *>(&packet_type), sizeof(packet_type), position);
-    if (position != sizeof(packet_type))
-        throw Poco::Net::NetException(fmt::format("Failed to receive Hello packet from socket for exchange stream {}, expected {} bytes but received {}", stream_name, sizeof(packet_type), position));
-    if (packet_type != StreamingExchangeProtocol::PacketType::SinkHello)
-        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet type {}", packet_type);
+    readFromSocket(reinterpret_cast<char *>(&header), sizeof(header), position);
+    if (position != sizeof(header))
+        throw Poco::Net::NetException(fmt::format(
+            "Failed to receive SinkHello header from socket for exchange stream {}, expected {} bytes but received {}",
+            stream_name, sizeof(header), position));
+
+    if (header.packet_type != StreamingExchangeProtocol::PacketType::SinkHello)
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+            "Unexpected packet type 0x{:x} (expected SinkHello 0x{:x}) for exchange stream {}",
+            header.packet_type, static_cast<UInt64>(StreamingExchangeProtocol::PacketType::SinkHello), stream_name);
+
+    if (header.bytes_size > StreamingExchangeProtocol::MAX_HELLO_BODY_BYTES)
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+            "SinkHello body size {} exceeds the limit {} for exchange stream {}",
+            header.bytes_size, StreamingExchangeProtocol::MAX_HELLO_BODY_BYTES, stream_name);
+
+    if (header.bytes_size < sizeof(UInt64))
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+            "SinkHello body size {} is too small to contain the protocol version for exchange stream {}",
+            header.bytes_size, stream_name);
+
+    std::vector<char> body_buffer(header.bytes_size);
+    size_t body_position = 0;
+    readFromSocket(body_buffer.data(), body_buffer.size(), body_position);
+    if (body_position != body_buffer.size())
+        throw Poco::Net::NetException(fmt::format(
+            "Failed to receive SinkHello body from socket for exchange stream {}, expected {} bytes but received {}",
+            stream_name, body_buffer.size(), body_position));
+
+    ReadBufferFromMemory body_in(body_buffer.data(), body_buffer.size());
+    UInt64 sink_version = 0;
+    readIntBinary(sink_version, body_in);
+
+    if (sink_version != StreamingExchangeProtocol::PROTOCOL_VERSION)
+        throw Exception(ErrorCodes::PROTOCOL_VERSION_MISMATCH,
+            "Streaming exchange protocol version mismatch for stream {}: this node speaks version {}, sink at {}:{} speaks version {}",
+            stream_name, StreamingExchangeProtocol::PROTOCOL_VERSION, host, port, sink_version);
 }
 
 IProcessor::Status StreamingExchangeSource::prepare()
