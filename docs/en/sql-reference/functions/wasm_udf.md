@@ -147,13 +147,16 @@ SELECT name, lower(hex(reinterpretAsFixedString(hash))) AS sha256 FROM system.we
 ### Delete a module
 
 Deletion performed by `DELETE FROM system.webassembly_modules WHERE name = '...'` statement.
-Only deletion of single module by exact name per single statement is supported.
+The predicate must be either `name = 'literal'` for exact match or `name LIKE 'pattern'` to delete every module whose name matches the pattern; no other shapes are accepted.
 
 ```sql
 DELETE FROM system.webassembly_modules WHERE name = 'collatz';
+
+-- Bulk-delete every module whose name starts with `tmp_` (literal underscore is escaped as `\_`):
+DELETE FROM system.webassembly_modules WHERE name LIKE 'tmp\_%';
 ```
 
-If any existing UDFs reference the module, the deletion fails, so you must drop those UDFs first.
+If any existing UDFs reference one of the matched modules, the deletion fails, so you must drop those UDFs first.
 
 ## Create a WebAssembly UDF
 

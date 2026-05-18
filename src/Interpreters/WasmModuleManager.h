@@ -32,6 +32,7 @@ public:
     std::vector<std::pair<std::string, UInt256>> getModulesList() const;
 
     void deleteModuleIfExists(std::string_view module_name);
+    void deleteModuleIfExists(std::function<bool(std::string_view)> name_match);
 
     WasmModuleManager(const WasmModuleManager &) = delete;
     WasmModuleManager & operator=(const WasmModuleManager &) = delete;
