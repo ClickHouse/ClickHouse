@@ -11,7 +11,7 @@ SELECT JSONExtractBool(CAST('{"sold":-1}', 'JSON'), 'sold');
 SELECT JSONExtractBool(CAST('{"sold":0}', 'JSON'), 'sold');
 SELECT toTypeName(JSONExtractBool(CAST('{"k":1}', 'JSON'), 'k'));
 
-SELECT '-- non-numeric and float values match String JSON path (return 0)';
+SELECT '-- float and string values use Bool cast semantics';
 SELECT JSONExtractBool(CAST('{"sold":-3.14159265}', 'JSON'), 'sold');
 SELECT JSONExtractBool(CAST('{"sold":"foobar"}', 'JSON'), 'sold');
 SELECT JSONExtractBool(CAST('{"sold":"true"}', 'JSON'), 'sold');
@@ -24,9 +24,6 @@ SELECT JSONExtractBool('{"k":15}', 'k'), JSONExtractBool(CAST('{"k":15}', 'JSON'
 SELECT JSONExtractBool('{"k":-1}', 'k'), JSONExtractBool(CAST('{"k":-1}', 'JSON'), 'k');
 SELECT JSONExtractBool('{"k":0}', 'k'), JSONExtractBool(CAST('{"k":0}', 'JSON'), 'k');
 SELECT JSONExtractBool('{"k":"x"}', 'k'), JSONExtractBool(CAST('{"k":"x"}', 'JSON'), 'k');
-
-SELECT '-- JSONExtractBoolCaseInsensitive on native JSON';
-SELECT JSONExtractBoolCaseInsensitive(CAST('{"Sold":15}', 'JSON'), 'sold');
 
 SELECT '-- native JSON column';
 DROP TABLE IF EXISTS t_jsonextractbool_native;

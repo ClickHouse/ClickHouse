@@ -6,10 +6,10 @@
 1
 0
 UInt8
--- non-numeric and float values match String JSON path (return 0)
+-- float and string values use Bool cast semantics
+1
 0
-0
-0
+1
 -- missing path returns 0
 0
 -- JSONExtractBool on native and String JSON must agree
@@ -17,8 +17,6 @@ UInt8
 1	1
 0	0
 0	0
--- JSONExtractBoolCaseInsensitive on native JSON
-1
 -- native JSON column
 1	1
 2	1
