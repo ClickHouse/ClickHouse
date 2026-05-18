@@ -3449,7 +3449,15 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.contains("query_id"))
         getClientConfiguration().setString("query_id", options["query_id"].as<std::string>());
     if (options.contains("database"))
-        getClientConfiguration().setString("database", options["database"].as<std::string>());
+    {
+        const auto & db = options["database"].as<std::string>();
+        getClientConfiguration().setString("database", db);
+        /// `database` is also a setting (https://github.com/ClickHouse/ClickHouse/issues/46925).
+        /// Propagating the CLI value into `cmd_settings` makes `--database=foo` behave like a
+        /// regular setting (sent with every query), in addition to seeding the TCP connection's
+        /// initial database.
+        cmd_settings->set("database", db);
+    }
     if (options.contains("config-file"))
         getClientConfiguration().setString("config-file", options["config-file"].as<std::string>());
     if (options.contains("queries-file"))
@@ -3463,9 +3471,27 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.contains("ignore-error"))
         getClientConfiguration().setBool("ignore-error", true);
     if (options.contains("format"))
-        getClientConfiguration().setString("format", options["format"].as<std::string>());
+    {
+        const auto & fmt = options["format"].as<std::string>();
+        getClientConfiguration().setString("format", fmt);
+        /// `--format` mirrors the `format` setting so it applies as a normal per-query setting,
+        /// in addition to the client's default-format selection.
+        cmd_settings->set("format", fmt);
+    }
     if (options.contains("output-format"))
-        getClientConfiguration().setString("output-format", options["output-format"].as<std::string>());
+    {
+        const auto & fmt = options["output-format"].as<std::string>();
+        getClientConfiguration().setString("output-format", fmt);
+        /// `--output-format` mirrors the `output_format` setting (note the underscore).
+        cmd_settings->set("output_format", fmt);
+    }
+    if (options.contains("input-format"))
+    {
+        const auto & fmt = options["input-format"].as<std::string>();
+        getClientConfiguration().setString("input-format", fmt);
+        /// `--input-format` mirrors the `input_format` setting.
+        cmd_settings->set("input_format", fmt);
+    }
     if (options.contains("vertical"))
         getClientConfiguration().setBool("vertical", true);
     if (options.contains("stacktrace"))

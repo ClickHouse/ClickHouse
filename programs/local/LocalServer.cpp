@@ -1297,9 +1297,19 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         getClientConfiguration().setBool("only-system-tables", true);
 
     if (options.contains("input-format"))
-        getClientConfiguration().setString("table-data-format", options["input-format"].as<std::string>());
+    {
+        const auto & fmt = options["input-format"].as<std::string>();
+        getClientConfiguration().setString("table-data-format", fmt);
+        /// `--input-format` mirrors the `input_format` setting (sent per query).
+        cmd_settings->set("input_format", fmt);
+    }
     if (options.contains("output-format"))
-        getClientConfiguration().setString("output-format", options["output-format"].as<std::string>());
+    {
+        const auto & fmt = options["output-format"].as<std::string>();
+        getClientConfiguration().setString("output-format", fmt);
+        /// `--output-format` mirrors the `output_format` setting.
+        cmd_settings->set("output_format", fmt);
+    }
 
     if (options.contains("logger.console"))
         getClientConfiguration().setBool("logger.console", options["logger.console"].as<bool>());
