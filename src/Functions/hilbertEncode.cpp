@@ -37,9 +37,6 @@ public:
         {
             num_dimensions = mask.tupleSize();
             vector_start_index = 1;
-            /// Validate the ratios. For constant masks only row 0 carries information
-            /// (every output row reads the same values); for non-constant masks every
-            /// row may have its own ratio, so each row must be validated independently.
             const size_t rows_to_check = mask.is_const ? 1 : input_rows_count;
             for (size_t row = 0; row < rows_to_check; ++row)
             {

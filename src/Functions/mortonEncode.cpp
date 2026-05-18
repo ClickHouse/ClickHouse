@@ -34,8 +34,6 @@ namespace ErrorCodes
     { \
         nd = mask.tupleSize(); \
         vectorStartIndex = 1; \
-        /* Validate ratios. For constant masks check row 0 only; for non-constant */ \
-        /* masks every row may have its own ratio, so each row is validated. */ \
         const size_t rows_to_check_morton = mask.is_const ? 1 : input_rows_count; \
         for (size_t row = 0; row < rows_to_check_morton; row++) \
         { \
