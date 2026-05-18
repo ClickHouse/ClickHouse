@@ -648,12 +648,38 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
         }
     }
 
-    /// If no valid result types were found, all alternatives are incompatible
-    /// Return Nullable(Nothing) to indicate NULL result for all rows
+    /// If no valid result types were found, all Variant alternatives are incompatible with the function.
+    /// When variant_throw_on_type_mismatch is enabled (the default), throw a clear error rather than
+    /// silently returning Nullable(Nothing), which would cause WHERE clauses to return 0 rows with no
+    /// diagnostic. When the setting is disabled, fall back to Nullable(Nothing) so that executeImpl
+    /// returns NULL rows (consistent with the per-row mismatch behaviour).
     if (result_types.empty())
     {
-        return_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
-        return;
+        bool throw_on_mismatch = true;
+        if (CurrentThread::isInitialized())
+        {
+            if (auto query_context = CurrentThread::tryGetQueryContext())
+                throw_on_mismatch = query_context->getSettingsRef()[Setting::variant_throw_on_type_mismatch];
+        }
+
+        if (!throw_on_mismatch)
+        {
+            return_type = makeNullable(std::make_shared<DataTypeNothing>());
+            return;
+        }
+
+        String alt_names;
+        for (const auto & alt : variant_alternatives)
+        {
+            if (!alt_names.empty())
+                alt_names += ", ";
+            alt_names += alt->getName();
+        }
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "None of the Variant alternatives ({}) are compatible with function '{}'",
+            alt_names,
+            function_overload_resolver->getName());
     }
 
     /// If all result types are the same (ignoring Nullable), return Nullable(common).
