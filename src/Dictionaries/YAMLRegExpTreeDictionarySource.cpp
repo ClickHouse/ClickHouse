@@ -290,27 +290,34 @@ YAMLRegExpTreeDictionarySource::YAMLRegExpTreeDictionarySource(
 {
     key_name = (*structure.key)[0].name;
 
-    /// `loadAll` reads the YAML file via `YAML::LoadFile`, which only works on
-    /// the local filesystem. With `user_files_policy` configured on a non-local
-    /// disk (for example `s3_plain`), the configured user-files roots are not
-    /// usable through local APIs. Reject up front instead of failing later with
-    /// an opaque local I/O error, mirroring the explicit guards added in
-    /// `InputFormatErrorsLogger` and `EmbeddedRocksDB`.
-    if (auto user_files_volume = context->getUserFilesVolume())
+    /// DDL-created dictionaries are required to live under `user_files_path`.
+    /// `loadAll` reads them via `YAML::LoadFile`, which only works on the local
+    /// filesystem. With `user_files_policy` on a non-local disk (for example
+    /// `s3_plain`), the configured user-files roots are not reachable through local
+    /// APIs, so a DDL-created dictionary cannot work. Reject up front instead of
+    /// failing later with an opaque local I/O error.
+    ///
+    /// XML-config dictionaries (`created_from_ddl == false`) are not constrained to
+    /// `user_files_path` and may point at arbitrary local files, so they are not
+    /// affected by `user_files_policy` and must not be rejected here.
+    if (created_from_ddl)
     {
-        for (const auto & disk : user_files_volume->getDisks())
+        if (auto user_files_volume = context->getUserFilesVolume())
         {
-            if (disk->isRemote())
-                throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                                "Dictionary source `{}` is not supported "
-                                "with non-local `user_files_policy` disks (disk `{}` is remote)",
-                                kYAMLRegExpTree, disk->getName());
+            for (const auto & disk : user_files_volume->getDisks())
+            {
+                if (disk->isRemote())
+                    throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
+                                    "Dictionary source `{}` is not supported "
+                                    "with non-local `user_files_policy` disks (disk `{}` is remote)",
+                                    kYAMLRegExpTree, disk->getName());
+            }
         }
-    }
 
-    if (created_from_ddl && !fileOrSymlinkPathStartsWith(filepath_, context->getUserFilesPath()))
-    {
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File {} is not inside user files path", filepath_);
+        if (!fileOrSymlinkPathStartsWith(filepath_, context->getUserFilesPath()))
+        {
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File {} is not inside user files path", filepath_);
+        }
     }
 }
 
