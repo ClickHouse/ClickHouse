@@ -359,8 +359,14 @@ public:
             /// Invalid UTF-8
             if (!first_u32)
             {
-                /// Process it verbatim as a sequence of bytes.
-                size_t src_len = UTF8::seqLength(*needle);
+                /// Process it verbatim as a sequence of bytes. The clamp
+                /// against `needle_size` matches the inner-loop clamp at
+                /// `src_len = std::min<size_t>(needle_end - needle_pos, UTF8::seqLength(*needle_pos))`
+                /// below: a truncated first sequence (e.g. a 1-byte needle starting
+                /// with `0xE4`, where `seqLength` is 3) must not read past `needle_end`,
+                /// otherwise the `memcpy` propagates MemorySanitizer noise from
+                /// uninitialized memory past the needle into `l_seq` / `u_seq`.
+                size_t src_len = std::min<size_t>(needle_size, UTF8::seqLength(*needle));
 
                 memcpy(l_seq, needle, src_len);
                 memcpy(u_seq, needle, src_len);

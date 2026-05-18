@@ -1,6 +1,5 @@
 -- Regression test for use-of-uninitialized-value in `StringSearcher<false, false>`
--- (UTF-8 case-insensitive) when the needle contains an invalid UTF-8 sequence
--- in the middle (i.e. not as the first character).
+-- (UTF-8 case-insensitive) when the needle contains an invalid UTF-8 sequence.
 --
 -- Reported by MemorySanitizer at `src/Common/StringSearcher.h:563:61` from
 -- `Volnitsky::Volnitsky` -> `MatchImpl::vectorVector` -> `FunctionLike` (`ilike`)
@@ -11,11 +10,17 @@
 --   when `convertUTF8ToCodePoint` returned an empty optional for an invalid byte
 --   sequence in the middle of the needle, the inner loop still inserted
 --   `l_seq[j]` / `u_seq[j]` into `cachel` / `cacheu` even though those buffers
---   had not been written for this iteration.
+--   had not been written for this iteration. Symmetrically, the first-character
+--   invalid-UTF-8 branch above the loop copied `seqLength(*needle)` bytes from
+--   the needle without clamping to `needle_size`, so a truncated first sequence
+--   (e.g. a 1-byte needle starting with `\xE4`, where `seqLength` is 3) would
+--   read past `needle_end` into uninitialized memory and propagate sanitizer
+--   noise from the same family.
 --
 -- The fix mirrors the existing verbatim-bytes handling used for the first
 -- character: when the conversion fails, the bytes of the needle are copied
--- into `l_seq` / `u_seq` directly.
+-- into `l_seq` / `u_seq` directly, with the source length clamped to
+-- `needle_size` (first character) or `needle_end - needle_pos` (inner loop).
 
 -- A 3-byte needle: 'a' (valid ASCII), followed by `\xC3\x28` (invalid UTF-8 -
 -- `\xC3` is a 2-byte start byte, but `\x28` is not a continuation byte).
@@ -49,5 +54,32 @@ SELECT '-- multi-row ilike';
 SELECT count() FROM
 (
     SELECT ilike(materialize('some long haystack that is much longer than sixteen bytes'), concat('%', unhex('61C328'), '%'))
+    FROM numbers(64)
+);
+
+-- Truncated first-character invalid-UTF-8 needle: a 1-byte needle starting with
+-- `\xE4`. `seqLength(\xE4) = 3` but `needle_size = 1`, so without the clamp on
+-- `src_len` in the first-character branch the constructor would memcpy 3 bytes
+-- from a 1-byte needle, reading past `needle_end` into uninitialized memory.
+SELECT '-- ilike with 1-byte truncated UTF-8 needle';
+SELECT count() FROM (SELECT ilike('a long enough haystack that easily exceeds sixteen bytes', concat('%', unhex('E4'), '%')));
+
+SELECT '-- positionCaseInsensitiveUTF8 with 1-byte truncated UTF-8 needle';
+SELECT positionCaseInsensitiveUTF8('a long enough haystack that easily exceeds sixteen bytes', unhex('E4'));
+
+SELECT '-- multiSearchAnyCaseInsensitiveUTF8 with 1-byte truncated UTF-8 needle';
+SELECT multiSearchAnyCaseInsensitiveUTF8('a long enough haystack that easily exceeds sixteen bytes', [unhex('E4')]);
+
+SELECT '-- startsWithCaseInsensitiveUTF8 with 1-byte truncated UTF-8 needle';
+SELECT startsWithCaseInsensitiveUTF8('a long enough haystack that easily exceeds sixteen bytes', unhex('E4'));
+
+SELECT '-- endsWithCaseInsensitiveUTF8 with 1-byte truncated UTF-8 needle';
+SELECT endsWithCaseInsensitiveUTF8('a long enough haystack that easily exceeds sixteen bytes', unhex('E4'));
+
+-- Multi-row variant for the truncated first-character case.
+SELECT '-- multi-row ilike with 1-byte truncated UTF-8 needle';
+SELECT count() FROM
+(
+    SELECT ilike(materialize('a long enough haystack that easily exceeds sixteen bytes'), concat('%', unhex('E4'), '%'))
     FROM numbers(64)
 );
