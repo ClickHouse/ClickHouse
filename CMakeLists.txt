@@ -391,9 +391,12 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
 # to only supply -fno-lto at the final linking stage. So we disable it
 # completely.
 if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
-    # Link time optimization
-    set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables -fforce-emit-vtables")
-    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables -fforce-emit-vtables")
+    # Link time optimization. The visibility flags lock the LTO unit: with `-fvisibility=hidden`
+    # and `-fvisibility-inlines-hidden` the compiler can prove that classes/symbols are not
+    # overridden in any other shared object, which lets `-fwhole-program-vtables` devirtualize
+    # more aggressively. We are a static executable so nothing needs default visibility.
+    set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables -fforce-emit-vtables -fvisibility=hidden")
+    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables -fforce-emit-vtables -fvisibility=hidden -fvisibility-inlines-hidden")
     set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
 
     if(LINKER_NAME MATCHES "lld")

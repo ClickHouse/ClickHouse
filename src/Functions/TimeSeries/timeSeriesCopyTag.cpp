@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesCopyTags(dest_group, src_group, 'tag_name')
 /// copies the specified tag from the `src` group to the `dest` group, and returns the new tags group.
-class FunctionTimeSeriesCopyTag : public IFunction
+class FunctionTimeSeriesCopyTag final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesCopyTag";

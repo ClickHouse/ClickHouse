@@ -136,7 +136,7 @@ inline void validateIV(std::string_view iv_value, const size_t cipher_iv_size)
 }
 
 template <typename Impl>
-class FunctionEncrypt : public IFunction
+class FunctionEncrypt final : public IFunction
 {
 public:
     static constexpr OpenSSLDetails::CompatibilityMode compatibility_mode = Impl::compatibility_mode;
@@ -410,7 +410,7 @@ private:
 
 /// decrypt(string, key, block_mode[, init_vector])
 template <typename Impl>
-class FunctionDecrypt : public IFunction
+class FunctionDecrypt final : public IFunction
 {
 public:
     static constexpr OpenSSLDetails::CompatibilityMode compatibility_mode = Impl::compatibility_mode;

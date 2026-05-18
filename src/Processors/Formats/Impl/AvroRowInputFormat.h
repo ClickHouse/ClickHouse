@@ -210,7 +210,7 @@ private:
     FormatSettings format_settings;
 };
 
-class AvroSchemaReader : public ISchemaReader
+class AvroSchemaReader final : public ISchemaReader
 {
 public:
     AvroSchemaReader(ReadBuffer & in_, bool confluent_, const FormatSettings & format_settings_);
