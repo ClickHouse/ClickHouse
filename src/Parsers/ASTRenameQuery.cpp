@@ -45,6 +45,19 @@ void ASTRenameQuery::readJSON(const Poco::JSON::Object & json)
             String to_tbl = elem_obj->getValue<String>("to_table");
             elem.if_exists = elem_obj->getValue<bool>("if_exists");
 
+            /// `formatQueryImpl` unconditionally dereferences these pointers,
+            /// so require the names the chosen rename form actually needs.
+            if (database)
+            {
+                if (from_db.empty() || to_db.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element at index {} in `RenameQuery` must specify non-empty 'from_database' and 'to_database' for `RENAME DATABASE` during AST JSON deserialization", i);
+            }
+            else
+            {
+                if (from_tbl.empty() || to_tbl.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element at index {} in `RenameQuery` must specify non-empty 'from_table' and 'to_table' during AST JSON deserialization", i);
+            }
+
             if (!from_db.empty())
             {
                 elem.from.database = make_intrusive<ASTIdentifier>(from_db);
@@ -69,6 +82,10 @@ void ASTRenameQuery::readJSON(const Poco::JSON::Object & json)
             elements.push_back(std::move(elem));
         }
     }
+
+    /// `RENAME DATABASE` form indexes `elements.at(0)`, so we must have at least one element.
+    if (database && elements.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`RENAME DATABASE` requires at least one element during AST JSON deserialization");
 }
 
 void ASTRenameQuery::writeJSON(WriteBuffer & out) const
