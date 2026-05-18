@@ -133,6 +133,11 @@ public:
 
     std::unordered_set<JoinTableSide> typeChangingSides() const;
 
+    /// Add a pass-through column from the specified input side to the join output.
+    /// Used by pushDownVolumeReducingFunctions to make pre-computed columns
+    /// available in the join's output after inserting an ExpressionStep below the join.
+    void addPassThroughColumn(const String & column_name, const DataTypePtr & column_type, JoinTableSide side);
+
     bool isOptimized() const { return optimized; }
     std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
     const std::unordered_map<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }

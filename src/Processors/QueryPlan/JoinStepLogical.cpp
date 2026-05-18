@@ -337,6 +337,17 @@ void JoinStepLogical::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Actions", ExpressionActions(std::move(actions_dag)).toTree());
 }
 
+void JoinStepLogical::addPassThroughColumn(const String & column_name, const DataTypePtr & column_type, JoinTableSide side)
+{
+    size_t source_relation = side == JoinTableSide::Left ? 0 : 1;
+    auto action_ref = expression_actions.addInput(column_name, column_type, source_relation);
+
+    auto actions_dag = expression_actions.getActionsDAG();
+    const auto * node = action_ref.getNode();
+    actions_dag->addOrReplaceInOutputs(*node);
+    actions_after_join.push_back(node);
+}
+
 bool JoinStepLogical::canRemoveUnusedColumns() const
 {
     return !hasDuplicatedNamesInInputOrOutputs(*expression_actions.getActionsDAG());
