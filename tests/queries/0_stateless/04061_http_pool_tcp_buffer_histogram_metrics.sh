@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Tags: linux
 
-# Verify that asynchronous metrics for HTTP connection pool TCP buffer memory
-# (HTTPConnectionPool*TCP{Rcv,Snd}BufBytes_{p50,p75,p90,p95} and TotalBytes)
-# are populated when there are active HTTP connection pool connections.
+# Verify that the http_pool_tcp_buf_bytes histogram metric is populated when
+# there are active HTTP connection pool connections.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,13 +19,16 @@ done
 # Force an async metrics update while keep-alive connections are in the pool.
 ${CLICKHOUSE_CLIENT} -q "SYSTEM RELOAD ASYNCHRONOUS METRICS"
 
-# Check that the Storage group TCP buffer metrics exist with non-negative values.
+# The +Inf bucket of the histogram is the cumulative count of all observations.
+# After the metrics scrape above, every live storage-pool socket should have been
+# observed exactly once for each of rcv/snd, so the count must be > 0.
 ${CLICKHOUSE_CLIENT} -q "
-    SELECT metric, value >= 0
-    FROM system.asynchronous_metrics
-    WHERE metric LIKE 'HTTPConnectionPoolStorageTCP%BufBytes\_%'
-       OR metric LIKE 'HTTPConnectionPoolStorageTCP%BufTotalBytes'
-    ORDER BY metric
+    SELECT labels['direction'], value > 0
+    FROM system.histogram_metrics
+    WHERE metric = 'http_pool_tcp_buf_bytes'
+      AND labels['group'] = 'storage'
+      AND labels['le'] = '+Inf'
+    ORDER BY labels['direction']
 "
 
 wait
