@@ -4,8 +4,9 @@ sidebar_label: 'lagInFrame'
 sidebar_position: 9
 slug: /sql-reference/window-functions/lagInFrame
 title: 'lagInFrame'
-doc_type: 'reference'
 ---
+
+# lagInFrame
 
 Returns a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
 

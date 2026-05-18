@@ -3,8 +3,9 @@ description: 'Documentation for GROUP BY Clause'
 sidebar_label: 'GROUP BY'
 slug: /sql-reference/statements/select/group-by
 title: 'GROUP BY Clause'
-doc_type: 'reference'
 ---
+
+# GROUP BY Clause
 
 `GROUP BY` clause switches the `SELECT` query into an aggregation mode, which works as follows:
 

@@ -45,7 +45,7 @@ private:
     String name_buf;
 
     /// Hash table matching `field name -> position in the block`. NOTE You can use perfect hash map.
-    using NameMap = HashMap<std::string_view, size_t, StringViewHash>;
+    using NameMap = HashMap<StringRef, size_t, StringRefHash>;
     NameMap name_map;
 
     /// Set of columns for which the values were read. The rest will be filled with default values.
