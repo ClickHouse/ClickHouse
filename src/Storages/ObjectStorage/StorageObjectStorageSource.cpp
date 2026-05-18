@@ -1075,8 +1075,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         logIcebergFileStats(object_info, log);
 
         InputFormatPtr input_format;
+<<<<<<< HEAD
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
             && (Poco::toLower(format_name) == "parquet")
+=======
+        if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache] && use_native_reader_v3
+            && (Poco::toLower(object_info->getFileFormat().value_or(configuration->getFormat())) == "parquet")
+>>>>>>> 7e5f7d649ab (Merge pull request #1751 from Altinity/feature/antalya-26.3/pr-1631)
             && !object_info->getObjectMetadata()->etag.empty())
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;

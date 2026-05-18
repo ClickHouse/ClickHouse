@@ -169,6 +169,18 @@ def test_read_constant_columns_optimization(started_cluster_iceberg_with_spark, 
     for replica in started_cluster_iceberg_with_spark.instances.values():
         replica.query("SYSTEM FLUSH LOGS")
 
+    # Number of object-get requests per data file that are NOT served from caches
+    # after the warmup query above. The parquet metadata cache (enabled by default)
+    # caches the parquet footer keyed by the object's etag; the warmup query then
+    # populates it, so any subsequent read of the same file skips one object-get
+    # (the footer read). However, AzureObjectStorage::getObjectMetadata does NOT
+    # populate etag, so the cache guard `!etag.empty()` in
+    # StorageObjectStorageSource::createReader always fails for Azure, and the
+    # cache path is never taken there. As a result the multiplier is:
+    #   S3:    2 (footer served from cache, data-only gets remain)
+    #   Azure: 3 (cache never engaged, footer + data gets)
+    per_file_gets = 2 if storage_type == "s3" else 3
+
     def check_events(query_id, event, is_cluster, expected):
         res = instance.query(
             f"""
