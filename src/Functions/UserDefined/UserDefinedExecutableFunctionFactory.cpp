@@ -35,7 +35,7 @@ namespace ProfileEvents
     extern const Event ExecutableUserDefinedFunctionPoolWaitMicroseconds;
     extern const Event ExecutableUserDefinedFunctionUserTimeMicroseconds;
     extern const Event ExecutableUserDefinedFunctionSystemTimeMicroseconds;
-    extern const Event ExecutableUserDefinedFunctionMemoryUsageByteSeconds;
+    extern const Event ExecutableUserDefinedFunctionPeakMemoryByteSeconds;
     extern const Event ExecutableUserDefinedFunctionInputBytes;
     extern const Event ExecutableUserDefinedFunctionOutputBytes;
 }
@@ -246,7 +246,7 @@ public:
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionElapsedMicroseconds, sampler->getElapsedMicroseconds());
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionUserTimeMicroseconds, sampler->getCPUUserMicroseconds());
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionSystemTimeMicroseconds, sampler->getCPUSystemMicroseconds());
-                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionMemoryUsageByteSeconds, sampler->getMemoryUsageByteSeconds());
+                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionPeakMemoryByteSeconds, sampler->getMemoryUsageByteSeconds());
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionInputBytes, sampler->getInputBytes());
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionOutputBytes, sampler->getOutputBytes());
                 }

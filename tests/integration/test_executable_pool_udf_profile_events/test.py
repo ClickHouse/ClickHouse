@@ -153,10 +153,10 @@ def test_memory_usage_byte_seconds(started_cluster):
         "SELECT count() FROM (SELECT test_pool_udf_mem(number) FROM numbers(64))",
         qid,
     )
-    mem = _profile_event_value(qid, "ExecutableUserDefinedFunctionMemoryUsageByteSeconds")
+    mem = _profile_event_value(qid, "ExecutableUserDefinedFunctionPeakMemoryByteSeconds")
     # 32 MiB peak RSS, touched page by page over 64 rows: borrow wall takes
     # well over 30 ms in CPython. 32 MiB * 0.03 s ~= 10^6 byte-seconds floor.
-    assert mem >= 1_000_000, f"Expected MemoryUsageByteSeconds >= 1e6, got {mem}"
+    assert mem >= 1_000_000, f"Expected PeakMemoryByteSeconds >= 1e6, got {mem}"
 
 
 def test_input_bytes(started_cluster):
