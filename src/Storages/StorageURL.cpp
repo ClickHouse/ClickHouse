@@ -545,7 +545,7 @@ Chunk StorageURLSource::generate()
         }
 
         if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && (!format_filter_info || !format_filter_info->hasFilter()))
+            && (!format_filter_info || !format_filter_info->hasFilter()) && !isCancelled())
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
         (*pipeline).reset();
