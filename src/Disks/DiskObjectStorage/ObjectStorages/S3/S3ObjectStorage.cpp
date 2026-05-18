@@ -674,6 +674,7 @@ void S3ObjectStorage::applyNewSettings(
     settings_from_config->loadFromConfigForObjectStorage(
         config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
+    auto current_settings = s3_settings.get();
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
 
     /// Apply global <s3> endpoint settings first (lowest priority).
@@ -690,7 +691,9 @@ void S3ObjectStorage::applyNewSettings(
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
 
-    auto current_settings = s3_settings.get();
+    if (!for_disk_s3)
+        modified_settings->copyCredentialsFrom(*current_settings);
+
     if (options.allow_client_change
         && (current_settings->auth_settings.hasUpdates(modified_settings->auth_settings) || for_disk_s3))
     {

@@ -100,6 +100,18 @@ namespace
         source);
 }
 
+void applyEndpointCredentialsOrReset(S3Settings & s3_settings, const S3::URI & url, ContextPtr context)
+{
+    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
+    {
+        s3_settings.auth_settings.updateIfChanged(endpoint_settings->auth_settings);
+        s3_settings.request_settings.updateIfChanged(endpoint_settings->request_settings);
+        return;
+    }
+
+    s3_settings.resetCredentialsForUserControlledRequest();
+}
+
 }
 
 static const std::unordered_set<std::string_view> required_configuration_keys =
@@ -235,11 +247,7 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_settings->loadFromConfigForObjectStorage(
         config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
-    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
-    {
-        s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
-        s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
-    }
+    applyEndpointCredentialsOrReset(*s3_settings, url, context);
 
     if (collection.has("use_environment_credentials")
         && collection.get<bool>("use_environment_credentials"))
@@ -669,13 +677,9 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     s3_settings->loadFromConfigForObjectStorage(
         config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
-    auto extra_credentials_result = S3StorageParsedArguments::collectCredentials(extra_credentials, s3_settings->auth_settings, context);
+    applyEndpointCredentialsOrReset(*s3_settings, url, context);
 
-    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
-    {
-        s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
-        s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
-    }
+    auto extra_credentials_result = S3StorageParsedArguments::collectCredentials(extra_credentials, s3_settings->auth_settings, context);
 
     /// Re-apply user/profile/query-level settings on top, so they take priority over the global <s3> config section.
     s3_settings->request_settings.updateFromSettings(

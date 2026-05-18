@@ -940,6 +940,23 @@ def test_check_database(started_cluster):
             f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
         )
 
+
+def test_glue_role_arn_requires_explicit_keys(started_cluster):
+    node = started_cluster.instances["node1"]
+    db_name = f"db_role_no_keys_{uuid.uuid4().hex}"
+
+    with pytest.raises(Exception) as exc_info:
+        create_clickhouse_glue_database(
+            started_cluster,
+            node,
+            db_name,
+            additional_settings={"aws_role_arn": "arn::role"},
+            with_credentials=False,
+        )
+
+    assert "ACCESS_DENIED" in str(exc_info.value)
+
+
 def test_sts_smoke(started_cluster):
     """Test that STS authentication works with Glue catalog using role_arn and role_session_name"""
     node = started_cluster.instances["node1"]
@@ -974,6 +991,8 @@ def test_sts_smoke(started_cluster):
         additional_settings={
             "aws_role_arn": "arn::role",
             "aws_role_session_name": "wrongsession",
+            "aws_access_key_id": minio_access_key,
+            "aws_secret_access_key": minio_secret_key,
         },
         with_credentials=False,
     )
@@ -999,6 +1018,8 @@ def test_sts_smoke(started_cluster):
         additional_settings={
             "aws_role_arn": "arn::role",
             "aws_role_session_name": "miniorole",
+            "aws_access_key_id": minio_access_key,
+            "aws_secret_access_key": minio_secret_key,
         },
         with_credentials=False,
     )

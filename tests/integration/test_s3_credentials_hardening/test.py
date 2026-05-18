@@ -1,5 +1,4 @@
-"""Verify that user SQL cannot reuse server-managed `<s3>` config credentials
-to sign an STS `AssumeRole` flow.
+"""Verify that user SQL cannot reuse server-managed `<s3>` config credentials.
 
 The cluster instance has top-level `<s3><access_key_id>` and
 `<s3><secret_access_key>` set in its main config. Before the hardening fix
@@ -9,20 +8,29 @@ matching user-supplied keys would silently pick up the admin's keys to sign
 the STS request. After the fix, every such call is rejected with
 `ACCESS_DENIED` at parse time.
 
-These checks fire before any network call, so the test does not need a real
-S3 endpoint.
+Most checks fire before any network call. The omission checks use a small mock
+endpoint to verify that credential-less user SQL does not inherit top-level
+server credentials or environment credentials.
 """
+
+import os
 
 import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.mock_servers import start_mock_servers
 
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/config.d/admin_s3.xml"],
+    env_variables={
+        "AWS_ACCESS_KEY_ID": "ENV_FAKE_KEY",
+        "AWS_SECRET_ACCESS_KEY": "ENV_FAKE_SECRET",
+    },
+    with_minio=True,
     stay_alive=True,
 )
 
@@ -31,6 +39,8 @@ node = cluster.add_instance(
 def started_cluster():
     try:
         cluster.start()
+        script_dir = os.path.join(os.path.dirname(__file__), "s3_mocks")
+        start_mock_servers(cluster, script_dir, [("credential_echo.py", "resolver", "18080")])
         yield cluster
     finally:
         cluster.shutdown()
@@ -38,6 +48,8 @@ def started_cluster():
 
 ROLE_ARN = "arn:aws:iam::123456789012:role/Test"
 ENDPOINT = "http://unreachable.invalid/bucket/object.tsv"
+UNTRUSTED_ENDPOINT = "http://resolver:18080/untrusted/object.csv"
+TRUSTED_ENDPOINT = "http://resolver:18080/trusted/object.csv"
 
 
 def _expect_access_denied(query):
@@ -68,6 +80,37 @@ def test_s3_table_function_role_arn_with_partial_user_keys():
                 extra_credentials(role_arn = '{ROLE_ARN}'))
         """
     )
+
+
+def test_s3_table_function_omission_does_not_inherit_server_credentials():
+    result = node.query(
+        f"SELECT * FROM s3('{UNTRUSTED_ENDPOINT}', 'CSV', 'leaked UInt8')"
+    )
+    assert result.strip() == "0"
+
+
+def test_named_collection_omission_does_not_inherit_server_credentials():
+    node.query("DROP NAMED COLLECTION IF EXISTS nc_omission")
+    node.query(
+        f"""
+        CREATE NAMED COLLECTION nc_omission AS
+            url = '{UNTRUSTED_ENDPOINT}'
+        """
+    )
+    try:
+        result = node.query(
+            "SELECT * FROM s3(nc_omission, format = 'CSV', structure = 'leaked UInt8')"
+        )
+        assert result.strip() == "0"
+    finally:
+        node.query("DROP NAMED COLLECTION IF EXISTS nc_omission")
+
+
+def test_endpoint_scoped_credentials_still_apply():
+    result = node.query(
+        f"SELECT * FROM s3('{TRUSTED_ENDPOINT}', 'CSV', 'leaked UInt8')"
+    )
+    assert result.strip() == "2"
 
 
 def test_named_collection_role_arn_does_not_inherit_admin_keys():

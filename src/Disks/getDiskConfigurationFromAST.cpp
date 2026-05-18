@@ -3,6 +3,7 @@
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
+#include <Core/SettingsFields.h>
 #include <Core/Settings.h>
 #include <Disks/DiskFactory.h>
 #include <Interpreters/Context.h>
@@ -62,6 +63,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     /// credential hardening below cannot be bypassed by indirection.
     bool type_resolution_is_indirect = false;
     bool has_use_environment_credentials = false;
+    bool use_environment_credentials = false;
     bool has_role_arn = false;
     /// "Explicit" here means the value is a literal in the SQL — not a
     /// `from_env`/`from_zk` reference. Indirect values must not count as the
@@ -113,7 +115,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         else if (key == "include")
             type_resolution_is_indirect = true;
         else if (key == "use_environment_credentials")
+        {
             has_use_environment_credentials = true;
+            use_environment_credentials = is_indirect_value(value_str) || stringToBool(value_str);
+        }
         else if (key == "role_arn" && !value_str.empty())
             has_role_arn = true;
         else if (key == "access_key_id" && !value_str.empty() && !is_indirect_value(value_str))
@@ -163,10 +168,18 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     /// augmented by an `include` that could supply the type itself.
     const bool apply_s3_credential_checks = is_s3_configuration || type_resolution_is_indirect;
 
-    if (!is_loading_from_existing_metadata && apply_s3_credential_checks && has_use_environment_credentials)
+    if (!is_loading_from_existing_metadata && apply_s3_credential_checks && use_environment_credentials)
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
             "Using `use_environment_credentials` in dynamic S3 disk configuration is not allowed");
+
+    if (!is_loading_from_existing_metadata && apply_s3_credential_checks && !has_use_environment_credentials)
+    {
+        Poco::AutoPtr<Poco::XML::Element> key_element(xml_document->createElement("use_environment_credentials"));
+        root->appendChild(key_element);
+        Poco::AutoPtr<Poco::XML::Text> value_element(xml_document->createTextNode("false"));
+        key_element->appendChild(value_element);
+    }
 
     if (!is_loading_from_existing_metadata && apply_s3_credential_checks && has_role_arn
         && (!has_explicit_access_key_id || !has_explicit_secret_access_key))

@@ -105,6 +105,7 @@ namespace DataLakeStorageSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int DATALAKE_DATABASE_ERROR;
@@ -144,6 +145,16 @@ void DatabaseDataLake::validateSettings()
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "`region` setting cannot be empty for Glue Catalog. "
                 "Please specify 'SETTINGS region=<region_name>' in the CREATE DATABASE query");
+
+        if (!settings[DatabaseDataLakeSetting::aws_role_arn].value.empty()
+            && (settings[DatabaseDataLakeSetting::aws_access_key_id].value.empty()
+                || settings[DatabaseDataLakeSetting::aws_secret_access_key].value.empty()))
+        {
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Using `aws_role_arn` without user-supplied `aws_access_key_id` and `aws_secret_access_key` "
+                "in Glue catalog settings is not allowed");
+        }
     }
     else if (settings[DatabaseDataLakeSetting::warehouse].value.empty())
     {

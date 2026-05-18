@@ -45,6 +45,13 @@ struct S3Settings
         const std::string & scheme,
         bool validate_settings);
 
+    /// Keep non-credential client/request settings from the top-level `s3`
+    /// config, but do not let user-controlled URLs inherit server credentials
+    /// unless an endpoint-scoped config matched the URL.
+    void resetCredentialsForUserControlledRequest();
+
+    void copyCredentialsFrom(const S3Settings & settings);
+
     void updateIfChanged(const S3Settings & settings);
 
     void serialize(WriteBuffer & os, ContextPtr) const;

@@ -15,6 +15,25 @@ namespace Setting
     extern const SettingsBool s3_validate_request_settings;
 }
 
+namespace S3AuthSetting
+{
+    extern const S3AuthSettingsString access_key_id;
+    extern const S3AuthSettingsString google_adc_client_id;
+    extern const S3AuthSettingsString google_adc_client_secret;
+    extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsString http_client;
+    extern const S3AuthSettingsString metadata_service;
+    extern const S3AuthSettingsString request_token_path;
+    extern const S3AuthSettingsString role_arn;
+    extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsString service_account;
+    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsBool no_sign_request;
+    extern const S3AuthSettingsBool use_environment_credentials;
+    extern const S3AuthSettingsBool use_insecure_imds_request;
+}
+
 namespace S3RequestSetting
 {
     extern const S3RequestSettingsBool read_only;
@@ -52,6 +71,43 @@ void S3Settings::loadFromConfigForObjectStorage(
     request_settings[S3RequestSetting::min_bytes_for_seek] = config.getUInt64(config_prefix + ".min_bytes_for_seek", S3::DEFAULT_MIN_BYTES_FOR_SEEK);
     request_settings[S3RequestSetting::list_object_keys_size] = config.getUInt64(config_prefix + ".list_object_keys_size", S3::DEFAULT_LIST_OBJECT_KEYS_SIZE);
     request_settings[S3RequestSetting::objects_chunk_size_to_delete] = config.getUInt(config_prefix + ".objects_chunk_size_to_delete", S3::DEFAULT_OBJECTS_CHUNK_SIZE_TO_DELETE);
+}
+
+void S3Settings::resetCredentialsForUserControlledRequest()
+{
+    auth_settings[S3AuthSetting::access_key_id] = "";
+    auth_settings[S3AuthSetting::secret_access_key] = "";
+    auth_settings[S3AuthSetting::session_token] = "";
+    auth_settings[S3AuthSetting::use_environment_credentials] = false;
+    auth_settings[S3AuthSetting::use_insecure_imds_request] = false;
+    auth_settings[S3AuthSetting::role_arn] = "";
+    auth_settings[S3AuthSetting::role_session_name] = "";
+    auth_settings[S3AuthSetting::http_client] = "";
+    auth_settings[S3AuthSetting::service_account] = "";
+    auth_settings[S3AuthSetting::metadata_service] = "";
+    auth_settings[S3AuthSetting::request_token_path] = "";
+    auth_settings[S3AuthSetting::google_adc_client_id] = "";
+    auth_settings[S3AuthSetting::google_adc_client_secret] = "";
+    auth_settings[S3AuthSetting::google_adc_refresh_token] = "";
+}
+
+void S3Settings::copyCredentialsFrom(const S3Settings & settings)
+{
+    auth_settings[S3AuthSetting::access_key_id] = settings.auth_settings[S3AuthSetting::access_key_id];
+    auth_settings[S3AuthSetting::secret_access_key] = settings.auth_settings[S3AuthSetting::secret_access_key];
+    auth_settings[S3AuthSetting::session_token] = settings.auth_settings[S3AuthSetting::session_token];
+    auth_settings[S3AuthSetting::no_sign_request] = settings.auth_settings[S3AuthSetting::no_sign_request];
+    auth_settings[S3AuthSetting::use_environment_credentials] = settings.auth_settings[S3AuthSetting::use_environment_credentials];
+    auth_settings[S3AuthSetting::use_insecure_imds_request] = settings.auth_settings[S3AuthSetting::use_insecure_imds_request];
+    auth_settings[S3AuthSetting::role_arn] = settings.auth_settings[S3AuthSetting::role_arn];
+    auth_settings[S3AuthSetting::role_session_name] = settings.auth_settings[S3AuthSetting::role_session_name];
+    auth_settings[S3AuthSetting::http_client] = settings.auth_settings[S3AuthSetting::http_client];
+    auth_settings[S3AuthSetting::service_account] = settings.auth_settings[S3AuthSetting::service_account];
+    auth_settings[S3AuthSetting::metadata_service] = settings.auth_settings[S3AuthSetting::metadata_service];
+    auth_settings[S3AuthSetting::request_token_path] = settings.auth_settings[S3AuthSetting::request_token_path];
+    auth_settings[S3AuthSetting::google_adc_client_id] = settings.auth_settings[S3AuthSetting::google_adc_client_id];
+    auth_settings[S3AuthSetting::google_adc_client_secret] = settings.auth_settings[S3AuthSetting::google_adc_client_secret];
+    auth_settings[S3AuthSetting::google_adc_refresh_token] = settings.auth_settings[S3AuthSetting::google_adc_refresh_token];
 }
 
 

@@ -213,6 +213,18 @@ private:
             throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
         return outcome.GetResult().GetContents();
     }
+
+    void applyEndpointCredentialsOrReset(S3Settings & s3_settings, const S3::URI & s3_uri, const ContextPtr & context, bool ignore_user)
+    {
+        if (auto endpoint_settings = context->getStorageS3Settings().getSettings(
+                s3_uri.uri.toString(), context->getUserName(), ignore_user))
+        {
+            s3_settings.updateIfChanged(*endpoint_settings);
+            return;
+        }
+
+        s3_settings.resetCredentialsForUserControlledRequest();
+    }
 }
 
 
@@ -258,11 +270,7 @@ BackupReaderS3::BackupReaderS3(
 {
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
-    if (auto endpoint_settings = context_->getStorageS3Settings().getSettings(
-            s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
-    {
-        s3_settings.updateIfChanged(*endpoint_settings);
-    }
+    applyEndpointCredentialsOrReset(s3_settings, s3_uri, context_, /*ignore_user=*/is_internal_backup);
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
@@ -359,11 +367,7 @@ BackupWriterS3::BackupWriterS3(
 {
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
-    if (auto endpoint_settings = context_->getStorageS3Settings().getSettings(
-            s3_uri.uri.toString(), context_->getUserName(), /*ignore_user=*/is_internal_backup))
-    {
-        s3_settings.updateIfChanged(*endpoint_settings);
-    }
+    applyEndpointCredentialsOrReset(s3_settings, s3_uri, context_, /*ignore_user=*/is_internal_backup);
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
