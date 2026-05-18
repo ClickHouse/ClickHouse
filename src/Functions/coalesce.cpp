@@ -106,32 +106,33 @@ public:
         if (arguments.empty())
             return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
 
+        /// Mirror `executeImpl`'s filter: skip `Nothing`/`Null` arguments and stop at
+        /// the first argument that cannot be NULL. Strip `Nullable` from all but the
+        /// last surviving argument — the last one keeps its `Nullable` so the result
+        /// inherits its nullability (matching the legacy DSL).
         DataTypes filtered_types;
         filtered_types.reserve(arguments.size());
-        bool stopped_at_non_nullable = false;
         for (const auto & arg : arguments)
         {
             if (arg.type->onlyNull())
                 continue;
+            filtered_types.push_back(arg.type);
             if (!canContainNull(*arg.type))
-            {
-                filtered_types.push_back(arg.type);
-                stopped_at_non_nullable = true;
                 break;
-            }
-            filtered_types.push_back(removeNullable(arg.type));
         }
 
         if (filtered_types.empty())
             return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
 
-        DataTypePtr supertype = use_variant_as_common_type
+        for (size_t i = 0; i + 1 < filtered_types.size(); ++i)
+            filtered_types[i] = removeNullable(filtered_types[i]);
+
+        if (filtered_types.size() == 1)
+            return filtered_types[0];
+
+        return use_variant_as_common_type
             ? getLeastSupertypeOrVariant(filtered_types)
             : getLeastSupertype(filtered_types);
-
-        if (stopped_at_non_nullable)
-            return supertype;
-        return makeNullable(supertype);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
