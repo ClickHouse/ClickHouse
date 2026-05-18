@@ -122,47 +122,40 @@ bool readStat(pid_t pid, UInt64 & utime_us, UInt64 & stime_us) noexcept
         return false;
 
 #if defined(OS_LINUX)
-    try
-    {
-        const std::string path = "/proc/" + std::to_string(pid) + "/stat";
-        std::ifstream in(path);
-        if (!in.is_open())
-            return false;
-
-        std::string line;
-        if (!std::getline(in, line))
-            return false;
-
-        /// `comm` (field 2) is parenthesised and may contain spaces and even
-        /// parentheses, so locate the last ')' to anchor parsing.
-        auto close_paren = line.rfind(')');
-        if (close_paren == std::string::npos || close_paren + 1 >= line.size())
-            return false;
-
-        std::istringstream rest(line.substr(close_paren + 1));
-        std::string token;
-        /// After comm, the next token is state (field 3). utime is field 14,
-        /// stime is field 15 — skip 11 fields to land on utime.
-        for (int i = 0; i < 11; ++i)
-        {
-            if (!(rest >> token))
-                return false;
-        }
-        UInt64 utime_ticks = 0;
-        UInt64 stime_ticks = 0;
-        if (!(rest >> utime_ticks))
-            return false;
-        if (!(rest >> stime_ticks))
-            return false;
-
-        utime_us = ticksToMicroseconds(utime_ticks);
-        stime_us = ticksToMicroseconds(stime_ticks);
-        return true;
-    }
-    catch (...)
-    {
+    const std::string path = "/proc/" + std::to_string(pid) + "/stat";
+    std::ifstream in(path);
+    if (!in.is_open())
         return false;
+
+    std::string line;
+    if (!std::getline(in, line))
+        return false;
+
+    /// `comm` (field 2) is parenthesised and may contain spaces and even
+    /// parentheses, so locate the last ')' to anchor parsing.
+    auto close_paren = line.rfind(')');
+    if (close_paren == std::string::npos || close_paren + 1 >= line.size())
+        return false;
+
+    std::istringstream rest(line.substr(close_paren + 1));
+    std::string token;
+    /// After comm, the next token is state (field 3). utime is field 14,
+    /// stime is field 15 — skip 11 fields to land on utime.
+    for (int i = 0; i < 11; ++i)
+    {
+        if (!(rest >> token))
+            return false;
     }
+    UInt64 utime_ticks = 0;
+    UInt64 stime_ticks = 0;
+    if (!(rest >> utime_ticks))
+        return false;
+    if (!(rest >> stime_ticks))
+        return false;
+
+    utime_us = ticksToMicroseconds(utime_ticks);
+    stime_us = ticksToMicroseconds(stime_ticks);
+    return true;
 #else
     return false;
 #endif
@@ -176,32 +169,25 @@ bool readPeakRss(pid_t pid, UInt64 & bytes) noexcept
         return false;
 
 #if defined(OS_LINUX)
-    try
+    const std::string path = "/proc/" + std::to_string(pid) + "/status";
+    std::ifstream in(path);
+    if (!in.is_open())
+        return false;
+
+    std::string line;
+    while (std::getline(in, line))
     {
-        const std::string path = "/proc/" + std::to_string(pid) + "/status";
-        std::ifstream in(path);
-        if (!in.is_open())
+        if (line.compare(0, 6, "VmHWM:") != 0)
+            continue;
+
+        std::istringstream parser(line.substr(6));
+        UInt64 kib = 0;
+        if (!(parser >> kib))
             return false;
-
-        std::string line;
-        while (std::getline(in, line))
-        {
-            if (line.compare(0, 6, "VmHWM:") != 0)
-                continue;
-
-            std::istringstream parser(line.substr(6));
-            UInt64 kib = 0;
-            if (!(parser >> kib))
-                return false;
-            bytes = kib * 1024ULL;
-            return true;
-        }
-        return false;
+        bytes = kib * 1024ULL;
+        return true;
     }
-    catch (...)
-    {
-        return false;
-    }
+    return false;
 #else
     return false;
 #endif

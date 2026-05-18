@@ -22,7 +22,7 @@ namespace DB
   *
   * Lifecycle (all callbacks tolerate being skipped if the borrow never
   * happened, e.g. `tryBorrowObject` timed out):
-  *   recordExecuteImplStart  -- ctor implicitly starts the wall clock
+  *   ctor                    -- implicitly starts the wall clock for pool wait
   *   recordBorrowAcquired    -- tryBorrowObject returned; pid known
   *   recordInputBytes / recordOutputBytes -- IO buffers report bytes pushed
   *   recordReleased          -- ShellCommandSource cleanup, before returnObject
@@ -86,7 +86,7 @@ private:
 };
 
 
-/// Free helpers exposed for unit testing. On non-Linux platforms they are no-ops
+/// Free helpers for /proc parsing. On non-Linux platforms they are no-ops
 /// that return empty / false.
 namespace UDFProcfs
 {
