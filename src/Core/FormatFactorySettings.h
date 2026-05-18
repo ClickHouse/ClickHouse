@@ -1567,16 +1567,16 @@ Allow to write information about geo columns in parquet metadata and encode colu
     DECLARE(Map, output_format_parquet_column_field_ids, "", R"(
 Explicit Parquet `field_id` overrides for output columns, keyed by column name. Useful for producing Parquet files compatible with Apache Iceberg, which identifies columns by `field_id` rather than by name.
 
-The value of the map is a string holding a non-negative `Int32` `field_id`. IDs must be unique across the map.
+The value of the map is a non-negative `Int32` `field_id`. IDs must be unique across the map.
 
-Takes precedence over `output_format_parquet_auto_assign_field_ids` for any column that appears in the map.
+Takes precedence over `output_format_parquet_auto_assign_field_ids` for any column that appears in the map. When writing to a datalake table that provides its own column-id mapping (e.g. Iceberg), this setting must not be combined with that mapping — set it only for direct Parquet output.
 
-Example: `SET output_format_parquet_column_field_ids = {'col_a': '1', 'col_b': '2', 'col_c': '3'}`.
+Example: `SET output_format_parquet_column_field_ids = {'col_a': 1, 'col_b': 2, 'col_c': 3}`.
 )", 0) \
     DECLARE(Bool, output_format_parquet_auto_assign_field_ids, false, R"(
 When enabled, every output column is assigned a unique Parquet `field_id` automatically (sequential, starting at 1), matching the convention used by Apache Iceberg writers. Columns with an explicit override in `output_format_parquet_column_field_ids` keep the overridden value; remaining columns fill in around those overrides.
 
-Disabled by default so that existing Parquet output is unchanged.
+Disabled by default so that existing Parquet output is unchanged. Cannot be used when writing to a datalake table that provides its own column-id mapping.
 )", 0) \
     DECLARE(Bool, into_outfile_create_parent_directories, false, R"(
 Automatically create parent directories when using INTO OUTFILE if they do not already exists.

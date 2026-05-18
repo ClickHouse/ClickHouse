@@ -368,12 +368,11 @@ struct FormatSettings
         bool allow_geoparquet_parser = true;
         bool write_geometadata = true;
         size_t max_dictionary_size = 1024 * 1024;
-        /// Explicit per-column Parquet `field_id` overrides (column name -> field_id),
-        /// kept as raw strings here because `FormatSettings` is materialised on every
-        /// query (including SELECTs that don't write Parquet) and we don't want the
-        /// integer-parse failure to surface anywhere except the Parquet output path.
-        /// Validation and the string->Int32 parse happen in `ParquetBlockOutputFormat`.
-        std::vector<std::pair<String, String>> column_field_ids;
+        /// Explicit per-column Parquet `field_id` overrides (column name -> field_id).
+        /// Parsed from the `Map(String, Int32)` setting in `FormatFactory`; semantic
+        /// checks (unknown columns, duplicate ids, coverage vs. auto-assign) happen
+        /// in `ParquetBlockOutputFormat::buildColumnFieldIds`.
+        std::vector<std::pair<String, Int32>> column_field_ids;
         /// When true, every output column is assigned a unique, sequential Parquet
         /// `field_id` starting from 1 (Iceberg-style). Entries from
         /// `column_field_ids` take precedence; remaining columns fill in around them.

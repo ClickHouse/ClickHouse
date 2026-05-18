@@ -38,15 +38,15 @@ namespace
     /// Returns nullopt when the output should carry no field_ids (both overrides empty
     /// and auto-assign disabled).
     ///
-    ///   1. Every entry in `overrides` is parsed (value string -> Int32) and applied
-    ///      verbatim. Non-integer or out-of-range values and unknown columns are rejected
-    ///      so users get a clear signal when the setting drifts from the query's schema.
+    ///   1. Every entry in `overrides` is applied verbatim. Negative ids, unknown columns,
+    ///      duplicate column names and duplicate ids are rejected so users get a clear
+    ///      signal when the setting drifts from the query's schema.
     ///   2. If `auto_assign` is true, the remaining columns are given the smallest unused
-    ///      positive IDs (Iceberg writers conventionally start at 1 and go up).
-    ///   3. Duplicate IDs across overrides / auto-assigned columns are rejected.
+    ///      positive ids (Iceberg writers conventionally start at 1 and go up).
+    ///   3. If `auto_assign` is false, the override map must cover every output column.
     std::optional<std::unordered_map<String, Int64>> buildColumnFieldIds(
         const Block & header,
-        const std::vector<std::pair<String, String>> & overrides,
+        const std::vector<std::pair<String, Int32>> & overrides,
         bool auto_assign)
     {
         if (overrides.empty() && !auto_assign)
@@ -58,17 +58,11 @@ namespace
         std::unordered_map<String, Int64> result;
         std::unordered_set<Int32> used_ids;
 
-        for (const auto & [name, id_string] : overrides)
+        for (const auto & [name, id] : overrides)
         {
-            Int64 id_value = 0;
-            if (!tryParse<Int64>(id_value, id_string))
+            if (id < 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "output_format_parquet_column_field_ids value '{}' is not an integer", id_string);
-            if (id_value < 0 || id_value > std::numeric_limits<Int32>::max())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "output_format_parquet_column_field_ids value '{}' out of Int32 range", id_string);
-
-            const Int32 id = static_cast<Int32>(id_value);
+                    "output_format_parquet_column_field_ids value {} must be non-negative", id);
             if (!known_columns.contains(name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "output_format_parquet_column_field_ids references unknown column '{}'", name);
@@ -111,9 +105,20 @@ namespace
 ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, FormatFilterInfoPtr format_filter_info_)
     : IOutputFormat(header_, out_), format_settings{format_settings_}, format_filter_info(format_filter_info_)
 {
-    /// Resolve Parquet field_ids from the user-facing settings (explicit overrides and/or
-    /// the Iceberg-style auto-assign toggle). The result, if present, takes priority over
-    /// any datalake-provided mapping when building the schema.
+    const bool has_metadata_mapping = format_filter_info_ && format_filter_info_->column_mapper;
+    const bool user_set_field_ids = !format_settings.parquet.column_field_ids.empty()
+        || format_settings.parquet.auto_assign_field_ids;
+
+    /// When a datalake (e.g. Iceberg) writer hands us a column-id mapping, that mapping is
+    /// the source of truth — letting session settings override it would produce Parquet files
+    /// whose `field_id`s no longer match the table metadata, breaking subsequent reads.
+    if (has_metadata_mapping && user_set_field_ids)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "output_format_parquet_column_field_ids / output_format_parquet_auto_assign_field_ids "
+            "cannot be used when writing to a datalake table that provides its own column-id mapping");
+
+    /// Resolve Parquet `field_id`s from the user-facing settings (explicit overrides and/or
+    /// the Iceberg-style auto-assign toggle). Used only when there is no metadata mapping.
     column_field_ids = buildColumnFieldIds(
         *header_,
         format_settings.parquet.column_field_ids,
@@ -153,12 +158,10 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     options.max_dictionary_size = format_settings.parquet.max_dictionary_size;
     options.use_dictionary_encoding = options.max_dictionary_size > 0;
 
-    /// User-set field_ids take priority over any datalake-provided mapping.
-    const auto & effective_field_ids = column_field_ids
-        ? column_field_ids
-        : (format_filter_info_ && format_filter_info_->column_mapper
-            ? std::optional<std::unordered_map<String, Int64>>(format_filter_info_->column_mapper->getStorageColumnEncoding())
-            : std::nullopt);
+    /// Datalake (Iceberg) metadata mapping wins over user settings — see the check above.
+    const auto & effective_field_ids = has_metadata_mapping
+        ? std::optional<std::unordered_map<String, Int64>>(format_filter_info_->column_mapper->getStorageColumnEncoding())
+        : column_field_ids;
 
     schema = convertSchema(*header_, options, effective_field_ids);
 }
