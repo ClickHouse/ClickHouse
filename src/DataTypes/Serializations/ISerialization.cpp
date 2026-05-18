@@ -6,7 +6,6 @@
 #include <Common/Exception.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
-#include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -47,23 +46,6 @@ void throwInvalidSerializationState(const ISerialization * serialization, const 
             demangle(typeid(*serialization).name()),
             demangle(expected.name()),
             demangle(got.name()));
-}
-
-UInt128 ISerialization::getHash() const
-{
-    if (!cached_hash)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Hash is not set for serialization {}", typeid(*this).name());
-    return *cached_hash;
-}
-
-SerializationPtr ISerialization::pooled(UInt128 hash, std::function<ISerialization *()> creator)
-{
-    return SerializationObjectPool::getOrCreate(hash, [hash, c = std::move(creator)]() -> ISerialization *
-    {
-        auto * obj = c();
-        obj->cached_hash = hash;
-        return obj;
-    });
 }
 
 ISerialization::KindStack ISerialization::getKindStack(const IColumn & column)
@@ -443,11 +425,11 @@ String ISerialization::getFileNameForRenamedColumnStream(const String & name_fro
 {
     auto name_from_escaped = escapeForFileName(name_from);
     if (file_name.starts_with(name_from_escaped))
-        return escapeForFileName(name_to) + file_name.substr(0, name_from_escaped.size());
+        return escapeForFileName(name_to) + file_name.substr(name_from_escaped.size());
 
     auto nested_storage_name_escaped = escapeForFileName(Nested::extractTableName(name_from));
     if (file_name.starts_with(nested_storage_name_escaped))
-        return escapeForFileName(Nested::extractTableName(name_to)) + file_name.substr(0, nested_storage_name_escaped.size());
+        return escapeForFileName(Nested::extractTableName(name_to)) + file_name.substr(nested_storage_name_escaped.size());
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "File name {} doesn't correspond to column {}", file_name, name_from);
 }

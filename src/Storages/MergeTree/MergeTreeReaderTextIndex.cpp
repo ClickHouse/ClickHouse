@@ -6,8 +6,6 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/inplaceBlockConversions.h>
 #include <Common/logger_useful.h>
 #include <Columns/ColumnsNumber.h>
 #include <Storages/MergeTree/TextIndexCache.h>
@@ -91,83 +89,11 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     };
 
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
-
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
-    if (!condition_text.getAllSearchPatterns().empty())
-    {
-        /// Build a fallback evaluation path for when the dictionary scan is cut short
-        /// (too many pattern-matching tokens exceed text_index_like_max_postings_to_read).
-        ///
-        /// Instead of reading the indexed column by name (which fails for expression-based
-        /// indices, e.g. INDEX idx lower(text) where column_names[0] = "lower(text)" is
-        /// not a physical column), we compile each virtual column's default expression
-        /// (the original search predicate) and determine the required physical columns
-        /// from it. The fallback reader is then created for those physical columns only.
-        auto context_copy = createContextForDefaultExpressions();
-        auto combined_columns = buildCombinedColumnsForDefaultExpressions();
-
-        /// Build a header block containing all physical columns (column type only, no data).
-        /// evaluateMissingDefaults passes this to createExpressionsAnalyzer, which creates
-        /// a StorageDummy from it — StorageDummy requires at least one column, so the header
-        /// must be non-empty.
-        Block physical_header;
-        for (const auto & phys_col : storage_snapshot->metadata->getColumns().getAllPhysical())
-            physical_header.insert({phys_col.type->createColumn(), phys_col.type, phys_col.name});
-
-        NameSet fallback_columns_set;
-        for (const auto & col : columns_)
-        {
-            auto search_query = condition_text.getSearchQueryForVirtualColumn(col.name);
-            if (!search_query || search_query->patterns.empty())
-                continue;
-
-            /// Compile the virtual column's default expression (the original search predicate).
-            /// We pass a header with all physical columns so that createExpressionsAnalyzer
-            /// can build a non-empty StorageDummy (it requires at least one column).
-            NamesAndTypesList need_col{{col.name, col.type}};
-            auto dag = DB::evaluateMissingDefaults(physical_header, need_col, combined_columns, context_copy);
-            if (!dag)
-                continue;
-
-            dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);
-            auto actions = std::make_shared<ExpressionActions>(
-                std::move(*dag), ExpressionActionsSettings(context_copy->getSettingsRef()));
-
-            /// Collect the physical columns this expression requires.
-            for (const auto & req : actions->getRequiredColumnsWithTypes())
-            {
-                if (fallback_columns_set.insert(req.name).second)
-                    fallback_columns_list.push_back(req);
-            }
-
-            fallback_expressions.emplace(col.name, std::move(actions));
-        }
-
-        if (!fallback_columns_list.empty())
-        {
-            fallback_reader = createMergeTreeReader(
-                main_reader_->data_part_info_for_read,
-                fallback_columns_list,
-                main_reader_->storage_snapshot,
-                main_reader_->storage_settings,
-                main_reader_->all_mark_ranges,
-                /*virtual_fields=*/{},
-                main_reader_->uncompressed_cache,
-                main_reader_->mark_cache,
-                /*deserialization_prefixes_cache=*/nullptr,
-                main_reader_->settings,
-                /*avg_value_size_hints=*/{},
-                /*profile_callback=*/{});
-        }
-    }
 }
 
 void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
 {
     IMergeTreeReader::updateAllMarkRanges(ranges);
-
-    if (fallback_reader)
-        fallback_reader->updateAllMarkRanges(ranges);
 
     if (granule && !ranges.empty())
     {
@@ -216,9 +142,8 @@ void MergeTreeReaderTextIndex::readGranule()
 void MergeTreeReaderTextIndex::analyzeTokensCardinality()
 {
     is_always_true.resize(columns_to_read.size(), false);
-    use_fallback.resize(columns_to_read.size(), false);
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
-    auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
+    const auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
     const auto & remaining_tokens = granule_text.getRemainingTokens();
 
     for (size_t i = 0; i < columns_to_read.size(); ++i)
@@ -227,25 +152,9 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
         auto search_query = condition_text.getSearchQueryForVirtualColumn(column.name);
 
         /// Always return true for empty needles.
-        if (search_query->tokens.empty() && search_query->patterns.empty())
+        if (search_query->tokens.empty())
         {
             is_always_true[i] = true;
-        }
-        else if (!search_query->patterns.empty())
-        {
-            if (!granule_text.canUseLikeDictionaryScan())
-            {
-                if (!fallback_reader)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "The fallback reader for patterns is not initialized.");
-
-                use_fallback[i] = true;
-            }
-            else
-            {
-                const auto & pattern_tokens = granule_text.getPatternTokensForTextQuery(*search_query);
-                for (const auto & token : pattern_tokens)
-                    useful_tokens.insert(token);
-            }
         }
         else if (search_query->direct_read_mode == TextIndexDirectReadMode::Exact)
         {
@@ -276,7 +185,6 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
 {
     const auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
     const auto & remaining_tokens = granule_text.getRemainingTokens();
-    const auto & pattern_tokens = granule_text.getPatternTokens();
 
     auto data_part = getDataPart();
     auto substream = index.index->getSubstreams()[2];
@@ -294,14 +202,6 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
     };
 
     for (const auto & [token, token_info] : remaining_tokens)
-    {
-        if (granule_text.getPostingsForRareToken(token) || !useful_tokens.contains(token))
-            continue;
-
-        large_postings_streams.emplace(token, make_stream());
-    }
-
-    for (const auto & [token, token_info] : pattern_tokens)
     {
         if (granule_text.getPostingsForRareToken(token) || !useful_tokens.contains(token))
             continue;
@@ -375,29 +275,6 @@ size_t MergeTreeReaderTextIndex::readRows(
     createEmptyColumns(res_columns);
     size_t total_marks = data_part_info_for_read->getIndexGranularity().getMarksCountWithoutFinal();
 
-    /// Ensure analyzeTokensCardinality has run (it's called lazily inside canSkipMark)
-    /// so use_fallback is known before we decide whether to pre-read the body column.
-    if (!granule && max_rows_to_read > 0)
-        canSkipMark(from_mark, current_task_last_mark);
-
-    const bool any_use_fallback = !use_fallback.empty()
-        && std::any_of(use_fallback.begin(), use_fallback.end(), [](bool b) { return b; });
-
-    /// If any column needs the fallback evaluation, read the physical columns upfront.
-    /// We pass the same mark/continue_reading/offset arguments so the fallback reader stays
-    /// in sync with the text-index reader across multiple readRows calls.
-    Block fallback_block;
-    if (any_use_fallback && fallback_reader && max_rows_to_read > 0)
-    {
-        Columns fallback_cols(fallback_columns_list.size(), nullptr);
-        fallback_reader->readRows(from_mark, current_task_last_mark, continue_reading, max_rows_to_read, rows_offset, fallback_cols);
-        size_t col_idx = 0;
-        for (const auto & col_name_type : fallback_columns_list)
-            fallback_block.insert({fallback_cols[col_idx++], col_name_type.type, col_name_type.name});
-    }
-
-    size_t fallback_offset = 0;
-
     while (read_rows < max_rows_to_read && from_mark < total_marks)
     {
         /// When the number of rows in a part is smaller than `index_granularity`,
@@ -433,15 +310,6 @@ size_t MergeTreeReaderTextIndex::readRows(
                     auto & column_data = assert_cast<ColumnUInt8 &>(column_mutable).getData();
                     column_data.resize_fill(column_mutable.size() + rows_to_read, 1);
                 }
-                else if (use_fallback[i] && !fallback_block.empty())
-                {
-                    fillColumnFallback(
-                        column_mutable,
-                        columns_to_read[i].name,
-                        fallback_block,
-                        fallback_offset,
-                        rows_to_read);
-                }
                 else
                 {
                     fillColumn(column_mutable, columns_to_read[i].name, mark_postings, from_row, rows_to_read);
@@ -452,7 +320,6 @@ size_t MergeTreeReaderTextIndex::readRows(
         ++from_mark;
         from_row += rows_to_read;
         read_rows += rows_to_read;
-        fallback_offset += rows_to_read;
     }
 
     /// Remove blocks that are no longer needed.
@@ -525,8 +392,7 @@ double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & que
             for (const auto & token : query.tokens)
             {
                 auto it = remaining_tokens.find(token);
-                /// Same reasoning as above: absent from sparse index ⟹ too common ⟹ treat as all rows.
-                double token_cardinality = it == remaining_tokens.end() ? static_cast<double>(total_rows) : it->second->cardinality;
+                double token_cardinality = it == remaining_tokens.end() ? 0 : it->second->cardinality;
                 cardinality *= (1.0 - (token_cardinality / static_cast<double>(total_rows)));
             }
 
@@ -556,13 +422,14 @@ PostingsMap MergeTreeReaderTextIndex::readPostingsIfNeeded(size_t mark)
 
     auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
     const auto & remaining_tokens = granule_text.getRemainingTokens();
-    const auto & pattern_tokens = granule_text.getPatternTokens();
     PostingsMap result;
 
-    const auto read_postings_if_needed = [&](const String & token, const TokenPostingsInfoPtr & token_info)
+    for (const auto & [token, token_info] : remaining_tokens)
     {
         if (!useful_tokens.contains(token))
-            return;
+        {
+            continue;
+        }
 
         auto token_postings = readPostingsBlocksForToken(token, *token_info, *rows_range);
 
@@ -579,15 +446,7 @@ PostingsMap MergeTreeReaderTextIndex::readPostingsIfNeeded(size_t mark)
 
             result[token] = std::move(union_posting);
         }
-    };
-
-    /// Read postings for exact token matches
-    for (const auto & [token, token_info] : remaining_tokens)
-        read_postings_if_needed(token, token_info);
-
-    /// Read postings for pattern-matched tokens
-    for (const auto & [token, token_info] : pattern_tokens)
-        read_postings_if_needed(token, token_info);
+    }
 
     return result;
 }
@@ -624,26 +483,19 @@ void MergeTreeReaderTextIndex::cleanupPostingsBlocks(const RowsRange & range)
 {
     const auto & granule_text = assert_cast<const MergeTreeIndexGranuleText &>(*granule);
     const auto & remaining_tokens = granule_text.getRemainingTokens();
-    const auto & pattern_tokens = granule_text.getPatternTokens();
 
-    const auto cleanup_postings = [&](const String & token, const TokenPostingsInfoPtr & token_info)
+    for (const auto & [token, token_info] : remaining_tokens)
     {
         auto it = postings_blocks.find(token);
         if (it == postings_blocks.end())
-            return;
+            continue;
 
         for (size_t i = 0; i < token_info->ranges.size(); ++i)
         {
             if (!token_info->ranges[i].intersects(range))
                 it->second.erase(i);
         }
-    };
-
-    for (const auto & [token, token_info] : remaining_tokens)
-        cleanup_postings(token, token_info);
-
-    for (const auto & [token, token_info] : pattern_tokens)
-        cleanup_postings(token, token_info);
+    }
 }
 
 /// Finds the union of the posting lists for range [granule_offset, granule_offset + num_rows)
@@ -746,68 +598,15 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
     size_t old_size = column_data.size();
     column_data.resize_fill(old_size + num_rows, 0);
 
-    if (!search_query->patterns.empty())
-    {
-        const auto & granule_text = assert_cast<const MergeTreeIndexGranuleText &>(*granule);
-        std::vector<String> matched_tokens;
-        for (const auto & token : granule_text.getPatternTokensForTextQuery(*search_query))
-            if (postings.contains(token))
-                matched_tokens.push_back(String(token));
-
-        if (!matched_tokens.empty())
-            applyPostingsAny(column, postings, indices_buffer, matched_tokens, old_size, row_offset, num_rows);
-
-        return;
-    }
-
-    if (postings.empty())
+    if (postings.empty() || search_query->tokens.empty())
         return;
 
-    if (search_query->tokens.empty())
-    {
-        return;
-    }
-    else if (search_query->search_mode == TextSearchMode::Any)
-    {
+    if (search_query->search_mode == TextSearchMode::Any)
         applyPostingsAny(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);
-    }
     else if (search_query->search_mode == TextSearchMode::All)
-    {
         applyPostingsAll(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);
-    }
     else
-    {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->search_mode);
-    }
-}
-
-void MergeTreeReaderTextIndex::fillColumnFallback(
-    IColumn & column,
-    const String & column_name,
-    const Block & physical_block,
-    size_t offset,
-    size_t num_rows) const
-{
-    auto it = fallback_expressions.find(column_name);
-    chassert(it != fallback_expressions.end());
-
-    /// Build a block slice for this granule: cut [offset, offset + num_rows) from each physical column.
-    Block slice;
-    for (const auto & col : physical_block)
-        slice.insert({col.column->cut(offset, num_rows), col.type, col.name});
-
-    /// Execute the virtual column's default expression (the original search predicate) on the slice.
-    /// After execution the block contains both the physical columns and the computed virtual column.
-    it->second->execute(slice);
-
-    const auto & result_col = slice.getByName(column_name);
-    const auto & result_data = assert_cast<const ColumnUInt8 &>(*result_col.column).getData();
-    chassert(result_data.size() == num_rows);
-
-    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
-    const size_t old_size = column_data.size();
-    column_data.resize(old_size + num_rows);
-    memcpy(&column_data[old_size], result_data.data(), num_rows);
 }
 
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(

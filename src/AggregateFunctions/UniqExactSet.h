@@ -170,9 +170,7 @@ public:
                         }
                     };
 
-                    const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS);
-                    for (size_t i = 0; i < max_threads_to_enqueue
-                         && next_bucket_to_merge->load(std::memory_order_relaxed) < rhs.NUM_BUCKETS; ++i)
+                    for (size_t i = 0; i < std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS); ++i)
                         runner.enqueueAndKeepTrack(thread_func, Priority{});
                 }
                 catch (...)

@@ -269,7 +269,7 @@ PageCacheCell::~PageCacheCell()
     std::optional<MemoryTrackerBlockerInThread> blocker;
     if (!m_temporary)
         blocker.emplace();
-    JemallocCacheAllocator().free(m_data, m_size);
+    JemallocCacheAllocator().free(m_data, m_size, DEFAULT_AIO_FILE_BLOCK_SIZE);
 }
 
 }
