@@ -23,7 +23,7 @@
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/BufferedScatterByHashTransform.h>
+#include <Processors/Transforms/BufferedShardByHashTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
@@ -556,35 +556,35 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         return;
     }
 
-    /// Sharded aggregation: scatter rows by hash(key) % N, then aggregate per shard independently.
+    /// Sharded aggregation: shard rows by hash(key) % N, then aggregate per shard independently.
     if (use_sharded_aggregation)
     {
         const size_t num_shards = transform_params->params.max_threads;
         const size_t num_streams = pipeline.getNumStreams();
 
-        /// Resolve key column positions for BufferedScatterByHashTransform.
+        /// Resolve key column positions for BufferedShardByHashTransform.
         auto stream_header = pipeline.getSharedHeader();
         ColumnNumbers key_columns;
         key_columns.reserve(transform_params->params.keys.size());
         for (const auto & key : transform_params->params.keys)
             key_columns.push_back(stream_header->getPositionByName(key));
 
-        /// Add BufferedScatterByHashTransform to each stream (1 input -> num_shards outputs).
+        /// Add BufferedShardByHashTransform to each stream (1 input -> num_shards outputs).
         /// After this the pipeline has num_streams * num_shards output ports.
         pipeline.transform(
             [&, stream_header, key_columns](OutputPortRawPtrs ports)
             {
-                Processors scatters;
+                Processors shard_transforms;
                 for (auto * port : ports)
                 {
-                    auto scatter = std::make_shared<BufferedScatterByHashTransform>(stream_header, num_shards, key_columns);
-                    connect(*port, scatter->getInputs().front());
-                    scatters.push_back(scatter);
+                    auto shard_transform = std::make_shared<BufferedShardByHashTransform>(stream_header, num_shards, key_columns);
+                    connect(*port, shard_transform->getInputs().front());
+                    shard_transforms.push_back(shard_transform);
                 }
-                return scatters;
+                return shard_transforms;
             });
 
-        /// For each shard, collect outputs from all scatter transforms and merge them with Resize(num_streams -> 1).
+        /// For each shard, collect outputs from all sharding transforms and merge them with Resize(num_streams -> 1).
         /// After this the pipeline has num_shards output ports (one per shard).
         if (num_streams > 1)
         {
@@ -596,13 +596,13 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
                     for (size_t shard = 0; shard < num_shards; ++shard)
                     {
-                        /// Shard k from scatter i is at index: i * num_shards + shard
+                        /// Shard k from sharding transform i is at index: i * num_shards + shard
                         auto resize = std::make_shared<ResizeProcessor>(stream_header, num_streams, 1);
                         auto & resize_inputs = resize->getInputs();
                         auto input_it = resize_inputs.begin();
 
-                        /// For shard `s`, connect the `s`-th output of each BufferedScatterByHashTransform
-                        /// to this ResizeProcessor input. BufferedScatterByHashTransform routes rows by
+                        /// For shard `s`, connect the `s`-th output of each BufferedShardByHashTransform
+                        /// to this ResizeProcessor input. BufferedShardByHashTransform routes rows by
                         /// `hash(group_by_key) % num_shards`, so identical GROUP BY keys always
                         /// land on the same shard.
                         for (size_t stream = 0; stream < num_streams; ++stream, ++input_it)

@@ -13,7 +13,7 @@
 namespace DB
 {
 
-/// Scatters input rows to N output ports by hash(key) % N.
+/// Shards input rows to N output ports by hash(key) % N.
 /// Hashes the key columns with WeakHash32 and physically splits every column with
 /// IColumn::scatter so each output chunk holds only the rows belonging to its shard.
 ///
@@ -25,12 +25,12 @@ namespace DB
 /// So each output port has a FIFO queue. When a shard's port is busy, its chunk waits in
 /// the queue and gets pushed on the next prepare()/work() cycle. This allows other shards
 /// to continue processing without waiting for the slowest one.
-class BufferedScatterByHashTransform : public IProcessor
+class BufferedShardByHashTransform : public IProcessor
 {
 public:
-    BufferedScatterByHashTransform(SharedHeader header, size_t num_shards_, ColumnNumbers key_columns_);
+    BufferedShardByHashTransform(SharedHeader header, size_t num_shards_, ColumnNumbers key_columns_);
 
-    String getName() const override { return "BufferedScatterByHashTransform"; }
+    String getName() const override { return "BufferedShardByHashTransform"; }
 
     Status prepare() override;
     void work() override;
