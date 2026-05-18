@@ -384,7 +384,8 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
     }
 
     chassert(commands.front().type == MutationCommand::Type::UPDATE);
-    auto column_to_update = commands.front().accessAst().getColumnToUpdateExpression();
+    auto handle = commands.front().accessAst();
+    const auto & column_to_update = handle.getColumnToUpdateExpression();
     for (const auto & key_name : primary_keys)
     {
         if (column_to_update.contains(key_name))

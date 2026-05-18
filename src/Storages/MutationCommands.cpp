@@ -116,32 +116,31 @@ ASTAlterCommand * MutationCommand::AccessedAst::getAlter() const
     return ast ? ast->as<ASTAlterCommand>() : nullptr;
 }
 
-ASTPtr MutationCommand::AccessedAst::getPredicate() const
+IAST * MutationCommand::AccessedAst::getPredicateImpl() const
 {
     const auto * alter = getAlter();
-    if (!alter || !alter->predicate)
-        return nullptr;
-    return alter->predicate->clone();
+    return alter ? alter->predicate : nullptr;
 }
 
-ASTPtr MutationCommand::AccessedAst::getPartition() const
+IAST * MutationCommand::AccessedAst::getPartitionImpl() const
 {
     const auto * alter = getAlter();
-    if (!alter || !alter->partition)
-        return nullptr;
-    return alter->partition->clone();
+    return alter ? alter->partition : nullptr;
 }
 
-std::unordered_map<String, ASTPtr> MutationCommand::AccessedAst::getColumnToUpdateExpression() const
+const std::unordered_map<String, ASTPtr> & MutationCommand::AccessedAst::getColumnToUpdateExpression() const &
 {
-    std::unordered_map<String, ASTPtr> result;
+    if (cached_column_to_update.has_value())
+        return *cached_column_to_update;
+
+    auto & result = cached_column_to_update.emplace();
     const auto * alter = getAlter();
     if (!alter || !alter->update_assignments)
         return result;
     for (const auto & child : alter->update_assignments->children)
     {
         const auto & assignment = child->as<ASTAssignment &>();
-        result.emplace(assignment.column_name, assignment.expression()->clone());
+        result.emplace(assignment.column_name, assignment.expression());
     }
     return result;
 }

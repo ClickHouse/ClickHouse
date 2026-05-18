@@ -154,14 +154,15 @@ FirstNonDeterministicFunctionResult findFirstNonDeterministicFunction(const Muta
             if (finder_data.result.nondeterministic_function_name)
                 return finder_data.result;
 
-            auto predicate_ast = handle.getPredicate();
+            ASTPtr predicate_ast(handle.getPredicate());
             FirstNonDeterministicFunctionFinder(finder_data).visit(predicate_ast);
             return finder_data.result;
         }
 
         case MutationCommand::DELETE:
         {
-            auto predicate_ast = command.accessAst().getPredicate();
+            auto handle = command.accessAst();
+            ASTPtr predicate_ast(handle.getPredicate());
             FirstNonDeterministicFunctionFinder(finder_data).visit(predicate_ast);
             return finder_data.result;
         }

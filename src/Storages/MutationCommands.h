@@ -63,12 +63,19 @@ struct MutationCommand
     /// On construction it parses `ast_text` once (using the command's
     /// stored parser limits). The parsed AST is exposed for reading or
     /// modifying. On destruction the (possibly modified) AST is formatted
-    /// back into the owning `MutationCommand::ast_text`, so any changes
-    /// made through the handle persist.
+    /// back into the owning `MutationCommand::ast_text`, so all changes
+    /// accumulated through one handle are written back in a single pass.
     ///
     /// All AST sub-fields (predicate, partition, update assignments) are
     /// accessed through the same handle, so a single `accessAst` call is
-    /// enough to read several parts of the command without re-parsing.
+    /// enough to read or mutate several parts of the command without
+    /// re-parsing.
+    ///
+    /// The sub-tree accessors return references / raw pointers into the
+    /// AST owned by this handle - they are valid only while the handle
+    /// is alive. To make accidental dangling impossible, these accessors
+    /// are only enabled on lvalue handles: callers must bind the result
+    /// of `accessAst` to a named variable first.
     ///
     /// The handle is move-only. If constructed from a const `MutationCommand`
     /// it does not write anything back on destruction.
@@ -85,27 +92,46 @@ struct MutationCommand
 
         explicit operator bool() const { return ast != nullptr; }
 
+        /// Smart-pointer copy of the parsed alter command. Safe to use even
+        /// after the handle is destroyed (it keeps a reference of its own).
         ASTPtr getAstPtr() const { return ast; }
-        ASTAlterCommand * operator->() const { return getAlter(); }
-        ASTAlterCommand & operator*() const { return *getAlter(); }
 
-        /// Clones of the corresponding sub-trees of the parsed alter command.
-        /// They are returned by value (cloned) so they remain valid after
-        /// the handle is destroyed.
-        ASTPtr getPredicate() const;
-        ASTPtr getPartition() const;
-        std::unordered_map<String, ASTPtr> getColumnToUpdateExpression() const;
+        /// Lvalue-only access to the parsed alter command. The returned
+        /// reference / pointer is tied to *this and dangles once this is
+        /// destroyed.
+        ASTAlterCommand * operator->() const & { return getAlter(); }
+        ASTAlterCommand * operator->() const && = delete;
+        ASTAlterCommand & operator*() const & { return *getAlter(); }
+        ASTAlterCommand & operator*() const && = delete;
+
+        /// References to the corresponding sub-trees of the parsed alter
+        /// command. They share storage with the AST owned by this handle -
+        /// the handle must outlive the returned pointers / reference. The
+        /// rvalue overloads are deleted so a temporary handle cannot leak a
+        /// dangling reference.
+        IAST * getPredicate() const & { return getPredicateImpl(); }
+        IAST * getPredicate() const && = delete;
+
+        IAST * getPartition() const & { return getPartitionImpl(); }
+        IAST * getPartition() const && = delete;
+
+        const std::unordered_map<String, ASTPtr> & getColumnToUpdateExpression() const &;
+        const std::unordered_map<String, ASTPtr> & getColumnToUpdateExpression() const && = delete;
 
     private:
         MutationCommand * owner;
         ASTPtr ast;
+        mutable std::optional<std::unordered_map<String, ASTPtr>> cached_column_to_update;
+
         ASTAlterCommand * getAlter() const;
+        IAST * getPredicateImpl() const;
+        IAST * getPartitionImpl() const;
     };
 
     /// Parses `ast_text` once and returns a RAII handle. Modifications made
-    /// through the handle are serialized back into `ast_text` when the handle
-    /// is destroyed. Use the same handle to read multiple sub-trees and avoid
-    /// re-parsing for each one.
+    /// through the handle are accumulated in memory and serialized back into
+    /// `ast_text` when the handle is destroyed, so one handle = one parse
+    /// followed by one write-back.
     AccessedAst accessAst();
     AccessedAst accessAst() const;
 

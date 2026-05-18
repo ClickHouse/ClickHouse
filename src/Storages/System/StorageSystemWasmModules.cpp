@@ -143,7 +143,7 @@ static std::optional<ModuleDeleteFilter> getModuleDeleteFilterFromAst(const Muta
 
     const auto & command = commands.front();
     auto handle = command.accessAst();
-    auto predicate = handle.getPredicate();
+    auto * predicate = handle.getPredicate();
     if (command.type != MutationCommand::DELETE || handle.getPartition() || !predicate)
         return {};
 

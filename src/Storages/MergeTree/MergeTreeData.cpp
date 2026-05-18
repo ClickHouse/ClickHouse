@@ -7649,7 +7649,8 @@ std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
 
     for (const auto & command : commands)
     {
-        auto partition = command.accessAst().getPartition();
+        auto handle = command.accessAst();
+        auto * partition = handle.getPartition();
         if (!partition)
         {
             affected_partition_ids.clear();
@@ -7657,7 +7658,7 @@ std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
         }
 
         affected_partition_ids.insert(
-            getPartitionIDFromQuery(partition, query_context)
+            getPartitionIDFromQuery(ASTPtr(partition), query_context)
         );
     }
 
@@ -10121,9 +10122,9 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                     throw_exception(mutation_name, action, "column", command.column_name);
 
                 auto handle = mutation_command.accessAst();
-                if (auto predicate = handle.getPredicate())
+                if (auto * predicate = handle.getPredicate())
                 {
-                    auto query_tree = buildQueryTree(predicate, local_context);
+                    auto query_tree = buildQueryTree(ASTPtr(predicate), local_context);
                     auto identifiers = collectIdentifiersFullNames(query_tree);
 
                     if (identifiers.contains(command.column_name))

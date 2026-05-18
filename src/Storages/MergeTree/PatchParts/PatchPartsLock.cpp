@@ -309,7 +309,7 @@ UpdateAffectedColumns getUpdateAffectedColumns(const MutationCommands & commands
     for (const auto & command : commands)
     {
         auto handle = command.accessAst();
-        auto query_tree = buildQueryTree(handle.getPredicate(), context);
+        auto query_tree = buildQueryTree(ASTPtr(handle.getPredicate()), context);
         auto identifiers = collectIdentifiersFullNames(query_tree);
         std::move(identifiers.begin(), identifiers.end(), std::inserter(res.used, res.used.end()));
 
