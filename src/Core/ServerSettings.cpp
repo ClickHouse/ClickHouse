@@ -686,7 +686,7 @@ namespace
     ```
     )", 0) \
     DECLARE(UInt64, max_replicated_table_num_to_warn, 3000lu, R"(
-    If the number of attached replicated tables exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+    If the number of attached replicated tables exceeds the specified value, ClickHouse server will add warning messages to `system.warnings` table.
 
     **Example**
 

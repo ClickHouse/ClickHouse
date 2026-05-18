@@ -13,17 +13,17 @@ CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_9 (id
 CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_10 (id Int32, str String) Engine=Memory;
 CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_11 (id Int32, str String) Engine=Memory;
 
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_1 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_2 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_3 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_4 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_5 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_6 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_7 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_8 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_9 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_10 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_11 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_replicated_num_to_warn_1 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_replicated_num_to_warn_1 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_replicated_num_to_warn_1 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_replicated_num_to_warn_1 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_replicated_num_to_warn_1 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_replicated_num_to_warn_1 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_replicated_num_to_warn_1 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_replicated_num_to_warn_1 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_replicated_num_to_warn_1 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_replicated_num_to_warn_1 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_replicated_num_to_warn_1 (id Int32, str String) Engine=ReplicatedMergeTree('/clickhouse/test_max_num_to_warn_02931/{database}/{table}', '1') ORDER BY id;
 
 CREATE VIEW IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_view_1 AS SELECT * FROM test_max_num_to_warn_02931.test_max_num_to_warn_1;
 CREATE VIEW IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_view_2 AS SELECT * FROM test_max_num_to_warn_02931.test_max_num_to_warn_2;
