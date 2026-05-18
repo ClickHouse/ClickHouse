@@ -1,4 +1,4 @@
-=== Test Streaming from partitioned ReplicatedMergeTree ===
+=== Test Streaming from partitioned ===
 p0-from-r1
 p1-from-r2
 p0-from-r2

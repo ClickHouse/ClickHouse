@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper, no-shared-merge-tree
+# Tags: long, zookeeper
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,7 +13,7 @@ $STREAMING_CLIENT -q "DROP TABLE IF EXISTS t_streaming_test_r2"
 $STREAMING_CLIENT -q "CREATE TABLE t_streaming_test_r1 (p UInt8, a String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04241/t_streaming_test', 'r1') ORDER BY a PARTITION BY p SETTINGS $STREAMING_TABLE_SETTINGS"
 $STREAMING_CLIENT -q "CREATE TABLE t_streaming_test_r2 (p UInt8, a String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04241/t_streaming_test', 'r2') ORDER BY a PARTITION BY p SETTINGS $STREAMING_TABLE_SETTINGS"
 
-echo "=== Test Streaming from partitioned ReplicatedMergeTree ==="
+echo "=== Test Streaming from partitioned ==="
 
 # Stream partition 0 from r1, partition 1 from r2.
 # Block numbers are assigned per partition by ZooKeeper, so each stream sees
