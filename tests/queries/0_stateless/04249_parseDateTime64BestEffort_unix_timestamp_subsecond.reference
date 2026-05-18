@@ -16,3 +16,6 @@ non-const
 parseDateTime64BestEffortUS
 2026-05-18 09:02:48.417585
 2026-05-18 09:02:48.417585845
+pre-2001 subsecond timestamps are not supported (10-digit seconds assumption)
+\N
+1970-01-01 00:00:00.000000000

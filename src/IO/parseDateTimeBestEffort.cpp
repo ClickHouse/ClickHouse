@@ -197,6 +197,12 @@ ReturnType parseDateTimeBestEffortImpl(
         {
             num_digits = readDigits(digits, sizeof(digits), in);
 
+            /// Unix timestamps with subsecond precision are matched on exact digit count, assuming a 10-digit
+            /// seconds part (timestamps on/after 2001-09-09 01:46:40 UTC). This keeps parsing unambiguous.
+            /// Without it, a 9-digit input could be a pre-2001 second timestamp or a microsecond timestamp from
+            /// 1970. The trade-off is that pre-2001 subsecond timestamps (12-digit ms, 15-digit us, 18-digit ns)
+            /// are rejected here; resolving that would require make this function aware of `scale` argument so we could
+            /// split from the right instead.
             if (num_digits == 13 && !year && !has_time)
             {
                 /// This is unix timestamp with millisecond.
