@@ -109,29 +109,57 @@ for _ in $(seq 1 60); do
     fi
 done
 
-# Trigger the bug: a CTAS reading `system.current_roles` via the replicated
-# DDL worker. With `distributed_ddl_use_initial_user_and_roles=0` (default)
-# the worker's query context has no user, so unfixed `fillData` throws
-# `LOGICAL_ERROR` and aborts the subprocess server. Both client invocations
-# silence their stderr so the parent test stderr never gets `<Fatal>` from
-# the subprocess (which would otherwise be picked up by `clickhouse-test` as
-# the test server having died).
-$CLICKHOUSE_BINARY client --host 127.0.0.1 --port "$PORT_TCP" \
-    --send_logs_level=none --query "
-        CREATE DATABASE bug
-        ENGINE = Replicated('/clickhouse/databases/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/bug', '{shard}', '{replica}');
-    " > /dev/null 2>&1
+# Trigger the bug: a CTAS reading `system.current_roles` (and a second one
+# reading `system.enabled_roles`) via the replicated DDL worker. With
+# `distributed_ddl_use_initial_user_and_roles=0` (default) the worker's
+# query context has no user, so unfixed `fillData` throws `LOGICAL_ERROR`.
+# In debug/sanitizer builds this aborts the subprocess server (SIGABRT);
+# in non-debug builds the DDL just returns the exception, in which case
+# the client still exits non-zero. Either failure mode is reported as
+# `BUG`. Both system tables exercise the modified `fillData` paths in
+# `StorageSystemCurrentRoles.cpp` and `StorageSystemEnabledRoles.cpp`.
+#
+# All client invocations silence their stderr so the parent test stderr
+# never gets `<Fatal>` from the subprocess (which would otherwise be
+# picked up by `clickhouse-test` as the shared test server having died).
+# We assert each call's exit status separately, so a query-level
+# `LOGICAL_ERROR` exception is also classified as `BUG` rather than
+# silently masked.
+
+run_in_subprocess() {
+    $CLICKHOUSE_BINARY client --host 127.0.0.1 --port "$PORT_TCP" \
+        --send_logs_level=none --query "$1" > /dev/null 2>&1
+}
+
+if ! run_in_subprocess "
+    CREATE DATABASE bug
+    ENGINE = Replicated('/clickhouse/databases/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/bug', '{shard}', '{replica}');
+"; then
+    echo "BUG"
+    exit 0
+fi
 
 # Default `distributed_ddl_output_mode` makes the client wait for the
 # replicated DDL to finish, so an abort in the DDL worker manifests as a
 # connection drop on this query rather than asynchronously a few hundred
 # milliseconds later. That removes timing dependence on the post-CTAS probe.
-$CLICKHOUSE_BINARY client --host 127.0.0.1 --port "$PORT_TCP" \
-    --send_logs_level=none --query "
-        CREATE TABLE bug.t (role_name String, with_admin_option UInt8, is_default UInt8)
-        ENGINE = MergeTree() ORDER BY role_name
-        AS SELECT * FROM system.current_roles;
-    " > /dev/null 2>&1
+if ! run_in_subprocess "
+    CREATE TABLE bug.t_current (role_name String, with_admin_option UInt8, is_default UInt8)
+    ENGINE = MergeTree() ORDER BY role_name
+    AS SELECT * FROM system.current_roles;
+"; then
+    echo "BUG"
+    exit 0
+fi
+
+if ! run_in_subprocess "
+    CREATE TABLE bug.t_enabled (role_name String, with_admin_option UInt8, is_current UInt8, is_default UInt8)
+    ENGINE = MergeTree() ORDER BY role_name
+    AS SELECT * FROM system.enabled_roles;
+"; then
+    echo "BUG"
+    exit 0
+fi
 
 # Probe: if the subprocess server still responds, the fix is in place.
 # A short wait gives any straggler DDL coordination on testkeeper time to
