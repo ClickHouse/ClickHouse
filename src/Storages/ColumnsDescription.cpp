@@ -1247,16 +1247,20 @@ void collectAliasDependenciesFromAST(
     throw Exception(ErrorCodes::CYCLIC_ALIASES, "Cyclic alias detected in column DEFAULT expressions: {}", message);
 }
 
+NameSet getDefaultColumnNames(const ASTPtr & default_expr_list, const ColumnsDescription & columns);
+
 /**
- * Build a dependency graph between all aliases present in the DEFAULT expression list.
+ * Build a dependency graph between aliases in the DEFAULT expression list and existing column default expressions.
  * The additional alias map is required because typed defaults are rewritten into temporary
  * aliases (e.g. `a_tmp_alter...`) before the analyzer runs, so we must consider every alias,
  * not only user-visible column names, to detect cycles that pass through those synthetic nodes.
  */
 void detectRecursiveDefaultCycles(
     const ASTPtr & expression_list,
-    const NameSet & default_column_names)
+    const ColumnsDescription & columns,
+    ContextPtr context)
 {
+    const NameSet default_column_names = getDefaultColumnNames(expression_list, columns);
     if (!expression_list || default_column_names.empty())
         return;
 
@@ -1266,8 +1270,8 @@ void detectRecursiveDefaultCycles(
 
     NameSet alias_names;
     std::unordered_map<String, ASTPtr> alias_to_expression;
-    alias_names.reserve(list_node->children.size());
-    alias_to_expression.reserve(list_node->children.size());
+    alias_names.reserve(list_node->children.size() + columns.size());
+    alias_to_expression.reserve(list_node->children.size() + columns.size());
     for (const auto & child : list_node->children)
     {
         if (!child)
@@ -1282,6 +1286,15 @@ void detectRecursiveDefaultCycles(
 
         alias_names.insert(alias);
         alias_to_expression.emplace(alias, child);
+    }
+
+    for (const ColumnDescription & column : columns)
+    {
+        if (!column.default_desc.expression)
+            continue;
+
+        alias_names.insert(column.name);
+        alias_to_expression.try_emplace(column.name, cloneAndExpandColumnDefaultExpression(column.default_desc, columns, context));
     }
 
     enum class Color
@@ -1445,7 +1458,7 @@ std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default
             throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Select query is not allowed in columns DEFAULT expression");
 
     expandColumnMatchersImpl(default_expr_list, columns, context);
-    detectRecursiveDefaultCycles(default_expr_list, getDefaultColumnNames(default_expr_list, columns));
+    detectRecursiveDefaultCycles(default_expr_list, columns, context);
 
     try
     {

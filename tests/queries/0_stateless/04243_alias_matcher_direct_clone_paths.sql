@@ -29,7 +29,7 @@ ORDER BY a;
 
 INSERT INTO alias_matcher_direct_clone_prewhere (a) VALUES (1), (2);
 SELECT b FROM alias_matcher_direct_clone_prewhere PREWHERE b != '' ORDER BY a
-SETTINGS allow_experimental_analyzer = 0;
+SETTINGS allow_experimental_analyzer = 0, optimize_respect_aliases = 1;
 
 CREATE TABLE alias_matcher_direct_clone_merge_src
 (
