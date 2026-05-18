@@ -22,8 +22,7 @@ struct MatchHandler
     /// predicate: returns true if this message should be handled
     std::function<bool(const google::protobuf::Message &)> predicate;
     /// handler: mutates or processes the message
-    /// returns true if the message was consumed and recursion into its children should stop
-    std::function<bool(google::protobuf::Message &)> handler;
+    std::function<void(google::protobuf::Message &)> handler;
 };
 
 class QueryOracle
@@ -48,11 +47,10 @@ private:
     std::uniform_int_distribution<uint64_t> rows_dist;
     bool other_steps_success = true;
     bool can_test_oracle_result;
-    bool can_test_success;
     bool measure_performance;
-    bool compare_explain = false;
+    bool compare_explain;
 
-    std::unordered_set<String> found_tables;
+    std::unordered_set<uint32_t> found_tables;
     DB::Strings nsettings;
 
     void iterateQuery(google::protobuf::Message & message, const std::vector<MatchHandler> & rules);
@@ -60,20 +58,6 @@ private:
     void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq2);
     void
     generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const;
-
-    static void reattachSteps(
-        RandomGenerator & rg,
-        StatementGenerator & gen,
-        const SQLBase & obj,
-        SQLObject sobject,
-        std::vector<SQLQuery> & intermediate_queries);
-    static void backupRestoreSteps(
-        RandomGenerator & rg,
-        StatementGenerator & gen,
-        FuzzConfig & fc,
-        const SQLBase & obj,
-        SQLObject sobject,
-        std::vector<SQLQuery> & intermediate_queries);
 
 public:
     explicit QueryOracle(FuzzConfig & ffc)
@@ -85,7 +69,6 @@ public:
                                                 : std::filesystem::temp_directory_path())
         , rows_dist(fc.min_insert_rows, fc.max_insert_rows)
         , can_test_oracle_result(fc.compare_success_results)
-        , can_test_success(fc.compare_success_results)
         , measure_performance(fc.measure_performance)
     {
     }
@@ -98,28 +81,6 @@ public:
     /// Correctness query oracle
     void generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
     void generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
-
-    /// Roundtrip oracle: verifies that encoding/encryption functions compose correctly.
-    /// Query 1: SELECT count() FROM <from_clause> WHERE col IS NOT NULL  (baseline)
-    /// Query 2: SELECT count() FROM <from_clause> WHERE roundtrip(col) = col
-    /// Both queries must return the same value, catching any roundtrip failures.
-    void generateRoundtripOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2);
-
-    /// COUNT(DISTINCT expr) consistency oracle
-    /// Query 1: SELECT COUNT(DISTINCT expr) FROM <from_clause>
-    /// Query 2: SELECT COUNT(*) FROM (SELECT DISTINCT expr FROM <from_clause>) AS sub
-    /// Both forms must return the same integer (different code paths: uniqExact vs DISTINCT + COUNT).
-    void generateCountDistinctFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
-    void generateCountDistinctSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
-
-    /// Row policy correctness oracle.
-    /// Picks an existing catalog row policy (with a stored USING predicate) on a suitable table.
-    /// Query 1 (sq1):  SELECT count() FROM db.t [FINAL] INTO OUTFILE ...
-    ///                  (FuzzLoop sends "EXECUTE AS buzzhouse_oracle_user" first → policy active)
-    /// Query 2 (sq2):  SELECT count() FROM db.t [FINAL] WHERE pred INTO OUTFILE ...
-    ///                  (run as admin after reconnect → explicit WHERE equivalent to policy filter)
-    /// Both counts must be equal.  No setup or teardown needed — the policy already exists.
-    void generateRowPolicyOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2);
 
     /// Dump and read table oracle
     void dumpTableContent(
@@ -136,17 +97,6 @@ public:
         SQLTable & t,
         DumpOracleStrategy strategy,
         bool test_content,
-        std::vector<SQLQuery> & intermediate_queries);
-
-    /// Dump and read dictionary/view oracle (REATTACH / BACKUP_RESTORE)
-    void dumpDictionaryContent(RandomGenerator & rg, StatementGenerator & gen, const SQLDictionary & d, SQLQuery & sq1, SQLQuery & sq2);
-    void dumpViewContent(RandomGenerator & rg, const SQLView & v, SQLQuery & sq1, SQLQuery & sq2);
-    void dumpObjectIntermediateSteps(
-        RandomGenerator & rg,
-        StatementGenerator & gen,
-        const SQLBase & obj,
-        SQLObject sobject,
-        DumpOracleStrategy strategy,
         std::vector<SQLQuery> & intermediate_queries);
 
     /// Run query with different settings oracle

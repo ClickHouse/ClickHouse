@@ -35,7 +35,7 @@ namespace Jemalloc
 void purgeArenas()
 {
     Stopwatch watch;
-    je_mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
+    mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
     ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
     ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, watch.elapsedMicroseconds());
 }
@@ -44,7 +44,7 @@ void checkProfilingEnabled()
 {
     bool active = true;
     size_t active_size = sizeof(active);
-    je_mallctl("opt.prof", &active, &active_size, nullptr, 0);
+    mallctl("opt.prof", &active, &active_size, nullptr, 0);
 
     if (!active)
         throw Exception(
@@ -58,10 +58,10 @@ std::string_view flushProfile(const char * file_prefix)
     checkProfilingEnabled();
     char * prefix_buffer;
     size_t prefix_size = sizeof(prefix_buffer);
-    int n = je_mallctl("opt.prof_prefix", &prefix_buffer, &prefix_size, nullptr, 0); // NOLINT
+    int n = mallctl("opt.prof_prefix", &prefix_buffer, &prefix_size, nullptr, 0); // NOLINT
     if (!n && std::string_view(prefix_buffer) != "jeprof")
     {
-        je_mallctl("prof.dump", nullptr, nullptr, nullptr, 0);
+        mallctl("prof.dump", nullptr, nullptr, nullptr, 0);
         return getLastFlushProfileForThread();
     }
 
@@ -69,7 +69,7 @@ std::string_view flushProfile(const char * file_prefix)
     std::string profile_dump_path = fmt::format("{}.{}.{}.heap", file_prefix, getpid(), profile_counter.fetch_add(1));
     const auto * profile_dump_path_str = profile_dump_path.c_str();
 
-    je_mallctl("prof.dump", nullptr, nullptr, &profile_dump_path_str, sizeof(profile_dump_path_str)); // NOLINT
+    mallctl("prof.dump", nullptr, nullptr, &profile_dump_path_str, sizeof(profile_dump_path_str)); // NOLINT
     return getLastFlushProfileForThread();
 }
 
@@ -85,30 +85,13 @@ void setMaxBackgroundThreads(size_t max_threads)
 
 void setProfileSamplingRate(size_t lg_prof_sample)
 {
-    /// `prof.lg_sample` / `prof.reset` only exist on jemalloc builds with `JEMALLOC_PROF`.
-    /// When absent, treat the call as a no-op (just like the other `prof.*` setters in `setup`)
-    /// instead of asserting via the strict `getValue`.
-    if (size_t current = 0; !tryGetValue("prof.lg_sample", current) || current == lg_prof_sample)
+    size_t current = getValue<size_t>("prof.lg_sample");
+    if (current == lg_prof_sample)
         return;
 
-    je_mallctl("prof.reset", nullptr, nullptr, &lg_prof_sample, sizeof(lg_prof_sample));
+    mallctl("prof.reset", nullptr, nullptr, &lg_prof_sample, sizeof(lg_prof_sample));
 }
 
-
-std::string getStats()
-{
-    std::string result;
-    auto callback = [](void * opaque, const char * data)
-    {
-        auto * str = static_cast<std::string *>(opaque);
-        str->append(data);
-    };
-    size_t epoch = 1;
-    size_t sz = sizeof(epoch);
-    je_mallctl("epoch", &epoch, &sz, &epoch, sz);
-    je_malloc_stats_print(callback, &result, nullptr);
-    return result;
-}
 
 namespace
 {
@@ -136,7 +119,7 @@ void jemallocAllocationTracker(const void * ptr, size_t /*size*/, void ** backtr
                 .memory_blocked_context = MemoryTrackerBlockerInThread::getLevel(),
             });
     }
-    catch (...) // Ok: non-critical profiling, tracked via ProfileEvents
+    catch (...)
     {
         ProfileEvents::increment(ProfileEvents::JemallocFailedAllocationSampleTracking);
     }
@@ -159,7 +142,7 @@ void jemallocDeallocationTracker(const void * ptr, unsigned usize)
                 .memory_blocked_context = MemoryTrackerBlockerInThread::getLevel(),
             });
     }
-    catch (...) // Ok: non-critical profiling, tracked via ProfileEvents
+    catch (...)
     {
         ProfileEvents::increment(ProfileEvents::JemallocFailedDeallocationSampleTracking);
     }
@@ -226,27 +209,13 @@ void verifySetup(
             &Poco::Logger::get("Jemalloc"), "Jemalloc settings mismatch: `{}` differs between BaseDaemon and server settings", setting);
     };
 
-    /// `prof.*` mallctls (including `prof.thread_active_init` / `prof.lg_sample`) only exist when
-    /// jemalloc was built with `JEMALLOC_PROF`. When absent, `setup` could not have applied the
-    /// corresponding settings either (the writes were no-ops), so there is nothing to verify and
-    /// reading a missing MIB must not abort debug builds.
-    if (bool current_thread_active_init = false; getThreadProfileInitMib().tryGetValue(current_thread_active_init)
-        && current_thread_active_init != enable_global_profiler)
+    if (getThreadProfileInitMib().getValue() != enable_global_profiler)
         log_warning(config_enable_global_profiler);
-    /// `background_thread` and `max_background_threads` mallctls only exist when jemalloc was built
-    /// with `JEMALLOC_BACKGROUND_THREAD` (e.g. not on macOS). When unavailable, `je_mallctl` returns
-    /// `ENOENT` and any `setBackgroundThreads`/`setMaxBackgroundThreads` calls in `setup` were no-ops,
-    /// so we have nothing to verify and must not compare against an uninitialized read.
-    if (bool current_background_thread = false; tryGetValue("background_thread", current_background_thread)
-        && current_background_thread != enable_background_threads)
+    if (getValue<bool>("background_thread") != enable_background_threads)
         log_warning(config_enable_background_threads);
-    if (size_t current_max_background_threads = 0; max_background_threads_num
-        && tryGetValue("max_background_threads", current_max_background_threads)
-        && current_max_background_threads != max_background_threads_num)
+    if (max_background_threads_num && getValue<size_t>("max_background_threads") != max_background_threads_num)
         log_warning(config_max_background_threads_num);
-    if (size_t current_lg_sample = 0; profiler_sampling_rate != default_profiler_sampling_rate
-        && tryGetValue("prof.lg_sample", current_lg_sample)
-        && current_lg_sample != profiler_sampling_rate)
+    if (profiler_sampling_rate != default_profiler_sampling_rate && getValue<size_t>("prof.lg_sample") != profiler_sampling_rate)
         log_warning(config_profiler_sampling_rate);
     if (collect_global_profiles_in_trace_log != collect_global_profile_samples_in_trace_log)
         log_warning(config_collect_global_profile_samples_in_trace_log);
@@ -270,28 +239,6 @@ std::string_view getLastFlushProfileForThread()
     return last_flush_profile;
 }
 
-}
-
-ScopedJemallocThreadArena::ScopedJemallocThreadArena(unsigned arena_idx)
-{
-    if (arena_idx == 0)
-        return;
-
-    /// `thread.arena` returns the previous value via the read pointer and sets the new one.
-    size_t previous_size = sizeof(previous_arena);
-    int err = je_mallctl("thread.arena", &previous_arena, &previous_size, &arena_idx, sizeof(arena_idx));
-    /// We deliberately don't throw here: if jemalloc rejects the switch (e.g. arena doesn't exist),
-    /// fall back to the previous behavior of allocating in the default arena. The cost is fragmentation,
-    /// not correctness.
-    active = (err == 0);
-}
-
-ScopedJemallocThreadArena::~ScopedJemallocThreadArena()
-{
-    if (!active)
-        return;
-
-    je_mallctl("thread.arena", nullptr, nullptr, &previous_arena, sizeof(previous_arena));
 }
 
 }

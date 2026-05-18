@@ -75,7 +75,8 @@ def test_initiator_user_in_ddl(started_cluster):
         )
         node.restart_clickhouse()
 
-    node1.query(query, user="test")
+    error = node1.query_and_get_error(query, user="test")
+    assert "Not enough privileges" not in error
 
     for node in all_nodes:
         node.replace_in_config(

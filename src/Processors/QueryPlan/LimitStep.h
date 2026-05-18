@@ -24,7 +24,6 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     size_t getLimit() const { return limit; }
-    size_t getOffset() const { return offset; }
 
     size_t getLimitForSorting() const
     {
@@ -35,7 +34,6 @@ public:
     }
 
     bool withTies() const { return with_ties; }
-    bool alwaysReadTillEnd() const { return always_read_till_end; }
 
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }

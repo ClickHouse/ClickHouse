@@ -5,6 +5,7 @@
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
 
+#include <DataTypes/Serializations/ISerialization.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TreeRewriter.h>
@@ -20,6 +21,7 @@ namespace DB
 
 class ASTFunction;
 class Context;
+class IFunction;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -31,22 +33,12 @@ class MergeTreeSetIndex;
 /// * push down NOT to leaf nodes
 /// * remove aliases and re-generate function names
 /// * remove unneeded functions (e.g. materialize)
-/// * normalize `.null` boolean inputs to comparisons with zero for the listed subcolumn names
 struct ActionsDAGWithInversionPushDown
 {
     std::optional<ActionsDAG> dag;
     const ActionsDAG::Node * predicate = nullptr;
 
-    /// When `null_subcolumns_to_normalize` is non-null and non-empty, INPUT nodes whose name
-    /// appears in the set are rewritten from a bare UInt8 boolean into an explicit comparison
-    /// with zero (`equals`/`notEquals`) within predicate context. This lets `KeyCondition`
-    /// treat the `.null` subcolumn as a ranged key column. The caller is responsible for
-    /// ensuring every entry is a genuine `.null` subcolumn of a Nullable column (not a user
-    /// column that happens to be named like one).
-    explicit ActionsDAGWithInversionPushDown(
-        const ActionsDAG::Node * predicate_,
-        const ContextPtr & context,
-        const NameSet * null_subcolumns_to_normalize = nullptr);
+    explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context);
 };
 
 
@@ -79,7 +71,7 @@ public:
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false,
-        bool skip_analysis_ = false); /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
+        bool skip_analysis_ = false); /// Toggled by `use_primary_key` setting. Useful for testing.
 
     struct BloomFilterData
     {

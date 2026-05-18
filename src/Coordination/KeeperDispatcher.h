@@ -9,7 +9,6 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <functional>
-#include <unordered_set>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
@@ -20,10 +19,6 @@
 
 namespace DB
 {
-/// Callback invoked by setResponse and finishSession to deliver responses to clients.
-/// Must be safe for concurrent invocation: setResponse (from responseThread) and
-/// finishSession (from dead session cleaner) may invoke copies of the same callback
-/// concurrently for the same session.
 using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)>;
 
 /// Highlevel wrapper for ClickHouse Keeper.
@@ -42,9 +37,6 @@ private:
 
     /// More than 1k updates is definitely misconfiguration.
     ClusterUpdateQueue cluster_update_queue{1000};
-
-    mutable std::mutex live_sessions_mutex;
-    std::unordered_set<int64_t> live_sessions;
 
     mutable std::mutex session_to_response_callback_mutex;
     /// These two maps looks similar, but serves different purposes.
@@ -75,7 +67,7 @@ private:
 
     KeeperConnectionStats keeper_stats;
 
-    KeeperConfigurationPtr server_config;
+    KeeperConfigurationAndSettingsPtr configuration_and_settings;
 
     LoggerPtr log;
 
@@ -85,10 +77,6 @@ private:
     KeeperSnapshotManagerS3 snapshot_s3;
 
     KeeperContextPtr keeper_context;
-
-    /// Flag to signal TCP handlers that they should close connections.
-    /// Set before the full shutdown() to allow handlers to exit promptly.
-    std::atomic<bool> shutting_down{false};
 
     /// Thread put requests to raft
     void requestThread();
@@ -141,7 +129,7 @@ public:
     /// (So e.g. we can't remove session ID from this map when the session is closed.)
     std::unordered_map<SessionAndXID, KeeperRequestsForSessions, SessionAndXIDHash> read_request_queue;
 
-    /// Just allocate some objects, real initialization is done by `initialize`
+    /// Just allocate some objects, real initialization is done by `intialize method`
     KeeperDispatcher();
 
     /// Call shutdown
@@ -170,12 +158,6 @@ public:
     /// Process reconfiguration 4LW command: rcfg, it's another option to update cluster configuration
     Poco::JSON::Object::Ptr reconfigureClusterFromReconfigureCommand(Poco::JSON::Object::Ptr reconfig_command);
 
-    /// Signal TCP handlers to close connections before the full shutdown.
-    void signalShutdown() { shutting_down.store(true, std::memory_order_relaxed); }
-
-    /// Returns true if signalShutdown() was called.
-    bool isShuttingDown() const { return shutting_down.load(std::memory_order_relaxed); }
-
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();
 
@@ -184,11 +166,13 @@ public:
     /// Put request to ClickHouse Keeper
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64);
 
+    /// Put local read request to ClickHouse Keeper
+    bool putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
+
     /// Get new session ID
     int64_t getSessionID(int64_t session_timeout_ms);
 
-    /// Register session and subscribe for responses with callback.
-    /// The callback must be safe for concurrent invocation — see ZooKeeperResponseCallback.
+    /// Register session and subscribe for responses with callback
     void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
 
     /// Call if we don't need any responses for this session no more (session was expired)
@@ -251,9 +235,9 @@ public:
         return *server->getKeeperStateMachine();
     }
 
-    const KeeperConfigurationPtr & getKeeperConfiguration() const
+    const KeeperConfigurationAndSettingsPtr & getKeeperConfigurationAndSettings() const
     {
-        return server_config;
+        return configuration_and_settings;
     }
 
     const KeeperContextPtr & getKeeperContext() const
