@@ -836,7 +836,17 @@
                 </div>`;
         }
 
+        /// Monotonic generation counter for `profileQuery`. The user can pick a new query at any time
+        /// (auto-select on `loadQueries`, picker change, etc.) and several `profileQuery` calls can
+        /// overlap. Each call captures its generation on entry and, after every `await`, checks that
+        /// it is still the latest before mutating the DOM. Older calls bail silently so a slower
+        /// earlier call cannot overwrite the graph with stale data for a no-longer-selected query.
+        let profileGeneration = 0;
+
         async function profileQuery(queryId) {
+            const myGen = ++profileGeneration;
+            const isStale = () => myGen !== profileGeneration;
+
             clearError();
             const graphEl = document.getElementById('graph');
             const textEl = document.getElementById('selected-query-text');
@@ -847,8 +857,10 @@
             let queryText;
             try {
                 queryText = await fetchQueryText(queryId);
+                if (isStale()) return;
                 if (!queryText) throw new Error(`No query text found in system.query_log for query_id=${queryId}`);
             } catch (e) {
+                if (isStale()) return;
                 renderStepError('fetch query text from system.query_log', e);
                 return;
             }
@@ -866,14 +878,17 @@
             } catch (e) {
                 console.warn('SYSTEM FLUSH LOGS failed (continuing):', e.message);
             }
+            if (isStale()) return;
 
             let dot;
             try {
                 dot = await fetchDotGraph(queryText);
+                if (isStale()) return;
                 if (!dot || !dot.includes('digraph')) {
                     throw new Error('EXPLAIN PIPELINE returned no DOT graph. Output:\n' + dot.slice(0, 500));
                 }
             } catch (e) {
+                if (isStale()) return;
                 renderStepError('EXPLAIN PIPELINE graph=1', e);
                 return;
             }
@@ -881,15 +896,18 @@
             let profile;
             try {
                 profile = await fetchProfileData(queryId);
+                if (isStale()) return;
             } catch (e) {
+                if (isStale()) return;
                 renderStepError('read system.processors_profile_log', e);
                 return;
             }
 
             try {
                 const enriched = enrichDot(dot, profile);
-                await renderDot(enriched, profile);
+                await renderDot(enriched, profile, isStale);
             } catch (e) {
+                if (isStale()) return;
                 renderStepError('render DOT with Viz.js', e);
             }
         }
@@ -904,15 +922,17 @@
             return vizInstance;
         }
 
-        async function renderDot(dot, profile) {
+        async function renderDot(dot, profile, isStale = () => false) {
             const graphEl = document.getElementById('graph');
             const viz = await getViz();
+            if (isStale()) return;
             let svg;
             try {
                 svg = viz.renderSVGElement(dot);
             } catch (e) {
                 throw new Error('Graphviz rendering failed: ' + e.message);
             }
+            if (isStale()) return;
             graphEl.innerHTML = '';
             graphEl.appendChild(svg);
             attachNodeTooltips(svg, profile);
