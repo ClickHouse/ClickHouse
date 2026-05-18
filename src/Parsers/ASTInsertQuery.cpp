@@ -19,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_USAGE_OF_INPUT;
+    extern const int BAD_ARGUMENTS;
 }
 
 String ASTInsertQuery::getDatabase() const
@@ -148,6 +149,11 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
         compression = child;
         children.push_back(compression);
     }
+
+    /// `formatImpl` falls through to the `chassert(table); table->format(...)` path when no other target is set.
+    /// Require at least one valid target so deserialized AST cannot crash on formatting.
+    if (!table_function && !table_id && !table)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`InsertQuery` must specify at least one of 'table_function', non-empty 'table_id', or 'table' during AST JSON deserialization");
 }
 
 void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
