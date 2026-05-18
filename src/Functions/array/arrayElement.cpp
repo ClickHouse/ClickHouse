@@ -19,6 +19,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <utility>
 
 namespace DB
 {
@@ -28,6 +29,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ILLEGAL_INDEX;
 extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
 }
 
@@ -160,6 +162,10 @@ private:
      *  However, optimizations are possible.
      */
     ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+
+    /** For a string, get character at the specified index.
+     */
+    static ColumnPtr executeString(const ColumnsWithTypeAndName & arguments, size_t input_rows_count);
 
     using Offsets = ColumnArray::Offsets;
 
@@ -2102,6 +2108,223 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
 }
 
 template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::executeString(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
+{
+    const ColumnPtr & column_string = arguments[0].column;
+    const ColumnPtr & column_index = arguments[1].column;
+
+    auto try_get_char_position = [&](StringRef str, Int64 index, UInt64 & position) -> bool
+    {
+        if (index == 0)
+            throw Exception(ErrorCodes::ILLEGAL_INDEX, "Index 0 is not valid for string subscript (indices start from 1)");
+
+        if (str.size == 0)
+            throw Exception(ErrorCodes::ILLEGAL_INDEX, "Cannot access character in empty string");
+
+        const UInt64 length = str.size;
+
+        if (index > 0)
+        {
+            const UInt64 idx = static_cast<UInt64>(index);
+            if (idx > length)
+                throw Exception(ErrorCodes::ILLEGAL_INDEX,
+                    "String index {} is out of bounds for string of length {}", index, length);
+
+            position = idx - 1;
+            return true;
+        }
+
+        const UInt64 idx = static_cast<UInt64>(-(index + 1)) + 1;
+        if (idx > length)
+            throw Exception(ErrorCodes::ILLEGAL_INDEX,
+                "String index {} is out of bounds for string of length {} (negative index too large)", index, length);
+
+        position = length - idx;
+        return true;
+    };
+
+    auto append_char_or_empty = [&](ColumnString & result, StringRef str, Int64 index)
+    {
+        UInt64 position = 0;
+        try_get_char_position(str, index, position);
+        result.insertData(str.data + position, 1);
+    };
+
+    auto get_char_at_index = [&](StringRef str, Int64 index) -> String
+    {
+        UInt64 position = 0;
+        try_get_char_position(str, index, position);
+        return String(str.data + position, 1);
+    };
+
+    auto get_slice_position = [&](StringRef str, Int64 index, const char* position_name) -> UInt64
+    {
+        if (index == 0)
+            throw Exception(ErrorCodes::ILLEGAL_INDEX,
+                "Index 0 is not valid for string slice {} (indices start from 1)", position_name);
+
+        if (str.size == 0)
+            throw Exception(ErrorCodes::ILLEGAL_INDEX, "Cannot slice empty string");
+
+        const UInt64 length = str.size;
+
+        if (index > 0)
+        {
+            const UInt64 idx = static_cast<UInt64>(index);
+            if (idx > length)
+                throw Exception(ErrorCodes::ILLEGAL_INDEX,
+                    "String slice {} index {} is out of bounds for string of length {}", position_name, index, length);
+
+            return idx - 1;
+        }
+        else  // negative index
+        {
+            const UInt64 idx = static_cast<UInt64>(-(index + 1)) + 1;
+            if (idx > length)
+                throw Exception(ErrorCodes::ILLEGAL_INDEX,
+                    "String slice {} index {} is out of bounds for string of length {} (negative index too large)",
+                    position_name, index, length);
+
+            return length - idx;
+        }
+    };
+
+    auto append_slice_or_empty = [&](ColumnString & result, StringRef str, Int64 start, Int64 end)
+    {
+        UInt64 start_position = get_slice_position(str, start, "start");
+        UInt64 end_position = get_slice_position(str, end, "end");
+
+        if (end_position < start_position)
+            throw Exception(ErrorCodes::ILLEGAL_INDEX,
+                "String slice start index {} is greater than end index {} (after conversion to 0-based: start={}, end={})",
+                start, end, start_position, end_position);
+
+        result.insertData(str.data + start_position, end_position - start_position + 1);
+    };
+
+    auto get_slice_or_empty = [&](StringRef str, Int64 start, Int64 end) -> String
+    {
+        UInt64 start_position = get_slice_position(str, start, "start");
+        UInt64 end_position = get_slice_position(str, end, "end");
+
+        if (end_position < start_position)
+            throw Exception(ErrorCodes::ILLEGAL_INDEX,
+                "String slice start index {} is greater than end index {} (after conversion to 0-based: start={}, end={})",
+                start, end, start_position, end_position);
+
+        return String(str.data + start_position, end_position - start_position + 1);
+    };
+
+    auto ensure_valid_tuple_size = [](const ColumnTuple & tuple_column)
+    {
+        if (tuple_column.tupleSize() != 2)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Tuple index for function '{}' must contain exactly two elements",
+                FunctionArrayElement<mode>::name);
+    };
+
+    auto append_tuple_slices = [&](auto && string_accessor, const ColumnTuple & tuple_column, ColumnString & result)
+    {
+        ensure_valid_tuple_size(tuple_column);
+        const IColumn & start_column = tuple_column.getColumn(0);
+        const IColumn & end_column = tuple_column.getColumn(1);
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+            append_slice_or_empty(result, string_accessor(row), start_column.getInt(row), end_column.getInt(row));
+    };
+
+    auto extract_const_tuple = [&](const ColumnConst & tuple_const) -> std::pair<Int64, Int64>
+    {
+        const auto & tuple_data = assert_cast<const ColumnTuple &>(tuple_const.getDataColumn());
+        ensure_valid_tuple_size(tuple_data);
+        const IColumn & start_column = tuple_data.getColumn(0);
+        const IColumn & end_column = tuple_data.getColumn(1);
+        return {start_column.getInt(0), end_column.getInt(0)};
+    };
+
+    if (const auto * col = checkAndGetColumn<ColumnString>(column_string.get()))
+    {
+        if (const auto * tuple_column = checkAndGetColumn<ColumnTuple>(column_index.get()))
+        {
+            auto col_res = ColumnString::create();
+            auto & res_column = assert_cast<ColumnString &>(*col_res);
+            append_tuple_slices([&](size_t row) { return col->getDataAt(row); }, *tuple_column, res_column);
+            return col_res;
+        }
+
+        if (const auto * tuple_const = checkAndGetColumnConst<ColumnTuple>(column_index.get()))
+        {
+            auto [start_value, end_value] = extract_const_tuple(*tuple_const);
+            auto col_res = ColumnString::create();
+            auto & res_column = assert_cast<ColumnString &>(*col_res);
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+                append_slice_or_empty(res_column, col->getDataAt(i), start_value, end_value);
+
+            return col_res;
+        }
+
+        auto col_res = ColumnString::create();
+        auto & res_column = assert_cast<ColumnString &>(*col_res);
+
+        if (const auto * column_index_const = checkAndGetColumn<ColumnConst>(column_index.get()))
+        {
+            const Int64 index_value = column_index_const->getInt(0);
+            for (size_t i = 0; i < input_rows_count; ++i)
+                append_char_or_empty(res_column, col->getDataAt(i), index_value);
+        }
+        else
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+                append_char_or_empty(res_column, col->getDataAt(i), column_index->getInt(i));
+        }
+
+        return col_res;
+    }
+
+    if (const auto * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
+    {
+        const StringRef str_ref = col_const->getDataAt(0);
+
+        if (const auto * tuple_const = checkAndGetColumnConst<ColumnTuple>(column_index.get()))
+        {
+            auto [start_value, end_value] = extract_const_tuple(*tuple_const);
+            const String result_value = get_slice_or_empty(str_ref, start_value, end_value);
+            return DataTypeString().createColumnConst(input_rows_count, result_value);
+        }
+
+        if (const auto * tuple_column = checkAndGetColumn<ColumnTuple>(column_index.get()))
+        {
+            auto col_res = ColumnString::create();
+            auto & res_column = assert_cast<ColumnString &>(*col_res);
+            append_tuple_slices([&](size_t) { return str_ref; }, *tuple_column, res_column);
+            return col_res;
+        }
+
+        if (const auto * column_index_const = checkAndGetColumn<ColumnConst>(column_index.get()))
+        {
+            const Int64 index_value = column_index_const->getInt(0);
+            const String result_value = get_char_at_index(str_ref, index_value);
+            return DataTypeString().createColumnConst(input_rows_count, result_value);
+        }
+
+        auto col_res = ColumnString::create();
+        auto & res_column = assert_cast<ColumnString &>(*col_res);
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+            append_char_or_empty(res_column, str_ref, column_index->getInt(i));
+
+        return col_res;
+    }
+
+    throw Exception(
+        ErrorCodes::ILLEGAL_COLUMN,
+        "Illegal column {} of first argument of function arrayElement for string subscript",
+        arguments[0].column->getName());
+}
+
+template <ArrayElementExceptionMode mode>
 String FunctionArrayElement<mode>::getName() const
 {
     return name;
@@ -2116,12 +2339,38 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
         return is_null_mode && value_type->canBeInsideNullable() ? makeNullable(value_type) : value_type;
     }
 
+    /// Support for string subscript operator
+    if (isString(arguments[0]))
+    {
+        if (isNativeInteger(arguments[1]))
+            return std::make_shared<DataTypeString>();
+
+        if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(arguments[1].get()))
+        {
+            const auto & tuple_elements = tuple_type->getElements();
+            if (tuple_elements.size() == 2)
+            {
+                const auto left_type = removeNullable(tuple_elements[0]);
+                const auto right_type = removeNullable(tuple_elements[1]);
+
+                if (isNativeInteger(left_type) && isNativeInteger(right_type))
+                    return std::make_shared<DataTypeString>();
+            }
+        }
+
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Second argument for function '{}' must be integer or tuple(start, end), got '{}' instead",
+            getName(),
+            arguments[1]->getName());
+    }
+
     const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
     if (!array_type)
     {
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "First argument for function '{}' must be array, got '{}' instead",
+            "First argument for function '{}' must be array or string, got '{}' instead",
             getName(),
             arguments[0]->getName());
     }
@@ -2148,6 +2397,10 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
 
     if (col_map || col_const_map)
         return executeMap(arguments, result_type, input_rows_count);
+
+    /// Support for string subscript operator
+    if (isString(arguments[0].type))
+        return executeString(arguments, input_rows_count);
 
     /// Check nullability.
     bool is_array_of_nullable = false;
