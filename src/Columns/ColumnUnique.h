@@ -147,7 +147,13 @@ public:
 
     void forEachSubcolumnRecursively(IColumn::RecursiveColumnCallback callback) const override
     {
-        callback(*column_holder);
+        /// Mirror the guard in `forEachSubcolumn`: when `is_nullable`, `column_holder`
+        /// is shared with `nested_column_nullable` by design (see `createNullMask`), so
+        /// its `use_count` is `>= 2`. Exposing it here would make `IColumn::mutate`'s deep
+        /// `chassert(sub.use_count() == 1)` walk fire on an invariant `ColumnUnique`
+        /// maintains internally.
+        if (!is_nullable)
+            callback(*column_holder);
         column_holder->forEachSubcolumnRecursively(callback);
     }
 
