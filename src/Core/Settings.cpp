@@ -5433,7 +5433,7 @@ Threshold for compaction data files in iceberg.
     DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 10_GiB, R"(
 Threshold for compaction data files in iceberg.
 )", 0) \
-    DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(Expand commentComment on line R5383Resolved
+    DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
 Threshold for compaction data files in iceberg.
 )", 0) \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
