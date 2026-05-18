@@ -253,9 +253,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             }
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_offset"}, size_tp.get()));
         }
-        else if (
-            t.isAnyS3Engine() || t.isAnyAzureEngine() || t.isAnyDeltaLakeEngine() || t.isAnyIcebergEngine() || t.isFileEngine()
-            || t.isURLEngine())
+        else if (t.isAnyS3Engine() || t.isAnyAzureEngine() || t.isAnyLakeEngine() || t.isFileEngine() || t.isURLEngine())
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_path"}, string_tp.get()));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_file"}, string_tp.get()));
@@ -980,6 +978,18 @@ void StatementGenerator::generateMergeTreeEngineDetails(
     {
         generateTableKey(rg, rel, b, false, te->mutable_partition_by());
     }
+    /// TODO re-enable this once https://github.com/ClickHouse/ClickHouse/issues/104963 is fixed
+    if (!entries.empty() && rg.nextSmallNumber() < 1)
+    {
+        TableKey * ukey = te->mutable_unique_key();
+        const uint32_t ncols = rg.randomInt<uint32_t>(1, std::min<uint32_t>(static_cast<uint32_t>(entries.size()), UINT32_C(3)));
+
+        std::shuffle(entries.begin(), entries.end(), rg.generator);
+        for (uint32_t i = 0; i < ncols; i++)
+        {
+            columnPathRef(entries[i], ukey->add_exprs()->mutable_expr());
+        }
+    }
 
     const int npkey = te->primary_key().exprs_size();
     if (npkey && !b.is_deterministic && rg.nextSmallNumber() < 5)
@@ -1410,7 +1420,7 @@ void StatementGenerator::generateEngineDetails(
             te->add_params()->set_num(static_cast<uint32_t>(keys_limit_dist(rg.generator)));
         }
     }
-    else if (te->has_engine() && (b.isAnyIcebergEngine() || b.isAnyDeltaLakeEngine() || b.isAnyS3Engine() || b.isAnyAzureEngine()))
+    else if (te->has_engine() && (b.isAnyLakeEngine() || b.isAnyS3Engine() || b.isAnyAzureEngine()))
     {
         if (b.integration != IntegrationCall::None)
         {
@@ -1818,7 +1828,8 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         case IndexType::IDX_text: {
             String buf;
             bool has_paren = rg.nextSmallNumber() < 8;
-            static const DB::Strings tokenizerVals = {"splitByNonAlpha", "splitByString", "ngrams", "array", "sparseGrams"};
+            static const DB::Strings tokenizerVals
+                = {"splitByNonAlpha", "splitByString", "ngrams", "array", "sparseGrams", "asciiCJK", "unicodeWord"};
             const auto & nt = rg.pickRandomly(fc.tokenizers.empty() ? tokenizerVals : fc.tokenizers);
 
             buf += fmt::format("tokenizer = {}", nt);
@@ -2001,11 +2012,11 @@ void StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, SQLBase 
     chassert(this->ids.empty());
     if (b.is_deterministic && !b.is_temp && !b.isExternalDistributedEngine())
     {
-        if (!b.isMySQLEngine() && connections.hasMySQLConnection())
+        if (!b.isMySQLEngine() && connections.hasMySQLConnection() && !fc.mysql_server.value().named_collection.empty())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::MySQL));
         }
-        if (!b.isPostgreSQLEngine() && connections.hasPostgreSQLConnection())
+        if (!b.isPostgreSQLEngine() && connections.hasPostgreSQLConnection() && !fc.postgresql_server.value().named_collection.empty())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::PostgreSQL));
         }
@@ -2082,8 +2093,10 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     const bool has_tables = collectionHas<SQLTable>(hasTableOrView<SQLTable>(b));
     const bool has_views = collectionHas<SQLView>(hasTableOrView<SQLView>(b));
     const bool has_dictionaries = collectionHas<SQLDictionary>(hasTableOrView<SQLDictionary>(b));
-    const bool allow_mysql_tbl = connections.hasMySQLConnection() && (fc.engine_mask & allow_mysql) != 0;
-    const bool allow_postgresql_tbl = connections.hasPostgreSQLConnection() && (fc.engine_mask & allow_postgresql) != 0;
+    const bool allow_mysql_tbl
+        = connections.hasMySQLConnection() && !fc.mysql_server.value().named_collection.empty() && (fc.engine_mask & allow_mysql) != 0;
+    const bool allow_postgresql_tbl = connections.hasPostgreSQLConnection() && !fc.postgresql_server.value().named_collection.empty()
+        && (fc.engine_mask & allow_postgresql) != 0;
 
     if ((fc.engine_mask & allow_file) != 0)
     {
@@ -2119,13 +2132,17 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     }
     if (storage == LakeStorage::All || storage == LakeStorage::Local)
     {
-        if (format != LakeFormat::DeltaLake && (fc.engine_mask & allow_icebergLocal) != 0)
+        if (format != LakeFormat::DeltaLake && format != LakeFormat::Paimon && (fc.engine_mask & allow_icebergLocal) != 0)
         {
             this->ids.emplace_back(IcebergLocal);
         }
-        if (format != LakeFormat::Iceberg && (fc.engine_mask & allow_deltalakelocal) != 0)
+        if (format != LakeFormat::Iceberg && format != LakeFormat::Paimon && (fc.engine_mask & allow_deltalakelocal) != 0)
         {
             this->ids.emplace_back(DeltaLakeLocal);
+        }
+        if (format != LakeFormat::Iceberg && format != LakeFormat::DeltaLake && (fc.engine_mask & allow_paimonLocal) != 0)
+        {
+            this->ids.emplace_back(PaimonLocal);
         }
     }
     if (fc.allow_memory_tables && (fc.engine_mask & allow_memory) != 0)
@@ -2176,12 +2193,9 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         {
             this->ids.emplace_back(MySQL);
         }
-        if (connections.hasPostgreSQLConnection())
+        if (allow_postgresql_tbl)
         {
-            if (allow_postgresql_tbl)
-            {
-                this->ids.emplace_back(PostgreSQL);
-            }
+            this->ids.emplace_back(PostgreSQL);
             if ((fc.engine_mask & allow_materialized_postgresql) != 0)
             {
                 this->ids.emplace_back(MaterializedPostgreSQL);
@@ -2191,7 +2205,8 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
         {
             this->ids.emplace_back(SQLite);
         }
-        if (connections.hasMongoDBConnection() && (fc.engine_mask & allow_mongodb) != 0)
+        if (connections.hasMongoDBConnection() && !fc.mongodb_server.value().named_collection.empty()
+            && (fc.engine_mask & allow_mongodb) != 0)
         {
             this->ids.emplace_back(MongoDB);
         }
@@ -2211,13 +2226,17 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
             }
             if (storage == LakeStorage::All || storage == LakeStorage::S3)
             {
-                if (format != LakeFormat::DeltaLake && (fc.engine_mask & allow_icebergS3) != 0)
+                if (format != LakeFormat::DeltaLake && format != LakeFormat::Paimon && (fc.engine_mask & allow_icebergS3) != 0)
                 {
                     this->ids.emplace_back(IcebergS3);
                 }
-                if (format != LakeFormat::Iceberg && (fc.engine_mask & allow_deltalakeS3) != 0)
+                if (format != LakeFormat::Iceberg && format != LakeFormat::Paimon && (fc.engine_mask & allow_deltalakeS3) != 0)
                 {
                     this->ids.emplace_back(DeltaLakeS3);
+                }
+                if (format != LakeFormat::Iceberg && format != LakeFormat::DeltaLake && (fc.engine_mask & allow_paimonS3) != 0)
+                {
+                    this->ids.emplace_back(PaimonS3);
                 }
             }
         }
@@ -2233,13 +2252,17 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
             }
             if (storage == LakeStorage::All || storage == LakeStorage::Azure)
             {
-                if (format != LakeFormat::DeltaLake && (fc.engine_mask & allow_icebergAzure) != 0)
+                if (format != LakeFormat::DeltaLake && format != LakeFormat::Paimon && (fc.engine_mask & allow_icebergAzure) != 0)
                 {
                     this->ids.emplace_back(IcebergAzure);
                 }
-                if (format != LakeFormat::Iceberg && (fc.engine_mask & allow_deltalakeAzure) != 0)
+                if (format != LakeFormat::Iceberg && format != LakeFormat::Paimon && (fc.engine_mask & allow_deltalakeAzure) != 0)
                 {
                     this->ids.emplace_back(DeltaLakeAzure);
+                }
+                if (format != LakeFormat::Iceberg && format != LakeFormat::DeltaLake && (fc.engine_mask & allow_paimonAzure) != 0)
+                {
+                    this->ids.emplace_back(PaimonAzure);
                 }
             }
         }
@@ -2609,10 +2632,17 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
                   est->mutable_database()->set_value(sc.database);
                   est->mutable_table()->set_value(t.getBaseName());
-                  dsd->set_host(sc.server_hostname);
-                  dsd->set_port(std::to_string(sc.port));
-                  dsd->set_user(sc.user);
-                  dsd->set_password(sc.password);
+                  if (!sc.named_collection.empty())
+                  {
+                      dsd->set_named_collection(sc.named_collection);
+                  }
+                  else
+                  {
+                      dsd->set_host(sc.server_hostname);
+                      dsd->set_port(std::to_string(sc.port));
+                      dsd->set_user(sc.user);
+                      dsd->set_password(sc.password);
+                  }
                   dsd->set_source(DictionarySourceDetails::POSTGRESQL);
               }
               else if (t.isMySQLEngine() && fc.mysql_server.has_value() && rg.nextSmallNumber() < 8)
@@ -2622,10 +2652,17 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
                   est->mutable_database()->set_value(sc.database);
                   est->mutable_table()->set_value(t.getBaseName());
-                  dsd->set_host(sc.server_hostname);
-                  dsd->set_port(std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
-                  dsd->set_user(sc.user);
-                  dsd->set_password(sc.password);
+                  if (!sc.named_collection.empty())
+                  {
+                      dsd->set_named_collection(sc.named_collection);
+                  }
+                  else
+                  {
+                      dsd->set_host(sc.server_hostname);
+                      dsd->set_port(std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
+                      dsd->set_user(sc.user);
+                      dsd->set_password(sc.password);
+                  }
                   dsd->set_source(DictionarySourceDetails::MYSQL);
               }
               else if (t.isMongoDBEngine() && fc.mongodb_server.has_value() && rg.nextSmallNumber() < 8)
@@ -2635,10 +2672,17 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
 
                   est->mutable_database()->set_value(sc.database);
                   est->mutable_table()->set_value(t.getBaseName());
-                  dsd->set_host(sc.server_hostname);
-                  dsd->set_port(std::to_string(sc.port));
-                  dsd->set_user(sc.user);
-                  dsd->set_password(sc.password);
+                  if (!sc.named_collection.empty())
+                  {
+                      dsd->set_named_collection(sc.named_collection);
+                  }
+                  else
+                  {
+                      dsd->set_host(sc.server_hostname);
+                      dsd->set_port(std::to_string(sc.port));
+                      dsd->set_user(sc.user);
+                      dsd->set_password(sc.password);
+                  }
                   dsd->set_source(DictionarySourceDetails::MONGODB);
               }
               else if (t.isFileEngine() && rg.nextSmallNumber() < 8)

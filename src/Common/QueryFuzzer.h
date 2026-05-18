@@ -130,11 +130,11 @@ public:
         if (!parsed_query)
             return {};
 
-        const auto & query_ast = *parsed_query->template as<ParsedAST>();
-        if (!query_ast.table)
+        const auto * query_ast = parsed_query->template as<ParsedAST>();
+        if (!query_ast || !query_ast->table)
             return {};
 
-        auto table_name = query_ast.getTable();
+        auto table_name = query_ast->getTable();
         auto it = original_table_name_to_fuzzed.find(table_name);
         if (it == original_table_name_to_fuzzed.end())
             return {};
@@ -145,8 +145,14 @@ public:
             /// Parse query from scratch for each table instead of clone,
             /// to store proper pointers to inlined data,
             /// which are not copied during clone.
-            auto & query = queries.emplace_back(tryParseQueryForFuzzedTables<Parser>(full_query));
-            query->template as<ParsedAST>()->setTable(fuzzed_name);
+            auto query = tryParseQueryForFuzzedTables<Parser>(full_query);
+            if (!query)
+                continue;
+            auto * fuzzed_ast = query->template as<ParsedAST>();
+            if (!fuzzed_ast)
+                continue;
+            fuzzed_ast->setTable(fuzzed_name);
+            queries.emplace_back(std::move(query));
         }
 
         return queries;
@@ -238,6 +244,7 @@ private:
     void fuzzProjectionDeclaration(ASTProjectionDeclaration & projection);
     void fuzzProjectionWithSettings(ASTProjectionDeclaration & projection);
     void fuzzTableName(ASTTableExpression & table);
+    void fuzzTableFunctionName(ASTPtr & table_function);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
     void fuzzExpressionList(ASTExpressionList & expr_list);
@@ -263,6 +270,7 @@ private:
     template <typename Container>
     const auto & pickRandomly(pcg64 & rand, const Container & container)
     {
+        chassert(!container.empty());
         std::uniform_int_distribution<size_t> d{0, container.size() - 1};
         auto it = container.begin();
         std::advance(it, d(rand));

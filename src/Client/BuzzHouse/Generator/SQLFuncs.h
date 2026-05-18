@@ -1444,6 +1444,8 @@ const std::vector<CHFunction> CHTableFuncs = {
     CHFunction(SQLTableFunc::TFexecutable, 0, 0, 3, 4),
     CHFunction(SQLTableFunc::TFfile, 0, 0, 1, 5),
     CHFunction(SQLTableFunc::TFfileCluster, 0, 0, 2, 5),
+    /// `filesystem([path])` — 0 or 1 string argument, lists files under user_files or the given path.
+    CHFunction(SQLTableFunc::TFfilesystem, 0, 0, 0, 1),
     CHFunction(SQLTableFunc::TFformat, 0, 0, 2, 3),
     CHFunction(SQLTableFunc::TFfuzzJSON, 0, 0, 1, 14),
     CHFunction(SQLTableFunc::TFfuzzQuery, 0, 0, 1, 3),

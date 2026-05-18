@@ -15,6 +15,22 @@ const std::unordered_map<JoinType, std::vector<JoinConst>> StatementGenerator::j
        {J_PASTE, {}},
        {J_CROSS, {}}};
 
+bool StatementGenerator::rowPolicyForOracle(const SQLPolicy & p) const
+{
+    if (!(p.is_row && p.where_expr.has_value() && p.targets_oracle_role))
+        return false;
+    size_t siblings_targeting_oracle = 0;
+    for (const auto & [_, other] : policies)
+    {
+        if (other.is_row && other.targets_oracle_role && other.table_key == p.table_key)
+        {
+            if (++siblings_targeting_oracle > 1)
+                return false;
+        }
+    }
+    return siblings_targeting_oracle == 1;
+}
+
 StatementGenerator::StatementGenerator(
     RandomGenerator & rg, FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool supports_cloud_features_)
     : fc(fuzzc)
@@ -151,14 +167,15 @@ StatementGenerator::StatementGenerator(
               {0.02, 0.05}, /// MergeIndexUDF
               {0.01, 0.10}, /// MergeProjectionUDF
               {0.01, 0.10}, /// MergeTextIndexUDF
-              {0.01, 0.05} /// MergeIndexAnalyzeUDF
+              {0.01, 0.05}, /// MergeIndexAnalyzeUDF
+              {0.005, 0.02} /// FilesystemUDF (filesystem reads files, gate behind allow_not_deterministic)
           }},
           "SQL queries"))
     , SQLMask(static_cast<size_t>(SQLOp::SnapshotQuery) + 1, true)
     , litMask(static_cast<size_t>(LitOp::LitFraction) + 1, true)
     , expMask(static_cast<size_t>(ExpOp::LitAccurateCast) + 1, true)
     , predMask(static_cast<size_t>(PredOp::OtherExpr) + 1, true)
-    , queryMask(static_cast<size_t>(QueryOp::MergeIndexAnalyzeUDF) + 1, true)
+    , queryMask(static_cast<size_t>(QueryOp::FilesystemUDF) + 1, true)
 {
     chassert(enum8_ids.size() > enum_values.size() && enum16_ids.size() > enum_values.size());
 
@@ -1108,10 +1125,12 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
         {{desc_table,
           [&]
           {
-              const auto is_url
-                  = tableOrFunctionRef(rg, rg.pickRandomly(filterCollection<SQLTable>(attached_tables)), true, dt->mutable_tof());
+              const auto & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+              const auto is_url = tableOrFunctionRef(rg, t, true, dt->mutable_tof());
               UNUSED(is_url);
               this->entries.clear();
+              /// TEMPORARY is only valid for plain table names, not table functions
+              dt->set_temporary(dt->tof().has_est() && t.get().is_temp && rg.nextBool());
           }},
          {desc_view,
           [&]
@@ -2593,6 +2612,9 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         {3, [&] { sc->set_start_views(true); }},
         {8 * has_refreshable_view,
          [&] { cluster = setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_start_view()); }},
+        {3, [&] { sc->set_pause_views(true); }},
+        {8 * has_refreshable_view,
+         [&] { cluster = setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_pause_view()); }},
         {8 * has_refreshable_view,
          [&] { cluster = setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_cancel_view()); }},
         {8 * has_refreshable_view,

@@ -170,10 +170,26 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 rename.dictionary);
 
             DatabaseCatalog::instance().addDependencies(to_table_id, from_ref_dependencies, from_loading_dependencies, from_mv_dependencies);
-            DatabaseCatalog::instance().addSourceViewDependencies(to_table_id, from_dependent_views);
             if (!to_ref_dependencies.empty() || !to_loading_dependencies.empty() || !to_mv_dependencies.empty())
                 DatabaseCatalog::instance().addDependencies(from_table_id, to_ref_dependencies, to_loading_dependencies, to_mv_dependencies);
-            DatabaseCatalog::instance().addSourceViewDependencies(from_table_id, to_dependent_views);
+
+            if (exchange_tables)
+            {
+                /// `EXCHANGE TABLES` (and the synthetic exchange used by
+                /// `CREATE OR REPLACE TABLE` / `REPLACE TABLE`): source-side
+                /// view-dependency edges must follow the name, not the data.
+                /// The `MV`'s stored `select_table_id` is not rewritten by the
+                /// rename, so cross-swapping would orphan the `MV`. See #105021.
+                DatabaseCatalog::instance().addSourceViewDependencies(from_table_id, from_dependent_views);
+                DatabaseCatalog::instance().addSourceViewDependencies(to_table_id, to_dependent_views);
+            }
+            else
+            {
+                /// Plain `RENAME TABLE a TO c`: re-key source-view edges from
+                /// the old name to the new one (needed when the table is moved
+                /// across databases — see `01155_rename_move_materialized_view`).
+                DatabaseCatalog::instance().addSourceViewDependencies(to_table_id, from_dependent_views);
+            }
 
             NamedCollectionFactory::instance().renameDependencies(from_table_id, to_table_id);
             if (exchange_tables)

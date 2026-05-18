@@ -317,7 +317,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         }
         break;
         case LitOp::LitStr:
-            lv->set_string_lit(rg.nextString("'", true, rg.nextStrlen()));
+            lv->set_no_quote_str(rg.nextString("'", true, rg.nextStrlen()));
             break;
         case LitOp::LitSpecial: {
             SpecialVal * val = lv->mutable_special_val();

@@ -1042,6 +1042,23 @@ public:
     QueryFactoriesInfo getQueryFactoriesInfo() const;
     void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
 
+    /// RAII scope that suppresses calls to addQueryFactoriesInfo() on the current thread.
+    /// Use it in introspection paths (e.g. reading system.functions) where instantiating
+    /// every function — and the helper functions they construct internally — must not
+    /// pollute query_log.used_functions for the user's query.
+    class SuppressQueryFactoriesInfoScope
+    {
+    public:
+        SuppressQueryFactoriesInfoScope();
+        ~SuppressQueryFactoriesInfoScope();
+
+        SuppressQueryFactoriesInfoScope(const SuppressQueryFactoriesInfoScope &) = delete;
+        SuppressQueryFactoriesInfoScope & operator=(const SuppressQueryFactoriesInfoScope &) = delete;
+
+    private:
+        bool prev;
+    };
+
     const QueryPrivilegesInfo & getQueryPrivilegesInfo() const { return *getQueryPrivilegesInfoPtr(); }
     QueryPrivilegesInfoPtr getQueryPrivilegesInfoPtr() const { return query_privileges_info; }
     void addQueryPrivilegesInfo(const String & privilege, bool granted) const;
