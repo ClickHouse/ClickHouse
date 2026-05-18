@@ -14,10 +14,13 @@ ${CLICKHOUSE_LOCAL} <<EOF
     int8_negative Int8,
     uint16 UInt16,
     int16 Int16,
+    int16_negative Int16,
     uint32 UInt32,
     int32 Int32,
+    int32_negative Int32,
     uint64 UInt64,
     int64 Int64,
+    int64_negative Int64,
   );
 
   INSERT INTO test FROM INFILE '${CUR_DIR}/data_avro/fixed.avro' FORMAT avro;
