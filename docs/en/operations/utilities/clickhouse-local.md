@@ -7,6 +7,8 @@ title: 'clickhouse-local'
 doc_type: 'reference'
 ---
 
+# clickhouse-local
+
 ## When to use clickhouse-local vs. ClickHouse {#when-to-use-clickhouse-local-vs-clickhouse}
 
 `clickhouse-local` is an easy-to-use version of ClickHouse that is ideal for developers who need to perform fast processing on local and remote files using SQL without having to install a full database server. With `clickhouse-local`, developers can use SQL commands (using the [ClickHouse SQL dialect](../../sql-reference/index.md) directly from the command line, providing a simple and efficient way to access ClickHouse features without the need for a full ClickHouse installation. One of the main benefits of `clickhouse-local` is that it is already included when installing [clickhouse-client](/operations/utilities/clickhouse-local). This means that developers can get started with `clickhouse-local` quickly, without the need for a complex installation process.
@@ -236,60 +238,6 @@ Arguments:
 - `-V`, `--version` — print version information and exit.
 
 Also, there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
-
-## Commands {#commands}
-
-### LS Command {#ls-command}
-
-Lists all the files in the current working directory accessible to clickhouse-local.
-
-You can run it in interactive mode like:
-
-```sql 
-ClickHouse local version 26.3.1.1.
-
-:) ls
-
-SELECT _file AS file
-FROM file('*', 'One')
-ORDER BY file ASC
-```
-
-```text title="Response"
-┌─file────────┐
-│ file1.csv   │
-│ file2.json  │
-│ file3.xml   │
-└─────────────┘
-```
-
-You can also run it as a query using the argument -q:
-
-```sh
-./clickhouse-local -q ls
-```
-
-```text title="Response"
-file1.csv
-file2.json
-file3.xml
-```
-
-### CLEAR command {#clear-command}
-
-Clears the terminal screen (similar to the `clear` command on Linux or Ctrl+L in many terminals). This is a client-side action: it is not sent to the SQL engine.
-
-In `clickhouse-local`, the meta-command is recognized in **interactive** mode and for **`-q`** and **`--queries-file`** input (same client path as `-q`, same idea as `ls`), so a bare `clear` does not produce an `UNKNOWN_IDENTIFIER` error. Remote **`clickhouse-client --queries-file`** is unchanged: file contents are executed as SQL only (no text-level meta-commands).
-
-In `clickhouse-client`, it is recognized only in **interactive** mode. With **`-q`** or query files, `clear` is still parsed as SQL, so automation keeps the previous error behavior instead of turning typos into a silent no-op.
-
-Supported forms: `clear`, `CLEAR`, `/clear` (optional trailing `;` is ignored). If standard output is not a terminal (for example, when piping output), the meta-command is accepted when recognized but does not emit control sequences.
-
-With `clickhouse-local` and `-q`:
-
-```sh
-./clickhouse-local -q clear
-```
 
 ## Examples {#examples}
 
