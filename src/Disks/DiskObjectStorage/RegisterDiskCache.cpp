@@ -1,6 +1,6 @@
-#include <Interpreters/Cache/FileCacheSettings.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheSettings.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
