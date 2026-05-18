@@ -81,6 +81,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int CYCLIC_ALIASES;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
 ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
@@ -1178,6 +1179,24 @@ void expandColumnMatchersImpl(ASTPtr & node, const ColumnsDescription & columns,
 
     if (node->as<ASTSelectQuery>() || node->as<ASTSelectWithUnionQuery>() || node->as<ASTSubquery>())
         return;
+
+    if (isColumnMatcher(node))
+    {
+        auto expanded_columns = expandColumnMatcher(node, columns, context);
+        if (expanded_columns.size() != 1)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+                "Column matcher {} expands to {} columns, but a single expression is expected",
+                node->formatForErrorMessage(),
+                expanded_columns.size());
+
+        if (auto alias = node->tryGetAlias(); !alias.empty())
+            expanded_columns.front()->setAlias(alias);
+
+        node = std::move(expanded_columns.front());
+        expandColumnMatchersImpl(node, columns, context);
+        return;
+    }
 
     if (auto * expression_list = node->as<ASTExpressionList>())
     {
