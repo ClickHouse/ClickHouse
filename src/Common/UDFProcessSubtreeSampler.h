@@ -53,9 +53,9 @@ public:
     /// Borrow-internal wall = borrow acquired → released.
     UInt64 getElapsedMicroseconds() const noexcept { return elapsed_us; }
 
-    UInt64 getCPUUserMicroseconds() const noexcept { return cpu_user_us; }
-    UInt64 getCPUSystemMicroseconds() const noexcept { return cpu_system_us; }
-    UInt64 getMemoryUsageByteSeconds() const noexcept { return memory_byte_seconds; }
+    UInt64 getUserTimeMicroseconds() const noexcept { return user_time_us; }
+    UInt64 getSystemTimeMicroseconds() const noexcept { return system_time_us; }
+    UInt64 getPeakMemoryByteSeconds() const noexcept { return peak_memory_byte_seconds; }
     UInt64 getInputBytes() const noexcept { return input_bytes.load(std::memory_order_relaxed); }
     UInt64 getOutputBytes() const noexcept { return output_bytes.load(std::memory_order_relaxed); }
 
@@ -70,9 +70,9 @@ private:
 
     UInt64 pool_wait_us = 0;
     UInt64 elapsed_us = 0;
-    UInt64 cpu_user_us = 0;
-    UInt64 cpu_system_us = 0;
-    UInt64 memory_byte_seconds = 0;
+    UInt64 user_time_us = 0;
+    UInt64 system_time_us = 0;
+    UInt64 peak_memory_byte_seconds = 0;
 
     std::atomic<UInt64> input_bytes{0};
     std::atomic<UInt64> output_bytes{0};

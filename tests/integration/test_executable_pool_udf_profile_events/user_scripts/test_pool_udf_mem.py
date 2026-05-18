@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """executable_pool UDF that allocates a sizeable bytearray per call.
 
-Used to validate MemoryUsageByteSeconds. Allocates ~32 MB on the first row
+Used to validate PeakMemoryByteSeconds. Allocates ~32 MB on the first row
 and frees it before responding; VmHWM observes that peak.
 """
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """executable_pool UDF that does CPU work per row.
 
-Used to validate CPUUserMicroseconds is non-zero. Per-row CPU is sized so
+Used to validate UserTimeMicroseconds is non-zero. Per-row CPU is sized so
 that a 1000-row block accumulates well above 10 ms — the tick granularity of
 the 100 Hz clock that drives `/proc/<pid>/stat` utime/stime.
 """

@@ -244,9 +244,9 @@ public:
                 {
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionPoolWaitMicroseconds, sampler->getPoolWaitMicroseconds());
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionElapsedMicroseconds, sampler->getElapsedMicroseconds());
-                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionUserTimeMicroseconds, sampler->getCPUUserMicroseconds());
-                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionSystemTimeMicroseconds, sampler->getCPUSystemMicroseconds());
-                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionPeakMemoryByteSeconds, sampler->getMemoryUsageByteSeconds());
+                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionUserTimeMicroseconds, sampler->getUserTimeMicroseconds());
+                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionSystemTimeMicroseconds, sampler->getSystemTimeMicroseconds());
+                    ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionPeakMemoryByteSeconds, sampler->getPeakMemoryByteSeconds());
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionInputBytes, sampler->getInputBytes());
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionOutputBytes, sampler->getOutputBytes());
                 }

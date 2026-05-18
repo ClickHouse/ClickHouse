@@ -310,16 +310,16 @@ void UDFProcessSubtreeSampler::recordReleased()
     }
 
     if (post_utime_sum_in_baseline >= pre_utime_sum)
-        cpu_user_us = post_utime_sum_in_baseline - pre_utime_sum;
+        user_time_us = post_utime_sum_in_baseline - pre_utime_sum;
     if (post_stime_sum_in_baseline >= pre_stime_sum)
-        cpu_system_us = post_stime_sum_in_baseline - pre_stime_sum;
+        system_time_us = post_stime_sum_in_baseline - pre_stime_sum;
 
-    /// MemoryUsageByteSeconds = peak_rss × borrow_wall_seconds.
+    /// PeakMemoryByteSeconds = peak_rss × borrow_wall_seconds.
     /// Stored as integer byte-seconds. 64-bit multiplication is fine for any
     /// realistic UDF (1 GiB × 100 s ≈ 10^14, well below 2^64); pathological
     /// inputs above ~1.8e19 byte-microseconds would overflow before the
     /// divide.
-    memory_byte_seconds = peak_rss * elapsed_us / 1000000ULL;
+    peak_memory_byte_seconds = peak_rss * elapsed_us / 1000000ULL;
 }
 
 }
