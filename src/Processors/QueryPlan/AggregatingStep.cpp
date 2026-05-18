@@ -302,7 +302,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// Respect pipeline width — do not fan out a single stream into shards.
         && pipeline.getNumStreams() > 1
         && params.max_threads > 1
-        /// TODO: `max_rows_to_group_by` is enforced globally during the merge phase in normal
+        /// TODO(nihalzp): `max_rows_to_group_by` is enforced globally during the merge phase in normal
         /// aggregation. Could be supported by a post-step that counts total keys across shards.
         && params.max_rows_to_group_by == 0
         /// Skip no-key aggregation as sharding does not give any benefit and has overhead.
@@ -310,7 +310,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// We do not want to take over cases covered by InOrder Aggregation as those are faster.
         && sort_description_for_merging.empty()
         && grouping_sets_params.empty()
-        /// TODO: Support this when we will have external aggregation
+        /// TODO(nihalzp): Support this when we will have external aggregation
         && !should_produce_results_in_order_of_bucket_number
         /// Sharding is useful for high cardinality keys. For single-key, skip 1-byte types
         /// (UInt8/Int8 have at most 256 distinct values) and LowCardinality. For multi-key, skip
@@ -341,7 +341,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// Sharded aggregation does not implement temporary-file spill/merge yet.
         params.max_bytes_before_external_group_by = 0;
 
-        /// TODO: Support it
+        /// TODO(nihalzp): Support it
         params.stats_collecting_params.disable();
     }
 

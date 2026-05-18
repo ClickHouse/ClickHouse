@@ -187,7 +187,7 @@ def test_merge_tree_load_parts_corrupted(started_cluster):
             f"""
             SELECT pk, count() FROM {table}
             GROUP BY pk ORDER BY pk
-            SETTINGS enable_sharding_aggregator = 0 -- TODO: remove once sharded aggregation supports external aggregation (spill to disk)."""
+            SETTINGS enable_sharding_aggregator = 0 -- TODO(nihalzp): remove once sharded aggregation supports external aggregation (spill to disk)."""
         )
         == "111\t3\n222\t3\n333\t3\n"
     )
@@ -197,7 +197,7 @@ def test_merge_tree_load_parts_corrupted(started_cluster):
             SELECT partition, count()
             FROM system.parts WHERE table = '{table}' AND active
             GROUP BY partition ORDER BY partition
-            SETTINGS enable_sharding_aggregator = 0 -- TODO: remove once sharded aggregation supports external aggregation (spill to disk)."""
+            SETTINGS enable_sharding_aggregator = 0 -- TODO(nihalzp): remove once sharded aggregation supports external aggregation (spill to disk)."""
         )
         == "111\t1\n222\t1\n333\t1\n"
     )
