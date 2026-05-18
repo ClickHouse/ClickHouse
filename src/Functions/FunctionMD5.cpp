@@ -17,6 +17,12 @@
 
 #include <Common/TargetSpecific.h>
 
+#include "config.h"
+
+#if USE_SSL
+#    include <Common/Crypto/OpenSSLInitializer.h>
+#endif
+
 #if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
 #include <immintrin.h>
 #endif
@@ -35,6 +41,9 @@ constexpr uint32_t MD5_C0 = 0x98badcfe;
 constexpr uint32_t MD5_D0 = 0x10325476;
 
 constexpr size_t MD5_DIGEST_LEN = 16;
+
+/// Placeholder for unused SIMD lanes. Only passed with length=0, so zero bytes are read from it.
+constexpr uint8_t md5_dummy_lane_byte = 0;
 
 /// Pad a message per RFC 1321. Writes the final 1-2 blocks into `out`.
 /// Returns the number of final blocks written (1 or 2).
@@ -70,6 +79,7 @@ namespace ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int SUPPORT_IS_DISABLED;
 }
 
 /// Shared base class: common IFunction overrides.
@@ -124,9 +134,6 @@ public:
     }
 
 DECLARE_MULTITARGET_CODE(
-
-    /// Placeholder for unused SIMD lanes. Only passed with length=0, so zero bytes are read from it.
-    static const uint8_t md5_dummy_lane_byte = 0;
 
     /// Process one 64-byte block for two independent groups of N lanes.
     /// The two groups are interleaved to let the CPU overlap independent chains.
@@ -818,6 +825,11 @@ public:
     explicit FunctionMD5(ContextPtr context)
         : selector(context)
     {
+#if USE_SSL
+        if (OpenSSLInitializer::instance().isFIPSEnabled())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Function {} is not available in FIPS mode", name);
+#endif
+
         selector.registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionMD5Impl>();
 
 #if USE_MULTITARGET_CODE

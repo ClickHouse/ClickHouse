@@ -1,3 +1,4 @@
+-- Tags: no-openssl-fips
 -- Test MD5 multi-buffer SIMD implementation for correctness.
 -- Verifies that the SIMD batched path produces byte-identical results
 -- to the RFC 1321 reference vectors across various input sizes and batch boundaries.
