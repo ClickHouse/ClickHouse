@@ -45,9 +45,9 @@ ${CLICKHOUSE_CLIENT} --query "SELECT exception FROM system.query_log
     WHERE query_id = '$QUERY_ID' AND current_database = '$CLICKHOUSE_DATABASE' AND type != 'QueryStart'" \
     | grep -oF "QUERY_WAS_CANCELLED" | head -1
 
-if (( ELAPSED_MS < 20000 ))
+if (( ELAPSED_MS < 10000 ))
 then
-    echo "cancelled under 20s"
+    echo "cancelled under 10s"
 else
     echo "FAIL: cancellation took ${ELAPSED_MS}ms"
 fi
