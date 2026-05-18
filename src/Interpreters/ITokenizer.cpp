@@ -85,6 +85,16 @@ bool NgramsTokenizer::nextInStringLike(const char * data, size_t length, size_t 
     return false;
 }
 
+void NgramsTokenizer::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool, bool) const
+{
+    stringToBloomFilter(data, length, bloom_filter);
+}
+
+void NgramsTokenizer::substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool, bool) const
+{
+    stringToTokens(data, length, tokens);
+}
+
 bool SplitByNonAlphaTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
 {
     token_start = pos;
@@ -163,7 +173,7 @@ namespace
 {
 
 /// Shared implementation of `substringToBloomFilter` for word-boundary tokenizers
-/// (`SplitByNonAlphaTokenizer`, `UnicodeWordTokenizer`).
+/// (`SplitByNonAlphaTokenizer`, `AsciiCJKTokenizer`).
 ///
 /// In order to avoid filter updates with incomplete tokens, the first token is
 /// ignored unless the substring is a prefix, and the last token is ignored unless
@@ -260,6 +270,16 @@ bool SplitByStringTokenizer::nextInStringLike(const char * /*data*/, size_t /*le
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StringTokenExtractor::nextInStringLike is not implemented");
 }
 
+void SplitByStringTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByStringTokenizer::substringToBloomFilter is not implemented");
+}
+
+void SplitByStringTokenizer::substringToTokens(const char *, size_t, std::vector<String> &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByStringTokenizer::substringToTokens is not implemented");
+}
+
 String SplitByStringTokenizer::getDescription() const
 {
     String result = fmt::format("{}([", getName());
@@ -289,6 +309,16 @@ bool ArrayTokenizer::nextInString(const char * /*data*/, size_t length, size_t &
 bool ArrayTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::nextInStringLike is not implemented");
+}
+
+void ArrayTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::substringToBloomFilter is not implemented");
+}
+
+void ArrayTokenizer::substringToTokens(const char *, size_t, std::vector<String> &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::substringToTokens is not implemented");
 }
 
 SparseGramsTokenizer::SparseGramsTokenizer(size_t min_length, size_t max_length, std::optional<size_t> min_cutoff_length_)
@@ -374,6 +404,16 @@ bool SparseGramsTokenizer::nextInStringLike(const char * data, size_t length, si
     }
 }
 
+void SparseGramsTokenizer::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool /*is_prefix*/, bool /*is_suffix*/) const
+{
+    stringToBloomFilter(data, length, bloom_filter);
+}
+
+void SparseGramsTokenizer::substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool /*is_prefix*/, bool /*is_suffix*/) const
+{
+    stringToTokens(data, length, tokens);
+}
+
 std::vector<String> SparseGramsTokenizer::compactTokens(const std::vector<String> & tokens) const
 {
     std::unordered_set<String> result;
@@ -427,7 +467,7 @@ void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, 
         });
 }
 
-bool UnicodeWordTokenizer::nextInString(
+bool AsciiCJKTokenizer::nextInString(
     const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
 {
     token_length = 0;
@@ -496,13 +536,6 @@ bool UnicodeWordTokenizer::nextInString(
             /// Token must contain at least one alphanumeric character
             if (token_alnum_count > 0)
             {
-                /// Check if token is a stop word
-                std::string_view token_view(data + token_start, token_length);
-                if (stop_words.contains(token_view))
-                {
-                    token_length = 0;
-                    continue;
-                }
                 return true;
             }
 
@@ -530,15 +563,6 @@ bool UnicodeWordTokenizer::nextInString(
             return false;
         }
 
-        std::string_view utf8_char(data + pos, char_len);
-
-        /// 3a. Stop words: skip
-        if (stop_words.contains(utf8_char))
-        {
-            pos += char_len;
-            continue;
-        }
-
         token_start = pos;
         token_length = char_len;
         pos += char_len;
@@ -549,7 +573,7 @@ bool UnicodeWordTokenizer::nextInString(
     return false;
 }
 
-bool UnicodeWordTokenizer::nextInStringLike(const char * data, size_t length, size_t & __restrict pos, String & token) const
+bool AsciiCJKTokenizer::nextInStringLike(const char * data, size_t length, size_t & __restrict pos, String & token) const
 {
     token.clear();
     size_t token_start;
@@ -658,14 +682,7 @@ bool UnicodeWordTokenizer::nextInStringLike(const char * data, size_t length, si
                 /// If we consumed a backslash but the escaped char didn't continue the token, back up so the next call
                 /// re-parses `\X` with proper escape context.
                 if (escaped)
-                {
                     --pos;
-                    escaped = false;
-                }
-
-                /// Check if token is a stop word
-                if (stop_words.contains(token))
-                    continue;
 
                 return true;
             }
@@ -698,14 +715,6 @@ bool UnicodeWordTokenizer::nextInStringLike(const char * data, size_t length, si
 
         token = {data + pos, char_len};
 
-        /// 3a. Stop words: skip
-        if (stop_words.contains(token))
-        {
-            pos += char_len;
-            escaped = false;
-            continue;
-        }
-
         pos += char_len;
         return true;
     }
@@ -713,13 +722,13 @@ bool UnicodeWordTokenizer::nextInStringLike(const char * data, size_t length, si
     return false;
 }
 
-void UnicodeWordTokenizer::substringToBloomFilter(
+void AsciiCJKTokenizer::substringToBloomFilter(
     const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
 {
     wordBoundarySubstringToBloomFilter(*this, data, length, bloom_filter, is_prefix, is_suffix);
 }
 
-void UnicodeWordTokenizer::substringToTokens(
+void AsciiCJKTokenizer::substringToTokens(
     const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const
 {
     wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);

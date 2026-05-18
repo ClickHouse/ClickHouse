@@ -57,7 +57,7 @@ void BackgroundJobsAssignee::postpone()
     double random_addition = std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng);
 
     size_t next_time_to_execute = static_cast<size_t>(
-        1000 * (std::min(
+        1000 * (data.getBiasBackoffSeconds() + std::min(
             sleep_settings.task_sleep_seconds_when_no_work_max,
             sleep_settings.thread_sleep_seconds_if_nothing_to_do * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_count))
         + random_addition));
