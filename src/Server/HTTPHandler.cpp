@@ -322,6 +322,14 @@ void HTTPHandler::processQuery(
 
     auto is_known_setting = [&](const String & name) -> bool
     {
+        /// A few names aren't declared as settings via `DECLARE(...)` but are still handled by
+        /// `Context::setSetting` as "settings" — most importantly `profile`, which triggers
+        /// profile loading rather than mapping to a stored value. Without this carve-out, those
+        /// names would be deferred to the unrecognized-URL-params path and (if the
+        /// `http_allow_filters_as_unrecognized_url_parameters` feature is on) misinterpreted as
+        /// filter expressions.
+        if (name == "profile")
+            return true;
         return context->getAccessControl().isSettingNameAllowed(name);
     };
 

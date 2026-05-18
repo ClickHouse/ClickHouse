@@ -449,28 +449,49 @@ void addDefaultHandlersFactory(
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
     query_handler->addFilter([](const auto & request)
         {
-            /// This is the catch-all dynamic query handler. It accepts any GET/HEAD/POST/OPTIONS
-            /// request on any path starting with '/'. Strict-path handlers (e.g. `/ping`, `/play`,
-            /// `/metrics`) are registered before this one and take precedence. We cannot gate this
-            /// on `http_allow_*_as_path` settings here because routing happens before authentication
-            /// — those settings are then read per-user inside `HTTPHandler::processQuery`, where the
-            /// URL path is parsed only if the authenticated user has enabled at least one path feature.
             const auto & uri = request.getURI();
             const auto & method = request.getMethod();
             bool is_get_or_head = method == Poco::Net::HTTPRequest::HTTP_GET
                                || method == Poco::Net::HTTPRequest::HTTP_HEAD;
             bool is_post_or_options = method == Poco::Net::HTTPRequest::HTTP_POST
                                    || method == Poco::Net::HTTPRequest::HTTP_OPTIONS;
+
+            /// Existing routing: explicit query-string forms (`?...`, `/?...`, `/query?...`) plus an
+            /// empty or "/" POST.
+            bool original_get_match = startsWith(uri, "?")
+                                   || startsWith(uri, "/?")
+                                   || startsWith(uri, "/query?");
+            bool original_post_match = original_get_match || uri == "/" || uri.empty();
+            if ((is_get_or_head && original_get_match) || (is_post_or_options && original_post_match))
+                return true;
             if (!is_get_or_head && !is_post_or_options)
                 return false;
 
-            /// Accept the original schemes (`?...`, `/?...`, `/query?...`, and an empty / "/" POST)
-            /// as well as any other path starting with `/` — those will be interpreted as
-            /// `database/table.format` only if the user has the matching `http_allow_*_as_path`
-            /// setting enabled.
-            return startsWith(uri, "?")
-                || startsWith(uri, "/")
-                || uri.empty();
+            /// Extended routing for the HTTP-as-file feature: accept arbitrary paths that *look
+            /// like* a database/table/filter reference. A path qualifies if it
+            ///   * has a `?` with a non-empty query string, or
+            ///   * has more than one `/` separator (e.g. `/db/hits`), or
+            ///   * has a `.` in its last component (e.g. `/hits.CSV`), or
+            ///   * has a `=`, `<`, `>`, or `!` (filter-component or unrecognized-param form).
+            /// This deliberately rejects simple single-component paths like `/sashboards` so that
+            /// `NotFoundHandler` can still produce its "Maybe you meant /dashboard" hint for typos.
+            /// The path features themselves are still gated on the authenticated user's
+            /// `http_allow_*_as_path` settings inside `HTTPHandler::processQuery`.
+            auto qmark = uri.find('?');
+            if (qmark != std::string::npos && qmark + 1 < uri.size())
+                return true;
+            std::string path = (qmark == std::string::npos) ? std::string(uri) : std::string(uri.substr(0, qmark));
+            if (path.empty() || path[0] != '/')
+                return false;
+            /// Strip leading slash; "/" alone was already matched above.
+            std::string rest = path.substr(1);
+            if (rest.find('/') != std::string::npos)
+                return true;
+            if (rest.find('.') != std::string::npos)
+                return true;
+            if (rest.find_first_of("=<>!") != std::string::npos)
+                return true;
+            return false;
         }
     );
     factory.addHandler(query_handler);

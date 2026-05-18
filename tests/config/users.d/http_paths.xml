@@ -1,10 +1,17 @@
 <clickhouse>
+    <!-- The path-as-URL features are enabled by default for stateless tests so the 04245
+         test can exercise them without per-request opt-in.
+
+         Notably we do NOT enable `http_allow_filters_as_unrecognized_url_parameters` globally:
+         that one converts any unknown URL parameter into a SQL `WHERE` filter, which collides
+         with existing tests that rely on typos or special parameters (e.g. `?profile=` or
+         a misspelt setting name) surfacing as a "did you mean" / UNKNOWN_SETTING error. The
+         04245 test enables it per-request via the URL parameter for the cases that need it. -->
     <profiles>
         <default>
             <http_allow_database_as_path>1</http_allow_database_as_path>
             <http_allow_table_as_file>1</http_allow_table_as_file>
             <http_allow_filters_as_path>1</http_allow_filters_as_path>
-            <http_allow_filters_as_unrecognized_url_parameters>1</http_allow_filters_as_unrecognized_url_parameters>
         </default>
     </profiles>
 </clickhouse>

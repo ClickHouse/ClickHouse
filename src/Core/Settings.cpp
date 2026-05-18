@@ -8718,13 +8718,28 @@ void Settings::dumpToMapColumn(IColumn * column, bool changed_only) const
 
 NameToNameMap Settings::toNameToNameMap() const
 {
+    /// This is used to convert the `Settings` packet that the TCP protocol carries query
+    /// parameters in (see `Connection::sendQuery`) into a name→value map. The client side calls
+    /// `params.set(name, value)` for each query parameter, which produces a `SettingFieldCustom`
+    /// for undeclared names (whose `toString()` already SQL-quotes the value, e.g. `'default'`)
+    /// but a typed field for declared settings (whose `toString()` returns the raw value).
+    /// Accept both formats: if the string starts with `'` treat it as SQL-quoted, otherwise use
+    /// it as-is.
     NameToNameMap query_parameters;
     for (const auto & param : *impl)
     {
+        std::string value_string = param.getValueString();
         std::string value;
-        ReadBufferFromOwnString buf(param.getValueString());
-        readQuoted(value, buf);
-        query_parameters.emplace(param.getName(), value);
+        if (!value_string.empty() && value_string.front() == '\'')
+        {
+            ReadBufferFromOwnString buf(value_string);
+            readQuoted(value, buf);
+        }
+        else
+        {
+            value = std::move(value_string);
+        }
+        query_parameters.emplace(param.getName(), std::move(value));
     }
     return query_parameters;
 }

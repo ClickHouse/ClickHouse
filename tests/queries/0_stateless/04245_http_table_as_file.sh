@@ -71,14 +71,19 @@ echo "-- filter=a>1&filter=b='two' (multiple)"
 http_get "${BASE_URL}/${DB}/hits?filter=a%3E1&filter=b%3D%27two%27"
 
 echo "===== http_allow_filters_as_unrecognized_url_parameters ====="
+# This feature is intentionally NOT enabled in the global stateless-test profile (it would
+# turn typos like `?profile=` or a misspelt setting name into a SQL `WHERE` filter and break
+# tests such as `02152_invalid_setting_with_hints_in_http_request`). Enable it per-request
+# for the cases below.
+UNREC="http_allow_filters_as_unrecognized_url_parameters=1"
 echo "-- /hits?a=2"
-http_get "${BASE_URL}/${DB}/hits?a=2"
+http_get "${BASE_URL}/${DB}/hits?${UNREC}&a=2"
 echo "-- /hits?a!=2  (HTMLForm splits '=' off the '!=' operator; we reassemble)"
-http_get "${BASE_URL}/${DB}/hits?a!=2"
+http_get "${BASE_URL}/${DB}/hits?${UNREC}&a!=2"
 echo "-- /hits?a>=2 (operator's '=' is the form separator)"
-http_get "${BASE_URL}/${DB}/hits?a>=2"
+http_get "${BASE_URL}/${DB}/hits?${UNREC}&a>=2"
 echo "-- /hits?a<>2 (operator survives intact when there's no '=' at all)"
-http_get "${BASE_URL}/${DB}/hits?a<>2"
+http_get "${BASE_URL}/${DB}/hits?${UNREC}&a<>2"
 
 echo "===== http_allow_filters_as_path ====="
 echo "-- /a=2/hits"
