@@ -1,3 +1,4 @@
+import json
 import time
 
 import requests
@@ -18,6 +19,32 @@ from praktika.utils import Shell
 
 
 class GHAuth:
+
+    @classmethod
+    def _get_access_token_from_lambda(cls, lambda_name: str, region: str) -> str:
+        import boto3  # type: ignore
+
+        client = boto3.session.Session().client(
+            service_name="lambda", region_name=region or None
+        )
+        response = client.invoke(
+            FunctionName=lambda_name,
+            InvocationType="RequestResponse",
+            Payload=b"{}",
+        )
+        if response.get("FunctionError"):
+            payload = response["Payload"].read().decode()
+            raise RuntimeError(
+                f"Lambda {lambda_name} returned FunctionError: {payload}"
+            )
+        result = json.loads(response["Payload"].read())
+        status_code = result.get("statusCode")
+        if status_code != 200:
+            raise RuntimeError(
+                f"Lambda {lambda_name} returned statusCode={status_code}: {result}"
+            )
+        body = json.loads(result["body"])
+        return body["token"]
 
     @classmethod
     def _get_access_token_by_jwt(cls, jwt_token: str, installation_id: int) -> str:
@@ -76,6 +103,15 @@ class GHAuth:
     def auth_from_settings(cls) -> None:
         from praktika.secret import Secret
         from praktika.settings import Settings
+
+        if Settings.GH_AUTH_LAMBDA_NAME:
+            access_token = cls._get_access_token_from_lambda(
+                Settings.GH_AUTH_LAMBDA_NAME, Settings.GH_AUTH_LAMBDA_REGION
+            )
+            Shell.check(
+                f"echo {access_token} | gh auth login --with-token", strict=True
+            )
+            return
 
         app_id, pem, installation_id = (
             Secret.Config(
