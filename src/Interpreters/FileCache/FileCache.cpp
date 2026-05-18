@@ -1276,10 +1276,16 @@ bool FileCache::doTryReserve(
     file_segment.reserved_size += size;
     chassert(file_segment.reserved_size == main_priority_iterator->getEntry()->size);
 
-    if (!file_segment.getKeyMetadata()->createBaseDirectory())
+    if (auto ec = file_segment.getKeyMetadata()->createBaseDirectory(); ec)
     {
-        failure_reason = "not enough space on device";
-        return false;
+        if (skip_cache_on_disk_failure)
+        {
+            failure_reason = ec.message();
+            return false;
+        }
+
+        throw std::filesystem::filesystem_error(
+            fmt::format("failed to create base directory for a key {}", file_segment.getKeyMetadata()->getPath()), ec);
     }
 
     return true;
