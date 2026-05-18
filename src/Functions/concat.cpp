@@ -28,12 +28,12 @@ namespace
 class ConcatImpl : public IFunction
 {
 public:
-    ConcatImpl(ContextPtr context_, const char * name_, bool is_injective_)
-        : context(context_), function_name(name_), injective(is_injective_) {}
+    ConcatImpl(const char * name_, bool is_injective_)
+        : function_name(name_), injective(is_injective_) {}
 
-    static FunctionPtr create(ContextPtr context, const char * name = "concat", bool is_injective = false)
+    static FunctionPtr create(ContextPtr, const char * name = "concat", bool is_injective = false)
     {
-        return std::make_shared<ConcatImpl>(context, name, is_injective);
+        return std::make_shared<ConcatImpl>(name, is_injective);
     }
 
     String getName() const override { return function_name; }
@@ -81,7 +81,6 @@ public:
     }
 
 private:
-    ContextWeakPtr context;
     const char * function_name;
     bool injective;
 
@@ -206,7 +205,13 @@ public:
     static constexpr auto name = "concat";
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ConcatOverloadResolver>(context); }
 
-    explicit ConcatOverloadResolver(ContextPtr context_) : context(context_) { }
+    explicit ConcatOverloadResolver(ContextPtr context_)
+        : to_string(FunctionFactory::instance().getImpl("toString", context_))
+        , array_concat(FunctionFactory::instance().getImpl("arrayConcat", context_))
+        , map_concat(FunctionFactory::instance().getImpl("mapConcat", context_))
+        , tuple_concat(FunctionFactory::instance().getImpl("tupleConcat", context_))
+    {
+    }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -221,15 +226,15 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (arguments.size() == 1)
-            return FunctionFactory::instance().getImpl("toString", context)->build(arguments);
+            return to_string->build(arguments);
         if (!arguments.empty() && std::ranges::all_of(arguments, [](const auto & elem) { return isArray(elem.type); }))
-            return FunctionFactory::instance().getImpl("arrayConcat", context)->build(arguments);
+            return array_concat->build(arguments);
         if (!arguments.empty() && std::ranges::all_of(arguments, [](const auto & elem) { return isMap(elem.type); }))
-            return FunctionFactory::instance().getImpl("mapConcat", context)->build(arguments);
+            return map_concat->build(arguments);
         if (!arguments.empty() && std::ranges::all_of(arguments, [](const auto & elem) { return isTuple(elem.type); }))
-            return FunctionFactory::instance().getImpl("tupleConcat", context)->build(arguments);
+            return tuple_concat->build(arguments);
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
-            ConcatImpl::create(context),
+            ConcatImpl::create(nullptr),
             DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
             return_type);
     }
@@ -246,7 +251,10 @@ public:
     }
 
 private:
-    ContextPtr context;
+    FunctionOverloadResolverPtr to_string;
+    FunctionOverloadResolverPtr array_concat;
+    FunctionOverloadResolverPtr map_concat;
+    FunctionOverloadResolverPtr tuple_concat;
 };
 
 }

@@ -7,8 +7,6 @@ title: 'clickhouse-benchmark'
 doc_type: 'reference'
 ---
 
-# clickhouse-benchmark 
-
 Connects to a ClickHouse server and repeatedly sends specified queries.
 
 **Syntax**
