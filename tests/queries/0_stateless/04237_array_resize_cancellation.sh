@@ -23,9 +23,9 @@ ${CLICKHOUSE_CLIENT} --max_threads 1 --max_execution_time 1 -q "
 " 2>&1 | grep -q -E 'TIMEOUT_EXCEEDED|QUERY_WAS_CANCELLED' && echo "got expected timeout exception"
 ELAPSED_MS=$(( ($(date +%s%N) - START_NS) / 1000000 ))
 
-if (( ELAPSED_MS < 20000 ))
+if (( ELAPSED_MS < 10000 ))
 then
-    echo "elapsed under 20s"
+    echo "elapsed under 10s"
 else
     echo "FAIL: elapsed ${ELAPSED_MS}ms"
 fi
