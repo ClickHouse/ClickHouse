@@ -236,9 +236,11 @@ public:
 
             /// Flush resource accumulators into ProfileEvents on every exit
             /// path — successful return AND exception thrown from the
-            /// pipeline. `recordReleased` fires from `~ShellCommandSource`
-            /// regardless, so by the time this guard runs the sampler holds
-            /// the final counters for the borrow that did happen.
+            /// pipeline. The pipeline / executor below are declared after
+            /// this `SCOPE_EXIT`, so by the C++ stack unwinding rules they
+            /// destruct first; `recordReleased` fires from
+            /// `~ShellCommandSource` during that destruction and the
+            /// sampler holds the final counters by the time this guard runs.
             SCOPE_EXIT({
                 if (sampler && sampler->borrowAcquired())
                 {
@@ -258,27 +260,22 @@ public:
             auto result_column = result_type->createColumn();
             result_column->reserve(input_rows_count);
 
+            Pipe pipe = coordinator->createPipe(
+                command,
+                command_arguments_with_parameters,
+                std::move(shell_input_pipes),
+                result_block,
+                context,
+                shell_command_source_configuration);
+
+            QueryPipeline pipeline(std::move(pipe));
+            PullingPipelineExecutor executor(pipeline);
+
+            Block block;
+            while (executor.pull(block))
             {
-                /// Inner scope so the pipeline (and therefore the
-                /// ShellCommandSource) destructs and runs its borrow-release
-                /// hook before SCOPE_EXIT above reads the accumulators.
-                Pipe pipe = coordinator->createPipe(
-                    command,
-                    command_arguments_with_parameters,
-                    std::move(shell_input_pipes),
-                    result_block,
-                    context,
-                    shell_command_source_configuration);
-
-                QueryPipeline pipeline(std::move(pipe));
-                PullingPipelineExecutor executor(pipeline);
-
-                Block block;
-                while (executor.pull(block))
-                {
-                    const auto & result_column_to_add = *block.safeGetByPosition(0).column;
-                    result_column->insertRangeFrom(result_column_to_add, 0, result_column_to_add.size());
-                }
+                const auto & result_column_to_add = *block.safeGetByPosition(0).column;
+                result_column->insertRangeFrom(result_column_to_add, 0, result_column_to_add.size());
             }
 
             size_t result_column_size = result_column->size();
