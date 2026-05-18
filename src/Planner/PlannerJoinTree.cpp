@@ -932,7 +932,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         /// Apply trivial_count optimization if possible
         bool is_trivial_count_applied = !select_query_options.only_analyze && !select_query_options.build_logical_plan && is_single_table_expression
             && (table_node || table_function_node) && select_query_info.has_aggregates
-            /// NOTE: we check the setting itself (even though it may not reference this table) instead of relying on additional_filters_ast,
+            /// NOTE: For parallel replicas followers we check the setting itself (even though it may not reference this table) instead of relying on additional_filters_ast,
             /// because filters in the setting may use unqualified table names, while followers receive fully qualified names
             /// in the rewritten `SELECT` query — so `additional_filters_ast` may be empty on the follower even when the filter applies.
             ///
@@ -942,7 +942,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             ///     Follower : SELECT count() FROM non_default_db.t additional_table_filters = {'t': 'x != 0'}
             ///
             /// The follower will not match `t` against the filter map keyed by the unqualified name.
-            && settings[Setting::additional_table_filters].value.empty()
+            && (!query_context->canUseParallelReplicasOnFollower() || settings[Setting::additional_table_filters].value.empty())
             && applyTrivialCountIfPossible(
                 query_plan,
                 table_expression_query_info,
