@@ -48,6 +48,8 @@ static MutationCommand createCommandWithUpdatedColumns(
     MutationCommand res;
     res.type = command.type;
     res.mutation_version = command.mutation_version;
+    res.max_parser_depth = command.max_parser_depth;
+    res.max_parser_backtracks = command.max_parser_backtracks;
 
     auto modified_ast = command.ast();
     auto & alter_ast = assert_cast<ASTAlterCommand &>(*modified_ast);
@@ -93,7 +95,12 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
         alter_command->partition = alter_command->children.emplace_back(std::move(partition)).get();
 
     alter_command->predicate = alter_command->children.emplace_back(std::move(predicate)).get();
-    auto mutation_command = MutationCommand::parse(*alter_command);
+    auto mutation_command = MutationCommand::parse(
+        *alter_command,
+        /* parse_alter_commands = */ false,
+        /* with_pure_metadata_commands = */ false,
+        command.max_parser_depth,
+        command.max_parser_backtracks);
 
     if (!mutation_command)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}", alter_command->formatForErrorMessage());

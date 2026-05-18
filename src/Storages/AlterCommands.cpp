@@ -65,6 +65,8 @@ namespace Setting
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool flatten_nested;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
 }
 
 namespace ErrorCodes
@@ -1272,6 +1274,9 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     }
 
     result.ast_text = ast->formatWithSecretsOneLine();
+    const auto & settings = context->getSettingsRef();
+    result.max_parser_depth = settings[Setting::max_parser_depth];
+    result.max_parser_backtracks = settings[Setting::max_parser_backtracks];
     apply(metadata, context);
     return result;
 }
@@ -1902,6 +1907,10 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     /// to metadata that already contains auto-added statistics would throw a duplicate error.
     removeImplicitStatistics(metadata.columns);
 
+    const auto & settings = context->getSettingsRef();
+    const UInt64 max_parser_depth = settings[Setting::max_parser_depth];
+    const UInt64 max_parser_backtracks = settings[Setting::max_parser_backtracks];
+
     MutationCommands result;
     for (const auto & alter_cmd : *this)
     {
@@ -1911,7 +1920,12 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
         }
         else if (with_alters)
         {
-            result.push_back(MutationCommand{.ast_text = alter_cmd.ast->formatWithSecretsOneLine(), .type = MutationCommand::Type::ALTER_WITHOUT_MUTATION});
+            result.push_back(MutationCommand{
+                .ast_text = alter_cmd.ast->formatWithSecretsOneLine(),
+                .max_parser_depth = max_parser_depth,
+                .max_parser_backtracks = max_parser_backtracks,
+                .type = MutationCommand::Type::ALTER_WITHOUT_MUTATION,
+            });
         }
     }
 

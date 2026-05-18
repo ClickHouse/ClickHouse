@@ -5,6 +5,7 @@
 #include <memory>
 #include <unordered_map>
 
+#include <Core/Defines.h>
 #include <Core/Names.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Parsers/ASTExpressionList.h>
@@ -25,6 +26,14 @@ struct MutationCommand
     /// Serialized text of the whole command (output of `formatWithSecretsOneLine`).
     /// The AST itself is not kept around - call `ast` to parse it on demand.
     String ast_text = {};
+
+    /// Parser limits captured at the time `ast_text` was produced. Used by `ast`
+    /// (and the other accessors that delegate to it) so that on-demand re-parsing
+    /// uses the same limits as the original successful parse. They are deliberately
+    /// stored alongside the text instead of caching the parsed AST - the AST is
+    /// always parsed fresh on demand.
+    UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
+    UInt64 max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
 
     /// Parses `ast_text` and returns the resulting AST.
     /// Returns nullptr when `ast_text` is empty.
@@ -89,8 +98,15 @@ struct MutationCommand
     /// Required to distinguish read command used for MODIFY COLUMN.
     bool read_for_patch = false;
 
-    /// If parse_alter_commands, than consider more Alter commands as mutation commands
-    static std::optional<MutationCommand> parse(const ASTAlterCommand & command, bool parse_alter_commands = false, bool with_pure_metadata_commands = false);
+    /// If parse_alter_commands, than consider more Alter commands as mutation commands.
+    /// `max_parser_depth` / `max_parser_backtracks` are captured into the returned
+    /// command so subsequent on-demand re-parsing uses the same limits.
+    static std::optional<MutationCommand> parse(
+        const ASTAlterCommand & command,
+        bool parse_alter_commands = false,
+        bool with_pure_metadata_commands = false,
+        UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH,
+        UInt64 max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     /// This command shouldn't stick with other commands
     bool isBarrierCommand() const;

@@ -64,7 +64,7 @@ ASTPtr MutationCommand::ast() const
     ParserAlterCommandList p_alter_commands;
     auto commands_ast = parseQuery(
         p_alter_commands, ast_text.data(), ast_text.data() + ast_text.length(),
-        "mutation command", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        "mutation command", 0, max_parser_depth, max_parser_backtracks);
 
     if (commands_ast->children.size() != 1)
         throw Exception(
@@ -114,10 +114,17 @@ std::unordered_map<String, ASTPtr> MutationCommand::columnToUpdateExpression() c
     return result;
 }
 
-std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & command, bool parse_alter_commands, bool with_pure_metadata_commands)
+std::optional<MutationCommand> MutationCommand::parse(
+    const ASTAlterCommand & command,
+    bool parse_alter_commands,
+    bool with_pure_metadata_commands,
+    UInt64 max_parser_depth,
+    UInt64 max_parser_backtracks)
 {
     MutationCommand res;
     res.ast_text = command.formatWithSecretsOneLine();
+    res.max_parser_depth = max_parser_depth;
+    res.max_parser_backtracks = max_parser_backtracks;
     if (with_pure_metadata_commands)
     {
         res.type = ALTER_WITHOUT_MUTATION;
