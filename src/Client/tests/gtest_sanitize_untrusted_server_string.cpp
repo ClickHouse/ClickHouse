@@ -85,3 +85,12 @@ TEST(SanitizeUntrustedServerString, MaxStringSizeCapIsTight)
     EXPECT_LE(MAX_SERVER_HELLO_STRING_SIZE, 64u * 1024u);
     EXPECT_GE(MAX_SERVER_HELLO_STRING_SIZE, 256u);
 }
+
+TEST(SanitizeUntrustedServerString, MaxPasswordComplexityRulesCapIsTight)
+{
+    /// `rules_size` from the server feeds directly into `reserve`; without a cap
+    /// a hostile server forces an arbitrarily large allocation. Real configurations
+    /// declare a handful of rules at most.
+    EXPECT_LE(MAX_PASSWORD_COMPLEXITY_RULES, 4096u);
+    EXPECT_GE(MAX_PASSWORD_COMPLEXITY_RULES, 16u);
+}

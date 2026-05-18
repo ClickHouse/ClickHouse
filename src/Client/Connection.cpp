@@ -600,14 +600,22 @@ void Connection::receiveHello()
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
         {
-            readStringBinary(proto_send_chunked_srv, *in);
-            readStringBinary(proto_recv_chunked_srv, *in);
+            /// These are tiny protocol tokens ("chunked" / "notchunked") compared in
+            /// `is_chunked`; cap them so a hostile server cannot force a large allocation.
+            readStringBinary(proto_send_chunked_srv, *in, MAX_SERVER_HELLO_STRING_SIZE);
+            readStringBinary(proto_recv_chunked_srv, *in, MAX_SERVER_HELLO_STRING_SIZE);
         }
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
         {
             UInt64 rules_size;
             readVarUInt(rules_size, *in);
+            /// `rules_size` is server-controlled and feeds a `reserve`; reject absurd
+            /// values so a hostile server cannot force a huge allocation.
+            if (rules_size > MAX_PASSWORD_COMPLEXITY_RULES)
+                throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
+                    "Server declared {} password-complexity rules, maximum allowed is {}",
+                    rules_size, MAX_PASSWORD_COMPLEXITY_RULES);
             password_complexity_rules.reserve(rules_size);
 
             for (size_t i = 0; i < rules_size; ++i)
@@ -1433,7 +1441,10 @@ Packet Connection::receivePacket()
                 return res;
 
             case Protocol::Server::TimezoneUpdate:
-                readStringBinary(server_timezone, *in);
+                /// Same cap + control-char sanitization as the handshake read; the field
+                /// reaches the client's terminal via the time-zone warning path.
+                readStringBinary(server_timezone, *in, MAX_SERVER_HELLO_STRING_SIZE);
+                sanitizeUntrustedServerString(server_timezone);
                 res.server_timezone = server_timezone;
                 return res;
 
