@@ -8,8 +8,6 @@ title: 'Client Libraries from Third-party Developers'
 doc_type: 'reference'
 ---
 
-# Client libraries from third-party developers
-
 :::note
 ClickHouse Inc does **not** maintain the libraries listed below and hasn't done any extensive testing to ensure their quality.
 :::
