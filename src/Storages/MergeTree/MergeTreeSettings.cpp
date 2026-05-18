@@ -2578,32 +2578,32 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_offset_column' to be enabled");
     }
 
-    if (leader_election)
+    if ((*this)[MergeTreeSetting::leader_election])
     {
-        if (leader_election_heartbeat_interval.totalSeconds() <= 0)
+        if ((*this)[MergeTreeSetting::leader_election_heartbeat_interval].totalSeconds() <= 0)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The value of `leader_election_heartbeat_interval` must be a positive number of seconds, got {} s",
-                leader_election_heartbeat_interval.totalSeconds());
+                (*this)[MergeTreeSetting::leader_election_heartbeat_interval].totalSeconds());
         }
 
-        if (leader_election_session_timeout.totalSeconds() <= 0)
+        if ((*this)[MergeTreeSetting::leader_election_session_timeout].totalSeconds() <= 0)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The value of `leader_election_session_timeout` must be a positive number of seconds, got {} s",
-                leader_election_session_timeout.totalSeconds());
+                (*this)[MergeTreeSetting::leader_election_session_timeout].totalSeconds());
         }
 
-        if (leader_election_session_timeout.totalSeconds() < leader_election_heartbeat_interval.totalSeconds() * 3)
+        if ((*this)[MergeTreeSetting::leader_election_session_timeout].totalSeconds() < (*this)[MergeTreeSetting::leader_election_heartbeat_interval].totalSeconds() * 3)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The value of `leader_election_session_timeout` ({} s) must be at least 3x"
                 " the value of `leader_election_heartbeat_interval` ({} s)",
-                leader_election_session_timeout.totalSeconds(),
-                leader_election_heartbeat_interval.totalSeconds());
+                (*this)[MergeTreeSetting::leader_election_session_timeout].totalSeconds(),
+                (*this)[MergeTreeSetting::leader_election_heartbeat_interval].totalSeconds());
         }
     }
 }
