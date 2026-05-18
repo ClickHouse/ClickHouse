@@ -843,7 +843,7 @@
     <div id="main">
         <form id="controls">
             <div id="inputs">
-                <input name="url" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" spellcheck="false" class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input name="password" class="monospace shadow" id="password" type="password" placeholder="password" />
+                <input name="url" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" spellcheck="false" class="monospace shadow" id="user" type="text" value="" placeholder="user" /><input name="password" class="monospace shadow" id="password" type="password" placeholder="password" />
             </div>
             <div id="query_div"><div id="query-backdrop"></div><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea></div>
             <div id="query-params"></div>
@@ -2986,16 +2986,23 @@ async function postSingle(posted_request_num, query, history_query_text)
 
         const user = user_elem.value;
         const server_address = url_elem.value;
-        let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
+        const history_params = [];
+        if (user) {
+            history_params.push('user=' + encodeURIComponent(user));
+        }
         if (run_immediately) {
-            history_url += "&run=1";
+            history_params.push('run=1');
         }
         if (server_address != location.origin) {
-            history_url += '&url=' + encodeURIComponent(server_address);
+            history_params.push('url=' + encodeURIComponent(server_address));
         }
         for (const [name, value] of Object.entries(paramValuesSnapshot))
         {
-            history_url += '&param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value);
+            history_params.push('param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value));
+        }
+        let history_url = window.location.pathname;
+        if (history_params.length > 0) {
+            history_url += '?' + history_params.join('&');
         }
         history_url += '#' + toBase64(saved_query);
 
@@ -3159,16 +3166,23 @@ async function postMulti(posted_request_num, parsed)
 
         const user = user_elem.value;
         const server_address = url_elem.value;
-        let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
+        const history_params = [];
+        if (user) {
+            history_params.push('user=' + encodeURIComponent(user));
+        }
         if (run_immediately) {
-            history_url += "&run=1";
+            history_params.push('run=1');
         }
         if (server_address != location.origin) {
-            history_url += '&url=' + encodeURIComponent(server_address);
+            history_params.push('url=' + encodeURIComponent(server_address));
         }
         for (const [name, value] of Object.entries(paramValuesSnapshot))
         {
-            history_url += '&param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value);
+            history_params.push('param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value));
+        }
+        let history_url = window.location.pathname;
+        if (history_params.length > 0) {
+            history_url += '?' + history_params.join('&');
         }
         history_url += '#' + toBase64(all_queries_text);
 
@@ -4297,7 +4311,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         if (terminalIframe && terminalIframe.contentWindow) {
             terminalIframe.contentWindow.postMessage({
                 type: 'webterminal-credentials',
-                user: user_elem.value || 'default',
+                user: user_elem.value,
                 password: password_elem.value || ''
             }, window.location.origin);
         }
