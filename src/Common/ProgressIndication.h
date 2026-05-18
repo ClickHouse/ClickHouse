@@ -82,8 +82,14 @@ public:
 
     MemoryUsage getMemoryUsage() const;
 
-    /// Total amount of temporary data on disk used by the query across all hosts (in bytes).
-    UInt64 getTempDataOnDiskUsage() const;
+    struct TempDataOnDiskUsage
+    {
+        UInt64 total = 0;
+        UInt64 max = 0;
+    };
+
+    /// Total amount of temporary data on disk used by the query across all hosts and the maximum per host (in bytes).
+    TempDataOnDiskUsage getTempDataOnDiskUsage() const;
 
     void updateThreadEventData(HostToTimesMap & new_hosts_data);
 

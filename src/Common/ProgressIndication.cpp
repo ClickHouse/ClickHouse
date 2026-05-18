@@ -91,14 +91,15 @@ ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
         });
 }
 
-UInt64 ProgressIndication::getTempDataOnDiskUsage() const
+ProgressIndication::TempDataOnDiskUsage ProgressIndication::getTempDataOnDiskUsage() const
 {
     std::lock_guard lock(profile_events_mutex);
 
-    return std::accumulate(hosts_data.cbegin(), hosts_data.cend(), UInt64{0},
-        [](UInt64 acc, auto const & host_data)
+    return std::accumulate(hosts_data.cbegin(), hosts_data.cend(), TempDataOnDiskUsage{},
+        [](TempDataOnDiskUsage const & acc, auto const & host_data)
         {
-            return acc + host_data.second.temp_data_on_disk_usage;
+            UInt64 host_usage = host_data.second.temp_data_on_disk_usage;
+            return TempDataOnDiskUsage{.total = acc.total + host_usage, .max = std::max(acc.max, host_usage)};
         });
 }
 
@@ -174,7 +175,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
 
     double cpu_usage = getCPUUsage();
     auto [memory_usage, max_host_usage, peak_usage] = getMemoryUsage();
-    UInt64 temp_data_on_disk_usage = getTempDataOnDiskUsage();
+    auto [temp_data_on_disk_usage, max_host_temp_data_on_disk_usage] = getTempDataOnDiskUsage();
 
     if (cpu_usage > 0 || memory_usage > 0 || temp_data_on_disk_usage > 0)
     {
@@ -191,6 +192,8 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(max_host_usage) << " max/host";
         if (temp_data_on_disk_usage > 0)
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(temp_data_on_disk_usage) << " disk";
+        if (max_host_temp_data_on_disk_usage < temp_data_on_disk_usage)
+            profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(max_host_temp_data_on_disk_usage) << " max/host";
 
         profiling_msg_builder << ")";
         profiling_msg = profiling_msg_builder.str();
