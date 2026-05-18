@@ -642,8 +642,9 @@ void KeeperDispatcher::garbageCollectorThread(size_t batch_size)
 
                     info.request->spans.maybeInitialize(KeeperSpan::DispatcherRequestsQueue, info.request->tracing_context.get());
 
-                    if (requests_queue->push(std::move(info)))
+                    if (requests_queue->tryPush(std::move(info)))
                     {
+                        CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
                         ProfileEvents::increment(ProfileEvents::KeeperTTLRemoveRequestsEnqueued);
                         LOG_TRACE(log, "Garbage collector: Remove request enqueued, path: {}, time: {}", rem.path, time);
                     }
@@ -651,6 +652,7 @@ void KeeperDispatcher::garbageCollectorThread(size_t batch_size)
                     {
                         ProfileEvents::increment(ProfileEvents::KeeperTTLRemoveRequestsDropped);
                         LOG_WARNING(log, "Garbage collector: queue full, drop path retry next tick");
+                        break;
                     }
                 }
             }
