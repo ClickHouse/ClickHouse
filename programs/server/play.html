@@ -3678,9 +3678,10 @@ async function getQueryUnderCursor() {
     const cursor_position = query_area.selectionStart;
     let current_query_start = 0;
     let current_offset = 0;
-    /// Track the most recently completed query so that if the cursor is past
-    /// the last `;` with only whitespace/comments after it, we run that query
-    /// instead of returning an empty string.
+    /// Track the most recently completed non-empty query so that if the cursor
+    /// is past the last `;` (with only whitespace/comments after it, or only
+    /// further delimiter-only segments like `;;`), we run that query instead
+    /// of returning an empty string or a bare delimiter.
     let last_query_start = -1;
     let last_query_end = -1;
 
@@ -3688,17 +3689,25 @@ async function getQueryUnderCursor() {
         if (current_query_start == current_offset && !elem.significant) {
             current_query_start += elem.token.length;
         }
+        const offset_before_token = current_offset;
         current_offset += elem.token.length;
         if (elem.token == ';') {
-            if (current_offset >= cursor_position) {
+            /// If `current_query_start == offset_before_token`, the segment up
+            /// to this `;` has no significant content (only whitespace/comments
+            /// that the leading-skip above has consumed, or nothing at all).
+            /// Treat such a delimiter-only segment as empty: do not run it and
+            /// do not record it as the last completed query.
+            const has_content = current_query_start < offset_before_token;
+            if (has_content && current_offset >= cursor_position) {
                 query_area.setSelectionRange(current_query_start, current_offset);
                 query_area.focus();
                 return all_queries.substring(current_query_start, current_offset);
-            } else {
+            }
+            if (has_content) {
                 last_query_start = current_query_start;
                 last_query_end = current_offset;
-                current_query_start = current_offset;
             }
+            current_query_start = current_offset;
         }
 
     }
