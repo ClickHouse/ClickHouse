@@ -17,6 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -41,6 +42,14 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
             ErrorCodes::NOT_IMPLEMENTED,
             "Hypothetical indexes are only supported for MergeTree family tables, got {}",
             table->getName());
+
+    if (table_id.uuid == UUIDHelpers::Nil)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Hypothetical indexes require a table with a stable UUID; {}.{} has none "
+            "(legacy `Ordinary` databases are not supported)",
+            table_id.getDatabaseName(),
+            table_id.getTableName());
 
     auto & store = context->getHypotheticalIndexStore();
 

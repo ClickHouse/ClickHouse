@@ -13,9 +13,7 @@ namespace ErrorCodes
 
 bool HypotheticalIndexStore::sameTable(const StorageID & a, const StorageID & b)
 {
-    if (a.uuid != UUIDHelpers::Nil && b.uuid != UUIDHelpers::Nil)
-        return a.uuid == b.uuid;
-    return a.getDatabaseName() == b.getDatabaseName() && a.getTableName() == b.getTableName();
+    return a.uuid != UUIDHelpers::Nil && a.uuid == b.uuid;
 }
 
 bool HypotheticalIndexStore::add(const StorageID & table_id, const IndexDescription & index, bool if_not_exists)
