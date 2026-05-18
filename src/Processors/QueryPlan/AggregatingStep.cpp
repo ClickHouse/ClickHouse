@@ -302,6 +302,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// Respect pipeline width — do not fan out a single stream into shards.
         && pipeline.getNumStreams() > 1
         && params.max_threads > 1
+        /// Avoid too much overhead from routing
+        && pipeline.getNumStreams() * params.max_threads < 100'000
         /// TODO(nihalzp): `max_rows_to_group_by` is enforced globally during the merge phase in normal
         /// aggregation. Could be supported by a post-step that counts total keys across shards.
         && params.max_rows_to_group_by == 0
