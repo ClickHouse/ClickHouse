@@ -1186,9 +1186,14 @@ void ColumnArray::filterTuple(const Filter & filt)
     /// guard in `filterNestedInPlaceOrReplace` is not enough on its own. Deep-clone
     /// `data` first so subsequent in-place updates stay confined to the local
     /// `ColumnTuple`. Read through `std::as_const` to avoid the non-const
-    /// `WrappedPtr::operator->`, which `chassert(use_count() == 1)`.
+    /// `WrappedPtr::operator->`, which `chassert(use_count() == 1)`. Clone into a
+    /// temporary before reassigning so `data` is never moved-from while `mutate`
+    /// can still throw.
     if (std::as_const(data)->use_count() > 1)
-        data = IColumn::mutate(std::move(data).detach());
+    {
+        auto cloned_data = IColumn::mutate(data);
+        data = std::move(cloned_data);
+    }
 
     /// Read the inner tuple via the const path: a non-const `WrappedPtr::operator*`
     /// goes through `assumeMutableRef`, which `chassert(use_count() == 1)`.
@@ -1265,9 +1270,13 @@ void ColumnArray::filterNullable(const Filter & filt)
     /// Filtering the nested column or null map in place — or writing the
     /// cloned null map back through `getNullMapColumnPtr()` — would leak the mutation
     /// to the other owner if the parent nullable is shared (even when the nested
-    /// columns have `use_count() == 1`). Deep-clone `data` first.
+    /// columns have `use_count() == 1`). Deep-clone `data` first, into a temporary,
+    /// so `data` is never moved-from while `mutate` can still throw.
     if (std::as_const(data)->use_count() > 1)
-        data = IColumn::mutate(std::move(data).detach());
+    {
+        auto cloned_data = IColumn::mutate(data);
+        data = std::move(cloned_data);
+    }
 
     /// Read the inner `ColumnNullable` via the const path; see the rationale in
     /// `filterTuple` above. The previous implementation built a temporary
@@ -1305,7 +1314,9 @@ void ColumnArray::filterNullable(const Filter & filt)
     ColumnPtr & null_map_ptr = mutable_nullable.getNullMapColumnPtr();
     if (null_map_ptr->use_count() > 1)
     {
-        auto cloned_null_map = IColumn::mutate(std::move(null_map_ptr));
+        /// Clone and filter into a temporary so `null_map_ptr` is never left moved-from
+        /// while `mutate` / `filterArraysImplInPlace` can still throw.
+        auto cloned_null_map = IColumn::mutate(null_map_ptr);
         filterArraysImplInPlace<UInt8>(
             assert_cast<ColumnUInt8 &>(*cloned_null_map).getData(), res_offsets, filt);
         null_map_ptr = std::move(cloned_null_map);
