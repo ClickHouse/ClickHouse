@@ -2112,7 +2112,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     {
         /// Check sub columns limit
         UInt64 max_static_subcolumns = getContext()->getSettingsRef()[Setting::max_static_subcolumns];
-        size_t subcolumn_count = properties.columns.getNumberOfSubcoumns();
+        /// Use columns from the actual storage metadata, not from properties.columns,
+        /// because properties.columns can be stale/empty for schema-inference engines
+        /// (e.g. File, S3, URL) where columns are inferred during storage creation.
+        size_t subcolumn_count = res->getInMemoryMetadataPtr(getContext(), false)->getColumns().getNumberOfSubcoumns();
 
         if (max_static_subcolumns > 0 && subcolumn_count > max_static_subcolumns)
             throw Exception(ErrorCodes::TOO_MANY_SUBCOLUMNS,
