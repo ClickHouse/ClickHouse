@@ -1,8 +1,6 @@
 #include <memory>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
-#include <Columns/ColumnsNumber.h>
-#include <Common/assert_cast.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -21,7 +19,6 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Common/ColumnsHashing.h>
@@ -73,7 +70,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool finalize_projection_parts_synchronously;
     extern const SettingsBool materialize_skip_indexes_on_insert;
     extern const SettingsString exclude_materialize_skip_indexes_on_insert;
     extern const SettingsBool materialize_statistics_on_insert;
@@ -387,14 +383,6 @@ void MergeTreeTemporaryPart::finalize()
     part->getDataPartStorage().precommitTransaction();
     for (const auto & [_, projection] : part->getProjectionParts())
         projection->getDataPartStorage().precommitTransaction();
-
-    /// If any minmax column is a virtual, the writer aggregated placeholder values for it. Drop the
-    /// in-memory index so `getMinMaxIndex()` reloads from disk and applies the 0-level correction.
-    const auto metadata_snapshot = part->getMetadataSnapshot();
-    const auto data_settings = part->storage.getSettings();
-    for (const auto & [minmax_column, _] : MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings))
-        if (metadata_snapshot->isVirtualColumn(minmax_column))
-            part->setMinMaxIndex(nullptr);
 }
 
 /// This method must be called after rename and commit of part
@@ -492,7 +480,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     for (size_t col = 0; col < block.columns(); ++col)
     {
-        auto scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
+        MutableColumns scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
         for (size_t i = 0; i < partitions_count; ++i)
             result[i].block->getByPosition(col).column = std::move(scattered[i]);
     }
@@ -621,19 +609,17 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     Block & block = *block_with_partition.block;
     MergeTreePartition & partition = block_with_partition.partition;
 
-    const auto & data_settings = data.getSettings();
-    const auto & global_settings = context->getSettingsRef();
-
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 
-    /// Do not write _block_number and _block_offset for 0-level parts: block number is not known on this step.
-    const auto minmax_columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-    minmax_idx->update(block, minmax_columns);
+    minmax_idx->update(block, MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
 
-    const bool optimize_on_insert = !isPatchPartitionId(partition_id)
+    const auto & global_settings = context->getSettingsRef();
+    const auto & data_settings = data.getSettings();
+    bool optimize_on_insert = !isPatchPartitionId(partition_id)
         && global_settings[Setting::optimize_on_insert]
         && data.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
+
     UInt32 new_part_level = optimize_on_insert ? 1 : 0;
     MergeTreePartInfo new_part_info(std::move(partition_id), block_number, block_number, new_part_level);
 
@@ -674,29 +660,18 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         const auto & index_descriptions = metadata_snapshot->getSecondaryIndices();
         auto exclude_indexes_string = global_settings[Setting::exclude_materialize_skip_indexes_on_insert].toString();
 
-        /// Some indices were requested to not be build during insert.
-        std::unordered_set<String> exclude_index_names;
+        /// Check if user specified list of indexes to exclude from materialize on INSERT
         if (!exclude_indexes_string.empty())
-            exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, global_settings);
-
-        /// Indices looking into virtual columns can't be correctly build at this stage.
-        auto is_virtual_column_index = [metadata_snapshot](const IndexDescription & index)
         {
-            for (const auto & required_column : index.column_names)
-                if (metadata_snapshot->isVirtualColumn(required_column))
-                    return true;
+            std::unordered_set<String> exclude_index_names
+                = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, global_settings);
 
-            return false;
-        };
-
-        for (const auto & index : index_descriptions)
-        {
-            if (exclude_index_names.contains(index.name))
-                continue;
-            if (is_virtual_column_index(index))
-                continue;
-            indices.emplace_back(MergeTreeIndexFactory::instance().get(index));
+            for (const auto & index : index_descriptions)
+                if (!exclude_index_names.contains(index.name))
+                    indices.emplace_back(MergeTreeIndexFactory::instance().get(index));
         }
+        else /// All indexes will be materialized on INSERT
+            indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
     }
 
     /// If we need to calculate some columns to sort.
@@ -856,7 +831,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     new_data_part->rows_count = block.rows();
     new_data_part->existing_rows_count = block.rows();
     new_data_part->partition = std::move(partition);
-    new_data_part->setMinMaxIndex(std::move(minmax_idx));
+    new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
     /// In case of replicated merge tree with zero copy replication
     /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
@@ -922,10 +897,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         indices,
         compression_codec,
         std::move(index_granularity_ptr),
-        (data.supportsTransactions() && context->getCurrentTransaction()) ? context->getCurrentTransaction()->tid : Tx::NonTransactionalTID,
+        (data.supportsTransactions() && context->getCurrentTransaction()) ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
         block.bytes(),
-        /*reset_columns=*/false,
-        /*blocks_are_granules_size=*/false,
+        /*reset_columns=*/ false,
+        /*blocks_are_granules_size=*/ false,
         context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr));
 
@@ -933,11 +908,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     for (const auto & projection : metadata_snapshot->getProjections())
     {
-        /// Commit-order projections use `_block_number` which is only finalized at commit time.
-        /// Skip during insert; they will be built correctly during the first merge.
-        if (projection.with_block_number)
-            continue;
-
         Block projection_block;
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterProjectionsCalculationMicroseconds);
@@ -951,23 +921,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             auto proj_temp_part
                 = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false);
             new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
-
-            if (global_settings[Setting::finalize_projection_parts_synchronously])
-            {
-                /// Finish each projection stream's finalizer immediately to release
-                /// output stream memory (writer buffers, S3 write buffers, etc.).
-                /// We cannot call proj_temp_part->finalize() here because the part
-                /// has already been moved to new_data_part above. The projection
-                /// part's precommitTransaction() will be handled later by the main
-                /// temp_part->finalize() which iterates part->getProjectionParts().
-                for (auto & stream : proj_temp_part->streams)
-                    stream.finalizer.finish();
-            }
-            else
-            {
-                for (auto & stream : proj_temp_part->streams)
-                    temp_part->streams.emplace_back(std::move(stream));
-            }
+            for (auto & stream : proj_temp_part->streams)
+                temp_part->streams.emplace_back(std::move(stream));
         }
     }
 
@@ -1117,7 +1072,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         MergeTreeIndices{},
         compression_codec,
         std::move(index_granularity_ptr),
-        Tx::NonTransactionalTID,
+        Tx::PrehistoricTID,
         block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
