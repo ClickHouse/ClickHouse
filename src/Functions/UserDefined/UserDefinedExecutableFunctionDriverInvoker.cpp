@@ -1,5 +1,6 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionDriverInvoker.h>
 
+#include <Common/ErrnoException.h>
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
 #include <Common/logger_useful.h>
@@ -8,6 +9,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
+#include <cerrno>
 #include <future>
 
 
@@ -84,16 +86,53 @@ namespace
         String stdout_output;
         String stderr_output;
         std::exception_ptr wait_exception;
+        std::exception_ptr write_exception;
     };
 
-    CommandResult waitAndRead(ShellCommand & process)
+    /// Write `source_code` to the child's stdin. If the driver exits before consuming
+    /// all of stdin, the write returns `EPIPE` (which `WriteBufferFromFileDescriptor`
+    /// surfaces as `CANNOT_WRITE_TO_FILE_DESCRIPTOR` with `saved_errno == EPIPE`).
+    /// That is not a fatal condition - the driver's exit code and stderr describe
+    /// the real failure, so we suppress the broken-pipe exception here and let the
+    /// caller report the driver's own error.
+    std::exception_ptr writeStdinSafely(WriteBufferFromFile & in, const String & source_code)
     {
+        try
+        {
+            if (!source_code.empty())
+            {
+                writeString(source_code, in);
+                if (!source_code.ends_with('\n'))
+                    writeChar('\n', in);
+            }
+            in.close();
+        }
+        catch (const ErrnoException & e)
+        {
+            if (e.getErrno() == EPIPE)
+                return nullptr;
+            return std::current_exception();
+        }
+        catch (...)
+        {
+            return std::current_exception();
+        }
+        return nullptr;
+    }
+
+    CommandResult writeAndWait(ShellCommand & process, const String & source_code)
+    {
+        /// All three pipes must be serviced concurrently: a driver that prints
+        /// enough on stderr while waiting for stdin would otherwise deadlock if
+        /// we wrote stdin synchronously before draining stdout/stderr.
         auto stdout_future = std::async(std::launch::async, [&process] { return readPipeToString(process.out); });
         auto stderr_future = std::async(std::launch::async, [&process] { return readPipeToString(process.err); });
+        auto stdin_future = std::async(std::launch::async, [&process, &source_code] { return writeStdinSafely(process.in, source_code); });
 
         CommandResult result;
         result.stdout_output = stdout_future.get();
         result.stderr_output = stderr_future.get();
+        result.write_exception = stdin_future.get();
         try
         {
             result.retcode = process.tryWait();
@@ -130,37 +169,45 @@ String UserDefinedExecutableFunctionDriverInvoker::runCreateCommand(
     ShellCommand::Config config(shell_command);
     auto process = ShellCommand::execute(config);
 
-    if (!source_code.empty())
-    {
-        WriteBufferFromOwnString src_buf;
-        writeString(source_code, src_buf);
-        if (!source_code.ends_with('\n'))
-            writeChar('\n', src_buf);
-        writeString(src_buf.str(), process->in);
-    }
-    process->in.close();
-
     /// `tryWait` returns the actual exit code without throwing on non-zero codes,
     /// so we can decorate the resulting exception with the full driver stderr.
-    CommandResult result;
-    try
-    {
-        result = waitAndRead(*process);
-        if (result.wait_exception)
-            std::rethrow_exception(result.wait_exception);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(fmt::format(
-            "while waiting for driver '{}' create_command for function '{}'. Stderr: {}",
-            driver.name, function_name, result.stderr_output));
-        throw;
-    }
+    CommandResult result = writeAndWait(*process, source_code);
 
     if (result.retcode != 0)
         throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
             "Driver '{}' create_command for function '{}' exited with code {}. Stderr: {}",
             driver.name, function_name, result.retcode, result.stderr_output);
+
+    /// The driver exited cleanly but we could not deliver the function body to it.
+    if (result.write_exception)
+    {
+        try
+        {
+            std::rethrow_exception(result.write_exception);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format(
+                "while writing function body to driver '{}' create_command for function '{}'. Stderr: {}",
+                driver.name, function_name, result.stderr_output));
+            throw;
+        }
+    }
+
+    if (result.wait_exception)
+    {
+        try
+        {
+            std::rethrow_exception(result.wait_exception);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format(
+                "while waiting for driver '{}' create_command for function '{}'. Stderr: {}",
+                driver.name, function_name, result.stderr_output));
+            throw;
+        }
+    }
 
     if (result.stdout_output.empty())
         throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
@@ -190,21 +237,22 @@ void UserDefinedExecutableFunctionDriverInvoker::runDropCommand(
 
     ShellCommand::Config config(shell_command);
     auto process = ShellCommand::execute(config);
-    process->in.close();
 
-    CommandResult result;
-    try
+    CommandResult result = writeAndWait(*process, /*source_code=*/ "");
+
+    if (result.wait_exception)
     {
-        result = waitAndRead(*process);
-        if (result.wait_exception)
+        try
+        {
             std::rethrow_exception(result.wait_exception);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log,
-            fmt::format("while waiting for driver '{}' drop_command for function '{}'. Stderr: {}",
-                driver.name, function_name, result.stderr_output));
-        return;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log,
+                fmt::format("while waiting for driver '{}' drop_command for function '{}'. Stderr: {}",
+                    driver.name, function_name, result.stderr_output));
+            return;
+        }
     }
 
     if (result.retcode != 0)
