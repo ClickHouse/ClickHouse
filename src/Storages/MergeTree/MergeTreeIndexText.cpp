@@ -595,7 +595,17 @@ std::shared_ptr<TextIndexHeader> MergeTreeIndexGranuleText::loadHeader(MergeTree
     const auto load_header = [&]
     {
         header_stream.seekToStart();
-        return std::make_shared<TextIndexHeader>(TextIndexSerialization::deserializeHeader(*header_stream.getDataBuffer()));
+        auto header = std::make_shared<TextIndexHeader>(TextIndexSerialization::deserializeHeader(*header_stream.getDataBuffer()));
+
+        /// Pre-WithCodec parts don't persist the codec type. Take it from the index definition.
+        if (header->version < static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec))
+        {
+            const auto & text_index = assert_cast<const MergeTreeIndexText &>(state.index);
+            if (const auto * codec = text_index.getPostingListCodec())
+                header->codec_type = codec->getType();
+        }
+
+        return header;
     };
 
     auto header_hash = TextIndexHeaderCache::hash(index_id_for_caches);
