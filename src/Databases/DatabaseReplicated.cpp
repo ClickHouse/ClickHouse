@@ -335,22 +335,27 @@ ClusterPtr DatabaseReplicated::tryGetCluster() const
     }
     catch (...)
     {
-        /// Coordination errors (`KEEPER_EXCEPTION`) and connection failures
-        /// (`ALL_CONNECTION_TRIES_FAILED`) are expected during concurrent
-        /// database lifecycle operations -- e.g. another session is dropping
-        /// the database or its Keeper state is mid-creation -- and the
-        /// caller treats nullptr as "no cluster info available for this
-        /// database, skip it". Logging those at `error` is misleading and
-        /// noisy: the test runner forwards server logs at `warning` and
-        /// above to the client stderr, which makes any otherwise-passing
-        /// test that touches `system.clusters` flaky
-        /// (e.g. `01293_show_clusters`). Log them at `information` so
-        /// administrators still see the message in normal server logs but
-        /// it does not propagate to clients. Anything else is unexpected
-        /// (malformed Keeper payloads, logic bugs in `getClusterImpl`, ...)
-        /// and stays at the default `error` level so operators notice it.
+        /// Coordination errors (`KEEPER_EXCEPTION`), connection failures
+        /// (`ALL_CONNECTION_TRIES_FAILED`), and the "no active replicas"
+        /// state (`NO_ACTIVE_REPLICAS`, thrown by `getClusterImpl` when
+        /// `/replicas` exists but is empty -- i.e. the first replica is
+        /// not fully created yet or the last replica was just dropped)
+        /// are all expected during concurrent database lifecycle
+        /// operations. The caller treats nullptr as "no cluster info
+        /// available for this database, skip it". Logging those at
+        /// `error` is misleading and noisy: the test runner forwards
+        /// server logs at `warning` and above to the client stderr,
+        /// which makes any otherwise-passing test that touches
+        /// `system.clusters` flaky (e.g. `01293_show_clusters`). Log
+        /// them at `information` so administrators still see the message
+        /// in normal server logs but it does not propagate to clients.
+        /// Anything else is unexpected (malformed Keeper payloads, logic
+        /// bugs in `getClusterImpl`, ...) and stays at the default
+        /// `error` level so operators notice it.
         const auto code = getCurrentExceptionCode();
-        if (code == ErrorCodes::KEEPER_EXCEPTION || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
+        if (code == ErrorCodes::KEEPER_EXCEPTION
+            || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED
+            || code == ErrorCodes::NO_ACTIVE_REPLICAS)
             tryLogCurrentException(log, "Failed to get cluster info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
         else
             tryLogCurrentException(log);
@@ -377,12 +382,15 @@ ClusterPtr DatabaseReplicated::tryGetAllGroupsCluster() const
     }
     catch (...)
     {
-        /// See the note in `tryGetCluster` above: downgrade only the
-        /// expected coordination/connection failures to `information`,
-        /// leave anything else at the default `error` level so unexpected
-        /// problems are visible.
+        /// See the note in `tryGetCluster` above: downgrade the expected
+        /// coordination/connection failures and the "no active replicas"
+        /// state (all reachable through `getClusterImpl`) to
+        /// `information`, leave anything else at the default `error`
+        /// level so unexpected problems are visible.
         const auto code = getCurrentExceptionCode();
-        if (code == ErrorCodes::KEEPER_EXCEPTION || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
+        if (code == ErrorCodes::KEEPER_EXCEPTION
+            || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED
+            || code == ErrorCodes::NO_ACTIVE_REPLICAS)
             tryLogCurrentException(log, "Failed to get all-groups cluster info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
         else
             tryLogCurrentException(log);
