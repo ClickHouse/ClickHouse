@@ -369,8 +369,14 @@ def rewrite_arrayjoin_to_array_join(sql):
         rest = alias_match.group(3)
         col_name = col if col else alias
 
-        # Strip optional ON clause (ON TRUE, ON col IS NOT NULL, or arbitrary ON condition)
-        on_match = re.match(r'\s+ON\s+(?:TRUE\b|[^\n,)]+)', rest, re.IGNORECASE)
+        # Strip optional ON clause (ON TRUE, ON col IS NOT NULL, or arbitrary ON condition).
+        # Bound the match before the next SQL clause keyword so the predicate
+        # does not greedily consume the rest of the query (`WHERE`, `ORDER BY`, ...).
+        on_match = re.match(
+            r'\s+ON\s+(?:TRUE\b|(?:(?!\s+(?:WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT|OFFSET|UNION|INTERSECT|EXCEPT|WINDOW|QUALIFY|SETTINGS|FORMAT|JOIN|LEFT\s+JOIN|RIGHT\s+JOIN|CROSS\s+JOIN|FULL\s+JOIN|INNER\s+JOIN)\b)[^\n,);])+)',
+            rest,
+            re.IGNORECASE,
+        )
         if on_match:
             rest = rest[on_match.end():]
 

@@ -38,6 +38,27 @@ class TestFetchOffsetRewrite(unittest.TestCase):
         )
 
 
+class TestArrayJoinOnClause(unittest.TestCase):
+    def test_on_predicate_does_not_consume_trailing_clauses(self):
+        # The `ON` regex must stop before clause keywords; otherwise it
+        # greedily swallows `WHERE`/`ORDER BY` etc. and drops them from the
+        # rewritten query.
+        self.assertEqual(
+            rewrite_query(
+                "SELECT * FROM t JOIN arrayJoin(arr) AS a ON a > 0 WHERE id = 1 ORDER BY id"
+            ),
+            "SELECT * FROM t \nARRAY JOIN arr AS a WHERE id = 1 ORDER BY id",
+        )
+
+    def test_on_true_followed_by_where(self):
+        self.assertEqual(
+            rewrite_query(
+                "SELECT * FROM t LEFT JOIN arrayJoin(arr) AS a ON TRUE WHERE id = 1"
+            ),
+            "SELECT * FROM t \nLEFT ARRAY JOIN arr AS a WHERE id = 1",
+        )
+
+
 def _sort_key(f):
     """Mirror of `runner._sort_key` — kept inline to avoid importing the runner
     (which has heavy side imports). If runner's sort key changes, update here."""
