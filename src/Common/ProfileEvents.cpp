@@ -1351,7 +1351,7 @@ The server successfully detected this situation and will download merged part fr
     M(ExecutableUserDefinedFunctionElapsedMicroseconds, "Wall clock time spent executing executable and executable pool user-defined functions, in microseconds.", ValueType::Microseconds) \
     M(ExecutableUserDefinedFunctionUserTimeMicroseconds, "User mode CPU time consumed by executable and executable pool user-defined function child processes, in microseconds.", ValueType::Microseconds) \
     M(ExecutableUserDefinedFunctionSystemTimeMicroseconds, "Kernel mode CPU time consumed by executable and executable pool user-defined function child processes, in microseconds.", ValueType::Microseconds) \
-    M(ExecutableUserDefinedFunctionMemoryUsageByteSeconds, "Memory used by executable and executable pool user-defined function child processes integrated over wall clock time, in byte-seconds.", ValueType::Number) \
+    M(ExecutableUserDefinedFunctionPeakMemoryByteSeconds, "Per-process peak memory used by executable and executable pool user-defined function child processes integrated over wall clock time, in byte-seconds.", ValueType::Number) \
     M(ExecutableUserDefinedFunctionInputBytes, "Total bytes written to the stdin of executable and executable pool user-defined function child processes.", ValueType::Bytes) \
     M(ExecutableUserDefinedFunctionOutputBytes, "Total bytes read from the stdout of executable and executable pool user-defined function child processes.", ValueType::Bytes) \
     \
