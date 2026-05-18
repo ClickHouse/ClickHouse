@@ -27,21 +27,8 @@ namespace ErrorCodes
     DECLARE(UInt64, min_rows_for_spawn_stream, 1000, "Min number of rows to spawn the new stream. To use 8 streams the table must hold at least 8 * `min_rows_for_spawn_stream` rows.", 0) \
     DECLARE(UInt64, max_streams, 4, "Max number of streams to read from static table.", 0) \
 
-DECLARE_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS)
-
-struct YTsaurusSettingsImpl : public BaseSettings<YTsaurusSettingsTraits>
-{
-};
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) YTsaurusSettings##TYPE NAME = &YTsaurusSettingsImpl ::NAME;
-
-namespace YTsaurusSetting
-{
-LIST_OF_YTSAURUS_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS, YTSAURUS_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS, YTsaurusSettings, YTsaurusSetting)
 
 YTsaurusSettings::YTsaurusSettings() : impl(std::make_unique<YTsaurusSettingsImpl>())
 {
