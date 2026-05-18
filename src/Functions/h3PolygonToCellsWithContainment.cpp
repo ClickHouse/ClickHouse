@@ -202,7 +202,8 @@ public:
 
                 if (process_list_element && process_list_element->isKilled())
                     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-
+                
+                const size_t row_start_offset = current_offset;
                 for (const auto & polygon : multi_polygon)
                 {
                     std::vector<LatLng> exterior;
@@ -228,10 +229,11 @@ public:
                     maxPolygonToCellsSizeExperimental(polygon_wrapper.unwrap(), resolution, flags, &polygon_size);
 
                     const size_t vec_size = static_cast<size_t>(polygon_size);
-                    if (vec_size > MAX_ARRAY_SIZE)
+                    const size_t row_size_so_far = current_offset - row_start_offset;
+                    if (vec_size > MAX_ARRAY_SIZE || row_size_so_far + vec_size > MAX_ARRAY_SIZE)
                         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                             "The result of function {} (array of {} elements) will be too large with resolution = {}",
-                            getName(), vec_size, toString(resolution));
+                            getName(), row_size_so_far + vec_size, toString(resolution));
 
                     hindex_vec.assign(vec_size, 0);
                     polygonToCellsExperimental(polygon_wrapper.unwrap(),
@@ -250,6 +252,11 @@ public:
                         }
                     }
                 }
+
+                if (current_offset - row_start_offset > MAX_ARRAY_SIZE)
+                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                        "The result of function {} (array of {} elements) will be too large with resolution = {}",
+                        getName(), current_offset - row_start_offset, toString(resolution));
 
                 dst_offsets[row] = current_offset;
             }
