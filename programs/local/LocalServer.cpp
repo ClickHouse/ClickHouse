@@ -593,9 +593,8 @@ void LocalServer::setupUsers()
     access_control.setEnableUserNameAccessType(config.getBool("access_control_improvements.enable_user_name_access_type", true));
     access_control.setThrowOnInvalidReplicatedAccessEntities(config.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", true));
 
-    /// Apply user-level configuration if any config file was loaded in `initialize` — including
-    /// configs auto-discovered via `getLocalConfigPath` (`~/.clickhouse-local/config.xml` etc.),
-    /// not just those passed via `--config-file` or located at `./config.xml`.
+    /// Apply user-level configuration from a loaded config file (including those
+    /// auto-discovered via `getLocalConfigPath`, e.g. `~/.clickhouse-local/config.xml`).
     if (!loaded_config_path.empty())
     {
         const auto config_dir = fs::path{loaded_config_path}.remove_filename().string();
@@ -603,16 +602,13 @@ void LocalServer::setupUsers()
         String users_config_path = getClientConfiguration().getString("users_config", "");
 
         if (users_config_path.empty() && has_user_directories)
-        {
             users_config_path = getClientConfiguration().getString("user_directories.users_xml.path");
-            /// Always anchor a relative `user_directories.users_xml.path` to the loaded
-            /// config's directory. Falling back to the current working directory when the
-            /// configured file is missing can silently load an unrelated `users.xml`
-            /// (e.g. one that grants `access_management` to the default user) instead of
-            /// failing with a clear error pointing at the configured path.
-            if (fs::path(users_config_path).is_relative())
-                users_config_path = fs::path(config_dir) / users_config_path;
-        }
+
+        /// Anchor relative paths to the config's directory, not the cwd.
+        /// Otherwise a missing `users.xml` silently falls back to `./users.xml`,
+        /// which could grant `access_management` to the default user.
+        if (!users_config_path.empty() && fs::path(users_config_path).is_relative())
+            users_config_path = fs::path(config_dir) / users_config_path;
 
         if (users_config_path.empty())
             users_config = getConfigurationFromXMLString(minimal_default_user_xml);

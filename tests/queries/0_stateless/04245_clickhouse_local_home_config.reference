@@ -6,5 +6,7 @@
 42
 -- no config
 1
--- missing users.xml next to config does not silently load cwd users.xml
+-- missing user_directories.users_xml.path does not silently load cwd users.xml
+FILE_DOESNT_EXIST
+-- missing users_config users.xml does not silently load cwd users.xml
 FILE_DOESNT_EXIST
