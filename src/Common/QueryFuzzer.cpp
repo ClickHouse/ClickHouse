@@ -1446,7 +1446,7 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
 
 void QueryFuzzer::fuzzProjectionWithSettings(ASTProjectionDeclaration & projection)
 {
-    static const UInt64 granularity_values[] = {1, 64, 128, 256, 512, 1024, 4096, 8192, 65536};
+    static const UInt64 granularity_values[] = {0, 1, 64, 128, 256, 512, 1024, 4096, 8192, 65536};
     static const UInt64 granularity_bytes_values[] = {1024, 4096, 8192, 65536, 1048576, 10485760};
 
     if (!projection.with_settings)
@@ -1636,7 +1636,8 @@ void QueryFuzzer::fuzzProjectionDeclaration(ASTProjectionDeclaration & projectio
 
     /// Fuzz WITH SETTINGS (index_granularity = N, index_granularity_bytes = N).
     /// These are the only two settings accepted by ProjectionDescription::loadSettings.
-    /// Valid ranges: index_granularity >= 1; index_granularity_bytes >= 1024.
+    /// Valid ranges: index_granularity >= 0 (when index_granularity_bytes > 0);
+    /// index_granularity_bytes >= 1024. Both being zero is rejected.
     fuzzProjectionWithSettings(projection);
 }
 
