@@ -510,8 +510,20 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             cache_file.path = memory_cache->cache_path_prefix + first_object.remote_path;
         }
 
+        /// Apply stage-level page cache settings when provided, falling back to source settings.
+        auto page_cache_read_settings = settings;
+        if (memory_cache->page_cache_settings)
+        {
+            auto & pcs = *memory_cache->page_cache_settings;
+            page_cache_read_settings.read_from_page_cache_if_exists_otherwise_bypass_cache = pcs.read_from_page_cache_if_exists_otherwise_bypass_cache;
+            page_cache_read_settings.page_cache_inject_eviction = pcs.page_cache_inject_eviction;
+            page_cache_read_settings.page_cache_block_size = pcs.page_cache_block_size;
+            page_cache_read_settings.page_cache_lookahead_blocks = pcs.page_cache_lookahead_blocks;
+            page_cache_read_settings.page_cache_max_coalesced_bytes = pcs.page_cache_max_coalesced_bytes;
+        }
+
         impl = std::make_unique<CachedInMemoryReadBufferFromFile>(
-            cache_file, memory_cache->cache, std::move(impl), settings);
+            cache_file, memory_cache->cache, std::move(impl), page_cache_read_settings);
     }
 
     /// -- Stage 5: Async prefetch --
