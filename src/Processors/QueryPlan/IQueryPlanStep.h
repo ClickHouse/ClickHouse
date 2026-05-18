@@ -147,7 +147,8 @@ public:
         bool changed = false;
 
         /// Required input positions per child (outer index = child_id).
-        /// Empty means no inputs were changed.
+        /// Empty outside vector means no inputs were changed.
+        /// Empty inside vector means the step doesn't require any inputs from the child.
         std::vector<std::vector<size_t>> required_input_positions;
 
         /// Which original output positions survived, in order.

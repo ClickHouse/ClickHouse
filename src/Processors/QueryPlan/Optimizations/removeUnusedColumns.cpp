@@ -167,6 +167,71 @@ bool absorbExtraChildColumns(
     return true;
 }
 
+struct ChildUpdateResult
+{
+    bool updated = false;
+    bool added_discarding_step = false;
+};
+
+ChildUpdateResult removeSingleChildOutput(
+    QueryPlan::Nodes & nodes,
+    QueryPlan::Node & node,
+    const size_t child_id,
+    const std::vector<size_t> & required_positions
+)
+{
+    auto & child_step = node.children[child_id]->step;
+    chassert(child_step->canRemoveUnusedColumns());
+
+    ChildUpdateResult result{};
+
+    // Here we never want to remove inputs because the grandchildren might not be able to remove outputs.
+    auto child_result = child_step->removeUnusedColumns(required_positions, false);
+    const bool child_updated = child_result.changed;
+
+    if (child_updated)
+        result.updated = true;
+
+    const auto effective_kept_positions = effectiveKeptOutputPositions(
+        child_result.changed,
+        std::move(child_result.kept_output_positions),
+        child_step->getOutputHeader()->columns());
+
+    /// If the child's output doesn't match the parent's input (extra columns the child
+    /// couldn't remove, e.g. ReadFromMergeTree with FINAL keeping sort key columns,
+    /// or JoinStepLogical keeping a dummy column), reconcile the headers.
+    /// First try absorbing extras into the parent's DAG (no extra step needed).
+    /// Fall back to inserting a discarding ExpressionStep if absorption isn't possible.
+    {
+        const auto & current_parent_input = node.step->getInputHeaders()[child_id];
+        const auto & child_output = child_step->getOutputHeader();
+        if (!blocksHaveEqualStructure(*current_parent_input, *child_output))
+        {
+            if (!absorbExtraChildColumns(node, child_id, required_positions, effective_kept_positions))
+            {
+                if (addDiscardingExpressionStepIfNeeded(nodes, node, child_id, required_positions, effective_kept_positions))
+                {
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+                    const auto & discarding_step = *node.children[child_id]->step;
+                    assertBlocksHaveEqualStructure(
+                        *discarding_step.getInputHeaders()[0], *child_step->getOutputHeader(), "after adding discarding step");
+#endif
+                    result.added_discarding_step = true;
+                }
+            }
+        }
+    }
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    {
+        const auto & final_parent_inputs = node.step->getInputHeaders();
+        assertBlocksHaveEqualStructure(
+            *node.children[child_id]->step->getOutputHeader(), *final_parent_inputs[child_id], "after removing unused columns");
+    }
+#endif
+
+    return result;
+}
+
 /// Remove unused columns from the children of `node`, using the required input positions
 /// returned by the parent's `removeUnusedColumns` call. If `required_input_positions` is
 /// non-empty, use those positions directly; otherwise fall back to computing positions
@@ -181,56 +246,13 @@ RemoveChildrenOutputResult removeChildrenOutputs(
 
     for (auto child_id = 0U; child_id < node.children.size(); ++child_id)
     {
-        auto & child_step = node.children[child_id]->step;
-        chassert(child_step->canRemoveUnusedColumns());
 
         chassert(child_id < required_input_positions.size());
         const auto & required_positions = required_input_positions[child_id];
+        const auto [child_updated, added_discarding_step] = removeSingleChildOutput(nodes, node, child_id, required_positions);
 
-        // Here we never want to remove inputs because the grandchildren might not be able to remove outputs.
-        auto child_result = child_step->removeUnusedColumns(required_positions, false);
-        const bool child_updated = child_result.changed;
-
-        if (child_updated)
-            updated_any_child = true;
-
-        const auto effective_kept_positions = effectiveKeptOutputPositions(
-            child_result.changed,
-            std::move(child_result.kept_output_positions),
-            node.children[child_id]->step->getOutputHeader()->columns());
-
-        /// If the child's output doesn't match the parent's input (extra columns the child
-        /// couldn't remove, e.g. ReadFromMergeTree with FINAL keeping sort key columns,
-        /// or JoinStepLogical keeping a dummy column), reconcile the headers.
-        /// First try absorbing extras into the parent's DAG (no extra step needed).
-        /// Fall back to inserting a discarding ExpressionStep if absorption isn't possible.
-        {
-            const auto & current_parent_input = node.step->getInputHeaders()[child_id];
-            const auto & child_output = node.children[child_id]->step->getOutputHeader();
-            if (!blocksHaveEqualStructure(*current_parent_input, *child_output))
-            {
-                if (!absorbExtraChildColumns(node, child_id, required_positions, effective_kept_positions))
-                {
-                    if (addDiscardingExpressionStepIfNeeded(nodes, node, child_id, required_positions, effective_kept_positions))
-                    {
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-                        const auto & discarding_step = *node.children[child_id]->step;
-                        assertBlocksHaveEqualStructure(
-                            *discarding_step.getInputHeaders()[0], *child_step->getOutputHeader(), "after adding discarding step");
-#endif
-                        added_any_discarding_step = true;
-                    }
-                }
-            }
-        }
-
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-        {
-            const auto & final_parent_inputs = node.step->getInputHeaders();
-            assertBlocksHaveEqualStructure(
-                *node.children[child_id]->step->getOutputHeader(), *final_parent_inputs[child_id], "after removing unused columns");
-        }
-#endif
+        updated_any_child |= child_updated;
+        added_any_discarding_step |= added_discarding_step;
     }
 
     if (updated_any_child && added_any_discarding_step)
