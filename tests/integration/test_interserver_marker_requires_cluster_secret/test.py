@@ -67,9 +67,10 @@ def build_interserver_hello(cluster_name):
     parts.append(encode_string(b""))  # password — empty for interserver
 
     # The server then calls `processClusterNameAndSalt` which reads
-    # cluster (string) and salt (32 bytes).
+    # cluster and salt, both as length-prefixed strings (the salt is
+    # capped at 32 bytes by the `max_string_size` argument).
     parts.append(encode_string(cluster_name))
-    parts.append(b"A" * 32)
+    parts.append(encode_string(b"A" * 32))
 
     return b"".join(parts)
 
