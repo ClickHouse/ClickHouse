@@ -307,7 +307,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         if (grouping_sets_size > 1)
         {
-            pipeline.transform([&](OutputPortRawPtrs ports)
+            pipeline.transform([&](const OutputPortRawPtrs & ports)
             {
                 Processors copiers;
 
@@ -322,7 +322,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             });
         }
 
-        pipeline.transform([&](OutputPortRawPtrs ports)
+        pipeline.transform([&](const OutputPortRawPtrs & ports)
         {
             assert(streams * grouping_sets_size == ports.size());
             Processors processors;

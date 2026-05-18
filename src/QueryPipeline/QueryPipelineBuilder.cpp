@@ -462,7 +462,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         auto filling_finish_counter = std::make_shared<FinishCounter>(max_streams);
 
         right->resize(max_streams);
-        auto concurrent_right_filling_transform = [&](OutputPortRawPtrs outports)
+        auto concurrent_right_filling_transform = [&](const OutputPortRawPtrs & outports)
         {
             Processors processors;
             if (min_block_size_rows > 0 || min_block_size_bytes > 0)
