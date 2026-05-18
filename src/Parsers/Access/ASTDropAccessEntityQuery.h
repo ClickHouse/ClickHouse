@@ -14,7 +14,7 @@ struct MaskingPolicyName;
   * DROP ROLE [IF EXISTS] name [,...]
   * DROP QUOTA [IF EXISTS] name [,...]
   * DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...]
-  * DROP MASKING POLICY [IF EXISTS] name [,...] ON [database.]table [,...]
+  * DROP MASKING POLICY [IF EXISTS] name ON [database.]table
   * DROP [SETTINGS] PROFILE [IF EXISTS] name [,...]
   */
 class ASTDropAccessEntityQuery final : public IAST, public ASTQueryWithOnCluster

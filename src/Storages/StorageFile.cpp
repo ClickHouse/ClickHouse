@@ -37,6 +37,7 @@
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -1547,15 +1548,6 @@ Chunk StorageFileSource::generate()
                             progress_callback(FileProgress(0, tryGetFileSizeFromReadBuffer(*read_buf).value_or(0)));
                     }
                 }
-                else if (fixed_file_path.has_value())
-                {
-                    /// This source was assigned to one specific (file, bucket) pair.
-                    /// Consume it exactly once.
-                    if (fixed_file_consumed)
-                        return {};
-                    fixed_file_consumed = true;
-                    current_path = *fixed_file_path;
-                }
                 else
                 {
                     current_path = files_iterator->next();
@@ -1579,14 +1571,27 @@ Chunk StorageFileSource::generate()
                 current_file_size = file_stat.st_size;
                 current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
 
+                /// Build a sub-second-precision version token for the format metadata cache key.
+                /// `st_mtime` alone is second-resolution, so an in-place rewrite within the same
+                /// second that keeps the file size unchanged would otherwise reuse a stale entry.
+#if defined(OS_DARWIN)
+                const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
+                const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
+#else
+                const auto mtim_sec = file_stat.st_mtim.tv_sec;
+                const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
+#endif
+                current_file_cache_version = fmt::format(
+                    "{}.{:09}_{}_{}",
+                    static_cast<Int64>(mtim_sec),
+                    static_cast<Int64>(mtim_nsec),
+                    static_cast<Int64>(file_stat.st_ino),
+                    file_stat.st_size);
+
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                     continue;
 
-                /// The count cache stores the file's total row count. When this source
-                /// only reads a subset of the file (file_bucket_info is set), the cache
-                /// is inapplicable — using it would have every source report the full
-                /// total and produce a count that's multiplied by the number of buckets.
-                if (need_only_count && !file_bucket_info && tryGetCountFromCache(file_stat))
+                if (need_only_count && tryGetCountFromCache(file_stat))
                     continue;
 
                 read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
@@ -1600,26 +1605,62 @@ Chunk StorageFileSource::generate()
 
             chassert(file_num > 0);
 
-            input_format = FormatFactory::instance().getInput(
-                storage->format_name,
-                *read_buf,
-                block_for_format,
-                getContext(),
-                max_block_size,
-                storage->format_settings,
-                parser_shared_resources,
-                format_filter_info,
-                /*is_remote_fs=*/false,
-                CompressionMethod::None,
-                need_only_count);
+            /// For real local files, build a synthetic RelativePathWithMetadata so the
+            /// format-level metadata cache (e.g. Parquet footer cache) is reachable. The
+            /// "etag" is just any version identifier the cache compares for equality —
+            /// for local files we use the precomputed `current_file_cache_version`
+            /// (sub-second mtime + inode + size) so an in-place rewrite invalidates
+            /// the cache even when the new file has the same length and is written
+            /// within the same wall-clock second.
+            std::optional<RelativePathWithMetadata> object_with_metadata;
+            if (!storage->use_table_fd && !storage->archive_info && !current_path.empty()
+                && current_file_size.has_value() && current_file_last_modified.has_value()
+                && current_file_cache_version.has_value())
+            {
+                ObjectMetadata md;
+                md.size_bytes = *current_file_size;
+                md.last_modified = *current_file_last_modified;
+                md.etag = *current_file_cache_version;
+                object_with_metadata.emplace(current_path, std::move(md));
+            }
+
+            if (object_with_metadata.has_value())
+            {
+                input_format = FormatFactory::instance().getInputWithMetadata(
+                    storage->format_name,
+                    *read_buf,
+                    block_for_format,
+                    getContext(),
+                    max_block_size,
+                    object_with_metadata,
+                    storage->format_settings,
+                    parser_shared_resources,
+                    format_filter_info,
+                    /*is_remote_fs=*/false,
+                    CompressionMethod::None,
+                    need_only_count);
+            }
+            else
+            {
+                /// No usable metadata (e.g. archive entries, fd-backed storage, missing
+                /// stat info). Fall back to the regular creator — it doesn't trigger the
+                /// `getInputWithMetadata` chassert and the format-level metadata cache
+                /// just isn't consulted on this read.
+                input_format = FormatFactory::instance().getInput(
+                    storage->format_name,
+                    *read_buf,
+                    block_for_format,
+                    getContext(),
+                    max_block_size,
+                    storage->format_settings,
+                    parser_shared_resources,
+                    format_filter_info,
+                    /*is_remote_fs=*/false,
+                    CompressionMethod::None,
+                    need_only_count);
+            }
 
             input_format->setSerializationHints(serialization_hints);
-
-            /// If this source was assigned to read only a subset of the file's buckets
-            /// (used to read one large file with multiple parallel sources), pass the
-            /// bucket assignment to the format before it starts reading.
-            if (file_bucket_info)
-                input_format->setBucketsToRead(file_bucket_info);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -1687,8 +1728,7 @@ Chunk StorageFileSource::generate()
             finished_generate = true;
 
         if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && (!format_filter_info || !format_filter_info->hasFilter())
-            && !file_bucket_info)
+            && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(current_path, total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -1891,54 +1931,10 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (max_num_streams > files_to_read)
         num_streams = files_to_read;
 
-    auto ctx = getContext();
-
-    /// If we are reading exactly one local file in a splittable format (e.g. Parquet),
-    /// we can split it into multiple buckets (row group ranges) and create one source
-    /// per bucket. This recovers the parallelism we'd otherwise have only when reading
-    /// many files at once. Without this, a single big Parquet file feeds the whole
-    /// downstream pipeline through a single source/Resize(1->N) — leaving most of the
-    /// CPU idle on machines with many cores.
-    ///
-    /// We use the file list from `files_iterator` rather than `storage->paths`: the
-    /// iterator has already pruned files by `_path`/`_file` virtual-column predicates
-    /// (`createPathAndFileFilterDAG`), so the optimization respects that pruning. If
-    /// the predicate excludes the only path the file is not read at all. It also
-    /// means a query against many paths whose predicate prunes down to a single file
-    /// still benefits from the split.
-    std::vector<FileBucketInfoPtr> per_source_buckets;
-    String single_file_path;
-    if (max_num_streams > 1
-        && !storage->archive_info
-        && !storage->use_table_fd
-        && !storage->has_peekable_read_buffer_from_fd.load()
-        && !storage->distributed_processing
-        && storage->compression_method == "auto"
-        && FormatFactory::instance().checkFormatHasSplitter(storage->format_name)
-        && FormatFactory::instance().checkParallelizeOutputAfterReading(storage->format_name, ctx)
-        && files_iterator->getFiles().size() == 1)
-    {
-        auto splitter = FormatFactory::instance().getSplitter(storage->format_name);
-        single_file_path = files_iterator->getFiles().front();
-        struct stat file_stat = getFileStat(single_file_path, false, -1, storage->getName());
-        if (file_stat.st_size > 0)
-        {
-            auto buf = createReadBuffer(
-                single_file_path, file_stat, false, -1, storage->compression_method, ctx);
-            auto buckets = splitter->splitToBucketsByCount(
-                max_num_streams, *buf,
-                storage->format_settings.value_or(getFormatSettings(ctx)));
-
-            if (buckets.size() >= 2)
-            {
-                per_source_buckets = std::move(buckets);
-                num_streams = per_source_buckets.size();
-            }
-        }
-    }
-
     Pipes pipes;
     pipes.reserve(num_streams);
+
+    auto ctx = getContext();
 
     /// Set total number of bytes to process. For progress bar.
     auto progress_callback = ctx->getFileProgressCallback();
@@ -1970,19 +1966,13 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             parser_shared_resources,
             format_filter_info);
 
-        if (i < per_source_buckets.size())
-        {
-            source->fixed_file_path = single_file_path;
-            source->file_bucket_info = per_source_buckets[i];
-        }
-
         pipes.emplace_back(std::move(source));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = ctx->getSettingsRef()[Setting::parallelize_output_from_storages];
-    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports != max_num_streams)
+    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < max_num_streams)
         pipe.resize(max_num_streams);
 
     if (pipe.empty())
