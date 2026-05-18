@@ -39,6 +39,17 @@ ProtobufReader::ProtobufReader(ReadBuffer & in_)
 {
 }
 
+void ProtobufReader::reset()
+{
+    root_message_has_length_delimiter = false;
+    current_message_level = 0;
+    current_message_end = 0;
+    parent_message_ends.clear();
+    field_number = 0;
+    next_field_number = 0;
+    field_end = 0;
+}
+
 void ProtobufReader::startMessage(bool with_length_delimiter_)
 {
     // Start reading a root message.
