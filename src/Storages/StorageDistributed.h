@@ -218,6 +218,46 @@ private:
     std::vector<DistributedAsyncInsertDirectoryQueue::Status> getDirectoryQueueStatuses() const;
 
     static IColumn::Selector createSelector(ClusterPtr cluster, const ColumnWithTypeAndName & result);
+
+    /// Substitute hybridParam(name, type) calls in `predicate_ast` with literal values from
+    /// `watermarks`. Returns a fresh cloned AST. Pass-through for nullptr.
+    static ASTPtr substituteHybridWatermarks(
+        ASTPtr predicate_ast,
+        const MultiVersion<WatermarkParams>::Version & watermarks);
+
+    /// Hybrid-specific snapshot-time state attached to `StorageSnapshot::data`. Populated
+    /// once in `StorageDistributed::getStorageSnapshot()` so the watermark values seen by
+    /// `getQueryProcessingStage()` and `read()` cannot diverge mid-query under a concurrent
+    /// `ALTER MODIFY SETTING hybrid_watermark_*`. Without this, two independent
+    /// `MultiVersion::get()` calls could observe different versions and produce inconsistent
+    /// pruning verdicts (e.g. a `Complete`-stage plan unioned without final merge).
+    struct HybridSnapshotData : public StorageSnapshot::Data
+    {
+        MultiVersion<WatermarkParams>::Version watermark_snapshot;
+    };
+
+    /// Per-query Hybrid pruning verdict. Recomputed in both `getQueryProcessingStage()`
+    /// (to drive the stage decision and empty `optimized_cluster` when the base is pruned)
+    /// and `read()` (to skip planning of pruned additional segments). The verdict is
+    /// deterministic across both calls because the watermark snapshot it depends on is
+    /// taken once at `getStorageSnapshot()` time and reused via `HybridSnapshotData`.
+    struct HybridPruningVerdict
+    {
+        bool base_pruned = false;
+        std::vector<bool> segments_pruned;
+    };
+
+    HybridPruningVerdict computeHybridPruningVerdict(
+        const SelectQueryInfo & query_info,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ContextPtr & local_context) const;
+
+    /// Read the frozen watermark snapshot attached by `getStorageSnapshot()`. The standard read
+    /// path always attaches `HybridSnapshotData` for Hybrid tables; the fall-through to a live
+    /// `MultiVersion::get()` is for code paths that bypass `getStorageSnapshot()`.
+    MultiVersion<WatermarkParams>::Version getHybridWatermarkSnapshot(
+        const StorageSnapshotPtr & storage_snapshot) const;
+
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards

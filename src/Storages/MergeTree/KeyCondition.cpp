@@ -4845,10 +4845,18 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
     if (key_columns.size() != 1)
         return false;
 
+    return extractPlainRangesForColumn(0, ranges);
+}
+
+bool KeyCondition::extractPlainRangesForColumn(size_t column_index, Ranges & ranges) const
+{
+    if (column_index >= key_columns.size())
+        return false;
+
     if (hasMonotonicFunctionsChain())
         return false;
 
-    /// All Ranges in rpn_stack is plain.
+    /// All Ranges in rpn_stack are plain.
     std::stack<PlainRanges> rpn_stack;
 
     for (const auto & element : rpn)
@@ -4917,14 +4925,31 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
         {
             if (element.function == RPNElement::FUNCTION_IN_RANGE)
             {
-                rpn_stack.push(PlainRanges(element.range));
+                if (element.getKeyColumn() != column_index)
+                    rpn_stack.push(PlainRanges::makeUniverse());
+                else
+                    rpn_stack.push(PlainRanges(element.range));
             }
             else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
             {
-                rpn_stack.push(PlainRanges(element.range.invertRange()));
+                if (element.getKeyColumn() != column_index)
+                    rpn_stack.push(PlainRanges::makeUniverse());
+                else
+                    rpn_stack.push(PlainRanges(element.range.invertRange()));
             }
             else if (element.function == RPNElement::FUNCTION_IN_SET)
             {
+                /// Only single-column set atoms are supported. For multi-column tuple-IN, bail out;
+                /// the caller falls back to "can't prune" (see `HybridSegmentPruner::canBePruned`).
+                const auto & mapping = element.set_index->getIndexesMapping();
+                if (mapping.size() != 1)
+                    return false;
+                if (mapping[0].key_index != column_index)
+                {
+                    rpn_stack.push(PlainRanges::makeUniverse());
+                    continue;
+                }
+
                 if (element.set_index->hasMonotonicFunctionsChain())
                     return false;
 
@@ -4950,6 +4975,15 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
             }
             else if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
             {
+                const auto & mapping = element.set_index->getIndexesMapping();
+                if (mapping.size() != 1)
+                    return false;
+                if (mapping[0].key_index != column_index)
+                {
+                    rpn_stack.push(PlainRanges::makeUniverse());
+                    continue;
+                }
+
                 if (element.set_index->hasMonotonicFunctionsChain())
                     return false;
 
@@ -5016,7 +5050,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::extractPlainRanges");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::extractPlainRangesForColumn");
 
     ranges = std::move(rpn_stack.top().ranges);
     return true;
