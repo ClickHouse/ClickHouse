@@ -18,6 +18,7 @@ SELECT CAST(18446744073709551615::UInt64, 'Time64') SETTINGS date_time_overflow_
 SELECT CAST(9223372036854775808::UInt64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
 
 SELECT CAST(3600000::UInt64, 'Time64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(3600000::UInt32, 'Time64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(9999999::Int64, 'Time64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(9999999.0::Float64, 'Time64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(-9999999::Int64, 'Time64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
@@ -25,6 +26,17 @@ SELECT CAST(-9999999::Int64, 'Time64') SETTINGS date_time_overflow_behavior='thr
 SELECT CAST(99999999999::UInt64, 'DateTime64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(99999999999::Int64, 'DateTime64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(99999999999.0::Float64, 'DateTime64') SETTINGS date_time_overflow_behavior='throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+
+-- Small unsigned types fit entirely within the valid range, so no throw should occur and the result must agree across widths.
+SELECT CAST(200::UInt8, 'Time64') = CAST(200::UInt64, 'Time64') SETTINGS date_time_overflow_behavior='throw';
+SELECT CAST(60000::UInt16, 'Time64') = CAST(60000::UInt64, 'Time64') SETTINGS date_time_overflow_behavior='throw';
+SELECT CAST(1000000::UInt32, 'Time64') = CAST(1000000::UInt64, 'Time64') SETTINGS date_time_overflow_behavior='throw';
+SELECT CAST(200::UInt8, 'DateTime64') = CAST(200::UInt64, 'DateTime64') SETTINGS date_time_overflow_behavior='throw';
+SELECT CAST(60000::UInt16, 'DateTime64') = CAST(60000::UInt64, 'DateTime64') SETTINGS date_time_overflow_behavior='throw';
+SELECT CAST(4294967295::UInt32, 'DateTime64') = CAST(4294967295::UInt64, 'DateTime64') SETTINGS date_time_overflow_behavior='throw';
+
+-- Saturate mode for unsigned types
+SELECT CAST(4294967295::UInt32, 'Time64') = CAST(3599999::UInt64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
 
 -- Saturate clamp: out-of-range values must compare equal to the max
 SELECT CAST(9999999::Int64, 'Time64') = CAST(3599999::Int64, 'Time64') SETTINGS date_time_overflow_behavior='saturate';
