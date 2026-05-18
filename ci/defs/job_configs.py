@@ -1370,11 +1370,24 @@ class JobConfigs:
         command="python3 ./ci/jobs/docs_job_mintlify.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./docs/docs",
+                "./docs",
+                "./ci/jobs/docs_job_mintlify.py",
             ],
+            # Exclude everything currently in ./docs so that this job runs only
+            # on files that are NOT part of the legacy docs tree (i.e. the new
+            # Mintlify site files such as ./docs/docs.json and any new Mintlify
+            # content). Add new excludes here if more non-Mintlify content is
+            # introduced under ./docs.
             exclude_paths=[
+                "./docs/.gitignore",
+                "./docs/.htmltest.yml",
+                "./docs/README.md",
+                "./docs/_description_templates/",
+                "./docs/_includes/",
+                "./docs/changelog_entry_guidelines.md",
+                "./docs/changelogs/",
+                "./docs/clean",
                 "./docs/en/",
-                "./changelogs/"
             ],
         ),
         run_in_docker="clickhouse/docs-builder"
