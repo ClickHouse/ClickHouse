@@ -289,7 +289,7 @@ def test_predefined_connection_configuration(started_cluster):
     )
     print(f"kssenii: {result}")
     assert result.strip().endswith(
-        "ENGINE = PostgreSQL(postgres1, `table` = \\'test_table\\')"
+        "ENGINE = PostgreSQL(postgres1, `table` = \\\'test_table\\\')"
     )
 
     node1.query(
@@ -468,6 +468,60 @@ def test_numeric_detach_attach(started_cluster):
     node1.query("DROP DATABASE postgres_database")
     cursor.execute(f"DROP TABLE test_table")
 
+
+def test_postgresql_database_engine_show_create_preserves_compression(started_cluster):
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+
+    cursor.execute("DROP TABLE IF EXISTS test_table")
+    create_postgres_table(cursor, "test_table")
+
+    node1.query("DROP DATABASE IF EXISTS postgres_database")
+    node1.query(
+        f"""
+        CREATE DATABASE postgres_database ENGINE = PostgreSQL(
+            'postgres1:5432',
+            'postgres_database',
+            'postgres',
+            '{pg_pass}',
+            '',
+            0,
+            'on'
+        )
+        """
+    )
+
+    show_create = node1.query("SHOW CREATE TABLE postgres_database.test_table")
+
+    assert "ENGINE = PostgreSQL(" in show_create
+    assert "\\'test_table\\'" in show_create
+    assert "\\'\\'" in show_create
+    assert "\\'on\\'" in show_create
+
+    node1.query("DROP DATABASE postgres_database")
+    cursor.execute("DROP TABLE test_table")
+
+
+def test_postgresql_database_engine_rejects_invalid_compression(started_cluster):
+    node1.query("DROP DATABASE IF EXISTS postgres_database")
+    error = node1.query_and_get_error(
+        f"""
+        CREATE DATABASE postgres_database ENGINE = PostgreSQL(
+            'postgres1:5432',
+            'postgres_database',
+            'postgres',
+            '{pg_pass}',
+            '',
+            0,
+            'invalid'
+        )
+        """
+    )
+    assert "PostgreSQL compression must be one of" in error
+
+
 def test_postgresql_password_leak(started_cluster):
     conn = get_postgres_conn(
         started_cluster.postgres_ip, started_cluster.postgres_port, database=True
@@ -531,6 +585,7 @@ def test_inaccessible_postgresql_database_engine_filterable_on_system_tables(
 
     node1.query("DROP DATABASE postgres_database")
     assert "postgres_database" not in node1.query("SHOW DATABASES")
+
 
 def test_postgresql_database_engine_comment(started_cluster):
     conn = get_postgres_conn(
