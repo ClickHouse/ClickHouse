@@ -1668,6 +1668,9 @@ void ClientBase::onProfileEvents(Block & block)
                 thread_times[host_name].memory_usage = value;
             else if (event_name == MemoryTracker::PEAK_USAGE_EVENT_NAME)
                 thread_times[host_name].peak_memory_usage = value;
+            /// Keep the literal in sync with TemporaryDataOnDiskScope::USAGE_EVENT_NAME.
+            else if (event_name == "TemporaryDataOnDiskUsage")
+                thread_times[host_name].temp_data_on_disk_usage = value;
         }
         progress_indication.updateThreadEventData(thread_times);
         progress_table.updateTable(block);

@@ -23,6 +23,7 @@ struct ThreadEventData
     UInt64 user_ms      = 0;
     UInt64 system_ms    = 0;
     UInt64 memory_usage = 0;
+    UInt64 temp_data_on_disk_usage = 0;
 
     // -1 used as flag 'is not shown for old servers'
     Int64 peak_memory_usage = -1;
@@ -80,6 +81,9 @@ public:
     };
 
     MemoryUsage getMemoryUsage() const;
+
+    /// Total amount of temporary data on disk used by the query across all hosts (in bytes).
+    UInt64 getTempDataOnDiskUsage() const;
 
     void updateThreadEventData(HostToTimesMap & new_hosts_data);
 
