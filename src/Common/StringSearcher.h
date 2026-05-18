@@ -422,6 +422,16 @@ public:
                     return;
                 }
             }
+            else
+            {
+                /// Invalid UTF-8 sequence in the middle of the needle: process bytes verbatim,
+                /// matching the design of the outer if-else above for the first character.
+                /// Without this, the inner loop below would read uninitialized bytes from
+                /// `l_seq` / `u_seq` and insert them into `cachel` / `cacheu`, surfacing later
+                /// as a MemorySanitizer use-of-uninitialized-value in `compare` / `search`.
+                memcpy(l_seq, needle_pos, src_len);
+                memcpy(u_seq, needle_pos, src_len);
+            }
 
             cache_actual_len += src_len;
             if (cache_actual_len < N)
