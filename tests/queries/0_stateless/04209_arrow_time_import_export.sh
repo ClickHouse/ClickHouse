@@ -126,8 +126,8 @@ $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$DATA_FILE', 'Arrow')"
 # ---------------------------------------------------------------
 echo "=== Export Time64 to Arrow – Overflow ==="
 
-$CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 3) + INTERVAL 1000 YEAR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/ (version.*)//"
-$CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 3) - INTERVAL 1000 YEAR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/ (version.*)//"
+$CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 3) + INTERVAL 1000 YEAR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
+$CLICKHOUSE_LOCAL -q "SELECT toTime64(0, 3) - INTERVAL 1000 YEAR INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Arrow" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
 
 # Cleanup
 rm -f "$DATA_FILE"

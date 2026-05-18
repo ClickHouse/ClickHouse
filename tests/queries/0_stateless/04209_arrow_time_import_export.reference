@@ -5,5 +5,5 @@
 === Export Time type to Arrow ===
 12:34:56
 === Export Time64 to Arrow – Overflow ===
-Code: 407. DB::Exception: Code: 407. DB::Exception: Code: 407. DB::Exception: Decimal math overflow. (DECIMAL_OVERFLOW)
-Code: 407. DB::Exception: Code: 407. DB::Exception: Code: 407. DB::Exception: Decimal math overflow. (DECIMAL_OVERFLOW)
+Code: 407. Error: Code: 407. Error: Code: 407. Error: Decimal math overflow. (DECIMAL_OVERFLOW)
+Code: 407. Error: Code: 407. Error: Code: 407. Error: Decimal math overflow. (DECIMAL_OVERFLOW)
