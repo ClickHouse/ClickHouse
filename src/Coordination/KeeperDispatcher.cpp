@@ -629,7 +629,7 @@ void KeeperDispatcher::garbageCollectorThread(size_t batch_size)
                 {
                     auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::TryRemove);
                     auto & rem = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*request);
-                    rem.path = std::move(path);
+                    rem.path = path;
                     rem.version = version;
                     rem.try_remove = true;
                     rem.xid = Coordination::CLOSE_XID;
@@ -646,7 +646,7 @@ void KeeperDispatcher::garbageCollectorThread(size_t batch_size)
                     {
                         CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
                         ProfileEvents::increment(ProfileEvents::KeeperTTLRemoveRequestsEnqueued);
-                        LOG_TRACE(log, "Garbage collector: Remove request enqueued, path: {}, time: {}", rem.path, time);
+                        LOG_TRACE(log, "Garbage collector: Remove request enqueued, path: {}, time: {}", path, time);
                     }
                     else
                     {
