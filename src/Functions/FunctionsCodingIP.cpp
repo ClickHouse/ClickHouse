@@ -318,7 +318,20 @@ public:
     {
         ColumnPtr column = arguments[0].column;
         if (const auto * col_lc = checkAndGetColumn<ColumnLowCardinality>(column.get()))
-            return executeLowCardinality(*col_lc, input_rows_count);
+        {
+            /// LowCardinality fast path cannot honor the runtime Throw -> Default fallback selected by
+            /// `cast_ipv4_ipv6_default_on_conversion_error`, so materialize the column and fall through to
+            /// the regular path which already handles the mode selection.
+            if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
+            {
+                if (cast_ipv4_ipv6_default_on_conversion_error)
+                    column = col_lc->convertToFullColumnIfLowCardinality();
+                else
+                    return executeLowCardinality(*col_lc, input_rows_count);
+            }
+            else
+                return executeLowCardinality(*col_lc, input_rows_count);
+        }
 
         ColumnPtr null_map_column;
         const NullMap * null_map = nullptr;
@@ -413,7 +426,7 @@ private:
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal index column type {}. Expected UInt8 or UInt16 or UInt32", index_column->getName());
 
-        if (has_null && !col_res->isNullable())
+        if ((has_null || exception_mode == IPStringToNumExceptionMode::Null) && !col_res->isNullable())
             return ColumnNullable::create(std::move(col_res), std::move(col_null_map_to));
         return col_res;
     }
@@ -565,7 +578,20 @@ public:
     {
         ColumnPtr column = arguments[0].column;
         if (const auto * col_lc = checkAndGetColumn<ColumnLowCardinality>(column.get()))
-            return executeLowCardinality(*col_lc, input_rows_count);
+        {
+            /// LowCardinality fast path cannot honor the runtime Throw -> Default fallback selected by
+            /// `cast_ipv4_ipv6_default_on_conversion_error`, so materialize the column and fall through to
+            /// the regular path which already handles the mode selection.
+            if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
+            {
+                if (cast_ipv4_ipv6_default_on_conversion_error)
+                    column = col_lc->convertToFullColumnIfLowCardinality();
+                else
+                    return executeLowCardinality(*col_lc, input_rows_count);
+            }
+            else
+                return executeLowCardinality(*col_lc, input_rows_count);
+        }
         ColumnPtr null_map_column;
         const NullMap * null_map = nullptr;
         if (column->isNullable())
@@ -657,7 +683,7 @@ private:
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal index column type {}. Expected UInt8 or UInt16 or UInt32", index_column->getName());
 
-        if (has_null && !col_res->isNullable())
+        if ((has_null || exception_mode == IPStringToNumExceptionMode::Null) && !col_res->isNullable())
             return ColumnNullable::create(std::move(col_res), std::move(col_null_map_to));
         return col_res;
     }
