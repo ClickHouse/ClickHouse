@@ -493,19 +493,29 @@ void DiskObjectStorageTransaction::copyFileImpl(
     const size_t max_tasks_inflight = 2 * copy_object_pool->getMaxThreads();
     TaskTracker task_tracker(std::move(scheduler), max_tasks_inflight, /*limited_log=*/nullptr);
 
-    for (const auto & location : locations_for_writing)
+    try
     {
-        for (const auto [src_blob, dst_blob] : std::views::zip(blobs_to_copy, blobs_to_create))
+        for (const auto & location : locations_for_writing)
         {
-            task_tracker.add([this, &src_object_storages, src_blob, dst_blob, location, src_local_location, enriched_read_settings, enriched_write_settings]
+            for (const auto [src_blob, dst_blob] : std::views::zip(blobs_to_copy, blobs_to_create))
             {
-                src_object_storages->takePointingTo(src_local_location)->copyObjectToAnotherObjectStorage(
-                    src_blob, dst_blob, enriched_read_settings, enriched_write_settings, *object_storages->takePointingTo(location));
-            });
+                task_tracker.add([this, &src_object_storages, src_blob, dst_blob, location, src_local_location, enriched_read_settings, enriched_write_settings]
+                {
+                    src_object_storages->takePointingTo(src_local_location)->copyObjectToAnotherObjectStorage(
+                        src_blob, dst_blob, enriched_read_settings, enriched_write_settings, *object_storages->takePointingTo(location));
+                });
+            }
         }
-    }
 
-    task_tracker.waitAll();
+        task_tracker.waitAll();
+    }
+    catch (...)
+    {
+        /// Drain remaining in-flight tasks before unwinding, so workers stop touching
+        /// captured state (this, settings, ...) before TaskTracker is destroyed.
+        task_tracker.safeWaitAll();
+        throw;
+    }
 
     operations_to_execute.push_back([blobs_to_create, missing_locations, to_file_path](MetadataTransactionPtr tx)
     {
