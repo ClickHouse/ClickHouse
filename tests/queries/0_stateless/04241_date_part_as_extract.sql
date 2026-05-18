@@ -53,5 +53,5 @@ SELECT date_part('weeks', toDate('2024-03-17'));
 SELECT date_part('wk', toDate('2024-03-17'));
 SELECT date_part('ms', toDateTime64('2024-03-17 13:45:07.123', 3));
 
--- Unknown unit string still rejects.
-SELECT date_part('not_a_unit', toDate('2024-03-17')); -- { serverError SYNTAX_ERROR }
+-- Unknown unit string still rejects (raised by the parser, so it is a client error).
+SELECT date_part('not_a_unit', toDate('2024-03-17')); -- { clientError SYNTAX_ERROR }
