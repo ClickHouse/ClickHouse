@@ -1,0 +1,45 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <optimize_use_projections>1</optimize_use_projections>
+        <optimize_use_implicit_projections>1</optimize_use_implicit_projections>
+        <use_statistics_for_min_max_aggregation>1</use_statistics_for_min_max_aggregation>
+        <materialize_statistics_on_insert>1</materialize_statistics_on_insert>
+    </settings>
+
+    <create_query>
+        CREATE TABLE perf_stats_minmax_no_part (
+            key UInt64,
+            value Int32
+        ) ENGINE = MergeTree ORDER BY key
+        SETTINGS auto_statistics_types = 'basic'
+    </create_query>
+
+    <fill_query>
+        INSERT INTO perf_stats_minmax_no_part
+        SELECT number, toInt32(rand() % 1000000)
+        FROM numbers(10000000)
+    </fill_query>
+
+    <query>SELECT min(value), max(value) FROM perf_stats_minmax_no_part FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_stats_minmax_no_part</drop_query>
+
+    <create_query>
+        CREATE TABLE perf_stats_minmax_part (
+            p UInt8,
+            v UInt32
+        ) ENGINE = MergeTree PARTITION BY p ORDER BY tuple()
+        SETTINGS auto_statistics_types = 'basic'
+    </create_query>
+
+    <fill_query>
+        INSERT INTO perf_stats_minmax_part
+        SELECT number % 20, number
+        FROM numbers(10000000)
+    </fill_query>
+
+    <query>SELECT p, min(v), max(v) FROM perf_stats_minmax_part GROUP BY p ORDER BY p FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_stats_minmax_part</drop_query>
+</test>

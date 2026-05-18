@@ -1879,6 +1879,9 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, use_statistics_for_min_max_aggregation, true, R"(
+When enabled, `min`/`max` aggregation queries over columns with `basic` column statistics can be answered from per-part statistics without reading column data.
+)", 0) \
     DECLARE(Bool, use_top_k_dynamic_filtering, true, R"(
 Enable dynamic filtering optimization when executing a `ORDER BY <column> LIMIT n` query.
 
