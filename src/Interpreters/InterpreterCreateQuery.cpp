@@ -1883,7 +1883,7 @@ catch (...)
 
 bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
-                                           DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode)
+                                           DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode, bool skip_table_name_length_check)
 {
     if (create.isTemporary())
     {
@@ -1976,7 +1976,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
         /// If this is an initial create, we also need to check the table name's length.
         /// We are not checking this for secondary creates to avoid backward compatibility issues.
-        if (mode <= LoadingStrictnessLevel::CREATE)
+        if (!skip_table_name_length_check && mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(create.getTable());
     }
 
@@ -2253,7 +2253,7 @@ BlockIO InterpreterCreateQuery::doCreateTableAsSelect(ASTCreateQuery & create,
     {
         /// Create temporary table (random name will be generated)
         DDLGuardPtr ddl_guard;
-        [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties, ddl_guard, mode);
+        [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties, ddl_guard, mode, true);
         ddl_guard.reset();
         assert(done);
         created = true;
