@@ -1144,6 +1144,15 @@ class PaimonTableGenerator(LakeTableGenerator):
             del properties["bucket-key"]
         elif "bucket" in properties and "bucket-key" not in properties:
             properties["bucket-key"] = random.choice(flat_cols)
+        for min_key, max_key in (
+            ("snapshot.num-retained.min", "snapshot.num-retained.max"),
+            ("compaction.min.file-num", "compaction.max.file-num"),
+            ("num-sorted-run.compaction-trigger", "num-sorted-run.stop-trigger"),
+        ):
+            if min_key in properties and max_key in properties:
+                lo, hi = int(properties[min_key]), int(properties[max_key])
+                if lo > hi:
+                    properties[max_key] = str(lo)
         return properties
 
     def generate_table_properties_impl(
