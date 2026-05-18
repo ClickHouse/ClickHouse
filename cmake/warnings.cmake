@@ -44,7 +44,6 @@ no_warning(unsafe-buffer-usage) # too aggressive
 no_warning(switch-default) # conflicts with "defaults in a switch covering all enum values"
 no_warning(nrvo) # not eliding copy on return - too aggressive
 no_warning(missing-noreturn) # too aggressive with no clear benefit, see https://github.com/ClickHouse/ClickHouse/pull/86416
-no_warning(unique-object-duplication) # only relevant when building shared libraries; ClickHouse is a static binary
 # Hard-code knowledge of clang version-specific warnings rather than probing the compiler.
 # `lifetime-safety-*` were introduced in clang 23.
 if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 23)

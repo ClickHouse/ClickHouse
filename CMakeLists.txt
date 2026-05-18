@@ -391,12 +391,15 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
 # to only supply -fno-lto at the final linking stage. So we disable it
 # completely.
 if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
-    # Link time optimization. The visibility flags lock the LTO unit: with `-fvisibility=hidden`
-    # and `-fvisibility-inlines-hidden` the compiler can prove that classes/symbols are not
-    # overridden in any other shared object, which lets `-fwhole-program-vtables` devirtualize
-    # more aggressively. We are a static executable so nothing needs default visibility.
-    set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables -fforce-emit-vtables -fvisibility=hidden")
-    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables -fforce-emit-vtables -fvisibility=hidden -fvisibility-inlines-hidden")
+    # Link time optimization. `-fvisibility-inlines-hidden` keeps inline-function symbols inside
+    # their TU, which lets `-fwhole-program-vtables` devirtualize more aggressively without
+    # changing the linkage of data globals. `-Wl,--lto-whole-program-visibility` below gives
+    # the LTO pass the "no external override" promise we used to also get from full hidden
+    # visibility -- full `-fvisibility=hidden` is *not* safe here: ClickHouse links many static
+    # archives and would end up with duplicated Meyers' singletons across LTO partitions
+    # (clang flags this as `-Wunique-object-duplication`).
+    set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables -fforce-emit-vtables")
+    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables -fforce-emit-vtables -fvisibility-inlines-hidden")
     set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
 
     if(LINKER_NAME MATCHES "lld")
