@@ -240,6 +240,7 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool apply_row_policy_after_final;
     extern const SettingsBool apply_prewhere_after_final;
+    extern const SettingsBool defer_partition_pruning_after_final;
     extern const SettingsBool distributed_index_analysis_only_on_coordinator;
 }
 
@@ -2015,23 +2016,28 @@ void ReadFromMergeTree::buildIndexes(
     NamesAndTypesList dummy_names_and_types;
     indexes->key_condition_rpn_template = KeyCondition{filter_dag, query_context, {}, std::make_shared<ExpressionActions>(ActionsDAG(dummy_names_and_types))};
 
-    if (metadata_snapshot->hasPartitionKey())
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
-        auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
-        auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context));
+        const auto data_settings = data.getSettings();
 
-        bool skip_partition_analysis = skip_partition_pruning_ || !settings[Setting::use_partition_pruning];
-        indexes->minmax_idx_condition.emplace(
-            filter_dag, query_context, minmax_columns_names, minmax_expression_actions,
-            /* single_point_ = */ false,
-            /* skip_analysis_ = */ skip_partition_analysis);
-        indexes->partition_pruner.emplace(
-            metadata_snapshot,
-            filter_dag,
-            query_context,
-            false /* strict */,
-            skip_partition_analysis);
+        if (auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings); !minmax_columns.empty())
+        {
+            auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, data_settings, ExpressionActionsSettings(query_context));
+            indexes->minmax_idx_condition.emplace(
+                filter_dag, query_context, minmax_columns.getNames(), minmax_expression_actions,
+                /* single_point_ = */ false,
+                /* skip_analysis_ = */ skip_partition_pruning_ || !settings[Setting::use_partition_pruning] || !settings[Setting::use_skip_indexes]);
+        }
+
+        if (metadata_snapshot->hasPartitionKey())
+        {
+            indexes->partition_pruner.emplace(
+                metadata_snapshot,
+                filter_dag,
+                query_context,
+                /*strict=*/false,
+                /*skip_analysis=*/skip_partition_pruning_ || !settings[Setting::use_partition_pruning]);
+        }
     }
 
     indexes->part_values
@@ -2236,9 +2242,17 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
     if (defer_prewhere)
         deferred_prewhere_info = query_info.prewhere_info;
 
-    /// don't prune partitions unless the partition key is determined by the sorting key
-    /// matters when FINAL merges across partitions
-    if (!doNotMergePartsAcrossPartitionsFinal() && storage_snapshot->metadata->hasPartitionKey())
+    /// Don't prune partitions unless the partition key is determined by the sorting key:
+    /// when FINAL merges across partitions, rows with the same primary key in different
+    /// partitions must all participate in deduplication, so partition pruning would drop
+    /// rows that affect the FINAL result.
+    ///
+    /// Users whose data structure guarantees same-PK rows cannot span partitions (e.g. event-log
+    /// tables whose partition column is set at insert time and never changes) can opt out via
+    /// `defer_partition_pruning_after_final = 0` to restore pre-26.3 performance.
+    if (settings[Setting::defer_partition_pruning_after_final]
+        && !doNotMergePartsAcrossPartitionsFinal()
+        && storage_snapshot->metadata->hasPartitionKey())
     {
         const auto & partition_key = storage_snapshot->metadata->getPartitionKey();
         const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
@@ -2249,7 +2263,7 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
             partition_expr_names.begin(), partition_expr_names.end(),
             [&](const auto & expr_name) { return sorting_key_set.contains(expr_name); });
 
-        auto partition_required_columns = MergeTreeData::getMinMaxColumnsNames(partition_key);
+        auto partition_required_columns = partition_key.expression->getRequiredColumns();
         bool columns_match = std::all_of(
             partition_required_columns.begin(), partition_required_columns.end(),
             [&](const auto & col) { return sorting_key_set.contains(col); });
@@ -3898,8 +3912,8 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
     {
         case ReadFromMergeTree::IndexType::None:
             return "None";
-        case ReadFromMergeTree::IndexType::PartitionMinMax:
-            return "Partition Min-Max";
+        case ReadFromMergeTree::IndexType::MinMax:
+            return "Min-Max";
         case ReadFromMergeTree::IndexType::Partition:
             return "Partition";
         case ReadFromMergeTree::IndexType::Statistics:
