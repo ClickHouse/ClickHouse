@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 void ASTOptimizeQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     ostr << "OPTIMIZE TABLE ";
@@ -79,8 +84,9 @@ void ASTOptimizeQuery::readJSON(const Poco::JSON::Object & json)
     if (database)
         children.push_back(database);
     table = r.readChild("table");
-    if (table)
-        children.push_back(table);
+    if (!table)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'table' field in `OptimizeQuery` during AST JSON deserialization");
+    children.push_back(table);
     partition = r.readChild("partition");
     if (partition)
         children.push_back(partition);
