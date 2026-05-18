@@ -44,11 +44,14 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     /// Scan queues to decide what to do next.
     bool has_queued_chunks = false; /// any shard has chunks waiting in its queue
     bool has_pushable_queued_chunks = false; /// at least one queued chunk can be pushed right now (port is ready)
+    bool any_queue_at_capacity = false; /// at least one shard's queue hit the back-pressure cap
 
     auto queued_output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++queued_output_it)
     {
         const auto & queue = output_queues[shard];
+        if (queue.size() >= MAX_QUEUE_LENGTH)
+            any_queue_at_capacity = true;
         if (!queue.empty())
         {
             has_queued_chunks = true;
@@ -71,6 +74,9 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     /// Cannot push any output port
     if (has_queued_chunks && !has_pushable_queued_chunks)
         return Status::PortFull;
+
+    if (any_queue_at_capacity)
+        return has_pushable_queued_chunks ? Status::Ready : Status::PortFull;
 
     /// Try to pull a new input chunk.
     input.setNeeded();

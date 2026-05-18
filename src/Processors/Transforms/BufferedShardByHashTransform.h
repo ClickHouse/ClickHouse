@@ -44,6 +44,10 @@ public:
 private:
     void generateOutputChunks();
 
+    /// Once any queue hits this length the transform stops pulling new input until
+    /// the slow consumer drains it. Otherwise, we can have very high memory usage.
+    static constexpr size_t MAX_QUEUE_LENGTH = 10;
+
     size_t num_shards;
     ColumnNumbers key_columns;
 
@@ -51,7 +55,7 @@ private:
     bool has_pending_input_chunk = false;
     Chunk pending_input_chunk;
 
-    /// Per-shard FIFO of chunks waiting to be pushed downstream. Unbounded.
+    /// Per-shard FIFO of chunks waiting to be pushed downstream. Bounded at MAX_QUEUE_LENGTH.
     std::vector<std::deque<Chunk>> output_queues;
 
     WeakHash32 hash;
