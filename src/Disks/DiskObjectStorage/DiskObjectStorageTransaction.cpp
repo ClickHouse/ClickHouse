@@ -488,7 +488,10 @@ void DiskObjectStorageTransaction::copyFileImpl(
     /// We can't reuse `IObjectStorage::getThreadPoolWriter()` here because the copy implementation
     /// itself submits onto that pool via `writeObject`, which would risk pool self-deadlock.
     auto scheduler = threadPoolCallbackRunnerUnsafe<void>(*copy_object_pool, ThreadName::DISK_OBJECT_STORAGE_COPY);
-    TaskTracker task_tracker(std::move(scheduler), /*max_tasks_inflight=*/0, /*limited_log=*/nullptr);
+    /// Bound inflight tasks so memory stays O(threads) instead of O(locations * blobs),
+    /// and so a worker exception is observed (via future::get) before we enqueue the rest.
+    const size_t max_tasks_inflight = 2 * copy_object_pool->getMaxThreads();
+    TaskTracker task_tracker(std::move(scheduler), max_tasks_inflight, /*limited_log=*/nullptr);
 
     for (const auto & location : locations_for_writing)
     {
