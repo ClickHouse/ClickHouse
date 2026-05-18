@@ -49,8 +49,8 @@ void ProtobufListInputFormat::resetParser()
     /// envelope's message-bounds stack — rewind both so the next readRow
     /// opens a fresh envelope. This also recovers from a partially-read
     /// envelope after an exception.
-    reader->reset();
-    serializer->reset();
+    (*reader).reset();
+    (*serializer).reset();
 }
 
 bool ProtobufListInputFormat::readRow(MutableColumns & columns, RowReadExtension & row_read_extension)
