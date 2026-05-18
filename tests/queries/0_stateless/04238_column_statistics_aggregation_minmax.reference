@@ -1,0 +1,39 @@
+ReadFromPreparedSource (_column_statistics_aggregation)
+25	400
+ReadFromPreparedSource (_column_statistics_aggregation)
+50	200
+ReadFromMergeTree (default.test_col_stats_agg)
+100	200
+ReadFromPreparedSource (_column_statistics_aggregation)
+50	200
+ReadFromPreparedSource (_column_statistics_aggregation)
+2	40
+ReadFromPreparedSource (_column_statistics_aggregation)
+1	50	200
+2	150	300
+3	25	400
+ReadFromPreparedSource (_column_statistics_aggregation)
+1	50	200
+2	150	300
+ReadFromMergeTree (default.test_col_stats_agg)
+1	100	100
+2	200	200
+3	50	50
+4	300	300
+5	150	150
+6	25	25
+7	400	400
+ReadFromPreparedSource (_column_statistics_aggregation)
+1	5	20	2	5
+2	15	30	4	10
+3	2	40	3	10
+ReadFromPreparedSource (_column_statistics_aggregation)
+50	400
+ReadFromMergeTree (default.test_col_stats_agg)
+\N	\N
+25	inf
+1	50	200
+2	150	300
+3	25	inf
+ReadFromMergeTree (default.test_col_stats_agg)
+25	1225

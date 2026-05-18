@@ -2,6 +2,7 @@
 
 #include <mutex>
 #include <tuple>
+#include <vector>
 #include <base/defines.h>
 #include <Common/AggregatedMetrics.h>
 #include <Common/SimpleIncrement.h>
@@ -58,6 +59,9 @@ class Context;
 struct JobAndPool;
 class MergeTreeTransaction;
 struct ZeroCopyLock;
+
+struct AggregateDescription;
+using AggregateDescriptions = std::vector<AggregateDescription>;
 
 class IBackupEntry;
 using BackupEntries = std::vector<std::pair<String, std::shared_ptr<const IBackupEntry>>>;
@@ -518,6 +522,25 @@ public:
         QueryProcessingStage::Enum to_stage,
         const StorageSnapshotPtr &,
         SelectQueryInfo & info) const override;
+
+    /// Mapping from aggregate result column_name to physical (bare) column name in the table
+    using AggColumnToPhysicalName = std::unordered_map<String, String>;
+
+    /// Mapping from query GROUP BY key name to partition key index
+    using GroupByKeyToPartitionIdx = std::vector<std::pair<String, size_t>>;
+
+    /// Build a block of min/max aggregated values using per-column statistics.
+    /// This is used when `StatisticsMinMax` statistics have been collected
+    /// for the relevant columns.
+    Block getColumnStatisticsAggregationBlock(
+        const StorageMetadataPtr & metadata_snapshot,
+        const AggregateDescriptions & aggregate_descriptions,
+        const AggColumnToPhysicalName & agg_col_to_physical_name,
+        const GroupByKeyToPartitionIdx & group_by_key_to_partition_idx,
+        const ActionsDAG * filter_dag,
+        const RangesInDataParts & parts,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read,
+        ContextPtr query_context) const;
 
     ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
