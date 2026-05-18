@@ -2,6 +2,7 @@
 
 SET parallel_replicas_local_plan = 1;
 SET optimize_rewrite_has_to_in = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS tab;
 

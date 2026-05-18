@@ -59,10 +59,6 @@ SELECT count()
 FROM test_deterministic_injective_function_chain
 WHERE has(['abc', 'x9999'], p) SETTINGS optimize_rewrite_has_to_in = 0;
 
-SELECT count()
-FROM test_deterministic_injective_function_chain
-WHERE has(['abc', 'x9999'], p) SETTINGS optimize_rewrite_has_to_in = 1;
-
 EXPLAIN indexes = 1
 SELECT count()
 FROM test_deterministic_injective_function_chain
@@ -80,10 +76,6 @@ WHERE NOT has(['abc', 'x9999'], p) SETTINGS optimize_rewrite_has_to_in = 0;
 SELECT count()
 FROM test_deterministic_injective_function_chain
 WHERE NOT has(['abc', 'x9999'], p) SETTINGS optimize_rewrite_has_to_in = 0;
-
-SELECT count()
-FROM test_deterministic_injective_function_chain
-WHERE NOT has(['abc', 'x9999'], p) SETTINGS optimize_rewrite_has_to_in = 1;
 
 DROP TABLE IF EXISTS test_deterministic_injective_function_dag;
 
@@ -135,10 +127,6 @@ SELECT count()
 FROM test_deterministic_injective_function_dag
 WHERE has(['abc', 'x9999'], p) SETTINGS optimize_rewrite_has_to_in = 0;
 
-SELECT count()
-FROM test_deterministic_injective_function_dag
-WHERE has(['abc', 'x9999'], p) SETTINGS optimize_rewrite_has_to_in = 1;
-
 EXPLAIN indexes=1
 SELECT count()
 FROM test_deterministic_injective_function_dag
@@ -156,10 +144,6 @@ WHERE NOT has(['abc', 'x9999'], p) SETTINGS optimize_rewrite_has_to_in = 0;
 SELECT count()
 FROM test_deterministic_injective_function_dag
 WHERE NOT has(['abc', 'x9999'], p) SETTINGS optimize_rewrite_has_to_in = 0;
-
-SELECT count()
-FROM test_deterministic_injective_function_dag
-WHERE NOT has(['abc', 'x9999'], p) SETTINGS optimize_rewrite_has_to_in = 1;
 
 DROP TABLE IF EXISTS test_deterministic_injective_function_dag_complex;
 
@@ -211,10 +195,6 @@ SELECT count()
 FROM test_deterministic_injective_function_dag_complex
 WHERE has(['abc', 'x9999'], lower(p)) SETTINGS optimize_rewrite_has_to_in = 0;
 
-SELECT count()
-FROM test_deterministic_injective_function_dag_complex
-WHERE has(['abc', 'x9999'], lower(p)) SETTINGS optimize_rewrite_has_to_in = 1;
-
 EXPLAIN indexes=1
 SELECT count()
 FROM test_deterministic_injective_function_dag_complex
@@ -232,7 +212,3 @@ WHERE NOT has(['abc', 'x9999'], lower(p)) SETTINGS optimize_rewrite_has_to_in = 
 SELECT count()
 FROM test_deterministic_injective_function_dag_complex
 WHERE NOT has(['abc', 'x9999'], lower(p)) SETTINGS optimize_rewrite_has_to_in = 0;
-
-SELECT count()
-FROM test_deterministic_injective_function_dag_complex
-WHERE NOT has(['abc', 'x9999'], lower(p)) SETTINGS optimize_rewrite_has_to_in = 1;

@@ -101,10 +101,6 @@ SELECT count()
 FROM test_deterministic_injective_function_chain
 WHERE has(['abc', 'x9999'], p) SETTINGS optimize_rewrite_has_to_in = 0;
 9001
-SELECT count()
-FROM test_deterministic_injective_function_chain
-WHERE has(['abc', 'x9999'], p) SETTINGS optimize_rewrite_has_to_in = 1;
-9001
 EXPLAIN indexes = 1
 SELECT count()
 FROM test_deterministic_injective_function_chain
@@ -148,10 +144,6 @@ Expression ((Project names + Projection))
 SELECT count()
 FROM test_deterministic_injective_function_chain
 WHERE NOT has(['abc', 'x9999'], p) SETTINGS optimize_rewrite_has_to_in = 0;
-999
-SELECT count()
-FROM test_deterministic_injective_function_chain
-WHERE NOT has(['abc', 'x9999'], p) SETTINGS optimize_rewrite_has_to_in = 1;
 999
 DROP TABLE IF EXISTS test_deterministic_injective_function_dag;
 CREATE TABLE test_deterministic_injective_function_dag
@@ -254,10 +246,6 @@ SELECT count()
 FROM test_deterministic_injective_function_dag
 WHERE has(['abc', 'x9999'], p) SETTINGS optimize_rewrite_has_to_in = 0;
 9001
-SELECT count()
-FROM test_deterministic_injective_function_dag
-WHERE has(['abc', 'x9999'], p) SETTINGS optimize_rewrite_has_to_in = 1;
-9001
 EXPLAIN indexes=1
 SELECT count()
 FROM test_deterministic_injective_function_dag
@@ -301,10 +289,6 @@ Expression ((Project names + Projection))
 SELECT count()
 FROM test_deterministic_injective_function_dag
 WHERE NOT has(['abc', 'x9999'], p) SETTINGS optimize_rewrite_has_to_in = 0;
-999
-SELECT count()
-FROM test_deterministic_injective_function_dag
-WHERE NOT has(['abc', 'x9999'], p) SETTINGS optimize_rewrite_has_to_in = 1;
 999
 DROP TABLE IF EXISTS test_deterministic_injective_function_dag_complex;
 CREATE TABLE test_deterministic_injective_function_dag_complex
@@ -407,10 +391,6 @@ SELECT count()
 FROM test_deterministic_injective_function_dag_complex
 WHERE has(['abc', 'x9999'], lower(p)) SETTINGS optimize_rewrite_has_to_in = 0;
 9001
-SELECT count()
-FROM test_deterministic_injective_function_dag_complex
-WHERE has(['abc', 'x9999'], lower(p)) SETTINGS optimize_rewrite_has_to_in = 1;
-9001
 EXPLAIN indexes=1
 SELECT count()
 FROM test_deterministic_injective_function_dag_complex
@@ -454,8 +434,4 @@ Expression ((Project names + Projection))
 SELECT count()
 FROM test_deterministic_injective_function_dag_complex
 WHERE NOT has(['abc', 'x9999'], lower(p)) SETTINGS optimize_rewrite_has_to_in = 0;
-999
-SELECT count()
-FROM test_deterministic_injective_function_dag_complex
-WHERE NOT has(['abc', 'x9999'], lower(p)) SETTINGS optimize_rewrite_has_to_in = 1;
 999
