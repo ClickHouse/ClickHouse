@@ -24,13 +24,13 @@ class ReadBuffer;
 struct MutationCommand
 {
     /// Serialized text of the whole command (output of `formatWithSecretsOneLine`).
-    /// The AST itself is not kept around - call `accessAst` to parse it on demand.
+    /// The AST itself is not kept around - call `ast` to parse it on demand,
+    /// or `mutateAst` if the AST has to be edited in place.
     String ast_text = {};
 
-    /// Parser limits captured at the time `ast_text` was produced. Used by
-    /// `accessAst` so that on-demand re-parsing uses the same limits as the
-    /// original successful parse. They are stored alongside the text instead
-    /// of caching the parsed AST - the AST is always parsed fresh on demand.
+    /// Parser limits captured when `ast_text` was produced. Used by `ast` /
+    /// `mutateAst` so that on-demand re-parsing uses the same limits as the
+    /// original successful parse.
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
     UInt64 max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
 
@@ -58,82 +58,50 @@ struct MutationCommand
 
     Type type = EMPTY;
 
-    /// RAII handle returned by `accessAst`.
+    /// Read-only accessor: parses `ast_text` and returns the parsed alter
+    /// command as a shareable, const-qualified pointer. Returns nullptr if
+    /// `ast_text` is empty.
     ///
-    /// On construction it parses `ast_text` once (using the command's
-    /// stored parser limits). The parsed AST is exposed for reading or
-    /// modifying. On destruction the (possibly modified) AST is formatted
-    /// back into the owning `MutationCommand::ast_text`, so all changes
-    /// accumulated through one handle are written back in a single pass.
+    /// The returned value owns the AST: callers may keep it (passing through
+    /// further calls, storing in local variables, etc.) and it stays valid
+    /// independently of the `MutationCommand` it came from. To read several
+    /// sub-trees (`predicate`, `partition`, the `UPDATE` assignments) of the
+    /// same command, hoist `ast()` once into a local and access fields
+    /// directly through the returned pointer.
+    boost::intrusive_ptr<const ASTAlterCommand> ast() const;
+
+    /// RAII handle for editing the AST of a `MutationCommand` in place.
     ///
-    /// All AST sub-fields (predicate, partition, update assignments) are
-    /// accessed through the same handle, so a single `accessAst` call is
-    /// enough to read or mutate several parts of the command without
-    /// re-parsing.
+    /// On construction the handle parses a fresh, mutable copy of `ast_text`.
+    /// Inside the handle's scope callers may freely mutate the AST through
+    /// `*handle` / `handle->...`. On destruction the (possibly modified) AST
+    /// is serialized back into the owning `MutationCommand::ast_text` in one
+    /// pass, so all edits accumulated through one handle are written back
+    /// exactly once.
     ///
-    /// The sub-tree accessors return references / raw pointers into the
-    /// AST owned by this handle - they are valid only while the handle
-    /// is alive. To make accidental dangling impossible, these accessors
-    /// are only enabled on lvalue handles: callers must bind the result
-    /// of `accessAst` to a named variable first.
-    ///
-    /// The handle is move-only. If constructed from a const `MutationCommand`
-    /// it does not write anything back on destruction.
-    class AccessedAst
+    /// The handle is neither copyable nor movable. Construct one per scope.
+    class MutableAst
     {
     public:
-        AccessedAst(MutationCommand * owner, ASTPtr ast);
-        ~AccessedAst() noexcept;
+        explicit MutableAst(MutationCommand & owner);
+        ~MutableAst() noexcept;
 
-        AccessedAst(const AccessedAst &) = delete;
-        AccessedAst & operator=(const AccessedAst &) = delete;
-        AccessedAst(AccessedAst && other) noexcept;
-        AccessedAst & operator=(AccessedAst && other) noexcept;
+        MutableAst(const MutableAst &) = delete;
+        MutableAst & operator=(const MutableAst &) = delete;
+        MutableAst(MutableAst &&) = delete;
+        MutableAst & operator=(MutableAst &&) = delete;
 
-        explicit operator bool() const { return ast != nullptr; }
-
-        /// Smart-pointer copy of the parsed alter command. Safe to use even
-        /// after the handle is destroyed (it keeps a reference of its own).
-        ASTPtr getAstPtr() const { return ast; }
-
-        /// Lvalue-only access to the parsed alter command. The returned
-        /// reference / pointer is tied to *this and dangles once this is
-        /// destroyed.
-        ASTAlterCommand * operator->() const & { return getAlter(); }
-        ASTAlterCommand * operator->() const && = delete;
-        ASTAlterCommand & operator*() const & { return *getAlter(); }
-        ASTAlterCommand & operator*() const && = delete;
-
-        /// References to the corresponding sub-trees of the parsed alter
-        /// command. They share storage with the AST owned by this handle -
-        /// the handle must outlive the returned pointers / reference. The
-        /// rvalue overloads are deleted so a temporary handle cannot leak a
-        /// dangling reference.
-        IAST * getPredicate() const & { return getPredicateImpl(); }
-        IAST * getPredicate() const && = delete;
-
-        IAST * getPartition() const & { return getPartitionImpl(); }
-        IAST * getPartition() const && = delete;
-
-        const std::unordered_map<String, ASTPtr> & getColumnToUpdateExpression() const &;
-        const std::unordered_map<String, ASTPtr> & getColumnToUpdateExpression() const && = delete;
+        ASTAlterCommand & operator*() const { return *ast; }
+        ASTAlterCommand * operator->() const { return ast.get(); }
+        ASTAlterCommand * get() const { return ast.get(); }
 
     private:
-        MutationCommand * owner;
-        ASTPtr ast;
-        mutable std::optional<std::unordered_map<String, ASTPtr>> cached_column_to_update;
-
-        ASTAlterCommand * getAlter() const;
-        IAST * getPredicateImpl() const;
-        IAST * getPartitionImpl() const;
+        MutationCommand & owner;
+        boost::intrusive_ptr<ASTAlterCommand> ast;
     };
 
-    /// Parses `ast_text` once and returns a RAII handle. Modifications made
-    /// through the handle are accumulated in memory and serialized back into
-    /// `ast_text` when the handle is destroyed, so one handle = one parse
-    /// followed by one write-back.
-    AccessedAst accessAst();
-    AccessedAst accessAst() const;
+    /// Open a mutating scope on the AST. See `MutableAst` for the semantics.
+    MutableAst mutateAst() { return MutableAst(*this); }
 
     /// For MATERIALIZE INDEX and PROJECTION and STATISTICS
     String index_name = {};
@@ -158,9 +126,10 @@ struct MutationCommand
     /// Required to distinguish read command used for MODIFY COLUMN.
     bool read_for_patch = false;
 
-    /// If parse_alter_commands, than consider more Alter commands as mutation commands.
-    /// `max_parser_depth` / `max_parser_backtracks` are captured into the returned
-    /// command so subsequent on-demand re-parsing uses the same limits.
+    /// If `parse_alter_commands` is true, more alter commands are accepted as
+    /// mutation commands. `max_parser_depth` / `max_parser_backtracks` are
+    /// captured into the returned command so subsequent on-demand re-parsing
+    /// uses the same limits as this initial parse.
     static std::optional<MutationCommand> parse(
         const ASTAlterCommand & command,
         bool parse_alter_commands = false,
@@ -175,6 +144,12 @@ struct MutationCommand
     bool isDropOrRename() const;
     bool affectsAllColumns() const;
 };
+
+/// Collect the `UPDATE column = expr, ...` assignments from a parsed alter
+/// command into a `column -> expression` map. The returned `ASTPtr`s point
+/// into the assignment subtrees of `alter`, so the map is valid for as long
+/// as `alter` is.
+std::unordered_map<String, ASTPtr> getColumnToUpdateExpression(const ASTAlterCommand & alter);
 
 /// Multiple mutation commands, possibly from different ALTER queries
 class MutationCommands : public std::vector<MutationCommand>

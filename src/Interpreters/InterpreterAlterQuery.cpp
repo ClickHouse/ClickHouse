@@ -157,10 +157,9 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
             const auto & session_tz = settings[Setting::session_timezone].value;
             if (!session_tz.empty())
             {
-                auto handle = mutation_command->accessAst();
-                auto & source_ast = *handle;
+                auto source_alter = mutation_command->ast();
                 auto tz_rewritten_ast = rewriteDateTimeLiteralsWithTimezone(
-                    source_ast, table->getInMemoryMetadataPtr(context, true)->columns, session_tz);
+                    *source_alter, table->getInMemoryMetadataPtr(context, true)->columns, session_tz);
                 if (tz_rewritten_ast)
                 {
                     auto * tz_alter_command = tz_rewritten_ast->as<ASTAlterCommand>();
@@ -173,7 +172,7 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
                     if (!mutation_command)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
-                            source_ast.formatForErrorMessage(), tz_rewritten_ast->formatForErrorMessage());
+                            source_alter->formatForErrorMessage(), tz_rewritten_ast->formatForErrorMessage());
                 }
             }
 

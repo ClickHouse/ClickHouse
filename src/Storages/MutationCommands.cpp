@@ -56,7 +56,10 @@ bool MutationCommand::affectsAllColumns() const
         || type == REWRITE_PARTS;
 }
 
-static ASTPtr parseMutationCommandText(const String & ast_text, UInt64 max_parser_depth, UInt64 max_parser_backtracks)
+namespace
+{
+
+boost::intrusive_ptr<ASTAlterCommand> parseAlterCommand(const String & ast_text, UInt64 max_parser_depth, UInt64 max_parser_backtracks)
 {
     if (ast_text.empty())
         return nullptr;
@@ -72,38 +75,37 @@ static ASTPtr parseMutationCommandText(const String & ast_text, UInt64 max_parse
             "Expected exactly one ALTER command parsed from mutation command text, got {}",
             commands_ast->children.size());
 
-    return commands_ast->children[0];
+    auto child = std::move(commands_ast->children[0]);
+    auto * alter = child->as<ASTAlterCommand>();
+    if (!alter)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Parsed mutation command is not an ASTAlterCommand: {}",
+            child->formatForErrorMessage());
+
+    return boost::intrusive_ptr<ASTAlterCommand>(alter);
 }
 
-MutationCommand::AccessedAst::AccessedAst(MutationCommand * owner_, ASTPtr ast_)
-    : owner(owner_), ast(std::move(ast_))
+}
+
+boost::intrusive_ptr<const ASTAlterCommand> MutationCommand::ast() const
+{
+    return parseAlterCommand(ast_text, max_parser_depth, max_parser_backtracks);
+}
+
+MutationCommand::MutableAst::MutableAst(MutationCommand & owner_)
+    : owner(owner_)
+    , ast(parseAlterCommand(owner_.ast_text, owner_.max_parser_depth, owner_.max_parser_backtracks))
 {
 }
 
-MutationCommand::AccessedAst::AccessedAst(AccessedAst && other) noexcept
-    : owner(std::exchange(other.owner, nullptr))
-    , ast(std::move(other.ast))
+MutationCommand::MutableAst::~MutableAst() noexcept
 {
-}
-
-MutationCommand::AccessedAst & MutationCommand::AccessedAst::operator=(AccessedAst && other) noexcept
-{
-    if (this != &other)
-    {
-        this->~AccessedAst();
-        owner = std::exchange(other.owner, nullptr);
-        ast = std::move(other.ast);
-    }
-    return *this;
-}
-
-MutationCommand::AccessedAst::~AccessedAst() noexcept
-{
-    if (!owner || !ast)
+    if (!ast)
         return;
     try
     {
-        owner->ast_text = ast->formatWithSecretsOneLine();
+        owner.ast_text = ast->formatWithSecretsOneLine();
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -111,49 +113,17 @@ MutationCommand::AccessedAst::~AccessedAst() noexcept
     }
 }
 
-ASTAlterCommand * MutationCommand::AccessedAst::getAlter() const
+std::unordered_map<String, ASTPtr> getColumnToUpdateExpression(const ASTAlterCommand & alter)
 {
-    return ast ? ast->as<ASTAlterCommand>() : nullptr;
-}
-
-IAST * MutationCommand::AccessedAst::getPredicateImpl() const
-{
-    const auto * alter = getAlter();
-    return alter ? alter->predicate : nullptr;
-}
-
-IAST * MutationCommand::AccessedAst::getPartitionImpl() const
-{
-    const auto * alter = getAlter();
-    return alter ? alter->partition : nullptr;
-}
-
-const std::unordered_map<String, ASTPtr> & MutationCommand::AccessedAst::getColumnToUpdateExpression() const &
-{
-    if (cached_column_to_update.has_value())
-        return *cached_column_to_update;
-
-    auto & result = cached_column_to_update.emplace();
-    const auto * alter = getAlter();
-    if (!alter || !alter->update_assignments)
+    std::unordered_map<String, ASTPtr> result;
+    if (!alter.update_assignments)
         return result;
-    for (const auto & child : alter->update_assignments->children)
+    for (const auto & child : alter.update_assignments->children)
     {
         const auto & assignment = child->as<ASTAssignment &>();
         result.emplace(assignment.column_name, assignment.expression());
     }
     return result;
-}
-
-MutationCommand::AccessedAst MutationCommand::accessAst()
-{
-    return AccessedAst(this, parseMutationCommandText(ast_text, max_parser_depth, max_parser_backtracks));
-}
-
-MutationCommand::AccessedAst MutationCommand::accessAst() const
-{
-    /// Read-only access: do not write the AST back to ast_text on destruction.
-    return AccessedAst(nullptr, parseMutationCommandText(ast_text, max_parser_depth, max_parser_backtracks));
 }
 
 std::optional<MutationCommand> MutationCommand::parse(
@@ -318,8 +288,9 @@ boost::intrusive_ptr<ASTExpressionList> MutationCommands::ast(bool with_pure_met
     {
         if (!command.isPureMetadataCommand() || with_pure_metadata_commands)
         {
-            auto handle = command.accessAst();
-            res->children.push_back(handle.getAstPtr());
+            auto parsed = command.ast();
+            if (parsed)
+                res->children.emplace_back(const_cast<ASTAlterCommand *>(parsed.get()));
         }
     }
     return res;
@@ -391,9 +362,11 @@ NameSet MutationCommands::getAllUpdatedColumns() const
     NameSet res;
     for (const auto & command : *this)
     {
-        auto handle = command.accessAst();
-        for (const auto & [column_name, _] : handle.getColumnToUpdateExpression())
-            res.insert(column_name);
+        auto alter = command.ast();
+        if (!alter || !alter->update_assignments)
+            continue;
+        for (const auto & child : alter->update_assignments->children)
+            res.insert(child->as<ASTAssignment &>().column_name);
     }
     return res;
 }

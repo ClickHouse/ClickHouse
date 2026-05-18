@@ -27,6 +27,7 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -201,16 +202,16 @@ IsStorageTouched isStorageTouchedByMutations(
         }
         else
         {
-            auto handle = command.accessAst();
-            if (!handle.getPredicate()) /// The command touches all rows.
+            auto alter = command.ast();
+            if (!alter || !alter->predicate) /// The command touches all rows.
             {
                 ProfileEvents::increment(ProfileEvents::MutationAffectedRowsUpperBound, source_part->rows_count);
                 return all_rows;
             }
 
-            if (auto * partition = handle.getPartition())
+            if (alter->partition)
             {
-                const String partition_id = storage_from_part->getPartitionIDFromQuery(ASTPtr(partition), context);
+                const String partition_id = storage_from_part->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
                 if (partition_id == source_part->info.getPartitionId())
                     all_commands_can_be_skipped = false;
             }
@@ -277,18 +278,17 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
 )
 {
     ASTPtr partition_predicate_as_ast_func;
-    auto handle = command.accessAst();
-    auto * partition = handle.getPartition();
-    if (partition)
+    auto alter = command.ast();
+    if (alter && alter->partition)
     {
         String partition_id;
 
         auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
         auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
         if (storage_merge_tree)
-            partition_id = storage_merge_tree->getPartitionIDFromQuery(ASTPtr(partition), context);
+            partition_id = storage_merge_tree->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
         else if (storage_from_merge_tree_data_part)
-            partition_id = storage_from_merge_tree_data_part->getPartitionIDFromQuery(ASTPtr(partition), context);
+            partition_id = storage_from_merge_tree_data_part->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables");
 
@@ -298,8 +298,8 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
         );
     }
 
-    auto * predicate = handle.getPredicate();
-    if (predicate && partition)
+    IAST * predicate = alter ? alter->predicate : nullptr;
+    if (predicate && alter->partition)
         return makeASTOperator("and", ASTPtr(predicate), std::move(partition_predicate_as_ast_func));
     return predicate ? ASTPtr(predicate) : partition_predicate_as_ast_func;
 }
@@ -654,16 +654,20 @@ void MutationsInterpreter::prepare(bool dry_run)
         if (command.type == MutationCommand::REWRITE_PARTS)
             has_rewrite_parts = true;
 
-        auto handle = command.accessAst();
-        for (const auto & [name, _] : handle.getColumnToUpdateExpression())
+        auto alter = command.ast();
+        if (alter && alter->update_assignments)
         {
-            if (name == RowExistsColumn::name)
+            for (const auto & child : alter->update_assignments->children)
             {
-                if (available_columns_set.emplace(name).second)
-                    available_columns.push_back(name);
-            }
+                const auto & name = child->as<ASTAssignment &>().column_name;
+                if (name == RowExistsColumn::name)
+                {
+                    if (available_columns_set.emplace(name).second)
+                        available_columns.push_back(name);
+                }
 
-            updated_columns.insert(name);
+                updated_columns.insert(name);
+            }
         }
     }
 
@@ -817,8 +821,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             addStageIfNeeded(command.mutation_version, false);
 
             NameSet affected_materialized;
-            auto handle = command.accessAst();
-            const auto & column_to_update = handle.getColumnToUpdateExpression();
+            auto alter = command.ast();
+            auto column_to_update = alter ? getColumnToUpdateExpression(*alter) : std::unordered_map<String, ASTPtr>{};
 
             for (const auto & [column_name, update_expr] : column_to_update)
             {
@@ -1251,15 +1255,10 @@ void MutationsInterpreter::prepare(bool dry_run)
         else
         {
             String description;
-            if (!command.ast_text.empty())
-            {
-                auto handle = command.accessAst();
-                description = handle->formatForLogging();
-            }
+            if (auto alter = command.ast())
+                description = alter->formatForLogging();
             else
-            {
                 description = fmt::to_string(command.type);
-            }
             throw Exception(
                 ErrorCodes::UNKNOWN_MUTATION_COMMAND,
                 "Unknown mutation command: {}",

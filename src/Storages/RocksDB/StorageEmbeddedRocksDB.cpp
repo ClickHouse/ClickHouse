@@ -13,6 +13,7 @@
 #include <Storages/RocksDB/RocksDBSettings.h>
 #include <Storages/StorageFactory.h>
 
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <Processors/ISource.h>
@@ -384,8 +385,8 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
     }
 
     chassert(commands.front().type == MutationCommand::Type::UPDATE);
-    auto handle = commands.front().accessAst();
-    const auto & column_to_update = handle.getColumnToUpdateExpression();
+    auto alter = commands.front().ast();
+    const auto column_to_update = getColumnToUpdateExpression(*alter);
     for (const auto & key_name : primary_keys)
     {
         if (column_to_update.contains(key_name))

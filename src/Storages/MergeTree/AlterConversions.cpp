@@ -52,22 +52,21 @@ static MutationCommand createCommandWithUpdatedColumns(
     res.max_parser_backtracks = command.max_parser_backtracks;
     res.ast_text = command.ast_text;
 
-    /// Use the RAII handle on `res` inside an explicit scope so the handle's
-    /// destructor (which writes the modified AST back into `res.ast_text`)
-    /// runs before `return res`, regardless of whether NRVO is applied.
+    /// Open a mutating scope on `res` so the handle's destructor (which
+    /// serializes the modified AST back into `res.ast_text`) runs before
+    /// `return res`, regardless of whether NRVO is applied.
     {
-        auto handle = res.accessAst();
-        auto & alter_ast = *handle;
+        auto handle = res.mutateAst();
         auto new_assignments = make_intrusive<ASTExpressionList>();
 
-        for (const auto & child : alter_ast.update_assignments->children)
+        for (const auto & child : handle->update_assignments->children)
         {
             const auto & assignment = assert_cast<const ASTAssignment &>(*child);
             if (available_columns.contains(assignment.column_name))
                 new_assignments->children.push_back(child->clone());
         }
 
-        alter_ast.update_assignments = alter_ast.children.emplace_back(std::move(new_assignments)).get();
+        handle->update_assignments = handle->children.emplace_back(std::move(new_assignments)).get();
     }
     return res;
 }
@@ -90,17 +89,16 @@ static bool isLightweightDeleteCommand(const String & column_name, const ASTPtr 
 static MutationCommand createLightweightDeleteCommand(const MutationCommand & command)
 {
     chassert(command.type == MutationCommand::Type::UPDATE);
-    auto handle = command.accessAst();
-    auto * predicate = handle.getPredicate();
-    chassert(predicate != nullptr);
+    auto src_alter = command.ast();
+    chassert(src_alter && src_alter->predicate != nullptr);
 
     auto alter_command = make_intrusive<ASTAlterCommand>();
     alter_command->type = ASTAlterCommand::DELETE;
 
-    if (auto * partition = handle.getPartition())
-        alter_command->partition = alter_command->children.emplace_back(partition->clone()).get();
+    if (src_alter->partition)
+        alter_command->partition = alter_command->children.emplace_back(src_alter->partition->clone()).get();
 
-    alter_command->predicate = alter_command->children.emplace_back(predicate->clone()).get();
+    alter_command->predicate = alter_command->children.emplace_back(src_alter->predicate->clone()).get();
     auto mutation_command = MutationCommand::parse(
         *alter_command,
         /* parse_alter_commands = */ false,
@@ -206,9 +204,11 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
                 "ALTER UPDATE/ALTER DELETE statements with nondeterministic deterministic functions cannot be applied on fly. "
                 "Function '{}' is non-deterministic", *result.nondeterministic_function_name);
 
-        auto handle = command.accessAst();
-        for (const auto & [column, _] : handle.getColumnToUpdateExpression())
-            all_updated_columns.insert(column);
+        if (auto alter = command.ast(); alter && alter->update_assignments)
+        {
+            for (const auto & child : alter->update_assignments->children)
+                all_updated_columns.insert(child->as<ASTAssignment &>().column_name);
+        }
 
         mutation_commands.push_back(command);
     }
@@ -488,8 +488,7 @@ MutationCommands AlterConversions::filterMutationCommands(Names & read_columns, 
         IdentifierNameSet source_columns;
         if (command.type == MutationCommand::Type::DELETE)
         {
-            auto handle = command.accessAst();
-            handle.getPredicate()->collectIdentifierNames(source_columns);
+            command.ast()->predicate->collectIdentifierNames(source_columns);
             filtered_commands.push_back(command);
         }
         else if (command.type == MutationCommand::Type::UPDATE)
@@ -497,33 +496,36 @@ MutationCommands AlterConversions::filterMutationCommands(Names & read_columns, 
             bool has_lightweight_delete = false;
             std::unordered_map<String, ASTPtr> new_updated_columns;
 
-            auto handle = command.accessAst();
-            for (const auto & [column, ast] : handle.getColumnToUpdateExpression())
+            auto alter = command.ast();
+            if (alter && alter->update_assignments)
             {
-                if (isLightweightDeleteCommand(column, ast))
+                for (const auto & child : alter->update_assignments->children)
                 {
-                    has_lightweight_delete = true;
-                }
-                else if (read_columns_set.contains(column))
-                {
-                    ast->collectIdentifierNames(source_columns);
-                    new_updated_columns.emplace(column, ast->clone());
+                    const auto & assignment = child->as<ASTAssignment &>();
+                    auto expr = assignment.expression();
+                    if (isLightweightDeleteCommand(assignment.column_name, expr))
+                    {
+                        has_lightweight_delete = true;
+                    }
+                    else if (read_columns_set.contains(assignment.column_name))
+                    {
+                        expr->collectIdentifierNames(source_columns);
+                        new_updated_columns.emplace(assignment.column_name, expr->clone());
+                    }
                 }
             }
 
             if (has_lightweight_delete)
             {
                 auto new_command = createLightweightDeleteCommand(command);
-                auto new_handle = new_command.accessAst();
-                new_handle.getPredicate()->collectIdentifierNames(source_columns);
+                new_command.ast()->predicate->collectIdentifierNames(source_columns);
                 filtered_commands.push_back(std::move(new_command));
             }
 
             if (!new_updated_columns.empty())
             {
                 auto new_command = createCommandWithUpdatedColumns(command, new_updated_columns);
-                auto new_handle = new_command.accessAst();
-                new_handle.getPredicate()->collectIdentifierNames(source_columns);
+                new_command.ast()->predicate->collectIdentifierNames(source_columns);
                 filtered_commands.push_back(std::move(new_command));
             }
         }

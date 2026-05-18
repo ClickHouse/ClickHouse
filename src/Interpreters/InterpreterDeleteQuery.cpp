@@ -33,6 +33,8 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsLightweightDeleteMode lightweight_delete_mode;
     extern const SettingsBool enable_lightweight_update;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
 }
 
 namespace MergeTreeSetting
@@ -101,6 +103,8 @@ BlockIO InterpreterDeleteQuery::execute()
         alter_command->type = ASTAlterCommand::DELETE;
         alter_command->predicate = alter_command->children.emplace_back(delete_query.predicate->clone()).get();
         mut_command.ast_text = alter_command->formatWithSecretsOneLine();
+        mut_command.max_parser_depth = settings[Setting::max_parser_depth];
+        mut_command.max_parser_backtracks = settings[Setting::max_parser_backtracks];
 
         mutation_commands.emplace_back(mut_command);
 

@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -142,12 +143,11 @@ static std::optional<ModuleDeleteFilter> getModuleDeleteFilterFromAst(const Muta
         return {};
 
     const auto & command = commands.front();
-    auto handle = command.accessAst();
-    auto * predicate = handle.getPredicate();
-    if (command.type != MutationCommand::DELETE || handle.getPartition() || !predicate)
+    auto alter = command.ast();
+    if (command.type != MutationCommand::DELETE || !alter || alter->partition || !alter->predicate)
         return {};
 
-    const auto * func = predicate->as<ASTFunction>();
+    const auto * func = alter->predicate->as<ASTFunction>();
     if (!func || !func->arguments || func->arguments->children.size() != 2)
         return {};
 

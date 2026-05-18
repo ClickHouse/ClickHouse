@@ -3,6 +3,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -651,8 +652,8 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
     }
 
     assert(commands.front().type == MutationCommand::Type::UPDATE);
-    auto handle = commands.front().accessAst();
-    if (handle.getColumnToUpdateExpression().contains(primary_key))
+    auto alter = commands.front().ast();
+    if (getColumnToUpdateExpression(*alter).contains(primary_key))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
 
     MutationsInterpreter::Settings settings(true);
