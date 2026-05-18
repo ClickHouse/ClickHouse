@@ -15,6 +15,7 @@
 #include <Client/ClientApplicationBase.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
+#include <Client/sanitizeUntrustedServerString.h>
 #include <Common/logger_useful.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
@@ -575,16 +576,23 @@ void Connection::receiveHello()
     readVarUInt(packet_type, *in);
     if (packet_type == Protocol::Server::Hello)
     {
-        readStringBinary(server_name, *in);
+        readStringBinary(server_name, *in, MAX_SERVER_HELLO_STRING_SIZE);
+        sanitizeUntrustedServerString(server_name);
         readVarUInt(server_version_major, *in);
         readVarUInt(server_version_minor, *in);
         readVarUInt(server_revision, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL)
             readVarUInt(server_parallel_replicas_protocol_version, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
-            readStringBinary(server_timezone, *in);
+        {
+            readStringBinary(server_timezone, *in, MAX_SERVER_HELLO_STRING_SIZE);
+            sanitizeUntrustedServerString(server_timezone);
+        }
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
-            readStringBinary(server_display_name, *in);
+        {
+            readStringBinary(server_display_name, *in, MAX_SERVER_HELLO_STRING_SIZE);
+            sanitizeUntrustedServerString(server_display_name);
+        }
         if (server_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
             readVarUInt(server_version_patch, *in);
         else
@@ -606,8 +614,10 @@ void Connection::receiveHello()
             {
                 String original_pattern;
                 String exception_message;
-                readStringBinary(original_pattern, *in);
-                readStringBinary(exception_message, *in);
+                readStringBinary(original_pattern, *in, MAX_SERVER_HELLO_STRING_SIZE);
+                readStringBinary(exception_message, *in, MAX_SERVER_HELLO_STRING_SIZE);
+                sanitizeUntrustedServerString(original_pattern);
+                sanitizeUntrustedServerString(exception_message);
                 password_complexity_rules.push_back({std::move(original_pattern), std::move(exception_message)});
             }
         }
