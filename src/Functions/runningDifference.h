@@ -61,7 +61,7 @@ private:
 
         /// It is possible to SIMD optimize this loop. By no need for that in practice.
 
-        Dst prev{};
+        Src prev{};
         bool has_prev_value = false;
 
         for (size_t i = 0; i < size; ++i)
@@ -72,25 +72,42 @@ private:
                 continue;
             }
 
+            Src cur = src[i];
             if (!has_prev_value)
             {
-                dst[i] = is_first_line_zero ? static_cast<Dst>(0) : static_cast<Dst>(src[i]);
-                prev = static_cast<Dst>(src[i]);
+                dst[i] = is_first_line_zero ? Dst{} : static_cast<Dst>(cur);
+                prev = cur;
                 has_prev_value = true;
             }
             else
             {
-                /// Subtract in the destination type (`ResultOfSubtraction<Src, Src>`),
-                /// which is signed and at least as wide as `Src` for all narrow
-                /// integer inputs. This preserves the historically observable
-                /// result for widened cases such as `UInt32 -> Int64` (e.g.
-                /// `runningDifference(toUInt32(0))` after `1` produces `-1`,
-                /// not `4294967295`) and avoids the `-Wdouble-promotion`
-                /// warning by performing both casts explicitly. Overflow on
-                /// same-width inputs (e.g. `Int64 -> Int64`) is tolerated
-                /// via `NO_SANITIZE_UNDEFINED`.
-                auto cur = static_cast<Dst>(src[i]);
-                dst[i] = cur - prev;
+                if constexpr (is_integer<Src> && is_unsigned_v<Src> && sizeof(Src) >= sizeof(Dst))
+                {
+                    /// `Src` is unsigned and `Dst` is no wider than `Src`
+                    /// (e.g. `UInt64 -> Int64`, `UInt128 -> Int128`,
+                    /// `UInt256 -> Int256`). Subtract in the source domain
+                    /// where wrapping is well defined, then reinterpret the
+                    /// result into `Dst`. This preserves the historical
+                    /// behaviour (which relied on usual arithmetic
+                    /// conversions promoting both operands to `Src`) and
+                    /// avoids signed-overflow undefined behaviour for
+                    /// values near the boundary of the signed range.
+                    Src diff = cur - prev;
+                    dst[i] = static_cast<Dst>(diff);
+                }
+                else
+                {
+                    /// `Dst` is strictly wider than `Src` (e.g. `UInt32 -> Int64`,
+                    /// `Int32 -> Int64`), or the types match (floating point,
+                    /// same-width signed integers). Subtraction in `Dst`
+                    /// preserves the mathematical result for widened cases
+                    /// and matches the pre-existing behaviour otherwise.
+                    /// Same-width signed overflow (e.g. `Int64 -> Int64`)
+                    /// remains tolerated under `NO_SANITIZE_UNDEFINED`. The
+                    /// explicit casts on both operands avoid the
+                    /// `-Wdouble-promotion` warning for floating sources.
+                    dst[i] = static_cast<Dst>(cur) - static_cast<Dst>(prev);
+                }
                 prev = cur;
             }
         }
