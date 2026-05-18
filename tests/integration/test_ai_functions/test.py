@@ -37,15 +37,24 @@ def run_mock_server():
         detach=True,
         user="root",
     )
-    wait_condition(
-        lambda: instance.exec_in_container(
-            ["curl", "-s", f"http://localhost:{MOCK_PORT}/health"],
+    try:
+        wait_condition(
+            lambda: instance.exec_in_container(
+                ["curl", "-s", f"http://localhost:{MOCK_PORT}/health"],
+                nothrow=True,
+            ),
+            lambda r: r == "OK",
+            max_attempts=40,
+            delay=0.5,
+        )
+    except Exception as e:
+        log = instance.exec_in_container(
+            ["cat", "/var/log/clickhouse-server/mock_ai_server.log"],
             nothrow=True,
-        ),
-        lambda r: r == "OK",
-        max_attempts=20,
-        delay=0.5,
-    )
+        )
+        raise RuntimeError(
+            f"Mock AI server failed to become ready. Server log:\n{log}"
+        ) from e
 
 
 def unique_query_id(prefix):
@@ -64,10 +73,12 @@ def get_profile_events(query_id):
             ProfileEvents['AIRowsSkipped'] AS rows_skipped
         FROM system.query_log
         WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+        LIMIT 1
         FORMAT JSONEachRow
         """
-    )
-    return json.loads(result.strip())
+    ).strip()
+    assert result, f"no system.query_log row found for query_id={query_id}"
+    return json.loads(result)
 
 
 @pytest.fixture(scope="module")
@@ -350,8 +361,13 @@ def test_translate_multiple_rows(started_cluster):
 def test_translate_with_instructions(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('Hello')")
+    # Sentinels make this test order-independent against the shared `LAST_REQUEST`
+    # state: even if another request hits the mock between our query and the
+    # /last-request fetch, we can detect it by the missing sentinel.
+    lang_marker = f"LangMarker_{uuid.uuid4().hex[:8]}"
+    instr_marker = f"InstrMarker_{uuid.uuid4().hex[:8]}"
     result = instance.query(
-        "SELECT aiTranslate('ai_mock', x, 'German', 'Use formal tone') FROM test_input",
+        f"SELECT aiTranslate('ai_mock', x, '{lang_marker}', '{instr_marker}') FROM test_input",
         settings=AI_SETTINGS,
     )
     assert result.strip() == "Hello"
@@ -362,10 +378,9 @@ def test_translate_with_instructions(started_cluster):
         )
     )
     assert last["path"] == "/v1/chat/completions"
-    # Both the target language and the extra instructions must reach the prompt.
     sent = last["body"]
-    assert "German" in sent
-    assert "Use formal tone" in sent
+    assert lang_marker in sent, f"target language not in request body: {sent!r}"
+    assert instr_marker in sent, f"instructions not in request body: {sent!r}"
 
 
 def test_translate_profile_events(started_cluster):
