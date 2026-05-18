@@ -1459,6 +1459,7 @@ Alternatively, set them in `spark-defaults.conf` or when creating the Spark sess
 
 | Key                                                | Default                                                | Description                                                                                                                                                                                                                                                                                                                                                                                                     | Since |
 |----------------------------------------------------|--------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------|
+| spark.clickhouse.client.queryTimeout               | 60s                                                    | The maximum time the ClickHouse client will wait for a single query or ping operation to complete on a `NodeClient`. Applied as a future-handle timeout on every `client.query(...)` and `client.ping(...)` call. Used on both read and write paths (the write path issues metadata queries before each batch). Inserts themselves are unaffected — they have no connector-level timeout. | 0.10.1 |
 | spark.clickhouse.ignoreUnsupportedTransform        | true                                                   | ClickHouse supports using complex expressions as sharding keys or partition values, e.g. `cityHash64(col_1, col_2)`, and those can not be supported by Spark now. If `true`, ignore the unsupported expressions and log a warning, otherwise fail fast w/ an exception. **Warning**: When `spark.clickhouse.write.distributed.convertLocal=true`, ignoring unsupported sharding keys may corrupt the data. The connector validates this and throws an error by default. To allow it, explicitly set `spark.clickhouse.write.distributed.convertLocal.allowUnsupportedSharding=true`. | 0.4.0 |
 | spark.clickhouse.read.compression.codec            | lz4                                                    | The codec used to decompress data for reading. Supported codecs: none, lz4.                                                                                                                                                                                                                                                                                                                                     | 0.5.0 |
 | spark.clickhouse.read.distributed.convertLocal     | true                                                   | When reading Distributed table, read local table instead of itself. If `true`, ignore `spark.clickhouse.read.distributed.useClusterNodes`.                                                                                                                                                                                                                                                                      | 0.1.0 |
@@ -1805,7 +1806,7 @@ df.write()
 | `option.clickhouse_setting_wait_for_async_insert` | `1` | Wait for async insert acknowledgement before returning |
 | `option.clickhouse_setting_insert_deduplicate` | `0` | Disable deduplication for idempotent write pipelines |
 | `option.clickhouse_setting_max_insert_block_size` | `1048576` | Control max block size for inserts |
-| `option.clickhouse_setting_max_execution_time` | `300` | Extend query timeout (seconds) for large reads |
+| `option.clickhouse_setting_max_execution_time` | `300` | Extend server-side query timeout (seconds) for large reads. To actually allow reads longer than the connector default, also raise `spark.clickhouse.client.queryTimeout` (default `60s`). |
 | `option.clickhouse_setting_session_timeout` | `60` | Extend HTTP session timeout (seconds) |
 
 :::note
@@ -1818,14 +1819,16 @@ Timeouts in the Spark connector operate at three independent layers. Misdiagnosi
 
 ### Connector-internal timeouts {#timeout-connector}
 
-The connector enforces its own timeouts that are independent of any Spark or ClickHouse setting:
+The connector enforces its own timeouts on each Java client `query` and `ping` operation, independent of any ClickHouse server setting:
 
-| Behavior | Value | Configurable |
+| Behavior | Default | Configurable via |
 |---|---|---|
-| Query timeout | **60 seconds** | No — hard-coded in the connector |
-| Insert timeout | **None** | No — inserts run until the network drops the connection |
+| Query / ping timeout | **60 seconds** | `spark.clickhouse.client.queryTimeout` (since 0.10.1) |
+| Insert timeout | **None** | Not configurable — inserts run until the network drops the connection |
 
-The 60-second query cap is enforced by the connector regardless of `max_execution_time` or any other server setting. If a read query takes longer than 60 seconds end-to-end, the connector will abort it. There is no `spark.clickhouse.*` setting to override this value.
+The query timeout applies to every `client.query(...)` and `client.ping(...)` call made by the connector — this covers all reads, all DDL/metadata operations, and the metadata queries issued by the write path before each batch. If a query takes longer than the configured value end-to-end, the connector aborts it, regardless of `max_execution_time` or any other server setting.
+
+Before 0.10.1 this value was hard-coded at 60 seconds. From 0.10.1 onwards, override it via the Spark session config (e.g. `spark.conf.set("spark.clickhouse.client.queryTimeout", "300s")`). The value uses Spark's `TimeUnit` syntax (`ms`, `s`, `m`, …) and must be positive.
 
 Inserts have no connector-level timeout. This means a stalled or very slow insert will hang until a network device terminates the connection — which can produce a **"Broken pipe"** error.
 
@@ -1846,7 +1849,7 @@ These are ClickHouse query settings sent with each request. They instruct the Cl
 
 | Catalog property | Default | Unit | What it controls |
 |---|---|---|---|
-| `option.clickhouse_setting_max_execution_time` | `0` (unlimited) | seconds | Server-side hard cap on query execution time. Useful for preventing runaway reads from consuming server resources, but **does not override the connector's 60-second query timeout**. |
+| `option.clickhouse_setting_max_execution_time` | `0` (unlimited) | seconds | Server-side hard cap on query execution time. Useful for preventing runaway reads from consuming server resources. **Does not override the connector's client query timeout** — if you raise this for long reads, also raise `spark.clickhouse.client.queryTimeout` (default `60s`). |
 | `option.clickhouse_setting_session_timeout` | `60` | seconds | HTTP session lifetime on the server. |
 
 ## Performance tuning {#performance-tuning}
