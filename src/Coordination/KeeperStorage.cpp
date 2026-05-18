@@ -1789,8 +1789,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     ProfileEvents::increment(ProfileEvents::KeeperGetRequest);
 
     if (zk_request.path == Coordination::keeper_api_feature_flags_path
-        || zk_request.path == Coordination::keeper_config_path
-        || zk_request.path == Coordination::keeper_availability_zone_path)
+        || zk_request.path == Coordination::keeper_config_path)
         return {};
 
     if (!storage.uncommitted_state.getNode(zk_request.path))
