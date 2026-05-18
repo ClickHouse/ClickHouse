@@ -102,6 +102,7 @@ class BuzzHouseGenerator(Generator):
                 "port": cluster.postgres_port,
                 "user": "postgres",
                 "password": pg_pass,
+                "named_collection": "postgres_remote",
             }
         if args.with_mysql:
             buzz_config["mysql"] = {
@@ -112,6 +113,7 @@ class BuzzHouseGenerator(Generator):
                 "port": cluster.mysql8_port,
                 "user": "root",
                 "password": mysql_pass,
+                "named_collection": "mysql_remote",
             }
         if args.with_sqlite:
             buzz_config["sqlite"] = {
@@ -127,6 +129,7 @@ class BuzzHouseGenerator(Generator):
                 "port": cluster.mongo_port,
                 "user": "root",
                 "password": urllib.parse.quote_plus(mongo_pass),
+                "named_collection": "mongo_remote",
             }
         if args.with_redis:
             buzz_config["redis"] = {
