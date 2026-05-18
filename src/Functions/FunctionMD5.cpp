@@ -135,18 +135,25 @@ public:
 
 DECLARE_MULTITARGET_CODE(
 
+    template <typename Ops>
+    struct MD5X2State
+    {
+        typename Ops::Vec a1, b1, c1, d1, a2, b2, c2, d2;
+    };
+
     /// Process one 64-byte block for two independent groups of N lanes.
     /// The two groups are interleaved to let the CPU overlap independent chains.
+    /// State is passed by value so the compiler keeps everything in registers.
     template <typename Ops>
-    inline void md5MultiBufferBlockX2(
-        typename Ops::Vec & a1,
-        typename Ops::Vec & b1,
-        typename Ops::Vec & c1,
-        typename Ops::Vec & d1,
-        typename Ops::Vec & a2,
-        typename Ops::Vec & b2,
-        typename Ops::Vec & c2,
-        typename Ops::Vec & d2,
+    inline MD5X2State<Ops> md5MultiBufferBlockX2(
+        typename Ops::Vec a1,
+        typename Ops::Vec b1,
+        typename Ops::Vec c1,
+        typename Ops::Vec d1,
+        typename Ops::Vec a2,
+        typename Ops::Vec b2,
+        typename Ops::Vec c2,
+        typename Ops::Vec d2,
         const typename Ops::Vec msg1[16],
         const typename Ops::Vec msg2[16])
     {
@@ -233,15 +240,9 @@ DECLARE_MULTITARGET_CODE(
         MD5_STEP_X2(Ops::I, c1, d1, a1, b1, c2, d2, a2, b2, 2, 15, 0x2ad7d2bb)
         MD5_STEP_X2(Ops::I, b1, c1, d1, a1, b2, c2, d2, a2, 9, 21, 0xeb86d391)
 
-        a1 = Ops::add(a1, aa1);
-        b1 = Ops::add(b1, bb1);
-        c1 = Ops::add(c1, cc1);
-        d1 = Ops::add(d1, dd1);
-
-        a2 = Ops::add(a2, aa2);
-        b2 = Ops::add(b2, bb2);
-        c2 = Ops::add(c2, cc2);
-        d2 = Ops::add(d2, dd2);
+        return {
+            Ops::add(a1, aa1), Ops::add(b1, bb1), Ops::add(c1, cc1), Ops::add(d1, dd1),
+            Ops::add(a2, aa2), Ops::add(b2, bb2), Ops::add(c2, cc2), Ops::add(d2, dd2)};
     }
 
 
@@ -349,7 +350,9 @@ DECLARE_MULTITARGET_CODE(
             Ops::gatherAllMessageWords(block_ptrs, msg1);
             Ops::gatherAllMessageWords(block_ptrs + N, msg2);
 
-            md5MultiBufferBlockX2<Ops>(a1, b1, c1, d1, a2, b2, c2, d2, msg1, msg2);
+            auto st = md5MultiBufferBlockX2<Ops>(a1, b1, c1, d1, a2, b2, c2, d2, msg1, msg2);
+            a1 = st.a1; b1 = st.b1; c1 = st.c1; d1 = st.d1;
+            a2 = st.a2; b2 = st.b2; c2 = st.c2; d2 = st.d2;
 
             for (size_t j = 0; j < count1; ++j)
             {
