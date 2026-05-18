@@ -1911,16 +1911,20 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
     }
 
-    /// Check subcolumns limit.
+    /// Check subcolumns limit. Only reject when this ALTER actually increases the count past the
+    /// limit; unrelated commands (e.g. MODIFY COMMENT/SETTING, TTL/index alters, DROP COLUMN) must
+    /// still work on a table that is already over the limit (for example, because it was created
+    /// earlier with `max_static_subcolumns = 0`).
     if (table->storesDataOnDisk())
     {
         UInt64 max_static_subcolumns = context->getSettingsRef()[Setting::max_static_subcolumns];
-        size_t subcolumn_count = all_columns.getNumberOfSubcoumns();
-        if (max_static_subcolumns > 0 && subcolumn_count > max_static_subcolumns)
+        size_t subcolumns_before = metadata->columns.getNumberOfSubcoumns();
+        size_t subcolumns_after = all_columns.getNumberOfSubcoumns();
+        if (max_static_subcolumns > 0 && subcolumns_after > max_static_subcolumns && subcolumns_after > subcolumns_before)
             throw Exception(ErrorCodes::TOO_MANY_SUBCOLUMNS,
                 "Too many static subcolumns. The limit is set to {}, "
-                "the number of static subcolumns in the table is {}",
-                max_static_subcolumns, subcolumn_count);
+                "the number of static subcolumns after this ALTER would be {}",
+                max_static_subcolumns, subcolumns_after);
     }
 
     /// Parameterized views do not have 'columns' in their metadata
