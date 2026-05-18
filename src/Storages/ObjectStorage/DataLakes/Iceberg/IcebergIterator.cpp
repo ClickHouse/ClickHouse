@@ -122,8 +122,8 @@ std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
     if (beg_it != end_it)
     {
         auto previous_it = std::prev(end_it);
-        assert(*beg_it);
-        assert(*previous_it);
+        chassert(*beg_it);
+        chassert(*previous_it);
         LOG_DEBUG(
             logger,
             "Preliminary check got {} {} delete elements for data file {}, taken data file object info: {}, first taken delete object info is "

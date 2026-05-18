@@ -182,7 +182,7 @@ template <is_decimal T>
 template <typename Type>
 ColumnPtr ColumnDecimal<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
+    chassert(limit <= indexes.size());
 
     auto res = this->create(limit, scale);
     typename Self::Container & res_data = res->getData();

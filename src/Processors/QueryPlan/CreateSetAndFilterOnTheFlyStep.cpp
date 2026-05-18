@@ -62,21 +62,21 @@ public:
     /// Thread-safe.
     void connectPorts(PortPair rhs_ports, IProcessor * proc)
     {
-        assert(!rhs_ports.first->isConnected() && !rhs_ports.second->isConnected());
+        chassert(!rhs_ports.first->isConnected() && !rhs_ports.second->isConnected());
 
         std::lock_guard lock(mux);
         if (input_port || output_port)
         {
-            assert(input_port && output_port);
-            assert(!input_port->isConnected());
+            chassert(input_port && output_port);
+            chassert(!input_port->isConnected());
             connect(*rhs_ports.second, *input_port);
             connect(*output_port, *rhs_ports.first, /* reconnect= */ true);
         }
         else
         {
             std::tie(input_port, output_port) = rhs_ports;
-            assert(input_port && output_port);
-            assert(!input_port->isConnected() && !output_port->isConnected());
+            chassert(input_port && output_port);
+            chassert(!input_port->isConnected() && !output_port->isConnected());
 
             dummy_input_port = std::make_unique<InputPort>(output_port->getHeader(), proc);
             connect(*output_port, *dummy_input_port);
@@ -169,7 +169,7 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
             connect(port, transform->getInputPort());
             result_transforms.emplace_back(std::move(transform));
         }
-        assert(output_it == std::prev(outputs.end()));
+        chassert(output_it == std::prev(outputs.end()));
         result_transforms.emplace_back(std::move(stream_balancer));
 
         return result_transforms;

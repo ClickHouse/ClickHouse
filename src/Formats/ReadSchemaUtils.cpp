@@ -276,7 +276,7 @@ try
                     if (schema_reader && mode == SchemaInferenceMode::DEFAULT)
                     {
                         size_t rows_read = schema_reader->getNumRowsRead();
-                        assert(rows_read <= max_rows_to_read);
+                        chassert(rows_read <= max_rows_to_read);
                         max_rows_to_read -= schema_reader->getNumRowsRead();
                         size_t bytes_read = iterator_data.buf->count();
                         /// We could exceed max_bytes_to_read a bit to complete row parsing.

@@ -385,7 +385,7 @@ void BackupImpl::writeBackupMetadata()
     LOG_TRACE(log, "Backup {}: Writing metadata", backup_name_for_logging);
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::BackupWriteMetadataMicroseconds);
 
-    assert(!params.is_internal_backup);
+    chassert(!params.is_internal_backup);
     checkLockFile(true);
 
     std::unique_ptr<WriteBuffer> out;
@@ -638,7 +638,7 @@ void BackupImpl::checkBackupDoesntExist() const
     /// Check that no other backup (excluding internal backups) is writing to the same destination.
     if (!params.is_internal_backup)
     {
-        assert(!lock_file_name.empty());
+        chassert(!lock_file_name.empty());
         if (writer->fileExists(lock_file_name))
             throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} is being written already", backup_name_for_logging);
     }
@@ -647,9 +647,9 @@ void BackupImpl::checkBackupDoesntExist() const
 void BackupImpl::createLockFile()
 {
     /// Internal backup must not create the lock file (it should be created by the initiator).
-    assert(!params.is_internal_backup);
+    chassert(!params.is_internal_backup);
 
-    assert(uuid);
+    chassert(uuid);
     auto out = writer->writeFile(lock_file_name);
     writeUUIDText(*uuid, *out);
     out->finalize();
@@ -1235,4 +1235,3 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
 }
 
 }
-

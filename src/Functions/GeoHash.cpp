@@ -1,4 +1,5 @@
 #include <array>
+#include <base/defines.h>
 #include <cmath>
 #include <cassert>
 #include <Functions/GeoHash.h>
@@ -115,7 +116,7 @@ inline Encoded merge(const Encoded & encodedLon, const Encoded & encodedLat, uin
     result.fill(0);
 
     uint8_t bits = (precision * BITS_PER_SYMBOL) / 2;
-    assert(bits < 255);
+    chassert(bits < 255);
     uint8_t i = 0;
     for (; i < bits; ++i)
     {
@@ -170,7 +171,7 @@ inline void base32Encode(const Encoded & binary, uint8_t precision, char * out)
         v <<= 1;
         v |= binary[i + 4];
 
-        assert(v < 32);
+        chassert(v < 32);
 
         *out = geohash_base32_encode_lookup_table[v];
         ++out;

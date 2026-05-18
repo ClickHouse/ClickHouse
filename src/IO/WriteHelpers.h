@@ -1226,8 +1226,8 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     }
 
     constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
-    assert(scale <= max_digits);
-    assert(fractional_length <= max_digits);
+    chassert(scale <= max_digits);
+    chassert(fractional_length <= max_digits);
 
     char buf[max_digits];
     memset(buf, '0', std::max(scale, fractional_length));

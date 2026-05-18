@@ -88,7 +88,7 @@ LowcardAndNull getLowcardAndNullability(const ColumnPtr & col)
     if (col->lowCardinality())
     {
         /// Currently only `LowCardinality(Nullable(T))` is possible, but not `Nullable(LowCardinality(T))`
-        assert(!col->canBeInsideNullable());
+        chassert(!col->canBeInsideNullable());
         const auto * col_as_lc = assert_cast<const ColumnLowCardinality *>(col.get());
         return {true, col_as_lc->nestedIsNullable()};
     }
@@ -583,7 +583,7 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
     for (size_t i = 0; i < num_cols; ++i)
     {
         auto dispatched_columns = block.getByPosition(i).column->scatter(num_shards, selector);
-        assert(result.size() == dispatched_columns.size());
+        chassert(result.size() == dispatched_columns.size());
         for (size_t block_index = 0; block_index < num_shards; ++block_index)
         {
             result[block_index].getByPosition(i).column = std::move(dispatched_columns[block_index]);

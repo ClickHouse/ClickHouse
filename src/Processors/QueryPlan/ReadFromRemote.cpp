@@ -1110,7 +1110,7 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
 
     String query_string = formattedAST(ast, enable_analyzer);
 
-    assert(output_header);
+    chassert(output_header);
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
         pool,

@@ -982,7 +982,7 @@ size_t MergeTreeRangeReader::Stream::ceilRowsToCompleteGranules(size_t rows_num)
 {
     /// Find the first occurrence of mark that satisfies getRowsCountInRange(left, mark + 1) >= rows_num
     /// in [current_mark, last_mark).
-    assert(current_mark + 1 <= last_mark);
+    chassert(current_mark + 1 <= last_mark);
     size_t left_mark = current_mark;
     size_t right_mark = last_mark;
     while (left_mark < right_mark)

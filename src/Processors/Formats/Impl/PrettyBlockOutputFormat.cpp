@@ -186,7 +186,7 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
         }
 
         /// Should be written from writeSuffix()
-        assert(!mono_chunk);
+        chassert(!mono_chunk);
     }
 
     writeChunk(chunk, port_kind);

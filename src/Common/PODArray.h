@@ -317,7 +317,7 @@ public:
         const char * ptr_end = reinterpret_cast<const char *>(&*from_end);
 
         /// Also it's safe if the range is empty.
-        assert(!((ptr_begin >= c_start && ptr_begin < c_end) || (ptr_end > c_start && ptr_end <= c_end)) || (ptr_begin == ptr_end));
+        chassert(!((ptr_begin >= c_start && ptr_begin < c_end) || (ptr_end > c_start && ptr_end <= c_end)) || (ptr_begin == ptr_end));
 #endif
     }
 
@@ -397,13 +397,13 @@ public:
     T & operator[] (ssize_t n)
     {
         /// <= size, because taking address of one element past memory range is Ok in C++ (expression like &arr[arr.size()] is perfectly valid).
-        assert((n >= (static_cast<ssize_t>(pad_left_) ? -1 : 0)) && (n <= static_cast<ssize_t>(this->size())));
+        chassert((n >= (static_cast<ssize_t>(pad_left_) ? -1 : 0)) && (n <= static_cast<ssize_t>(this->size())));
         return t_start()[n];
     }
 
     const T & operator[] (ssize_t n) const
     {
-        assert((n >= (static_cast<ssize_t>(pad_left_) ? -1 : 0)) && (n <= static_cast<ssize_t>(this->size())));
+        chassert((n >= (static_cast<ssize_t>(pad_left_) ? -1 : 0)) && (n <= static_cast<ssize_t>(this->size())));
         return t_start()[n];
     }
 
@@ -494,8 +494,8 @@ public:
     {
         static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(rhs.front())>>);
 
-        assert(from_end >= from_begin);
-        assert(from_end <= rhs.size());
+        chassert(from_end >= from_begin);
+        chassert(from_end <= rhs.size());
 
         size_t required_capacity = this->size() + (from_end - from_begin);
         if (required_capacity > this->capacity())
@@ -553,7 +553,7 @@ public:
         size_t end_index = from_end - begin();
         size_t copy_size = end_index - start_index;
 
-        assert(start_index <= end_index);
+        chassert(start_index <= end_index);
 
         size_t required_capacity = this->size() + copy_size;
         if (required_capacity > this->capacity())

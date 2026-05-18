@@ -690,7 +690,7 @@ UnorderedMapWithMemoryTracking<String, ColumnPtr> RegExpTreeDictionary::match(
     std::optional<size_t> collect_values_limit) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(default_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefaultMap>(default_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefaultMap>(default_or_filter));
 
 #if USE_VECTORSCAN
     hs_scratch_t * scratch = nullptr;
@@ -924,7 +924,7 @@ Columns RegExpTreeDictionary::getColumnsImpl(
     std::optional<size_t> collect_values_limit) const
 {
     bool is_short_circuit = std::holds_alternative<RefFilter>(defaults_or_filter);
-    assert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
+    chassert(is_short_circuit || std::holds_alternative<RefDefaults>(defaults_or_filter));
 
     /// valid check
     if (key_columns.size() != 1)

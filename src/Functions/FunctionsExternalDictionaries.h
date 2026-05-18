@@ -1054,7 +1054,7 @@ private:
 
     static void addNullMap(PaddedPODArray<UInt8> & null_map, PaddedPODArray<UInt8> & null_map_to_add)
     {
-        assert(null_map.size() == null_map_to_add.size());
+        chassert(null_map.size() == null_map_to_add.size());
 
         for (size_t i = 0; i < null_map.size(); ++i)
             null_map[i] = null_map[i] || null_map_to_add[i];

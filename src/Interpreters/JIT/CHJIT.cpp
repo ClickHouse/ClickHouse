@@ -148,7 +148,7 @@ public:
         allocateNextPageBlock(size);
         size_t allocated_page_index = page_blocks.size() - 1;
         char * result = tryAllocateFromPageBlockWithIndex(size, alignment, allocated_page_index);
-        assert(result);
+        chassert(result);
 
         return result;
     }
@@ -232,7 +232,7 @@ private:
 
     char * tryAllocateFromPageBlockWithIndex(size_t size, size_t alignment, size_t page_block_index)
     {
-        assert(page_block_index < page_blocks.size());
+        chassert(page_block_index < page_blocks.size());
         auto & pages_block = page_blocks[page_block_index];
 
         size_t block_size = pages_block.blockSize();

@@ -206,7 +206,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         }
 
         InputFormatPtr input_format = getContext()->getInputFormat(format, in, header, 13 /* small block size */);
-        assert(input_format->getName() == format);
+        chassert(input_format->getName() == format);
 
         QueryPipeline pipeline(Pipe(std::move(input_format)));
         PullingPipelineExecutor executor(pipeline);

@@ -79,7 +79,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
 {
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
-        assert(!substream_path.empty());
+        chassert(!substream_path.empty());
         String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
         /// Shared offsets for Nested type.
@@ -242,7 +242,7 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
     if (compute_granularity)
     {
         size_t index_granularity_for_block = computeIndexGranularity(result_block);
-        assert(index_granularity_for_block >= 1);
+        chassert(index_granularity_for_block >= 1);
         fillIndexGranularity(index_granularity_for_block, result_block.rows());
     }
 
@@ -315,7 +315,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 if (prev_stream && prev_stream != result_stream)
                 {
                     /// Offset should be 0, because compressed block is written for every granule.
-                    assert(result_stream->hashing_buf.offset() == 0);
+                    chassert(result_stream->hashing_buf.offset() == 0);
                     prev_stream->hashing_buf.next();
                 }
 
@@ -386,7 +386,7 @@ void MergeTreeDataPartWriterCompact::finalizeIndexGranularity()
 #ifndef NDEBUG
     /// Offsets should be 0, because compressed block is written for every granule.
     for (const auto & [_, stream] : streams_by_codec)
-        assert(stream->hashing_buf.offset() == 0);
+        chassert(stream->hashing_buf.offset() == 0);
 #endif
 
     WriteBuffer & marks_out = marks_source_hashing ? *marks_source_hashing : *marks_file_hashing;

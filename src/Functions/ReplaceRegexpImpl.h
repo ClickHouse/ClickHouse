@@ -288,7 +288,7 @@ struct ReplaceRegexpImpl
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
     {
-        assert(haystack_offsets.size() == needle_offsets.size());
+        chassert(haystack_offsets.size() == needle_offsets.size());
 
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
@@ -338,7 +338,7 @@ struct ReplaceRegexpImpl
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
     {
-        assert(haystack_offsets.size() == replacement_offsets.size());
+        chassert(haystack_offsets.size() == replacement_offsets.size());
 
         if (needle.empty())
         {
@@ -389,8 +389,8 @@ struct ReplaceRegexpImpl
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
     {
-        assert(haystack_offsets.size() == needle_offsets.size());
-        assert(needle_offsets.size() == replacement_offsets.size());
+        chassert(haystack_offsets.size() == needle_offsets.size());
+        chassert(needle_offsets.size() == replacement_offsets.size());
 
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());

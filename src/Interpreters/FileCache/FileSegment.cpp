@@ -250,8 +250,8 @@ String FileSegment::getOrSetDownloader()
 
 void FileSegment::resetDownloadingStateUnlocked(const FileSegmentGuard::Lock & lock)
 {
-    assert(isDownloaderUnlocked(lock));
-    assert(download_state == State::DOWNLOADING);
+    chassert(isDownloaderUnlocked(lock));
+    chassert(download_state == State::DOWNLOADING);
 
     size_t current_downloaded_size = getDownloadedSize();
     /// range().size() can equal 0 in case of write-though cache.

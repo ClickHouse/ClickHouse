@@ -73,7 +73,7 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_)
     /// DateLUT should not be initialized in global constructors for the following reasons:
     /// 1. It is too heavy.
     if (&inside_main)
-        assert(inside_main);
+        chassert(inside_main);
 
     cctz::time_zone cctz_time_zone;
     if (!cctz::load_time_zone(time_zone, &cctz_time_zone))
@@ -144,10 +144,10 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_)
         values.day_of_week = getDayOfWeek(date);
         values.date = start_of_day;
 
-        assert(values.year >= DATE_LUT_MIN_YEAR && values.year <= DATE_LUT_MAX_YEAR + 1);
-        assert(values.month >= 1 && values.month <= 12);
-        assert(values.day_of_month >= 1 && values.day_of_month <= 31);
-        assert(values.day_of_week >= 1 && values.day_of_week <= 7);
+        chassert(values.year >= DATE_LUT_MIN_YEAR && values.year <= DATE_LUT_MAX_YEAR + 1);
+        chassert(values.month >= 1 && values.month <= 12);
+        chassert(values.day_of_month >= 1 && values.day_of_month <= 31);
+        chassert(values.day_of_week >= 1 && values.day_of_week <= 7);
 
         if (values.day_of_month == 1)
         {

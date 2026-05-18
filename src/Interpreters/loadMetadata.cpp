@@ -398,7 +398,7 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
     }
 
     auto tmp_database = DatabaseCatalog::instance().getDatabase(tmp_name);
-    assert(tmp_database->getEngineName() == "Atomic");
+    chassert(tmp_database->getEngineName() == "Atomic");
 
     size_t num_tables = 0;
     std::unordered_set<String> inner_mv_tables;

@@ -72,7 +72,7 @@ namespace DimensionalMetrics
 
     Metric & MetricFamily::withLabels(LabelValues label_values)
     {
-        assert(label_values.size() == labels.size());
+        chassert(label_values.size() == labels.size());
         {
             std::shared_lock lock(mutex);
             auto it = metrics.find(label_values);

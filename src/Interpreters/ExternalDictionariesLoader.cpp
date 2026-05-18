@@ -234,7 +234,7 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
 
     if (!db)
         return res;
-    assert(table);
+    chassert(table);
 
     if (db->getUUID() == UUIDHelpers::Nil)
         return res;

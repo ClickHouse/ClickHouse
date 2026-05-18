@@ -641,7 +641,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
     ///
     /// For each such hole create a file_segment_metadata with file segment state EMPTY.
 
-    assert(!file_segments.empty());
+    chassert(!file_segments.empty());
 
     auto it = file_segments.begin();
     size_t processed_count = 0;
@@ -679,7 +679,7 @@ void FileCache::fillHolesWithEmptyFileSegments(
             continue;
         }
 
-        assert(current_pos < segment_range.left);
+        chassert(current_pos < segment_range.left);
 
         auto hole_size = segment_range.left - current_pos;
 

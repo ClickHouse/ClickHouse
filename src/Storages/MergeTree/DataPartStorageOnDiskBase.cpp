@@ -74,7 +74,7 @@ std::string DataPartStorageOnDiskBase::getParentDirectory() const
 
 std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(LoggerPtr log, const String & prefix, bool detached, bool broken) const
 {
-    assert(!broken || detached);
+    chassert(!broken || detached);
     String res;
 
     auto full_relative_path = fs::path(root_path);
@@ -378,7 +378,7 @@ void DataPartStorageOnDiskBase::backup(
     std::shared_ptr<TemporaryFileOnDisk> temp_dir_owner;
     if (make_temporary_hard_links)
     {
-        assert(temp_dirs);
+        chassert(temp_dirs);
         auto temp_dir_it = temp_dirs->find(disk);
         if (temp_dir_it == temp_dirs->end())
             temp_dir_it = temp_dirs->emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/")).first;

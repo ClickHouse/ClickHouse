@@ -364,7 +364,7 @@ bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3
         if (region.empty())
             region = getRegionForBucket(bucket, /*force_detect*/ true);
 
-        assert(!explicit_region.empty());
+        chassert(!explicit_region.empty());
         if (region == explicit_region)
             return false;
 
@@ -679,7 +679,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (found_new_endpoint)
         {
             auto uri_override = request.getURIOverride();
-            assert(uri_override.has_value());
+            chassert(uri_override.has_value());
             updateURIForBucket(bucket, std::move(*uri_override));
         }
     );

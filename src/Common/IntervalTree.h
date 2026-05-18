@@ -110,7 +110,7 @@ public:
     requires std::is_same_v<Value, IntervalTreeVoidValue>
     ALWAYS_INLINE bool emplace(Interval interval)
     {
-        assert(!tree_is_built);
+        chassert(!tree_is_built);
         if (unlikely(interval.left > interval.right))
             return false;
 
@@ -124,7 +124,7 @@ public:
     requires(!std::is_same_v<TValue, IntervalTreeVoidValue>)
     ALWAYS_INLINE bool emplace(Interval interval, Args &&... args)
     {
-        assert(!tree_is_built);
+        chassert(!tree_is_built);
         if (unlikely(interval.left > interval.right))
             return false;
 
@@ -159,7 +159,7 @@ public:
     /// Build tree, after that intervals cannot be inserted, and only search or iteration can be performed.
     void build()
     {
-        assert(!tree_is_built);
+        chassert(!tree_is_built);
         nodes.clear();
         nodes.reserve(sorted_intervals.size());
         buildTree();

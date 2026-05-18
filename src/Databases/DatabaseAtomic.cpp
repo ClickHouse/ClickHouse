@@ -80,7 +80,7 @@ DatabaseAtomic::DatabaseAtomic(
     , path_to_metadata_symlink(DatabaseCatalog::getMetadataDirPath(name_))
     , db_uuid(uuid)
 {
-    assert(db_uuid != UUIDHelpers::Nil);
+    chassert(db_uuid != UUIDHelpers::Nil);
 }
 
 DatabaseAtomic::DatabaseAtomic(
@@ -112,14 +112,14 @@ String DatabaseAtomic::getTableDataPath(const String & table_name) const
     auto it = table_name_to_path.find(table_name);
     if (it == table_name_to_path.end())
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} not found in database {}", table_name, database_name);
-    assert(it->second != data_path && !it->second.empty());
+    chassert(it->second != data_path && !it->second.empty());
     return it->second;
 }
 
 String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 {
     auto tmp = data_path + DatabaseCatalog::getPathForUUID(query.uuid);
-    assert(tmp != data_path && !tmp.empty());
+    chassert(tmp != data_path && !tmp.empty());
     return tmp;
 }
 
@@ -129,7 +129,7 @@ void DatabaseAtomic::drop(ContextPtr)
     waitDatabaseStarted();
     {
         std::lock_guard lock(mutex);
-        assert(tables.empty());
+        chassert(tables.empty());
     }
 
     auto db_disk = getDisk();
@@ -152,7 +152,7 @@ void DatabaseAtomic::drop(ContextPtr)
 void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name, const StoragePtr & table, const String & relative_table_path)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::attachTable");
-    assert(relative_table_path != data_path && !relative_table_path.empty());
+    chassert(relative_table_path != data_path && !relative_table_path.empty());
     DetachedTables not_in_use;
     std::lock_guard lock(mutex);
     createDirectoriesUnlocked();
@@ -279,7 +279,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         /// Path can be not set for DDL dictionaries, but it does not matter for StorageDictionary.
         if (it != db.table_name_to_path.end())
             table_data_path_saved = it->second;
-        assert(!table_data_path_saved.empty());
+        chassert(!table_data_path_saved.empty());
         db.tables.erase(table_name_);
         db.table_name_to_path.erase(table_name_);
         if (has_symlink)

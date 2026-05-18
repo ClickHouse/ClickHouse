@@ -1074,7 +1074,7 @@ protected:
 
             // The hash table was rehashed, so we have to re-find the key.
             size_t new_place = findCell(key, hash_value, grower.place(hash_value));
-            assert(!buf[new_place].isZero(*this));
+            chassert(!buf[new_place].isZero(*this));
             it = &buf[new_place];
         }
     }
@@ -1264,7 +1264,7 @@ public:
             return false;
 
         /// We need to guarantee loop termination because there will be empty position
-        assert(m_size < grower.bufSize());
+        chassert(m_size < grower.bufSize());
 
         size_t next_position = erased_key_position;
 

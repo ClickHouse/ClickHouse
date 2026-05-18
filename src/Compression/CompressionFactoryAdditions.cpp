@@ -128,7 +128,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                     CompressionCodecPtr prev_codec;
                     ISerialization::StreamCallback callback = [&](const auto & substream_path)
                     {
-                        assert(!substream_path.empty());
+                        chassert(!substream_path.empty());
                         if (ISerialization::isSpecialCompressionAllowed(substream_path))
                         {
                             const auto & last_type = substream_path.back().data.type;

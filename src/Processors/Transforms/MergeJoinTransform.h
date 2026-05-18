@@ -79,7 +79,7 @@ public:
             , current(begin_)
             , chunk(std::move(chunk_))
         {
-            assert(length > 0 && begin + length <= chunk.getNumRows());
+            chassert(length > 0 && begin + length <= chunk.getNumRows());
         }
 
         size_t begin;
@@ -106,7 +106,7 @@ public:
     bool next()
     {
         /// advance right to one row, when right finished, advance left to next block
-        assert(!left.empty() && !right.empty());
+        chassert(!left.empty() && !right.empty());
 
         if (finished())
             return false;

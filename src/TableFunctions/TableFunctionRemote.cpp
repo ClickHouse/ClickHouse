@@ -342,7 +342,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
     if (cached_columns.empty())
         cached_columns = getActualTableStructure(context, is_insert_query);
 
-    assert(cluster);
+    chassert(cluster);
 
     bool has_local_shard = false;
     for (const auto & shard_info : cluster->getShardsInfo())
@@ -383,7 +383,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
 
 ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    assert(cluster);
+    chassert(cluster);
     return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
 }
 

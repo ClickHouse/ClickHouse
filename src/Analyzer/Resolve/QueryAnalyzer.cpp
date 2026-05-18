@@ -1818,7 +1818,7 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
 {
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
-    assert(matcher_node_typed.isQualified());
+    chassert(matcher_node_typed.isQualified());
 
     auto expression_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::EXPRESSION};
     auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
@@ -1939,7 +1939,7 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope)
 {
     auto & matcher_node_typed = matcher_node->as<MatcherNode &>();
-    assert(matcher_node_typed.isUnqualified());
+    chassert(matcher_node_typed.isUnqualified());
 
     /** There can be edge case if matcher is inside lambda expression.
       * Try to find parent query expression using parent scopes.

@@ -535,7 +535,7 @@ void removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG::Node * nod
     switch (node->type)
     {
         case ActionsDAG::ActionType::ALIAS:
-            assert(node->children.size() == 1);
+            chassert(node->children.size() == 1);
             removeInjectiveFunctionsFromResultsRecursively(node->children.at(0), irreducible, visited);
             break;
         case ActionsDAG::ActionType::ARRAY_JOIN:
@@ -583,7 +583,7 @@ bool allOutputsDependsOnlyOnAllowedNodes(
         switch (node->type)
         {
             case ActionsDAG::ActionType::ALIAS:
-                assert(node->children.size() == 1);
+                chassert(node->children.size() == 1);
                 res = allOutputsDependsOnlyOnAllowedNodes(irreducible_nodes, matches, node->children.at(0), visited);
                 break;
             case ActionsDAG::ActionType::ARRAY_JOIN:

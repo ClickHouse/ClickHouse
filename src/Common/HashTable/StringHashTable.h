@@ -20,7 +20,7 @@ struct StringKey24
 
 inline std::string_view ALWAYS_INLINE toStringView(const StringKey8 & n)
 {
-    assert(n != 0);
+    chassert(n != 0);
     if constexpr (std::endian::native == std::endian::big)
         return {reinterpret_cast<const char *>(&n), 8ul - (std::countr_zero(n) >> 3)};
     else
@@ -28,7 +28,7 @@ inline std::string_view ALWAYS_INLINE toStringView(const StringKey8 & n)
 }
 inline std::string_view ALWAYS_INLINE toStringView(const StringKey16 & n)
 {
-    assert(n.items[1] != 0);
+    chassert(n.items[1] != 0);
     if constexpr (std::endian::native == std::endian::big)
         return {reinterpret_cast<const char *>(&n), 16ul - (std::countr_zero(n.items[1]) >> 3)};
     else
@@ -36,7 +36,7 @@ inline std::string_view ALWAYS_INLINE toStringView(const StringKey16 & n)
 }
 inline std::string_view ALWAYS_INLINE toStringView(const StringKey24 & n)
 {
-    assert(n.c != 0);
+    chassert(n.c != 0);
     if constexpr (std::endian::native == std::endian::big)
         return {reinterpret_cast<const char *>(&n), 24ul - (std::countr_zero(n.c) >> 3)};
     else

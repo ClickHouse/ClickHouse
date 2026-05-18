@@ -127,7 +127,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
         stalled_status = REBALANCE_HAPPENED;
         last_rebalance_timestamp = timeInSeconds(std::chrono::system_clock::now());
 
-        assert(!assignment.has_value() || topic_partitions.size() == assignment->size());
+        chassert(!assignment.has_value() || topic_partitions.size() == assignment->size());
         cleanAssignment();
         waited_for_assignment = 0;
 
@@ -398,7 +398,7 @@ void KafkaConsumer::resetToLastCommitted(const char * msg)
 
 void KafkaConsumer::doPoll()
 {
-    assert(current == messages.end());
+    chassert(current == messages.end());
 
     while (true)
     {

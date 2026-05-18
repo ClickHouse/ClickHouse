@@ -57,7 +57,7 @@ void ActiveDataPartSet::checkIntersectingParts(const MergeTreePartInfo & part_in
     /// Let's go to the right.
     while (it != part_info_to_name.end() && part_info.contains(it->first))
     {
-        assert(part_info != it->first);
+        chassert(part_info != it->first);
         ++it;
     }
 
@@ -137,7 +137,7 @@ ActiveDataPartSet::AddPartOutcome ActiveDataPartSet::addImpl(const MergeTreePart
     /// Let's go to the right.
     while (it != part_info_to_name.end() && part_info.contains(it->first))
     {
-        assert(part_info != it->first);
+        chassert(part_info != it->first);
         if (out_replaced_parts)
             out_replaced_parts->push_back(it->second);
         it = part_info_to_name.erase(it);

@@ -26,7 +26,7 @@ void onError(std::string error_message)
 
 std::string_view foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, std::string_view key, std::array<char, EVP_MAX_KEY_LENGTH> & folded_key)
 {
-    assert(cipher_key_size <= EVP_MAX_KEY_LENGTH);
+    chassert(cipher_key_size <= EVP_MAX_KEY_LENGTH);
     memcpy(folded_key.data(), key.data(), cipher_key_size);
 
     for (size_t i = cipher_key_size; i < key.size(); ++i)

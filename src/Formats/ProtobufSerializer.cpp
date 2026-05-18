@@ -133,7 +133,7 @@ namespace
 
     std::string_view googleWrapperColumnName(const FieldDescriptor & field_descriptor)
     {
-        assert(isGoogleWrapperField(field_descriptor));
+        chassert(isGoogleWrapperField(field_descriptor));
         return field_descriptor.message_type()->field(0)->name();
     }
 
@@ -964,7 +964,7 @@ namespace
             const ProtobufReaderOrWriter & reader_or_writer_)
             : BaseClass(column_name_, field_descriptor_, reader_or_writer_), enum_data_type(enum_data_type_)
         {
-            assert(enum_data_type);
+            chassert(enum_data_type);
             setFunctions();
             prepareEnumMapping();
         }
@@ -1984,7 +1984,7 @@ namespace
 
         void setColumns(const ColumnPtr * columns, size_t num_columns) override
         {
-            assert(num_columns > presence_column_idx);
+            chassert(num_columns > presence_column_idx);
 
             Columns cols;
             cols.reserve(num_columns - 1);
@@ -2941,7 +2941,7 @@ namespace
                 wrongNumberOfColumns(num_columns, "1");
             const auto & column_tuple = assert_cast<const ColumnTuple &>(*columns[0]);
             size_t tuple_size = column_tuple.tupleSize();
-            assert(tuple_size);
+            chassert(tuple_size);
             Columns element_columns;
             element_columns.reserve(tuple_size);
             for (size_t i : collections::range(tuple_size))
@@ -3185,7 +3185,7 @@ namespace
             }
 
             missing_column_indices.clear();
-            assert(column_names.size() >= used_column_indices.size());
+            chassert(column_names.size() >= used_column_indices.size());
             missing_column_indices.reserve(column_names.size() - used_column_indices.size());
             auto used_column_indices_sorted = std::move(used_column_indices);
             ::sort(used_column_indices_sorted.begin(), used_column_indices_sorted.end());
@@ -3330,7 +3330,7 @@ namespace
         static void removeNonArrayElements(DataTypes & data_types, std::vector<T1> & elements1, std::vector<T2> & elements2)
         {
             size_t initial_size = data_types.size();
-            assert(initial_size == elements1.size() && initial_size == elements2.size());
+            chassert(initial_size == elements1.size() && initial_size == elements2.size());
             data_types.reserve(initial_size * 2);
             elements1.reserve(initial_size * 2);
             elements2.reserve(initial_size * 2);
@@ -3426,7 +3426,7 @@ namespace
                                             const FieldDescriptor & field_descriptor_,
                                             std::unique_ptr<ProtobufSerializer> field_serializer_)
             {
-                assert(&field_descriptor_);
+                chassert(&field_descriptor_);
                 auto it = field_descriptors_in_use.find(&field_descriptor_);
                 if (it != field_descriptors_in_use.end())
                 {
@@ -3475,7 +3475,7 @@ namespace
                     {
                         auto itused = used_column_indices_sorted.find(index);
 
-                        assert(itused != used_column_indices_sorted.end());
+                        chassert(itused != used_column_indices_sorted.end());
                         index = std::distance(used_column_indices_sorted.begin(), itused);
                     }
                 }
