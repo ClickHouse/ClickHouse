@@ -36,6 +36,14 @@ while IFS= read -r -d '' submodule_path; do
         echo "Failed to resolve pinned commit for submodule $submodule_path"
         exit 1
     fi
+    # Assert the pinned commit is actually present in the bare repo. Without
+    # this, `git show $sha:.gitmodules | grep ...` would silently treat a
+    # missing commit (e.g. incomplete cache) as "no nested submodules" because
+    # the pipeline's exit code comes from grep, not git show.
+    if ! git --git-dir="$submodule_git_dir" cat-file -e "$submodule_sha^{commit}" 2>/dev/null; then
+        echo "Pinned commit $submodule_sha for submodule $submodule_path is missing from $submodule_git_dir; the submodule cache may be incomplete."
+        exit 1
+    fi
     if git --git-dir="$submodule_git_dir" show "$submodule_sha:.gitmodules" 2>/dev/null | grep -q '\[submodule'; then
         echo "Recursive submodules are not allowed: $submodule_path contains its own .gitmodules with submodule entries"
         exit 1
