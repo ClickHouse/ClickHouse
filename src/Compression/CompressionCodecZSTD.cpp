@@ -35,6 +35,8 @@ UInt32 CompressionCodecZSTD::getMaxCompressedDataSize(UInt32 uncompressed_size) 
 UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
     ZSTD_CCtx * cctx = ZSTD_createCCtx();
+    if (!cctx)
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with ZSTD codec: failed to create compression context");
     ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, level);
     if (enable_long_range)
     {
