@@ -1,6 +1,11 @@
 -- Tags: no-fasttest, no-ordinary-database
--- vector_similarity with partial PK pruning: use_skip_indexes 1 vs 0 must return the same row ids.
--- Also: ORDER BY Date + range on that key + vector ORDER BY LIMIT.
+--
+-- Regression for partial PK + vector search.
+-- Before this fix, if PK left only part of the marks in a part, vector index analysis was skipped.
+-- Here we check:
+-- 1) `use_skip_indexes = 1` and `use_skip_indexes = 0` return the same ids.
+-- 2) vector path really runs (`USearchSearchCount > 0`).
+-- 3) Date-range PK filters + extra non-PK filters still work as expected.
 
 SET allow_experimental_vector_similarity_index = 1;
 SET enable_analyzer = 1;
@@ -15,6 +20,8 @@ INSERT INTO tab_pk_partial VALUES
     (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]),
     (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
 
+-- Case A: simple PK partial range (`id >= 6`) with vector ORDER BY LIMIT.
+-- Expected: same top-k ids with and without skip indexes.
 SELECT 'pk_partial_matches_exact_knn_without_skip_indexes';
 WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec
 SELECT
@@ -52,6 +59,7 @@ FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
+-- Case B: prove this query actually used the vector index path.
 SELECT 'vector_index_path_used';
 SELECT ProfileEvents['USearchSearchCount'] > 0
 FROM system.query_log
@@ -98,7 +106,8 @@ FROM
 
 DROP TABLE tab_pk_partial;
 
--- ORDER BY (Date, id), range on Date, vector query, and extra non-PK filter.
+-- Case C: composite PK (`ORDER BY (created_date, id)`), Date-range filters, and vector ORDER BY LIMIT.
+-- Also checks conjunction with extra non-PK predicates.
 DROP TABLE IF EXISTS tab_time_tickets;
 
 CREATE TABLE tab_time_tickets(

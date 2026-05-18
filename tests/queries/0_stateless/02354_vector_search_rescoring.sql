@@ -101,6 +101,7 @@ LIMIT 3
 SETTINGS vector_search_with_rescoring = 0;
 
 -- Since filter will select partial ranges from part, brute-force search will select 4,5,6
+-- Keep `use_skip_indexes = 0` on purpose: this is the brute-force baseline for this case.
 WITH [1.0, 0.0] AS reference_vec
 SELECT id, attr1
 FROM tab
