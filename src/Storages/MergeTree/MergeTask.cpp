@@ -411,17 +411,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     }
 
     /// Snapshot columns required by merge semantics before adding columns used only
-    /// to rebuild skip indexes, projections, or TTL filters.
-    ///
-    /// `SummingMergeTree` needs defaults for zero-row deletion.
-    /// `CoalescingMergeTree` needs defaults for last-value/default-value preservation.
-    /// `AggregatingMergeTree` needs defaults for aggregate-state and not-to-aggregate column merging.
-    /// `GraphiteMergeTree` adds only configured `path`, `time`, `value`, and `version` columns
-    /// beyond the generic columns collected above.
-    ///
-    /// Expired required columns may be written with defaults and removed during final
-    /// Wide-part cleanup. Compact parts keep them because per-column file removal
-    /// is not applicable; this keeps merge semantics separate from output cleanup.
+    /// to rebuild skip indexes, projections, or TTL filters. This covers defaults
+    /// for `SummingMergeTree`, `CoalescingMergeTree`, and `AggregatingMergeTree`,
+    /// and configured rollup columns for `GraphiteMergeTree`.
+    /// Expired required columns may later be removed from Wide parts; Compact
+    /// parts keep them because per-column file removal is not applicable.
     global_ctx->merge_required_columns = key_columns;
     const auto & skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
 
