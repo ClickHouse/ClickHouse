@@ -460,7 +460,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
 
         output_stream << std::endl;
 #if USE_REPLXX
-        output_stream << highlighted(res_buf.str(), *client_context);
+        output_stream << highlighted(res_buf.str(), *client_context, rainbow_parentheses);
 #else
         output_stream << res_buf.str();
 #endif
@@ -2747,9 +2747,12 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // the query ends because we failed to parse it, so we consume
                 // the entire line.
                 TestHint hint(String(this_query_begin, this_query_end - this_query_begin));
-                if (hint.hasServerErrors())
+                if (hint.hasServerErrors() && !hint.hasClientErrors())
                 {
-                    // Syntax errors are considered as client errors
+                    // Syntax errors are considered as client errors.
+                    // Reject hints that expect only server errors (serverError hint),
+                    // but fall through when both are set (error hint) so the
+                    // client error check below can handle it.
                     current_exception->addMessage("\nExpected server error: {}.", hint.serverErrors());
                     current_exception->rethrow();
                 }
@@ -3644,7 +3647,7 @@ void ClientBase::runInteractive()
     {
         highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos)
         {
-            highlight(query, colors, *client_context, pos);
+            highlight(query, colors, *client_context, pos, rainbow_parentheses);
         };
     }
 
