@@ -2264,6 +2264,12 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
     /// NOTE Skip datalake catalogs to avoid unnecessary access to remote catalogs (can be expensive)
     auto all_databases = database_catalog.getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
 
+    /// Cross-database hints would otherwise leak existence of databases the user cannot `SHOW`.
+    /// Match the access checks done by `DatabaseNameHints`: skip databases the user does not have
+    /// `SHOW_DATABASES` on. Per-table `SHOW_TABLES` filtering is applied inside `getAllRegisteredNames`.
+    auto access = context ? context->getAccess() : nullptr;
+    const bool need_to_check_access_for_databases = access && !access->isGranted(AccessType::SHOW_DATABASES);
+
     /// Pick the closest match across all databases, not just the first match found.
     /// Returning the first database with any match is non-deterministic when several
     /// databases contain similarly named tables (e.g. concurrent runs of the same
@@ -2275,6 +2281,9 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
     {
         /// this case should be covered already by getHintForTable
         if (database && db_name == database->getDatabaseName())
+            continue;
+
+        if (need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, db_name))
             continue;
 
         TableNameHints hints(db, context);
@@ -2299,7 +2308,23 @@ Names TableNameHints::getAllRegisteredNames() const
     /// DataLakeCatalog::getAllTableNames lists all tables from remote catalog - expensive. Skip when user opted out.
     if (database->isDatalakeCatalog() && context && !context->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
         return {};
-    return database->getAllTableNames(context);
+    auto names = database->getAllTableNames(context);
+
+    /// Filter out tables the user cannot `SHOW`, otherwise the hint can leak the existence of
+    /// tables (e.g. for the cross-database hint search in `getExtendedHintForTable`).
+    if (context)
+    {
+        const auto access = context->getAccess();
+        const bool need_to_check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES, database->getDatabaseName());
+        if (need_to_check_access_for_tables)
+        {
+            std::erase_if(names, [&](const String & name)
+            {
+                return !access->isGranted(AccessType::SHOW_TABLES, database->getDatabaseName(), name);
+            });
+        }
+    }
+    return names;
 }
 
 }
