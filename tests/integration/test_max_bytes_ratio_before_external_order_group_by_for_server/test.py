@@ -47,9 +47,7 @@ def test_max_bytes_ratio_before_external_group_by(node):
         "max_memory_usage": "0",
         "max_bytes_before_external_group_by": 0,
         "max_bytes_ratio_before_external_group_by": 0.3,
-        # Sharded aggregation disables external group by (no spill support yet),
-        # which would cause OOM in this test. Disable sharded aggregation for now.
-        # Once sharded aggregation is turned off by default, remove this setting.
+        # TODO(nihalzp): remove once sharded aggregation supports external aggregation (spill to disk).
         "enable_sharding_aggregator": 0,
     }
     node.query(query, settings=settings)
