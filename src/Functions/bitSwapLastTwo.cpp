@@ -56,9 +56,7 @@ struct NameBitSwapLastTwo { static constexpr auto name = "__bitSwapLastTwo"; };
 class FunctionBitSwapLastTwo : public FunctionUnaryArithmetic<BitSwapLastTwoImpl, NameBitSwapLastTwo, false>
 {
 public:
-    using FunctionUnaryArithmetic::FunctionUnaryArithmetic;
-
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionBitSwapLastTwo>(context_); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitSwapLastTwo>(); }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
