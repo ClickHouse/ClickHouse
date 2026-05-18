@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-shared-merge-tree
+# Tags: no-replicated-database, no-shared-merge-tree, no-object-storage
+#
+# `no-object-storage`: the captured 25.8 part is a local-disk fixture with
+# real file contents (`columns.txt`, `skp_idx_*.idx`, ...). On the s3 / azure
+# disk those files in the table's data dir are not actual data — they are
+# `DiskObjectStorageMetadata` pointer files (`<version>\n<num_objects>\n<size> <key>`)
+# referring to objects in the bucket. Extracting the captured part directly
+# into the local detached dir therefore fails at ATTACH time with
+# `CANNOT_PARSE_INPUT_ASSERTION_FAILED` inside
+# `DiskObjectStorageMetadata::deserialize`. The bug under test is a column-
+# extraction issue in `splitAndModifyMutationCommands` that is independent of
+# the disk layer, so exercising it on local disk is sufficient.
 #
 # Regression test for ClickHouse/ClickHouse#104872.
 #
