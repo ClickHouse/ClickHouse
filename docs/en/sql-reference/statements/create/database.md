@@ -7,6 +7,8 @@ title: 'CREATE DATABASE'
 doc_type: 'reference'
 ---
 
+# CREATE DATABASE
+
 Creates a new database.
 
 ```sql
