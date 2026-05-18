@@ -24,9 +24,12 @@ public:
 
     void run() override;
 
-private:
-    void addConnection(Poco::Net::StreamSocket socket);
+    /// Runs the SourceHello/SinkHello handshake on `socket` and registers the
+    /// resulting connection in `connections` on success. Throws on protocol
+    /// mismatch or transport failure without registering. Exposed for tests.
+    static void handleConnection(Poco::Net::StreamSocket socket, ExchangeConnectionsPtr connections, LoggerPtr log);
 
+private:
     ExchangeConnectionsPtr connections;
     Poco::Net::ServerSocket server_socket;
     Poco::Thread accept_thread;

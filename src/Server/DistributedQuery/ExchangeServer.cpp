@@ -73,7 +73,7 @@ void ExchangeServer::run()
                 try
                 {
                     Poco::Net::StreamSocket ss = server_socket.acceptConnection();
-                    addConnection(ss);
+                    handleConnection(std::move(ss), connections, log);
                 }
                 // Termination request
                 catch (Poco::InvalidArgumentException &)
@@ -122,7 +122,7 @@ namespace
     }
 }
 
-void ExchangeServer::addConnection(Poco::Net::StreamSocket socket)
+void ExchangeServer::handleConnection(Poco::Net::StreamSocket socket, ExchangeConnectionsPtr connections, LoggerPtr log)
 {
     LOG_TRACE(log, "Connection from {}", socket.peerAddress().toString());
 
