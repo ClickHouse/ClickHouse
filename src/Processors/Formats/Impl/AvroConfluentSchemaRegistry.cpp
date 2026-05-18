@@ -12,6 +12,8 @@
 
 #include <IO/HTTPCommon.h>
 
+#include <Processors/Formats/Impl/AvroRowInputFormat.h>
+
 #include <Compiler.hh>
 #include <ValidSchema.hh>
 
@@ -42,12 +44,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int INCOMPATIBLE_SCHEMA;
 }
-
-/// Maximum nesting depth for Avro schemas. Passed to the Avro library to
-/// prevent stack overflow on deeply nested schemas (e.g. crafted inputs with
-/// thousands of nested arrays/records). Real-world schemas rarely exceed 10-20
-/// levels, so 256 is more than enough.
-static constexpr size_t MAX_AVRO_SCHEMA_DEPTH = 256;
 
 ConfluentSchemaRegistry::ConfluentSchemaRegistry(const std::string & base_url_, size_t schema_cache_max_size)
     : base_url(base_url_)

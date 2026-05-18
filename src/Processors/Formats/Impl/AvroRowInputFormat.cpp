@@ -57,12 +57,6 @@ namespace ErrorCodes
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
-/// Maximum nesting depth for Avro schemas. Passed to the Avro library to
-/// prevent stack overflow on deeply nested schemas (e.g. crafted inputs with
-/// thousands of nested arrays/records). Real-world schemas rarely exceed 10-20
-/// levels, so 256 is more than enough.
-static constexpr size_t MAX_AVRO_SCHEMA_DEPTH = 256;
-
 bool AvroInputStreamReadBufferAdapter::next(const uint8_t ** data, size_t * len)
 {
     if (in.eof())
