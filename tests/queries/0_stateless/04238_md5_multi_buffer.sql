@@ -1,4 +1,3 @@
--- Tags: no-fasttest, no-openssl-fips
 -- Test MD5 multi-buffer SIMD implementation for correctness.
 -- Verifies that the SIMD batched path produces byte-identical results
 -- to the RFC 1321 reference vectors across various input sizes and batch boundaries.
@@ -18,8 +17,15 @@ SELECT hex(MD5(repeat('x', 56)));  -- spills to 2 blocks
 SELECT hex(MD5(repeat('x', 64)));  -- exactly 1 full block + padding block
 SELECT hex(MD5(repeat('x', 128))); -- 2 full blocks + padding block
 
--- Batch boundary tests: exercise partial SIMD batches
--- (AVX2 = 8 lanes, AVX-512 = 16 lanes)
+-- Batch boundary tests: exercise partial batches at each dispatch level.
+-- Scalar path: 2 lanes x 2 groups = 4 digests per iteration.
+-- 3 rows (partial scalar batch)
+SELECT sum(reinterpretAsUInt64(substring(MD5(toString(number)), 1, 8))) FROM numbers(3);
+-- 4 rows (exact scalar batch)
+SELECT sum(reinterpretAsUInt64(substring(MD5(toString(number)), 1, 8))) FROM numbers(4);
+-- 5 rows (scalar batch + 1 overflow)
+SELECT sum(reinterpretAsUInt64(substring(MD5(toString(number)), 1, 8))) FROM numbers(5);
+-- AVX2 = 8 lanes x 2 groups = 16 digests, AVX-512 = 16 lanes x 2 groups = 32 digests.
 -- 7 rows (partial AVX2 batch)
 SELECT sum(reinterpretAsUInt64(substring(MD5(toString(number)), 1, 8))) FROM numbers(7);
 -- 8 rows (exact AVX2 batch)

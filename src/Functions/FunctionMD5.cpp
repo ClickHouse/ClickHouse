@@ -1,8 +1,9 @@
-/// Multi-buffer SIMD MD5 function.
+/// Multi-buffer MD5 function.
 ///
-/// On x86-64 with AVX2 or AVX-512, processes 16 or 32 independent MD5 digests
-/// in parallel using SIMD lanes. Falls back to the scalar OpenSSL implementation
-/// on other architectures or when SIMD is not available.
+/// Processes multiple independent MD5 digests in parallel by interleaving
+/// their round computations. On x86-64 with AVX2 or AVX-512, uses SIMD to
+/// compute 16 or 32 digests simultaneously. On other architectures, uses a
+/// scalar multi-buffer approach with 4 independent dependency chains.
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -14,15 +15,6 @@
 #include <Functions/PerformanceAdaptors.h>
 #include <base/IPv4andIPv6.h>
 
-#include "config.h"
-
-#if USE_SSL
-#include <openssl/evp.h>
-#include <openssl/md5.h>
-#include <Common/Crypto/OpenSSLInitializer.h>
-#include <Common/OpenSSLHelpers.h>
-#endif
-
 #include <Common/TargetSpecific.h>
 
 #if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
@@ -33,28 +25,20 @@
 #include <cstdint>
 #include <cstring>
 
-
-namespace DB
+namespace
 {
-
-namespace ErrorCodes
-{
-extern const int ILLEGAL_COLUMN;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int OPENSSL_ERROR;
-extern const int SUPPORT_IS_DISABLED;
-}
-
 
 /// MD5 initial state (RFC 1321).
-[[maybe_unused]] static constexpr uint32_t MD5_A0 = 0x67452301;
-[[maybe_unused]] static constexpr uint32_t MD5_B0 = 0xefcdab89;
-[[maybe_unused]] static constexpr uint32_t MD5_C0 = 0x98badcfe;
-[[maybe_unused]] static constexpr uint32_t MD5_D0 = 0x10325476;
+constexpr uint32_t MD5_A0 = 0x67452301;
+constexpr uint32_t MD5_B0 = 0xefcdab89;
+constexpr uint32_t MD5_C0 = 0x98badcfe;
+constexpr uint32_t MD5_D0 = 0x10325476;
+
+constexpr size_t MD5_DIGEST_LEN = 16;
 
 /// Pad a message per RFC 1321. Writes the final 1-2 blocks into `out`.
 /// Returns the number of final blocks written (1 or 2).
-inline size_t md5PadFinalBlocks(const uint8_t * data, size_t len, uint8_t * out)
+size_t md5PadFinalBlocks(const uint8_t * data, size_t len, uint8_t * out)
 {
     size_t full_blocks = len / 64;
     size_t tail = len % 64;
@@ -71,15 +55,24 @@ inline size_t md5PadFinalBlocks(const uint8_t * data, size_t len, uint8_t * out)
     return final_count;
 }
 
-inline size_t numMD5Blocks(size_t len)
+size_t numMD5Blocks(size_t len)
 {
     return (len + 9 + 63) / 64;
 }
 
+} // anonymous namespace
 
-#if USE_SSL
 
-/// Shared base class: common IFunction overrides and the FIPS-mode check.
+namespace DB
+{
+
+namespace ErrorCodes
+{
+extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+/// Shared base class: common IFunction overrides.
 class FunctionMD5Base : public IFunction
 {
 public:
@@ -89,6 +82,8 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+    /// Disable default Variant implementation for compatibility.
+    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
     bool useDefaultImplementationForVariant() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -96,135 +91,18 @@ public:
         if (!isStringOrFixedString(arguments[0]) && !isIPv6(arguments[0])) [[unlikely]]
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-        return std::make_shared<DataTypeFixedString>(MD5_DIGEST_LENGTH);
-    }
-
-protected:
-    FunctionMD5Base()
-    {
-        if (OpenSSLInitializer::instance().isFIPSEnabled()) [[unlikely]]
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Function {} is not available in FIPS mode", name);
+        return std::make_shared<DataTypeFixedString>(MD5_DIGEST_LEN);
     }
 };
 
-
-/// Scalar (Default) implementation — delegates to OpenSSL EVP.
-DECLARE_DEFAULT_CODE(
-
-class FunctionMD5Impl : public FunctionMD5Base
-{
-public:
-    FunctionMD5Impl()
-    {
-        initTemplate();
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-    {
-        return executeScalar(arguments, input_rows_count);
-    }
-
-private:
-    using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
-
-    EVP_MD_CTX_ptr ctx_template{EVP_MD_CTX_new(), &EVP_MD_CTX_free};
-
-    void initTemplate()
-    {
-        if (!ctx_template) [[unlikely]]
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
-        if (EVP_DigestInit_ex(ctx_template.get(), EVP_md5(), nullptr) != 1) [[unlikely]]
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit_ex failed: {}", getOpenSSLErrors());
-    }
-
-    void applyScalar(const char * begin, size_t size, unsigned char * out_char_data) const
-    {
-        thread_local EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
-
-        if (EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get()) != 1) [[unlikely]]
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_copy_ex failed: {}", getOpenSSLErrors());
-        if (EVP_DigestUpdate(ctx.get(), begin, size) != 1) [[unlikely]]
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestUpdate failed: {}", getOpenSSLErrors());
-        if (EVP_DigestFinal_ex(ctx.get(), out_char_data, nullptr) != 1) [[unlikely]]
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestFinal_ex failed: {}", getOpenSSLErrors());
-    }
-
-protected:
-    ColumnPtr executeScalar(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
-    {
-        if (const auto * col_from = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
-        {
-            auto col_to = ColumnFixedString::create(MD5_DIGEST_LENGTH);
-            const auto & data = col_from->getChars();
-            const auto & offsets = col_from->getOffsets();
-            auto & chars_to = col_to->getChars();
-            chars_to.resize(input_rows_count * MD5_DIGEST_LENGTH);
-
-            ColumnString::Offset current_offset = 0;
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                applyScalar(
-                    reinterpret_cast<const char *>(&data[current_offset]),
-                    offsets[i] - current_offset,
-                    reinterpret_cast<uint8_t *>(&chars_to[i * MD5_DIGEST_LENGTH]));
-                current_offset = offsets[i];
-            }
-            return col_to;
-        }
-
-        if (const auto * col_from_fix = checkAndGetColumn<ColumnFixedString>(arguments[0].column.get()))
-        {
-            auto col_to = ColumnFixedString::create(MD5_DIGEST_LENGTH);
-            const auto & data = col_from_fix->getChars();
-            auto & chars_to = col_to->getChars();
-            const auto length = col_from_fix->getN();
-            chars_to.resize(input_rows_count * MD5_DIGEST_LENGTH);
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                applyScalar(
-                    reinterpret_cast<const char *>(&data[i * length]),
-                    length,
-                    reinterpret_cast<uint8_t *>(&chars_to[i * MD5_DIGEST_LENGTH]));
-            }
-            return col_to;
-        }
-
-        if (const auto * col_from_ip = checkAndGetColumn<ColumnIPv6>(arguments[0].column.get()))
-        {
-            auto col_to = ColumnFixedString::create(MD5_DIGEST_LENGTH);
-            const auto & data = col_from_ip->getData();
-            auto & chars_to = col_to->getChars();
-            const auto length = sizeof(IPv6::UnderlyingType);
-            chars_to.resize(input_rows_count * MD5_DIGEST_LENGTH);
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                applyScalar(
-                    reinterpret_cast<const char *>(&data[i]),
-                    length,
-                    reinterpret_cast<uint8_t *>(&chars_to[i * MD5_DIGEST_LENGTH]));
-            }
-            return col_to;
-        }
-
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "Illegal column {} of first argument of function {}",
-            arguments[0].column->getName(), getName());
-    }
-};
-
-) // DECLARE_DEFAULT_CODE
-
-
-#if USE_MULTITARGET_CODE
 
 /// ============================================================
-/// Multi-buffer SIMD MD5, templated on Ops.
+/// Multi-buffer MD5, templated on Ops.
 ///
 /// Template functions go inside DECLARE_MULTITARGET_CODE so each
 /// target-specific copy is compiled with the correct ISA flags.
-/// The Ops structs (AVX2MD5Ops, AVX512MD5Ops) are in their own
-/// DECLARE blocks and found via same-namespace lookup.
+/// The Ops structs (ScalarMD5Ops, AVX2MD5Ops, AVX512MD5Ops) are
+/// in their own DECLARE blocks and found via same-namespace lookup.
 /// ============================================================
 
 /// One interleaved MD5 round step for two independent groups.
@@ -373,7 +251,8 @@ DECLARE_MULTITARGET_CODE(
 
     /// Compute MD5 for up to 2*N lanes, split into two groups of N.
     template <typename Ops>
-    void md5MultiBufCompute(const uint8_t * const inputs[], const size_t lengths[], uint8_t * output, size_t actual_count) {
+    void md5MultiBufCompute(const uint8_t * const inputs[], const size_t lengths[], uint8_t * output, size_t actual_count)
+    {
         constexpr size_t N = Ops::lanes;
         using Vec = typename Ops::Vec;
 
@@ -523,13 +402,14 @@ DECLARE_MULTITARGET_CODE(
                 lengths[j] = 0;
             }
 
-            md5MultiBufCompute<Ops>(inputs, lengths, reinterpret_cast<uint8_t *>(&chars_to[base * MD5_DIGEST_LENGTH]), batch);
+            md5MultiBufCompute<Ops>(inputs, lengths, reinterpret_cast<uint8_t *>(&chars_to[base * MD5_DIGEST_LEN]), batch);
         }
     }
 
     /// Batch process ColumnFixedString / ColumnIPv6 data (uniform row length).
     template <typename Ops>
-    static void md5BatchFixedLen(const uint8_t * data, size_t row_len, ColumnFixedString::Chars & chars_to, size_t input_rows_count) {
+    static void md5BatchFixedLen(const uint8_t * data, size_t row_len, ColumnFixedString::Chars & chars_to, size_t input_rows_count)
+    {
         constexpr size_t N2 = 2 * Ops::lanes;
 
         for (size_t base = 0; base < input_rows_count; base += N2)
@@ -550,28 +430,28 @@ DECLARE_MULTITARGET_CODE(
                 lengths[j] = 0;
             }
 
-            md5MultiBufCompute<Ops>(inputs, lengths, reinterpret_cast<uint8_t *>(&chars_to[base * MD5_DIGEST_LENGTH]), batch);
+            md5MultiBufCompute<Ops>(inputs, lengths, reinterpret_cast<uint8_t *>(&chars_to[base * MD5_DIGEST_LEN]), batch);
         }
     }
 
-    /// Column-type dispatch for SIMD multi-buffer MD5.
+    /// Column-type dispatch for multi-buffer MD5.
     template <typename Ops>
     static ColumnPtr executeMD5Batch(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
     {
         if (const auto * col_from = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
         {
-            auto col_to = ColumnFixedString::create(MD5_DIGEST_LENGTH);
+            auto col_to = ColumnFixedString::create(MD5_DIGEST_LEN);
             auto & chars_to = col_to->getChars();
-            chars_to.resize(input_rows_count * MD5_DIGEST_LENGTH);
+            chars_to.resize(input_rows_count * MD5_DIGEST_LEN);
             md5BatchColumnString<Ops>(col_from->getChars(), col_from->getOffsets(), chars_to, input_rows_count);
             return col_to;
         }
 
         if (const auto * col_from_fix = checkAndGetColumn<ColumnFixedString>(arguments[0].column.get()))
         {
-            auto col_to = ColumnFixedString::create(MD5_DIGEST_LENGTH);
+            auto col_to = ColumnFixedString::create(MD5_DIGEST_LEN);
             auto & chars_to = col_to->getChars();
-            chars_to.resize(input_rows_count * MD5_DIGEST_LENGTH);
+            chars_to.resize(input_rows_count * MD5_DIGEST_LEN);
             md5BatchFixedLen<Ops>(
                 reinterpret_cast<const uint8_t *>(col_from_fix->getChars().data()), col_from_fix->getN(), chars_to, input_rows_count);
             return col_to;
@@ -579,9 +459,9 @@ DECLARE_MULTITARGET_CODE(
 
         if (const auto * col_from_ip = checkAndGetColumn<ColumnIPv6>(arguments[0].column.get()))
         {
-            auto col_to = ColumnFixedString::create(MD5_DIGEST_LENGTH);
+            auto col_to = ColumnFixedString::create(MD5_DIGEST_LEN);
             auto & chars_to = col_to->getChars();
-            chars_to.resize(input_rows_count * MD5_DIGEST_LENGTH);
+            chars_to.resize(input_rows_count * MD5_DIGEST_LEN);
             md5BatchFixedLen<Ops>(
                 reinterpret_cast<const uint8_t *>(col_from_ip->getData().data()), sizeof(IPv6::UnderlyingType), chars_to, input_rows_count);
             return col_to;
@@ -593,6 +473,84 @@ DECLARE_MULTITARGET_CODE(
     ) // DECLARE_MULTITARGET_CODE
 
 #undef MD5_STEP_X2
+
+
+/// Scalar (2 lanes x 2 groups = 4 digests per iteration).
+/// Uses a plain struct of uint32_t so each element stays in its own register.
+/// This gives the OOO engine 4 independent dependency chains to fill ALU ports,
+/// without the cross-lane carry/shift issues of SWAR packing.
+DECLARE_DEFAULT_CODE(
+
+struct ScalarMD5Ops
+{
+    struct Vec
+    {
+        uint32_t v[2];
+    };
+    static constexpr size_t lanes = 2;
+
+    static inline Vec add(Vec a, Vec b)
+    {
+        return {a.v[0] + b.v[0], a.v[1] + b.v[1]};
+    }
+    static inline Vec set1(uint32_t val)
+    {
+        return {val, val};
+    }
+    static inline Vec loadu(const void * p)
+    {
+        Vec r;
+        std::memcpy(r.v, p, sizeof(r.v));
+        return r;
+    }
+    static inline void storeu(void * p, Vec val)
+    {
+        std::memcpy(p, val.v, sizeof(val.v));
+    }
+
+    template <int N>
+    static inline Vec rotl(Vec x)
+    {
+        return {(x.v[0] << N) | (x.v[0] >> (32 - N)), (x.v[1] << N) | (x.v[1] >> (32 - N))};
+    }
+
+    static inline Vec F(Vec b, Vec c, Vec d)
+    {
+        return {d.v[0] ^ (b.v[0] & (c.v[0] ^ d.v[0])), d.v[1] ^ (b.v[1] & (c.v[1] ^ d.v[1]))};
+    }
+    static inline Vec G(Vec b, Vec c, Vec d)
+    {
+        return {c.v[0] ^ (d.v[0] & (b.v[0] ^ c.v[0])), c.v[1] ^ (d.v[1] & (b.v[1] ^ c.v[1]))};
+    }
+    static inline Vec H(Vec b, Vec c, Vec d)
+    {
+        return {b.v[0] ^ c.v[0] ^ d.v[0], b.v[1] ^ c.v[1] ^ d.v[1]};
+    }
+    static inline Vec I(Vec b, Vec c, Vec d)
+    {
+        return {c.v[0] ^ (b.v[0] | ~d.v[0]), c.v[1] ^ (b.v[1] | ~d.v[1])};
+    }
+
+    static inline void gatherAllMessageWords(const uint8_t * const block_ptrs[], Vec msg[16])
+    {
+        for (int i = 0; i < 16; ++i)
+        {
+            std::memcpy(&msg[i].v[0], block_ptrs[0] + i * 4, 4);
+            std::memcpy(&msg[i].v[1], block_ptrs[1] + i * 4, 4);
+        }
+    }
+};
+
+class FunctionMD5Impl : public FunctionMD5Base
+{
+public:
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        return executeMD5Batch<ScalarMD5Ops>(arguments, input_rows_count);
+    }
+};
+
+) // DECLARE_DEFAULT_CODE
 
 
 /// AVX2 (8 lanes x 2 groups = 16 parallel digests)
@@ -695,9 +653,8 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return executeMD5Batch<AVX2MD5Ops>(arguments, input_rows_count);
-}
-}
-;
+    }
+};
 
 ) // DECLARE_X86_64_V3_SPECIFIC_CODE
 
@@ -848,13 +805,10 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         return executeMD5Batch<AVX512MD5Ops>(arguments, input_rows_count);
-}
-}
-;
+    }
+};
 
 ) // DECLARE_X86_64_V4_SPECIFIC_CODE
-
-#endif // USE_MULTITARGET_CODE
 
 
 /// Runtime dispatch via ImplementationSelector.
@@ -910,7 +864,4 @@ SELECT HEX(MD5('abc'));
 
     factory.registerFunction<FunctionMD5>(documentation_MD5);
 }
-
-#endif // USE_SSL
-
 }
