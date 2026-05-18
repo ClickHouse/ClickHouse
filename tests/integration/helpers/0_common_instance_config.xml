@@ -61,11 +61,4 @@
     <asynchronous_metric_log remove="1"/>
     <processors_profile_log remove="1"/>
     <query_thread_log remove="1"/>
-
-    <!-- Mirror the stateless-test config: disable the per-thread speculative
-         memory reservation. Many integration tests use intentionally tight
-         `max_memory_usage` values to exercise specific memory-limit behaviour;
-         the production default of 4 MiB would push those queries over their
-         limits. -->
-    <additional_memory_tracking_per_thread>0</additional_memory_tracking_per_thread>
 </clickhouse>

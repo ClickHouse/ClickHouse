@@ -1,8 +1,0 @@
-<clickhouse>
-    <!-- Disable the speculative per-thread memory reservation for tests.
-         Many tests use intentionally tight `max_memory_usage` values to verify
-         specific memory-limit behaviour; the production default of 4 MiB would
-         push them over their thresholds. The feature itself is still covered
-         by dedicated tests that set the server setting explicitly. -->
-    <additional_memory_tracking_per_thread>0</additional_memory_tracking_per_thread>
-</clickhouse>
