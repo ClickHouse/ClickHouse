@@ -1,6 +1,8 @@
+-- Tags: no-parallel-replicas
 -- https://github.com/ClickHouse/ClickHouse/issues/105153
 -- Two calls of the same parameterized view with different argument values must not
 -- be deduplicated by the analyzer when used as IN-subqueries in the same WHERE clause.
+-- `no-parallel-replicas`: parameterized views are not yet supported with parallel replicas, see #84188.
 
 DROP TABLE IF EXISTS testing_105153;
 DROP VIEW IF EXISTS test_view_105153;
