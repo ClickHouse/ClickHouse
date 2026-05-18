@@ -298,8 +298,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// As a result, same key from different rows will always go to the same shard and we can aggregate
     /// each shard independently without merge phase.
     const bool use_sharded_aggregation = enable_sharding_aggregator
-        /// We may want to use this even in the case of `num_streams = 1`
-        /// If `num_streams = 1`, then one stream can be split into N shards and processed in parallel.
+        /// Respect pipeline width — do not fan out a single stream into shards.
+        && pipeline.getNumStreams() > 1
         && params.max_threads > 1
         /// TODO: `max_rows_to_group_by` is enforced globally during the merge phase in normal
         /// aggregation. Could be supported by a post-step that counts total keys across shards.
