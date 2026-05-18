@@ -160,37 +160,49 @@ void ExchangeServer::addConnection(Poco::Net::StreamSocket socket)
 
     LOG_TRACE(log, "Query id: {}, stream: {}, peer protocol version: {}", query_id, stream_name, source_version);
 
-    /// Send SinkHello before validating peer version so the peer can produce a precise diagnostic.
-    /// Write failures are swallowed so the local mismatch throw below still wins.
-    try
+    WriteBufferFromOwnString reply_body;
+    writeIntBinary(StreamingExchangeProtocol::PROTOCOL_VERSION, reply_body);
+    reply_body.finalize();
+    const std::string & reply_body_str = reply_body.str();
+
+    StreamingExchangeProtocol::PacketHeader reply_header{
+        .packet_type = StreamingExchangeProtocol::PacketType::SinkHello,
+        .bytes_size = reply_body_str.size(),
+    };
+
+    const bool version_matches = (source_version == StreamingExchangeProtocol::PROTOCOL_VERSION);
+
+    /// On version mismatch, send SinkHello on a best-effort basis so the peer can produce
+    /// a precise diagnostic naming both versions, then throw locally. The connection is
+    /// not registered. On version match, the SinkHello send must succeed for the handshake
+    /// to be considered complete; let any write error propagate and abort the registration.
+    auto send_sink_hello = [&]
     {
-        WriteBufferFromOwnString reply_body;
-        writeIntBinary(StreamingExchangeProtocol::PROTOCOL_VERSION, reply_body);
-        reply_body.finalize();
-        const std::string & reply_body_str = reply_body.str();
-
-        StreamingExchangeProtocol::PacketHeader reply_header{
-            .packet_type = StreamingExchangeProtocol::PacketType::SinkHello,
-            .bytes_size = reply_body_str.size(),
-        };
-
         WriteBufferFromPocoSocket out(socket);
         out.write(reinterpret_cast<const char *>(&reply_header), sizeof(reply_header));
         if (!reply_body_str.empty())
             out.write(reply_body_str.data(), reply_body_str.size());
         out.next();
         out.cancel();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, fmt::format("Failed to send SinkHello to {}", socket.peerAddress().toString()));
-    }
+    };
 
-    if (source_version != StreamingExchangeProtocol::PROTOCOL_VERSION)
+    if (!version_matches)
+    {
+        try
+        {
+            send_sink_hello();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Failed to send SinkHello to {}", socket.peerAddress().toString()));
+        }
         throw Exception(ErrorCodes::PROTOCOL_VERSION_MISMATCH,
             "Streaming exchange protocol version mismatch from {} for stream {}: peer speaks version {}, this node speaks version {}",
             socket.peerAddress().toString(), stream_name, source_version,
             StreamingExchangeProtocol::PROTOCOL_VERSION);
+    }
+
+    send_sink_hello();
 
     connections->addConnection(query_id, stream_name, socket);
 }
