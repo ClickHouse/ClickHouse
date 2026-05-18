@@ -35,8 +35,9 @@ SELECT c2 FROM t_97771_4 ORDER BY c0 LIMIT 1
 SETTINGS query_plan_optimize_lazy_materialization = 1;
 a
 -- 5. ALIAS that wraps the underlying column in an expression - the lazy reader has to
---    materialize both columns through the alias DAG.
-CREATE TABLE t_97771_5 (c0 UInt64, c1 String, c2 String ALIAS upperUTF8(c1)) ENGINE = MergeTree() ORDER BY c0;
+--    materialize both columns through the alias DAG. `upper` is intentionally chosen over
+--    `upperUTF8` because the latter is unavailable in the Fast test build (no ICU).
+CREATE TABLE t_97771_5 (c0 UInt64, c1 String, c2 String ALIAS upper(c1)) ENGINE = MergeTree() ORDER BY c0;
 INSERT INTO t_97771_5 VALUES (1, 'a'), (2, 'b');
 SELECT c1, c2 FROM t_97771_5 ORDER BY c0 LIMIT 2
 SETTINGS query_plan_optimize_lazy_materialization = 1;
