@@ -39,6 +39,7 @@ public:
     std::string getDescription() const override { return url; }
 
     const String & getBaseURL() const { return url; }
+    const String & getQueryFragment() const { return query_fragment; }
     const HTTPHeaderEntries & getHeaders() const { return headers; }
 
     bool exists(const StoredObject & object) const override;

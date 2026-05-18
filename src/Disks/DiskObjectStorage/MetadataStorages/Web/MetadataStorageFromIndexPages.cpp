@@ -181,8 +181,18 @@ std::string MetadataStorageFromIndexPages::makeListingURL(const std::string & pa
     Poco::URI path_uri(ensureTrailingSlashInPath(stripLeadingSlash(path)), false);
     auto listing_uri = base_uri;
     listing_uri.setPath(ensureTrailingSlash(base_uri.getPath()) + stripLeadingSlash(path_uri.getPath()));
-    listing_uri.setQuery(path_uri.getRawQuery());
-    listing_uri.setFragment(path_uri.getFragment());
+
+    Poco::URI source_uri(object_storage.getBaseURL() + object_storage.getQueryFragment(), false);
+    if (!path_uri.getRawQuery().empty())
+        listing_uri.setQuery(path_uri.getRawQuery());
+    else
+        listing_uri.setQuery(source_uri.getRawQuery());
+
+    if (!path_uri.getFragment().empty())
+        listing_uri.setFragment(path_uri.getFragment());
+    else
+        listing_uri.setFragment(source_uri.getFragment());
+
     return listing_uri.toString();
 }
 

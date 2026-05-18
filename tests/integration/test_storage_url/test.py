@@ -318,6 +318,13 @@ def test_url_wildcard_preserves_query_for_directory_listing():
     assert result.strip() == "11"
 
 
+def test_url_wildcard_preserves_source_query_for_directory_listing():
+    result = node1.query(
+        with_url_wildcard_setting("SELECT sum(x) FROM url('http://resolver:8087/data/source_query/**/part*.tsv?token=abc', 'TSV', 'x UInt64')")
+    )
+    assert result.strip() == "13"
+
+
 def test_url_wildcard_is_experimental():
     error = node1.query_and_get_error(
         "SELECT sum(x) FROM url('http://resolver:8087/data/**/part*.tsv', 'TSV', 'x UInt64')"
