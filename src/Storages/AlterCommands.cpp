@@ -65,6 +65,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool flatten_nested;
+    extern const SettingsUInt64 max_static_subcolumns;
 }
 
 namespace ErrorCodes
@@ -78,6 +79,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
+    extern const int TOO_MANY_SUBCOLUMNS;
 }
 
 namespace MergeTreeSetting
@@ -1683,6 +1685,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             }
 
             modified_columns.emplace(column_name);
+
+            /// Update the column type in all_columns to keep subcolumn count accurate
+            /// for the max_static_subcolumns check at the end of validation.
+            if (command.data_type)
+                all_columns.modify(column_name, [&](ColumnDescription & col) { col.type = command.data_type; });
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
@@ -1902,6 +1909,18 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 default_expr_list->children.emplace_back(setAlias(column_in_table.default_desc.expression->clone(), tmp_column_name));
             }
         }
+    }
+
+    /// Check subcolumns limit.
+    if (table->storesDataOnDisk())
+    {
+        UInt64 max_static_subcolumns = context->getSettingsRef()[Setting::max_static_subcolumns];
+        size_t subcolumn_count = all_columns.getNumberOfSubcoumns();
+        if (max_static_subcolumns > 0 && subcolumn_count > max_static_subcolumns)
+            throw Exception(ErrorCodes::TOO_MANY_SUBCOLUMNS,
+                "Too many static subcolumns. The limit is set to {}, "
+                "the number of static subcolumns in the table is {}",
+                max_static_subcolumns, subcolumn_count);
     }
 
     /// Parameterized views do not have 'columns' in their metadata
