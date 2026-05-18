@@ -577,6 +577,10 @@ Block ProjectionDescription::calculateByQuery(
     if (block.rows() == 0)
         return sample_block.cloneEmpty();
 
+    /// `_block_number`/`_block_offset` must be present in the input block when the projection references them.
+    chassert(!with_block_number || block.has(BlockNumberColumn::name));
+    chassert(!with_block_offset || block.has(BlockOffsetColumn::name));
+
     auto mut_context = Context::createCopy(context);
     /// We ignore aggregate_functions_null_for_empty cause it changes aggregate function types.
     /// Now, projections do not support in on SELECT, and (with this change) should ignore on INSERT as well.

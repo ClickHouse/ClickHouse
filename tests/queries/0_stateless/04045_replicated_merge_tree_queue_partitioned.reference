@@ -1,0 +1,109 @@
+replica 1
+1	10	0	0
+1	20	0	1
+1	30	0	2
+1	70	1	0
+1	80	1	1
+2	40	0	0
+2	50	0	1
+2	60	0	2
+2	90	1	0
+2	100	1	1
+2	110	2	0
+2	120	2	1
+
+replica 2
+1	10	0	0
+1	20	0	1
+1	30	0	2
+1	70	1	0
+1	80	1	1
+2	40	0	0
+2	50	0	1
+2	60	0	2
+2	90	1	0
+2	100	1	1
+2	110	2	0
+2	120	2	1
+
+index lookup partition 1
+1	20
+2	50
+
+index lookup partition 1 explain
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.rmtqp1)
+    Indexes:
+      Min-Max
+        Condition: true
+        Parts: 5/5
+        Granules: 12/12
+      Partition
+        Condition: true
+        Parts: 5/5
+        Granules: 12/12
+      PrimaryKey
+        Keys:
+          _block_number
+          _block_offset
+        Condition: and((_block_offset in [1, 1]), (_block_number in [0, 0]))
+        Parts: 2/5
+        Granules: 4/12
+        Search Algorithm: binary search
+      Ranges: 2
+
+index lookup partition 2
+1	20
+2	50
+
+index lookup partition 2 explain
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.rmtqp1)
+    Indexes:
+      Min-Max
+        Condition: true
+        Parts: 5/5
+        Granules: 12/12
+      Partition
+        Condition: true
+        Parts: 5/5
+        Granules: 12/12
+      PrimaryKey
+        Keys:
+          _block_number
+          _block_offset
+        Condition: and((_block_offset in [1, 1]), (_block_number in [0, 0]))
+        Parts: 2/5
+        Granules: 4/12
+        Search Algorithm: binary search
+      Ranges: 2
+
+after merge replica 1
+1	10	0	0
+1	20	0	1
+1	30	0	2
+1	70	1	0
+1	80	1	1
+2	40	0	0
+2	50	0	1
+2	60	0	2
+2	90	1	0
+2	100	1	1
+2	110	2	0
+2	120	2	1
+
+after merge replica 2
+1	10	0	0
+1	20	0	1
+1	30	0	2
+1	70	1	0
+1	80	1	1
+2	40	0	0
+2	50	0	1
+2	60	0	2
+2	90	1	0
+2	100	1	1
+2	110	2	0
+2	120	2	1

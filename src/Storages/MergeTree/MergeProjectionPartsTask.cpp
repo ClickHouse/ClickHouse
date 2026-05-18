@@ -90,14 +90,13 @@ bool MergeProjectionPartsTask::executeStep()
             /* need_prefix */ true,
             &projection,
             new_data_part.get(),
-            ".tmp_proj");
+            ".tmp_proj",
+            block_num);
 
         next_level_parts.push_back(executeHere(tmp_part_merge_task));
         /// FIXME (alesapin) we should use some temporary storage for this,
         /// not commit each subprojection part
         next_level_parts.back()->getDataPartStorage().commitTransaction();
-        next_level_parts.back()->is_temp = true;
-        next_level_parts.back()->temp_projection_block_number = block_num;
     }
 
     /// Need execute again

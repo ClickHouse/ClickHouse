@@ -405,6 +405,11 @@ const static std::vector<std::pair<std::string, std::string>> engine_to_type =
     {"SharedSummingMergeTree", "TABLE"},
     {"SharedVersionedCollapsingMergeTree", "TABLE"},
 
+    // MergeTreeQueue family
+    {"MergeTreeQueue", "TABLE"},
+    {"ReplicatedMergeTreeQueue", "TABLE"},
+    {"SharedMergeTreeQueue", "TABLE"},
+
     // Special
     {"TimeSeries", "TABLE"},
     {"Null", "TABLE"},

@@ -64,12 +64,14 @@ public:
         const MergeTreeMutableDataPartPtr & new_part,
         const GatheredData & gathered_data,
         bool sync,
+        bool init_index,
         const NamesAndTypesList * total_columns_list = nullptr);
 
     void finalizePart(
         const MergeTreeMutableDataPartPtr & new_part,
         const GatheredData & gathered_data,
         bool sync,
+        bool init_index,
         const NamesAndTypesList * total_columns_list = nullptr);
 
     void finalizeIndexGranularity();

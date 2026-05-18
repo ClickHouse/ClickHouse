@@ -94,7 +94,8 @@ public:
         bool need_prefix = true,
         ProjectionDescriptionRawPtr projection = nullptr,
         IMergeTreeDataPart * parent_part = nullptr,
-        const String & suffix = "");
+        const String & suffix = "",
+        std::optional<UInt64> temp_projection_block_number = {});
 
     /** Mutate a single data part with the specified commands. Will create and return a temporary part.
       */

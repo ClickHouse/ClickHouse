@@ -190,9 +190,10 @@ void MergedBlockOutputStream::finalizePart(
     const MergeTreeMutableDataPartPtr & new_part,
     const GatheredData & gathered_data,
     bool sync,
+    bool init_index,
     const NamesAndTypesList * total_columns_list)
 {
-    finalizePartAsync(new_part, gathered_data, sync, total_columns_list).finish();
+    finalizePartAsync(new_part, gathered_data, sync, init_index, total_columns_list).finish();
 }
 
 void MergedBlockOutputStream::finalizeIndexGranularity()
@@ -204,6 +205,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     const MergeTreeMutableDataPartPtr & new_part,
     const GatheredData & gathered_data,
     bool sync,
+    bool init_index,
     const NamesAndTypesList * total_columns_list)
 {
     /// Finish write and get checksums.
@@ -266,8 +268,11 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         new_part->index_granularity = constant_granularity->fixedFromRowsCount(rows_count);
 
     /// It's important to set index after index granularity.
+    /// Sometimes we do not want to initialize index on insert because it can be using
+    /// virtual columns and some of them were not possible to calculate correctly before commit.
     if (auto computed_index = writer->releaseIndexColumns())
-        new_part->setIndex(std::move(*computed_index));
+        if (init_index)
+            new_part->setIndex(std::move(*computed_index));
 
     /// In mutation, existing_rows_count is already calculated in PartMergerWriter
     /// In merge situation, lightweight deleted rows was physically deleted, existing_rows_count equals rows_count

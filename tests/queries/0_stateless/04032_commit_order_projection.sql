@@ -13,7 +13,7 @@ CREATE TABLE mt_with_commit_order(
 )
 ENGINE = MergeTree
 ORDER BY a
-settings enable_block_number_column=1, enable_block_offset_column=1, allow_commit_order_projection=1, index_granularity=1;
+settings enable_block_number_column=1, enable_block_offset_column=1, allow_commit_order_projection=1, index_granularity=1, min_parts_to_merge_at_once=4;
 
 insert into mt_with_commit_order(a) values (8) (5) (2);   -- all_1_1_0
 insert into mt_with_commit_order(a) values (10) (7) (9);  -- all_2_2_0

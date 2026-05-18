@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StatisticsDescription.h>
+#include <Storages/extractKeyExpressionList.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -207,10 +208,15 @@ static void evaluateEngineArgs(ASTs & engine_args, const ContextPtr & context)
 /// Returns whether this is a Replicated table engine?
 static bool isReplicated(const String & engine_name)
 {
-    return engine_name.starts_with("Replicated") && engine_name.ends_with("MergeTree");
+    return engine_name.starts_with("Replicated");
 }
 
-/// Returns the part of the name of a table engine between "Replicated" (if any) and "MergeTree".
+static bool isMergeTreeQueue(const String & engine_name)
+{
+    return engine_name.ends_with("MergeTreeQueue");
+}
+
+/// Returns the merging part of the storage name [Replicated](MergingPart)[MergeTree|MergeTreeQueue]
 static std::string_view getNamePart(const String & engine_name)
 {
     std::string_view name_part = engine_name;
@@ -219,6 +225,9 @@ static std::string_view getNamePart(const String & engine_name)
 
     if (name_part.ends_with("MergeTree"))
         name_part.remove_suffix(strlen("MergeTree"));
+
+    if (name_part.ends_with("MergeTreeQueue"))
+        name_part.remove_suffix(strlen("MergeTreeQueue"));
 
     return name_part;
 }
@@ -431,6 +440,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     MergeTreeData::MergingParams merging_params;
     merging_params.mode = MergeTreeData::MergingParams::Ordinary;
+    merging_params.is_queue = isMergeTreeQueue(args.engine_name);
 
     if (name_part == "Collapsing")
         merging_params.mode = MergeTreeData::MergingParams::Collapsing;
@@ -449,6 +459,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     else if (!name_part.empty())
         throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown storage {}",
             args.engine_name + verbose_help_message);
+
+    if (merging_params.is_queue && merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+        throw Exception(ErrorCodes::UNKNOWN_STORAGE, "MergeTreeQueue does not support merging modes. Used mode: {}", name_part);
 
     /// NOTE Quite complicated.
 
@@ -681,6 +694,29 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         metadata.virtuals = MergeTreeData::createVirtuals(&metadata.partition_key);
 
         /// PRIMARY KEY without ORDER BY is allowed and considered as ORDER BY.
+        /// MergeTreeQueue manages its own sorting key (`_block_number`, `_block_offset`).
+        /// User-specified ORDER BY or PRIMARY KEY is not allowed.
+        if (merging_params.is_queue)
+        {
+            auto unpack_key_ast = [](IAST * key_ast) -> std::vector<std::string>
+            {
+                if (!key_ast)
+                    return {};
+
+                auto key_expr_list = extractKeyExpressionList(key_ast->ptr());
+                return key_expr_list->children
+                        | std::views::transform([&](const auto & child) { return child->getColumnName(); })
+                        | std::ranges::to<std::vector<std::string>>();
+            };
+
+            std::vector<std::string> sorting_columns = unpack_key_ast(args.storage_def->order_by);
+            if (!sorting_columns.empty() && sorting_columns != std::vector<std::string>{BlockNumberColumn::name, BlockOffsetColumn::name})
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY is not supported for {} engine.", args.engine_name);
+
+            if (args.storage_def->primary_key)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "PRIMARY KEY is not supported for {} engine.", args.engine_name);
+        }
+
         if (!args.storage_def->order_by && args.storage_def->primary_key)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
 
@@ -709,7 +745,25 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (merging_param_key_arg)
             additional_columns.emplace_back(*merging_param_key_arg, metadata.columns.getPhysical(*merging_param_key_arg).type);
 
-        metadata.sorting_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, metadata.virtuals, context, additional_columns);
+        /// MergeTreeQueue automatically sorts by (`_block_number`, `_block_offset`) to preserve commit order.
+        /// These virtual columns are appended directly to the ORDER BY AST so that both
+        /// sorting key and primary key include them.
+        ASTPtr order_by_ast = args.storage_def->order_by->ptr();
+        if (merging_params.is_queue)
+        {
+            auto key_expr_list = make_intrusive<ASTExpressionList>();
+            key_expr_list->children.push_back(make_intrusive<ASTIdentifier>(BlockNumberColumn::name));
+            key_expr_list->children.push_back(make_intrusive<ASTIdentifier>(BlockOffsetColumn::name));
+
+            auto commit_order_sort = makeASTOperator("tuple");
+            commit_order_sort->arguments = key_expr_list;
+            commit_order_sort->children.push_back(commit_order_sort->arguments);
+            order_by_ast = commit_order_sort;
+
+            args.storage_def->set(args.storage_def->order_by, commit_order_sort->clone());
+        }
+
+        metadata.sorting_key = KeyDescription::getKeyFromAST(order_by_ast, metadata.columns, metadata.virtuals, context, additional_columns);
 
         if (!local_settings[Setting::allow_suspicious_primary_key] && args.mode <= LoadingStrictnessLevel::CREATE)
             MergeTreeData::verifySortingKey(metadata.sorting_key);
@@ -721,17 +775,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
         else /// Otherwise we don't have explicit primary key and copy it from order by.
         {
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, metadata.virtuals, context);
+            metadata.primary_key = KeyDescription::getKeyFromAST(order_by_ast, metadata.columns, metadata.virtuals, context);
             /// and set it's definition_ast to nullptr (so isPrimaryKeyDefined()
             /// will return false but hasPrimaryKey() will return true.
             metadata.primary_key.definition_ast = nullptr;
         }
 
-        auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
-        auto partition_key = metadata.partition_key.expression_list_ast->clone();
-        FunctionNameNormalizer::visit(partition_key.get());
-        metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            columns, partition_key, minmax_columns, metadata.primary_key, &metadata.partition_key, context));
+        if (!merging_params.is_queue)
+        {
+            auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
+            auto partition_key = metadata.partition_key.expression_list_ast->clone();
+            FunctionNameNormalizer::visit(partition_key.get());
+            metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
+                columns, partition_key, minmax_columns, metadata.primary_key, &metadata.partition_key, context));
+        }
 
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, metadata.virtuals, context);
@@ -811,6 +868,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
                 args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, allow_suspicious_ttl);
+        }
+
+        /// MergeTreeQueue requires block number and block offset columns to be materialized.
+        if (merging_params.is_queue)
+        {
+            if (!args.storage_def->settings)
+            {
+                args.storage_def->set(args.storage_def->settings, make_intrusive<ASTSetQuery>());
+                args.storage_def->settings->is_standalone = false;
+            }
+
+            auto & changes = args.storage_def->settings->changes;
+            changes.setSetting("enable_block_number_column", true);
+            changes.setSetting("enable_block_offset_column", true);
         }
 
         /// We use the local (query) context here so that user-level settings profiles can control
@@ -1093,6 +1164,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("SummingMergeTree", create, features);
     factory.registerStorage("GraphiteMergeTree", create, features);
     factory.registerStorage("VersionedCollapsingMergeTree", create, features);
+    factory.registerStorage("MergeTreeQueue", create, features);
 
     features.supports_replication = true;
     features.supports_deduplication = true;
@@ -1107,6 +1179,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("ReplicatedCoalescingMergeTree", create, features);
     factory.registerStorage("ReplicatedGraphiteMergeTree", create, features);
     factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create, features);
+    factory.registerStorage("ReplicatedMergeTreeQueue", create, features);
 }
 
 }

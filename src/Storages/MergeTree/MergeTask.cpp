@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/ColumnsDescription.h>
 
+#include <algorithm>
 #include <memory>
 #include <fmt/format.h>
 
@@ -683,7 +684,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
     global_ctx->new_data_part->partition.assign(global_ctx->future_part->getPartition());
-    global_ctx->new_data_part->is_temp = global_ctx->parent_part == nullptr;
+    global_ctx->new_data_part->is_temp = global_ctx->parent_part == nullptr || global_ctx->temp_projection_block_number.has_value();
+    global_ctx->new_data_part->temp_projection_block_number = global_ctx->temp_projection_block_number;
 
     /// In case of replicated merge tree with zero copy replication
     /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
@@ -1153,15 +1155,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         {
             global_ctx->projections_to_merge.push_back(&projection);
             global_ctx->projections_to_merge_parts[projection.name].assign(projection_parts.begin(), projection_parts.end());
-        }
-        else if (projection.with_block_number)
-        {
-            /// Commit-order projections are not written during insert (block number is not yet finalized).
-            /// When some source parts don't have the projection, rebuild it during the horizontal phase
-            /// where the correct `_block_number` values are available.
-            chassert(projection_parts.size() < global_ctx->future_part->parts.size());
-            LOG_DEBUG(ctx->log, "Projection {} will be rebuilt because some parts don't have it (commit-order projection)", projection.name);
-            global_ctx->projections_to_rebuild.push_back(&projection);
         }
         else
         {
@@ -1829,7 +1822,8 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
             global_ctx->data,
             global_ctx->mutator,
             global_ctx->merges_blocker,
-            global_ctx->ttl_merges_blocker));
+            global_ctx->ttl_merges_blocker,
+            /*temp_projection_block_number=*/std::nullopt));
     }
 
     /// merge projections with _part_offset first so that we can release offset mapping earlier.
@@ -1880,9 +1874,9 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     }
 
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
-        global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, nullptr);
+        global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, /*init_index=*/true, /*total_columns_list=*/nullptr);
     else
-        global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, &global_ctx->storage_columns);
+        global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, /*init_index=*/true, /*total_columns_list=*/&global_ctx->storage_columns);
 
     auto cached_marks = global_ctx->to->releaseCachedMarks();
     for (auto & [name, marks] : cached_marks)

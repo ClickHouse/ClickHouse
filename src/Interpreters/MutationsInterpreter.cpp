@@ -8,6 +8,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
@@ -456,11 +457,12 @@ MutationsInterpreter::MutationsInterpreter(
 
     const auto & part_columns = source_part_->getColumnsDescription();
     auto persistent_virtuals = metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
-    NameSet available_columns_set(available_columns.begin(), available_columns.end());
-
+    NameSet available_columns_set = available_columns | std::ranges::to<NameSet>();
+    NameSet key_columns = metadata_snapshot->getColumnsRequiredForSortingKey() | std::ranges::to<NameSet>();
     for (const auto & column : persistent_virtuals)
     {
-        if (part_columns.has(column.name) && !available_columns_set.contains(column.name))
+        bool needed = part_columns.has(column.name) || key_columns.contains(column.name);
+        if (needed && !available_columns_set.contains(column.name))
             available_columns.push_back(column.name);
     }
 
@@ -572,9 +574,20 @@ static void validateUpdateColumns(
             /// Check if we have a subcolumn of this column as a key column.
             for (const auto & key_column : key_columns)
             {
-                auto column = storage_columns.getColumnOrSubcolumn(GetColumnsOptions::All, key_column);
-                if (column.isSubcolumn() && column_name == column.getNameInStorage())
-                    throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Cannot UPDATE column {} because its subcolumn {} is a key column", backQuote(column_name), backQuote(key_column));
+                if (auto column = storage_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, key_column))
+                {
+                    if (column->isSubcolumn() && column_name == column->getNameInStorage())
+                        throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Cannot UPDATE column {} because its subcolumn {} is a key column", backQuote(column_name), backQuote(key_column));
+                }
+                else if (auto virtual_column = virtual_columns.tryGet(key_column, VirtualsKind::All, VirtualsMaterializationPlace::All))
+                {
+                    if (column_name == virtual_column->name)
+                        throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Cannot UPDATE column {} because its subcolumn {} is a key column", backQuote(column_name), backQuote(key_column));
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column {} is a key column", backQuote(key_column));
+                }
             }
         }
     }

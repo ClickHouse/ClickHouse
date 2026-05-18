@@ -113,14 +113,28 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Filling of virtual columns is supported only for LoadedMergeTreeDataPartInfoForReader");
 
     const auto & data_part = loaded_part_info->getDataPart();
+    const auto & part_info = data_part->isProjectionPart() ? data_part->getParentPart()->info : data_part->info;
     const auto & storage_columns = storage_snapshot->metadata->columns;
     const auto & virtual_columns = storage_snapshot->metadata->virtuals;
 
     auto it = getColumns().begin();
     for (size_t pos = 0; pos < columns.size(); ++pos, ++it)
     {
-        if (columns[pos] || storage_columns.has(it->name))
-            continue;
+        /// Some virtual columns may be incorrectly written to disk for 0-level parts
+        /// because they were materialized before commit of the part. We need to recalculate them during reading.
+        bool need_materialize = false;
+        if (!part_info.isPatch() && part_info.getBlocksCount() == 1)
+        {
+            if (it->name == BlockNumberColumn::name)
+            {
+                columns[pos].reset();
+                need_materialize = true;
+            }
+        }
+
+        if (!need_materialize)
+            if (columns[pos] || storage_columns.has(it->name))
+                continue;
 
         auto virtual_column = virtual_columns.tryGet(it->name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
         if (!virtual_column)
