@@ -483,6 +483,7 @@ Gcc
 Gemination
 GenerateRandom
 GeoCoord
+GeoParquet
 Geobases
 Geohash
 Geoid
