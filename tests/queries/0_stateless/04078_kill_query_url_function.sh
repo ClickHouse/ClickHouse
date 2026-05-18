@@ -20,18 +20,10 @@ test_url_cancellation()
 
     local query_id="kill_query_url_${CLICKHOUSE_DATABASE}_$RANDOM"
     local log_file=$(mktemp "./04078.XXXXXX.log")
+    local port_file=$(mktemp "./04078.XXXXXX.port")
 
-    # Get free port
-    local HTTP_PORT=$(python3 -c "
-import socket
-s = socket.socket()
-s.bind(('127.0.0.1', 0))
-print(s.getsockname()[1])
-s.close()
-")
-
-    # Start HTTP server with configurable sleep times
-    python3 -c "
+    # Start HTTP server that binds to port 0 (kernel-assigned free port)
+    python3 -u -c "
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import time
 
@@ -63,14 +55,27 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-HTTPServer(('127.0.0.1', $HTTP_PORT), Handler).serve_forever()
+server = HTTPServer(('127.0.0.1', 0), Handler)
+with open('$port_file', 'w') as f:
+    f.write(str(server.server_address[1]))
+server.serve_forever()
 " &
     local HTTP_PID=$!
 
     # Unconditional cleanup on any function return (success, failure, or exception)
-    trap 'kill $HTTP_PID 2>/dev/null; wait $HTTP_PID 2>/dev/null; rm -f "$log_file"' RETURN
+    trap 'kill $HTTP_PID 2>/dev/null; wait $HTTP_PID 2>/dev/null; rm -f "$log_file" "$port_file"' RETURN
 
-    # Wait for server to start
+    # Wait for port file to appear and read the actual bound port
+    local HTTP_PORT
+    for _ in $(seq 1 50); do
+        if [[ -s "$port_file" ]]; then
+            HTTP_PORT=$(cat "$port_file")
+            break
+        fi
+        sleep 0.1
+    done
+
+    # Wait for server to be ready
     for _ in $(seq 1 50); do
         curl -s "http://127.0.0.1:$HTTP_PORT/health" -o /dev/null 2>/dev/null && break
         sleep 0.1
