@@ -257,9 +257,6 @@ public:
             Pipes shell_input_pipes;
             shell_input_pipes.emplace_back(std::move(shell_input_pipe));
 
-            auto result_column = result_type->createColumn();
-            result_column->reserve(input_rows_count);
-
             Pipe pipe = coordinator->createPipe(
                 command,
                 command_arguments_with_parameters,
@@ -270,6 +267,9 @@ public:
 
             QueryPipeline pipeline(std::move(pipe));
             PullingPipelineExecutor executor(pipeline);
+
+            auto result_column = result_type->createColumn();
+            result_column->reserve(input_rows_count);
 
             Block block;
             while (executor.pull(block))
