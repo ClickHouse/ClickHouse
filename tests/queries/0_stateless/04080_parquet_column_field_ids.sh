@@ -35,13 +35,15 @@ run_insert () {
     ${CLICKHOUSE_LOCAL} --query="SELECT a, b, c FROM file('$file')"
 }
 
-# 1. Explicit per-column overrides.
+# 1. Explicit per-column overrides. ClickHouse's settings parser only accepts string
+#    literals as Map values, so the `Int32` ids are written as strings here. The
+#    setting accepts both string-encoded ids and (programmatically) real integers.
 F="$WORKDIR/04080_field_ids_custom.parquet"
 run_insert "explicit overrides" "$F" "
 INSERT INTO FUNCTION file('$F', 'Parquet')
 SELECT 1::UInt32 AS a, 'hello'::String AS b, 42::Int64 AS c
 SETTINGS engine_file_truncate_on_insert = 1,
-         output_format_parquet_column_field_ids = {'a': 10, 'b': 20, 'c': 30};
+         output_format_parquet_column_field_ids = {'a': '10', 'b': '20', 'c': '30'};
 "
 
 # 2. Auto-assign only.
@@ -61,7 +63,7 @@ INSERT INTO FUNCTION file('$F', 'Parquet')
 SELECT 1::UInt32 AS a, 'hello'::String AS b, 42::Int64 AS c
 SETTINGS engine_file_truncate_on_insert = 1,
          output_format_parquet_auto_assign_field_ids = 1,
-         output_format_parquet_column_field_ids = {'b': 1};
+         output_format_parquet_column_field_ids = {'b': '1'};
 "
 
 # 4. Default path: writing still works, no `field_id` emitted.
@@ -72,21 +74,12 @@ SELECT 1::UInt32 AS a, 'hello'::String AS b, 42::Int64 AS c
 SETTINGS engine_file_truncate_on_insert = 1;
 "
 
-# 5. Integer values may also be passed as quoted strings for compatibility.
-F="$WORKDIR/04080_field_ids_string_values.parquet"
-run_insert "string-encoded ids" "$F" "
-INSERT INTO FUNCTION file('$F', 'Parquet')
-SELECT 1::UInt32 AS a, 'hello'::String AS b, 42::Int64 AS c
-SETTINGS engine_file_truncate_on_insert = 1,
-         output_format_parquet_column_field_ids = {'a': '7', 'b': '8', 'c': '9'};
-"
-
 echo "== error: unknown column =="
 ${CLICKHOUSE_LOCAL} --query="
 INSERT INTO FUNCTION file('$WORKDIR/04080_err1.parquet', 'Parquet')
 SELECT 1 AS a
 SETTINGS engine_file_truncate_on_insert = 1,
-         output_format_parquet_column_field_ids = {'missing': 1};
+         output_format_parquet_column_field_ids = {'missing': '1'};
 " 2>&1 | grep -oE 'BAD_ARGUMENTS|references unknown column' | sort -u
 
 echo "== error: non-covering map without auto-assign =="
@@ -94,7 +87,7 @@ ${CLICKHOUSE_LOCAL} --query="
 INSERT INTO FUNCTION file('$WORKDIR/04080_err2.parquet', 'Parquet')
 SELECT 1 AS a, 2 AS b
 SETTINGS engine_file_truncate_on_insert = 1,
-         output_format_parquet_column_field_ids = {'a': 1};
+         output_format_parquet_column_field_ids = {'a': '1'};
 " 2>&1 | grep -oE 'BAD_ARGUMENTS|does not cover every output column' | sort -u
 
 echo "== error: duplicate id =="
@@ -102,7 +95,7 @@ ${CLICKHOUSE_LOCAL} --query="
 INSERT INTO FUNCTION file('$WORKDIR/04080_err3.parquet', 'Parquet')
 SELECT 1 AS a, 2 AS b
 SETTINGS engine_file_truncate_on_insert = 1,
-         output_format_parquet_column_field_ids = {'a': 1, 'b': 1};
+         output_format_parquet_column_field_ids = {'a': '1', 'b': '1'};
 " 2>&1 | grep -oE 'BAD_ARGUMENTS|more than one column' | sort -u
 
 echo "== error: non-integer string value =="
@@ -118,5 +111,5 @@ ${CLICKHOUSE_LOCAL} --query="
 INSERT INTO FUNCTION file('$WORKDIR/04080_err5.parquet', 'Parquet')
 SELECT 1 AS a
 SETTINGS engine_file_truncate_on_insert = 1,
-         output_format_parquet_column_field_ids = {'a': -1};
+         output_format_parquet_column_field_ids = {'a': '-1'};
 " 2>&1 | grep -oE 'BAD_ARGUMENTS|must be non-negative' | sort -u
