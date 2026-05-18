@@ -3625,3 +3625,72 @@ TEST(PostingListCursorTest, TextIndexHeaderInitialVersionDefaultsToNoneCodec)
     EXPECT_EQ(assert_cast<const ColumnString &>(*sparse_index_data.sparse_index.tokens).getDataAt(0), "beta");
     EXPECT_EQ(assert_cast<const ColumnUInt64 &>(*sparse_index_data.sparse_index.offsets_in_file).getData()[0], 7u);
 }
+
+// Section: row_offset beyond UInt32::max — must throw LOGICAL_ERROR.
+// Posting-list doc IDs are 32-bit, so a `row_offset` above `UInt32::max` cannot be a
+// legitimate input from the read pipeline. Without an explicit check, the
+// `out[values[i] - row_offset]` writers in `padColumn` and the leapfrog helpers
+// would underflow `size_t` and write OOB; silently swallowing the call would also
+// drop legitimate filter matches. The contract is to fail loudly.
+
+TEST(PostingListCursorTest, LinearOrRowOffsetAboveUInt32MaxThrows)
+{
+    auto info = makeEmbeddedInfo({1, 2, 3, 4, 5});
+    auto cursor = makeEmbeddedCursor(info);
+
+    std::vector<UInt8> buf(64, 0);
+    const size_t huge_offset = static_cast<size_t>(std::numeric_limits<uint32_t>::max()) + 1;
+    EXPECT_THROW(cursor->linearOr(buf.data(), huge_offset, buf.size()), Exception);
+}
+
+TEST(PostingListCursorTest, LinearAndRowOffsetAboveUInt32MaxThrows)
+{
+    auto info = makeEmbeddedInfo({1, 2, 3, 4, 5});
+    auto cursor = makeEmbeddedCursor(info);
+
+    std::vector<UInt8> buf(64, 7);
+    const size_t huge_offset = static_cast<size_t>(std::numeric_limits<uint32_t>::max()) + 1;
+    EXPECT_THROW(cursor->linearAnd(buf.data(), huge_offset, buf.size()), Exception);
+}
+
+TEST(PostingListCursorTest, LazyUnionRowOffsetAboveUInt32MaxThrows)
+{
+    auto info_a = makeEmbeddedInfo({1, 2, 3});
+    auto info_b = makeEmbeddedInfo({3, 4, 5});
+    PostingListCursorMap postings;
+    postings.emplace("a", makeEmbeddedCursor(info_a));
+    postings.emplace("b", makeEmbeddedCursor(info_b));
+
+    const size_t huge_offset = static_cast<size_t>(std::numeric_limits<uint32_t>::max()) + 1;
+    auto col = ColumnUInt8::create(64, UInt8(0));
+    EXPECT_THROW(
+        lazyUnionPostingLists(*col, postings, {"a", "b"}, 0, huge_offset, 64),
+        Exception);
+}
+
+TEST(PostingListCursorTest, LazyIntersectRowOffsetAboveUInt32MaxThrows)
+{
+    auto info_a = makeEmbeddedInfo({1, 2, 3});
+    auto info_b = makeEmbeddedInfo({2, 3, 4});
+    PostingListCursorMap postings;
+    postings.emplace("a", makeEmbeddedCursor(info_a));
+    postings.emplace("b", makeEmbeddedCursor(info_b));
+
+    const size_t huge_offset = static_cast<size_t>(std::numeric_limits<uint32_t>::max()) + 1;
+
+    // Leapfrog path.
+    {
+        auto col = ColumnUInt8::create(64, UInt8(0));
+        EXPECT_THROW(
+            lazyIntersectPostingLists(*col, postings, {"a", "b"}, 0, huge_offset, 64, /*density_threshold=*/1.0f),
+            Exception);
+    }
+
+    // Brute-force path.
+    {
+        auto col = ColumnUInt8::create(64, UInt8(0));
+        EXPECT_THROW(
+            lazyIntersectPostingLists(*col, postings, {"a", "b"}, 0, huge_offset, 64, /*density_threshold=*/0.0f),
+            Exception);
+    }
+}

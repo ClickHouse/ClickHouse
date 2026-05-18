@@ -380,6 +380,15 @@ inline uint32_t clampRowEnd(size_t row_offset, size_t num_rows)
         : static_cast<uint32_t>(sum);
 }
 
+/// Posting-list doc IDs are 32-bit, so `row_offset > UInt32::max` cannot legitimately
+/// occur and would underflow `out[v - row_offset]` indexing in `padColumn` / leapfrog
+/// writers. Throw rather than silently emit a zero filter and drop matches.
+inline void requireRowOffsetRepresentable(size_t row_offset)
+{
+    if (row_offset > std::numeric_limits<uint32_t>::max())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Posting-list cursor doesn't support row_offset larger than UINT32_MAX, got {}", row_offset);
+}
+
 enum class PadOp { Or, And };
 
 template <PadOp op>
@@ -445,6 +454,8 @@ bool hasNoZeros(const UInt8 * data, size_t count)
 
 void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_rows)
 {
+    requireRowOffsetRepresentable(row_offset);
+
     if (is_embedded)
     {
         if (decoded_count == 0)
@@ -580,6 +591,8 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
 
 void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_rows)
 {
+    requireRowOffsetRepresentable(row_offset);
+
     if (is_embedded)
     {
         /// Dense shortcut: if every row in the range is in the posting list,
@@ -1025,6 +1038,8 @@ void lazyUnionPostingLists(
     size_t row_offset,
     size_t num_rows)
 {
+    requireRowOffsetRepresentable(row_offset);
+
     auto & data = assert_cast<DB::ColumnUInt8 &>(column).getData();
     UInt8 * out = data.data() + column_offset;
 
@@ -1055,6 +1070,8 @@ void lazyIntersectPostingLists(
     size_t num_rows,
     float density_threshold)
 {
+    requireRowOffsetRepresentable(row_offset);
+
     auto & data = assert_cast<DB::ColumnUInt8 &>(column).getData();
     UInt8 * __restrict out = data.data() + column_offset;
 
