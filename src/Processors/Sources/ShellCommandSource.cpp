@@ -539,14 +539,15 @@ namespace
                 if (thread.joinable())
                     thread.join();
 
-            if (command_is_invalid)
-                command = nullptr;
-
             /// Resource accounting must observe the borrow's resident set before
-            /// the slot is handed back to the pool, otherwise a concurrent borrow
-            /// could clear or grow the worker's VmHWM between release and read.
+            /// the worker is torn down or the slot is handed back to the pool —
+            /// either path destroys `/proc/<pid>/{stat,status}` and the sampler
+            /// would then read zero CPU and zero `VmHWM`.
             if (configuration.sampler)
                 configuration.sampler->recordReleased();
+
+            if (command_is_invalid)
+                command = nullptr;
 
             if (command_holder && process_pool)
             {
