@@ -87,6 +87,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_top_k_dynamic_filtering_for_variable_length_types", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."},
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
             {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
+            {"max_static_subcolumns", 0, 10000, "Limit on the number of static subcolumns for persistent tables. Excludes dynamic columns in `JSON`, `Dynamic`, etc. types. Zero value disables check."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
@@ -194,7 +195,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_page_cache_for_local_disks", false, false, "New setting to use userspace page cache for local disks"},
             {"use_page_cache_for_object_storage", false, false, "New setting to use userspace page cache for object storage table functions"},
             {"use_statistics_cache", false, true, "Enable statistics cache"},
-            {"max_static_subcolumns", 0, 10000, "Limit on the number of static subcolumns for persistent tables. Excludes dynamic columns in `JSON`, `Dynamic`, etc. types. Zero value disables check."},
             {"apply_row_policy_after_final", false, true, "Enabling apply_row_policy_after_final by default, as if was in 25.8 before #87303"},
             {"ignore_format_null_for_explain", false, true, "FORMAT Null is now ignored for EXPLAIN queries by default"},
             {"input_format_connection_handling", false, false, "New setting to allow parsing and processing remaining data in the buffer if the connection closes unexpectedly"},
