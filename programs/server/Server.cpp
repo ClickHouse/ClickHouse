@@ -2286,14 +2286,16 @@ try
                     max_server_memory_usage_to_ram_ratio);
             }
 
-            total_memory_tracker.setHardLimit(max_server_memory_usage);
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
             /// Inform `MemoryWorker` of the configured ceiling and the ratio so its dynamic
-            /// adjustment (which only sees `MemFree + Cached` or cgroup memory) cannot exceed
+            /// adjustment (which only sees `MemAvailable` or cgroup memory) cannot exceed
             /// the explicit `max_server_memory_usage`, and so a config-reload change to
             /// `max_server_memory_usage_to_ram_ratio` takes effect on the next worker tick.
+            /// `setDynamicHardLimitSettings` also installs `max_server_memory_usage` as the
+            /// new hard limit atomically with the settings update; doing it outside that call
+            /// would re-open a reload race against the worker tick.
             memory_worker.setDynamicHardLimitSettings(
                 static_cast<Int64>(max_server_memory_usage),
                 max_server_memory_usage_to_ram_ratio);

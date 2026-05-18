@@ -19,6 +19,8 @@
 #include <filesystem>
 #include <optional>
 
+#include <unistd.h>
+
 namespace fs = std::filesystem;
 
 namespace ProfileEvents
@@ -278,6 +280,18 @@ MemoryWorker::MemoryWorker(
     page_size = pagesize_mib.getValue();
 #endif
 
+    /// Captured once for use in `readAvailableForDynamicLimit` to detect the
+    /// cgroup v1 "no limit" sentinel. We deliberately use `getMemoryAmountOrZero`
+    /// rather than the cgroup-aware `getMemoryAmount` so that nested cgroups
+    /// with their own finite limits do not also poison this threshold; here we
+    /// want only the host's physical RAM.
+    {
+        int64_t num_pages = sysconf(_SC_PHYS_PAGES);
+        int64_t page_size_bytes = sysconf(_SC_PAGESIZE);
+        if (num_pages > 0 && page_size_bytes > 0)
+            host_memory_bytes = static_cast<uint64_t>(num_pages) * static_cast<uint64_t>(page_size_bytes);
+    }
+
     if (config.use_cgroup)
     {
 #if defined(OS_LINUX)
@@ -448,6 +462,14 @@ namespace
 
 void MemoryWorker::setDynamicHardLimitSettings(Int64 ceiling, double ratio)
 {
+    /// Hold the mutex around the whole sequence of "store new settings" and
+    /// "install new hard limit". The worker re-checks `settings_generation`
+    /// under the same mutex before calling `setHardLimit`, so an in-flight
+    /// tick that computed against the old ratio cannot win the race against
+    /// this reload — it observes either the old generation while we still
+    /// hold the mutex (and waits), or the bumped generation (and skips).
+    std::lock_guard lock(dynamic_hard_limit_apply_mutex);
+
     /// Order matters: write the ratio first. The worker thread reads `external_hard_limit`
     /// first, and only proceeds with the adjustment when it is >= 0. By the time the
     /// adjustment is enabled (ceiling becomes >= 0), the new ratio is already visible.
@@ -458,6 +480,13 @@ void MemoryWorker::setDynamicHardLimitSettings(Int64 ceiling, double ratio)
     /// in flight and skip applying a stale `setHardLimit`. Release pairs with the
     /// worker's acquire load when re-checking.
     settings_generation.fetch_add(1, std::memory_order_release);
+
+    /// Install the configured ceiling as the current hard limit while we still
+    /// hold the mutex. Doing this here (instead of in the caller, before
+    /// `setDynamicHardLimitSettings`) closes the race window where the worker
+    /// could overwrite an out-of-band `setHardLimit` with a stale value before
+    /// it observed the new generation.
+    total_memory_tracker.setHardLimit(ceiling);
 }
 
 uint64_t MemoryWorker::readAvailableForDynamicLimit()
@@ -493,6 +522,15 @@ uint64_t MemoryWorker::readAvailableForDynamicLimit()
                 ReadBufferFromString token_buf(first_token);
                 if (tryReadIntText(limit_bytes, token_buf) && limit_bytes > 0)
                 {
+                    /// On cgroup v1, `memory.limit_in_bytes` uses a huge sentinel value
+                    /// (`PAGE_COUNTER_MAX`, around `2^63`) to mean "no limit". On a host
+                    /// without cgroup memory limits this looks like a finite limit far
+                    /// above any real RAM amount and would otherwise pin the dynamic
+                    /// limit to the startup ceiling. Anything `>= host_memory_bytes` is
+                    /// effectively unbounded, so treat it the same as the v2 `"max"` token.
+                    if (host_memory_bytes != 0 && limit_bytes >= host_memory_bytes)
+                        continue;
+
                     effective_limit = std::min(effective_limit, limit_bytes);
                     any_finite = true;
                 }
@@ -702,25 +740,37 @@ void MemoryWorker::updateResidentMemoryThread()
                         auto new_hard_limit = static_cast<Int64>(
                             static_cast<double>(static_cast<uint64_t>(used) + available) * ratio);
 
+                        /// Under high memory pressure the formula can produce `new_hard_limit <= used`.
+                        /// Setting the hard limit at or below current RSS would reject every new
+                        /// allocation and break in-flight queries — the server cannot release memory
+                        /// instantly. But skipping the tick entirely would leave the previous (often
+                        /// much larger) hard limit in place, defeating the whole point of dynamic
+                        /// adjustment: that ClickHouse should *shrink* its budget when free memory
+                        /// is gone, so co-located processes are not killed.
+                        ///
+                        /// Clamp instead of skipping: keep a small safety margin above `used` so
+                        /// queries can still allocate between ticks, but still apply the shrink so
+                        /// subsequent allocations are throttled.
+                        static constexpr Int64 safety_margin = 64ll * 1024 * 1024;
+                        new_hard_limit = std::max(new_hard_limit, used + safety_margin);
+
                         /// Never exceed the configured `max_server_memory_usage`. The dynamic
                         /// adjustment may only shrink the budget further, not raise it above the
-                        /// explicit user setting.
+                        /// explicit user setting. This must come *after* the `used + margin` floor:
+                        /// if we are already over `ceiling`, we cannot shrink to below `used`
+                        /// without strangling our own queries, but we still must not exceed `ceiling`.
                         if (ceiling > 0)
                             new_hard_limit = std::min(new_hard_limit, ceiling);
 
                         Int64 current_hard_limit = total_memory_tracker.getHardLimit();
-                        /// Refuse to shrink the limit to (or below) current RSS. The server cannot
-                        /// release memory instantly, and setting `hard_limit <= RSS` immediately
-                        /// rejects every allocation, breaking in-flight queries. The whole point of
-                        /// the adjustment is to leave room for *other* processes, not to throttle
-                        /// our own work. If the formula gives a value too close to `used`, skip the
-                        /// adjustment for this tick and keep the previous limit.
-                        if (new_hard_limit > used && new_hard_limit != current_hard_limit)
+                        if (new_hard_limit != current_hard_limit)
                         {
-                            /// Defeat the reload race: if a concurrent reload bumped the
-                            /// generation (and possibly set ratio to 0 or installed its own
-                            /// hard limit), our `new_hard_limit` is stale. Skip the write so
-                            /// the reload's value persists.
+                            /// Defeat the reload race: take the apply mutex and re-check the
+                            /// generation under it. If a concurrent `setDynamicHardLimitSettings`
+                            /// already installed its own value, the generation will have changed
+                            /// and we skip the write so the reload's value persists. The mutex
+                            /// also rules out a TOCTOU window between the check and the apply.
+                            std::lock_guard apply_lock(dynamic_hard_limit_apply_mutex);
                             if (settings_generation.load(std::memory_order_acquire) == gen_before)
                             {
                                 LOG_TRACE(

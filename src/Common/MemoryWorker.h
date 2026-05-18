@@ -67,12 +67,17 @@ public:
 
     void start();
 
-    /// Update the dynamic hard-limit settings from a config reload.
+    /// Update the dynamic hard-limit settings from a config reload, and atomically apply
+    /// `ceiling` as the new `total_memory_tracker` hard limit.
     ///   * `ceiling` is the configured `max_server_memory_usage` (after applying the ratio);
     ///     the dynamic adjustment may never set the hard limit above this. A value <= 0
     ///     disables the cap (i.e. unlimited).
     ///   * `ratio` is the `max_server_memory_usage_to_ram_ratio`; setting it to 0 disables
     ///     the dynamic adjustment entirely.
+    ///
+    /// The call is serialized with the worker's own `setHardLimit` via
+    /// `dynamic_hard_limit_apply_mutex`, so a concurrent worker tick that computed a value
+    /// against the old ratio cannot overwrite the freshly installed limit.
     ///
     /// Until this is called for the first time, the dynamic adjustment is suppressed, so
     /// the worker cannot inflate the hard limit before the server has had a chance to load
@@ -138,12 +143,25 @@ private:
     std::vector<std::unique_ptr<ReadBufferFromFile>> cgroup_memory_max_bufs;
     [[maybe_unused]] bool cgroup_memory_max_warnings_printed = false;
 
+    /// Total host RAM, captured at construction. Used to filter out the cgroup v1
+    /// "no limit" sentinel (`PAGE_COUNTER_MAX`, ~2^63), which is far larger than any
+    /// real RAM amount. Treating it as finite would pin the dynamic limit to the
+    /// startup ceiling on v1-unlimited hosts instead of tracking host `MemAvailable`.
+    uint64_t host_memory_bytes = 0;
+
     /// Bumped by `setDynamicHardLimitSettings` after writing the new ratio/ceiling.
     /// The worker captures the generation when it starts a dynamic update tick, then
-    /// re-checks before calling `setHardLimit`. If the generation changed while the
-    /// tick was in flight, a config reload took effect concurrently and the tick's
-    /// computed value would be stale, so we skip applying it.
+    /// re-checks under `dynamic_hard_limit_apply_mutex` before calling `setHardLimit`.
+    /// If the generation changed while the tick was in flight, a config reload took
+    /// effect concurrently and the tick's computed value would be stale, so we skip
+    /// applying it.
     std::atomic<uint64_t> settings_generation{0};
+
+    /// Serializes `total_memory_tracker.setHardLimit` between the worker's tick and
+    /// `setDynamicHardLimitSettings`. Without it, a worker that observed the old
+    /// generation could call `setHardLimit` after the reload installed its own value,
+    /// overwriting it with a stale number computed against the old ratio.
+    std::mutex dynamic_hard_limit_apply_mutex;
 
     MemoryUsageSource source{MemoryUsageSource::None};
 
