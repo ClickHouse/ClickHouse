@@ -1154,6 +1154,17 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
             /// part before the merge). When a FilterStep exists in the plan,
             /// the filter runs AFTER the merge, so limit pushdown is not safe.
             ///
+            /// Likewise, `deferFiltersAfterFinalIfNeeded` may move a row-level
+            /// policy or PREWHERE to run AFTER the merge (when
+            /// `apply_row_policy_after_final` or `apply_prewhere_after_final`
+            /// is enabled). In that case the merge sees unfiltered rows, so
+            /// stopping after LIMIT would truncate candidates that would
+            /// otherwise survive deferred filtering. The check on the deferred
+            /// filter pointers is reliable here because
+            /// `optimizePrimaryKeyConditionAndLimit` (which calls
+            /// `applyFilters` -> `deferFiltersAfterFinalIfNeeded`) runs before
+            /// `optimizeReadInOrder` in the optimization pipeline.
+            ///
             /// Additionally, the limit may only be pushed down when the sorting
             /// key fully covers the ORDER BY columns. If the ORDER BY extends
             /// beyond or diverges from the sorting key (e.g. ORDER BY a, c with
@@ -1165,7 +1176,8 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
             /// (ORDER BY) built by the matching loop, so equality of sizes
             /// means every ORDER BY column was successfully matched.
             bool sorting_key_covers_order_by = order_info.input_order->sort_description_for_merging.size() == description.size();
-            if (reading->isQueryWithFinal() && sorting.getLimit() > 0 && !has_filter_step && sorting_key_covers_order_by)
+            bool has_deferred_filters = reading->getDeferredRowLevelFilter() || reading->getDeferredPrewhereInfo();
+            if (reading->isQueryWithFinal() && sorting.getLimit() > 0 && !has_filter_step && !has_deferred_filters && sorting_key_covers_order_by)
                 reading->setFinalLimit(sorting.getLimit());
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
