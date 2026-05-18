@@ -1,4 +1,4 @@
-personal_ws-1.1 en 4071 
+personal_ws-1.1 en 4078
 AArch
 ABIs
 ACLs
@@ -162,6 +162,7 @@ CCTOOLS
 CDATA
 CDFs
 CDMA
+CDNs
 CESU
 CHouse
 CIDR
@@ -1173,6 +1174,7 @@ PostgreSQLThreads
 PostgreSQLWire
 Postgres
 PostgresSQL
+POSIX
 Prebase
 Precompiled
 Prefetcher
@@ -1222,6 +1224,8 @@ QTCreator
 Qaph
 Qoph
 Quantile
+QueriesMemoryUsage
+QueriesPeakMemoryUsage
 QueryCacheBytes
 QueryCacheEntries
 QueryCacheHits
@@ -1675,6 +1679,7 @@ Warang
 WasmEdge
 WasmTime
 WebAssembly
+WebSocket
 Welch
 Welch's
 Werror
@@ -2332,6 +2337,7 @@ distro
 divideDecimal
 divideOrNull
 dmesg
+dockable
 doesnt
 domainRFC
 domainWithoutWWW
@@ -3379,6 +3385,8 @@ redisstreams
 refcounter
 refreshable
 regexpExtract
+regexpInstr
+regexpPosition
 regexpQuoteMeta
 regionHierarchy
 regionIn

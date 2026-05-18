@@ -43,7 +43,10 @@ private:
 
         void close();
 
-        ~FileDescriptorWrapper() { close(); } // may throw, thus std::terminate
+        /// Destructor must not throw: a thrown ErrnoException during stack
+        /// unwinding (e.g. on session teardown for `/webterminal`) would call
+        /// `std::terminate` and bring the server down. Swallow and log instead.
+        ~FileDescriptorWrapper();
 
     private:
         int fd = -1;
