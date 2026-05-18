@@ -68,6 +68,19 @@ public:
         return "(IPv6 | FixedString) -> String";
     }
 
+    /// Restore the legacy `FixedString(16)` analyzer-time invariant; the DSL has no width matcher.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (const auto * fs = typeid_cast<const DataTypeFixedString *>(arguments[0].type.get()))
+        {
+            if (fs->getN() != IPV6_BINARY_LENGTH)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument 1 of function {}, expected IPv6 or FixedString({})",
+                    arguments[0].type->getName(), getName(), IPV6_BINARY_LENGTH);
+        }
+        return IFunction::getReturnTypeImpl(arguments);
+    }
+
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         return std::make_shared<DataTypeString>();
@@ -138,6 +151,19 @@ public:
     String getSignatureString() const override
     {
         return "(IPv6 | FixedString, UInt8, UInt8) -> String";
+    }
+
+    /// Restore the legacy `FixedString(16)` analyzer-time invariant; the DSL has no width matcher.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (const auto * fs = typeid_cast<const DataTypeFixedString *>(arguments[0].type.get()))
+        {
+            if (fs->getN() != IPV6_BINARY_LENGTH)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument 1 of function {}, expected IPv6 or FixedString({})",
+                    arguments[0].type->getName(), getName(), IPV6_BINARY_LENGTH);
+        }
+        return IFunction::getReturnTypeImpl(arguments);
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -780,6 +806,21 @@ public:
     String getSignatureString() const override
     {
         return "(IPv6 | FixedString, UInt8) -> Tuple(IPv6, IPv6)";
+    }
+
+    /// The signature accepts any FixedString, but the implementation reads 16 raw bytes per row.
+    /// Reject non-`FixedString(16)` at analysis time to preserve the legacy contract and avoid
+    /// out-of-bounds reads for narrower widths.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (const auto * fs = typeid_cast<const DataTypeFixedString *>(arguments[0].type.get()))
+        {
+            if (fs->getN() != IPV6_BINARY_LENGTH)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument 1 of function {}, expected IPv6 or FixedString({})",
+                    arguments[0].type->getName(), getName(), IPV6_BINARY_LENGTH);
+        }
+        return IFunction::getReturnTypeImpl(arguments);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
