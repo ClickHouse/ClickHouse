@@ -297,7 +297,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// Sharded aggregation: pre-partition rows by hash(key) % N before aggregation.
     /// As a result, same key from different rows will always go to the same shard and we can aggregate
     /// each shard independently without merge phase.
-    /// Fast for high cardinality keys with evenly distributed data, but has overhead of sharding and is not optimal for low cardinality keys.
     const bool use_sharded_aggregation = enable_sharding_aggregator
         /// We may want to use this even in the case of `num_streams = 1`
         /// If `num_streams = 1`, then one stream can be split into N shards and processed in parallel.
