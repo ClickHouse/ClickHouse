@@ -234,39 +234,6 @@ public:
 
     void removeAliasesForFilter(const std::string & filter_name);
 
-    /// Transform the current DAG in a way that leaf nodes get folded into their parents. It's done
-    /// because each projection can provide some columns as inputs to substitute certain sub-DAGs
-    /// (expressions). Consider the following example:
-    /// CREATE TABLE tbl (dt DateTime, val UInt64,
-    ///                   PROJECTION p_hour (SELECT sum(val) GROUP BY toStartOfHour(dt)));
-    ///
-    /// Query: SELECT toStartOfHour(dt), sum(val) FROM tbl GROUP BY toStartOfHour(dt);
-    ///
-    /// We will have an ActionsDAG like this:
-    /// FUNCTION: toStartOfHour(dt)       sum(val)
-    ///                 ^                   ^
-    ///                 |                   |
-    /// INPUT:          dt                  val
-    ///
-    /// Now we traverse the DAG and see if any FUNCTION node can be replaced by projection's INPUT node.
-    /// The result DAG will be:
-    /// INPUT:  toStartOfHour(dt)       sum(val)
-    ///
-    /// We don't need aggregate columns from projection because they are matched after DAG.
-    /// Currently we use canonical names of each node to find matches. It can be improved after we
-    /// have a full-featured name binding system.
-    ///
-    /// @param required_columns should contain columns which this DAG is required to produce after folding. It used for result actions.
-    /// @param projection_block_for_keys contains all key columns of given projection.
-    /// @param predicate_column_name means we need to produce the predicate column after folding.
-    /// @param add_missing_keys means whether to add additional missing columns to input nodes from projection key columns directly.
-    /// @return required columns for this folded DAG. It's expected to be fewer than the original ones if some projection is used.
-    NameSet foldActionsByProjection(
-        const NameSet & required_columns,
-        const Block & projection_block_for_keys,
-        const String & predicate_column_name = {},
-        bool add_missing_keys = true);
-
     /// Get an ActionsDAG in a following way:
     /// * Traverse a tree starting from required_outputs
     /// * If there is a node from new_inputs keys, replace it to INPUT
@@ -501,9 +468,6 @@ public:
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column);
 
-    bool
-    isSortingPreserved(const Block & input_header, const SortDescription & sort_description, const String & ignore_output_column = "") const;
-
     /** Build filter dag from multiple filter dags.
       *
       * If filter nodes are empty, result is nullptr.
@@ -528,12 +492,6 @@ public:
     /// Check if `predicate` is a combination of AND functions.
     /// Returns a list of nodes representing atomic predicates.
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
-
-    /// Get a list of nodes. For every node, check if it can be computed using allowed subset of inputs.
-    /// Returns only those nodes from the list which can be computed.
-    static NodeRawConstPtrs filterNodesByAllowedInputs(
-        NodeRawConstPtrs nodes,
-        const std::unordered_set<const Node *> & allowed_inputs);
 
     UInt64 getHash() const;
     void updateHash(SipHash & hash_state) const;
