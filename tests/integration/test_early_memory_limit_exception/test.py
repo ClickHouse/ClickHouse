@@ -3,8 +3,15 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
+# Disable `additional_memory_tracking_per_thread` for this test: the early
+# memory limit assertions depend on a tight `max_server_memory_usage` budget,
+# and the 4 MiB-per-thread speculative reservation can perturb the threshold.
 instance = cluster.add_instance(
-    "instance", main_configs=["configs/users_to_ignore_early_memory_limit_check.xml"]
+    "instance",
+    main_configs=[
+        "configs/users_to_ignore_early_memory_limit_check.xml",
+        "configs/additional_memory_tracking_per_thread.xml",
+    ],
 )
 
 

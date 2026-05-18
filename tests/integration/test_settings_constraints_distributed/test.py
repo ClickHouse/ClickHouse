@@ -7,7 +7,10 @@ cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/config.d/remote_servers.xml"],
+    main_configs=[
+        "configs/config.d/remote_servers.xml",
+        "configs/config.d/additional_memory_tracking_per_thread.xml",
+    ],
     user_configs=[
         "configs/users.d/allow_introspection_functions.xml",
         "configs/users.d/users.xml",
@@ -15,7 +18,10 @@ node1 = cluster.add_instance(
 )
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["configs/config.d/remote_servers.xml"],
+    main_configs=[
+        "configs/config.d/remote_servers.xml",
+        "configs/config.d/additional_memory_tracking_per_thread.xml",
+    ],
     user_configs=[
         "configs/users.d/allow_introspection_functions.xml",
         "configs/users.d/users.xml",
@@ -23,7 +29,10 @@ node2 = cluster.add_instance(
 )
 distributed = cluster.add_instance(
     "distributed",
-    main_configs=["configs/config.d/remote_servers.xml"],
+    main_configs=[
+        "configs/config.d/remote_servers.xml",
+        "configs/config.d/additional_memory_tracking_per_thread.xml",
+    ],
     user_configs=[
         "configs/users.d/allow_introspection_functions.xml",
         "configs/users.d/users.xml",
