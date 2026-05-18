@@ -54,6 +54,13 @@ class EC2Instance:
         # Desired behavior
         start_on_deploy: bool = True
 
+        # If True, deploy() will stop existing instances whose live UserData differs
+        # from `user_data`, call ModifyInstanceAttribute to install the new UserData,
+        # and then start them again (subject to `start_on_deploy`). Useful for
+        # instance types like mac1/mac2 where terminate + recreate is expensive due
+        # to dedicated-host cooldown.
+        update_user_data_on_change: bool = False
+
         # Tags applied to the instance
         tags: Dict[str, str] = field(default_factory=dict)
 
@@ -165,6 +172,69 @@ class EC2Instance:
 
             return instances[0]
 
+        def _reconcile_user_data(self, ec2, existing_instances) -> List[str]:
+            """If `update_user_data_on_change` is set, compare live UserData on each
+            existing instance with `self.user_data`. For mismatches, stop the
+            instance (waiting until it is fully stopped) and call
+            ModifyInstanceAttribute to install the new UserData. Returns the list
+            of instance IDs whose UserData was updated; the caller is responsible
+            for starting them back up if needed.
+            """
+            import base64
+
+            if not self.update_user_data_on_change or not self.user_data:
+                return []
+
+            to_update: List[str] = []
+            for inst in existing_instances:
+                instance_id = inst.get("InstanceId")
+                if not instance_id:
+                    continue
+                resp = ec2.describe_instance_attribute(
+                    InstanceId=instance_id, Attribute="userData"
+                )
+                encoded = (resp.get("UserData") or {}).get("Value") or ""
+                if isinstance(encoded, bytes):
+                    encoded = encoded.decode("ascii")
+                current = (
+                    base64.b64decode(encoded).decode("utf-8") if encoded else ""
+                )
+                if current != self.user_data:
+                    to_update.append(instance_id)
+
+            if not to_update:
+                return []
+
+            print(
+                f"EC2Instance '{self.name}': user_data changed for "
+                f"{len(to_update)} instance(s): {to_update}"
+            )
+
+            running_ids = [
+                inst.get("InstanceId")
+                for inst in existing_instances
+                if inst.get("InstanceId") in to_update
+                and (inst.get("State") or {}).get("Name") in ["pending", "running"]
+            ]
+            if running_ids:
+                print(
+                    f"EC2Instance '{self.name}': stopping {len(running_ids)} instance(s) to update user_data"
+                )
+                ec2.stop_instances(InstanceIds=running_ids)
+                ec2.get_waiter("instance_stopped").wait(InstanceIds=running_ids)
+
+            encoded_value = base64.b64encode(self.user_data.encode("utf-8"))
+            for instance_id in to_update:
+                ec2.modify_instance_attribute(
+                    InstanceId=instance_id,
+                    UserData={"Value": encoded_value},
+                )
+            print(
+                f"EC2Instance '{self.name}': updated user_data on {len(to_update)} instance(s)"
+            )
+
+            return to_update
+
         def fetch(self):
             instances = self._find_existing_instances()
             if not instances:
@@ -255,6 +325,14 @@ class EC2Instance:
                     print(
                         f"EC2Instance '{self.name}': found {len(existing_instances)} existing instance(s) - skip create"
                     )
+
+                    updated_ids = self._reconcile_user_data(ec2, existing_instances)
+                    # The reconciliation left these instances stopped; reflect that
+                    # in the local list so the start-stopped block below picks them
+                    # up (subject to start_on_deploy).
+                    for inst in existing_instances:
+                        if inst.get("InstanceId") in updated_ids:
+                            inst["State"] = {"Name": "stopped"}
 
                     # Start stopped instances if needed
                     if self.start_on_deploy:

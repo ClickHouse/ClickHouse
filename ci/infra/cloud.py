@@ -122,6 +122,7 @@ CLOUD = CloudInfrastructure.Config(
             praktika_resource_tag="mac",
             runner_type=RunnerLabels.MACOS_AMD_SMALL[1],
             quantity=3,
+            update_user_data_on_change=True,
         ),
         EC2Instance.Config(
             name=RunnerLabels.MACOS_ARM_SMALL[1],
@@ -140,6 +141,7 @@ CLOUD = CloudInfrastructure.Config(
             praktika_resource_tag="mac_m2_pro",
             runner_type=RunnerLabels.MACOS_ARM_SMALL[1],
             quantity=4,
+            update_user_data_on_change=True,
         ),
     ],
     # TODO: add autoscaling and launch templates
