@@ -1,4 +1,50 @@
+== explicit overrides ==
+-- field_ids --
+a	10
+b	20
+c	30
+-- values --
 1	hello	42
+== auto-assign ==
+-- field_ids --
+a	1
+b	2
+c	3
+-- values --
 1	hello	42
+== mixed override + auto-assign ==
+-- field_ids --
+a	2
+b	1
+c	3
+-- values --
 1	hello	42
+== default (no settings) ==
+-- field_ids --
+a	-
+b	-
+c	-
+-- values --
 1	hello	42
+== string-encoded ids ==
+-- field_ids --
+a	7
+b	8
+c	9
+-- values --
+1	hello	42
+== error: unknown column ==
+BAD_ARGUMENTS
+references unknown column
+== error: non-covering map without auto-assign ==
+BAD_ARGUMENTS
+does not cover every output column
+== error: duplicate id ==
+BAD_ARGUMENTS
+more than one column
+== error: non-integer string value ==
+BAD_ARGUMENTS
+is not an integer
+== error: negative id ==
+BAD_ARGUMENTS
+must be non-negative
