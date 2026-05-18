@@ -184,7 +184,9 @@ void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)
 
 void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
 {
-    if (partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
+    /// Data lake engines (Iceberg, Delta Lake, etc.) implement their own partitioning and
+    /// do not use the file-like `partition_strategy`. Skip applying a default strategy here.
+    if (partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE && !isDataLakeConfiguration())
     {
         if (!partition_by)
             return;
