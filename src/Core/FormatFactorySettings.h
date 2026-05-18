@@ -1345,8 +1345,10 @@ Enabled by default
     DECLARE(Bool, output_format_pretty_row_numbers, true, R"(
 Add row numbers before each row for pretty output format
 )", 0) \
-    DECLARE(Bool, output_format_pretty_use_nbsp_for_leading_padding, false, R"(
-If enabled, leading whitespace at the start of each line in Pretty output formats (the row-number padding and the indent before grid borders) is rendered with the Unicode NO-BREAK SPACE (U+00A0) instead of an ASCII space. The output remains visually identical in monospace, but the padding survives copy-paste through tools that compress or trim runs of regular spaces. Only takes effect when `output_format_pretty_grid_charset` is `UTF-8`.
+    DECLARE(Bool, output_format_pretty_use_nbsp_for_padding, false, R"(
+If enabled, padding in `Pretty` output formats is rendered with `U+00A0` instead of an ASCII space.
+The output remains visually identical in monospace, but the padding survives tools that compress or trim runs of regular spaces.
+Only takes effect when `output_format_pretty_grid_charset` is `UTF-8`.
 )", 0) \
     DECLARE(Bool, output_format_pretty_highlight_digit_groups, true, R"(
 If enabled and if output is a terminal, highlight every digit corresponding to the number of thousands, millions, etc. with underline.

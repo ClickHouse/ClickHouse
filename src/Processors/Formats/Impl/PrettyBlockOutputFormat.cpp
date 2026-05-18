@@ -39,6 +39,29 @@ PrettyBlockOutputFormat::PrettyBlockOutputFormat(
     format_settings.pretty_format = true;
     format_settings.json = FormatSettings::JSON{};
     format_settings.json.pretty_print_indent_multiplier = 1;
+
+    use_nbsp_for_padding = format_settings.pretty.use_nbsp_for_padding
+        && format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8;
+}
+
+namespace
+{
+    /// `U+00A0` survives tools that compress or trim runs of regular spaces.
+    constexpr std::string_view nbsp_utf8{"\xC2\xA0"};
+}
+
+void PrettyBlockOutputFormat::writePaddingSpace()
+{
+    if (use_nbsp_for_padding)
+        writeString(nbsp_utf8, out);
+    else
+        writeChar(' ', out);
+}
+
+void PrettyBlockOutputFormat::writePaddingSpaces(size_t count)
+{
+    for (size_t i = 0; i < count; ++i)
+        writePaddingSpace();
 }
 
 bool PrettyBlockOutputFormat::cutInTheMiddle(size_t row_num, size_t num_rows, size_t max_rows)
@@ -262,17 +285,10 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
     /// Create separators
 
-    /// Optionally render leading padding with Unicode NO-BREAK SPACE (U+00A0, "\xC2\xA0" in UTF-8).
-    /// The visual width is the same as a regular space in monospace, but padding survives tools
-    /// that compress or trim runs of ASCII space. See #95122. Only applies in UTF-8 mode.
-    const bool use_nbsp = format_settings.pretty.use_nbsp_for_leading_padding
-        && format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8;
-    static constexpr std::string_view nbsp_utf8{"\xC2\xA0"};
-
     String left_blank;
     if (format_settings.pretty.row_numbers)
     {
-        if (use_nbsp)
+        if (use_nbsp_for_padding)
         {
             left_blank.reserve(row_number_width * nbsp_utf8.size());
             for (size_t i = 0; i < row_number_width; ++i)
@@ -425,22 +441,29 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         writeString(left_blank, out);
 
         if (style == Style::Full)
-            out << vertical_bold_bar << " ";
+        {
+            out << vertical_bold_bar;
+            writePaddingSpace();
+        }
         else if (style == Style::Compact)
             out << grid[is_top ? 6 : 3][0] << horizontal_bar;
         else if (style == Style::Space)
-            out << " ";
+            writePaddingSpace();
 
         for (size_t i = 0; i < num_columns; ++i)
         {
             if (i != 0)
             {
                 if (style == Style::Full)
-                    out << " " << vertical_bold_bar << " ";
+                {
+                    writePaddingSpace();
+                    out << vertical_bold_bar;
+                    writePaddingSpace();
+                }
                 else if (style == Style::Compact)
                     out << horizontal_bar << grid[is_top ? 6 : 3][2] << horizontal_bar;
                 else if (style == Style::Space)
-                    out << "   ";
+                    writePaddingSpaces(3);
             }
 
             const auto & col = header->getByPosition(i);
@@ -461,7 +484,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     if (style == Style::Compact)
                         out << horizontal_bar;
                     else
-                        out << " ";
+                        writePaddingSpace();
                 }
             };
 
@@ -477,7 +500,10 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
             }
         }
         if (style == Style::Full)
-            out << " " << vertical_bold_bar;
+        {
+            writePaddingSpace();
+            out << vertical_bold_bar;
+        }
         else if (style == Style::Compact)
             out << horizontal_bar << grid[is_top ? 6 : 3][3];
 
@@ -547,13 +573,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     {
                         /// Write row number;
                         auto row_num_string = std::to_string(i + 1 + total_rows) + ". ";
-                        for (size_t j = 0; j < row_number_width - row_num_string.size(); ++j)
-                        {
-                            if (use_nbsp)
-                                writeString(nbsp_utf8, out);
-                            else
-                                writeChar(' ', out);
-                        }
+                        writePaddingSpaces(row_number_width - row_num_string.size());
 
                         if (color)
                             out << "\033[90m";
@@ -573,7 +593,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     if (style != Style::Space)
                         out << vertical_bar;
                     else if (j != 0)
-                        out << " ";
+                        writePaddingSpace();
 
                     const auto & type = header->getByPosition(j).type;
                     writeValueWithPadding(
@@ -720,8 +740,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     auto write_padding = [&]()
     {
         if (pad_to_width > value_width)
-            for (size_t k = 0; k < pad_to_width - value_width; ++k)
-                writeChar(' ', out);
+            writePaddingSpaces(pad_to_width - value_width);
     };
 
     if (is_continuation)
@@ -733,7 +752,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
             out << "\033[0m";
     }
     else
-        out.write(' ');
+        writePaddingSpace();
 
     if (align_right)
     {
@@ -755,7 +774,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
             out << "\033[0m";
     }
     else if (!is_cut)
-        out.write(' ');
+        writePaddingSpace();
 
     if (start_from_offset < serialized_value->size())
         ++start_from_offset;

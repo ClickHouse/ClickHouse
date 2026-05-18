@@ -266,7 +266,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.pretty.max_value_width_apply_for_single_value = settings[Setting::output_format_pretty_max_value_width_apply_for_single_value];
     format_settings.pretty.highlight_digit_groups = settings[Setting::output_format_pretty_highlight_digit_groups];
     format_settings.pretty.row_numbers = settings[Setting::output_format_pretty_row_numbers];
-    format_settings.pretty.use_nbsp_for_leading_padding = settings[Setting::output_format_pretty_use_nbsp_for_leading_padding];
+    format_settings.pretty.use_nbsp_for_padding = settings[Setting::output_format_pretty_use_nbsp_for_padding];
     format_settings.pretty.single_large_number_tip_threshold = settings[Setting::output_format_pretty_single_large_number_tip_threshold];
     format_settings.pretty.display_footer_column_names = settings[Setting::output_format_pretty_display_footer_column_names];
     format_settings.pretty.display_footer_column_names_min_rows = settings[Setting::output_format_pretty_display_footer_column_names_min_rows];
