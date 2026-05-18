@@ -836,6 +836,11 @@ void KeeperRequestDispatcher::dispatchThread()
 
                 LOG_TEST(log, "Starting batch {}, {} bytes, {} writes, {} reads ({} of them are at the end of batch). First request: {}", batch_idx, batch_bytes, requests.size(), reads_requests, late_reads.size(), requests[0].request->toString());
 
+                std::vector<nuraft::ptr<nuraft::buffer>> entries;
+                entries.reserve(requests.size());
+                for (const auto & r : requests)
+                    entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(r));
+
                 /// Add information about the batch to the queue of in-flight requests.
 
                 auto & batch = in_flight_batches[batch_idx % in_flight_batches.size()];
@@ -843,12 +848,6 @@ void KeeperRequestDispatcher::dispatchThread()
                 batch.requests = std::move(requests);
                 batch.intermediate_reads = std::move(intermediate_reads);
                 batch.activate(std::move(late_reads));
-
-                std::vector<nuraft::ptr<nuraft::buffer>> entries;
-                entries.reserve(batch.requests.size());
-                for (const auto & r : batch.requests)
-                    entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(r));
-
                 tail_idx.store(batch_idx + 1);
 
                 /// Finally send the requests to leader.
@@ -875,6 +874,7 @@ void KeeperRequestDispatcher::popBatch(size_t batch_idx)
 {
     auto & batch = in_flight_batches[batch_idx % in_flight_batches.size()];
     batch.deactivate();
+    chassert(head_idx.load() == batch_idx);
     head_idx.store(batch_idx + 1);
 }
 
