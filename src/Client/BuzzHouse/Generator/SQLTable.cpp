@@ -1,5 +1,7 @@
 #include <Common/checkStackSize.h>
 
+#include <fstream>
+
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
 #include <Client/BuzzHouse/Generator/SQLTypes.h>
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
@@ -1641,7 +1643,7 @@ void StatementGenerator::addTableColumnInternal(
 
             if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_ALIAS) && rg.nextMediumNumber() < 16)
             {
-                cd->set_codecs(generateNextCodecString(rg));
+                cd->set_codecs(generateNextCodecStringForType(rg, col.tp.get()));
             }
             if ((!col.dmod.has_value() || col.dmod.value() != DModifier::DEF_EPHEMERAL) && !csettings.empty() && rg.nextMediumNumber() < 16)
             {
@@ -2581,12 +2583,17 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     const bool has_view = collectionHas<SQLView>(dictionary_view_lambda);
     const bool has_dictionary = collectionHas<SQLDictionary>(dictionary_dictionary_lambda);
 
-    const uint32_t dict_table = 10 * static_cast<uint32_t>(has_table);
-    const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!next.is_deterministic && !systemTables.empty());
-    const uint32_t dict_view = 5 * static_cast<uint32_t>(has_view);
-    const uint32_t dict_dict = 5 * static_cast<uint32_t>(has_dictionary);
-    const uint32_t null_src = 5;
+    /// REGEXP_TREE layout is tied to YAMLRegExpTree source: skip all other source types when this layout is in use.
+    const uint32_t generic_src_mult = static_cast<uint32_t>(dl != REGEXP_TREE);
+    const uint32_t dict_table = 10 * static_cast<uint32_t>(has_table) * generic_src_mult;
+    const uint32_t dict_system_table = 5 * static_cast<uint32_t>(!next.is_deterministic && !systemTables.empty()) * generic_src_mult;
+    const uint32_t dict_view = 5 * static_cast<uint32_t>(has_view) * generic_src_mult;
+    const uint32_t dict_dict = 5 * static_cast<uint32_t>(has_dictionary) * generic_src_mult;
+    const uint32_t null_src = 5 * generic_src_mult;
+    /// YAMLRegExpTree only makes sense when paired with REGEXP_TREE layout.
+    const uint32_t yaml_regexp_tree_src = !generic_src_mult ? 100 : 0;
     DictionarySourceDetails * clickhouse_dsd = nullptr;
+    DictionarySourceDetails * yaml_dsd = nullptr;
 
     rg.pickWeighted(
         {{dict_table,
@@ -2633,6 +2640,24 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
                   dsd->set_user(sc.user);
                   dsd->set_password(sc.password);
                   dsd->set_source(DictionarySourceDetails::MONGODB);
+              }
+              else if (t.isFileEngine() && rg.nextSmallNumber() < 8)
+              {
+                  dsd->set_path(t.getTablePath(rg, this->allow_not_deterministic));
+                  if (t.file_format.has_value())
+                  {
+                      dsd->set_format(InOutFormat_Name(t.file_format.value()).substr(6));
+                  }
+                  dsd->set_source(DictionarySourceDetails::FILE);
+              }
+              else if (t.isURLEngine() && fc.http_server.has_value() && rg.nextSmallNumber() < 8)
+              {
+                  dsd->set_url(t.getTablePath(rg, this->allow_not_deterministic));
+                  if (t.file_format.has_value())
+                  {
+                      dsd->set_format(InOutFormat_Name(t.file_format.value()).substr(6));
+                  }
+                  dsd->set_source(DictionarySourceDetails::HTTP);
               }
               else if (t.isRedisEngine() && fc.redis_server.has_value() && rg.nextSmallNumber() < 8)
               {
@@ -2690,7 +2715,14 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
               dsd->set_source(DictionarySourceDetails::CLICKHOUSE);
               clickhouse_dsd = dsd;
           }},
-         {null_src, [&] { cd->mutable_source()->set_null_src(true); }}});
+         {null_src, [&] { cd->mutable_source()->set_null_src(true); }},
+         {yaml_regexp_tree_src,
+          [&]
+          {
+              DictionarySourceDetails * dsd = cd->mutable_source()->mutable_source();
+              dsd->set_source(DictionarySourceDetails::YAMLRegExpTree);
+              yaml_dsd = dsd;
+          }}});
 
     /// Set columns
     for (uint32_t i = 0; i < dictionary_ncols; i++)
@@ -2707,7 +2739,16 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         this->next_type_mask = fc.type_mask
             & ~(allow_JSON | allow_variant | allow_dynamic | allow_tuple | allow_low_cardinality | allow_map | allow_enum | allow_geo
                 | allow_time | allow_array | (is_complex_key ? UINT64_C(0) : allow_fixed_strings));
-        col.tp = randomNextType(rg, this->next_type_mask, col_counter, dc->mutable_type()->mutable_type());
+        if (yaml_dsd && i == 0)
+        {
+            /// YAMLRegExpTree requires the primary key to be exactly one String column.
+            dc->mutable_type()->mutable_type()->mutable_non_nullable()->set_standard_string(true);
+            col.tp = std::make_unique<StringType>(std::nullopt);
+        }
+        else
+        {
+            col.tp = randomNextType(rg, this->next_type_mask, col_counter, dc->mutable_type()->mutable_type());
+        }
         this->next_type_mask = type_mask_backup;
 
         const String dict_col_name = col.getColumnName();
@@ -2790,9 +2831,9 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
             clickhouse_dsd->set_update_lag(rg.randomInt<uint32_t>(0, 3600));
         }
     }
-    if (dl == IP_TRIE)
+    if (dl == IP_TRIE || yaml_dsd)
     {
-        /// IP_TRIE requires a String primary key
+        /// IP_TRIE and YAMLRegExpTree both require a String primary key
         std::vector<ColumnPathChain> str_entries;
         for (const auto & e : this->entries)
         {
@@ -2831,6 +2872,102 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
     for (size_t i = 0; i < kcols; i++)
     {
         columnPathRef(this->entries[i], tkey->add_exprs()->mutable_expr());
+    }
+    if (yaml_dsd && !this->entries.empty())
+    {
+        /// Write a small YAML fixture that matches the dictionary's columns so that both
+        /// CREATE-time validation and runtime LOAD succeed. The chosen primary-key column
+        /// is the regex pattern; every other column becomes an attribute.
+        ///
+        /// regexp_tree's loader parses YAML attribute values via deserializeWholeText for
+        /// the target type, which expects plain text (NOT SQL literal syntax with quotes
+        /// or `::Type` casts). We emit a fixed plain-text default per type class instead
+        /// of using appendRandomRawValue (which produces SQL literals).
+        const auto yaml_plain_value = [](const SQLType * tp) -> std::optional<String>
+        {
+            const SQLType * t = tp;
+            if (t && t->getTypeClass() == SQLTypeClass::NULLABLE)
+                t = static_cast<const Nullable *>(t)->subtype.get();
+            if (t && t->getTypeClass() == SQLTypeClass::LOWCARDINALITY)
+                t = static_cast<const LowCardinality *>(t)->subtype.get();
+            if (!t)
+                return std::nullopt;
+            switch (t->getTypeClass())
+            {
+                case SQLTypeClass::BOOL:
+                    return "true";
+                case SQLTypeClass::INT:
+                case SQLTypeClass::FLOAT:
+                case SQLTypeClass::DECIMAL:
+                    return "0";
+                case SQLTypeClass::ENUM: {
+                    /// regexp_tree parses enum YAML values via deserializeWholeText with
+                    /// enum_as_number=false, so we must emit a label, not a numeric id.
+                    const auto * et = static_cast<const EnumType *>(t);
+                    if (et->values.empty())
+                        return "0";
+                    String label = et->values[0].val;
+                    /// EnumValue::val stores the SQL form including surrounding single quotes
+                    /// (e.g. "'foo'" or "'-1'"); strip them for the YAML plain text.
+                    if (label.size() >= 2 && label.front() == '\'' && label.back() == '\'')
+                        label = label.substr(1, label.size() - 2);
+                    return label;
+                }
+                case SQLTypeClass::STRING:
+                    return "text";
+                case SQLTypeClass::DATE:
+                    return "2024-01-01";
+                case SQLTypeClass::DATETIME:
+                    return "2024-01-01 12:00:00";
+                case SQLTypeClass::TIME:
+                    return "12:00:00";
+                case SQLTypeClass::UUID:
+                    return "00000000-0000-0000-0000-000000000000";
+                case SQLTypeClass::IPV4:
+                    return "0.0.0.0";
+                case SQLTypeClass::IPV6:
+                    return "::";
+                default:
+                    /// Skip complex (Array/Map/Tuple/JSON/Variant/Dynamic/etc.)
+                    return std::nullopt;
+            }
+        };
+
+        const String pkey_name = this->entries[0].getBottomName();
+        const String fname = fmt::format("d{}.yaml", next.counter);
+        std::ofstream yaml_file(fc.client_file_path / fname);
+        if (!yaml_file.is_open())
+        {
+            /// user_files isn't writable from this process — fail closed by switching to a null
+            /// source so we don't generate a CREATE DICTIONARY pointing at a non-existent file.
+            /// This will still fail validation (REGEXP_TREE requires YAMLRegExpTree), but with a
+            /// meaningful "incompatible source/layout" error instead of CANNOT_OPEN_FILE.
+            LOG_DEBUG(
+                getLogger("BuzzHouse"),
+                "Failed to open YAML fixture {} for write — falling back to null dictionary source",
+                (fc.client_file_path / fname).generic_string());
+            cd->mutable_source()->Clear();
+            cd->mutable_source()->set_null_src(true);
+        }
+        else
+        {
+            for (uint32_t j = 0; j < 3; j++)
+            {
+                /// regexp_tree requires each rule to use the dictionary's primary-key field name
+                /// (not a literal "regexp"). This is the column we forced to String earlier.
+                yaml_file << "- " << pkey_name << ": '.*pattern" << j << ".*'\n";
+                for (const auto & [cname, cdata] : next.cols)
+                {
+                    if (cname == pkey_name || !cdata.tp)
+                        continue;
+                    auto value = yaml_plain_value(cdata.tp.get());
+                    if (value.has_value())
+                        yaml_file << "  " << cname << ": " << value.value() << "\n";
+                }
+            }
+            yaml_file.close();
+            yaml_dsd->set_path(fmt::format("{}/{}", fc.server_file_path.generic_string(), fname));
+        }
     }
     if (isRange && this->entries.size() > 1)
     {

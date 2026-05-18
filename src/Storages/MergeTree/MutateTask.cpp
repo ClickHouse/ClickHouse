@@ -1,4 +1,5 @@
 #include <Interpreters/TreeRewriter.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <Columns/ColumnsNumber.h>
@@ -40,6 +41,8 @@
 #include <Storages/Statistics/Statistics.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/FailPoint.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
 
@@ -1301,7 +1304,7 @@ void finalizeMutatedPart(
 
     new_data_part->rows_count = source_part->rows_count;
     new_data_part->index_granularity = source_part->index_granularity;
-    new_data_part->minmax_idx = source_part->minmax_idx;
+    new_data_part->setMinMaxIndex(std::make_shared<IMergeTreeDataPart::MinMaxIndex>(*source_part->getMinMaxIndex()));
     new_data_part->modification_time = time(nullptr);
 
     if ((*new_data_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
@@ -1384,6 +1387,7 @@ struct MutationContext
 
     std::vector<ProjectionDescriptionRawPtr> projections_to_build;
     IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
+    NamesAndTypesList minmax_idx_columns{};
 
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<MergeTreeIndexPtr> text_indices_to_recalc;
@@ -1564,7 +1568,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         ctx->out->write(cur_block);
 
         if (ctx->minmax_idx)
-            ctx->minmax_idx->update(cur_block, MergeTreeData::getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
+            ctx->minmax_idx->update(cur_block, ctx->minmax_idx_columns);
 
         if (!ctx->all_gathered_data.statistics.empty())
             ctx->all_gathered_data.statistics.buildIfExists(cur_block);
@@ -1991,6 +1995,7 @@ private:
         }
 
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+        ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(ctx->metadata_snapshot->getPartitionKey(), ctx->data->getSettings());
         ctx->all_gathered_data.statistics = ColumnsStatistics(ctx->metadata_snapshot->getColumns());
 
         MutationHelpers::processStatisticsChanges(
@@ -2029,7 +2034,7 @@ private:
     void finalize()
     {
         bool noop;
-        ctx->new_data_part->minmax_idx = std::move(ctx->minmax_idx);
+        ctx->new_data_part->setMinMaxIndex(std::move(ctx->minmax_idx));
         ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
@@ -2897,6 +2902,10 @@ bool MutateTask::prepare()
             }
         }
     }
+
+    /// Same rationale as `MergeTreeData::loadDataPart`: the per-part `SingleDiskVolume` and the
+    /// resulting `IMergeTreeDataPart` constructed below live for the mutated part's lifetime.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
     ctx->disk = single_disk_volume->getDisk();
