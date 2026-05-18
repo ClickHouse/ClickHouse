@@ -258,6 +258,69 @@ ActionsDAG AggregatingStep::makeCreatingMissingKeysForGroupingSetDAG(
     return dag;
 }
 
+/// Sharded aggregation: pre-partition rows by hash(key) % N before aggregation.
+/// As a result, same key from different rows will always go to the same shard and we can aggregate
+/// each shard independently without merge phase.
+bool AggregatingStep::canUseShardedAggregation(const QueryPipelineBuilder & pipeline) const
+{
+    if (!enable_sharding_aggregator)
+        return false;
+
+    /// Respect pipeline width — do not fan out a single stream into shards.
+    if (pipeline.getNumStreams() <= 1)
+        return false;
+    if (params.max_threads <= 1)
+        return false;
+
+    /// Avoid too much overhead from routing
+    if (pipeline.getNumStreams() * params.max_threads >= 100'000)
+        return false;
+
+    /// TODO(nihalzp): `max_rows_to_group_by` is enforced globally during the merge phase in normal
+    /// aggregation. Could be supported by a post-step that counts total keys across shards.
+    if (params.max_rows_to_group_by != 0)
+        return false;
+
+    /// Skip no-key aggregation as sharding does not give any benefit and has overhead.
+    if (params.keys_size < 1)
+        return false;
+
+    /// We do not want to take over cases covered by InOrder Aggregation as those are faster.
+    if (!sort_description_for_merging.empty())
+        return false;
+
+    if (!grouping_sets_params.empty())
+        return false;
+
+    /// TODO(nihalzp): Support this when we will have external aggregation
+    if (should_produce_results_in_order_of_bucket_number)
+        return false;
+
+    /// Sharding is useful for high cardinality keys. For single-key, skip 1-byte types
+    /// (UInt8/Int8 have at most 256 distinct values) and LowCardinality. For multi-key, skip
+    /// if combined cardinality is low enough.
+    constexpr size_t low_cardinality_threshold_bytes = 1;
+    const bool is_low_cardinality_keyspace
+        = std::accumulate(
+              params.keys.begin(),
+              params.keys.end(),
+              size_t{0},
+              [&](size_t sum, const String & key) -> size_t
+              {
+                  const auto & type = pipeline.getHeader().getByName(key).type;
+                  if (type->lowCardinality())
+                      return sum;
+                  const auto inner = removeNullable(type);
+                  return sum
+                      + (inner->haveMaximumSizeOfValue() ? inner->getMaximumSizeOfValueInMemory() : low_cardinality_threshold_bytes + 1);
+              })
+        <= low_cardinality_threshold_bytes;
+    if (is_low_cardinality_keyspace)
+        return false;
+
+    return true;
+}
+
 void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     size_t new_merge_threads = merge_threads;
@@ -295,42 +358,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         params.group_by_two_level_threshold_bytes = 0;
     }
 
-    /// Sharded aggregation: pre-partition rows by hash(key) % N before aggregation.
-    /// As a result, same key from different rows will always go to the same shard and we can aggregate
-    /// each shard independently without merge phase.
-    const bool use_sharded_aggregation = enable_sharding_aggregator
-        /// Respect pipeline width — do not fan out a single stream into shards.
-        && pipeline.getNumStreams() > 1
-        && params.max_threads > 1
-        /// Avoid too much overhead from routing
-        && pipeline.getNumStreams() * params.max_threads < 100'000
-        /// TODO(nihalzp): `max_rows_to_group_by` is enforced globally during the merge phase in normal
-        /// aggregation. Could be supported by a post-step that counts total keys across shards.
-        && params.max_rows_to_group_by == 0
-        /// Skip no-key aggregation as sharding does not give any benefit and has overhead.
-        && params.keys_size >= 1
-        /// We do not want to take over cases covered by InOrder Aggregation as those are faster.
-        && sort_description_for_merging.empty()
-        && grouping_sets_params.empty()
-        /// TODO(nihalzp): Support this when we will have external aggregation
-        && !should_produce_results_in_order_of_bucket_number
-        /// Sharding is useful for high cardinality keys. For single-key, skip 1-byte types
-        /// (UInt8/Int8 have at most 256 distinct values) and LowCardinality. For multi-key, skip
-        /// if combined cardinality is low enough.
-        && std::accumulate(
-               params.keys.begin(),
-               params.keys.end(),
-               size_t{0},
-               [&](size_t sum, const String & key) -> size_t
-               {
-                   constexpr size_t threshold = 1;
-                   const auto & type = pipeline.getHeader().getByName(key).type;
-                   if (type->lowCardinality())
-                       return sum;
-                   const auto inner = removeNullable(type);
-                   return sum + (inner->haveMaximumSizeOfValue() ? inner->getMaximumSizeOfValueInMemory() : threshold + 1);
-               })
-            > 1;
+    const bool use_sharded_aggregation = canUseShardedAggregation(pipeline);
 
     if (use_sharded_aggregation)
     {
