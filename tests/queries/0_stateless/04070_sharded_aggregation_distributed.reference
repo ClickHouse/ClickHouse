@@ -1,4 +1,4 @@
 Distributed aggregation via remote(): correctness
 1
-Distributed aggregation via remote(): no ScatterByHashTransform in pipeline
+Distributed aggregation via remote(): no ShardByHashTransform in pipeline
 1

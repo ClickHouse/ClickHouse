@@ -34,37 +34,37 @@ SELECT 'Base case: sharded aggregation is used';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) FROM test_sharded_agg_neg GROUP BY a
     SETTINGS enable_sharding_aggregator = 1, optimize_aggregation_in_order = 0
-) WHERE explain LIKE '%ScatterByHashTransform%';
+) WHERE explain LIKE '%ShardByHashTransform%';
 
 SELECT 'Aggregation in order enabled, takes precedence over sharded aggregation';
 SELECT count() = 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) FROM test_sharded_agg_neg GROUP BY a
     SETTINGS enable_sharding_aggregator = 1, optimize_aggregation_in_order = 1
-) WHERE explain LIKE '%ScatterByHashTransform%';
+) WHERE explain LIKE '%ShardByHashTransform%';
 
 SELECT 'No GROUP BY keys';
 SELECT count() = 0 FROM (
     EXPLAIN PIPELINE SELECT sum(b) FROM test_sharded_agg_neg
     SETTINGS enable_sharding_aggregator = 1
-) WHERE explain LIKE '%ScatterByHashTransform%';
+) WHERE explain LIKE '%ShardByHashTransform%';
 
 SELECT 'UInt8 key (too low cardinality for sharding)';
 SELECT count() = 0 FROM (
     EXPLAIN PIPELINE SELECT u8, sum(b) FROM test_sharded_agg_neg GROUP BY u8
     SETTINGS enable_sharding_aggregator = 1
-) WHERE explain LIKE '%ScatterByHashTransform%';
+) WHERE explain LIKE '%ShardByHashTransform%';
 
 SELECT 'Int8 key (too low cardinality for sharding)';
 SELECT count() = 0 FROM (
     EXPLAIN PIPELINE SELECT toInt8(u8) AS k, sum(b) FROM test_sharded_agg_neg GROUP BY k
     SETTINGS enable_sharding_aggregator = 1
-) WHERE explain LIKE '%ScatterByHashTransform%';
+) WHERE explain LIKE '%ShardByHashTransform%';
 
 SELECT 'LowCardinality key';
 SELECT count() = 0 FROM (
     EXPLAIN PIPELINE SELECT lc_key, sum(b) FROM test_sharded_agg_neg GROUP BY lc_key
     SETTINGS enable_sharding_aggregator = 1
-) WHERE explain LIKE '%ScatterByHashTransform%';
+) WHERE explain LIKE '%ShardByHashTransform%';
 
 SELECT 'GROUPING SETS';
 SELECT count() = 0 FROM (
@@ -73,22 +73,22 @@ SELECT count() = 0 FROM (
     FROM test_sharded_agg_neg
     GROUP BY GROUPING SETS ((a), (u8))
     SETTINGS enable_sharding_aggregator = 1
-) WHERE explain LIKE '%ScatterByHashTransform%';
+) WHERE explain LIKE '%ShardByHashTransform%';
 
 SELECT 'In-order aggregation (force_aggregation_in_order)';
 SELECT count() = 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) FROM test_sharded_agg_neg GROUP BY a
     SETTINGS enable_sharding_aggregator = 1, force_aggregation_in_order = 1
-) WHERE explain LIKE '%ScatterByHashTransform%';
+) WHERE explain LIKE '%ShardByHashTransform%';
 
 SELECT 'Single stream (max_threads = 1)';
 SELECT count() = 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) FROM test_sharded_agg_neg GROUP BY a
     SETTINGS enable_sharding_aggregator = 1, max_threads = 1
-) WHERE explain LIKE '%ScatterByHashTransform%';
+) WHERE explain LIKE '%ShardByHashTransform%';
 
 SELECT 'max_rows_to_group_by';
 SELECT count() = 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) FROM test_sharded_agg_neg GROUP BY a
     SETTINGS enable_sharding_aggregator = 1, max_rows_to_group_by = 10, group_by_overflow_mode = 'any'
-) WHERE explain LIKE '%ScatterByHashTransform%';
+) WHERE explain LIKE '%ShardByHashTransform%';

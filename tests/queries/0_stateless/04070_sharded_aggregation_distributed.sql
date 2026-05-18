@@ -31,10 +31,10 @@ SELECT
         (SELECT a, sum(b) AS s FROM remote('127.0.0.{1,1}', currentDatabase(), test_sharded_agg_dist) GROUP BY a
          SETTINGS enable_sharding_aggregator = 1));
 
-SELECT 'Distributed aggregation via remote(): no ScatterByHashTransform in pipeline';
+SELECT 'Distributed aggregation via remote(): no ShardByHashTransform in pipeline';
 SELECT count() = 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) FROM remote('127.0.0.{1,1}', currentDatabase(), test_sharded_agg_dist) GROUP BY a
     SETTINGS enable_sharding_aggregator = 1
-) WHERE explain LIKE '%ScatterByHashTransform%';
+) WHERE explain LIKE '%ShardByHashTransform%';
 
 DROP TABLE test_sharded_agg_dist;
