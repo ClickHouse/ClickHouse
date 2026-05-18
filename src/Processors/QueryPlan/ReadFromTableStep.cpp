@@ -93,9 +93,7 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
     if (flags & 4)
         sample_offset_ratio = deserializeRational(ctx.in);
 
-    char is_merge_tree = 0;
-    if (flags & 8)
-        readIntBinary(is_merge_tree, ctx.in);
+    const char is_merge_tree = flags & 8;
 
     char use_parallel_replicas = 0;
     if (flags & 16)
