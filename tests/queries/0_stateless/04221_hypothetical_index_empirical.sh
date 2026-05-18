@@ -11,6 +11,7 @@ $CLICKHOUSE_CLIENT -n -q "
     CREATE TABLE t_hypo_emp (a UInt64, b UInt64, c String)
     ENGINE = MergeTree ORDER BY a
     SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
     -- 10000 rows: 100 granules of 100 rows each
     -- b = a (sorted, unique range per granule)
     -- c = toString(a % 100) (uniformly distributed, every granule has every value)
@@ -82,25 +83,19 @@ $CLICKHOUSE_CLIENT -n -q "
     EXPLAIN WHATIF SELECT * FROM t_hypo_emp WHERE a > 5000 AND b < 100;
 " | grep -E '^\s+skip_ratio:|^\s+sampled_marks:'
 
-# =========================================================
-# Empirical with existing real skip index:
-# hypothetical index only processes marks surviving both PK and real index
-# =========================================================
+# Real minmax on b prunes 99 granules; hypothetical on c then sees baseline = 1
 echo "--- empirical with existing real index ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_real;
-    CREATE TABLE t_hypo_real (a UInt64, b UInt64, INDEX idx_a_real a TYPE minmax GRANULARITY 1)
+    CREATE TABLE t_hypo_real (a UInt64, b UInt64, c UInt64, INDEX idx_b_real b TYPE minmax GRANULARITY 1)
     ENGINE = MergeTree ORDER BY a
     SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
-    INSERT INTO t_hypo_real SELECT number, number FROM numbers(10000);
+    INSERT INTO t_hypo_real SELECT number, intDiv(number, 100), number FROM numbers(10000);
 "
 
-# With real minmax on a and PK on a, WHERE a > 5000 is handled by PK.
-# WHERE b = 7777 is tested by hypothetical minmax on b.
-# sampled_marks ≈ 50 / 100 (only ~50 baseline marks scanned out of 100 in the table)
 $CLICKHOUSE_CLIENT -n -q "
-    CREATE HYPOTHETICAL INDEX idx_b_hypo ON t_hypo_real (b) TYPE minmax GRANULARITY 1;
-    EXPLAIN WHATIF SELECT * FROM t_hypo_real WHERE a > 5000 AND b = 7777;
+    CREATE HYPOTHETICAL INDEX idx_c_hypo ON t_hypo_real (c) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT * FROM t_hypo_real WHERE b = 50 AND c = 7777;
 " | grep -E '^\s+skip_ratio:|^\s+sampled_marks:'
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_real"
@@ -126,14 +121,24 @@ $CLICKHOUSE_CLIENT -n -q "
     CREATE TABLE t_hypo_proof (p UInt8, a UInt64, b UInt64)
     ENGINE = MergeTree PARTITION BY p ORDER BY a
     SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
     INSERT INTO t_hypo_proof SELECT 0, number, 0 FROM numbers(5000);
     INSERT INTO t_hypo_proof SELECT 1, number, 1 FROM numbers(5000);
+
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_proof (b) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT * FROM t_hypo_proof WHERE p = 1 AND b = 0;
 " | grep -E '^\s+skip_ratio:|^\s+source:|^\s+sampled_marks:'
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_proof"
 
+# =========================================================
+# Non-uniform mark sizes + PK pruning must not trip
+# `Read N rows, more than requested to read: M`
+# Adaptive granularity with a small index_granularity_bytes
+# splits 1000 rows into several marks of differing row counts;
+# `WHERE a > 500` removes early marks so the surviving range
+# does not start at mark 0
+# =========================================================
 echo "--- non-uniform marks + PK pruning ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_split;
