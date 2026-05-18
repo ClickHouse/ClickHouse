@@ -109,7 +109,7 @@ public:
     void setBackupSource(std::shared_ptr<IBackup> backup, String path, StoredObjects objects, const ReadSettings & read_settings);
 
     /// Set source with a custom buffer creator (for testing or custom backends).
-    void setSource(StoredObjects objects, BufferCreator creator, const ReadSettings & read_settings);
+    void setSource(BufferCreator creator, StoredObjects objects, const ReadSettings & read_settings);
 
     /// -- Gather stage (ReadBufferFromRemoteFSGather) --
     /// Joins multiple stored objects into a single seekable buffer.

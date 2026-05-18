@@ -72,7 +72,7 @@ void ReadPipeline::setBackupSource(std::shared_ptr<IBackup> backup, String path,
         .read_settings = read_settings};
 }
 
-void ReadPipeline::setSource(StoredObjects objects, BufferCreator creator, const ReadSettings & read_settings)
+void ReadPipeline::setSource(BufferCreator creator, StoredObjects objects, const ReadSettings & read_settings)
 {
     source = SourceStage{
         .objects = std::move(objects),
@@ -87,7 +87,12 @@ void ReadPipeline::needGather()
 
 void ReadPipeline::needDiskCache(FileCachePtr cache, FilesystemCacheSettings cache_settings, std::shared_ptr<FilesystemCacheLog> cache_log)
 {
-    disk_caches.push_back(DiskCacheStage{.cache = std::move(cache), .cache_log = std::move(cache_log), .cache_settings = std::move(cache_settings), .custom_cache_key = std::nullopt, .custom_origin = std::nullopt});
+    disk_caches.push_back(DiskCacheStage{
+        .cache = std::move(cache),
+        .cache_log = std::move(cache_log),
+        .cache_settings = std::move(cache_settings),
+        .custom_cache_key = std::nullopt,
+        .custom_origin = std::nullopt});
 }
 
 void ReadPipeline::needDiskCache(
@@ -107,7 +112,12 @@ void ReadPipeline::needDiskCache(
 
 void ReadPipeline::needMemoryCache(std::shared_ptr<PageCache> cache, String cache_path_prefix, PageCacheSettings page_cache_settings)
 {
-    memory_cache = MemoryCacheStage{.cache = std::move(cache), .cache_path_prefix = std::move(cache_path_prefix), .page_cache_settings = std::move(page_cache_settings), .custom_cache_path = {}, .custom_file_version = {}};
+    memory_cache = MemoryCacheStage{
+        .cache = std::move(cache),
+        .cache_path_prefix = std::move(cache_path_prefix),
+        .page_cache_settings = std::move(page_cache_settings),
+        .custom_cache_path = {},
+        .custom_file_version = {}};
 }
 
 void ReadPipeline::needMemoryCache(
@@ -152,7 +162,10 @@ void ReadPipeline::needBufferLimit(std::shared_ptr<SourceBufferLimit> limit)
 
 void ReadPipeline::needDecryption(String path, size_t buffer_size, KeyFinderFunc key_finder)
 {
-    decryption_stages.push_back(DecryptionStage{.path = std::move(path), .buffer_size = buffer_size, .key_finder = std::move(key_finder)});
+    decryption_stages.push_back(DecryptionStage{
+        .path = std::move(path),
+        .buffer_size = buffer_size,
+        .key_finder = std::move(key_finder)});
 }
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
@@ -321,8 +334,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 auto origin = custom_origin.value_or(cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
                 /// Copy, not move: gather_creator may be called multiple times (once per object).
-                auto prev_copy = prev_creator;
-                auto impl_creator = [prev_copy, restricted_seek, object]() mutable
+                auto impl_creator = [prev_copy = prev_creator, restricted_seek, object]() mutable
                     -> std::unique_ptr<ReadBufferFromFileBase>
                 {
                     return prev_copy(restricted_seek, object);
@@ -488,9 +500,12 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                         throttler = settings.local_throttler
                     ]() mutable -> std::unique_ptr<ReadBufferFromFileBase>
                     {
+                        /// Copy, not move: impl_creator may be called multiple times
+                        /// (tryGetFileSize, read, re-read after seek/reset).
+                        auto prev_copy = prev_creator;
                         return std::make_unique<CachedOnDiskReadBufferFromFile>(
                             path, cache_key, cache, origin,
-                            std::move(prev_creator),
+                            std::move(prev_copy),
                             fs_cache_settings,
                             remote_buf_size, local_buf_size,
                             std::string(CurrentThread::getQueryId()),
@@ -608,8 +623,20 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             cache_file.path = memory_cache->cache_path_prefix + first_object.remote_path;
         }
 
+        /// Apply stage-level page cache settings when provided, falling back to source settings.
+        auto page_cache_read_settings = settings;
+        if (memory_cache->page_cache_settings)
+        {
+            auto & pcs = *memory_cache->page_cache_settings;
+            page_cache_read_settings.read_from_page_cache_if_exists_otherwise_bypass_cache = pcs.read_from_page_cache_if_exists_otherwise_bypass_cache;
+            page_cache_read_settings.page_cache_inject_eviction = pcs.page_cache_inject_eviction;
+            page_cache_read_settings.page_cache_block_size = pcs.page_cache_block_size;
+            page_cache_read_settings.page_cache_lookahead_blocks = pcs.page_cache_lookahead_blocks;
+            page_cache_read_settings.page_cache_max_coalesced_bytes = pcs.page_cache_max_coalesced_bytes;
+        }
+
         impl = std::make_unique<CachedInMemoryReadBufferFromFile>(
-            cache_file, memory_cache->cache, std::move(impl), settings);
+            cache_file, memory_cache->cache, std::move(impl), page_cache_read_settings);
     }
 
     /// -- Stage 5: Async prefetch --
