@@ -4,7 +4,7 @@ namespace BuzzHouse
 {
 
 const std::vector<std::vector<OutFormat>> outFormats
-    = {{OutFormat::OUT_Arrow},
+    = {{OutFormat::OUT_Arrow, OutFormat::OUT_ArrowStream},
        {OutFormat::OUT_Avro},
        {OutFormat::OUT_BSONEachRow},
        {OutFormat::OUT_Buffers},
@@ -31,7 +31,7 @@ const std::vector<std::vector<OutFormat>> outFormats
        {OutFormat::OUT_Native},
        {OutFormat::OUT_ORC},
        {OutFormat::OUT_Parquet},
-       {OutFormat::OUT_Protobuf, OutFormat::OUT_ProtobufSingle},
+       {OutFormat::OUT_Protobuf, OutFormat::OUT_ProtobufList, OutFormat::OUT_ProtobufSingle},
        {OutFormat::OUT_RawBLOB},
        {OutFormat::OUT_RowBinary, OutFormat::OUT_RowBinaryWithNames, OutFormat::OUT_RowBinaryWithNamesAndTypes},
        {OutFormat::OUT_TabSeparated,
@@ -45,6 +45,7 @@ const std::vector<std::vector<OutFormat>> outFormats
 
 const std::unordered_map<OutFormat, InFormat> outIn
     = {{OutFormat::OUT_Arrow, InFormat::IN_Arrow},
+       {OutFormat::OUT_ArrowStream, InFormat::IN_ArrowStream},
        {OutFormat::OUT_Avro, InFormat::IN_Avro},
        {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
        {OutFormat::OUT_Buffers, InFormat::IN_Buffers},
@@ -62,9 +63,11 @@ const std::unordered_map<OutFormat, InFormat> outIn
        {OutFormat::OUT_JSONCompactEachRow, InFormat::IN_JSONCompactEachRow},
        {OutFormat::OUT_JSONCompactEachRowWithNames, InFormat::IN_JSONCompactEachRowWithNames},
        {OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes, InFormat::IN_JSONCompactEachRowWithNamesAndTypes},
+       {OutFormat::OUT_JSONCompactEachRowWithProgress, InFormat::IN_JSONCompactEachRow},
        {OutFormat::OUT_JSONCompactStringsEachRow, InFormat::IN_JSONCompactStringsEachRow},
        {OutFormat::OUT_JSONCompactStringsEachRowWithNames, InFormat::IN_JSONCompactStringsEachRowWithNames},
        {OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes, InFormat::IN_JSONCompactStringsEachRowWithNamesAndTypes},
+       {OutFormat::OUT_JSONCompactStringsEachRowWithProgress, InFormat::IN_JSONCompactStringsEachRow},
        {OutFormat::OUT_JSONEachRow, InFormat::IN_JSONEachRow},
        {OutFormat::OUT_JSONLines, InFormat::IN_JSONLines},
        {OutFormat::OUT_JSONObjectEachRow, InFormat::IN_JSONObjectEachRow},
@@ -74,6 +77,7 @@ const std::unordered_map<OutFormat, InFormat> outIn
        {OutFormat::OUT_ORC, InFormat::IN_ORC},
        {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
        {OutFormat::OUT_Protobuf, InFormat::IN_Protobuf},
+       {OutFormat::OUT_ProtobufList, InFormat::IN_ProtobufList},
        {OutFormat::OUT_ProtobufSingle, InFormat::IN_ProtobufSingle},
        {OutFormat::OUT_RawBLOB, InFormat::IN_RawBLOB},
        {OutFormat::OUT_RowBinary, InFormat::IN_RowBinary},
