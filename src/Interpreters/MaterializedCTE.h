@@ -58,6 +58,16 @@ struct MaterializedCTE
     std::unique_ptr<QueryPlan> plan = {};
     /// If true, query plan is built for the CTE (i.e. the table is being populated, but is not ready for reads yet).
     std::atomic_bool is_materialization_planned{false};
+    /// If true, the CTE's pre-built plan has already been passed through
+    /// `QueryPlan::optimize`. Multiple `DelayedMaterializingCTEsStep`
+    /// instances can reference the same `MaterializedCTE` (e.g. UNION
+    /// branches plus the UNION-level step planted by
+    /// `addBuildSubqueriesForMaterializedCTEsIfNeeded`); this flag lets
+    /// `DelayedMaterializingCTEsStep::optimizePlans` skip redundant
+    /// optimize calls in pass 1 of `resolveMaterializingCTEs`. Logically
+    /// parallel to `is_materialization_planned`, but for the optimize
+    /// stage rather than the claim/move stage.
+    std::atomic_bool is_plan_optimized{false};
     /// If true, the CTE has been materialized (i.e. the table has been populated and is ready for reads).
     std::atomic_bool is_built{false};
 };
