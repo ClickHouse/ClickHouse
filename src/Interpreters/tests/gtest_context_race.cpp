@@ -183,7 +183,6 @@ TEST(Context, TableFunctionResultsCopyRace)
 TEST(Context, SetClustersConfigAfterReloadClusterConfig)
 {
     auto context = Context::createCopy(getContext().context);
-    context->makeGlobalContext();
 
     /// Simulate DNSCacheUpdater firing before ConfigReloader: this populates
     /// shared->clusters via the getConfigRef() fallback, leaving clusters_config null.
@@ -192,8 +191,13 @@ TEST(Context, SetClustersConfigAfterReloadClusterConfig)
     /// Now simulate the first ConfigReloader pass calling setClustersConfig().
     /// Without the fix this throws Poco::NullPointerException because shared->clusters
     /// is non-null but shared->clusters_config is still null.
-    std::string xml = "<clickhouse><remote_servers/></clickhouse>";
-    std::istringstream xml_stream(xml); // NOLINT(misc-const-correctness)
-    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(xml_stream);
+    std::istringstream config_stream{"<clickhouse><remote_servers/></clickhouse>"};
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(config_stream);
     ASSERT_NO_THROW(context->setClustersConfig(config, /*enable_discovery=*/false));
+
+    /// Verify the recovered state is sane: getClusters() must not throw and must
+    /// reflect the config we just applied (empty <remote_servers> → empty map).
+    std::map<String, ClusterPtr> clusters;
+    ASSERT_NO_THROW(clusters = context->getClusters());
+    EXPECT_TRUE(clusters.empty());
 }
