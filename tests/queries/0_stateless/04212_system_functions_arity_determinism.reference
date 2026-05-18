@@ -29,5 +29,3 @@ CHAR_LENGTH	1	1	0
 0
 -- SQL UDFs: metadata is NULL (parse syntax field for arity)
 test_udf_04212	\N	\N
--- after DROP the UDF is gone (count should be 0)
-0

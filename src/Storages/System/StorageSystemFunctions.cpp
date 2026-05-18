@@ -35,14 +35,6 @@ enum class FunctionOrigin : int8_t
 
 namespace
 {
-    /// Per-function metadata that cannot be obtained without resolving / parsing the function.
-    /// `nullopt` means "unknown" and is reported as NULL in the result column.
-    struct ExtraInfo
-    {
-        std::optional<UInt8> is_deterministic;
-        std::optional<UInt8> higher_order;
-    };
-
     template <typename Factory>
     void fillRow(
         MutableColumns & res_columns,
@@ -51,7 +43,7 @@ namespace
         const String & create_query,
         FunctionOrigin function_origin,
         const Factory & factory,
-        const ExtraInfo & extra)
+        ContextPtr context)
     {
         res_columns[0]->insert(name);
         res_columns[1]->insert(is_aggregate);
@@ -111,46 +103,29 @@ namespace
             res_columns[13]->insertDefault();
         }
 
-        if (extra.is_deterministic)
-            res_columns[14]->insert(*extra.is_deterministic);
-        else
-            res_columns[14]->insertDefault();
-
-        if (extra.higher_order)
-            res_columns[15]->insert(*extra.higher_order);
-        else
-            res_columns[15]->insertDefault();
-    }
-
-    /// Resolve an ordinary function and read static metadata from its overload resolver.
-    /// `tryGet` invokes the function's creator, which can throw — e.g. `showCertificate`
-    /// throws `SUPPORT_IS_DISABLED` when SSL is compiled out. Report NULL in that case so
-    /// querying `system.functions` doesn't fail on build-dependent surfaces.
-    ExtraInfo getOrdinaryFunctionExtraInfo(const FunctionFactory & factory, const String & name, ContextPtr context)
-    {
-        ExtraInfo info;
-        try
+        if constexpr (std::is_same_v<Factory, FunctionFactory>)
         {
-            auto resolver = factory.tryGet(name, context);
-            if (!resolver)
-                return info;
-
-            info.is_deterministic = resolver->isDeterministic() ? UInt8{1} : UInt8{0};
-            info.higher_order = resolver->isHigherOrderFunction() ? UInt8{1} : UInt8{0};
+            try
+            {
+                auto resolver = factory.tryGet(name, context);
+                if (resolver)
+                {
+                    res_columns[14]->insert(resolver->isDeterministic() ? UInt8{1} : UInt8{0});
+                    res_columns[15]->insert(resolver->isHigherOrderFunction() ? UInt8{1} : UInt8{0});
+                    return;
+                }
+            }
+            catch (...)
+            {
+                LOG_DEBUG(
+                    getLogger("system.functions"),
+                    "Cannot resolve function {} for introspection: {}",
+                    name,
+                    getCurrentExceptionMessage(/* with_stacktrace */ false));
+            }
         }
-        catch (...)
-        {
-            /// Some functions need a fully-formed query context to construct (e.g. those that
-            /// inspect settings at build time). Reporting NULL is the honest answer; log the
-            /// exception message at debug level so the failure is visible to anyone
-            /// investigating empty cells.
-            LOG_DEBUG(
-                getLogger("system.functions"),
-                "Cannot resolve function {} for introspection: {}",
-                name,
-                getCurrentExceptionMessage(/* with_stacktrace */ false));
-        }
-        return info;
+        res_columns[14]->insertDefault();
+        res_columns[15]->insertDefault();
     }
 
 }
@@ -202,19 +177,12 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & functions_factory = FunctionFactory::instance();
     const auto & function_names = functions_factory.getAllRegisteredNames();
     for (const auto & function_name : function_names)
-    {
-        const ExtraInfo extra = getOrdinaryFunctionExtraInfo(functions_factory, function_name, context);
-        fillRow(res_columns, function_name, 0, "", FunctionOrigin::SYSTEM, functions_factory, extra);
-    }
+        fillRow(res_columns, function_name, 0, "", FunctionOrigin::SYSTEM, functions_factory, context);
 
     const auto & aggregate_functions_factory = AggregateFunctionFactory::instance();
     const auto & aggregate_function_names = aggregate_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : aggregate_function_names)
-    {
-        /// Aggregate functions need argument types and parameters to instantiate, so static
-        /// arity / determinism are not available. Report NULL rather than guess.
-        fillRow(res_columns, function_name, 1, "", FunctionOrigin::SYSTEM, aggregate_functions_factory, ExtraInfo{});
-    }
+        fillRow(res_columns, function_name, 1, "", FunctionOrigin::SYSTEM, aggregate_functions_factory, context);
 
     const auto & user_defined_sql_functions_factory = UserDefinedSQLFunctionFactory::instance();
     const auto & user_defined_sql_functions_names = user_defined_sql_functions_factory.getAllRegisteredNames();
@@ -240,14 +208,14 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         String create_query;
         if (ast)
             create_query = format({context, *ast});
-        fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory, ExtraInfo{});
+        fillRow(res_columns, function_name, 0, create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory, context);
     }
 
     const auto & user_defined_executable_functions_factory = UserDefinedExecutableFunctionFactory::instance();
     const auto & user_defined_executable_functions_names = user_defined_executable_functions_factory.getRegisteredNames(context); /// NOLINT(readability-static-accessed-through-instance)
     for (const auto & function_name : user_defined_executable_functions_names)
     {
-        fillRow(res_columns, function_name, 0, "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory, ExtraInfo{});
+        fillRow(res_columns, function_name, 0, "", FunctionOrigin::EXECUTABLE_USER_DEFINED, user_defined_executable_functions_factory, context);
     }
 
     const auto & wasm_functions_factory = UserDefinedWebAssemblyFunctionFactory::instance();
