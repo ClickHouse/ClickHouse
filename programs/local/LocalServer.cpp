@@ -227,15 +227,22 @@ namespace
     /// other listener types up-front so `SYSTEM START/STOP LISTEN` for unsupported protocols
     /// (e.g. `HTTPS`, `MYSQL`, `QUERIES CUSTOM`) gives a clear `UNSUPPORTED_METHOD` exception
     /// rather than a misleading `NETWORK_ERROR` on start or a silent no-op on stop.
+    ///
+    /// For grouped types (`QUERIES ALL`, `QUERIES DEFAULT`), also reject forms whose `EXCEPT`
+    /// list strips out both `TCP` and `HTTP` — otherwise the operation would silently
+    /// no-op because the only managed protocols are excluded.
     void validateLocalServerListenType(const ServerType & server_type)
     {
         switch (server_type.type)
         {
             case ServerType::Type::TCP:
             case ServerType::Type::HTTP:
+                return;
             case ServerType::Type::QUERIES_ALL:
             case ServerType::Type::QUERIES_DEFAULT:
-                return;
+                if (server_type.shouldStart(ServerType::Type::TCP) || server_type.shouldStart(ServerType::Type::HTTP))
+                    return;
+                [[fallthrough]];
             default:
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                     "SYSTEM START/STOP LISTEN in clickhouse-local supports only TCP and HTTP listeners "
