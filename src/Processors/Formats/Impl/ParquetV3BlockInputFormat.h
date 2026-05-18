@@ -48,6 +48,18 @@ std::vector<FileBucketInfoPtr> splitParquetFileWithCache(
     const FormatSettings & format_settings,
     ParquetMetadataCachePtr metadata_cache);
 
+/// Warm-cache fast path for the single-file split decision. Returns the bucket layout without any
+/// I/O when `(file_path, cache_etag)` is already present in `metadata_cache`, and an empty vector
+/// otherwise (so the caller can fall through to the full `splitParquetFileWithCache` path that
+/// opens the file). The point is to avoid `createReadBuffer` + `Prefetcher::init` overhead on
+/// repeated queries against the same file — those are ~0.3 ms of fixed cost that visibly slows
+/// "short" queries (e.g. `clickbench_parquet_short`).
+std::vector<FileBucketInfoPtr> trySplitParquetFileFromCacheOnly(
+    size_t target_count,
+    const String & file_path,
+    const String & cache_etag,
+    const ParquetMetadataCachePtr & metadata_cache);
+
 class ParquetV3BlockInputFormat : public IInputFormat
 {
 public:

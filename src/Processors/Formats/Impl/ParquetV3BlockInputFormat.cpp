@@ -429,6 +429,21 @@ std::vector<FileBucketInfoPtr> splitParquetFileWithCache(
     return computeBucketsByCount(target_count, num_row_groups);
 }
 
+std::vector<FileBucketInfoPtr> trySplitParquetFileFromCacheOnly(
+    size_t target_count,
+    const String & file_path,
+    const String & cache_etag,
+    const ParquetMetadataCachePtr & metadata_cache)
+{
+    if (!metadata_cache || file_path.empty() || cache_etag.empty())
+        return {};
+    auto key = ParquetMetadataCache::createKey(file_path, cache_etag);
+    auto cached = metadata_cache->get(key);
+    if (!cached)
+        return {};
+    return computeBucketsByCount(target_count, cached->metadata.row_groups.size());
+}
+
 void registerInputFormatParquet(FormatFactory & factory)
 {
     factory.registerFileBucketInfo(

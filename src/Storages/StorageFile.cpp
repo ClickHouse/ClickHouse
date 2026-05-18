@@ -1997,9 +1997,6 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         struct stat file_stat = getFileStat(single_file_path, false, -1, storage->getName());
         if (file_stat.st_size > 0)
         {
-            auto buf = createReadBuffer(
-                single_file_path, file_stat, false, -1, storage->compression_method, ctx);
-            const auto & format_settings = storage->format_settings.value_or(getFormatSettings(ctx));
             std::vector<FileBucketInfoPtr> buckets;
 
 #if USE_PARQUET
@@ -2023,17 +2020,34 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
                     static_cast<Int64>(file_stat.st_ino),
                     file_stat.st_size);
 
-                buckets = splitParquetFileWithCache(
-                    max_num_streams,
-                    single_file_path,
-                    cache_etag,
-                    *buf,
-                    format_settings,
-                    ctx->tryGetParquetMetadataCache());
+                auto metadata_cache = ctx->tryGetParquetMetadataCache();
+
+                /// Warm-cache fast path: avoid opening the file and constructing `FormatSettings`
+                /// when the footer is already cached from a previous query against this file. The
+                /// extra `createReadBuffer` + `Prefetcher::init` is ~0.3 ms — small absolute, but
+                /// noticeable on "short" queries (see `tests/performance/clickbench_parquet_short`).
+                buckets = trySplitParquetFileFromCacheOnly(
+                    max_num_streams, single_file_path, cache_etag, metadata_cache);
+                if (buckets.empty())
+                {
+                    auto buf = createReadBuffer(
+                        single_file_path, file_stat, false, -1, storage->compression_method, ctx);
+                    const auto & format_settings = storage->format_settings.value_or(getFormatSettings(ctx));
+                    buckets = splitParquetFileWithCache(
+                        max_num_streams,
+                        single_file_path,
+                        cache_etag,
+                        *buf,
+                        format_settings,
+                        metadata_cache);
+                }
             }
             else
 #endif
             {
+                auto buf = createReadBuffer(
+                    single_file_path, file_stat, false, -1, storage->compression_method, ctx);
+                const auto & format_settings = storage->format_settings.value_or(getFormatSettings(ctx));
                 auto splitter = FormatFactory::instance().getSplitter(storage->format_name);
                 buckets = splitter->splitToBucketsByCount(max_num_streams, *buf, format_settings);
             }
