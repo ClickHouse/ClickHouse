@@ -52,6 +52,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_dictget_tuple_element", false, true, "Rewrite tupleElement(dictGet(..., tuple_of_attrs, ...), N) into a single-attribute dictGet call."},
             {"parallel_replicas_prefer_local_replica", true, true, "New setting. When disabled, replicas for parallel reading are selected purely by the load balancing algorithm without forcing the local replica into the set."},
             {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
+            {"enable_software_prefetch_in_join", false, true, "Enable use of software prefetch in hash join probe phase."},
             {"shared_merge_tree_sequential_consistency_initial_parts_update_backoff_ms", 50, 50, "New setting to reduce sporadic UNFINISHED errors in queries with sequential consistency for SharedMergeTree."},
             {"shared_merge_tree_sequential_consistency_max_parts_update_backoff_ms", 1000, 1000, "New setting to reduce sporadic UNFINISHED errors in queries with sequential consistency for SharedMergeTree."},
             {"shared_merge_tree_sequential_consistency_parts_update_max_retries", 10, 10, "New setting to reduce sporadic UNFINISHED errors in queries with sequential consistency for SharedMergeTree."},
