@@ -46,6 +46,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"order", "", "", "New setting to add an ORDER BY clause around a query."},
             {"sort", "", "", "New setting to add a simple ORDER BY clause around a query."},
             {"filter", "", "", "New setting to add a WHERE clause around a query."},
+            {"database", "", "", "New setting that specifies the current database for the query. Replaces the special handling of the HTTP `database` URL parameter and `X-ClickHouse-Database` header."},
             {"default_format", "", "", "New setting for the default format when the query has no FORMAT clause."},
             {"format", "", "", "New setting to override the FORMAT of the query for both input and output."},
             {"input_format", "", "", "New setting to override the input format of the query."},

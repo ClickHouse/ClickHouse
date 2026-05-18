@@ -90,6 +90,7 @@ namespace Setting
     extern const SettingsString input_format;
     extern const SettingsString output_format;
     extern const SettingsString default_format;
+    extern const SettingsString database;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsUInt64 limit;
     extern const SettingsUInt64 offset;
@@ -257,13 +258,16 @@ void HTTPHandler::processQuery(
     /// after releasing the session below, this whole call will be no-op (due to named_session being nullptr already inside a session).
     SCOPE_EXIT_SAFE({ releaseOrCloseSession(session_id, close_session); });
 
+    /// === Authentication and user profile are applied first ===
+    /// Authentication has already happened above (line `authenticateUser`); makeQueryContext()
+    /// loads the user's default profile. Auth-related parameters (role) are applied immediately
+    /// after, so that the resulting settings/constraints are in effect before we process any
+    /// general settings.
     auto context = session->makeQueryContext();
 
     auto roles = params.getAll("role");
     if (!roles.empty())
         context->setCurrentRoles(roles);
-
-    std::string database = request.get("X-ClickHouse-Database", params.get("database", ""));
 
     /// Parse the URL path according to http_allow_database_as_path/table_as_file/filters_as_path settings.
     /// We use the server-default settings (same as the request-routing filter), which is consistent
@@ -294,21 +298,6 @@ void HTTPHandler::processQuery(
             default_settings_for_path[Setting::http_allow_filters_as_path]);
     }
 
-    /// Apply database from path if set (and not already overridden by `database` URL param/header).
-    if (!path_info.database.empty() && database.empty())
-        database = path_info.database;
-    else if (!path_info.database.empty() && !database.empty() && database != path_info.database)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Conflicting database specification: '{}' in URL path vs '{}' in URL parameter.",
-            path_info.database, database);
-
-    if (!database.empty())
-        context->setCurrentDatabase(database);
-
-    std::string default_format = request.get("X-ClickHouse-Format", params.get("default_format", ""));
-    if (!default_format.empty())
-        context->setDefaultFormat(default_format);
-
     /// Anything else beside HTTP POST should be readonly queries.
     setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
 
@@ -329,15 +318,15 @@ void HTTPHandler::processQuery(
         if (name.empty())
             return true;
 
-        /// Some parameters (database, everything used in the code above) do not
-        /// belong to the Settings class.
-        /// Note: `default_format` is also a setting; we still accept it here as a reserved name to preserve
-        /// the special URL handling above, but the setting itself will also work.
-        /// `filter` is a setting but multiple URL params named `filter` should be combined; we handle this
-        /// separately below.
+        /// HTTP-specific parameters that are consumed by the handler itself and never propagated as settings.
+        /// `database` and `default_format` are NOT here — they are now proper settings and flow through the
+        /// settings pipeline (with `changeable_in_readonly` constraints in the default profile so they remain
+        /// settable on read-only HTTP methods).
+        /// `filter` is also a setting, but multiple URL params named `filter` must be combined; this is
+        /// handled separately below.
         static const NameSet reserved_param_names{"compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace", "role",
             "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check", "client_protocol_version", "close_session",
-            "database", "default_format", "filter"};
+            "filter"};
 
         if (reserved_param_names.contains(name))
             return true;
@@ -392,6 +381,14 @@ void HTTPHandler::processQuery(
             deferred_unrecognized_params.emplace_back(key, value);
     }
 
+    /// `X-ClickHouse-Database` and `X-ClickHouse-Format` headers are aliases for the
+    /// `database` and `default_format` settings. They override any matching URL parameter
+    /// (preserving the historical precedence).
+    if (auto header_value = request.get("X-ClickHouse-Database", ""); !header_value.empty())
+        settings_changes.setSetting("database", header_value);
+    if (auto header_value = request.get("X-ClickHouse-Format", ""); !header_value.empty())
+        settings_changes.setSetting("default_format", header_value);
+
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
 
@@ -400,6 +397,24 @@ void HTTPHandler::processQuery(
     query_scope = QueryScope::create(context);
 
     const auto & settings = context->getSettingsRef();
+
+    /// Resolve the current database from the path and the `database` setting, in that order.
+    /// If both are specified and differ, that's an error.
+    {
+        const String & database_setting = settings[Setting::database];
+        String resolved_database = database_setting;
+        if (!path_info.database.empty())
+        {
+            if (resolved_database.empty())
+                resolved_database = path_info.database;
+            else if (resolved_database != path_info.database)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Conflicting database specification: '{}' in URL path vs '{}' in `database` setting.",
+                    path_info.database, resolved_database);
+        }
+        if (!resolved_database.empty())
+            context->setCurrentDatabase(resolved_database);
+    }
 
     /// Now we know the resolved settings. Decide what to do with unrecognized URL params:
     /// - if http_allow_filters_as_unrecognized_url_parameters is true: treat them as filter expressions

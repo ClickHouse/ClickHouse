@@ -6270,6 +6270,9 @@ Adds a simple `ORDER BY` clause to the query as a wrapping subquery. Accepts a c
     DECLARE(String, filter, "", R"(
 Adds a `WHERE` clause to the query as a wrapping subquery. Multiple filters are combined with AND. The HTTP interface allows multiple `filter` URL parameters which are combined with AND in order, and with the value of this setting.
 )", 0) \
+    DECLARE(String, database, "", R"(
+Specifies the current database for the query. Equivalent to issuing `USE <database>`. Used as the destination for the HTTP interface `database` URL parameter and `X-ClickHouse-Database` header.
+)", 0) \
     DECLARE(String, default_format, "", R"(
 Specifies the format of the query result when the query has no `FORMAT` clause and no other format override is applied.
 )", 0) \
