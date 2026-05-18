@@ -474,7 +474,7 @@ void SegmentationTokenizer::buildStateIfNeeded(const char * data, size_t length)
     major_part_index.clear();
     minor_part_starts.clear();
     minor_part_lengths.clear();
-    
+
     current_part_i = 0;
     current_part_j = 1;
 
