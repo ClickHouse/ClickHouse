@@ -18,9 +18,10 @@ class EC2Instance:
         praktika_resource_tag: str = (
             ""  # Praktika resource tag (e.g., "mac") - tagged as "praktika"
         )
-        runner_type: str = (
-            ""  # GitHub runner type (e.g., "arm_macos_small") - tagged as "github:runner-type"
-        )
+        # GitHub runner labels (e.g., ["arm_macos_small", "macos"]) - tagged as "github:runner-type"
+        # (comma-separated). Tag key is kept for compatibility with the legacy runner-init.py,
+        # which inlines this value into the runner's `--labels` list.
+        runner_labels: List[str] = field(default_factory=list)
 
         # AMI + instance type
         image_id: str = ""
@@ -65,8 +66,8 @@ class EC2Instance:
             # Add resource tag if specified
             if self.praktika_resource_tag:
                 merged["praktika_resource_tag"] = self.praktika_resource_tag
-            if self.runner_type:
-                merged["github:runner-type"] = self.runner_type
+            if self.runner_labels:
+                merged["github:runner-type"] = ",".join(self.runner_labels)
             # Add user-defined tags
             merged.update(self.tags or {})
             return merged
