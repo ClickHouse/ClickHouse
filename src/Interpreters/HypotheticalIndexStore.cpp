@@ -1,4 +1,6 @@
 #include <Interpreters/HypotheticalIndexStore.h>
+
+#include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -36,10 +38,17 @@ bool HypotheticalIndexStore::add(const StorageID & table_id, const IndexDescript
 
     std::erase_if(entries, [&](const Entry & e)
     {
-        return e.index.name == index.name
-            && e.table_id.getDatabaseName() == table_id.getDatabaseName()
-            && e.table_id.getTableName() == table_id.getTableName()
-            && !sameTable(e.table_id, table_id);
+        if (e.index.name != index.name
+            || e.table_id.getDatabaseName() != table_id.getDatabaseName()
+            || e.table_id.getTableName() != table_id.getTableName()
+            || sameTable(e.table_id, table_id))
+            return false;
+
+        if (e.table_id.uuid != UUIDHelpers::Nil
+            && DatabaseCatalog::instance().tryGetByUUID(e.table_id.uuid).second)
+            return false;
+
+        return true;
     });
 
     entries.push_back({table_id, index});
@@ -60,9 +69,16 @@ bool HypotheticalIndexStore::remove(const StorageID & table_id, const String & i
     {
         pos = std::find_if(entries.begin(), entries.end(), [&](const Entry & e)
         {
-            return e.index.name == index_name
-                && e.table_id.getDatabaseName() == table_id.getDatabaseName()
-                && e.table_id.getTableName() == table_id.getTableName();
+            if (e.index.name != index_name
+                || e.table_id.getDatabaseName() != table_id.getDatabaseName()
+                || e.table_id.getTableName() != table_id.getTableName())
+                return false;
+
+            if (e.table_id.uuid != UUIDHelpers::Nil
+                && DatabaseCatalog::instance().tryGetByUUID(e.table_id.uuid).second)
+                return false;
+
+            return true;
         });
     }
 
