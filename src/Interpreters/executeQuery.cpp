@@ -216,6 +216,7 @@ namespace ErrorCodes
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
+    extern const int AST_FUZZER_ORACLE_MISMATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
@@ -2216,7 +2217,7 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
                 }
                 catch (const Exception & e)
                 {
-                    if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
+                    if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
                     {
                         LOG_FATAL(logger,
                             "AST Fuzzer oracle mismatch detected!\n"
@@ -2239,7 +2240,7 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         catch (const Exception & e)
         {
             reset_transactions();
-            if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
+            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
                 throw; /// Oracle mismatch — abort the fuzzer to make it visible in CI
             LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
             auto [fuzzer, lock] = getGlobalASTFuzzer();
@@ -2336,7 +2337,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
                     }
                     catch (const Exception & e)
                     {
-                        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
+                        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
                             throw; /// Oracle mismatch — propagate to abort the server
                         tryLogCurrentException("ASTFuzzer");
                     }

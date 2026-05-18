@@ -52,6 +52,7 @@ extern const int SYNTAX_ERROR;
 extern const int MEMORY_LIMIT_EXCEEDED;
 extern const int TOO_DEEP_RECURSION;
 extern const int LOGICAL_ERROR;
+extern const int AST_FUZZER_ORACLE_MISMATCH;
 extern const int BUZZHOUSE;
 using ErrorCode = int;
 extern std::string_view getName(ErrorCode error_code);
@@ -129,14 +130,18 @@ bool Client::processASTFuzzerStep(const String & query_to_execute, const ASTPtr 
         return true;
     }
     /// The server-side AST fuzzer oracle reports a wrong-result bug by throwing
-    /// LOGICAL_ERROR with "oracle mismatch" in the message. Treat this as fatal:
-    /// print the reproducer to stderr (so it lands in fuzzer.log for CI) and
-    /// terminate the client immediately, so the CI run fails fast with logs
-    /// attached instead of running for the full FUZZ_TIME_LIMIT and being
-    /// classified as a clean timeout.
+    /// `AST_FUZZER_ORACLE_MISMATCH`. Treat this as fatal: print the reproducer
+    /// to stderr (so it lands in fuzzer.log for CI) and terminate the client
+    /// immediately, so the CI run fails fast with logs attached instead of
+    /// running for the full FUZZ_TIME_LIMIT and being classified as a clean
+    /// timeout.
+    ///
+    /// We deliberately do NOT use `LOGICAL_ERROR` for oracle mismatches: in
+    /// sanitizer / debug builds `LOGICAL_ERROR` triggers `abortOnFailedAssertion`
+    /// from inside the `Exception` constructor, which crashes the server before
+    /// the message can even propagate back here.
     if (have_error
-        && exception->code() == ErrorCodes::LOGICAL_ERROR
-        && exception->message().find("oracle mismatch") != std::string::npos)
+        && exception->code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
     {
         fmt::print(
             stderr,

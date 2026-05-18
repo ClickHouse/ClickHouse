@@ -39,6 +39,7 @@ extern const SettingsBool ast_fuzzer_oracle;
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int AST_FUZZER_ORACLE_MISMATCH;
 }
 
 
@@ -259,6 +260,48 @@ bool referencesNonDeterministicDatabase(const ASTSelectQuery & select)
     return false;
 }
 
+/// Safer replacement for `GetAggregatesVisitor` when scanning fuzzer-mutated
+/// ASTs. The default visitor calls `node.getColumnName()` for deduplication,
+/// which recursively invokes `appendColumnName` on every child. Some AST node
+/// types (e.g. ones produced by certain fuzz mutations) do not implement
+/// `appendColumnNameImpl` and the default base `IAST::appendColumnName`
+/// throws `LOGICAL_ERROR`. In sanitizer / debug builds, a `LOGICAL_ERROR`
+/// triggers `abortOnFailedAssertion` from inside the `Exception` constructor
+/// — before any catch block runs — and the server is killed.
+///
+/// We only need the list of aggregate / window function nodes, not their
+/// canonical column names, so do a direct tree walk that mirrors
+/// `GetAggregatesMatcher::needChildVisit` but never calls `getColumnName`.
+struct SafeAggregateScan
+{
+    ASTs aggregates;
+    ASTs window_functions;
+};
+
+void scanAggregatesSafe(const ASTPtr & ast, SafeAggregateScan & out)
+{
+    if (!ast)
+        return;
+    if (ast->as<ASTSubquery>() || ast->as<ASTSelectQuery>())
+        return; /// Don't descend into nested subqueries — they're not part of *this* SELECT's aggregates.
+
+    if (const auto * func = ast->as<ASTFunction>())
+    {
+        /// Match `GetAggregatesMatcher::isAggregateFunction` semantics: a window
+        /// function does not count as an aggregate even if its underlying function
+        /// has an aggregate name.
+        if (!func->isWindowFunction() && AggregateUtils::isAggregateFunction(*func))
+        {
+            out.aggregates.push_back(ast);
+            return; /// Don't recurse into the aggregate's own arguments.
+        }
+        if (func->isWindowFunction())
+            out.window_functions.push_back(ast);
+    }
+    for (const auto & child : ast->children)
+        scanAggregatesSafe(child, out);
+}
+
 }
 
 
@@ -310,8 +353,8 @@ bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select)
     /// Window functions are never safe for oracle testing.
     if (select.select())
     {
-        GetAggregatesVisitor::Data data;
-        GetAggregatesVisitor(data).visit(select.select());
+        SafeAggregateScan data;
+        scanAggregatesSafe(select.select(), data);
         if (!data.window_functions.empty())
             return false;
     }
@@ -324,8 +367,8 @@ bool QueryOracleChecker::hasAggregates(const ASTSelectQuery & select)
 {
     if (!select.select())
         return false;
-    GetAggregatesVisitor::Data data;
-    GetAggregatesVisitor(data).visit(select.select());
+    SafeAggregateScan data;
+    scanAggregatesSafe(select.select(), data);
     return !data.aggregates.empty();
 }
 
@@ -575,7 +618,7 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
             }
         }
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "{}", message);
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH, "{}", message);
     }
 
     LOG_TRACE(logger, "TLP WHERE oracle passed ({} rows)", ref_rows.size());
@@ -639,7 +682,7 @@ bool QueryOracleChecker::checkNoREC(const ASTSelectQuery & select, const Context
     {
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "NoREC oracle mismatch!\n"
             "Optimized query (count={}): {}\n"
             "Unoptimized query (count={}): {}",
@@ -680,8 +723,8 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
     /// Window functions are never safe for oracle testing.
     if (select.select())
     {
-        GetAggregatesVisitor::Data data;
-        GetAggregatesVisitor(data).visit(select.select());
+        SafeAggregateScan data;
+        scanAggregatesSafe(select.select(), data);
         if (!data.window_functions.empty())
             return false;
     }
@@ -739,7 +782,7 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
     if (ref_rows != part_rows)
     {
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "TLP DISTINCT oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Partitioned query ({} rows): {}",
@@ -820,7 +863,7 @@ bool QueryOracleChecker::checkTLPGroupBy(const ASTSelectQuery & select, const Co
     if (ref_rows != part_rows)
     {
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "TLP GROUP BY oracle mismatch!\n"
             "Reference query ({} unique rows): {}\n"
             "Partitioned query ({} unique rows): {}",
@@ -900,7 +943,7 @@ bool QueryOracleChecker::checkTLPHaving(const ASTSelectQuery & select, const Con
     if (ref_rows != part_rows)
     {
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "TLP HAVING oracle mismatch!\n"
             "Reference query ({} unique rows): {}\n"
             "Partitioned query ({} unique rows): {}",
@@ -974,7 +1017,7 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
         if (default_rows != variant_rows)
         {
             ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
+            throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
                 "DQP oracle mismatch! Setting: {}\n"
                 "Default ({} rows): {}\n"
                 "With {}=off ({} rows): {}",
@@ -985,7 +1028,7 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
+        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
             throw;
         /// The variant query might fail with a different error — that's OK.
         LOG_TRACE(logger, "DQP oracle: variant query failed (expected): {}", e.message());
@@ -1018,8 +1061,8 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
         return false;
 
     /// Collect aggregate functions from the SELECT list.
-    GetAggregatesVisitor::Data agg_data;
-    GetAggregatesVisitor(agg_data).visit(select.select());
+    SafeAggregateScan agg_data;
+    scanAggregatesSafe(select.select(), agg_data);
     if (agg_data.aggregates.empty())
         return false;
 
@@ -1214,7 +1257,7 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
     {
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "TLP Aggregate oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Metamorphic query ({} rows): {}",
@@ -1317,7 +1360,7 @@ bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const
         if (ref_rows != rows)
         {
             ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
+            throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
                 "Identity WHERE ({}) oracle mismatch!\n"
                 "Reference query ({} rows): {}\n"
                 "Variant query ({} rows): {}",
@@ -1383,7 +1426,7 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
     if (ref_rows != wrapped_rows)
     {
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "Subquery wrap oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Wrapped query ({} rows): {}",
@@ -1515,7 +1558,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
+        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
             throw;
         LOG_TRACE(logger, "TLP WHERE oracle execution error (skipping): {}", e.message());
     }
@@ -1532,7 +1575,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
+        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
             throw;
         LOG_TRACE(logger, "NoREC oracle execution error (skipping): {}", e.message());
     }
@@ -1549,7 +1592,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
+        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
             throw;
         LOG_TRACE(logger, "TLP Aggregate oracle execution error (skipping): {}", e.message());
     }
@@ -1566,7 +1609,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
+        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
             throw;
         LOG_TRACE(logger, "TLP DISTINCT oracle execution error (skipping): {}", e.message());
     }
@@ -1583,7 +1626,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
+        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
             throw;
         LOG_TRACE(logger, "TLP GROUP BY oracle execution error (skipping): {}", e.message());
     }
@@ -1600,7 +1643,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
+        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
             throw;
         LOG_TRACE(logger, "TLP HAVING oracle execution error (skipping): {}", e.message());
     }
@@ -1617,7 +1660,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
+        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
             throw;
         LOG_TRACE(logger, "DQP oracle execution error (skipping): {}", e.message());
     }
@@ -1634,7 +1677,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
+        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
             throw;
         LOG_TRACE(logger, "Identity WHERE oracle execution error (skipping): {}", e.message());
     }
@@ -1651,7 +1694,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
+        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
             throw;
         LOG_TRACE(logger, "Subquery wrap oracle execution error (skipping): {}", e.message());
     }
