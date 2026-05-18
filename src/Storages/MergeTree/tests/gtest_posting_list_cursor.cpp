@@ -3694,3 +3694,82 @@ TEST(PostingListCursorTest, LazyIntersectRowOffsetAboveUInt32MaxThrows)
             Exception);
     }
 }
+
+// Section: row range ending at UInt32::max — the matching last row must not be dropped.
+// `clampRowEnd` used to saturate the exclusive end to UInt32::max, which collided with a
+// real doc_id at the boundary and made `lower_bound`-based range search produce an empty
+// interval. `findRowRangeEnd` returns `end` directly when the exclusive bound exceeds
+// UInt32::max, preserving the match.
+//
+// Posting lists below are sparse on purpose (cardinality < range_span) so they bypass
+// the dense-memset fast path in `linearOr`/`linearAnd` and actually exercise the
+// `lower_bound + findRowRangeEnd` path that contained the off-by-one.
+
+TEST(PostingListCursorTest, LinearOrIncludesRowAtUInt32Max)
+{
+    const uint32_t m = std::numeric_limits<uint32_t>::max();
+    auto info = makeEmbeddedInfo({m - 4, m - 2, m});
+    auto cursor = makeEmbeddedCursor(info);
+
+    std::vector<UInt8> buf(5, 0);
+    cursor->linearOr(buf.data(), static_cast<size_t>(m) - 4, 5);
+
+    EXPECT_EQ(buf[0], 1u);  // m - 4
+    EXPECT_EQ(buf[1], 0u);
+    EXPECT_EQ(buf[2], 1u);  // m - 2
+    EXPECT_EQ(buf[3], 0u);
+    EXPECT_EQ(buf[4], 1u);  // m: previously dropped by the off-by-one
+}
+
+TEST(PostingListCursorTest, LinearAndIncrementsRowAtUInt32Max)
+{
+    const uint32_t m = std::numeric_limits<uint32_t>::max();
+    auto info = makeEmbeddedInfo({m - 4, m - 2, m});
+    auto cursor = makeEmbeddedCursor(info);
+
+    /// linearAnd increments; start from 1 to simulate a prior linearOr pass.
+    std::vector<UInt8> buf(5, 1);
+    cursor->linearAnd(buf.data(), static_cast<size_t>(m) - 4, 5);
+
+    EXPECT_EQ(buf[0], 2u);  // m - 4
+    EXPECT_EQ(buf[1], 1u);
+    EXPECT_EQ(buf[2], 2u);  // m - 2
+    EXPECT_EQ(buf[3], 1u);
+    EXPECT_EQ(buf[4], 2u);  // m
+}
+
+TEST(PostingListCursorTest, LazyIntersectIncludesRowAtUInt32Max)
+{
+    const uint32_t m = std::numeric_limits<uint32_t>::max();
+    /// "a" is sparse (cardinality 2 in span 4) so `linearOr` / `linearAnd` bypass the
+    /// dense-memset path and exercise `findRowRangeEnd`.
+    auto info_a = makeEmbeddedInfo({m - 3, m});
+    auto info_b = makeEmbeddedInfo({m - 2, m});
+    PostingListCursorMap postings;
+    postings.emplace("a", makeEmbeddedCursor(info_a));
+    postings.emplace("b", makeEmbeddedCursor(info_b));
+
+    // Brute-force path (forced via density_threshold = 0). This is the path that goes
+    // through `linearOr` + `linearAnd` and was affected by the off-by-one.
+    {
+        auto col = ColumnUInt8::create(4, UInt8(0));
+        lazyIntersectPostingLists(*col, postings, {"a", "b"}, 0, static_cast<size_t>(m) - 3, 4, /*density_threshold=*/0.0f);
+        const auto & data = col->getData();
+        EXPECT_EQ(data[0], 0u);  // m - 3: only in a
+        EXPECT_EQ(data[1], 0u);  // m - 2: only in b
+        EXPECT_EQ(data[2], 0u);  // m - 1
+        EXPECT_EQ(data[3], 1u);  // m: in both
+    }
+
+    // Leapfrog path (density_threshold = 1.0). Uses direct size_t arithmetic so the bug
+    // didn't manifest here; included for completeness as a regression guard.
+    {
+        auto col = ColumnUInt8::create(4, UInt8(0));
+        lazyIntersectPostingLists(*col, postings, {"a", "b"}, 0, static_cast<size_t>(m) - 3, 4, /*density_threshold=*/1.0f);
+        const auto & data = col->getData();
+        EXPECT_EQ(data[0], 0u);
+        EXPECT_EQ(data[1], 0u);
+        EXPECT_EQ(data[2], 0u);
+        EXPECT_EQ(data[3], 1u);
+    }
+}

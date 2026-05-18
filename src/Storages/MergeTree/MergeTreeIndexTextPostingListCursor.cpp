@@ -371,13 +371,14 @@ void PostingListCursor::next()
 namespace
 {
 
-/// Clamp (row_offset + num_rows) to uint32_t max to avoid narrowing overflow.
-inline uint32_t clampRowEnd(size_t row_offset, size_t num_rows)
+/// Iterator to the first row_id >= row_offset + num_rows. Returns `end` directly when the
+/// exclusive bound exceeds UInt32::max — saturating would drop a match at the boundary.
+inline const uint32_t * findRowRangeEnd(const uint32_t * begin, const uint32_t * end, size_t row_offset, size_t num_rows)
 {
-    size_t sum = row_offset + num_rows;
-    return sum > std::numeric_limits<uint32_t>::max()
-        ? std::numeric_limits<uint32_t>::max()
-        : static_cast<uint32_t>(sum);
+    size_t exclusive_end = row_offset + num_rows;
+    if (exclusive_end > std::numeric_limits<uint32_t>::max())
+        return end;
+    return std::lower_bound(begin, end, static_cast<uint32_t>(exclusive_end));
 }
 
 /// Posting-list doc IDs are 32-bit, so `row_offset > UInt32::max` cannot legitimately
@@ -483,7 +484,7 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
 
         /// Find range within decoded_values.
         const auto * begin_it = std::lower_bound(decoded_values_ptr, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
-        const auto * end_it = std::lower_bound(begin_it, decoded_values_ptr + decoded_count, clampRowEnd(row_offset, num_rows));
+        const auto * end_it = findRowRangeEnd(begin_it, decoded_values_ptr + decoded_count, row_offset, num_rows);
         size_t begin_idx = static_cast<size_t>(begin_it - decoded_values_ptr);
         size_t end_idx = static_cast<size_t>(end_it - decoded_values_ptr);
         padColumn<PadOp::Or>(data, decoded_values_ptr, row_offset, begin_idx, end_idx);
@@ -581,7 +582,7 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
             decodeBlock(block_idx);
 
             const auto * begin_it = std::lower_bound(decoded_values_ptr, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
-            const auto * end_it = std::lower_bound(begin_it, decoded_values_ptr + decoded_count, clampRowEnd(row_offset, num_rows));
+            const auto * end_it = findRowRangeEnd(begin_it, decoded_values_ptr + decoded_count, row_offset, num_rows);
             size_t begin_idx = static_cast<size_t>(begin_it - decoded_values_ptr);
             size_t end_idx = static_cast<size_t>(end_it - decoded_values_ptr);
             padColumn<PadOp::Or>(data, decoded_values_ptr, row_offset, begin_idx, end_idx);
@@ -621,7 +622,7 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
         }
 
         const auto * begin_it = std::lower_bound(decoded_values_ptr, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
-        const auto * end_it = std::lower_bound(begin_it, decoded_values_ptr + decoded_count, clampRowEnd(row_offset, num_rows));
+        const auto * end_it = findRowRangeEnd(begin_it, decoded_values_ptr + decoded_count, row_offset, num_rows);
         size_t begin_idx = static_cast<size_t>(begin_it - decoded_values_ptr);
         size_t end_idx = static_cast<size_t>(end_it - decoded_values_ptr);
         padColumn<PadOp::And>(data, decoded_values_ptr, row_offset, begin_idx, end_idx);
@@ -718,7 +719,7 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
             decodeBlock(b);
 
             const auto * begin_it = std::lower_bound(decoded_values_ptr, decoded_values_ptr + decoded_count, static_cast<uint32_t>(row_offset));
-            const auto * end_it = std::lower_bound(begin_it, decoded_values_ptr + decoded_count, clampRowEnd(row_offset, num_rows));
+            const auto * end_it = findRowRangeEnd(begin_it, decoded_values_ptr + decoded_count, row_offset, num_rows);
             size_t begin_idx = static_cast<size_t>(begin_it - decoded_values_ptr);
             size_t end_idx = static_cast<size_t>(end_it - decoded_values_ptr);
             padColumn<PadOp::And>(data, decoded_values_ptr, row_offset, begin_idx, end_idx);
