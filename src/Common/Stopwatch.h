@@ -6,6 +6,7 @@
 
 #include <cassert>
 #include <atomic>
+#include <limits>
 #include <memory>
 #include <system_error>
 #include <cerrno>
@@ -111,7 +112,7 @@ public:
       */
     bool compareAndRestart(double seconds)
     {
-        UInt64 threshold = static_cast<UInt64>(seconds * 1000000000.0);
+        UInt64 threshold = secondsToNanoseconds(seconds);
         UInt64 current_start_ns = start_ns;
         UInt64 current_ns = nanoseconds(current_start_ns);
 
@@ -155,7 +156,7 @@ public:
       */
     Lock compareAndRestartDeferred(double seconds)
     {
-        UInt64 threshold = UInt64(seconds * 1000000000.0);
+        UInt64 threshold = secondsToNanoseconds(seconds);
         UInt64 current_start_ns = start_ns;
         UInt64 current_ns = nanoseconds(current_start_ns);
 
@@ -179,4 +180,21 @@ private:
 
     /// Most significant bit is a lock. When it is set, compareAndRestartDeferred method will return false.
     UInt64 nanoseconds(UInt64 prev_time) const { return clock_gettime_ns_adjusted(prev_time, clock_type) & 0x7FFFFFFFFFFFFFFFULL; }
+
+    /// Convert seconds to nanoseconds with saturation. Avoids UB when `seconds` is so large
+    /// that `seconds * 1e9` falls outside the representable range of `UInt64` — which can
+    /// happen when a `UInt64` interval setting tuned to an extreme value is fed in via a
+    /// `static_cast<double>` at the call site. Saturating at half of `UInt64::max` also
+    /// keeps `current_start_ns + threshold` from wrapping inside the compare-and-restart
+    /// loop, so an "essentially infinite" threshold behaves as "never restart".
+    static UInt64 secondsToNanoseconds(double seconds)
+    {
+        if (seconds <= 0.0)
+            return 0;
+        constexpr UInt64 max_ns = std::numeric_limits<UInt64>::max() / 2;
+        const double ns = seconds * 1000000000.0;
+        if (ns >= static_cast<double>(max_ns))
+            return max_ns;
+        return static_cast<UInt64>(ns);
+    }
 };
