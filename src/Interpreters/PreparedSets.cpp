@@ -164,11 +164,11 @@ Columns FutureSetFromTuple::getKeyColumns() const
 
 FutureSet::Hash FutureSetFromTuple::getContentHash() const
 {
-    callOnce(content_hash_once, [this] { computeContentHash(); });
+    callOnce(content_hash_once, [this] { content_hash = computeContentHash(); });
     return content_hash;
 }
 
-void FutureSetFromTuple::computeContentHash() const
+FutureSet::Hash FutureSetFromTuple::computeContentHash() const
 {
     /// Hash the normalized elements (deduplicated, NULL-filtered, sorted by value) so that
     /// permutations and duplicate inputs produce the same hash. Used by the aggregate
@@ -200,7 +200,7 @@ void FutureSetFromTuple::computeContentHash() const
         else
             normalized[i]->updateHashFast(siphasher);
     }
-    content_hash = getSipHash128AsPair(siphasher);
+    return getSipHash128AsPair(siphasher);
 }
 
 SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)
