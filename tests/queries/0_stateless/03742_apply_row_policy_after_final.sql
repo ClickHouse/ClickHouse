@@ -165,6 +165,7 @@ DROP ROW POLICY pol_part ON tab_part;
 DROP TABLE tab_part;
 
 SELECT '';
+
 SELECT '= WHERE + FINAL must not prune partitions with non-sorting-key partition columns =';
 
 DROP TABLE IF EXISTS tab_where;
@@ -197,6 +198,29 @@ SELECT * FROM tab_safe FINAL WHERE x != 1 ORDER BY x;
 DROP TABLE tab_safe;
 
 SELECT '';
+
+SELECT '= row policy on toDate(time) with ORDER BY toDate(time) — prewhere should NOT be deferred =';
+
+DROP TABLE IF EXISTS tab_todate_policy;
+DROP ROW POLICY IF EXISTS pol_todate ON tab_todate_policy;
+
+CREATE TABLE tab_todate_policy (time DateTime, y String, version UInt32)
+ENGINE = ReplacingMergeTree(version) ORDER BY toDate(time);
+
+INSERT INTO tab_todate_policy VALUES ('2024-01-01 10:00:00', 'aaa', 1), ('2024-01-02 12:00:00', 'bbb', 1);
+INSERT INTO tab_todate_policy VALUES ('2024-01-01 11:00:00', 'ccc', 2), ('2024-01-02 13:00:00', 'ddd', 2);
+
+CREATE ROW POLICY pol_todate ON tab_todate_policy USING toDate(time) = '2024-01-01' TO ALL;
+
+SET apply_row_policy_after_final = 1;
+-- rp is over sorting key toDate(time), so neither row policy nor prewhere should be deferred
+SELECT '--- toDate(time) row policy: neither row policy nor prewhere deferred';
+SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab_todate_policy FINAL PREWHERE y != 'ddd' ORDER BY time) WHERE explain LIKE '%Deferred%' SETTINGS enable_analyzer=1;
+
+DROP ROW POLICY pol_todate ON tab_todate_policy;
+SET apply_row_policy_after_final = 0;
+DROP TABLE tab_todate_policy;
+
 SELECT '= compound row policy: sorting-key atom should be used for index analysis =';
 
 DROP TABLE IF EXISTS tab_compound;
@@ -299,3 +323,32 @@ SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab_nested_and_pw FINAL PRE
 
 SET apply_prewhere_after_final = 0;
 DROP TABLE tab_nested_and_pw;
+
+SELECT '';
+SELECT '= row policy on non-SK column + PREWHERE on SK column: both must be deferred =';
+
+DROP TABLE IF EXISTS tab_sk_prewhere;
+DROP ROW POLICY IF EXISTS pol_sk_pw ON tab_sk_prewhere;
+
+CREATE TABLE tab_sk_prewhere (x UInt32, y String, deleted Int8, version UInt32)
+ENGINE = ReplacingMergeTree(version) ORDER BY x;
+
+INSERT INTO tab_sk_prewhere VALUES (1, 'aaa', 0, 1), (2, 'bbb', 0, 1), (3, 'ccc', 1, 1);
+INSERT INTO tab_sk_prewhere VALUES (1, 'ddd', 1, 2), (2, 'eee', 0, 2);
+
+CREATE ROW POLICY pol_sk_pw ON tab_sk_prewhere USING deleted = 0 TO ALL;
+
+SET apply_row_policy_after_final = 1;
+
+SELECT '--- data correctness: PREWHERE x = 2 with row policy deleted = 0';
+-- After FINAL: (1,'ddd',1,2), (2,'eee',0,2), (3,'ccc',1,1)
+-- Row policy deleted=0: (2,'eee',0,2)
+-- PREWHERE x=2:        (2,'eee',0,2)
+SELECT * FROM tab_sk_prewhere FINAL PREWHERE x = 2 ORDER BY x;
+
+SELECT '--- EXPLAIN: both row policy and PREWHERE deferred';
+SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab_sk_prewhere FINAL PREWHERE x = 2 ORDER BY x) WHERE explain LIKE '%Deferred%' SETTINGS enable_analyzer=1;
+
+DROP ROW POLICY pol_sk_pw ON tab_sk_prewhere;
+SET apply_row_policy_after_final = 0;
+DROP TABLE tab_sk_prewhere;
