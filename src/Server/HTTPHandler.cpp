@@ -183,11 +183,12 @@ HTTPHandlerConnectionConfig::HTTPHandlerConnectionConfig(const Poco::Util::Abstr
 }
 
 
-HTTPHandler::HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_)
+HTTPHandler::HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_, const std::string & url_prefix_)
     : log(getLogger(name))
     , server(server_)
     , default_settings(server.context()->getSettingsRef())
     , http_response_headers_override(http_response_headers_override_)
+    , url_prefix(url_prefix_)
     , connection_config(connection_config_)
 {
     server_display_name = server.config().getString("display_name", getFQDNOrHostName());
@@ -288,6 +289,15 @@ void HTTPHandler::processQuery(
         catch (const Poco::Exception &) // NOLINT(bugprone-empty-catch)
         {
             /// Fall back to the already-stripped raw path.
+        }
+
+        /// If this handler is registered under a URL prefix, strip it so only the trailing portion
+        /// is interpreted as `database/table.format` (or filters / hive partitions).
+        if (!url_prefix.empty() && path_only.starts_with(url_prefix))
+        {
+            path_only = path_only.substr(url_prefix.size());
+            if (path_only.empty())
+                path_only = "/";
         }
 
         const auto & default_settings_for_path = server.context()->getSettingsRef();
@@ -1116,10 +1126,11 @@ void HTTPHandler::releaseOrCloseSession(const String & session_id, bool close_se
 
 DynamicQueryHandler::DynamicQueryHandler(
     IServer & server_,
-    const HTTPHandlerConnectionConfig & connection_config,
+    const HTTPHandlerConnectionConfig & connection_config_,
     const std::string & param_name_,
-    const HTTPResponseHeaderSetup & http_response_headers_override_)
-    : HTTPHandler(server_, connection_config, "DynamicQueryHandler", http_response_headers_override_)
+    const HTTPResponseHeaderSetup & http_response_headers_override_,
+    const std::string & url_prefix_)
+    : HTTPHandler(server_, connection_config_, "DynamicQueryHandler", http_response_headers_override_, url_prefix_)
     , param_name(param_name_)
 {
 }
@@ -1278,6 +1289,13 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
 {
     auto query_param_name = config.getString(config_prefix + ".handler.query_param_name", "query");
 
+    /// Optional URL prefix under which this handler is mounted. When set, the prefix is required
+    /// to match incoming requests and is stripped before the remaining URL path is parsed as
+    /// `database/table.format[.compression]` (or filters / hive partitions). Example config:
+    ///   <url_prefix>/api</url_prefix>
+    /// A request `GET /api/db/hits.csv` is then processed as if the path were `/db/hits.csv`.
+    auto url_prefix = config.getString(config_prefix + ".url_prefix", "");
+
     HTTPHandlerConnectionConfig connection_config(config, config_prefix);
     HTTPResponseHeaderSetup http_response_headers_override = parseHTTPResponseHeaders(config, config_prefix);
     if (!common_headers.empty())
@@ -1287,11 +1305,13 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
         http_response_headers_override.value().insert(common_headers.begin(), common_headers.end());
     }
 
-    auto creator = [&server, query_param_name, http_response_headers_override, connection_config]() -> std::unique_ptr<DynamicQueryHandler>
-    { return std::make_unique<DynamicQueryHandler>(server, connection_config, query_param_name, http_response_headers_override); };
+    auto creator = [&server, query_param_name, http_response_headers_override, connection_config, url_prefix]() -> std::unique_ptr<DynamicQueryHandler>
+    { return std::make_unique<DynamicQueryHandler>(server, connection_config, query_param_name, http_response_headers_override, url_prefix); };
 
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);
+    if (!url_prefix.empty())
+        factory->attachNonStrictPath(url_prefix);
     return factory;
 }
 

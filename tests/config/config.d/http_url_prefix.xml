@@ -1,0 +1,13 @@
+<clickhouse>
+    <!-- A dynamic-query handler mounted under `/api/v1`. The handler strips the prefix
+         before parsing the remaining URL path for database/table/format/compression/filters. -->
+    <http_handlers>
+        <rule>
+            <url_prefix>/api/v1</url_prefix>
+            <handler>
+                <type>dynamic_query_handler</type>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>

@@ -7,11 +7,11 @@
         <default>
             <!-- <async_insert>1</async_insert> -->
 
-            <!-- The `database` and `default_format` settings can be set per-request via the
-                 HTTP interface (URL parameter or `X-ClickHouse-Database` / `X-ClickHouse-Format`
-                 header). They are allowed even when the connection is read-only (e.g. when
-                 the HTTP method is GET, which forces `readonly = 2`, or for users whose
-                 profile sets `readonly = 1`). -->
+            <!-- These settings are set per-request via the HTTP interface (URL parameter, or
+                 `X-ClickHouse-Database` / `X-ClickHouse-Format` header for the first two). They
+                 are query-construction or routing settings that should remain settable on a
+                 read-only HTTP connection (HTTP GET forces `readonly = 2`, and some user
+                 profiles set `readonly = 1`). -->
             <constraints>
                 <database>
                     <changeable_in_readonly/>
@@ -19,6 +19,42 @@
                 <default_format>
                     <changeable_in_readonly/>
                 </default_format>
+                <format>
+                    <changeable_in_readonly/>
+                </format>
+                <input_format>
+                    <changeable_in_readonly/>
+                </input_format>
+                <output_format>
+                    <changeable_in_readonly/>
+                </output_format>
+                <compression>
+                    <changeable_in_readonly/>
+                </compression>
+                <limit>
+                    <changeable_in_readonly/>
+                </limit>
+                <offset>
+                    <changeable_in_readonly/>
+                </offset>
+                <page>
+                    <changeable_in_readonly/>
+                </page>
+                <select>
+                    <changeable_in_readonly/>
+                </select>
+                <order>
+                    <changeable_in_readonly/>
+                </order>
+                <sort>
+                    <changeable_in_readonly/>
+                </sort>
+                <filter>
+                    <changeable_in_readonly/>
+                </filter>
+                <implicit_table_at_top_level>
+                    <changeable_in_readonly/>
+                </implicit_table_at_top_level>
             </constraints>
         </default>
 

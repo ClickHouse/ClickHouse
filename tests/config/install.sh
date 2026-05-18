@@ -213,6 +213,7 @@ ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/us
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/http_paths.xml $DEST_SERVER_PATH/users.d/
+ln -sf $SRC_PATH/config.d/http_url_prefix.xml $DEST_SERVER_PATH/config.d/
 if check_clickhouse_version 26.1; then
     ln -sf $SRC_PATH/users.d/distributed_index_analysis.yaml $DEST_SERVER_PATH/users.d/
 fi

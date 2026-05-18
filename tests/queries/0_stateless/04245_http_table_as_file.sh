@@ -117,6 +117,16 @@ http_get "${BASE_URL}/${DB}/hits?sort=a%20b" 2>&1 | grep -oE "Invalid character 
 echo "-- compression without format in path:"
 http_get "${BASE_URL}/${DB}/hits.unknownformat.gz" 2>&1 | grep -oE "Unknown format" | head -1
 
+echo "===== url_prefix: handler mounted at /api/v1 strips the prefix ====="
+echo "-- /api/v1/<db>/hits"
+http_get "${BASE_URL}/api/v1/${DB}/hits"
+echo "-- /api/v1/<db>/hits.CSV"
+http_get "${BASE_URL}/api/v1/${DB}/hits.CSV"
+echo "-- /api/v1/<db>/hits?filter=a>1"
+http_get "${BASE_URL}/api/v1/${DB}/hits?filter=a%3E1"
+echo "-- /api/v1?query=SELECT+1 (prefix alone, with query param)"
+http_get "${BASE_URL}/api/v1?query=SELECT+1"
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${DB}.hits"
 
 rm -f /tmp/04245_hits.csv.gz /tmp/04245_compress.gz

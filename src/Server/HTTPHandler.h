@@ -48,7 +48,7 @@ struct HTTPHandlerConnectionConfig
 class HTTPHandler : public HTTPRequestHandler
 {
 public:
-    HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_);
+    HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_, const std::string & url_prefix_ = "");
     ~HTTPHandler() override;
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
@@ -138,6 +138,11 @@ private:
     /// Overrides for response headers.
     HTTPResponseHeaderSetup http_response_headers_override;
 
+    /// URL path prefix under which this handler is registered. When set, the prefix is stripped from
+    /// `request.getURI()` before parsing the URL path for database/table/format/compression/filters.
+    /// Empty by default (handler is at the URL root).
+    std::string url_prefix;
+
     // session is reset at the end of each request/response.
     std::unique_ptr<Session> session;
 
@@ -184,7 +189,8 @@ public:
         IServer & server_,
         const HTTPHandlerConnectionConfig & connection_config,
         const std::string & param_name_ = "query",
-        const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt);
+        const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt,
+        const std::string & url_prefix_ = "");
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
 

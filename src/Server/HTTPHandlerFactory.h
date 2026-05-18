@@ -52,6 +52,10 @@ public:
         {
             if (filter_type == "handler")
                 continue;
+            /// `url_prefix` is handled separately by the dynamic-query factory (it both adds a
+            /// non-strict-path filter and passes the prefix to the handler for stripping).
+            if (filter_type == "url_prefix")
+                continue;
             /// URI (path and query string)
             if (filter_type == "url")
                 addFilter(urlFilter(config, prefix + ".url"));

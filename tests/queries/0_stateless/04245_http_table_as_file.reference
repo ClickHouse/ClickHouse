@@ -112,3 +112,17 @@ Conflicting compression
 Invalid character ' ' in identifier
 -- compression without format in path:
 Unknown format
+===== url_prefix: handler mounted at /api/v1 strips the prefix =====
+-- /api/v1/<db>/hits
+1	one
+2	two
+3	three
+-- /api/v1/<db>/hits.CSV
+1,"one"
+2,"two"
+3,"three"
+-- /api/v1/<db>/hits?filter=a>1
+2	two
+3	three
+-- /api/v1?query=SELECT+1 (prefix alone, with query param)
+1
