@@ -665,8 +665,8 @@ void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & ri
 
     if (planning_context.is_storage_key_value)
     {
-        auto stripped_right = removeNullable(recursiveRemoveLowCardinality(right_type));
-        auto stripped_common = removeNullable(recursiveRemoveLowCardinality(common_type));
+        auto stripped_right = removeLowCardinality(right_type);
+        auto stripped_common = removeLowCardinality(common_type);
         if (!stripped_right->equals(*stripped_common))
             right_node = JoinActionRef::transform({right_node}, cast_transform);
     }
