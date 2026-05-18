@@ -680,6 +680,8 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     HashMethodContext::Settings cache_settings;
     cache_settings.max_threads = params.max_threads;
     cache_settings.serialize_string_with_zero_byte = params.serialize_string_with_zero_byte;
+    cache_settings.enable_prefetch = params.enable_prefetch;
+    cache_settings.min_bytes_for_prefetch = min_bytes_for_prefetch;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 
 #if USE_EMBEDDED_COMPILER
@@ -3682,7 +3684,9 @@ void Aggregator::mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVari
 }
 
 
-Aggregator::AggregatedChunk Aggregator::mergeBlocks(AggregatedChunks & chunks, bool final, std::atomic<bool> & is_cancelled)
+Aggregator::AggregatedChunk Aggregator::mergeBlocks(
+    AggregatedChunks & chunks, bool final, std::atomic<bool> & is_cancelled,
+    const RuntimeDataflowStatisticsCacheUpdaterPtr & dataflow_cache_updater)
 {
     if (chunks.empty())
         return {};
@@ -3759,6 +3763,9 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(AggregatedChunks & chunks, b
             throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
     }
 
+    if (dataflow_cache_updater)
+        dataflow_cache_updater->recordAggregationStateSizes(result, bucket_num);
+
     AggregatedChunk agg_chunk;
     if (result.type == AggregatedDataVariants::Type::without_key || is_overflows)
     {
@@ -3770,6 +3777,9 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(AggregatedChunks & chunks, b
         constexpr bool return_single_block = true;
         agg_chunk = prepareChunkAndFillSingleLevel<return_single_block>(result, final);
     }
+
+    if (dataflow_cache_updater && agg_chunk.chunk.getNumRows())
+        dataflow_cache_updater->recordAggregationKeySizes(agg_chunk.chunk, getKeysPositions(), getKeyTypes());
     /// NOTE: two-level data is not possible here - chooseAggregationMethod chooses only among single-level methods.
 
     agg_chunk.bucket_num = bucket_num;
