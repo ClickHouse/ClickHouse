@@ -297,6 +297,7 @@ Rope ReaderExecutor::allocateRope(size_t total_size, size_t logical_offset)
 static size_t fillRopeFromStream(ReadBufferFromFileBase & stream, Rope & rope, bool use_external_buffer)
 {
     size_t total_read = 0;
+    size_t filled_nodes = 0;
     for (auto & node : rope.getNodes())
     {
         size_t node_read = 0;
@@ -324,7 +325,10 @@ static size_t fillRopeFromStream(ReadBufferFromFileBase & stream, Rope & rope, b
         }
         node.size = node_read;
         total_read += node_read;
+        ++filled_nodes;
     }
+    /// Remove unfilled nodes — they contain uninitialized memory.
+    rope.getNodes().resize(filled_nodes);
     return total_read;
 }
 
@@ -332,6 +336,7 @@ static size_t fillRopeFromStream(ReadBufferFromFileBase & stream, Rope & rope, b
 static size_t fillRopeFromStateless(ISourceReader & source, const StoredObject & object, size_t offset, Rope & rope)
 {
     size_t total_read = 0;
+    size_t filled_nodes = 0;
     for (auto & node : rope.getNodes())
     {
         size_t got = source.read(object, offset + total_read, node.size, node.data());
@@ -339,7 +344,9 @@ static size_t fillRopeFromStateless(ISourceReader & source, const StoredObject &
             break;
         node.size = got;
         total_read += got;
+        ++filled_nodes;
     }
+    rope.getNodes().resize(filled_nodes);
     return total_read;
 }
 
