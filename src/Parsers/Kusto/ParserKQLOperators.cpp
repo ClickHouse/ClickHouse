@@ -188,7 +188,7 @@ static String genEqOpExprCis(std::vector<String> & tokens, IParser::Pos & token_
 
 static String genInOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, const String & kql_op, const String & ch_op)
 {
-    ParserKQLTableFunction kqlfun_p;
+    ParserKQLParenExpression kqlfun_p;
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
 
     ASTPtr select;
@@ -241,7 +241,7 @@ static String genInOpExprCis(std::vector<String> & tokens, IParser::Pos & token_
 
 static std::string genInOpExpr(IParser::Pos & token_pos, const std::string & kql_op, const std::string & ch_op)
 {
-    ParserKQLTableFunction kqlfun_p;
+    ParserKQLParenExpression kqlfun_p;
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
 
     ASTPtr select;
