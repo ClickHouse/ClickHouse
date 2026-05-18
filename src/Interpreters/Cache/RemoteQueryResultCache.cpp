@@ -138,19 +138,26 @@ std::string RemoteQueryResultCache::lockKey(const std::string & redis_key)
 void RemoteQueryResultCache::startHeartbeat(const std::string & redis_key, const String & token)
 {
     const auto interval = std::max(std::chrono::milliseconds(1), lock_ttl / 3);
-    const auto stop = std::make_shared<std::atomic_bool>(false);
+    const auto state = std::make_shared<HeartbeatState>();
     const auto lk = lockKey(redis_key);
 
-    std::thread heartbeat([this, lk, token, stop, interval]
+    std::thread heartbeat([this, lk, token, state, interval]
     {
-        while (!stop->load(std::memory_order_relaxed))
+        std::unique_lock state_lock(state->mutex);
+        while (!state->stop)
         {
-            sleepForMilliseconds(interval.count());
-
-            if (stop->load(std::memory_order_relaxed))
+            /// Sleep up to `interval`, but return early if `stop` is set so that
+            /// query teardown does not wait for the next sleep boundary.
+            if (state->cv.wait_for(state_lock, interval, [&]{ return state->stop; }))
                 break;
 
-            if (!backend.renewLock(lk, token, lock_ttl))
+            /// Release the heartbeat lock while talking to Redis so that a
+            /// concurrent `stopHeartbeat` does not block on the network round-trip.
+            state_lock.unlock();
+            const bool renewed = backend.renewLock(lk, token, lock_ttl);
+            state_lock.lock();
+
+            if (!renewed)
             {
                 LOG_TRACE(logger, "Stopped renewing `IN_PROGRESS` lock {} because it is no longer owned by this writer", lk);
                 break;
@@ -163,18 +170,19 @@ void RemoteQueryResultCache::startHeartbeat(const std::string & redis_key, const
         auto it = held_locks.find(redis_key);
         if (it == held_locks.end())
         {
-            stop->store(true, std::memory_order_relaxed);
+            std::lock_guard state_lock(state->mutex);
+            state->stop = true;
+            state->cv.notify_all();
         }
         else
         {
-            it->second.stop_heartbeat = stop;
+            it->second.heartbeat_state = state;
             it->second.heartbeat_thread = std::move(heartbeat);
             return;
         }
     }
 
     heartbeat.join();
-
 }
 
 std::optional<RemoteQueryResultCache::HeldLockInfo> RemoteQueryResultCache::takeHeldLockInfo(const std::string & redis_key)
@@ -191,8 +199,12 @@ std::optional<RemoteQueryResultCache::HeldLockInfo> RemoteQueryResultCache::take
 
 void RemoteQueryResultCache::stopHeartbeat(HeldLockInfo & info)
 {
-    if (info.stop_heartbeat)
-        info.stop_heartbeat->store(true, std::memory_order_relaxed);
+    if (info.heartbeat_state)
+    {
+        std::lock_guard state_lock(info.heartbeat_state->mutex);
+        info.heartbeat_state->stop = true;
+        info.heartbeat_state->cv.notify_all();
+    }
 
     if (info.heartbeat_thread.joinable())
         info.heartbeat_thread.join();

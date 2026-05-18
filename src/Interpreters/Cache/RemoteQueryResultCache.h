@@ -4,7 +4,7 @@
 #include <Interpreters/Cache/RedisRemoteCacheBackend.h>
 
 #include <chrono>
-#include <atomic>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -80,11 +80,22 @@ private:
 
     mutable std::mutex mutex;
 
+    /// Synchronization primitives shared between the cache and the per-lock heartbeat thread.
+    /// A `condition_variable` is used (rather than a plain sleep) so that `stopHeartbeat`
+    /// can wake the heartbeat thread immediately on cancellation instead of waiting up
+    /// to a full heartbeat interval.
+    struct HeartbeatState
+    {
+        std::mutex mutex;
+        std::condition_variable cv;
+        bool stop = false;
+    };
+
     struct HeldLockInfo
     {
         String token;
         std::thread::id owner_thread_id;
-        std::shared_ptr<std::atomic_bool> stop_heartbeat;
+        std::shared_ptr<HeartbeatState> heartbeat_state;
         std::thread heartbeat_thread;
     };
 
