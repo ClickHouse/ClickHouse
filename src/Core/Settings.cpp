@@ -8742,7 +8742,32 @@ void Settings::writeEmpty(WriteBuffer & out)
 
 void Settings::addToProgramOptions(boost::program_options::options_description & options)
 {
-    addProgramOptions(*impl, options);
+    /// Some settings share their name with existing client-specific command-line options
+    /// (e.g. `--database`, `--default_format`). Boost program_options would otherwise treat
+    /// the duplicate registration as ambiguous at parse time. The client-side option (registered
+    /// first) takes precedence; we skip the setting registration when its name already exists,
+    /// mirroring the strategy used in `MergeTreeSettings::addToProgramOptionsIfNotPresent`.
+    std::unordered_set<std::string> existing;
+    existing.reserve(options.options().size());
+    for (const auto & option : options.options())
+        existing.insert(option->long_name());
+
+    const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
+    for (const auto & field : impl->all())
+    {
+        std::string_view name = field.getName();
+        if (!existing.contains(std::string(name)))
+            addProgramOption(*impl, options, name, field);
+
+        if (auto it = settings_to_aliases.find(name); it != settings_to_aliases.end())
+        {
+            for (const auto alias : it->second)
+            {
+                if (!existing.contains(std::string(alias)))
+                    addProgramOption(*impl, options, alias, field);
+            }
+        }
+    }
 }
 
 void Settings::addToProgramOptions(std::string_view setting_name, boost::program_options::options_description & options)

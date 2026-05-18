@@ -270,44 +270,6 @@ void HTTPHandler::processQuery(
     if (!roles.empty())
         context->setCurrentRoles(roles);
 
-    /// Parse the URL path according to http_allow_database_as_path/table_as_file/filters_as_path settings.
-    /// We use the server-default settings (same as the request-routing filter), which is consistent
-    /// since users can't override the path-feature gating per-request anyway.
-    HTTPPathInfo path_info;
-    {
-        const String & raw_uri = request.getURI();
-        String path_only = raw_uri;
-        auto qmark = path_only.find('?');
-        if (qmark != String::npos)
-            path_only = path_only.substr(0, qmark);
-        /// URL-decode the path.
-        try
-        {
-            Poco::URI uri_obj(raw_uri);
-            path_only = uri_obj.getPath();
-        }
-        catch (const Poco::Exception &) // NOLINT(bugprone-empty-catch)
-        {
-            /// Fall back to the already-stripped raw path.
-        }
-
-        /// If this handler is registered under a URL prefix, strip it so only the trailing portion
-        /// is interpreted as `database/table.format` (or filters / hive partitions).
-        if (!url_prefix.empty() && path_only.starts_with(url_prefix))
-        {
-            path_only = path_only.substr(url_prefix.size());
-            if (path_only.empty())
-                path_only = "/";
-        }
-
-        const auto & default_settings_for_path = server.context()->getSettingsRef();
-        path_info = parseHTTPPath(
-            path_only,
-            default_settings_for_path[Setting::http_allow_database_as_path],
-            default_settings_for_path[Setting::http_allow_table_as_file],
-            default_settings_for_path[Setting::http_allow_filters_as_path]);
-    }
-
     /// Anything else beside HTTP POST should be readonly queries.
     setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
 
@@ -407,6 +369,49 @@ void HTTPHandler::processQuery(
     query_scope = QueryScope::create(context);
 
     const auto & settings = context->getSettingsRef();
+
+    /// === URL path parsing happens after settings are applied ===
+    /// This way the `http_allow_*_as_path` settings are read from the authenticated, profile-resolved
+    /// context (the same way any per-user setting works), not from server defaults. If the user
+    /// has all path features off, we skip path parsing entirely — the rest of the request is treated
+    /// exactly as it would be at the root URL.
+    HTTPPathInfo path_info;
+    bool any_path_feature_enabled = settings[Setting::http_allow_database_as_path]
+                                  || settings[Setting::http_allow_table_as_file]
+                                  || settings[Setting::http_allow_filters_as_path];
+    if (any_path_feature_enabled)
+    {
+        const String & raw_uri = request.getURI();
+        String path_only = raw_uri;
+        auto qmark = path_only.find('?');
+        if (qmark != String::npos)
+            path_only = path_only.substr(0, qmark);
+        /// URL-decode the path.
+        try
+        {
+            Poco::URI uri_obj(raw_uri);
+            path_only = uri_obj.getPath();
+        }
+        catch (const Poco::Exception &) // NOLINT(bugprone-empty-catch)
+        {
+            /// Fall back to the already-stripped raw path.
+        }
+
+        /// If this handler is registered under a URL prefix, strip it so only the trailing portion
+        /// is interpreted as `database/table.format` (or filters / hive partitions).
+        if (!url_prefix.empty() && path_only.starts_with(url_prefix))
+        {
+            path_only = path_only.substr(url_prefix.size());
+            if (path_only.empty())
+                path_only = "/";
+        }
+
+        path_info = parseHTTPPath(
+            path_only,
+            settings[Setting::http_allow_database_as_path],
+            settings[Setting::http_allow_table_as_file],
+            settings[Setting::http_allow_filters_as_path]);
+    }
 
     /// Resolve the current database from the path and the `database` setting, in that order.
     /// If both are specified and differ, that's an error.

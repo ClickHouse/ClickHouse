@@ -231,10 +231,37 @@ HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_
 
 String parseURLParameterAsFilter(const String & name, const String & value)
 {
-    /// Mode 1: name is a simple identifier-like string and value contains no comparison ops.
-    ///         Interpret as `name = value`.
-    static constexpr std::array<const char *, 6> compare_ops = {">=", "<=", "!=", "<>", ">", "<"};
+    if (name.empty())
+        return {};
 
+    /// Case 1: HTMLForm splits a URL parameter on the first `=`. For two-character operators
+    /// that end in `=` (`!=`, `>=`, `<=`), the operator's `=` ends up as that separator, leaving
+    /// the leading character of the operator stuck to the end of the name and the literal in `value`.
+    /// Examples:
+    ///   `?a!=2` -> name="a!", value="2"  -> "a != 2"
+    ///   `?a>=2` -> name="a>", value="2"  -> "a >= 2"
+    ///   `?a<=2` -> name="a<", value="2"  -> "a <= 2"
+    if (name.size() > 1
+        && (name.back() == '!' || name.back() == '>' || name.back() == '<'))
+    {
+        char op_char = name.back();
+        String identifier = name.substr(0, name.size() - 1);
+        if (!identifier.empty())
+        {
+            String op;
+            if (op_char == '!')
+                op = "!=";
+            else if (op_char == '>')
+                op = ">=";
+            else /* '<' */
+                op = "<=";
+            return "(" + backQuoteIfNeed(identifier) + " " + op + " " + quoteString(value) + ")";
+        }
+    }
+
+    /// Case 2: The full operator survived inside `name` because the URL had no `=` to split on
+    /// (e.g. `?a>2`, `?a<>2`, `?f(x)>3`). Treat the reassembled `name[=value]` as a SQL expression.
+    static constexpr std::array<const char *, 6> compare_ops = {">=", "<=", "!=", "<>", ">", "<"};
     auto has_compare_op = [&](const String & s)
     {
         for (const char * op : compare_ops)
@@ -243,22 +270,13 @@ String parseURLParameterAsFilter(const String & name, const String & value)
         return false;
     };
 
-    /// If value contains comparison operators, treat the *whole* name=value as an expression.
-    /// The HTTP form parser splits on '=', so we reassemble as "<name><op><value>" must result
-    /// in a parsable expression. To support `f(x)>3`, the URL would have been `f(x)>3=<empty>`
-    /// — but URL parsers actually preserve `>` in the value. The HTML form treats only the FIRST
-    /// `=` as separator. So the canonical case is: name="<identifier>", value="<literal>",
-    /// producing "<identifier> = <literal>". For comparison ops embedded in the name (e.g., "f(x)>3"),
-    /// we reassemble "<name>=<value>" only if there's a real operator in name.
     if (has_compare_op(name))
     {
-        /// Looks like `f(x)>3` came through with name="f(x)>3", value="" or appended after `=`.
-        /// Validate: at least one comparison operator must be in the full reassembled expression.
         String full = value.empty() ? name : name + "=" + value;
         return "(" + full + ")";
     }
 
-    /// Plain `name=value` -> `name = value` with quoted literal.
+    /// Case 3: Plain `name=value` -> `name = value` with quoted literal.
     return "(" + backQuoteIfNeed(name) + " = " + quoteString(value) + ")";
 }
 
@@ -381,7 +399,7 @@ bool isBinaryOutputFormat(const String & format_name)
         }
         return false;
     }
-    catch (...)
+    catch (...) /// Ok: unknown / malformed format name — fall back to "not binary".
     {
         return false;
     }

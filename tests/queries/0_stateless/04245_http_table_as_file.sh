@@ -59,6 +59,12 @@ http_get "${BASE_URL}/${DB}/hits?filter=a%3E1&filter=b%3D%27two%27"
 echo "===== http_allow_filters_as_unrecognized_url_parameters ====="
 echo "-- /hits?a=2"
 http_get "${BASE_URL}/${DB}/hits?a=2"
+echo "-- /hits?a!=2  (HTMLForm splits '=' off the '!=' operator; we reassemble)"
+http_get "${BASE_URL}/${DB}/hits?a!=2"
+echo "-- /hits?a>=2 (operator's '=' is the form separator)"
+http_get "${BASE_URL}/${DB}/hits?a>=2"
+echo "-- /hits?a<>2 (operator survives intact when there's no '=' at all)"
+http_get "${BASE_URL}/${DB}/hits?a<>2"
 
 echo "===== http_allow_filters_as_path ====="
 echo "-- /a=2/hits"
@@ -116,6 +122,10 @@ echo "-- sort with space:"
 http_get "${BASE_URL}/${DB}/hits?sort=a%20b" 2>&1 | grep -oE "Invalid character . . in identifier" | head -1
 echo "-- compression without format in path:"
 http_get "${BASE_URL}/${DB}/hits.unknownformat.gz" 2>&1 | grep -oE "Unknown format" | head -1
+
+echo "===== per-user disable of path features ====="
+echo "-- with all http_allow_* disabled per-request, the path is ignored (no implicit-table parse)"
+http_get "${BASE_URL}/${DB}/hits?http_allow_database_as_path=0&http_allow_table_as_file=0&http_allow_filters_as_path=0&http_allow_filters_as_unrecognized_url_parameters=0&query=SELECT+42"
 
 echo "===== url_prefix: handler mounted at /api/v1 strips the prefix ====="
 echo "-- /api/v1/<db>/hits"

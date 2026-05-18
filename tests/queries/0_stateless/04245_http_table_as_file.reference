@@ -53,6 +53,15 @@
 ===== http_allow_filters_as_unrecognized_url_parameters =====
 -- /hits?a=2
 2	two
+-- /hits?a!=2  (HTMLForm splits '=' off the '!=' operator; we reassemble)
+1	one
+3	three
+-- /hits?a>=2 (operator's '=' is the form separator)
+2	two
+3	three
+-- /hits?a<>2 (operator survives intact when there's no '=' at all)
+1	one
+3	three
 ===== http_allow_filters_as_path =====
 -- /a=2/hits
 2	two
@@ -112,6 +121,9 @@ Conflicting compression
 Invalid character ' ' in identifier
 -- compression without format in path:
 Unknown format
+===== per-user disable of path features =====
+-- with all http_allow_* disabled per-request, the path is ignored (no implicit-table parse)
+42
 ===== url_prefix: handler mounted at /api/v1 strips the prefix =====
 -- /api/v1/<db>/hits
 1	one

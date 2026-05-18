@@ -444,6 +444,13 @@ void addDefaultHandlersFactory(
     factory.addPathToHints("/webterminal");
     factory.addHandler(webterminal_handler);
 
+    /// Register Prometheus BEFORE the dynamic query handler. The dynamic handler's catch-all
+    /// path match (gated by the `http_allow_*_as_path` settings) would otherwise shadow
+    /// `/metrics` and other prometheus endpoints.
+    /// createPrometheusHandlerFactoryForHTTPRuleDefaults() can return nullptr if prometheus protocols must not be served on http port.
+    if (auto prometheus_handler = createPrometheusHandlerFactoryForHTTPRuleDefaults(server, config, async_metrics))
+        factory.addHandler(prometheus_handler);
+
     auto dynamic_creator = [&server] () -> std::unique_ptr<DynamicQueryHandler>
     {
         return std::make_unique<DynamicQueryHandler>(server, HTTPHandlerConnectionConfig{}, "query");
@@ -469,8 +476,8 @@ void addDefaultHandlersFactory(
 
             /// Extended path matching: when any of the http_allow_* path features is enabled at the
             /// server-default level, accept arbitrary paths starting with '/'. This is the catch-all
-            /// for the HTTP-as-file feature; other strict-path handlers (e.g. /ping, /play) are
-            /// registered before this one and take precedence.
+            /// for the HTTP-as-file feature; other strict-path handlers (e.g. /ping, /play, /metrics)
+            /// are registered before this one and take precedence.
             const auto & default_settings = server.context()->getSettingsRef();
             bool path_features_enabled = default_settings[Setting::http_allow_database_as_path]
                                        || default_settings[Setting::http_allow_table_as_file]
@@ -484,10 +491,6 @@ void addDefaultHandlersFactory(
         }
     );
     factory.addHandler(query_handler);
-
-    /// createPrometheusHandlerFactoryForHTTPRuleDefaults() can return nullptr if prometheus protocols must not be served on http port.
-    if (auto prometheus_handler = createPrometheusHandlerFactoryForHTTPRuleDefaults(server, config, async_metrics))
-        factory.addHandler(prometheus_handler);
 }
 
 }
