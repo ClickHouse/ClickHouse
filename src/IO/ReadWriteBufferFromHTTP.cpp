@@ -590,7 +590,7 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
             bytes_copied = 0;
         });
 
-    chassert(total_bytes_copied == initial_n || is_canceled);
+    chassert(total_bytes_copied == initial_n || is_canceled || cancellation_check && cancellation_check());
     return total_bytes_copied;
 }
 
