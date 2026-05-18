@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
@@ -17,11 +18,14 @@ static bool isTransparentStep(IQueryPlanStep * step)
     /// ExpressionStep does not advertise preserves_sorting (it cannot prove it
     /// for arbitrary expressions), but the sort column identifiers match
     /// between SortingStep and AggregatingStep, so it cannot interfere.
-    if (typeid_cast<ExpressionStep *>(step))
-        return true;
+    /// Row count, however, must be checked: ARRAY JOIN changes it.
+    if (auto * expression = typeid_cast<ExpressionStep *>(step))
+        return expression->getTransformTraits().preserves_number_of_rows;
 
+    /// ExtremesStep observes the stream before LIMIT is applied; pushing the
+    /// limit past it would feed it a truncated prefix and produce wrong extremes.
     /// WindowStep preserves rows but is not supported by this optimization.
-    if (typeid_cast<WindowStep *>(step))
+    if (typeid_cast<ExtremesStep *>(step) || typeid_cast<WindowStep *>(step))
         return false;
 
     auto * transforming = dynamic_cast<ITransformingStep *>(step);
