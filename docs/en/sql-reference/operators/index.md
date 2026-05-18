@@ -7,6 +7,8 @@ title: 'Operators'
 doc_type: 'reference'
 ---
 
+# Operators
+
 ClickHouse transforms operators to their corresponding functions at the query parsing stage according to their priority, precedence, and associativity.
 
 ## Access Operators {#access-operators}
@@ -114,15 +116,6 @@ SELECT
 │                        0 │                        1 │
 └──────────────────────────┴──────────────────────────┘
 ```
-
-## Operators for Working with Strings {#operators-for-working-with-strings}
-
-### OVERLAY {#overlay}
-
-- `OVERLAY(string PLACING replacement FROM offset)` - The `overlay(string, replacement, offset)` function.
-- `OVERLAY(string PLACING replacement FROM offset FOR length)` - The `overlay(string, replacement, offset, length)` function.
-- `OVERLAYUTF8(string PLACING replacement FROM offset)` - The `overlayUTF8(string, replacement, offset)` function.
-- `OVERLAYUTF8(string PLACING replacement FROM offset FOR length)` - The `overlayUTF8(string, replacement, offset, length)` function.
 
 ## Operators for Working with Data Sets {#operators-for-working-with-data-sets}
 

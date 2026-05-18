@@ -91,7 +91,6 @@ static struct InitFiu
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
     PAUSEABLE_ONCE(smt_wait_next_mutation) \
     PAUSEABLE_ONCE(delta_lake_metadata_iterate_pause) \
-    PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
@@ -152,7 +151,6 @@ static struct InitFiu
     REGULAR(mt_select_parts_to_mutate_max_part_size) \
     REGULAR(rmt_merge_selecting_task_no_free_threads) \
     REGULAR(rmt_merge_selecting_task_max_part_size) \
-    REGULAR(merge_tree_load_statistics_throw) \
     PAUSEABLE(smt_mutate_task_pause_in_prepare) \
     PAUSEABLE(smt_merge_selecting_task_pause_when_scheduled) \
     REGULAR(smt_merge_selecting_task_reach_memory_limit) \
@@ -165,7 +163,6 @@ static struct InitFiu
     REGULAR(rmt_delay_commit_part) \
     ONCE(local_object_storage_network_error_during_remove) \
     REGULAR(lightweight_show_tables) \
-    REGULAR(smt_part_update_duplicated_part) \
     REGULAR(check_database_datalake_negative) \
     REGULAR(restart_replica_fail_after_detach) \
     REGULAR(database_replicated_force_metadata_digest_check) \
@@ -176,8 +173,7 @@ static struct InitFiu
     REGULAR(patch_parts_reverse_column_order) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
-    REGULAR(transaction_force_unknown_state_after_commit) \
-    PAUSEABLE(transaction_after_commit_pause)
+    REGULAR(query_metric_log_delay_collect)
 
 namespace FailPoints
 {
@@ -221,11 +217,6 @@ struct FailPointChannel
 void FailPointInjection::pauseFailPoint(const String & fail_point_name)
 {
     fiu_do_on(fail_point_name.c_str(), FailPointInjection::notifyPauseAndWaitForResume(fail_point_name););
-}
-
-bool FailPointInjection::hasAnyFailPointBeenRegistered()
-{
-    return atomic_load_explicit(&has_any_failpoint_been_registered, memory_order_relaxed) != 0;
 }
 
 void FailPointInjection::enableFailPoint(const String & fail_point_name)
@@ -348,12 +339,12 @@ std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints
 {
     std::vector<FailPointInfo> result;
 
-#define SUB_M(NAME, TP)                                   \
-    result.push_back(                                     \
-        FailPointInfo{                                    \
-            .name = FailPoints::NAME,                     \
-            .type = FailPointType::TP,                    \
-            .enabled = fiu_status(FailPoints::NAME) != 0, \
+#define SUB_M(NAME, TP)                                 \
+    result.push_back(                                   \
+        FailPointInfo{                                  \
+            .name = FailPoints::NAME,                   \
+            .type = FailPointType::TP,                  \
+            .enabled = fiu_fail(FailPoints::NAME) != 0, \
         });
 #define ADD_ONCE(NAME) SUB_M(NAME, Once)
 #define ADD_REGULAR(NAME) SUB_M(NAME, Regular)
@@ -373,11 +364,6 @@ std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints
 
 void FailPointInjection::pauseFailPoint(const String &)
 {
-}
-
-bool FailPointInjection::hasAnyFailPointBeenRegistered()
-{
-    return false;
 }
 
 void FailPointInjection::enableFailPoint(const String &)

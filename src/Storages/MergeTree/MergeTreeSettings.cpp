@@ -1698,14 +1698,6 @@ namespace ErrorCodes
     Activate concurrent part removal (see 'max_part_removal_threads') only if
     the number of inactive data parts is at least this.
     )", 0) \
-    DECLARE(UInt64, concurrent_part_removal_threshold_for_remote_disk, 16, R"(
-    Same as `concurrent_part_removal_threshold`, but used when at least one
-    part being removed is stored on a remote disk. The default is lower
-    because each part removal on remote storage typically requires a network
-    round-trip (e.g. one HTTP `DELETE` per part on object storage), so a
-    serial removal of even 100 parts can stall a `DROP TABLE` for tens of
-    seconds.
-    )", 0) \
     DECLARE(UInt64, zero_copy_concurrent_part_removal_max_split_times, 5, R"(
     Max recursion depth for splitting independent Outdated parts ranges into
     smaller subranges. Recommended not to change.
@@ -1877,7 +1869,7 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
-    Supported statistics types: tdigest, countmin, minmax, nullcount, uniq.
+    Supported statistics types: tdigest, countmin, minmax, uniq.
     )", 0) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
@@ -2234,10 +2226,10 @@ DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
 struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 {
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach);
 
     /// Check that the values are sane taking also query-level settings into account.
-    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
+    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const;
 };
 
 static void validateTableDisk(const DiskPtr & disk)
@@ -2253,7 +2245,7 @@ static void validateTableDisk(const DiskPtr & disk)
 
 IMPLEMENT_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
 
-void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
+void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach)
 {
     if (storage_def.settings)
     {
@@ -2276,7 +2268,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 
                     if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
                     {
-                        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata);
+                        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_attach);
                         LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
                         value = disk_name;
                     }
@@ -2296,7 +2288,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
                 else if (name == "table_disk")
                     table_disk = value.safeGet<bool>();
 
-                if (!is_loading_from_existing_metadata && found_disk_setting && found_storage_policy_setting)
+                if (!is_attach && found_disk_setting && found_storage_policy_setting)
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -2336,7 +2328,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 #undef ADD_IF_ABSENT
 }
 
-void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const
+void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const
 {
     if (!allow_experimental || !allow_beta)
     {
@@ -2365,14 +2357,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
     }
 
 
-    /// Skip these checks when the background pool was auto-lowered by the low-memory heuristic
-    /// AND the corresponding table-level threshold is at its default. On small systems the pool
-    /// may be tuned below the default thresholds, and we do not want to fail table creation in
-    /// that mode. However, if the operator explicitly overrides one of these thresholds at the
-    /// table level, the check must still fire so a misconfiguration that would silently disable
-    /// mutations or merge sizing is caught early.
-    if (number_of_free_entries_in_pool_to_execute_mutation > background_pool_tasks
-        && !(background_pool_auto_lowered && !number_of_free_entries_in_pool_to_execute_mutation.changed))
+    if (number_of_free_entries_in_pool_to_execute_mutation > background_pool_tasks)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_execute_mutation' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
@@ -2384,8 +2369,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             background_pool_tasks);
     }
 
-    if (number_of_free_entries_in_pool_to_lower_max_size_of_merge > background_pool_tasks
-        && !(background_pool_auto_lowered && !number_of_free_entries_in_pool_to_lower_max_size_of_merge.changed))
+    if (number_of_free_entries_in_pool_to_lower_max_size_of_merge > background_pool_tasks)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_lower_max_size_of_merge' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
@@ -2397,8 +2381,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             background_pool_tasks);
     }
 
-    if (number_of_free_entries_in_pool_to_execute_optimize_entire_partition > background_pool_tasks
-        && !(background_pool_auto_lowered && !number_of_free_entries_in_pool_to_execute_optimize_entire_partition.changed))
+    if (number_of_free_entries_in_pool_to_execute_optimize_entire_partition > background_pool_tasks)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_execute_optimize_entire_partition' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
@@ -2641,9 +2624,9 @@ std::vector<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
     return setting_names;
 }
 
-void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
+void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach)
 {
-    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata);
+    impl->loadFromQuery(storage_def, context, is_attach);
 }
 
 void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
@@ -2674,9 +2657,9 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
         || (impl->min_compressed_bytes_to_fsync_after_merge && input_bytes >= impl->min_compressed_bytes_to_fsync_after_merge));
 }
 
-void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const
+void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const
 {
-    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta, background_pool_auto_lowered);
+    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta);
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const
