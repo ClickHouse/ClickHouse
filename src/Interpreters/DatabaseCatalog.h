@@ -188,6 +188,12 @@ public:
     void removeViewDependency(const StorageID & source_table_id, const StorageID & view_id);
     std::vector<StorageID> getDependentViews(const StorageID & source_table_id) const;
 
+    /// Detach all source-side view-dependency edges of a source table (the table is the source of one
+    /// or more materialized views) and return the list of dependent views. Used by `RENAME TABLE`
+    /// to re-key these edges under the new storage id via `addSourceViewDependencies`.
+    std::vector<StorageID> takeSourceViewDependencies(const StorageID & source_table_id);
+    void addSourceViewDependencies(const StorageID & source_table_id, const std::vector<StorageID> & view_ids);
+
     /// Check that all dependent views of a streaming source table are ready.
     /// Returns the list of ready views, or empty if not all are ready yet.
     /// During server startup, returns empty to prevent streaming engines from
@@ -224,6 +230,8 @@ public:
     void undropTable(StorageID table_id);
 
     void waitTableFinallyDropped(const UUID & uuid, std::function<void()> throw_if_cancelled = {});
+
+    bool isShuttingDown() const { return is_shutting_down.load(); }
 
     /// Referential dependencies between tables: table "A" depends on table "B"
     /// if "B" is referenced in the definition of "A".

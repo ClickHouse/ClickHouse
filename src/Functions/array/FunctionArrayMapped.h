@@ -72,6 +72,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isHigherOrderFunction() const override { return true; }
     bool isDeterministic() const override { return IsDeterministic; }
     bool isDeterministicInScopeOfQuery() const override { return IsDeterministic; }
 

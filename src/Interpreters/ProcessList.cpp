@@ -637,6 +637,12 @@ void QueryStatus::throwIfKilled()
     throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), 0);
 }
 
+CancelReason QueryStatus::getCancelReason() const
+{
+    std::lock_guard<std::mutex> lock(cancel_mutex);
+    return cancel_reason;
+}
+
 bool QueryStatus::checkTimeLimitSoft()
 {
     if (is_killed.load())

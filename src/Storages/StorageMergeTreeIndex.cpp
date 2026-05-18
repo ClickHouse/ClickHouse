@@ -1,4 +1,3 @@
-
 #include <Storages/StorageMergeTreeIndex.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -8,6 +7,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/ColumnsDescription.h>
@@ -32,7 +32,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int CORRUPTED_DATA;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_IMPLEMENTED;
 }
@@ -113,18 +112,18 @@ protected:
             }
             else if (minmax_header && minmax_header->has(column_name))
             {
-                size_t minmax_pos = minmax_header->getPositionByName(column_name);
-                if (minmax_pos >= part->minmax_idx->hyperrectangle.size())
-                    throw Exception(
-                        ErrorCodes::CORRUPTED_DATA,
-                        "Part {} has broken minmax_idx: size = {} but {} has pos = {}",
-                        part->name,
-                        part->minmax_idx->hyperrectangle.size(),
-                        column_name,
-                        minmax_pos);
+                FieldRef min_value(Null{});
+                FieldRef max_value(Null{});
 
-                auto column = column_type->createColumnConst(
-                    num_rows, Tuple{part->minmax_idx->hyperrectangle[minmax_pos].left, part->minmax_idx->hyperrectangle[minmax_pos].right});
+                size_t minmax_pos = minmax_header->getPositionByName(column_name);
+                const auto & hyperrectangle = part->getMinMaxIndex()->hyperrectangle;
+                if (minmax_pos < hyperrectangle.size())
+                {
+                    min_value = hyperrectangle[minmax_pos].left;
+                    max_value = hyperrectangle[minmax_pos].right;
+                }
+
+                auto column = column_type->createColumnConst(num_rows, Tuple{std::move(min_value), std::move(max_value)});
                 result_columns[pos] = column->convertToFullColumnIfConst();
             }
             else if (column_name == part_name_column.name)
@@ -296,12 +295,8 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
         Block minmax_block;
         const auto metadata_snapshot = merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
         const auto & partition_key = metadata_snapshot->getPartitionKey();
-        if (!partition_key.column_names.empty() && partition_key.expression)
-        {
-            for (const auto & column : partition_key.expression->getRequiredColumnsWithTypes())
-                minmax_block.insert(
-                    {nullptr, std::make_shared<DataTypeTuple>(DataTypes{column.type, column.type}), fmt::format("minmax_{}", column.name)});
-        }
+        for (const auto & column : MergeTreeData::getMinMaxColumns(partition_key, merge_tree->getSettings()))
+            minmax_block.insert({nullptr, std::make_shared<DataTypeTuple>(DataTypes{makeNullableSafe(column.type), makeNullableSafe(column.type)}), fmt::format("minmax_{}", column.name)});
         minmax_sample_block = std::make_shared<const Block>(std::move(minmax_block));
     }
 
