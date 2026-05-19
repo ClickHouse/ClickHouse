@@ -57,7 +57,7 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    bool supportsColumnsWithDynamicStructure() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
 
@@ -73,7 +73,7 @@ public:
 
     bool materializeTTLRecalculateOnly() const;
 
-    bool hasLightweightDeletedMask() const override
+    bool hasLightweightDeletedMask() const
     {
         return !parts.empty() && parts.front().data_part->hasLightweightDelete();
     }

@@ -2,7 +2,6 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
-#include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Core/Field.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
@@ -156,12 +155,10 @@ protected:
             correlated_subtrees.assertEmpty("in constant expression without query context");
 
             auto subquery_options = SelectQueryOptions{}.subquery();
-            subquery_options.forceMaterializeCTE();
             subquery_options.ignore_limits = false;
             for (auto & subquery : planner_context->getPreparedSets().getSubqueries())
             {
                 auto query_tree = subquery->detachQueryTree();
-                createUniqueAliasesIfNecessary(query_tree, execution_context);
                 Planner subquery_planner(
                     query_tree,
                     subquery_options,
@@ -295,7 +292,7 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
     const StorageID & table_id_,
     const StoragePtr & source_table_,
     const ColumnsDescription & columns,
-    std::vector<String> parts_,
+    const String & parts_regexp_,
     const ASTPtr & predicate_,
     const OptionalVectorSearchParameters & vector_search_parameters_)
     : IStorage(table_id_)
@@ -309,10 +306,10 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
 
     data_parts = merge_tree_data->getDataPartsVectorForInternalUsage();
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
-    if (!parts_.empty())
+    if (!parts_regexp_.empty())
     {
-        std::unordered_set<String> parts_set(std::make_move_iterator(parts_.begin()), std::make_move_iterator(parts_.end()));
-        std::erase_if(data_parts, [&](const MergeTreeData::DataPartPtr & part) { return !parts_set.contains(part->name); });
+        OptimizedRegularExpression regexp(parts_regexp_);
+        std::erase_if(data_parts, [&](const MergeTreeData::DataPartPtr & part) { return !regexp.match(part->name); });
     }
 
     table_settings = merge_tree_data->getSettings();

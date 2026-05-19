@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Analyzer/HashUtils.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 
@@ -23,12 +22,6 @@ using TableNodePtr = std::shared_ptr<TableNode>;
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
-struct TemporaryTableHolder;
-using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
-
-struct MaterializedCTE;
-using MaterializedCTEPtr = std::shared_ptr<MaterializedCTE>;
-
 class TableNode : public IQueryTreeNode
 {
 public:
@@ -40,16 +33,6 @@ public:
 
     /// Construct table node with storage, context
     explicit TableNode(StoragePtr storage_, const ContextPtr & context);
-
-    /// Construct table node for deferred MATERIALIZED CTE (subquery not yet resolved).
-    /// Creates StorageDummy as a placeholder; call finalizeMaterializedCTE after resolving the subquery.
-    explicit TableNode(
-        const std::string & cte_name_,
-        QueryTreeNodePtr materialized_cte_subquery_,
-        const ContextPtr & context_);
-
-    /// Replace the placeholder storage with the real StorageMemory from the temporary table holder.
-    void finalizeMaterializedCTE(TemporaryTableHolder temporary_table_holder_, const ContextPtr & context_);
 
     /** Update table node storage.
       * After this call storage, storage_id, storage_lock, storage_snapshot will be updated using new storage.
@@ -116,26 +99,6 @@ public:
         table_expression_modifiers = std::move(table_expression_modifiers_value);
     }
 
-    const MaterializedCTEPtr & getMaterializedCTE() const
-    {
-        return materialized_cte;
-    }
-
-    bool isMaterializedCTE() const
-    {
-        return children[materialized_cte_subquery_index] != nullptr;
-    }
-
-    const QueryTreeNodePtr & getMaterializedCTESubquery() const
-    {
-        return children[materialized_cte_subquery_index];
-    }
-
-    QueryTreeNodePtr & getMaterializedCTESubquery()
-    {
-        return children[materialized_cte_subquery_index];
-    }
-
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::TABLE;
@@ -161,10 +124,8 @@ private:
     StorageSnapshotPtr storage_snapshot;
     std::optional<TableExpressionModifiers> table_expression_modifiers;
     std::string temporary_table_name;
-    MaterializedCTEPtr materialized_cte;
 
-    static constexpr size_t materialized_cte_subquery_index = 0;
-    static constexpr size_t children_size = materialized_cte_subquery_index + 1;
+    static constexpr size_t children_size = 0;
 };
 
 }

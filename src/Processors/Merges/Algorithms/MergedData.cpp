@@ -16,7 +16,7 @@ extern const int LOGICAL_ERROR;
 void MergedData::initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs)
 {
     columns = header.cloneEmptyColumns();
-    std::vector<VectorWithMemoryTracking<ColumnPtr>> source_columns(columns.size());
+    std::vector<Columns> source_columns(columns.size());
     std::vector<bool> is_replicated(columns.size());
     for (const auto & input : inputs)
     {
@@ -37,15 +37,8 @@ void MergedData::initialize(const Block & header, const IMergingAlgorithm::Input
         columns[i] = recursiveRemoveSparse(std::move(columns[i]))->assumeMutable();
         if (is_replicated[i])
             columns[i] = ColumnReplicated::create(std::move(columns[i]));
-        /// Columns with dynamic structure (like JSON/Dynamic) need their structure to be
-        /// merged from all source columns before the merge starts.
         if (columns[i]->hasDynamicStructure())
-            columns[i]->chooseDynamicStructureForMerge(source_columns[i], max_dynamic_subcolumns);
-        /// Columns with statistics (like Map with adaptive buckets) need their statistics to be
-        /// merged from all source columns before the merge starts.
-        /// Must be called after `chooseDynamicStructureForMerge` for columns that have both.
-        if (columns[i]->hasStatistics())
-            columns[i]->takeOrCalculateStatisticsFrom(source_columns[i]);
+            columns[i]->takeDynamicStructureFromSourceColumns(source_columns[i], max_dynamic_subcolumns);
     }
 }
 
@@ -54,7 +47,21 @@ void MergedData::insertRow(const ColumnRawPtrs & raw_columns, size_t row, size_t
     size_t num_columns = raw_columns.size();
     chassert(columns.size() == num_columns);
     for (size_t i = 0; i < num_columns; ++i)
+    {
+        /// If the source is `ColumnReplicated` but the destination is not, wrap the destination
+        /// in `ColumnReplicated` so its `insertFrom` can consume both regular and replicated
+        /// sources through the same optimized path. This preserves the lazy replication
+        /// optimization instead of eagerly materializing the source.
+        ///
+        /// This can happen when `initialize` set the destination type based on the initial
+        /// inputs (none of which were `ColumnReplicated`), but a later chunk arrives via
+        /// `consume` with non-sort `ColumnReplicated` columns (for example, from a JOIN
+        /// with `enable_lazy_columns_replication = 1`).
+        if (raw_columns[i]->isReplicated() && !columns[i]->isReplicated())
+            columns[i] = ColumnReplicated::create(std::move(columns[i]));
+
         columns[i]->insertFrom(*raw_columns[i], row);
+    }
 
     ++total_merged_rows;
     ++merged_rows;
@@ -67,6 +74,10 @@ void MergedData::insertRows(const ColumnRawPtrs & raw_columns, size_t start_inde
     chassert(columns.size() == num_columns);
     for (size_t i = 0; i < num_columns; ++i)
     {
+        /// See comment in `insertRow` for why this wrapping is needed.
+        if (raw_columns[i]->isReplicated() && !columns[i]->isReplicated())
+            columns[i] = ColumnReplicated::create(std::move(columns[i]));
+
         if (length == 1)
             columns[i]->insertFrom(*raw_columns[i], start_index);
         else
@@ -97,21 +108,19 @@ void MergedData::insertChunk(Chunk && chunk, size_t rows_size)
         {
             columns[i] = columns[i]->cloneResized(num_rows);
         }
-        /// For columns with dynamic structure (like JSON/Dynamic) we cannot just take the column from
-        /// the input chunk because the resulting column may have different dynamic structure
-        /// (after calling `chooseDynamicStructureForMerge`).
-        /// We need to use `cloneEmpty` + `insertRangeFrom` to properly re-insert data.
+        /// For columns with Dynamic structure we cannot just take column from input chunk because resulting column may have
+        /// different Dynamic structure (and have some merge statistics after calling takeDynamicStructureFromSourceColumns).
+        /// We should insert into data resulting column using insertRangeFrom.
+        ///
+        /// If `chunk_columns[i]` is `ColumnReplicated`, wrap the empty destination in
+        /// `ColumnReplicated` so `insertRangeFrom` consumes the source via the optimized path
+        /// without eagerly materializing it. This preserves the lazy replication optimization.
         else if (columns[i]->hasDynamicStructure())
         {
             columns[i] = columns[i]->cloneEmpty();
+            if (chunk_columns[i]->isReplicated() && !columns[i]->isReplicated())
+                columns[i] = ColumnReplicated::create(std::move(columns[i]));
             columns[i]->insertRangeFrom(*chunk_columns[i], 0, num_rows);
-        }
-        /// For columns with statistics (like Map with adaptive buckets) we can reuse the column
-        /// from the input chunk, but need to preserve the merged statistics computed during `initialize`.
-        else if (columns[i]->hasStatistics())
-        {
-            chunk_columns[i]->takeOrCalculateStatisticsFrom({columns[i]->getPtr()});
-            columns[i] = std::move(chunk_columns[i]);
         }
         else if (columns[i]->isReplicated() && !chunk_columns[i]->isReplicated())
         {
@@ -119,6 +128,9 @@ void MergedData::insertChunk(Chunk && chunk, size_t rows_size)
         }
         else
         {
+            /// Simple case: move the chunk column into the destination. If the chunk is
+            /// `ColumnReplicated`, the destination becomes `ColumnReplicated` — this preserves
+            /// the lazy replication optimization.
             columns[i] = std::move(chunk_columns[i]);
         }
     }

@@ -26,6 +26,14 @@ namespace CurrentMetrics
     extern const Metric QueryNonInternal;
 }
 
+namespace ProfileEvents
+{
+    extern const Event UserThrottlerBytes;
+    extern const Event UserThrottlerSleepMicroseconds;
+    extern const Event AllUsersThrottlerBytes;
+    extern const Event AllUsersThrottlerSleepMicroseconds;
+}
+
 namespace DB
 {
 namespace Setting
@@ -379,14 +387,20 @@ ProcessList::EntryPtr ProcessList::insert(
 
         if (!total_network_throttler && settings[Setting::max_network_bandwidth_for_all_users])
         {
-            total_network_throttler = std::make_shared<Throttler>(settings[Setting::max_network_bandwidth_for_all_users]);
+            total_network_throttler = std::make_shared<Throttler>(
+                settings[Setting::max_network_bandwidth_for_all_users],
+                ProfileEvents::AllUsersThrottlerBytes,
+                ProfileEvents::AllUsersThrottlerSleepMicroseconds);
         }
 
         if (!user_process_list.user_throttler)
         {
             if (settings[Setting::max_network_bandwidth_for_user])
-                user_process_list.user_throttler
-                    = std::make_shared<Throttler>(settings[Setting::max_network_bandwidth_for_user], total_network_throttler);
+                user_process_list.user_throttler = std::make_shared<Throttler>(
+                    settings[Setting::max_network_bandwidth_for_user],
+                    total_network_throttler,
+                    ProfileEvents::UserThrottlerBytes,
+                    ProfileEvents::UserThrottlerSleepMicroseconds);
             else if (settings[Setting::max_network_bandwidth_for_all_users])
                 user_process_list.user_throttler = total_network_throttler;
         }
@@ -636,13 +650,6 @@ void QueryStatus::throwQueryWasCancelled() const
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
 
-void QueryStatus::throwIfKilled()
-{
-    if (!is_killed.load())
-        return;
-    throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), 0);
-}
-
 bool QueryStatus::checkTimeLimitSoft()
 {
     if (is_killed.load())
@@ -779,25 +786,6 @@ void ProcessList::killAllQueries()
     for (auto & cancelled_process : cancelled_processes)
         cancelled_process->cancelQuery(CancelReason::CANCELLED_BY_USER);
 
-}
-
-bool QueryStatus::updateProgressIn(const Progress & value)
-{
-    CurrentThread::updateProgressIn(value);
-    progress_in.incrementPiecewiseAtomically(value);
-
-    if (priority_handle)
-        priority_handle->waitIfNeed();
-
-    return !is_killed.load(std::memory_order_relaxed);
-}
-
-bool QueryStatus::updateProgressOut(const Progress & value)
-{
-    CurrentThread::updateProgressOut(value);
-    progress_out.incrementPiecewiseAtomically(value);
-
-    return !is_killed.load(std::memory_order_relaxed);
 }
 
 

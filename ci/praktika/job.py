@@ -1,10 +1,8 @@
 import copy
 import fnmatch
-import hashlib
 import json
 import os
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Iterable, List, Optional
 
 from . import Artifact
@@ -79,13 +77,7 @@ class Job:
 
         parameter: Any = None
 
-        # Per-job secrets (exported only for this job, not all jobs in the workflow)
-        secrets: list = field(default_factory=list)
-
-        # List of commands to call before job starts
-        pre_hooks: List[str] = field(default_factory=list)
-
-        # List of commands to call after job completes
+        # List of commands to call upon job completion
         post_hooks: List[str] = field(default_factory=list)
 
         def parametrize(self, *param_sets: "Job.ParamSet"):
@@ -220,11 +212,6 @@ class Job:
             res.post_hooks = post_hooks
             return res
 
-        def set_timeout(self, timeout):
-            res = copy.deepcopy(self)
-            res.timeout = timeout
-            return res
-
         @staticmethod
         def get_job(job_configs, job_name):
             for job in job_configs:
@@ -278,10 +265,5 @@ class Job:
             if self.timeout_shell_cleanup:
                 return
             if self.run_in_docker:
-                container_name = (
-                    "praktika_"
-                    + hashlib.sha1(
-                        (Path(os.getcwd()).resolve().as_posix() + ":" + self.name).encode()
-                    ).hexdigest()[:12]
-                )
-                self.timeout_shell_cleanup = f"docker rm -f {container_name}"
+                # the container name is always the same (praktika) for every image
+                self.timeout_shell_cleanup = "docker rm -f praktika"

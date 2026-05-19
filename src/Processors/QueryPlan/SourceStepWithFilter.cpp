@@ -93,15 +93,15 @@ void SourceStepWithFilter::applyFilters(ActionDAGNodes added_filter_nodes)
 void SourceStepWithFilter::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
     query_info.prewhere_info = prewhere_info_value;
-    output_header = std::make_shared<const Block>(applyPrewhereActions(*output_header, query_info.row_level_filter, query_info.prewhere_info));
+    output_header = std::make_shared<const Block>(applyPrewhereActions(
+        storage_snapshot->getSampleBlockForColumns(required_source_columns),
+        query_info.row_level_filter,
+        query_info.prewhere_info));
 }
 
 void SourceStepWithFilter::describeActions(FormatSettings & format_settings) const
 {
-    std::string prefix = format_settings.detail_prefix;
-
-    if (format_settings.pretty)
-        QueryPlanFormat::formatOutputColumns(format_settings.out, *this, prefix);
+    std::string prefix(format_settings.offset, format_settings.indent_char);
 
     if (query_info.prewhere_info || query_info.row_level_filter)
     {
@@ -122,8 +122,7 @@ void SourceStepWithFilter::describeActions(FormatSettings & format_settings) con
         format_settings.out << '\n';
 
         auto expression = std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions.clone());
-        if (!format_settings.compact)
-            expression->describeActions(format_settings.out, prefix);
+        expression->describeActions(format_settings.out, prefix);
     }
 
     if (query_info.row_level_filter)
@@ -135,8 +134,7 @@ void SourceStepWithFilter::describeActions(FormatSettings & format_settings) con
         format_settings.out << '\n';
 
         auto expression = std::make_shared<ExpressionActions>(query_info.row_level_filter->actions.clone());
-        if (!format_settings.compact)
-            expression->describeActions(format_settings.out, prefix);
+        expression->describeActions(format_settings.out, prefix);
     }
 }
 

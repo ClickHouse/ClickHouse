@@ -134,7 +134,6 @@ private:
     mutable std::mutex streaming_mutex;
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;
     std::vector<BackgroundSchedulePoolTaskHolder> streaming_tasks;
-    std::atomic<size_t> max_files_override{0};
 
     LoggerPtr log;
 
@@ -144,7 +143,7 @@ private:
     bool supportsSubsetOfColumns(const ContextPtr & context_) const;
     bool supportsSubcolumns() const override { return true; }
     bool supportsOptimizationToSubcolumns() const override { return false; }
-    bool supportsColumnsWithDynamicStructure() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
 
     const ObjectStorageQueueTableMetadata & getTableMetadata() const;
 
@@ -157,8 +156,7 @@ private:
         std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
         size_t max_block_size,
         ContextPtr local_context,
-        bool commit_once_processed,
-        size_t max_processed_files_override = 0);
+        bool commit_once_processed);
 
     /// Get number of dependent materialized views.
     size_t getDependencies() const;

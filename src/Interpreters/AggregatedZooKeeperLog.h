@@ -19,7 +19,6 @@ struct AggregatedZooKeeperLogElement
     String parent_path;
     Int32 operation;
     StaticString component;
-    bool is_subrequest = false;
 
     /// Group statistics.
     UInt32 count;
@@ -46,8 +45,7 @@ public:
         const std::filesystem::path & path,
         UInt64 latency_microseconds,
         Coordination::Error error,
-        StaticString component,
-        bool is_subrequest = false);
+        StaticString component);
 
 private:
     struct EntryKey
@@ -56,7 +54,6 @@ private:
         Int32 operation;
         String parent_path;
         StaticString component;
-        bool is_subrequest = false;
 
         bool operator==(const EntryKey & other) const = default;
     };
