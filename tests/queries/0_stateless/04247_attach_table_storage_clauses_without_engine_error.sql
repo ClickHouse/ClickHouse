@@ -5,7 +5,7 @@
 -- path reads the table definition from stored metadata and overwrites anything the
 -- user typed. The parser allows `SETTINGS`, `ORDER BY`, `PARTITION BY`, etc. without
 -- an `ENGINE` to support `default_table_engine` on `CREATE`, but for `ATTACH` the
--- same syntax produced no error and no effect — users assumed their settings took
+-- same syntax produced no error and no effect, and users assumed their settings took
 -- effect. We now reject this with `BAD_ARGUMENTS` so the user notices.
 --
 -- However `ATTACH TABLE t SETTINGS log_comment = 'foo';` is a legitimate, supported

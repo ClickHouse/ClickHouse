@@ -1576,10 +1576,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// `InterpreterSetQuery::applySettingsFromQuery` (called from `executeQueryImpl` before this
     /// interpreter runs) extracts session settings out of `create.storage->settings` and applies
     /// them to the context, then clears `create.storage->settings` when nothing engine-specific
-    /// is left. So the case we must reject is the *remaining* one: at this point any of the
+    /// is left. So the case we must reject is the remaining one: at this point any of the
     /// non-engine storage fields (`ORDER BY`, `PARTITION BY`, `PRIMARY KEY`, `SAMPLE BY`, `TTL`,
     /// `UNIQUE KEY`, or `SETTINGS` containing keys that are not known session settings) are still
-    /// populated — those would be silently dropped by the short `ATTACH` path below.
+    /// populated, and those would be silently dropped by the short `ATTACH` path below.
     if (create.attach && create.storage && !create.storage->engine && !create.columns_list)
     {
         const auto & storage = *create.storage;
@@ -1595,11 +1595,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (has_non_engine_storage_clauses)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "ATTACH TABLE without ENGINE cannot specify storage clauses (ORDER BY, PARTITION BY, PRIMARY KEY, "
-                "SAMPLE BY, TTL, UNIQUE KEY, or engine SETTINGS) — they would be silently ignored because the "
-                "table definition is read from stored metadata. Use 'ATTACH TABLE {0};' to re-attach with stored "
-                "metadata, or 'ALTER TABLE {0} MODIFY SETTING ...' (or 'MODIFY ORDER BY ...') after ATTACH to "
-                "change settings. Session settings (e.g. log_comment) are allowed and applied automatically.",
+                "ATTACH applies the table definition from stored metadata and can't be changed in the query itself. "
+                "Use 'ATTACH TABLE {0};' to re-attach with stored metadata, or 'ALTER TABLE {0} MODIFY SETTING ...' "
+                "(or 'MODIFY ORDER BY ...') after ATTACH to change settings.",
                 backQuoteIfNeed(create.getTable()));
         }
     }
