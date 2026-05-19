@@ -29,6 +29,7 @@ class ReaderExecutor
 public:
     static constexpr size_t DEFAULT_WINDOW_SIZE = 8 * 1024 * 1024; /// 8 MiB
     static constexpr size_t DEFAULT_MIN_BYTES_FOR_SEEK = 8 * 1024 * 1024; /// 8 MiB
+    static constexpr size_t ROPE_BLOCK_SIZE = 1 * 1024 * 1024; /// 1 MiB per Rope node
 
     ReaderExecutor(
         std::shared_ptr<ISourceReader> source,

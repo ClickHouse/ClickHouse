@@ -422,11 +422,47 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
         {
             LOG_TRACE(log, "readPhysicalWindow: source read object={}, offset={}, size={}",
                 pr.object.remote_path, pr.object_offset, pr.size);
-            auto rope_buf = std::make_shared<OwnedRopeBuffer>(pr.size);
-            size_t bytes_read = readFromSource(pr.object, pr.object_offset, pr.size, rope_buf->data());
 
-            result.append(RopeNode{std::move(rope_buf), 0, bytes_read, logical_pos});
-            logical_pos += bytes_read;
+            /// Live buffer path: single contiguous allocation.
+            if (live_buffer
+                && live_buffer->object_path == pr.object.remote_path
+                && live_buffer->current_position == pr.object_offset)
+            {
+                auto rope_buf = std::make_shared<OwnedRopeBuffer>(pr.size);
+                LOG_DEBUG(log, "readPhysicalWindow: live buffer, allocated {} bytes at logical_pos={}", pr.size, logical_pos);
+                size_t bytes_read = readFromSource(pr.object, pr.object_offset, pr.size, rope_buf->data());
+                LOG_DEBUG(log, "readPhysicalWindow: live buffer read {} bytes, first_byte=0x{:02x}",
+                    bytes_read, bytes_read > 0 ? static_cast<unsigned char>(rope_buf->data()[0]) : 0);
+                result.append(RopeNode{std::move(rope_buf), 0, bytes_read, logical_pos});
+                logical_pos += bytes_read;
+            }
+            else
+            {
+                /// Stateless path: allocate 1 MiB blocks, fill each with independent range read.
+                size_t bytes_left = pr.size;
+                size_t src_offset = pr.object_offset;
+                LOG_DEBUG(log, "readPhysicalWindow: stateless, {} bytes in {} blocks at logical_pos={}",
+                    pr.size, (pr.size + ROPE_BLOCK_SIZE - 1) / ROPE_BLOCK_SIZE, logical_pos);
+
+                while (bytes_left > 0)
+                {
+                    size_t chunk = std::min(ROPE_BLOCK_SIZE, bytes_left);
+                    auto rope_buf = std::make_shared<OwnedRopeBuffer>(chunk);
+
+                    size_t got = readFromSource(pr.object, src_offset, chunk, rope_buf->data());
+                    LOG_DEBUG(log, "readPhysicalWindow: stateless block offset={}, requested={}, got={}, first_byte=0x{:02x}",
+                        src_offset, chunk, got,
+                        got > 0 ? static_cast<unsigned char>(rope_buf->data()[0]) : 0);
+
+                    if (got == 0)
+                        break;
+
+                    result.append(RopeNode{std::move(rope_buf), 0, got, logical_pos});
+                    logical_pos += got;
+                    src_offset += got;
+                    bytes_left -= got;
+                }
+            }
         }
     }
 
