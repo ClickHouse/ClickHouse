@@ -530,11 +530,6 @@ public:
         bool /*cleanup*/,
         ContextPtr /*context*/);
 
-    /// Compact metadata-only manifests for data-lake tables that support it (currently Iceberg).
-    virtual bool optimizeManifestFiles(
-        const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr /*context*/);
-
     /// Executes update query. More lightweight than mutation.
     virtual QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context);
 

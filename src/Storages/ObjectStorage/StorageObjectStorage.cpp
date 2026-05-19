@@ -621,13 +621,6 @@ bool StorageObjectStorage::optimize(
     return configuration->optimize(object_storage, metadata_snapshot, context, format_settings);
 }
 
-bool StorageObjectStorage::optimizeManifestFiles(
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr context)
-{
-    return configuration->optimizeManifestFiles(metadata_snapshot, context, format_settings);
-}
-
 void StorageObjectStorage::truncate(
     const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,

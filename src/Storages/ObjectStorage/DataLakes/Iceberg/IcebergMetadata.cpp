@@ -456,7 +456,7 @@ bool IcebergMetadata::optimize(
 }
 
 bool IcebergMetadata::optimizeManifestFiles(
-       const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & /*format_settings*/)
+       const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
     {

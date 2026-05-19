@@ -156,10 +156,6 @@ public:
         bool /*cleanup*/,
         ContextPtr context) override;
 
-    bool optimizeManifestFiles(
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr context) override;
-
     bool supportsDelete() const override { return configuration->supportsDelete(); }
 
     bool supportsParallelInsert() const override { return configuration->supportsParallelInsert(); }

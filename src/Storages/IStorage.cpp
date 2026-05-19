@@ -270,13 +270,6 @@ bool IStorage::optimize(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method optimize is not supported by storage {}", getName());
 }
 
-bool IStorage::optimizeManifestFiles(
-        const StorageMetadataPtr & /*metadata_snapshot*/,
-        ContextPtr /*context*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method optimize manifest files is not supported by storage {}", getName());
-}
-
 std::expected<void, PreformattedMessage> IStorage::supportsLightweightUpdate() const
 {
     return std::unexpected(PreformattedMessage::create("Table with engine {} doesn't support lightweight updates", getName()));
