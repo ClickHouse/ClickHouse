@@ -4330,7 +4330,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         if (terminalActive) return;
         /// Bail out before mutating any state if the configured server URL is currently invalid.
         /// The icon is only shown when the initial probe succeeded, so this can happen only if the
-        /// user edited `url_elem.value` to something unparseable between page load and this click.
+        /// user edited `url_elem.value` to something unparsable between page load and this click.
         const terminalSrc = terminalIframe ? null : getTerminalURL();
         if (!terminalIframe && !terminalSrc) return;
         terminalActive = true;
