@@ -98,14 +98,17 @@ void SerializationCustomSimpleText::serializeTextQuoted(const IColumn & column, 
 void SerializationCustomSimpleText::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    readQuotedString(str, istr);
+    /// Use SQL-style quoted reader so we accept both `\'` and the SQL-standard `''` apostrophe escapes.
+    /// `serializeTextQuoted` above can emit either form depending on `output_format_values_escape_quote_with_quote`,
+    /// and a value written by us via `Values` must be parseable back by the same path.
+    readQuotedStringWithSQLStyle(str, istr);
     deserializeFromString(*this, column, str, settings);
 }
 
 bool SerializationCustomSimpleText::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    if (!tryReadQuotedString(str, istr))
+    if (!tryReadQuotedStringWithSQLStyle(str, istr))
         return false;
     return tryDeserializeFromString(*this, column, str, settings);
 }
