@@ -345,7 +345,7 @@ AccessToken RestCatalog::retrieveAccessToken() const
     }
 
     const auto & context = getContext();
-    context->getRemoteHostFilter().checkURL(url);
+    context->getRemoteHostFilter().checkHostAndPort(url.getHost(), std::to_string(url.getPort()));
     auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
     auto session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
 
@@ -506,7 +506,7 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
 
     LOG_DEBUG(log, "Requesting Google Cloud access token from metadata service: {}", url.toString());
 
-    context->getRemoteHostFilter().checkURL(url);
+    context->getRemoteHostFilter().checkHostAndPort(url.getHost(), std::to_string(url.getPort()));
     auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
     auto session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
 
