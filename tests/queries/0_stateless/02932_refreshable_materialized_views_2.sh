@@ -102,8 +102,9 @@ $CLICKHOUSE_CLIENT -q "
     select '<29: randomize>', abs(next_refresh_time::Int64 - expected::Int64) <= 3600*(24*4+1), next_refresh_time != expected from refreshes;"
 
 # Send data 'TO' an existing table.
-# Reading dest while auto-refreshes run concurrently: getAndLockTargetTable retries
-# if the table is briefly invisible during the atomic table exchange.
+# Reading `dest` while auto-refreshes run concurrently: the `EXCHANGE` + `DROP` race
+# makes the name `dest` resolve to a UUID that is briefly stale; the fallback in
+# `IdentifierResolver` retries by name and resolves to the freshly exchanged-in target.
 $CLICKHOUSE_CLIENT -q "
     drop table g;
     create table dest (x Int64) engine MergeTree order by x;

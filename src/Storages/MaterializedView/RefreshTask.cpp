@@ -1099,14 +1099,6 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
     ///  3. Do SYSTEM SYNC REPLICA. May fail if the table is being dropped.
     ///     If this fails, retry until we see a different table by the same name.
 
-    /// Look up by name, not UUID. The caller (IdentifierResolver) may pass a UUID-bearing StorageID
-    /// from resolveStorageID, but that UUID can be stale: EXCHANGE TABLES during refresh replaces
-    /// the target table with a new UUID, and then the old table is dropped. If we pass the stale
-    /// UUID to getTable, it throws UNKNOWN_TABLE via the tryGetByUUID shortcut in getTableImpl,
-    /// bypassing our retry loop. Name-based lookup is safe: the database mutex is held across
-    /// applyState renames, so getTable blocks during the rename and resolves correctly afterward.
-    StorageID name_only_id(storage_id.database_name, storage_id.table_name);
-
     StoragePtr prev_storage;
     bool prev_table_dropped_locally = false;
     std::exception_ptr exception;
@@ -1121,13 +1113,13 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
             }
             else
             {
-                /// We're waiting for the database to catch up and see the new table.
+                /// We're waiting for DatabaseReplicated to catch up and see the new table.
                 ProfileEvents::increment(ProfileEvents::RefreshableViewSyncReplicaRetry);
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
         }
 
-        StoragePtr storage = DatabaseCatalog::instance().getTable(name_only_id, context);
+        StoragePtr storage = DatabaseCatalog::instance().getTable(storage_id, context);
 
         if (storage == prev_storage)
         {
