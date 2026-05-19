@@ -3718,7 +3718,7 @@ async function getQueryUnderCursor() {
     /// fall back to the query that ended at the last `;` rather than returning
     /// an empty string. This is what handles the "single query ending in `;`
     /// with the cursor placed after it" case.
-    if (current_query_start === current_offset && last_query_end >= 0) {
+    if (current_query_start === current_offset && current_offset === all_queries.length && last_query_end >= 0) {
         query_area.setSelectionRange(last_query_start, last_query_end);
         query_area.focus();
         return all_queries.substring(last_query_start, last_query_end);
