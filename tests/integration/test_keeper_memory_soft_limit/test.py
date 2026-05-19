@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 import logging
+import os
+import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 import pytest
 from kazoo.client import KazooClient
 
 from helpers.cluster import ClickHouseCluster
+
+CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 
 cluster = ClickHouseCluster(__file__, keeper_config_dir="configs/")
 
@@ -104,3 +108,61 @@ def test_soft_limit_create(started_cluster):
         return
 
     raise Exception("all records are inserted but no error occurs")
+
+
+def test_soft_limit_hot_reload(started_cluster):
+    started_cluster.wait_zookeeper_to_start()
+
+    zoo1_container = started_cluster.get_container_id("zoo1")
+    keeper_log = "/var/log/clickhouse-keeper/clickhouse-keeper.log"
+
+    # At startup the limit was set to 300 000 000 bytes ≈ 286.10 MiB (explicit value).
+    startup_log = started_cluster.exec_in_container(
+        zoo1_container,
+        ["bash", "-c", f'grep "max_memory_usage_soft_limit is set to" {keeper_log} || true'],
+    )
+    assert "286.10 MiB" in startup_log, (
+        f"Expected startup log to contain '286.10 MiB', got:\n{startup_log}"
+    )
+
+    # Overwrite keeper_config1.xml with the reload variant that uses ratio=0.9 instead of an explicit value.
+    started_cluster.copy_file_to_container(
+        zoo1_container,
+        os.path.join(CURRENT_TEST_DIR, "configs", "keeper_config1_reload.xml"),
+        "/etc/clickhouse-keeper/keeper_config1.xml",
+    )
+
+    # Send SIGHUP to the keeper process to trigger config reload.
+    started_cluster.exec_in_container(
+        zoo1_container,
+        ["bash", "-c", "pkill -HUP clickhouse-keeper 2>/dev/null || pkill -HUP clickhouse 2>/dev/null || true"],
+        user="root",
+    )
+
+    # Poll for up to 30 s until a second log entry appears with a value different from the
+    # startup "286.10 MiB". ratio=0.9 of any realistic machine memory is  differs from 286 MiB.
+    deadline = time.time() + 30
+    reloaded = False
+    while time.time() < deadline:
+        lines = started_cluster.exec_in_container(
+            zoo1_container,
+            ["bash", "-c", f'grep "max_memory_usage_soft_limit is set to" {keeper_log} || true'],
+        ).strip().splitlines()
+        reload_lines = [l for l in lines if "286.10 MiB" not in l]
+        if reload_lines:
+            reloaded = True
+            break
+        time.sleep(1)
+
+    assert reloaded, (
+        "Timeout waiting for a reload log entry with a value different from '286.10 MiB' after SIGHUP. "
+        f"Log lines seen: {lines}"
+    )
+
+    # Verify keeper is still accepting connections after reload.
+    node_zk = get_connection_zk("zoo1")
+    try:
+        assert node_zk.exists("/") is not None, "Keeper root node not accessible after reload"
+    finally:
+        node_zk.stop()
+        node_zk.close()
