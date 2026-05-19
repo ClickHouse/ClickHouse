@@ -21,7 +21,7 @@ namespace
     {
         static const UInt64 ticks = []
         {
-            long t = ::sysconf(_SC_CLK_TCK);
+            Int64 t = ::sysconf(_SC_CLK_TCK);
             return t > 0 ? static_cast<UInt64>(t) : UInt64{100};
         }();
         return ticks;
@@ -62,6 +62,7 @@ std::vector<pid_t> walkSubtree(pid_t root_pid)
             continue;
 
         struct dirent * entry;
+        /// NOLINTNEXTLINE(concurrency-mt-unsafe) -- `dir` is a local `DIR *` not shared across threads.
         while ((entry = ::readdir(dir)) != nullptr)
         {
             const char * name = entry->d_name;
@@ -184,7 +185,7 @@ bool readPeakRss(pid_t pid, UInt64 & bytes) noexcept
     std::string line;
     while (std::getline(in, line))
     {
-        if (line.compare(0, 6, "VmHWM:") != 0)
+        if (!line.starts_with("VmHWM:"))
             continue;
 
         const std::string value_str = line.substr(6);
