@@ -308,6 +308,27 @@ def test_optimize_manifest_files(started_cluster_iceberg_with_spark, storage_typ
 
     instance.query(f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST;", settings={"allow_experimental_iceberg_compaction" : 1})
 
+    # Verify Spark can still read the table correctly after manifest compaction.
+    # Total rows: range(10,100) + range(100,200) + range(600,700) + range(200,300)
+    #           + range(300,400) + range(400,500) + range(600,700) = 690
+    # (range(600,700) is inserted twice, so it contributes 200 rows.)
+    default_download_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
+    )
+    spark_rows = spark.read.format("iceberg").load(
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+    ).collect()
+    assert len(spark_rows) == 690
+
+    spark_ids = sorted(row["id"] for row in spark_rows)
+    clickhouse_ids = list(map(int, instance.query(
+        f"SELECT id FROM {TABLE_NAME} ORDER BY id"
+    ).split()))
+    assert spark_ids == clickhouse_ids
+
 
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_optimize_manifest_files_partitioned(started_cluster_iceberg_with_spark, storage_type):

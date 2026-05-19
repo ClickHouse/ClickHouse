@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
@@ -127,23 +128,32 @@ struct Plan
 };
 
 /// Cheap pre-check used by compactIcebergManifests: read just the current manifest list
-/// (one Avro file) and return its length. This avoids walking every manifest entry on every
-/// retry, which under contention (e.g. concurrent OPTIMIZE ... MANIFEST) would amplify
-/// storage reads quadratically. The companion "are manifests already optimal?" check is
-/// done lazily inside writeConsolidatedManifestFile from the data it has to read anyway.
-size_t getCurrentManifestListLength(
+/// (one Avro file) and report whether its entry count is strictly greater than `threshold`.
+/// This avoids walking every manifest entry on every retry, which under contention
+/// (e.g. concurrent OPTIMIZE ... MANIFEST) would amplify storage reads quadratically.
+///
+/// The threshold is passed in so we can skip materializing the per-entry
+/// `ManifestFileCacheKeys` vector that `getManifestList` produces — we only need a yes/no
+/// answer, not the entries themselves. (The Avro deserializer constructor still parses
+/// all rows; pushing the early-exit deeper into Avro decoding would require a separate
+/// max-rows parameter on `AvroForIcebergDeserializer`.)
+///
+/// The companion "are manifests already optimal?" check is done lazily inside
+/// `writeConsolidatedManifestFile` from the data it has to read anyway.
+bool isCurrentManifestListAboveThreshold(
     Poco::JSON::Object::Ptr metadata_object,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage,
-    ContextPtr context)
+    ContextPtr context,
+    size_t threshold)
 {
-    LoggerPtr log = getLogger("IcebergCompaction::getCurrentManifestListLength");
+    LoggerPtr log = getLogger("IcebergCompaction::isCurrentManifestListAboveThreshold");
 
     if (!metadata_object->has(Iceberg::f_current_snapshot_id))
-        return 0;
+        return false;
     Int64 current_snapshot_id = metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
     if (current_snapshot_id < 0)
-        return 0;
+        return false;
 
     String current_manifest_list_path;
     auto snapshots = metadata_object->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
@@ -157,12 +167,14 @@ size_t getCurrentManifestListLength(
         }
     }
     if (current_manifest_list_path.empty())
-        return 0;
+        return false;
 
-    auto manifest_list = getManifestList(
-        object_storage, persistent_table_components, context,
-        IcebergPathFromMetadata::deserialize(current_manifest_list_path), log);
-    return manifest_list.size();
+    auto filename = IcebergPathFromMetadata::deserialize(current_manifest_list_path);
+    RelativePathWithMetadata object_info(persistent_table_components.path_resolver.resolve(filename));
+    auto manifest_list_buf = createReadBuffer(object_info, object_storage, context, log);
+    AvroForIcebergDeserializer manifest_list_deserializer(
+        std::move(manifest_list_buf), filename, getFormatSettings(context));
+    return manifest_list_deserializer.rows() > threshold;
 }
 
 Plan getPlan(
@@ -565,7 +577,7 @@ bool writeConsolidatedManifestFile(
         current_snapshot_id);
 
     // Write one manifest file per partition
-    auto partition_types = ChunkPartitioner(fields_from_partition_spec, current_schema, context, sample_block_).getResultTypes();
+    auto partition_types = ChunkPartitioner(fields_from_partition_spec, current_schema->getArray(Iceberg::f_fields), context, sample_block_).getResultTypes();
 
     std::vector<IcebergPathFromMetadata> consolidated_manifest_paths;
     std::vector<Int64> manifest_entry_sizes;
@@ -619,12 +631,24 @@ bool writeConsolidatedManifestFile(
                 DBMS_DEFAULT_BUFFER_SIZE,
                 context->getWriteSettings());
 
+            std::vector<UInt64> file_row_counts;
+            std::vector<UInt64> file_byte_counts;
+            file_row_counts.reserve(pd.file_metrics.size());
+            file_byte_counts.reserve(pd.file_metrics.size());
+            for (const auto & [record_count, file_size_in_bytes] : pd.file_metrics)
+            {
+                file_row_counts.push_back(static_cast<UInt64>(record_count));
+                file_byte_counts.push_back(static_cast<UInt64>(file_size_in_bytes));
+            }
+
             generateManifestFile(
                 metadata_object,
                 partition_columns,
                 pd.partition_values,
                 partition_types,
                 pd.file_paths,
+                file_row_counts,
+                file_byte_counts,
                 std::nullopt,
                 sample_block_,
                 new_snapshot.snapshot,
@@ -632,8 +656,7 @@ bool writeConsolidatedManifestFile(
                 partition_spec,
                 partition_spec_id,
                 *buffer_manifest,
-                Iceberg::FileContentType::DATA,
-                pd.file_metrics);
+                Iceberg::FileContentType::DATA);
 
             buffer_manifest->finalize();
             Int64 manifest_size = buffer_manifest->count();
@@ -988,17 +1011,17 @@ void compactIcebergManifests(
             persistent_table_components.table_uuid);
 
         /// Cheap pre-check: read just the current manifest list (one Avro file) to
-        /// decide whether the table is below the configured threshold. The companion
-        /// "are manifests already optimal?" check is done lazily inside
+        /// decide whether the table is above the configured threshold. The threshold
+        /// is passed in so this helper can skip materializing the per-entry vector
+        /// that getManifestList builds — we only need a yes/no answer here. The
+        /// companion "are manifests already optimal?" check is done lazily inside
         /// writeConsolidatedManifestFile from the data files it has to read anyway,
         /// so a wasted retry under contention does not re-walk every manifest entry.
-        const size_t total_manifest_files_before = getCurrentManifestListLength(
-            metadata_object, persistent_table_components, object_storage_, context_);
-
-        if (total_manifest_files_before <= min_count_to_compact)
+        if (!isCurrentManifestListAboveThreshold(
+                metadata_object, persistent_table_components, object_storage_, context_, min_count_to_compact))
         {
-            LOG_INFO(log, "Manifest compaction is not needed. Total manifest files: {} (threshold: {})",
-                     total_manifest_files_before, min_count_to_compact);
+            LOG_INFO(log, "Manifest compaction is not needed (manifest list is within threshold {})",
+                     min_count_to_compact);
             return;
         }
 
@@ -1020,7 +1043,7 @@ void compactIcebergManifests(
                 if (persistent_table_components.table_uuid)
                     persistent_table_components.metadata_cache->remove(*persistent_table_components.table_uuid);
             }
-            LOG_INFO(log, "Successfully compacted {} manifest files", total_manifest_files_before);
+            LOG_INFO(log, "Successfully compacted manifest list");
             return;
         }
     }
