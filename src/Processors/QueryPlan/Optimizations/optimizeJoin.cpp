@@ -363,7 +363,10 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name};
     }
 
-    if (typeid_cast<const ReadFromSystemOneStep *>(step))
+    /// We cannot do typeid_cast<const ReadFromSystemOneStep *>(step)
+    /// since this is defined in clickhouse_storages_system module,
+    /// which is not linked to current module
+    if (step->getName() == "ReadFromSystemOne")
     {
         /// system.one always produces exactly one row — used to implement constant SELECTs like `SELECT 1`.
         return RelationStats{.estimated_rows = 1, .table_name = "system.one"};
