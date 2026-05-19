@@ -74,6 +74,8 @@ private:
     Poco::Net::HTTPBasicCredentials credentials{};
 
     bool use_external_buffer;
+    bool has_pending_first_read_result = false;
+    bool pending_first_read_result = false;
 
     /// atomic is required for CachedOnDiskReadBufferFromFile, which can access
     /// to this variable via getFileOffsetOfBufferEnd()/seek() from multiple

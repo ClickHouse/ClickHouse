@@ -73,6 +73,13 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
 {
     if (read_until_position)
     {
+        if (read_until_position == offset)
+        {
+            has_pending_first_read_result = false;
+            pending_first_read_result = false;
+            return nullptr;
+        }
+
         if (read_until_position < offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
     }
@@ -83,13 +90,6 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
     auto connection_timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, server_settings);
     connection_timeouts.withConnectionTimeout(std::max<Poco::Timespan>(settings[Setting::http_connection_timeout], Poco::Timespan(20, 0)));
     connection_timeouts.withReceiveTimeout(std::max<Poco::Timespan>(settings[Setting::http_receive_timeout], Poco::Timespan(20, 0)));
-
-    /// When `use_external_buffer` is false, `nextImpl` calls `BufferBase::set(impl->buffer().begin(), ...)`
-    /// before issuing any read. We must construct `impl` with `delay_initialization = false` so that
-    /// `impl->buffer()` is backed by a real buffer; otherwise we would publish a `nullptr` working buffer.
-    /// `delay_initialization = false` also probes connectivity at creation, which lets us iterate over
-    /// `urls` and skip failing failover options without an extra dry run.
-    const bool delay_initialization = use_external_buffer;
 
     std::exception_ptr last_exception;
     for (const auto & url : urls)
@@ -105,7 +105,7 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
                            .withHostFilter(&context->getRemoteHostFilter())
                            .withHeaders(headers)
                            .withExternalBuf(use_external_buffer)
-                           .withDelayInit(delay_initialization)
+                           .withDelayInit(true)
                            .create(credentials);
 
             if (offset)
@@ -113,11 +113,21 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
             if (read_until_position)
                 res->setReadUntilPosition(read_until_position);
 
+            /// For failover URL options, use the first real read to select the working URL
+            /// after seek and read bounds are applied. `nextImpl` will publish this result.
+            if (urls.size() > 1 && !use_external_buffer)
+            {
+                pending_first_read_result = res->next();
+                has_pending_first_read_result = true;
+            }
+
             current_url = url;
             return res;
         }
         catch (...)
         {
+            has_pending_first_read_result = false;
+            pending_first_read_result = false;
             last_exception = std::current_exception();
         }
     }
@@ -133,6 +143,8 @@ void ReadBufferFromWebServer::setReadUntilPosition(size_t position)
 {
     read_until_position = position;
     impl.reset();
+    has_pending_first_read_result = false;
+    pending_first_read_result = false;
 }
 
 
@@ -150,11 +162,8 @@ bool ReadBufferFromWebServer::nextImpl()
     if (!impl)
     {
         impl = initialize();
-
-        if (!use_external_buffer)
-        {
-            BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset());
-        }
+        if (!impl)
+            return false;
     }
 
     if (use_external_buffer)
@@ -163,11 +172,34 @@ bool ReadBufferFromWebServer::nextImpl()
     }
     else
     {
-        impl->position() = position();
+        if (working_buffer.begin())
+            impl->position() = position();
+    }
+
+    if (!use_external_buffer)
+    {
+        bool result;
+        if (has_pending_first_read_result)
+        {
+            result = pending_first_read_result;
+            has_pending_first_read_result = false;
+            pending_first_read_result = false;
+        }
+        else
+        {
+            result = impl->next();
+        }
+
+        working_buffer = impl->buffer();
+        pos = impl->position();
+
+        if (result)
+            offset += working_buffer.size();
+
+        return result;
     }
 
     chassert(available() == 0);
-
     chassert(pos >= working_buffer.begin());
     chassert(pos <= working_buffer.end());
 
@@ -213,6 +245,9 @@ off_t ReadBufferFromWebServer::seek(off_t offset_, int whence)
 
     if (offset_ < 0)
         throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}", offset_);
+
+    has_pending_first_read_result = false;
+    pending_first_read_result = false;
 
     if (impl)
     {
