@@ -68,6 +68,7 @@ static struct InitFiu
     ONCE(distributed_cache_fail_choose_server) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     REGULAR(cache_filesystem_failure) \
+    REGULAR(distributed_cache_simulate_writer_not_keeping_up) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
     ONCE(distributed_cache_simulate_stale_connection) \
