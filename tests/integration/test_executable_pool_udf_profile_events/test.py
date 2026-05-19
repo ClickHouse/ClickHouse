@@ -83,8 +83,11 @@ def test_invocations(started_cluster):
     _skip_msan()
     qid = "invocations-1"
     rows = 5000
+    # Use `sum` (not `count`) so the optimizer can't prune the UDF column;
+    # otherwise `SELECT count() FROM (SELECT udf(number) FROM numbers(N))`
+    # is rewritten to `SELECT count() FROM numbers(N)` and the UDF never runs.
     _run(
-        f"SELECT count() FROM (SELECT test_pool_udf_echo(number) FROM numbers({rows}))",
+        f"SELECT sum(test_pool_udf_echo(number)) FROM numbers({rows})",
         qid,
     )
     invocations = _profile_event_value(qid, "ExecutableUserDefinedFunctionInvocations")
@@ -139,8 +142,9 @@ def test_pool_wait_microseconds(started_cluster):
 def test_cpu_user_microseconds(started_cluster):
     _skip_msan()
     qid = "cpu-1"
+    # `sum` keeps the UDF column live so the optimizer can't drop the call.
     _run(
-        "SELECT count() FROM (SELECT test_pool_udf_cpu(number) FROM numbers(2000))",
+        "SELECT sum(test_pool_udf_cpu(number)) FROM numbers(2000)",
         qid,
     )
     cpu = _profile_event_value(qid, "ExecutableUserDefinedFunctionUserTimeMicroseconds")
@@ -151,7 +155,7 @@ def test_system_time_microseconds(started_cluster):
     _skip_msan()
     qid = "syscall-1"
     _run(
-        "SELECT count() FROM (SELECT test_pool_udf_syscall(number) FROM numbers(64))",
+        "SELECT sum(test_pool_udf_syscall(number)) FROM numbers(64)",
         qid,
     )
     sys_time = _profile_event_value(qid, "ExecutableUserDefinedFunctionSystemTimeMicroseconds")
@@ -162,7 +166,7 @@ def test_memory_usage_byte_seconds(started_cluster):
     _skip_msan()
     qid = "mem-1"
     _run(
-        "SELECT count() FROM (SELECT test_pool_udf_mem(number) FROM numbers(64))",
+        "SELECT sum(test_pool_udf_mem(number)) FROM numbers(64)",
         qid,
     )
     mem = _profile_event_value(qid, "ExecutableUserDefinedFunctionPeakMemoryByteSeconds")
@@ -176,7 +180,7 @@ def test_input_bytes(started_cluster):
     qid = "in-1"
     rows = 1000
     _run(
-        f"SELECT count() FROM (SELECT test_pool_udf_echo(number) FROM numbers({rows}))",
+        f"SELECT sum(test_pool_udf_echo(number)) FROM numbers({rows})",
         qid,
     )
     input_bytes = _profile_event_value(qid, "ExecutableUserDefinedFunctionInputBytes")
@@ -190,7 +194,7 @@ def test_output_bytes(started_cluster):
     qid = "out-1"
     rows = 1000
     _run(
-        f"SELECT count() FROM (SELECT test_pool_udf_echo(number) FROM numbers({rows}))",
+        f"SELECT sum(test_pool_udf_echo(number)) FROM numbers({rows})",
         qid,
     )
     output_bytes = _profile_event_value(qid, "ExecutableUserDefinedFunctionOutputBytes")
