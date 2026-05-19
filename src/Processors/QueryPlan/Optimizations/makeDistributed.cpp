@@ -391,6 +391,8 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     }
     else if (read_from_object_storage_step)
     {
+        /// TODO: implement row-count-based decision for object storage reads;
+        /// always enable distributed read for now.
         read_from_object_storage_step->setDistributedRead(bucket_count);
     }
 

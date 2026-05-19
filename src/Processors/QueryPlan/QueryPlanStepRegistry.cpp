@@ -64,12 +64,12 @@ void registerObjectFilterStep(QueryPlanStepRegistry & registry);
 
 
 void registerReadFromStorageStep(QueryPlanStepRegistry & registry);
-void registerShuffleExchangeStep(QueryPlanStepRegistry & registry);
 void registerShuffleSendStep(QueryPlanStepRegistry & registry);
 void registerShuffleReceiveStep(QueryPlanStepRegistry & registry);
-void registerGatherExchangeStep(QueryPlanStepRegistry & registry);
 void registerGatherSendStep(QueryPlanStepRegistry & registry);
 void registerGatherReceiveStep(QueryPlanStepRegistry & registry);
+void registerBroadcastSendStep(QueryPlanStepRegistry & registry);
+void registerBroadcastReceiveStep(QueryPlanStepRegistry & registry);
 
 
 void QueryPlanStepRegistry::registerPlanSteps()
@@ -102,12 +102,12 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerObjectFilterStep(registry);
 
     registerReadFromStorageStep(registry);
-    registerShuffleExchangeStep(registry);
     registerShuffleSendStep(registry);
     registerShuffleReceiveStep(registry);
-    registerGatherExchangeStep(registry);
     registerGatherSendStep(registry);
     registerGatherReceiveStep(registry);
+    registerBroadcastSendStep(registry);
+    registerBroadcastReceiveStep(registry);
 }
 
 }
