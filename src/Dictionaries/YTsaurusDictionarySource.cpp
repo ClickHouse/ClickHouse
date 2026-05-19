@@ -272,15 +272,14 @@ void YTsarususDictionarySource::initializeLookupThrottlerIfNeeded()
 {
     if (throttler_initialized)
         return;
-    throttler_initialized = true;
     auto max_lookups_per_sec = configuration->settings[YTsaurusSetting::lookup_throttler_max_requests_per_second].value;
-    if (!supportsSelectiveLoad() || !max_lookups_per_sec)
-        return;
-    lookup_throttler = std::make_shared<Throttler>(
-        max_lookups_per_sec,
-        ProfileEvents::YTsaurusLookupThrottled,
-        ProfileEvents::end()      /// No sleep time tracking for now
-    );
+    if (max_lookups_per_sec)
+        lookup_throttler = std::make_shared<Throttler>(
+            max_lookups_per_sec,
+            ProfileEvents::YTsaurusLookupThrottled,
+            ProfileEvents::end()      /// No sleep time tracking for now
+        );
+    throttler_initialized = true;
 }
 #endif
 
