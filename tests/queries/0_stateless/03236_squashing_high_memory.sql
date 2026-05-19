@@ -1,5 +1,7 @@
--- Tags: no-fasttest, no-asan, no-tsan, no-msan, no-ubsan, no-random-settings, no-random-merge-tree-settings
+-- Tags: no-fasttest, no-asan, no-tsan, no-msan, no-ubsan, no-random-settings, no-random-merge-tree-settings, no-flaky-check
 -- reason: test requires too many rows to read
+-- no-flaky-check: heavy test (500M rows); runs ~13s in regular CI but ~400s under flaky-check load,
+--                 exceeding the 180s per-run timeout.
 
 SET max_rows_to_read = '501G';
 SET enable_lazy_columns_replication = 0;
