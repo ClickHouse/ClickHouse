@@ -476,13 +476,8 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
 
     auto logger = Poco::Logger::getShared("executeDistributedQuery");
 
-    Strings input_exchange_streams;
-    for (const auto & stream_id : task.input_exchange_streams)
-        input_exchange_streams.push_back(stream_id.toString());
-
-    Strings output_exchange_streams;
-    for (const auto & stream_id : task.output_exchange_streams)
-        output_exchange_streams.push_back(stream_id.toString());
+    const Strings & input_exchange_streams = task.input_exchange_streams;
+    const Strings & output_exchange_streams = task.output_exchange_streams;
 
     LOG_TRACE(logger, "Task '{}' input exchange streams: [{}], output exchange streams: [{}]",
         task.task_id, fmt::join(input_exchange_streams, ", "), fmt::join(output_exchange_streams, ", "));

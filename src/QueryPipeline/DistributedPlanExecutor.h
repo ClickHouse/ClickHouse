@@ -5,6 +5,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <IO/Progress.h>
+#include <boost/core/noncopyable.hpp>
 #include <deque>
 
 namespace DB
