@@ -3,7 +3,17 @@
 -- 13-digit millisecond timestamps and rejected longer ones with
 -- "unexpected number of decimal digits".
 
-SELECT 'toDateTime64 cast (cast_string_to_date_time_mode = best_effort)';
+-- Exercise toDateTime64 cast in two configurations:
+--   1. explicit SETTINGS cast_string_to_date_time_mode = 'best_effort' — pins the parser this PR fixes
+--      so the test keeps exercising the right contract even if the default changes later.
+--   2. inherited default — pins the assumption that `best_effort` IS the default; a silent default
+--      change would flip this section without flipping section 1.
+-- Both must agree.
+SELECT 'toDateTime64 cast: explicit cast_string_to_date_time_mode = best_effort';
+SELECT toDateTime64('1779094968417585', 6, 'UTC') SETTINGS cast_string_to_date_time_mode = 'best_effort';
+SELECT toDateTime64('1779094968417585845', 9, 'UTC') SETTINGS cast_string_to_date_time_mode = 'best_effort';
+
+SELECT 'toDateTime64 cast: inherited default (expected to match best_effort)';
 SELECT toDateTime64('1779094968417585', 6, 'UTC');
 SELECT toDateTime64('1779094968417585845', 9, 'UTC');
 

@@ -1,4 +1,7 @@
-toDateTime64 cast (cast_string_to_date_time_mode = best_effort)
+toDateTime64 cast: explicit cast_string_to_date_time_mode = best_effort
+2026-05-18 09:02:48.417585
+2026-05-18 09:02:48.417585845
+toDateTime64 cast: inherited default (expected to match best_effort)
 2026-05-18 09:02:48.417585
 2026-05-18 09:02:48.417585845
 parseDateTime64BestEffort
