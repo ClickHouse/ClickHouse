@@ -3,6 +3,8 @@ description: 'System table containing information about existing constraints in 
   tables.'
 keywords: ['system table', 'constraints']
 slug: /operations/system-tables/constraints
+sidebar_label: 'system.constraints'
+sidebar_position: 20
 title: 'system.constraints'
 doc_type: 'reference'
 ---
