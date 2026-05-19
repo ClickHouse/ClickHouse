@@ -61,16 +61,28 @@ if (SANITIZE)
             endif ()
             if (_msan_x86_arch_level VERSION_GREATER_EQUAL 3)
                 set (MSAN_TRACK_ORIGINS_LEVEL 1)
+                # On v3+ MSan, AVX2 codegen keeps YMM live across the per-allocation MSan RTL calls
+                # (operator new, free, __msan_set_alloca_origin*, __msan_memcpy, etc.), and LLVM's
+                # `X86VZeroUpperInserter` emits a `vzeroupper` before every such call. For ClickHouse
+                # workloads that's ~1.78M vzeroupper instructions in the binary, almost all on hot
+                # paths.
+                #
+                # On Zen3+ and Ice Lake (current AMD CI runners) the AVX-to-SSE transition penalty
+                # that vzeroupper exists to mitigate is essentially zero. Disable the inserter under
+                # MSan v3+ so we skip executing those instructions.
+                set (MSAN_X86_VZEROUPPER_FLAGS "-mno-vzeroupper")
             else ()
                 set (MSAN_TRACK_ORIGINS_LEVEL 2)
+                set (MSAN_X86_VZEROUPPER_FLAGS "")
             endif ()
         else ()
             set (MSAN_TRACK_ORIGINS_LEVEL 2)
+            set (MSAN_X86_VZEROUPPER_FLAGS "")
         endif ()
 
         # Linking can fail due to relocation overflows (see #49145), caused by too big object files / libraries.
         # Work around this with position-independent builds (-fPIC and -fpie), this is slightly slower than non-PIC/PIE but that's okay.
-        set (MSAN_FLAGS "-fsanitize=memory -fsanitize-memory-use-after-dtor -fsanitize-memory-track-origins=${MSAN_TRACK_ORIGINS_LEVEL} -fPIC -fpie")
+        set (MSAN_FLAGS "-fsanitize=memory -fsanitize-memory-use-after-dtor -fsanitize-memory-track-origins=${MSAN_TRACK_ORIGINS_LEVEL} -fPIC -fpie ${MSAN_X86_VZEROUPPER_FLAGS}")
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${MSAN_FLAGS}")
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${MSAN_FLAGS}")
 
