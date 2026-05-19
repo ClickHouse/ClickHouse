@@ -405,6 +405,78 @@ def test_move_after_processing(started_cluster, engine_name, move_to):
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
+@pytest.mark.parametrize("move_to", ["same_bucket", "another_bucket"])
+def test_move_after_processing_preserve_path(started_cluster, engine_name, move_to):
+    node = started_cluster.instances["instance"]
+    token = generate_random_string()
+    table_name = f"move_after_processing_preserve_{engine_name}_{token}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    file_name = "a.csv"
+    processed_prefix = "sink"
+    processed_bucket = "sink-bucket" if move_to == "another_bucket" else None
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+
+    generate_random_files(
+        started_cluster,
+        files_path,
+        count=1,
+        row_num=1,
+        storage="s3" if engine_name == "S3Queue" else "azure",
+        files=[(f"{files_path}/{file_name}", 0)],
+    )
+
+    if move_to == "another_bucket":
+        if engine_name == "S3Queue":
+            recreate_minio_bucket(started_cluster, processed_bucket)
+        else:
+            recreate_azurite_container(started_cluster, processed_bucket)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        engine_name=engine_name,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        move_to_bucket=processed_bucket,
+        preserve_move_path=True,
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    expected_count = 1
+    for _ in range(1000):
+        count = int(node.query(f"SELECT count() FROM {dst_table_name}"))
+        if count == expected_count:
+            break
+        time.sleep(0.1)
+
+    assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == expected_count
+
+    # With preserve_move_path=true, the moved object must live at exactly
+    # `<processed_prefix>/<files_path>/<file_name>`.
+    expected_key = f"{processed_prefix}/{files_path}/{file_name}"
+
+    if engine_name == "S3Queue":
+        src_bucket = started_cluster.minio_bucket
+        count_objects = count_minio_objects
+    else:
+        src_bucket = started_cluster.azurite_container
+        count_objects = count_azurite_blobs
+
+    dst_bucket = processed_bucket if move_to == "another_bucket" else src_bucket
+
+    breakpoint()
+
+    assert count_objects(started_cluster, dst_bucket, expected_key) == 1
+    assert count_objects(started_cluster, dst_bucket, processed_prefix) == 1
+    assert count_objects(started_cluster, src_bucket, files_path) == 0
+
+
+@pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 def test_auxiliary_zookeeper_keeper_path(started_cluster, engine_name):
     node = started_cluster.instances["instance"]
     table_name = f"aux_keeper_{engine_name.lower()}_{generate_random_string()}"

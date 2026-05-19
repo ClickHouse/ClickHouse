@@ -154,6 +154,7 @@ def create_table(
     after_processing="keep",
     move_to_prefix=None,
     move_to_bucket=None,
+    preserve_move_path=False,
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
@@ -170,6 +171,9 @@ def create_table(
 
     if after_processing == "move":
         assert move_to_prefix or move_to_bucket
+
+        if preserve_move_path:
+            settings["after_processing_move_preserve_path"] = True
 
         if move_to_prefix:
             settings["after_processing_move_prefix"] = move_to_prefix

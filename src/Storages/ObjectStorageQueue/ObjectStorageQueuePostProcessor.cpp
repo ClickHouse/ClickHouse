@@ -178,14 +178,14 @@ void ObjectStorageQueuePostProcessor::doWithRetries(std::function<void()> action
     }
 }
 
-static StoredObject applyMovePrefixIfPresent(const StoredObject & src, const String & move_prefix)
+static StoredObject applyMovePrefixIfPresent(const StoredObject & src, const String & move_prefix, bool preserve_path)
 {
     if (move_prefix.empty())
     {
         return src;
     }
-    const String file_name = fileName(src.remote_path);
-    const String remote_path = fs::path(move_prefix) / file_name;
+    const String suffix = preserve_path ? src.remote_path : fileName(src.remote_path);
+    const String remote_path = fs::path(move_prefix) / suffix;
     return StoredObject(remote_path);
 }
 
@@ -207,7 +207,7 @@ static AzureBlobStorage::ConnectionParams getAzureConnectionParams(
 
 #endif
 
-void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & objects, const String & move_prefix) const
+void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & objects, const String & move_prefix, bool preserve_path) const
 {
     auto read_settings = getReadSettings();
     auto write_settings = getWriteSettings();
@@ -229,7 +229,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                 try
                 {
                     doWithRetries([&]{
-                        auto object_to = applyMovePrefixIfPresent(object_from, move_prefix);
+                        auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, preserve_path);
                         LOG_TRACE(log, "Copying object {} to {}", object_from.remote_path, object_to.remote_path);
                         object_storage->copyObject(
                             object_from,
@@ -321,7 +321,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                             *src_client,
                             src_bucket,
                             object_from.remote_path);
-                        auto object_to = applyMovePrefixIfPresent(object_from, move_prefix);
+                        auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
 
                         LOG_INFO(log, "Copying {} ({} Bytes) to bucket {}", object_from.remote_path, object_size, dst_uri.bucket);
                         copyS3File(
@@ -366,7 +366,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
     }
     else if (!move_prefix.empty())
     {
-        moveWithinBucket(objects, move_prefix);
+        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path);
     }
     else
     {
@@ -413,7 +413,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                         Azure::Storage::Blobs::BlobClient blobClient = src_client->GetBlobClient(object_from.remote_path);
                         auto properties = blobClient.GetProperties().Value;
                         auto blob_size = properties.BlobSize;
-                        auto object_to = applyMovePrefixIfPresent(object_from, move_prefix);
+                        auto object_to = applyMovePrefixIfPresent(object_from, move_prefix, settings.after_processing_move_preserve_path);
                         auto request_settings = azure_storage->getSettings();
                         auto read_settings = getReadSettings();
                         const auto read_settings_to_use = azure_storage->patchSettings(read_settings);
@@ -460,7 +460,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
     }
     else if (!move_prefix.empty())
     {
-        moveWithinBucket(objects, move_prefix);
+        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path);
     }
     else
     {
