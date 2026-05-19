@@ -13,6 +13,6 @@ FROM (
     ) AS ab
     JOIN numbers(10) AS c
     ON b_number = c.number+2
-SETTINGS enable_join_runtime_filters=1
+SETTINGS enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows = 0
 
 );

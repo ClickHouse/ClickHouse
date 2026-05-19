@@ -51,7 +51,7 @@ EXPLAIN PLAN actions = 1, compact = 1, pretty = 1
 SELECT *
 FROM t1
 INNER JOIN t2 ON t1.a = t2.x
-SETTINGS enable_join_runtime_filters = 1, join_algorithm = 'parallel_hash';
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, join_algorithm = 'parallel_hash';
 
 DROP TABLE t1;
 DROP TABLE t2;

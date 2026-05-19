@@ -12,7 +12,7 @@ INSERT INTO users_04041 VALUES (1231, 'John', 33), (6666, 'Ksenia', 48),
 
 EXPLAIN WITH a AS MATERIALIZED (SELECT * FROM users_04041)
 SELECT count() FROM a as l JOIN a as r ON l.uid = r.uid
-SETTINGS enable_join_runtime_filters = 1;
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 
 -- Materialized CTE referenced twice (prevents inlining).
 -- CTE subquery reads from MergeTree table → parallel replicas kicks in.

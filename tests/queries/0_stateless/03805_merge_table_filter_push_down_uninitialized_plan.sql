@@ -14,7 +14,7 @@ CREATE TABLE foo_merge (Val UInt64) ENGINE = Merge(currentDatabase(), '^t1$');
 -- when filter push-down optimization tried to add filter to an uninitialized child plan
 SELECT count() > 0 FROM viewExplain('EXPLAIN', '', (
     SELECT count() FROM foo_merge INNER JOIN t2 USING (Val)
-    SETTINGS enable_join_runtime_filters = 1, parallel_replicas_local_plan = 1
+    SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, parallel_replicas_local_plan = 1
 ));
 
 DROP TABLE foo_merge;

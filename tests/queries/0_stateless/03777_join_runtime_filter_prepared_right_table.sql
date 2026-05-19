@@ -16,7 +16,7 @@ SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, key3) ORDER BY key1;
 SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, key3) ORDER BY key1;
 
 SELECT '============ runtime filters enabled =========';
-SET enable_join_runtime_filters = 1;
+SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
 
 EXPLAIN
 SELECT * FROM t1 ALL INNER JOIN tj USING (key1, key2, key3) ORDER BY key1;

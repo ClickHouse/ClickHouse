@@ -6,6 +6,7 @@ SET enable_join_runtime_filters = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_join_swap_table = 0;
 SET join_runtime_filter_min_probe_rows=DEFAULT;
+SET query_plan_optimize_join_order_limit=16;
 
 DROP TABLE IF EXISTS small_probe;
 DROP TABLE IF EXISTS large_probe;

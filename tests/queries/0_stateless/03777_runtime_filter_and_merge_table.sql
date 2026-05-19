@@ -19,7 +19,7 @@ SELECT explain FROM (
 EXPLAIN
 SELECT count()
 FROM foo_merge JOIN t2 USING Val
-SETTINGS enable_join_runtime_filters=1, parallel_replicas_local_plan=1
+SETTINGS enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows = 0, parallel_replicas_local_plan=1
 );
 
 SELECT '=================================================';
@@ -32,4 +32,4 @@ SELECT '=================================================';
 
 SELECT count()
 FROM foo_merge JOIN t2 USING Val
-SETTINGS enable_join_runtime_filters=1;
+SETTINGS enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows = 0;
