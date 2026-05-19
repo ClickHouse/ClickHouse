@@ -79,8 +79,13 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
             if (!allow_uuid_macro)
                 info.table_id.uuid = UUIDHelpers::Nil;
 
-            /// Make sure that {uuid} macro is allowed, if present.
-            args.getContext()->getMacros()->expand(path, info);
+            {
+                /// Some fields (e.g.: level) in MacroExpansionInfo are modified during macro expansion.
+                /// Let's make a copy, so the next call won't interfere with this one.
+                auto info_copy = info;
+                /// Make sure that {uuid} macro is allowed, if present.
+                args.getContext()->getMacros()->expand(path, info);
+            }
 
             /// Actually expand all the macros except {uuid} macro.
             info.expand_special_macros_only = true;
