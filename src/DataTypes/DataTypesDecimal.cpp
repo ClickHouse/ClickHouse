@@ -421,8 +421,18 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
         /// representable integer and must not be rejected as overflow.
         auto out = std::round(value * static_cast<FromFieldType>(DecimalUtils::scaleMultiplier<ToNativeType>(scale)));
 
-        if (out < static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::min()) ||
-            out > static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::max()))
+        /// Bound at `2^(width - 1)` (i.e. `ToNativeType::max + 1`) rather than `max` itself:
+        /// for signed `ToNativeType` the valid range is `[-2^(width-1), 2^(width-1) - 1]`, and
+        /// `2^(width-1)` is a power of two, so it is exactly representable in any IEEE float with
+        /// enough exponent range. Using `static_cast<Float>(max)` loses precision when `max`
+        /// isn't exactly representable — e.g. `Float64(Int64::max) == 2^63` — and then
+        /// `out > max_as_float` fails to detect values that would cast to undefined behavior.
+        /// `!isFinite(out)` covers the case where the multiplier or product is `+/-inf`
+        /// (`Float32` × scale-76 multiplier for `Decimal256`), in which case the bound itself
+        /// may also be `inf` and the strict comparison would not fire.
+        const FromFieldType max_plus_one = std::ldexp(static_cast<FromFieldType>(1), sizeof(ToNativeType) * 8 - 1);
+
+        if (!isFinite(out) || out >= max_plus_one || out < -max_plus_one)
         {
             if constexpr (throw_exception)
                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. Float is out of Decimal range", ToDataType::family_name);
@@ -465,6 +475,10 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
     else if constexpr (is_floating_point<FromFieldType>)
     {
         const auto multiplier = static_cast<FromFieldType>(DecimalUtils::scaleMultiplier<ToNativeType>(scale));
+        /// See `convertToDecimalImpl` for the rationale: use `2^(width-1)` as the strict bound
+        /// rather than `max` itself, so the comparison stays correct for widths where the
+        /// integer max can't be exactly represented in the source float (e.g. `Int64::max`).
+        const FromFieldType max_plus_one = std::ldexp(static_cast<FromFieldType>(1), sizeof(ToNativeType) * 8 - 1);
         for (size_t i = 0; i < size; ++i)
         {
             bool overflow = !isFinite(from[i]);
@@ -472,8 +486,9 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
             /// integer (matches the scalar path in `convertToDecimalImpl`).
             FromFieldType out = std::round(from[i] * multiplier);
 
-            overflow |= out < static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::min())
-                     || out > static_cast<FromFieldType>(std::numeric_limits<ToNativeType>::max());
+            /// `!isFinite(out)` catches `inf` products from finite inputs (e.g. `Float32` ×
+            /// scale-76 multiplier for `Decimal256`), where the bound itself may also be `inf`.
+            overflow |= !isFinite(out) || out >= max_plus_one || out < -max_plus_one;
 
             if constexpr (has_nullmap)
             {
