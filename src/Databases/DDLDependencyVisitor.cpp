@@ -188,7 +188,7 @@ namespace
                             mv_from_dependency->uuid = UUIDHelpers::Nil;
                         }
                     }
-                    else
+                    else if (create.is_ordinary_view)
                         is_plain_view = true;
                 }
                 else
