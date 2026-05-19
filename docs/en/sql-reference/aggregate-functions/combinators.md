@@ -323,7 +323,7 @@ FROM people
 
 ## -Sparkbar {#-sparkbar}
 
-Lets you divide data into buckets by the first argument (the x-axis key) and apply an aggregate function independently to values in each bucket. The per-bucket results are rendered as a Unicode sparkbar string. The nested aggregate function must return a numeric type (`Int*`, `UInt*`, `Float*`, or `Decimal`).
+Divides data into buckets by the first argument (the x-axis key) and applies an aggregate function independently to the values in each bucket. The per-bucket results are rendered as a Unicode sparkbar string. The nested aggregate function must return a numeric type (`Int*`, `UInt*`, `Float*`, or `Decimal`).
 
 ```sql
 <aggFunction>Sparkbar([<aggFunction_params>,] width, min_x, max_x)(x, <aggFunction_args>)
