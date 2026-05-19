@@ -400,7 +400,7 @@ static ReadFromMergeTree * findReadingStep(QueryPlan::Node & node, StepStack & b
     return nullptr;
 }
 
-bool allExpressionsSuitableForLazyMaterialization(const QueryPlan::Node * node)
+static bool allExpressionsSuitableForLazyMaterialization(const QueryPlan::Node * node)
 {
     while (!node->children.empty())
     {
