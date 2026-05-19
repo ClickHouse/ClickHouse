@@ -73,7 +73,7 @@
 <<<	drop mv1
 []	.inner_id.
 []	.inner_id.
-['mv1']	a
+[]	a
 []	b
 ['mv2']	c
 []	mv2
