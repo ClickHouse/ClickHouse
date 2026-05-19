@@ -188,8 +188,7 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
     {{"clickhouse", Dialect::clickhouse},
      {"kusto", Dialect::kusto},
      {"prql", Dialect::prql},
-     {"promql", Dialect::promql},
-     {"polyglot", Dialect::polyglot}})
+     {"promql", Dialect::promql}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
@@ -395,19 +394,6 @@ IMPLEMENT_SETTING_ENUM(
      {"v3", MergeTreeObjectSerializationVersion::V3}})
 
 IMPLEMENT_SETTING_ENUM(
-    MergeTreeMapSerializationVersion,
-    ErrorCodes::BAD_ARGUMENTS,
-    {{"basic", MergeTreeMapSerializationVersion::BASIC},
-     {"with_buckets", MergeTreeMapSerializationVersion::WITH_BUCKETS}})
-
-IMPLEMENT_SETTING_ENUM(
-    MergeTreeMapBucketsStrategy,
-    ErrorCodes::BAD_ARGUMENTS,
-    {{"constant", MergeTreeMapBucketsStrategy::CONSTANT},
-     {"sqrt", MergeTreeMapBucketsStrategy::SQRT},
-     {"linear", MergeTreeMapBucketsStrategy::LINEAR}})
-
-IMPLEMENT_SETTING_ENUM(
     MergeTreeObjectSharedDataSerializationVersion,
     ErrorCodes::BAD_ARGUMENTS,
     {{"map", MergeTreeObjectSharedDataSerializationVersion::MAP},
@@ -474,10 +460,5 @@ IMPLEMENT_SETTING_ENUM(JemallocProfileFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"raw", JemallocProfileFormat::Raw},
      {"symbolized", JemallocProfileFormat::Symbolized},
      {"collapsed", JemallocProfileFormat::Collapsed}})
-
-IMPLEMENT_SETTING_ENUM(S3UriStyle, ErrorCodes::BAD_ARGUMENTS,
-    {{"auto", S3UriStyle::AUTO},
-     {"path", S3UriStyle::PATH},
-     {"virtual_hosted", S3UriStyle::VIRTUAL_HOSTED}})
 
 }

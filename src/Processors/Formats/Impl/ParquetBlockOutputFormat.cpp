@@ -1,5 +1,4 @@
 #include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
-#include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 
 #if USE_PARQUET
@@ -339,8 +338,7 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
             CHColumnToArrowColumn::Settings
             {
                 .output_string_as_string = format_settings.parquet.output_string_as_string,
-                .output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array,
-                .output_unsupported_types_as_binary = format_settings.parquet.output_unsupported_types_as_binary,
+                .output_fixed_string_as_fixed_byte_array = format_settings.parquet.output_fixed_string_as_fixed_byte_array
             });
     }
 

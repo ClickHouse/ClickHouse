@@ -437,12 +437,8 @@ void GraceHashJoin::initialize(const Block & sample_block)
 
 JoinResultPtr GraceHashJoin::joinBlock(Block block)
 {
-    /// Check if hash join post build optimizations could be performed.
-    if (hash_join && getNumBuckets() <= 1)
-    {
-        std::lock_guard lock(hash_join_mutex);
-        hash_join->runPostBuildPhase();
-    }
+    if (rightTableCanBeReranged())
+        tryRerangeRightTableData();
 
     if (block.rows() == 0)
         return hash_join->joinBlock(block);
@@ -464,14 +460,8 @@ JoinResultPtr GraceHashJoin::joinBlock(Block block)
 
 void GraceHashJoin::setTotals(const Block & block)
 {
-    std::lock_guard lock(totals_mutex);
-    IJoin::setTotals(block);
-}
-
-const Block & GraceHashJoin::getTotals() const
-{
-    std::lock_guard lock(totals_mutex);
-    return IJoin::getTotals();
+    if (block.rows() > 0)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Totals are not supported for GraceHashJoin, got '{}'", block.dumpStructure());
 }
 
 size_t GraceHashJoin::getTotalRowCount() const
@@ -799,6 +789,20 @@ size_t GraceHashJoin::getNumBuckets() const
 {
     std::shared_lock lock(rehash_mutex);
     return buckets.size();
+}
+
+bool GraceHashJoin::rightTableCanBeReranged() const
+{
+    if (hash_join && getNumBuckets() <= 1)
+        return hash_join->rightTableCanBeReranged();
+    return false;
+}
+
+void GraceHashJoin::tryRerangeRightTableData()
+{
+    std::lock_guard lock(hash_join_mutex);
+    if (hash_join)
+        hash_join->tryRerangeRightTableData();
 }
 
 GraceHashJoin::Buckets GraceHashJoin::getCurrentBuckets() const

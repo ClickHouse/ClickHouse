@@ -5,7 +5,6 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -27,7 +26,6 @@
 #include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/typeid_cast.h>
@@ -161,7 +159,7 @@ ColumnPtr getFilteredTables(
 }
 
 StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -188,7 +186,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"sorting_key", std::make_shared<DataTypeString>(), "The sorting key expression specified in the table."},
         {"primary_key", std::make_shared<DataTypeString>(), "The primary key expression specified in the table."},
         {"sampling_key", std::make_shared<DataTypeString>(), "The sampling key expression specified in the table."},
-        {"storage_policy", std::make_shared<DataTypeString>(), "The storage policy. Relevant for tables using MergeTree and Distributed engines."},
+        {"storage_policy", std::make_shared<DataTypeString>(), "The storage policy."},
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise NULL (including underlying Buffer table)."
         },
@@ -206,7 +204,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"active_parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The number of active parts in this table."},
         {"total_marks", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The total number of marks in all parts in this table."},
         {"active_on_fly_data_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active data mutations (UPDATEs and DELETEs) suitable for applying on the fly."},
-        {"active_on_fly_alter_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active alter mutations (MODIFY COLUMN) suitable for applying on the fly."},
+        {"active_on_fly_alter_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active alter mutations (MODIFY COLUMNs) suitable for applying on the fly."},
         {"active_on_fly_metadata_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active metadata mutations (RENAMEs) suitable for applying on the fly."},
         {"columns_descriptions_cache_size", std::make_shared<DataTypeUInt64>(), "Size of columns description cache for *MergeTree tables"},
         {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
@@ -239,16 +237,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
     });
 
     storage_metadata.setColumns(std::move(description));
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-}
-
-VirtualColumnsDescription StorageSystemTables::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 class TablesBlockSource : public ISource
@@ -290,7 +279,7 @@ protected:
     {
         if (table)
         {
-            StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+            StorageMetadataPtr metadata_snapshot = table->tryGetInMemoryMetadataPtr().value_or(nullptr);
             if (!metadata_snapshot)
             {
                 columns[res_index++]->insertDefault();
@@ -595,7 +584,7 @@ protected:
 
                 StorageMetadataPtr metadata_snapshot;
                 if (table)
-                    metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+                    metadata_snapshot = table->tryGetInMemoryMetadataPtr().value_or(nullptr);
 
                 if (columns_mask[src_index++])
                 {
@@ -968,7 +957,7 @@ private:
     ColumnPtr filtered_tables_column;
 };
 
-void StorageSystemTables::readImpl(
+void StorageSystemTables::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,

@@ -32,10 +32,16 @@
 #include <Storages/StorageTableProxy.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/PoolId.h>
+#include <Common/Stopwatch.h>
+#include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
 #include <Common/AsyncLoader.h>
 #include <Interpreters/TransactionLog.h>
+
+#include <boost/algorithm/string/replace.hpp>
 
 namespace fs = std::filesystem;
 
@@ -175,7 +181,6 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     /// Set new engine for the old query
     engine->name = engine_name;
     engine->arguments = args;
-    engine->setNoEmptyArgs(true);
     create_query.storage->set(create_query.storage->engine, engine->clone());
 }
 

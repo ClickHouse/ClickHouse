@@ -27,7 +27,8 @@ public:
         , storage(part_->storage)
         , partition_id(part_->info.getPartitionId())
     {
-        setInMemoryMetadata(*storage.getInMemoryMetadataPtr(storage.getContext(), false));
+        setInMemoryMetadata(storage.getInMemoryMetadata());
+        setVirtuals(*storage.getVirtualsPtr());
     }
 
     /// Used in queries with projection.
@@ -36,10 +37,13 @@ public:
         ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr_)
         : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
     {
-        setInMemoryMetadata(*storage.getInMemoryMetadataPtr(storage.getContext(), false));
+        setInMemoryMetadata(storage.getInMemoryMetadata());
+        setVirtuals(*storage.getVirtualsPtr());
     }
 
     String getName() const override { return "FromMergeTreeDataPart"; }
+
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override;
 
     void read(
         QueryPlan & query_plan,
@@ -53,7 +57,7 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    bool supportsColumnsWithDynamicStructure() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
 
@@ -69,7 +73,7 @@ public:
 
     bool materializeTTLRecalculateOnly() const;
 
-    bool hasLightweightDeletedMask() const override
+    bool hasLightweightDeletedMask() const
     {
         return !parts.empty() && parts.front().data_part->hasLightweightDelete();
     }

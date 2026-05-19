@@ -1,5 +1,4 @@
 #include <Interpreters/DatabaseCatalog.h>
-#include <Common/CurrentThread.h>
 
 #include <Access/ContextAccess.h>
 
@@ -19,7 +18,6 @@
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMemory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -87,7 +85,6 @@ namespace Setting
 {
     extern const SettingsBool fsync_metadata;
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
 
 namespace MergeTreeSetting
@@ -106,7 +103,7 @@ public:
 
     Names getAllRegisteredNames() const override
     {
-        auto context = CurrentThread::tryGetQueryContext();
+        auto context = CurrentThread::getQueryContext();
         if (!context)
             return {};
 
@@ -1023,35 +1020,6 @@ std::vector<StorageID> DatabaseCatalog::getDependentViews(const StorageID & sour
     return view_dependencies.getDependencies(source_table_id);
 }
 
-std::vector<StorageID> DatabaseCatalog::getReadyDependentViews(const StorageID & source_table_id, const ContextPtr & query_context) const
-{
-    /// During server startup, not all dependent views may be registered yet.
-    /// Return empty to prevent streaming engines from processing with a
-    /// partial dependency graph, which would permanently lose data for
-    /// views not yet loaded.
-    auto global_context = Context::getGlobalContextInstance();
-    if (global_context->getApplicationType() == Context::ApplicationType::SERVER
-        && !global_context->isServerCompletelyStarted())
-        return {};
-
-    auto view_ids = getDependentViews(source_table_id);
-    if (view_ids.empty())
-        return {};
-
-    for (const auto & view_id : view_ids)
-    {
-        auto view = tryGetTable(view_id, query_context);
-        if (!view)
-            return {};
-
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-        if (materialized_view && !materialized_view->tryGetTargetTable())
-            return {};
-    }
-
-    return view_ids;
-}
-
 DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String & table, const IDatabase * expected_database)
 {
     if (database.empty())
@@ -1608,20 +1576,17 @@ String DatabaseCatalog::getPathForUUID(const UUID & uuid)
     return toString(uuid).substr(0, uuid_prefix_len) + '/' + toString(uuid) + '/';
 }
 
-void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid, std::function<void()> throw_if_cancelled)
+void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
 {
     if (uuid == UUIDHelpers::Nil)
         return;
 
     LOG_DEBUG(log, "Waiting for table {} to be finally dropped", toString(uuid));
     UniqueLock lock{tables_marked_dropped_mutex};
-
-    while (tables_marked_dropped_ids.contains(uuid) && !is_shutting_down)
+    wait_table_finally_dropped.wait(lock.getUnderlyingLock(), [&]() TSA_REQUIRES(tables_marked_dropped_mutex) -> bool
     {
-        if (throw_if_cancelled)
-            throw_if_cancelled(); /// throws QUERY_WAS_CANCELLED or TIMEOUT_EXCEEDED if the query has been killed
-        wait_table_finally_dropped.wait_for(lock.getUnderlyingLock(), std::chrono::seconds(1));
-    }
+        return !tables_marked_dropped_ids.contains(uuid) || is_shutting_down;
+    });
 
     const bool has_table = tables_marked_dropped_ids.contains(uuid);
     LOG_DEBUG(log, "Done waiting for the table {} to be dropped. The outcome: {}", toString(uuid), has_table ? "table still exists" : "table dropped successfully");
@@ -2237,12 +2202,9 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
 
 Names TableNameHints::getAllRegisteredNames() const
 {
-    if (!database)
-        return {};
-    /// DataLakeCatalog::getAllTableNames lists all tables from remote catalog - expensive. Skip when user opted out.
-    if (database->isDatalakeCatalog() && context && !context->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
-        return {};
-    return database->getAllTableNames(context);
+    if (database)
+        return database->getAllTableNames(context);
+    return {};
 }
 
 }

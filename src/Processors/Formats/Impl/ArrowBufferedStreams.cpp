@@ -305,7 +305,7 @@ arrow::Status ArrowMemoryPool::Reallocate(int64_t old_size, int64_t new_size, in
     return arrow::Status::OK();
 }
 
-void ArrowMemoryPool::Free(uint8_t * buffer, int64_t size, int64_t alignment)
+void ArrowMemoryPool::Free(uint8_t * buffer, int64_t size, int64_t /* alignment */)
 {
     if (size == 0)
     {
@@ -313,7 +313,7 @@ void ArrowMemoryPool::Free(uint8_t * buffer, int64_t size, int64_t alignment)
         return;
     }
 
-    Allocator<false>().free(buffer, size_t(size), alignment);
+    Allocator<false>().free(buffer, size_t(size));
     stats.DidFreeBytes(size);
 }
 

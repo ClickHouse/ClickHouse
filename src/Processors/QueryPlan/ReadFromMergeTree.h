@@ -37,9 +37,22 @@ struct MergeTreeDataSelectSamplingData
 
 struct UsefulSkipIndexes
 {
-    bool empty() const { return useful_indices.empty() && !skip_index_for_top_k_filtering; }
+    struct MergedDataSkippingIndexAndCondition
+    {
+        std::vector<MergeTreeIndexPtr> indices;
+        MergeTreeIndexMergedConditionPtr condition;
+
+        void addIndex(const MergeTreeIndexPtr & index)
+        {
+            indices.push_back(index);
+            condition->addIndex(indices.back());
+        }
+    };
+
+    bool empty() const { return useful_indices.empty() && merged_indices.empty() && !skip_index_for_top_k_filtering; }
 
     std::vector<MergeTreeIndexWithCondition> useful_indices;
+    std::vector<MergedDataSkippingIndexAndCondition> merged_indices;
     std::vector<std::vector<size_t>> per_part_index_orders;
     MergeTreeIndexPtr skip_index_for_top_k_filtering{nullptr};
     TopKThresholdTrackerPtr threshold_tracker{nullptr};
@@ -68,7 +81,6 @@ struct TopKFilterInfo
 {
     String column_name;
     DataTypePtr data_type;
-    size_t num_sort_columns;
     size_t limit_n;
     int direction; /// 1 = ASC, -1 = DESC
     bool where_clause;
@@ -83,12 +95,11 @@ public:
     enum class IndexType : uint8_t
     {
         None,
-        PartitionMinMax,
+        MinMax,
         Partition,
         PrimaryKey,
         Skip,
         PrimaryKeyExpand,
-        Statistics
     };
 
     struct DistributedIndexStat
@@ -393,9 +404,6 @@ public:
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
 
     void deferFiltersAfterFinalIfNeeded();
-
-    const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
-    const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
 
 private:
     MergeTreeSettingsPtr data_settings;

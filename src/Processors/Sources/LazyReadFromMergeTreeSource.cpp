@@ -79,8 +79,7 @@ RangesInDataParts LazyReadFromMergeTreeSource::splitRanges(RangesInDataParts par
                     part.parent_part,
                     part.part_index_in_query,
                     part.part_starting_offset_in_query,
-                    std::move(part.ranges),
-                    part.read_hints);
+                    std::move(part.ranges));
 
                 break;
             }
@@ -124,8 +123,7 @@ RangesInDataParts LazyReadFromMergeTreeSource::splitRanges(RangesInDataParts par
                 part.parent_part,
                 part.part_index_in_query,
                 part.part_starting_offset_in_query,
-                std::move(ranges),
-                part.read_hints);
+                std::move(ranges));
         }
     }
 
