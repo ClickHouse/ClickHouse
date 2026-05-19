@@ -828,6 +828,11 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         /// the capture loop, so the table column would never be captured.  Add a second
         /// INPUT with a disambiguated name at the lambda scope, and register aliases at
         /// every outer scope so the capture loop can find the node by that name.
+        ///
+        /// We use the column identifier (e.g. `__table1.x`) as the disambiguated name.
+        /// It is deterministic (same for the same query) and guaranteed to differ from
+        /// any lambda argument name because `createUniqueAliasesIfNecessary` assigns
+        /// a unique alias like `__table1` to every table expression before the planner runs.
         const auto & scope = actions_stack[i].getScopeNode();
         if (scope && scope->getNodeType() == QueryTreeNodeType::LAMBDA)
         {
@@ -835,7 +840,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             const auto & arg_names = lambda_node.getArgumentNames();
             if (std::find(arg_names.begin(), arg_names.end(), column_node_name) != arg_names.end())
             {
-                String disambiguated = column_node_name + "_" + toString(UUIDHelpers::generateV4());
+                const auto & disambiguated = planner_context->getColumnNodeIdentifierOrThrow(node);
 
                 actions_stack[i].addInputColumnIfNecessary(disambiguated, column_node.getColumnType());
 
