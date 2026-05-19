@@ -418,11 +418,14 @@ void BackgroundSchedulePool::scheduleTask(TaskInfo & task_info)
         }
         running_tasks.erase(task_ptr);
 
-        /// Grow the pool lazily: if no worker is currently parked in cv.wait and we have headroom,
-        /// spawn an extra worker rather than letting the task queue behind a busy thread. We're
-        /// still holding tasks_mutex, so no thread can transition idle until we release — the
-        /// idle_threads == 0 observation is consistent.
-        if (idle_threads == 0 && threads.size() < max_size && !runnable_task_types.empty() && !shutdown)
+        /// Grow the pool lazily: if there are more runnable task groups than parked workers
+        /// available to pick them up, and we have headroom, spawn an extra worker. We compare
+        /// against `runnable_task_types.size()` (not `idle_threads == 0`) because parked workers
+        /// woken by a prior `notify_one` are already "claimed" by previously-enqueued tasks even
+        /// though they have not yet decremented `idle_threads` — otherwise a fast caller can push
+        /// several tasks in a row while seeing `idle_threads > 0` and never spawn the workers
+        /// needed to drain them.
+        if (runnable_task_types.size() > idle_threads && threads.size() < max_size && !shutdown)
         {
             try
             {
@@ -431,6 +434,16 @@ void BackgroundSchedulePool::scheduleTask(TaskInfo & task_info)
             }
             catch (...)
             {
+                /// If there are existing workers, fall through to `notify_one` — one of them will
+                /// pick up the task once it finishes its current work. But if the pool is still
+                /// empty (`background_schedule_pool_initial_size = 0` and the very first spawn
+                /// just failed), there is nobody to notify and the queued task would be orphaned.
+                /// Fail closed in that case so the caller learns about the failure rather than
+                /// silently dropping the work. The stale `weak_ptr` left in `task_groups` is
+                /// harmless: workers skip entries whose `weak_ptr::lock` returns null, and the
+                /// task can be re-scheduled by the caller after the exception is handled.
+                if (threads.empty())
+                    throw;
                 tryLogCurrentException(logger, "Failed to spawn an additional schedule pool worker");
                 /// Fall through to notify_one — an existing worker will eventually take the task.
             }

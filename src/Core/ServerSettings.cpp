@@ -1662,6 +1662,7 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
         "background_common_pool_size",
         "background_buffer_flush_schedule_pool_size",
         "background_schedule_pool_size",
+        "background_schedule_pool_initial_size",
         "background_message_broker_schedule_pool_size",
         "background_distributed_schedule_pool_size",
 
