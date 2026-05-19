@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/TransactionID.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/noexcept_scope.h>
@@ -21,6 +22,11 @@ namespace ErrorCodes
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace FailPoints
+{
+    extern const char transaction_after_commit_pause[];
 }
 
 static void checkNotOrdinaryDatabase(const StoragePtr & storage)
@@ -255,11 +261,6 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 {
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
-    /// Write allocated CSN into version metadata, so we will know CSN without reading it from transaction log
-    /// and we will be able to remove old entries from transaction log in ZK.
-    /// It's not a problem if server crash before CSN is written, because we already have TID in data part and entry in the log.
-    [[maybe_unused]] CSN prev_value = csn.exchange(assigned_csn);
-    chassert(prev_value == Tx::CommittingCSN);
 
     DataPartsVector created_parts;
     DataPartsVector removed_parts;
@@ -272,18 +273,41 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
         committed_mutations = mutations;
     }
 
+    /// Persist per-part version metadata BEFORE flipping `csn` below.
+    /// `csn.exchange(assigned_csn)` is the signal that `MergeTreeTransaction::waitStateChange`
+    /// blocks on; doing the disk-backed `setAndStore...CSN` calls first ensures that once a
+    /// waiter wakes up, the new `creation_csn` / `removal_csn` are already visible through
+    /// `VersionMetadata::getInfo`, and therefore through `system.parts`.
+    ///
+    /// Use `assigned_csn` directly because `this->csn` is still `Tx::CommittingCSN` here.
+    ///
+    /// Crash-safe: if the process terminates inside this loop, the CSN znode in ZK plus
+    /// `removal_tid` / `creation_tid` on disk are enough to recover any part whose
+    /// `setAndStore...CSN` did not complete; `TransactionLog::getCSN(tid)` returns the right
+    /// answer after restart.
     for (const auto & part : created_parts)
     {
-        part->version->setAndStoreCreationCSN(csn);
+        part->version->setAndStoreCreationCSN(assigned_csn);
     }
 
     for (const auto & part : removed_parts)
     {
-        part->version->setAndStoreRemovalCSN(csn);
+        part->version->setAndStoreRemovalCSN(assigned_csn);
     }
 
     for (const auto & storage_and_mutation : committed_mutations)
-        storage_and_mutation.first->setMutationCSN(storage_and_mutation.second, csn);
+        storage_and_mutation.first->setMutationCSN(storage_and_mutation.second, assigned_csn);
+
+    /// Test-only pause point. With this failpoint enabled, a regression test can verify that
+    /// `waitStateChange` does not return until every part has its new CSN persisted (above).
+    /// Not wrapped in try/catch: `pauseFailPoint` only takes a mutex and a condvar, and the
+    /// surrounding `setAndStore...CSN` calls already trust their callees not to throw under
+    /// the same `noexcept` contract.
+    FailPointInjection::pauseFailPoint(FailPoints::transaction_after_commit_pause);
+
+    /// Flip the atomic last so that `waitStateChange` only wakes up after all metadata is durable.
+    [[maybe_unused]] CSN prev_value = csn.exchange(assigned_csn);
+    chassert(prev_value == Tx::CommittingCSN);
 }
 
 bool MergeTreeTransaction::rollback() noexcept

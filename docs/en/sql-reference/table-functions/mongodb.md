@@ -8,8 +8,6 @@ title: 'mongodb'
 doc_type: 'reference'
 ---
 
-# mongodb Table Function
-
 Allows `SELECT` queries to be performed on data that is stored on a remote MongoDB server.
 
 ## Syntax {#syntax}
