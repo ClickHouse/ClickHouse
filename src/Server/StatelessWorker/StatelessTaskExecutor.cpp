@@ -10,6 +10,7 @@
 #include <Common/SipHash.h>
 #include <Common/QueryScope.h>
 #include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <exception>
 #include <mutex>
 
@@ -50,7 +51,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
 
     auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(unique_temp_file_path, query_context);
 
-    std::shared_ptr<std::promise<void>> task_promise = std::make_shared<std::promise<void>>();
+    std::shared_ptr<std::promise<String>> task_promise = std::make_shared<std::promise<String>>();
     auto task_state = std::make_shared<TaskState>();
     task_state->completion_future = task_promise->get_future();
 
