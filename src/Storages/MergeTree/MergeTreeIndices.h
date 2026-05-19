@@ -269,7 +269,7 @@ struct IMergeTreeIndex
     virtual MergeTreeIndexFormat getDeserializedFormat(
         const MergeTreeDataPartChecksums & checksums,
         const std::string & relative_path_prefix,
-        const IDataPartStorage * storage = nullptr) const;
+        const IDataPartStorage * storage) const;
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 

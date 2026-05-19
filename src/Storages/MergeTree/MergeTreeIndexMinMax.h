@@ -90,7 +90,7 @@ public:
     MergeTreeIndexFormat getDeserializedFormat(
         const MergeTreeDataPartChecksums & checksums,
         const std::string & path_prefix,
-        const IDataPartStorage * storage = nullptr) const override; /// NOLINT
+        const IDataPartStorage * storage) const override;
 };
 
 struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranules

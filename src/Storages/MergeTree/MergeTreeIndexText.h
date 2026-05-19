@@ -467,7 +467,7 @@ public:
     MergeTreeIndexFormat getDeserializedFormat(
         const MergeTreeDataPartChecksums & checksums,
         const std::string & path_prefix,
-        const IDataPartStorage * storage = nullptr) const override;
+        const IDataPartStorage * storage) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
