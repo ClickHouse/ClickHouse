@@ -1100,7 +1100,8 @@ customElements.define('query-progress', QueryProgressElement);
 
 class QueryResultElement extends HTMLElement
 {
-    static _loadDagrePromise = null;
+    static _loadVizPromise = null;
+    static _vizInstance = null;
     static _loadUplotPromise = null;
 
     constructor()
@@ -1387,29 +1388,18 @@ class QueryResultElement extends HTMLElement
                 {
                     display: none;
                     margin: auto;
-                }
-
-                text
-                {
-                    font-size: 14px;
-                    fill: var(--text-color);
-                }
-
-                .node rect
-                {
-                    fill: var(--element-background-color);
+                    overflow: auto;
+                    background: white;
+                    color: black;
+                    padding: 0.5rem;
+                    border-radius: 3px;
                     filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
-                    stroke: var(--border-color);
                 }
 
-                .edgePath path
+                #graph svg
                 {
-                    stroke: var(--text-color);
-                }
-
-                marker
-                {
-                    fill: var(--text-color);
+                    display: block;
+                    margin: auto;
                 }
 
                 #chart
@@ -1449,7 +1439,7 @@ class QueryResultElement extends HTMLElement
                 <pre class="monospace shadow" id="data-unparsed"></pre>
             </div>
             <div id="chart"></div>
-            <svg id="graph" fill="none"></svg>
+            <div id="graph"></div>
             <p id="error" class="monospace shadow"></p>
         `;
 
@@ -2056,7 +2046,7 @@ class QueryResultElement extends HTMLElement
                 script.crossOrigin = 'anonymous';
                 script.integrity = integrity;
             }
-            else
+            else if (!src.startsWith('/'))
             {
                 console.warn('no integrity for', src);
             }
@@ -2065,22 +2055,20 @@ class QueryResultElement extends HTMLElement
         });
     }
 
-    _loadDagre()
+    async _getViz()
     {
-        if (QueryResultElement._loadDagrePromise) { return QueryResultElement._loadDagrePromise; }
-
-        QueryResultElement._loadDagrePromise = Promise.all([
-            this._loadJS('https://dagrejs.github.io/project/dagre/v0.8.5/dagre.min.js',
-                    'sha384-2IH3T69EIKYC4c+RXZifZRvaH5SRUdacJW7j6HtE5rQbvLhKKdawxq6vpIzJ7j9M'),
-            this._loadJS('https://dagrejs.github.io/project/graphlib-dot/v0.6.4/graphlib-dot.min.js',
-                    'sha384-Q7oatU+b+y0oTkSoiRH9wTLH6sROySROCILZso/AbMMm9uKeq++r8ujD4l4f+CWj'),
-            this._loadJS('https://dagrejs.github.io/project/dagre-d3/v0.6.4/dagre-d3.min.js',
-                    'sha384-9N1ty7Yz7VKL3aJbOk+8ParYNW8G5W+MvxEfFL9G7CRYPmkHI9gJqyAfSI/8190W'),
-            this._loadJS('https://cdn.jsdelivr.net/npm/d3@7.0.0',
-                    'sha384-S+Kf0r6YzKIhKA8d1k2/xtYv+j0xYUU3E7+5YLrcPVab6hBh/r1J6cq90OXhw80u'),
-        ]);
-
-        return QueryResultElement._loadDagrePromise;
+        if (QueryResultElement._vizInstance) { return QueryResultElement._vizInstance; }
+        if (!QueryResultElement._loadVizPromise)
+        {
+            QueryResultElement._loadVizPromise = this._loadJS('/js/viz-standalone.js');
+        }
+        await QueryResultElement._loadVizPromise;
+        if (typeof Viz === 'undefined')
+        {
+            throw new Error('Viz.js failed to load from /js/viz-standalone.js.');
+        }
+        QueryResultElement._vizInstance = await Viz.instance();
+        return QueryResultElement._vizInstance;
     }
 
     _loadUplot()
@@ -2094,25 +2082,10 @@ class QueryResultElement extends HTMLElement
     async renderGraph()
     {
         this._clearElement(this._dataTable);
-        await this._loadDagre();
-
-        const dot = this._explain_graph.replace(/shape\s*=\s*box/g, 'shape=rect');
-
-        let graph = graphlibDot.read(dot);
-        let render = new dagreD3.render();
-
-        graph.setGraph({
-            nodesep: 20,
-            rankdir: 'LR',
-        });
-
-        let svg = this._graph;
-        svg.style.display = 'block';
-
-        render(d3.select(svg), graph);
-
-        svg.style.width = graph.graph().width;
-        svg.style.height = graph.graph().height;
+        const viz = await this._getViz();
+        const svg = viz.renderSVGElement(this._explain_graph);
+        this._graph.replaceChildren(svg);
+        this._graph.style.display = 'block';
     }
 
     _legendAsTooltipPlugin({ className, style = {} } = {})

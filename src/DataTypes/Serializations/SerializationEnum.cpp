@@ -59,9 +59,13 @@ bool SerializationEnum<Type>::tryDeserializeTextEscaped(IColumn & column, ReadBu
 }
 
 template <typename Type>
-void SerializationEnum<Type>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationEnum<Type>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeQuotedString(ref_enum_values.getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+    auto name = ref_enum_values.getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]);
+    if (settings.values.escape_quote_with_quote)
+        writeQuotedStringPostgreSQL(name, ostr);
+    else
+        writeQuotedString(name, ostr);
 }
 
 template <typename Type>

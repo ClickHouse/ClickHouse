@@ -33,6 +33,13 @@ public:
     /// Function timeSeriesStoreTags(id, ...) always returns `id`, so it's deterministic.
     bool isDeterministic() const override { return true; }
 
+    /// Stateful: writes to the per-query tags collector read by timeSeriesIdToGroup() etc.
+    bool isStateful() const override { return true; }
+
+    /// Disable constant folding: the side effect (storing tags in the per-query `ContextTimeSeriesTagsCollector`)
+    /// must run at execution time, not analysis time.
+    bool isSuitableForConstantFolding() const override { return false; }
+
     /// This function allows NULLs as a way to specify that some tags don't have values.
     bool useDefaultImplementationForNulls() const override { return false; }
 
