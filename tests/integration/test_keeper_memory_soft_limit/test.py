@@ -110,6 +110,8 @@ def test_soft_limit_create(started_cluster):
     raise Exception("all records are inserted but no error occurs")
 
 
+# Verify that `max_memory_usage_soft_limit` is correctly updated
+# on config reload without requiring keeper restart.
 def test_soft_limit_hot_reload(started_cluster):
     started_cluster.wait_zookeeper_to_start()
 
