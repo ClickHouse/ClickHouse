@@ -12,7 +12,7 @@ SKIPPED_SIGN = "[ SKIPPED "
 NOT_FAILED_SIGN = "[ NOT_FAILED "
 HUNG_SIGN = "Found hung queries in processlist"
 STOP_TESTING_SIGN = "Stopping tests, terminating all processes"
-STOP_TESTING_SIGN2 = "Hung check failed: server is not responding"
+STOP_TESTING_SIGN2 = "Server does not respond to health check"
 DATABASE_SIGN = "Database: "
 
 SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
