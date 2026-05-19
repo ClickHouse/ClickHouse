@@ -4174,14 +4174,38 @@ async function updateQueryParams()
         return;
     }
 
-    const tokens = await tokenize(query);
+    /// If tokenization or rendering throws (e.g. the query is larger than the WASM
+    /// memory window currently allocated to the lexer), fall back to the unstyled
+    /// textarea instead of leaving the previous `.has-backdrop` state in place —
+    /// otherwise `#query.has-backdrop` keeps the real text invisible
+    /// (`color: transparent`) while the stale backdrop is shown.
+    let tokens;
+    try
+    {
+        tokens = await tokenize(query);
+    }
+    catch (e)
+    {
+        if (generation !== updateQueryParamsGeneration) { return; }
+        console.error('Tokenization failed, disabling syntax highlighting:', e);
+        updateQueryBackdrop('', [], []);
+        return;
+    }
     if (generation !== updateQueryParamsGeneration) { return; }
     const params = extractQueryParams(tokens);
 
     /// Detect multi-query mode from the same token stream.
     const boundaries = getQueryBoundaries(tokens, query);
     updateRunButtons(boundaries.length > 1);
-    updateQueryBackdrop(query, tokens, boundaries);
+    try
+    {
+        updateQueryBackdrop(query, tokens, boundaries);
+    }
+    catch (e)
+    {
+        console.error('Rendering syntax highlighting failed, disabling backdrop:', e);
+        updateQueryBackdrop('', [], []);
+    }
 
     if (JSON.stringify(params) === JSON.stringify(currentQueryParams))
     {
