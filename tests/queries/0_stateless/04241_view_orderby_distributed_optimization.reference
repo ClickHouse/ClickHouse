@@ -1,5 +1,6 @@
 Direct query has merge sort:	1
 View query has merge sort:	1
+Sorting (Merge sorted streams after aggregation stage for ORDER BY)
 View ORDER BY+LIMIT result count:	10
 NULLS FIRST has merge sort:	1
 NULLS FIRST result count:	10
@@ -8,3 +9,7 @@ WITH TIES result count:	10
 WITH FILL disables pushdown:	1
 GROUP BY result count:	5
 OFFSET result count:	5
+LIMIT BY disables pushdown:	1
+LIMIT BY result count:	10
+JOIN disables pushdown:	1
+JOIN result count:	10

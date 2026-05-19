@@ -778,7 +778,9 @@ std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
 /// - No existing ORDER BY/LIMIT in the view
 ///
 /// Outer query restrictions (to preserve semantics under shard-local truncation):
+/// - Single-table outer query (JOINs may filter/expand rows after per-shard truncation)
 /// - No GROUP BY/HAVING/DISTINCT/window
+/// - No LIMIT BY (per-shard truncation can drop candidates needed for global groups)
 /// - No LIMIT ... OFFSET (pushing LIMIT_LENGTH would truncate before outer OFFSET)
 /// - No LIMIT ... WITH TIES (ties are computed globally after merging)
 /// - No ORDER BY ... WITH FILL (WITH FILL synthesizes rows; per-shard fills are wrong)
@@ -788,10 +790,13 @@ void pushOrderByIntoView(
     const StorageSnapshotPtr & storage_snapshot,
     const SelectQueryInfo & select_query_info,
     const QueryTreeNodePtr & table_expression,
+    bool is_single_table_expression,
     SelectQueryInfo & table_expression_query_info)
 {
-    /// Basic checks: must be a view with ORDER BY
-    if (!storage->isView() || !select_query_info.has_order_by)
+    /// Basic checks: must be a view with ORDER BY in a single-table outer query.
+    /// JOINs are excluded because the outer JOIN may filter or expand rows, so
+    /// truncating one input early can drop rows that belong to the global top-N.
+    if (!storage->isView() || !select_query_info.has_order_by || !is_single_table_expression)
         return;
 
     /// Skip inline view() table functions - they're handled by remote()/Distributed
@@ -806,6 +811,13 @@ void pushOrderByIntoView(
     /// aggregation, DISTINCT or window functions changes semantics and can
     /// disable downstream optimizations (e.g. matching aggregate projections).
     if (outer->hasGroupBy() || outer->hasHaving() || outer->isDistinct() || outer->hasWindow())
+        return;
+
+    /// `LIMIT BY` is evaluated globally on the coordinator after merging.
+    /// Pushing only `LIMIT_LENGTH` into the view would truncate per-shard before
+    /// `LIMIT BY` is applied, so the coordinator may not see enough candidates
+    /// to fill each `LIMIT BY` group.
+    if (outer->hasLimitBy())
         return;
 
     /// Outer LIMIT ... OFFSET ... cannot be pushed safely: pushing only
@@ -931,7 +943,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         if (const auto & filter_actions = table_expression_data.getFilterActions())
             table_expression_query_info.filter_actions_dag = std::make_shared<const ActionsDAG>(filter_actions->clone());
 
-        pushOrderByIntoView(storage, storage_snapshot, select_query_info, table_expression, table_expression_query_info);
+        pushOrderByIntoView(storage, storage_snapshot, select_query_info, table_expression, is_single_table_expression, table_expression_query_info);
 
         /// Parse additional_table_filters early so that later decisions (trivial-count,
         /// trivial-limit) can see `additional_filter_ast` before the actual filter DAG

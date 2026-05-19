@@ -37,6 +37,13 @@ SELECT 'View query has merge sort:',
     (SELECT count() > 0 FROM (EXPLAIN SELECT id FROM test_view_04241 ORDER BY ts DESC LIMIT 10)
      WHERE explain LIKE '%Merge sorted streams%') AS has_merge_sort;
 
+-- EXPLAIN PLAN: after pushdown the merge-sorted-streams step must appear in
+-- the plan. Match only the merge step to keep the reference stable across
+-- builds (the surrounding plan shape depends on `Distributed` internals).
+SELECT trim(replaceRegexpAll(explain, '^\\s+', '')) AS step
+FROM (EXPLAIN SELECT id FROM test_view_04241 ORDER BY ts DESC LIMIT 10)
+WHERE explain LIKE '%Merge sorted streams%';
+
 -- Result correctness: pushdown must not change result rows.
 SELECT 'View ORDER BY+LIMIT result count:', count() FROM (
     SELECT id FROM test_view_04241 ORDER BY ts DESC LIMIT 10
@@ -79,6 +86,32 @@ SELECT 'OFFSET result count:', count() FROM (
     SELECT id FROM test_view_04241 ORDER BY ts DESC LIMIT 5 OFFSET 3
 );
 
+-- Outer LIMIT BY: pushdown must be disabled because LIMIT BY is evaluated
+-- globally on the coordinator after merging, so per-shard truncation could
+-- drop candidates needed to fill each group.
+SELECT 'LIMIT BY disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_04241 ORDER BY ts DESC LIMIT 1 BY id LIMIT 10)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
+SELECT 'LIMIT BY result count:', count() FROM (
+    SELECT id FROM test_view_04241 ORDER BY ts DESC LIMIT 1 BY id LIMIT 10
+);
+
+-- Outer JOIN: pushdown must be disabled because the JOIN may filter or expand
+-- rows after per-shard truncation, dropping rows that belong to the global top-N.
+DROP TABLE IF EXISTS test_join_04241;
+CREATE TABLE test_join_04241 (id UInt64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO test_join_04241 SELECT number FROM numbers(50);
+
+SELECT 'JOIN disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT v.id FROM test_view_04241 v INNER JOIN test_join_04241 j ON v.id = j.id ORDER BY v.ts DESC LIMIT 10)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
+SELECT 'JOIN result count:', count() FROM (
+    SELECT v.id FROM test_view_04241 v INNER JOIN test_join_04241 j ON v.id = j.id ORDER BY v.ts DESC LIMIT 10
+);
+
+DROP TABLE test_join_04241;
 DROP VIEW test_view_04241;
 DROP TABLE test_distributed_04241;
 DROP TABLE test_local_04241;
