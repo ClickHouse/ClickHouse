@@ -51,8 +51,12 @@ private:
     void initializeFallbackReader(const IMergeTreeReader * main_reader);
     void createEmptyColumns(Columns & columns) const;
 
-    /// Returns combined postings per column for the given mark.
-    std::vector<PostingList> buildPostingsForMark(size_t mark);
+    /// Returns combined postings per column for the given mark, restricted to `slice_range`.
+    /// The slice is the actual read window inside the mark and may be narrower than the full
+    /// mark range when `rows_offset > 0` or when `max_rows_to_read` stops inside the mark.
+    /// Postings must be clipped to this slice because `fillColumn` assumes every index falls
+    /// inside [from_row, from_row + num_rows).
+    std::vector<PostingList> buildPostingsForMark(size_t mark, const RowsRange & slice_range);
     /// Returns combined posting list for a single query by taking the prebuilt
     /// postings from the analyzer and reading large postings blocks as needed.
     PostingList buildPostingsForQuery(const TextSearchQuery & query, const TextIndexAnalyzer & analyzer, const RowsRange & range);

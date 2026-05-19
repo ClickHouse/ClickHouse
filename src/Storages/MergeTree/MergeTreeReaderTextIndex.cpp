@@ -374,7 +374,7 @@ size_t MergeTreeReaderTextIndex::readRows(
         /// `MergeTreeReaderTextIndex` must ensure that the virtual column it reads
         /// contains no more data rows than actually exist in the part
         size_t rows_to_read = std::min(index_granularity.getMarkRows(from_mark), max_rows_to_read - read_rows);
-        auto mark_postings = buildPostingsForMark(from_mark);
+        auto mark_postings = buildPostingsForMark(from_mark, RowsRange(from_row, from_row + rows_to_read - 1));
 
         for (size_t i = 0; i < res_columns.size(); ++i)
         {
@@ -499,12 +499,21 @@ std::optional<RowsRange> MergeTreeReaderTextIndex::getRowsRangeForMark(size_t ma
     return RowsRange(row_begin, row_end - 1);
 }
 
-std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t mark)
+std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t mark, const RowsRange & slice_range)
 {
     std::vector<PostingList> result(columns_to_read.size());
-    auto rows_range = getRowsRangeForMark(mark);
+    auto mark_range = getRowsRangeForMark(mark);
 
-    if (!rows_range.has_value())
+    if (!mark_range.has_value())
+        return result;
+
+    /// Clip the slice to the mark range. `fillColumn` assumes posting indices fall inside
+    /// [slice_range.begin, slice_range.end] (the read window passed by `readRows`), so we
+    /// must filter postings to this narrower range — not the full mark range — to keep
+    /// indices in bounds on partial-mark reads (`rows_offset > 0` or `max_rows_to_read`
+    /// stops inside the mark).
+    auto effective_range = mark_range->intersectWith(slice_range);
+    if (!effective_range.has_value())
         return result;
 
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
@@ -519,7 +528,7 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
         if (search_query->tokens.empty() && search_query->patterns.empty())
             continue;
 
-        result[i] = buildPostingsForQuery(*search_query, analyzer, *rows_range);
+        result[i] = buildPostingsForQuery(*search_query, analyzer, *effective_range);
     }
 
     return result;
