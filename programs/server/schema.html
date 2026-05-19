@@ -255,6 +255,22 @@
             width: 1.6rem;
             height: 2px;
         }
+        .load-legend-bar {
+            height: 6px;
+            width: 4rem;
+            background: linear-gradient(90deg, #2a4d8a 0%, #6aa84f 33%, #f1c232 66%, #cc0000 100%);
+            border-radius: 1px;
+        }
+        .load-badge {
+            display: inline-block;
+            margin-left: 0.5rem;
+            padding: 0.05rem 0.35rem;
+            font-size: 0.65rem;
+            font-family: Monaco, Consolas, monospace;
+            color: white;
+            background: var(--muted);
+            border-radius: 2px;
+        }
 
         #status {
             margin-left: auto;
@@ -586,6 +602,21 @@
             <select id="db-filter"><option value="">All databases</option></select>
             <button id="toggle-columns" class="btn-toggle active">Columns</button>
             <button id="toggle-system" class="btn-toggle">System tables</button>
+            <select id="load-period" title="Highlight INSERT pipeline load from system.query_views_log">
+                <option value="0">Load: off</option>
+                <option value="1">Last 1 day</option>
+                <option value="7" selected>Last 7 days</option>
+                <option value="30">Last 30 days</option>
+            </select>
+            <select id="load-metric" title="Metric used to colour the heat-map">
+                <option value="written_rows" selected>Rows written</option>
+                <option value="written_bytes">Bytes written</option>
+                <option value="read_rows">Rows read</option>
+                <option value="read_bytes">Bytes read</option>
+                <option value="total_duration_ms">View duration</option>
+                <option value="peak_memory_usage">Peak memory</option>
+                <option value="executions">Executions</option>
+            </select>
             <button id="relayout" class="btn btn-secondary">Re-layout</button>
             <span id="status"></span>
         </div>
@@ -599,6 +630,10 @@
             <span class="legend-item"><span class="legend-line" style="background:var(--link-mv)"></span>MV flow</span>
             <span class="legend-item"><span class="legend-line" style="background:var(--link-dict)"></span>Dictionary source</span>
             <span class="legend-item"><span class="legend-line" style="background:var(--link-distributed)"></span>Distributed shard</span>
+            <span class="legend-item" id="load-legend" style="display:none">
+                <span class="legend-line load-legend-bar"></span>
+                <span id="load-legend-label">INSERT pipeline load (cool → hot)</span>
+            </span>
         </div>
     </div>
 
@@ -663,6 +698,12 @@ const state = {
     dbFilter: '',
     selectedKey: null,
     zoom: 1.0,
+    /// INSERT-pipeline heat-map state populated from `system.query_views_log`.
+    loadPeriodDays: 7,                 /// 0 disables the heat-map; otherwise the lookback window.
+    loadMetric: 'written_rows',
+    loadByMv: new Map(),               /// node key -> { executions, total_duration_ms, read_rows, ... }
+    loadByEdge: new Map(),             /// "from\x00to" -> same shape (MV -> target only)
+    loadMax: { byMv: {}, byEdge: {} }, /// per-metric maxima used to normalize colour intensity
 };
 
 function setStatus(text, isError) {
@@ -671,6 +712,17 @@ function setStatus(text, isError) {
 }
 
 function fullName(db, t) { return db + '.' + t; }
+
+/// Mirrors `backQuoteIfNeed` in ClickHouse (`src/IO/WriteHelpers.cpp`): bare identifier
+/// when it matches `[A-Za-z_][A-Za-z0-9_]*` and is not a reserved word, otherwise
+/// backquoted with internal backticks escaped. Used to reconstruct the `view_name` /
+/// `view_target` strings that `system.query_views_log` produces via `getFullTableName`.
+const QUOTED_NAME_RESERVED = /^(distinct|all|table|select|from|values)$/i;
+function backQuoteIfNeed(s) {
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(s) && !QUOTED_NAME_RESERVED.test(s)) return s;
+    return '`' + s.replace(/`/g, '\\`') + '`';
+}
+function quotedFullName(db, t) { return backQuoteIfNeed(db) + '.' + backQuoteIfNeed(t); }
 
 async function chQuery(query) {
     const host = $('url').value.replace(/\/+$/, '');
@@ -736,6 +788,8 @@ async function loadAll() {
             total_rows,
             total_bytes,
             comment,
+            target_database,
+            target_table,
             arrayMap((d, t) -> concat(d, '.', t), dependencies_database, dependencies_table) AS dependents,
             arrayMap((d, t) -> concat(d, '.', t), loading_dependencies_database, loading_dependencies_table) AS depends_on
         FROM system.tables
@@ -803,7 +857,127 @@ async function loadAll() {
     setStatus(`Loaded ${state.tables.length} tables, ${columnsRes.rows.length} columns.`);
     buildGraph();
     updateDbFilter();
+    await loadViewsLoad();
     render();
+}
+
+/// Pulls aggregated INSERT-pipeline load from `system.query_views_log` for the configured
+/// lookback window and stores it on `state.loadByMv` / `state.loadByEdge`. Best-effort:
+/// if the table is empty, missing, or query_views_log is disabled, we silently fall back
+/// to an empty heat-map.
+async function loadViewsLoad() {
+    state.loadByMv = new Map();
+    state.loadByEdge = new Map();
+    state.loadMax = { byMv: {}, byEdge: {} };
+
+    const days = Number(state.loadPeriodDays || 0);
+    if (!days || !state.nodes.size) {
+        return;
+    }
+
+    /// `view_name` and `view_target` are produced by `StorageID::getFullTableName`, so they
+    /// arrive backquoted ("`weird db`.`weird tbl`") whenever an identifier isn't bare-safe.
+    /// Build a lookup map from that quoted form back to the plain `db.name` keys our graph
+    /// uses, then enrich the matching edges.
+    const quotedToKey = new Map();
+    for (const node of state.nodes.values()) {
+        quotedToKey.set(quotedFullName(node.database, node.name), node.key);
+    }
+
+    const q = `
+        SELECT
+            view_name,
+            view_target,
+            count() AS executions,
+            sum(view_duration_ms) AS total_duration_ms,
+            sum(read_rows) AS read_rows,
+            sum(read_bytes) AS read_bytes,
+            sum(written_rows) AS written_rows,
+            sum(written_bytes) AS written_bytes,
+            sum(peak_memory_usage) AS peak_memory_usage
+        FROM system.query_views_log
+        WHERE event_date >= today() - INTERVAL ${days} DAY
+          AND status IN ('QueryFinish', 'ExceptionWhileProcessing')
+        GROUP BY view_name, view_target
+    `;
+
+    let rows;
+    try {
+        const res = await chQuery(q);
+        rows = res.rows;
+    } catch (e) {
+        console.info('system.query_views_log not available:', e.message);
+        setStatus(`Loaded ${state.tables.length} tables, ${state.nodes.size} nodes (query_views_log unavailable).`);
+        return;
+    }
+
+    const metricKeys = ['executions', 'total_duration_ms', 'read_rows', 'read_bytes',
+                        'written_rows', 'written_bytes', 'peak_memory_usage'];
+    const maxByMv = {}, maxByEdge = {};
+    for (const m of metricKeys) { maxByMv[m] = 0; maxByEdge[m] = 0; }
+
+    let matched = 0;
+    for (const r of rows) {
+        const mvKey = quotedToKey.get(r.view_name);
+        if (!mvKey) continue;
+        ++matched;
+        const targetKey = r.view_target ? quotedToKey.get(r.view_target) : null;
+
+        const mvAgg = state.loadByMv.get(mvKey) || mkMetrics();
+        for (const m of metricKeys) mvAgg[m] += Number(r[m]) || 0;
+        state.loadByMv.set(mvKey, mvAgg);
+        for (const m of metricKeys) maxByMv[m] = Math.max(maxByMv[m], mvAgg[m]);
+
+        if (targetKey) {
+            const edgeKey = mvKey + '\x00' + targetKey;
+            const eAgg = state.loadByEdge.get(edgeKey) || mkMetrics();
+            for (const m of metricKeys) eAgg[m] += Number(r[m]) || 0;
+            state.loadByEdge.set(edgeKey, eAgg);
+            for (const m of metricKeys) maxByEdge[m] = Math.max(maxByEdge[m], eAgg[m]);
+        }
+    }
+    state.loadMax = { byMv: maxByMv, byEdge: maxByEdge };
+    setStatus(`Loaded ${state.tables.length} tables, ${state.nodes.size} nodes. ` +
+              `INSERT load: ${matched}/${rows.length} log rows over ${days}d (${state.loadByMv.size} MVs hit).`);
+}
+
+function mkMetrics() {
+    return {
+        executions: 0,
+        total_duration_ms: 0,
+        read_rows: 0,
+        read_bytes: 0,
+        written_rows: 0,
+        written_bytes: 0,
+        peak_memory_usage: 0,
+    };
+}
+
+/// 0..1 -> hex colour along the cool→hot gradient used in the legend.
+function loadColour(intensity) {
+    intensity = Math.max(0, Math.min(1, intensity));
+    /// Four stops to match the CSS legend: cool blue → green → amber → red.
+    const stops = [
+        { p: 0.00, r: 0x2a, g: 0x4d, b: 0x8a },
+        { p: 0.33, r: 0x6a, g: 0xa8, b: 0x4f },
+        { p: 0.66, r: 0xf1, g: 0xc2, b: 0x32 },
+        { p: 1.00, r: 0xcc, g: 0x00, b: 0x00 },
+    ];
+    let i = 0;
+    while (i < stops.length - 1 && intensity > stops[i + 1].p) ++i;
+    const a = stops[i], b = stops[i + 1] || stops[i];
+    const t = b.p === a.p ? 0 : (intensity - a.p) / (b.p - a.p);
+    const r = Math.round(a.r + (b.r - a.r) * t);
+    const g = Math.round(a.g + (b.g - a.g) * t);
+    const bl = Math.round(a.b + (b.b - a.b) * t);
+    return `rgb(${r}, ${g}, ${bl})`;
+}
+
+/// log-scale normalization — INSERT volumes span many orders of magnitude across views.
+function loadIntensity(value, max) {
+    if (!value || !max || max <= 0) return 0;
+    if (max === value) return 1;
+    return Math.log1p(value) / Math.log1p(max);
 }
 
 function buildGraph() {
@@ -828,6 +1002,8 @@ function buildGraph() {
             totalRows: t.total_rows,
             totalBytes: t.total_bytes,
             comment: t.comment,
+            targetDatabase: t.target_database || '',
+            targetTable: t.target_table || '',
             dependents: t.dependents || [],
             dependsOn: t.depends_on || [],
             columns: state.columnsByTable.get(key) || [],
@@ -854,18 +1030,6 @@ function buildGraph() {
         edges.push({ from, to, kind });
     }
 
-    /// Extracts the TO target of an MV from a CREATE statement.
-    /// Matches: TO `db`.`tbl`, TO db.tbl, TO db.`tbl`, etc. Stops at AS or `(`.
-    function parseMvTarget(node) {
-        const q = node.createQuery || '';
-        const re = /\bTO\s+(?:`([^`]+)`|([A-Za-z_][\w]*))\s*\.\s*(?:`([^`]+)`|([A-Za-z_][\w]*))/i;
-        const m = q.match(re);
-        if (!m) return null;
-        const db = m[1] || m[2];
-        const t = m[3] || m[4];
-        return db + '.' + t;
-    }
-
     for (const node of nodes.values()) {
         /// MV/RMV: SELECT FROM dependsOn, write to dependents
         const isMv = node.kind === 'mv' || node.kind === 'rmv';
@@ -887,10 +1051,11 @@ function buildGraph() {
             else
                 addEdge(node.key, dep, 'normal');
         }
-        /// Parse TO target for MVs (ClickHouse doesn't track this edge in system.tables).
-        if (isMv) {
-            const target = parseMvTarget(node);
-            if (target) addEdge(node.key, target, 'mv');
+        /// MV -> destination table. Exposed by `system.tables.target_table`,
+        /// covering both the explicit `TO` target and the implicit `.inner.*`
+        /// table created by `MATERIALIZED VIEW ... ENGINE = ... AS SELECT ...`.
+        if (isMv && node.targetTable) {
+            addEdge(node.key, fullName(node.targetDatabase || node.database, node.targetTable), 'mv');
         }
     }
 
@@ -1082,6 +1247,27 @@ function fmtRows(n) {
     if (n >= 1e3) return (n / 1e3).toFixed(2) + 'K';
     return String(n);
 }
+function fmtMs(n) {
+    n = Number(n) || 0;
+    if (n < 1000) return n.toFixed(0) + ' ms';
+    if (n < 60 * 1000) return (n / 1000).toFixed(2) + ' s';
+    if (n < 60 * 60 * 1000) return (n / 60000).toFixed(2) + ' min';
+    return (n / 3600000).toFixed(2) + ' h';
+}
+function formatLoadValue(metric, value) {
+    switch (metric) {
+        case 'written_bytes':
+        case 'read_bytes':
+        case 'peak_memory_usage':
+            return fmtBytes(value);
+        case 'total_duration_ms':
+            return fmtMs(value);
+        case 'executions':
+            return String(Math.round(Number(value) || 0));
+        default:
+            return fmtRows(value);
+    }
+}
 
 function render() {
     const canvas = $('canvas');
@@ -1146,6 +1332,21 @@ function render() {
         kindEl.textContent = n.kind === 'rmv' ? 'Refreshable MV' : (n.engine || '');
         header.appendChild(nameEl);
         header.appendChild(kindEl);
+        /// INSERT-pipeline load badge: only on MVs/RMVs that ran during the window.
+        const mvLoad = state.loadByMv.get(n.key);
+        if (mvLoad && state.loadPeriodDays) {
+            const metric = state.loadMetric;
+            const value = mvLoad[metric] || 0;
+            const max = state.loadMax.byMv[metric] || 0;
+            if (value > 0) {
+                const badge = document.createElement('span');
+                badge.className = 'load-badge';
+                badge.title = `INSERT pipeline load (${metric}) over last ${state.loadPeriodDays}d`;
+                badge.style.background = loadColour(loadIntensity(value, max));
+                badge.textContent = formatLoadValue(metric, value);
+                header.appendChild(badge);
+            }
+        }
         el.appendChild(header);
 
         if (state.showColumns && n.columns.length) {
@@ -1271,6 +1472,9 @@ function drawEdges() {
     state._incoming = incoming;
     state._outgoing = outgoing;
 
+    const metric = state.loadMetric;
+    const edgeMax = state.loadMax.byEdge[metric] || 0;
+
     for (const e of state.edges) {
         if (!visible.has(e.from) || !visible.has(e.to)) continue;
         const a = state.nodes.get(e.from);
@@ -1288,6 +1492,28 @@ function drawEdges() {
         const dx = Math.max(40, (x2 - x1) / 2);
         const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2 - 8} ${y2}`;
         path.setAttribute('d', d);
+
+        /// Heat-map: paint MV -> target edges that carried INSERT traffic during the window.
+        let arrowColour = null;
+        if (state.loadPeriodDays && edgeMax > 0) {
+            const edgeLoad = state.loadByEdge.get(e.from + '\x00' + e.to);
+            if (edgeLoad) {
+                const value = edgeLoad[metric] || 0;
+                if (value > 0) {
+                    const intensity = loadIntensity(value, edgeMax);
+                    arrowColour = loadColour(intensity);
+                    path.setAttribute('stroke', arrowColour);
+                    path.setAttribute('stroke-width', String(1.5 + 3 * intensity));
+                    path.style.opacity = String(0.55 + 0.45 * intensity);
+                    path.classList.add('hot');
+                    const titleNode = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+                    titleNode.textContent =
+                        `${e.from} → ${e.to}\n${metric} = ${formatLoadValue(metric, value)}` +
+                        ` over last ${state.loadPeriodDays}d`;
+                    path.appendChild(titleNode);
+                }
+            }
+        }
         svg.appendChild(path);
 
         /// Arrowhead.
@@ -1303,6 +1529,10 @@ function drawEdges() {
         const p2x = hx - len * Math.cos(angle) - sp * Math.sin(angle);
         const p2y = hy - len * Math.sin(angle) + sp * Math.cos(angle);
         ah.setAttribute('points', `${hx},${hy} ${p1x},${p1y} ${p2x},${p2y}`);
+        if (arrowColour) {
+            ah.setAttribute('fill', arrowColour);
+            ah.setAttribute('stroke', arrowColour);
+        }
         svg.appendChild(ah);
 
         if (search) {
@@ -1375,6 +1605,17 @@ function showSidebar(key) {
         if (n.refresh.exception) rows.push(['Refresh error', n.refresh.exception]);
     }
     if (n.dictSource) rows.push(['Dictionary source', n.dictSource]);
+    const mvLoad = state.loadByMv.get(n.key);
+    if (mvLoad && state.loadPeriodDays) {
+        rows.push([`INSERT load (last ${state.loadPeriodDays}d)`, '']);
+        rows.push(['  Executions', formatLoadValue('executions', mvLoad.executions)]);
+        rows.push(['  Rows written', formatLoadValue('written_rows', mvLoad.written_rows)]);
+        rows.push(['  Bytes written', formatLoadValue('written_bytes', mvLoad.written_bytes)]);
+        rows.push(['  Rows read', formatLoadValue('read_rows', mvLoad.read_rows)]);
+        rows.push(['  Bytes read', formatLoadValue('read_bytes', mvLoad.read_bytes)]);
+        rows.push(['  Total view duration', formatLoadValue('total_duration_ms', mvLoad.total_duration_ms)]);
+        rows.push(['  Peak memory (sum)', formatLoadValue('peak_memory_usage', mvLoad.peak_memory_usage)]);
+    }
     for (const [k, v] of rows) {
         const tr = document.createElement('tr');
         const td1 = document.createElement('td'); td1.textContent = k;
@@ -1500,6 +1741,26 @@ $('toggle-system').onclick = (e) => {
     e.target.classList.toggle('active', state.showSystem);
     loadAll();
 };
+$('load-period').onchange = async (e) => {
+    state.loadPeriodDays = Number(e.target.value) || 0;
+    updateLoadLegendVisibility();
+    if (state.nodes.size) {
+        await loadViewsLoad();
+        render();
+    }
+};
+$('load-metric').onchange = (e) => {
+    state.loadMetric = e.target.value;
+    updateLoadLegendVisibility();
+    render();
+};
+function updateLoadLegendVisibility() {
+    $('load-legend').style.display = state.loadPeriodDays ? '' : 'none';
+    if (state.loadPeriodDays) {
+        $('load-legend-label').textContent =
+            `INSERT pipeline load — ${state.loadMetric} (cool → hot, last ${state.loadPeriodDays}d)`;
+    }
+}
 let searchTimer;
 $('search').addEventListener('input', () => {
     clearTimeout(searchTimer);
@@ -1510,6 +1771,9 @@ $('viewport').addEventListener('click', clearHighlight);
 
 state.showColumns = $('toggle-columns').classList.contains('active');
 state.showSystem = $('toggle-system').classList.contains('active');
+state.loadPeriodDays = Number($('load-period').value) || 0;
+state.loadMetric = $('load-metric').value;
+updateLoadLegendVisibility();
 
 window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') clearHighlight();
