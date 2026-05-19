@@ -143,7 +143,7 @@ https://github.com/confluentinc/librdkafka/compare/master...ClickHouse:librdkafk
   https://github.com/confluentinc/librdkafka/pull/4065
 
 ```shell
-git add remote confluentinc https://github.com/confluentinc/librdkafka.git
+git remote add confluentinc https://github.com/confluentinc/librdkafka.git
 
 git fetch confluentinc master
 
