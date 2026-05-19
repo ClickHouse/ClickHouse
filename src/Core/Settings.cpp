@@ -6162,15 +6162,6 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_push_down_order_by_limit, true, R"(
-Toggles a query-plan-level optimization which tries to push down order by limit clause as predicate.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
     DECLARE(Bool, query_plan_enable_multithreading_after_window_functions, true, R"(
 Enable multithreading after evaluating window functions to allow parallel stream processing
 )", 0) \

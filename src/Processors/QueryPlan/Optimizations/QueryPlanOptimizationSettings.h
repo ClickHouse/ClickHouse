@@ -60,7 +60,6 @@ struct QueryPlanOptimizationSettings
     bool try_use_vector_search;
     bool convert_join_to_in;
     bool merge_filter_into_join_condition;
-    bool push_down_order_by_limit;
     bool use_join_disjunctions_push_down;
     bool convert_any_join_to_semi_or_anti_join;
     bool try_use_top_k_optimization;

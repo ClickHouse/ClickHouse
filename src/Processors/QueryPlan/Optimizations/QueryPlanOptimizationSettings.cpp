@@ -50,7 +50,6 @@ namespace Setting
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool query_plan_optimize_prewhere;
     extern const SettingsBool query_plan_push_down_limit;
-    extern const SettingsBool query_plan_push_down_order_by_limit;
     extern const SettingsBool query_plan_top_k_through_join;
     extern const SettingsBool query_plan_read_in_order_through_join;
     extern const SettingsBool query_plan_read_in_order;
@@ -170,7 +169,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     }
     enable_join_transitive_predicates = from[Setting::enable_join_transitive_predicates];
 
-    push_down_order_by_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_down_order_by_limit];
     join_swap_table = from[Setting::query_plan_join_swap_table].is_auto
         ? std::nullopt
         : std::make_optional(from[Setting::query_plan_join_swap_table].base);
