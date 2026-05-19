@@ -4,6 +4,7 @@
 #include <Processors/Port.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Formats/NativeWriter.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

@@ -72,7 +72,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromStorageStep::deserialize(Deserialization
     auto column = DataTypeUInt8().createColumnConst(1, 0u)->convertToFullColumnIfConst();
     Chunk chunk({ std::move(column) }, 1);
 
-    auto source = std::make_shared<SourceFromSingleChunk>(*ctx.output_header, std::move(chunk));
+    auto source = std::make_shared<SourceFromSingleChunk>(ctx.output_header, std::move(chunk));
     source->addTotalRowsApprox(1);
 
     return std::make_unique<ReadFromPreparedSource>(Pipe(source));

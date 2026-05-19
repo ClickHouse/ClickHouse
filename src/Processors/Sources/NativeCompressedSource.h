@@ -3,6 +3,7 @@
 #include <Processors/ISource.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Formats/NativeReader.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
