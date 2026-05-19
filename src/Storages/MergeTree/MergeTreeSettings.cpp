@@ -1897,16 +1897,25 @@ namespace ErrorCodes
     Supported statistics types: tdigest, countmin, minmax, nullcount, uniq.
     )", 0) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 0, R"(
-    Threshold (bytes, uncompressed) below which a skip-index substream is bundled into a
-    single `skp_idx.packed` archive per part instead of being written as a separate
-    `skp_idx_<name>.idx2` / `.mrk2` file. Substreams larger than this stay in the legacy
-    per-file layout. The decision is made independently per substream at write time, so a
-    single part can have small indices (e.g. `minmax`) packed and large ones (e.g. a heavy
-    `bloom_filter`) per-file. Set to 0 to disable packing entirely (default).
+    Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
+    chain) below which a skip-index substream is bundled into a single `skp_idx.packed`
+    archive per part instead of being written as a separate `skp_idx_<name>.idx2` / `.mrk2`
+    file. Substreams larger than this stay in the legacy per-file layout. The decision is
+    made independently per substream at write time, so a single part can have small indices
+    (e.g. `minmax`) packed and large ones (e.g. a heavy `bloom_filter`) per-file. Set to 0
+    to disable packing entirely (default).
+
+    Each skip-index substream actually consists of a data file and a marks file; both buffer
+    in memory up to the threshold before the spill decision is made. So peak memory while
+    writing scales with `2 * packed_skip_index_max_bytes * (number of substreams that stay
+    below the threshold)`.
+
+    Text (full-text) indices are never packed: their merge pipeline produces standalone
+    files, so packing them on INSERT would only result in OPTIMIZE FINAL un-packing them
+    later. For the current experimental rollout the layout is forced to per-file for text.
 
     Packing reduces inode pressure when many skip indices are defined on a table (for example
-    with `add_minmax_index_for_numeric_columns`). Memory cost while writing scales with
-    `packed_skip_index_max_bytes * (number of substreams that stay below the threshold)`.
+    with `add_minmax_index_for_numeric_columns`).
 
     The on-disk format is self-describing: readers detect `skp_idx.packed` and serve packed
     substreams from inside it transparently. Changing this setting affects newly written parts

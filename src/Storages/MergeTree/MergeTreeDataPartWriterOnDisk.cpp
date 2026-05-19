@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
@@ -149,6 +150,17 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
         auto index_name = skip_index->getFileName();
         auto index_substreams = skip_index->getSubstreams();
 
+        /// Text (full-text) indices route their MERGE output through MergeTextIndexesTask, which
+        /// builds its own writer streams via TextIndexUtils::makeOutputStreams and does NOT
+        /// thread a PackedFilesWriter. If we packed text during INSERT, OPTIMIZE FINAL would
+        /// then un-pack it (the merge produces standalone files), leaving a confusing
+        /// per-INSERT vs per-merge layout drift. Keep the layout consistent by never packing
+        /// text indices in either path. (Plumbing the packed writer through the text-index
+        /// merge pipeline is the proper long-term fix; this stays per-file for the current
+        /// experimental rollout.)
+        const bool packs_this_index = packing_enabled
+            && dynamic_cast<const MergeTreeIndexText *>(skip_index.get()) == nullptr;
+
         auto & index_streams = skip_indices_streams.emplace_back();
 
         for (const auto & index_substream : index_substreams)
@@ -179,9 +191,9 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                 marks_compression_codec,
                 settings.marks_compress_block_size,
                 settings.query_write_settings,
-                packing_enabled ? skip_indices_packed_writer.get() : nullptr,
-                packing_enabled ? logical_stream_name + index_substream.extension : String{},
-                packing_enabled ? logical_stream_name + marks_file_extension : String{},
+                packs_this_index ? skip_indices_packed_writer.get() : nullptr,
+                packs_this_index ? logical_stream_name + index_substream.extension : String{},
+                packs_this_index ? logical_stream_name + marks_file_extension : String{},
                 packed_spill_threshold);
 
             index_streams[index_substream.type] = stream.get();
@@ -370,6 +382,10 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
 
     for (size_t i = 0; i < skip_indices_streams.size(); ++i)
     {
+        const auto & skip_index = skip_indices[i];
+        const auto & index_substreams = skip_index->getSubstreams();
+        const String logical_index_name = skip_index->getFileName();
+        size_t substream_idx = 0;
         for (const auto & [type, stream] : skip_indices_streams[i])
         {
             /// preFinalize drains the chain above (compressor + hashing) so the
@@ -379,9 +395,27 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
 
             if (stream->isPacked())
             {
+                /// Packed substream: the reader looks up its marks under the LOGICAL
+                /// (unhashed) stream name because checksums.txt has no per-substream entry
+                /// for it to disambiguate against. cached_index_marks was emplaced under the
+                /// on-disk (possibly hashed) name -- if those differ (long index name +
+                /// replace_long_file_name_to_hash) the prewarmed marks never get hit. Re-key
+                /// the entry under the logical name so prewarm survives.
+                const String & on_disk_key = stream->escaped_column_name;
+                const String logical_key = logical_index_name + index_substreams[substream_idx].suffix;
+                if (on_disk_key != logical_key)
+                {
+                    auto node = cached_index_marks.extract(on_disk_key);
+                    if (!node.empty())
+                    {
+                        node.key() = logical_key;
+                        cached_index_marks.insert(std::move(node));
+                    }
+                }
+
                 /// Substream fit under the spill threshold: bytes are still in the spool
                 /// buffer; finalize hands them to skip_indices_packed_writer. No per-file
-                /// checksum entry — the archive's single checksum covers it.
+                /// checksum entry -- the archive's single checksum covers it.
                 stream->finalize();
             }
             else
@@ -391,6 +425,7 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
                 /// finishSkipIndicesSerialization below.
                 stream->addToChecksums(checksums, MergeTreeIndexSubstream::isCompressed(type));
             }
+            ++substream_idx;
         }
     }
 
