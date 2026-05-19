@@ -37,9 +37,22 @@ struct MergeTreeDataSelectSamplingData
 
 struct UsefulSkipIndexes
 {
-    bool empty() const { return useful_indices.empty() && !skip_index_for_top_k_filtering; }
+    struct MergedDataSkippingIndexAndCondition
+    {
+        std::vector<MergeTreeIndexPtr> indices;
+        MergeTreeIndexMergedConditionPtr condition;
+
+        void addIndex(const MergeTreeIndexPtr & index)
+        {
+            indices.push_back(index);
+            condition->addIndex(indices.back());
+        }
+    };
+
+    bool empty() const { return useful_indices.empty() && merged_indices.empty() && !skip_index_for_top_k_filtering; }
 
     std::vector<MergeTreeIndexWithCondition> useful_indices;
+    std::vector<MergedDataSkippingIndexAndCondition> merged_indices;
     std::vector<std::vector<size_t>> per_part_index_orders;
     MergeTreeIndexPtr skip_index_for_top_k_filtering{nullptr};
     TopKThresholdTrackerPtr threshold_tracker{nullptr};
@@ -68,15 +81,11 @@ struct TopKFilterInfo
 {
     String column_name;
     DataTypePtr data_type;
-    size_t num_sort_columns;
     size_t limit_n;
     int direction; /// 1 = ASC, -1 = DESC
     bool where_clause;
     TopKThresholdTrackerPtr threshold_tracker;
 };
-
-struct LazyMaterializingRows;
-using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
@@ -86,13 +95,11 @@ public:
     enum class IndexType : uint8_t
     {
         None,
-        PartitionMinMax,
+        MinMax,
         Partition,
         PrimaryKey,
         Skip,
         PrimaryKeyExpand,
-        Statistics,
-        NonIntersectingSplit,
     };
 
     struct DistributedIndexStat
@@ -396,12 +403,7 @@ public:
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
 
-    void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_) { lazy_materializing_rows = std::move(lazy_materializing_rows_); }
-
     void deferFiltersAfterFinalIfNeeded();
-
-    const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
-    const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
 
 private:
     MergeTreeSettingsPtr data_settings;
@@ -520,8 +522,6 @@ private:
     const ReadFromMergeTree::AnalysisResult & getAnalysisResult() const { return getAnalysisResultImpl(); }
     ReadFromMergeTree::AnalysisResult & getAnalysisResult() { return getAnalysisResultImpl(); }
 
-    void logPredicateStatistics(const AnalysisResult & result) const;
-
     int getSortDirection() const;
     void updateSortDescription();
 
@@ -538,8 +538,6 @@ private:
     bool enable_vertical_final = false;
     bool enable_remove_parts_from_snapshot_optimization = true;
     bool allow_query_condition_cache = true;
-
-    LazyMaterializingRowsPtr lazy_materializing_rows;
 
     ExpressionActionsPtr virtual_row_conversion;
 

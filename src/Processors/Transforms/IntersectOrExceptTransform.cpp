@@ -1,6 +1,5 @@
 #include <Processors/Port.h>
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
-#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -10,6 +9,11 @@ IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Ope
     : IProcessor(InputPorts(2, header_), {header_})
     , current_operator(operator_)
 {
+    size_t num_columns = header_->columns();
+
+    key_columns_pos.reserve(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        key_columns_pos.emplace_back(i);
 }
 
 
@@ -131,13 +135,13 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
     auto columns = chunk.detachColumns();
 
     ColumnRawPtrs column_ptrs;
-    column_ptrs.reserve(columns.size());
+    column_ptrs.reserve(key_columns_pos.size());
 
-    for (auto & column : columns)
+    for (auto pos : key_columns_pos)
     {
-        /// Hash methods expect non-const columns.
-        column = column->convertToFullColumnIfConst();
-        column_ptrs.emplace_back(column.get());
+        /// Hash methods expect non-const column
+        columns[pos] = columns[pos]->convertToFullColumnIfConst();
+        column_ptrs.emplace_back(columns[pos].get());
     }
 
     if (isAllOperator())
@@ -180,13 +184,13 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
     auto columns = chunk.detachColumns();
 
     ColumnRawPtrs column_ptrs;
-    column_ptrs.reserve(columns.size());
+    column_ptrs.reserve(key_columns_pos.size());
 
-    for (auto & column : columns)
+    for (auto pos : key_columns_pos)
     {
-        /// Hash methods expect non-const columns.
-        column = column->convertToFullColumnIfConst();
-        column_ptrs.emplace_back(column.get());
+        /// Hash methods expect non-const column
+        columns[pos] = columns[pos]->convertToFullColumnIfConst();
+        column_ptrs.emplace_back(columns[pos].get());
     }
 
     size_t new_rows_num = 0;
@@ -202,13 +206,19 @@ void IntersectOrExceptTransform::filter(Chunk & chunk)
             auto key = hashRow(column_ptrs, i);
             auto * it = counts.find(key);
 
-            /// Check if this row has remaining occurrences in the right side.
-            bool matched = (it != nullptr && it->getMapped() > 0);
-            if (matched)
+            if (it != nullptr && it->getMapped() > 0)
+            {
                 --it->getMapped();
-
-            /// EXCEPT ALL keeps unmatched rows; INTERSECT ALL keeps matched rows.
-            row_filter[i] = matched != is_except;
+                /// EXCEPT ALL: found in right side, exclude this row.
+                /// INTERSECT ALL: found in right side, include this row.
+                row_filter[i] = is_except ? 0 : 1;
+            }
+            else
+            {
+                /// EXCEPT ALL: not in right side, include this row.
+                /// INTERSECT ALL: not in right side, exclude this row.
+                row_filter[i] = is_except ? 1 : 0;
+            }
 
             if (row_filter[i])
                 ++new_rows_num;

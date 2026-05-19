@@ -171,8 +171,10 @@ process_query() {
     echo -e "${GREEN}Processing query $id...${NC}" >&2
     
     # Run profiler with jemalloc profiling
+    # JE_MALLOC_CONF is used on macOS, MALLOC_CONF on Linux
     local output
-    output=$(MALLOC_CONF=prof:true,prof_active:true,lg_prof_sample:0 \
+    output=$(JE_MALLOC_CONF=prof:true,prof_active:true,lg_prof_sample:0 \
+        MALLOC_CONF=prof:true,prof_active:true,lg_prof_sample:0 \
         "$PROFILER" --profile "$profile_prefix" <<< "$query" 2>/dev/null)
     
     # Parse the output (format: length \t before \t after \t diff)

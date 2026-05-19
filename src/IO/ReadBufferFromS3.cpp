@@ -257,8 +257,8 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             if (metrics_observed)
                 return;
             metrics_observed = true;
-            HistogramMetrics::S3ReadRequestDuration.observe(static_cast<double>(request_watch.elapsedMicroseconds()));
-            HistogramMetrics::S3ReadRequestBytes.observe(static_cast<double>(bytes_copied));
+            HistogramMetrics::S3ReadRequestDuration.observe(static_cast<HistogramMetrics::Value>(request_watch.elapsedMicroseconds()));
+            HistogramMetrics::S3ReadRequestBytes.observe(static_cast<HistogramMetrics::Value>(bytes_copied));
         };
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3Microseconds);

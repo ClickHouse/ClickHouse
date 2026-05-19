@@ -81,7 +81,7 @@ bool tryGetLiteralBool(const IAST * ast, bool & value)
         }
         return false;
     }
-    catch (const Exception &)
+    catch (...)
     {
         return false;
     }

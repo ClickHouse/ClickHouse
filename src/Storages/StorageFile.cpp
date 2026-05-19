@@ -49,7 +49,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
@@ -160,7 +159,7 @@ void listFilesWithRegexpMatchingImpl(
             /// We use fs::canonical to resolve the canonical path and check if the file does exists
             /// but the result path will be fs::absolute.
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-            (void)fs::canonical(path_for_ls + for_match);
+            fs::canonical(path_for_ls + for_match);
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
             result.push_back(absolute_path.string());
@@ -199,14 +198,8 @@ void listFilesWithRegexpMatchingImpl(
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
 
     const fs::directory_iterator end;
-    std::error_code ec;
-    for (fs::directory_iterator it(prefix_without_globs, ec); it != end; it.increment(ec))
+    for (fs::directory_iterator it(prefix_without_globs); it != end; ++it)
     {
-        if (ec)
-        {
-            return;
-        }
-
         const std::string full_path = it->path().string();
         const size_t last_slash = full_path.rfind('/');
         const String file_name = full_path.substr(last_slash);
@@ -216,13 +209,7 @@ void listFilesWithRegexpMatchingImpl(
         {
             if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
             {
-                total_bytes_to_read += it->file_size(ec);
-                if (ec)
-                {
-                    ec.clear();
-                    continue;
-                }
-
+                total_bytes_to_read += it->file_size();
                 result.push_back(it->path().string());
             }
         }
@@ -1133,13 +1120,13 @@ std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
 {
     /// Currently don't support prewhere for virtual columns, columns with default expressions,
     /// and columns taken from file path (hive partitioning).
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageFile::getColumnSizes() const
 {
     /// Reporting some fake sizes to enable prewhere optimization.
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getFakeColumnSizes();
+    return getInMemoryMetadataPtr()->getFakeColumnSizes();
 }
 
 bool StorageFile::prefersLargeBlocks() const
@@ -1280,7 +1267,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
         format_settings,
         args.getContext());
 
-    storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), format_settings, PartitionStrategyFactory::StrategyType::NONE, sample_path));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), format_settings, PartitionStrategyFactory::StrategyType::NONE, sample_path));
     setInMemoryMetadata(storage_metadata);
 
     supports_prewhere = format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, args.getContext(), format_settings);
@@ -1654,10 +1641,9 @@ Chunk StorageFileSource::generate()
                 chunk, requested_virtual_columns,
                 {
                     .path = current_path,
-                    .storage_id = storage->getStorageID(),
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
-                    .last_modified = current_file_last_modified,
+                    .last_modified = current_file_last_modified
                 }, getContext());
 
             return chunk;
@@ -1824,8 +1810,7 @@ void StorageFile::read(
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
 
     bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
-        && context->getSettingsRef()[Setting::optimize_count_from_files]
-        && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
+        && context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto reading = std::make_unique<ReadFromFile>(
         column_names,
@@ -1850,7 +1835,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->paths,
         storage->archive_info,
         predicate,
-        storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
+        storage->getVirtualsList(),
         info.hive_partition_columns_to_read_from_file_path,
         context,
         storage->distributed_processing);

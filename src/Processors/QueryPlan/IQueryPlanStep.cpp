@@ -1,11 +1,9 @@
-#include <Common/CurrentThread.h>
 #include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Common/CurrentThread.h>
+
 #include <fmt/format.h>
 
 namespace DB
@@ -177,7 +175,7 @@ static void doDescribeProcessor(const IProcessor & processor, size_t count, IQue
     if (!processor.getDescription().empty())
         settings.out << String(settings.offset, settings.indent_char) << "Description: " << processor.getDescription() << '\n';
 
-    settings.offset += settings.base_indent;
+    settings.offset += settings.indent;
 }
 
 void IQueryPlanStep::describePipeline(const Processors & processors, FormatSettings & settings)

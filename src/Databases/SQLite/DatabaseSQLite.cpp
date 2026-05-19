@@ -212,8 +212,7 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
         true,
         static_cast<uint32_t>(settings[Setting::max_parser_depth]),
         static_cast<uint32_t>(settings[Setting::max_parser_backtracks]),
-        throw_on_error,
-        getContext());
+        throw_on_error);
 
     return create_table_query;
 }
@@ -234,7 +233,7 @@ void registerDatabaseSQLite(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseSQLite>(args.context, engine_define, args.create_query.attach, database_path);
     };
-    factory.registerDatabase("SQLite", create_fn, {.supports_arguments = true, .is_external = true});
+    factory.registerDatabase("SQLite", create_fn, {.supports_arguments = true});
 }
 }
 

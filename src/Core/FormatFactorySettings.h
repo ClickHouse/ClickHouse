@@ -562,7 +562,7 @@ Possible values:
     DECLARE(Bool, type_json_skip_duplicated_paths, false, R"(
 When enabled, during parsing JSON object into JSON type duplicated paths will be ignored and only the first one will be inserted instead of an exception
 )", 0) \
-    DECLARE(Bool, type_json_allow_duplicated_key_with_literal_and_nested_object, true, R"(
+    DECLARE(Bool, type_json_allow_duplicated_key_with_literal_and_nested_object, false, R"(
 When enabled, JSONs like `{"a" : 42, "a" : {"b" : 42}}` where some key is duplicated but one of them is a nested object are allowed to be parsed.
 )", 0) \
     DECLARE(Bool, type_json_use_partial_match_to_skip_paths_by_regexp, true, R"(
@@ -1208,9 +1208,6 @@ Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
     DECLARE(Bool, output_format_parquet_write_checksums, true, R"(
 Put crc32 checksums in parquet page headers.
 )", 0) \
-    DECLARE(Bool, output_format_parquet_unsupported_types_as_binary, false, R"(
-Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
-)", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
 )", 0) \
@@ -1236,9 +1233,6 @@ Custom NULL representation in TSV format
 Output trailing zeros when printing Decimal values. E.g. 1.230000 instead of 1.23.
 
 Disabled by default.
-)", 0) \
-    DECLARE(Bool, output_format_trim_fixed_string, false, R"(
-Trim trailing null bytes from FixedString values in text output formats. E.g. `toFixedString('John', 8)` is printed as `John` instead of `John\0\0\0\0`.
 )", 0) \
     \
     DECLARE(UInt64, input_format_allow_errors_num, 0, R"(
@@ -1411,9 +1405,6 @@ Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, n
     DECLARE(Bool, output_format_arrow_date_as_uint16, false, R"(
 Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit Arrow DATE32 type (read back as Date32).
 )", 0) \
-    DECLARE(Bool, output_format_arrow_unsupported_types_as_binary, true, R"(
-Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
-)", 0) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
 Use ORC String type instead of Binary for String columns
@@ -1533,25 +1524,6 @@ Limits the maximum time in milliseconds to wait before emitting a block during p
 :::note
 This option only works if `input_format_connection_handling` is enabled. Setting a value also disables parallel parsing and makes deduplication impossible.
 :::
-
-:::note
-For streaming inserts, you must also set `min_insert_block_size_rows=0` and `min_insert_block_size_bytes=0`. Otherwise, parsed blocks may still be accumulated in memory by the block squashing stage until those thresholds are reached, preventing timely inserts.
-:::
-
-**Example: streaming Wikipedia recent changes into ClickHouse**
-
-```bash
-clickhouse-client --query 'CREATE TABLE wikipedia_edits (data JSON)'
-
-curl -sS --globoff -H 'Accept: application/json' --no-buffer \
-  'https://stream.wikimedia.org/v2/stream/recentchange' \
-  | clickhouse-client \
-      --query 'INSERT INTO wikipedia_edits FORMAT JSONAsObject' \
-      --input_format_max_block_wait_ms 1000 \
-      --input_format_connection_handling 1 \
-      --min_insert_block_size_rows 0 \
-      --min_insert_block_size_bytes 0
-```
 )", 0) \
     DECLARE(Bool, input_format_connection_handling, false, R"(
     When this option is enabled, if the connection closes unexpectedly, any remaining data in the buffer will be parsed and processed instead of being treated as an error
@@ -1571,13 +1543,6 @@ Allow to write information about geo columns in parquet metadata and encode colu
 )", 0) \
     DECLARE(Bool, into_outfile_create_parent_directories, false, R"(
 Automatically create parent directories when using INTO OUTFILE if they do not already exists.
-)", 0) \
-    DECLARE(InputFormatColumnMatchingCaseSensitivity, input_format_column_name_matching_mode, FormatSettings::InputFormatColumnMatchingCaseSensitivity::MATCH_CASE, R"(
-Defines the column name matching mode when ingesting data through various formats (including but not limited to JSONEachRow, CSVWithNames, JSONColumns, BSONEachRow, RowBinaryWithNames).
-Supported modes:
-    - match_case: match case-sensitively
-    - ignore_case: match case-insensitively
-    - auto: first tries to match case-sensitively, if fails, tries to match case-insensitively.
 )", 0) \
 
 

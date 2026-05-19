@@ -1,31 +1,37 @@
-#include <Core/Settings.h>
+#include <Columns/IColumn.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
-#include <Storages/KeyDescription.h>
 #include <Storages/ReadInOrderOptimizer.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Core/Settings.h>
 
 #include <stack>
 
@@ -74,8 +80,7 @@ ISourceStep * checkSupportedReadingStep(IQueryPlanStep * step, bool allow_existi
         for (const auto & table : tables)
         {
             auto storage = std::get<StoragePtr>(table);
-            const auto storage_metadata = storage->getInMemoryMetadataPtr(merge->getContext(), false);
-            const auto & sorting_key = storage_metadata->getSortingKey();
+            const auto & sorting_key = storage->getInMemoryMetadataPtr()->getSortingKey();
             if (sorting_key.column_names.empty())
                 return nullptr;
         }
@@ -128,8 +133,6 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
     if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())
         return findReadingStep(*node.children.front(), data);
 
-    if (typeid_cast<CreatingSetsStep *>(step) || typeid_cast<DelayedCreatingSetsStep *>(step))
-        return findReadingStep(*node.children.front(), data);
 
     if (data.read_in_order_through_join)
     {
@@ -144,10 +147,7 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
             const auto & table_join = join_ptr->getTableJoin();
             auto kind = table_join.kind();
             auto strictness = table_join.strictness();
-            /// Grace hash join scatters rows into buckets by hash, destroying the input order.
-            /// We must not propagate read-in-order through joins that reorder rows.
-            if ((strictness == JoinStrictness::Any || strictness == JoinStrictness::All) && isInnerOrLeft(kind)
-                && !join_ptr->hasDelayedBlocks())
+            if ((strictness == JoinStrictness::Any || strictness == JoinStrictness::All) && isInnerOrLeft(kind))
             {
                 auto * reading_step = findReadingStep(*node.children.front(), data);
                 if (auto * join_step = typeid_cast<JoinStep *>(step); reading_step && join_step)
@@ -966,7 +966,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
     for (const auto & table : tables)
     {
         auto storage = std::get<StoragePtr>(table);
-        auto metadata = storage->getInMemoryMetadataPtr(merge->getContext(), false);
+        auto metadata = storage->getInMemoryMetadataPtr();
         const auto & sorting_key = metadata->getSortingKey();
         // const auto & pk_column_names = metadata->getPrimaryKey().column_names;
 
@@ -1034,8 +1034,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
     for (const auto & table : tables)
     {
         auto storage = std::get<StoragePtr>(table);
-        const auto storage_metadata = storage->getInMemoryMetadataPtr(merge->getContext(), false);
-        const auto & sorting_key = storage_metadata->getSortingKey();
+        const auto & sorting_key = storage->getInMemoryMetadataPtr()->getSortingKey();
         const auto & sorting_key_columns = sorting_key.column_names;
 
         if (sorting_key_columns.empty())
@@ -1080,15 +1079,6 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
-        /// With parallel replicas, the read-in-order-through-join optimization can produce
-        /// different results on the initiator and remote replicas (due to differences in plan
-        /// construction such as AST optimizations), leading to coordination mode mismatch
-        /// ("Replica decided to read in Default mode, not in WithOrder").
-        /// Skip this optimization for parallel replicas when it goes through a JOIN,
-        /// similar to the existing check for parallel replicas in the Union case.
-        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
-            return nullptr;
-
         auto order_info = buildInputOrderFromSortDescription(
             reading,
             fixed_columns,
@@ -1200,11 +1190,6 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
-        /// Same as above: skip aggregation-in-order through JOIN for parallel replicas
-        /// to avoid coordination mode mismatch.
-        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
-            return {};
-
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
             fixed_columns,
@@ -1321,11 +1306,6 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
 
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
-        /// Same as above: skip distinct-in-order through JOIN for parallel replicas
-        /// to avoid coordination mode mismatch.
-        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
-            return {};
-
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
             fixed_columns,

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/demangle.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ColumnsHashing/HashMethod.h>
@@ -10,8 +9,11 @@
 #include <Common/SipHash.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/assert_cast.h>
+#include <Interpreters/AggregationCommon.h>
 #include <base/unaligned.h>
 
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 
 #include <Core/Defines.h>
@@ -414,7 +416,7 @@ struct HashMethodSerialized
 
                 const size_t rows = row_sizes.size();
                 char * memory = serialized_buffer.data();
-                VectorWithMemoryTracking<char *> memories(rows);
+                std::vector<char *> memories(rows);
                 serialized_keys.resize(rows);
                 for (size_t i = 0; i < row_sizes.size(); ++i)
                 {
