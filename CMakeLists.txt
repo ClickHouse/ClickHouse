@@ -135,8 +135,12 @@ if (ENABLE_COLORED_BUILD AND CMAKE_GENERATOR STREQUAL "Ninja")
     # --> available since CMake 3.24: https://stackoverflow.com/a/73349744
 endif ()
 
-include (cmake/check_flags.cmake)
 include (cmake/add_warning.cmake)
+
+# Block build-time CMake probes (check_*, try_compile, try_run) project-wide. Compiler and
+# toolchain are fixed (see cmake/tools.cmake), so feature detection is unnecessary - any
+# version-dependent behaviour must be gated on CMAKE_CXX_COMPILER_VERSION explicitly.
+include (cmake/block_build_time_checks.cmake)
 
 option(ENABLE_TESTS "Provide unit_tests_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
@@ -415,9 +419,6 @@ include(cmake/limit_jobs.cmake)
 
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
-
-# Don't use the system compiler-rt library even if it is available. Instead build it directly
-option(USE_SYSTEM_COMPILER_RT "Use the system compiler-rt if available. If disabled it will be built from sources (supported for Linux and FreeBSD)" OFF)
 
 # Increase stack size on Musl. We need big stack for our recursive-descend parser.
 if (USE_MUSL)

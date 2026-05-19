@@ -70,6 +70,22 @@
             --selection-color: #FFF;
             --selection-background-color: #456;
             --current-query-background-color: #FFF4E0;
+
+            /* Syntax highlighting palette, modelled after `clickhouse-client`. The
+               textarea text is made transparent when highlighting is ready, so the
+               user sees the backdrop text in these colors directly.
+               Light-theme values are darker variants of the terminal palette so they
+               read well on a light background. */
+            --syntax-default:    var(--text-color-active);
+            --syntax-keyword:    var(--text-color-active);  /* bold default fg */
+            --syntax-identifier: #00838F;                    /* CYAN */
+            --syntax-function:   #875F00;                    /* BROWN */
+            --syntax-number:     #008700;                    /* bright green */
+            --syntax-string:     #006400;                    /* GREEN */
+            --syntax-qident:     #008B8B;                    /* alias / teal */
+            --syntax-comment:    #757575;
+            --syntax-operator:   var(--text-color-active);
+            --syntax-error:      #B71C1C;
         }
 
         [data-theme="dark"] {
@@ -103,6 +119,18 @@
             --selection-color: #000;
             --selection-background-color: #FF8;
             --current-query-background-color: #442;
+
+            /* Dark-theme palette uses the actual xterm 16-color values that
+               `clickhouse-client` renders to in a dark terminal. */
+            --syntax-keyword:    var(--text-color-active);   /* bold default fg */
+            --syntax-identifier: #00CDCD;                     /* CYAN */
+            --syntax-function:   #CDCD00;                     /* BROWN */
+            --syntax-number:     #00D700;                     /* rgb666(0,4,0) */
+            --syntax-string:     #00CD00;                     /* GREEN */
+            --syntax-qident:     #00D7D7;                     /* rgb666(0,4,4) */
+            --syntax-comment:    #9E9E9E;
+            --syntax-operator:   var(--text-color-active);
+            --syntax-error:      #FF6E40;
         }
 
         ::selection {
@@ -141,20 +169,28 @@
             position: relative;
             display: grid;
             grid-template-columns: auto 1fr;
-            grid-template-areas: "menu main";
+            grid-template-rows: auto 1fr;
+            grid-template-areas: "terminal terminal" "menu main";
         }
 
         #menu
         {
             padding: 0.25rem;
             grid-area: menu;
-            position: relative;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            height: 100vh;
+            align-self: start;
             background: var(--table-header-color);
             border-right: 1px solid var(--border-color);
             display: grid;
             grid-template-rows: auto 1fr auto;
-            grid-template-areas: "databases-icon" "contents" "github-icon";
+            grid-template-areas: "databases-icon" "contents" "terminal-icon" "github-icon";
             cursor: e-resize;
+            min-height: 0;
+            overflow-x: visible;
+            overflow-y: clip;
         }
 
         #main
@@ -162,7 +198,8 @@
             overflow: auto;
             grid-area: main;
             padding: 0.5rem;
-            position: relative; /* for stacking context */
+            position: relative;
+            z-index: 0; /* stacking context so children don't overlap #menu */
         }
 
         .menu-icon
@@ -181,18 +218,73 @@
         #databases-icon
         {
             grid-area: databases-icon;
+            text-decoration: none;
+            display: block;
         }
 
         #databases
         {
             grid-area: contents;
             max-width: 25em;
-            overflow: hidden;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border-color) transparent;
         }
 
         .tables:not(:empty)
         {
             margin-bottom: 1em;
+        }
+
+        #terminal-icon
+        {
+            grid-area: terminal-icon;
+            margin-bottom: 0.25rem;
+        }
+
+        #terminal-icon.active svg
+        {
+            fill: var(--button-color);
+        }
+
+        #terminal-panel
+        {
+            grid-area: terminal;
+            display: none;
+            position: relative;
+            background: #000;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        #terminal-panel.active
+        {
+            display: block;
+        }
+
+        #terminal-iframe
+        {
+            width: 100%;
+            height: 100%;
+            border: none;
+            display: block;
+        }
+
+        #terminal-resizer
+        {
+            position: absolute;
+            bottom: -0.3rem;
+            left: 0;
+            width: 100%;
+            height: 0.5rem;
+            cursor: row-resize;
+            user-select: none;
+            z-index: 10;
+        }
+
+        #terminal-resizer:hover, .terminal-resizer-dragging
+        {
+            border-radius: 0.25rem;
+            background-color: var(--border-color);
         }
 
         #github-icon
@@ -282,10 +374,10 @@
 
         .table-addendum
         {
-            position: absolute;
+            position: fixed;
             z-index: 999;
             white-space: pre;
-            transform: translate(0.25rem, calc(-50% + 0.5em));
+            transform: translateY(-50%);
             color: var(--element-background-color);
             background: color-mix(in srgb, var(--text-color) 50%, var(--background-color));
             backdrop-filter: blur(4px);
@@ -314,6 +406,17 @@
             opacity: 1;
             pointer-events: auto;
             transition: opacity 0s 0.1s;
+        }
+
+        /* While suppress-balloons is set on the body (set on scroll, cleared on the
+           next mousemove), no balloon may appear from a :hover state. This prevents
+           a different table button from scrolling under a stationary cursor and
+           revealing its balloon without `mouseenter` having fired to position it. */
+        body.suppress-balloons .table button:hover + .table-addendum,
+        body.suppress-balloons .table .table-addendum:hover
+        {
+            opacity: 0;
+            pointer-events: none;
         }
 
         .table-addendum-elem
@@ -381,11 +484,16 @@
             resize: none; /* Disable default browser resizer */
         }
 
-        /* When the backdrop is active, the textarea becomes transparent so
-           the colored query spans behind it are visible. */
+        /* When the backdrop is populated with the highlighted version of the text,
+           we hide the textarea's own text by setting its color to transparent. What
+           the user sees is the backdrop directly. The caret keeps a normal color via
+           `caret-color` (the bare `color: transparent` would also make the caret
+           transparent because the caret defaults to `currentColor`). */
         #query.has-backdrop
         {
             background: transparent;
+            color: transparent;
+            caret-color: var(--text-color-active);
         }
 
         #query-backdrop
@@ -406,10 +514,25 @@
             word-wrap: break-word;
             overflow-wrap: break-word;
             background-color: var(--element-background-color);
-            color: transparent; /* text is invisible; only backgrounds are visible */
+            /* Default backdrop text is the "neutral" color of the chosen palette.
+               It coincides with the canonical text color after the difference blend. */
+            color: var(--syntax-default);
         }
 
         #query-backdrop .q-active { background-color: var(--current-query-background-color); }
+
+        /* Per-token syntax highlighting classes. The color value here is the raw color
+           painted in the backdrop; the visible color the user sees is the difference
+           between this and --text-color-active (see the comment on .has-backdrop). */
+        #query-backdrop .q-kw  { color: var(--syntax-keyword); font-weight: bold; }
+        #query-backdrop .q-id  { color: var(--syntax-identifier); }
+        #query-backdrop .q-fn  { color: var(--syntax-function); }
+        #query-backdrop .q-num { color: var(--syntax-number); }
+        #query-backdrop .q-str { color: var(--syntax-string); }
+        #query-backdrop .q-qid { color: var(--syntax-qident); }
+        #query-backdrop .q-com { color: var(--syntax-comment); font-style: italic; }
+        #query-backdrop .q-op  { color: var(--syntax-operator); }
+        #query-backdrop .q-err { color: var(--syntax-error); text-decoration: underline wavy; }
 
 
         #inputs
@@ -747,10 +870,13 @@
 
 <body>
     <div id="menu">
-        <div id="databases-icon" class="menu-icon">
+        <a id="databases-icon" class="menu-icon" href="">
             <svg id="databases-toggle" viewBox="0 0 9 9"><path d="M0,0 h1 v8 h-1 z"/><path d="M2,0 h1 v8 h-1 z"/><path d="M4,0 h1 v8 h-1 z"/><path d="M6,0 h1 v8 h-1 z"/><path d="M8,3.25 h1 v1.5 h-1 z"/></svg>
-        </div>
+        </a>
         <div id="databases"></div>
+        <div id="terminal-icon" class="menu-icon" title="Web Terminal (~)">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="22" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 8l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="13" y1="16" x2="18" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </div>
         <!-- https://github.com/logos -->
         <div id="github-icon" class="menu-icon">
             <a href="https://github.com/ClickHouse/ClickHouse/">
@@ -758,6 +884,9 @@
                 <svg id="github-icon-dark" viewBox="0 0 98 96" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0 1 12.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z" fill="#fff"/></svg>
             </a>
         </div>
+    </div>
+    <div id="terminal-panel">
+        <div id="terminal-resizer"></div>
     </div>
     <div id="main">
         <form id="controls">
@@ -800,6 +929,7 @@
                     <label for="download-format">Format:</label>
                     <select id="download-format">
                         <option value="CSV">CSV</option>
+                        <option value="CSVWithNames">CSVWithNames</option>
                         <option value="TSV">TSV</option>
                         <option value="JSON">JSON</option>
                         <option value="NDJSON" selected>JSONLines</option>
@@ -971,7 +1101,8 @@ customElements.define('query-progress', QueryProgressElement);
 
 class QueryResultElement extends HTMLElement
 {
-    static _loadDagrePromise = null;
+    static _loadVizPromise = null;
+    static _vizInstance = null;
     static _loadUplotPromise = null;
 
     constructor()
@@ -1258,29 +1389,18 @@ class QueryResultElement extends HTMLElement
                 {
                     display: none;
                     margin: auto;
-                }
-
-                text
-                {
-                    font-size: 14px;
-                    fill: var(--text-color);
-                }
-
-                .node rect
-                {
-                    fill: var(--element-background-color);
+                    overflow: auto;
+                    background: white;
+                    color: black;
+                    padding: 0.5rem;
+                    border-radius: 3px;
                     filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
-                    stroke: var(--border-color);
                 }
 
-                .edgePath path
+                #graph svg
                 {
-                    stroke: var(--text-color);
-                }
-
-                marker
-                {
-                    fill: var(--text-color);
+                    display: block;
+                    margin: auto;
                 }
 
                 #chart
@@ -1320,7 +1440,7 @@ class QueryResultElement extends HTMLElement
                 <pre class="monospace shadow" id="data-unparsed"></pre>
             </div>
             <div id="chart"></div>
-            <svg id="graph" fill="none"></svg>
+            <div id="graph"></div>
             <p id="error" class="monospace shadow"></p>
         `;
 
@@ -1927,7 +2047,7 @@ class QueryResultElement extends HTMLElement
                 script.crossOrigin = 'anonymous';
                 script.integrity = integrity;
             }
-            else
+            else if (!src.startsWith('/'))
             {
                 console.warn('no integrity for', src);
             }
@@ -1936,22 +2056,20 @@ class QueryResultElement extends HTMLElement
         });
     }
 
-    _loadDagre()
+    async _getViz()
     {
-        if (QueryResultElement._loadDagrePromise) { return QueryResultElement._loadDagrePromise; }
-
-        QueryResultElement._loadDagrePromise = Promise.all([
-            this._loadJS('https://dagrejs.github.io/project/dagre/v0.8.5/dagre.min.js',
-                    'sha384-2IH3T69EIKYC4c+RXZifZRvaH5SRUdacJW7j6HtE5rQbvLhKKdawxq6vpIzJ7j9M'),
-            this._loadJS('https://dagrejs.github.io/project/graphlib-dot/v0.6.4/graphlib-dot.min.js',
-                    'sha384-Q7oatU+b+y0oTkSoiRH9wTLH6sROySROCILZso/AbMMm9uKeq++r8ujD4l4f+CWj'),
-            this._loadJS('https://dagrejs.github.io/project/dagre-d3/v0.6.4/dagre-d3.min.js',
-                    'sha384-9N1ty7Yz7VKL3aJbOk+8ParYNW8G5W+MvxEfFL9G7CRYPmkHI9gJqyAfSI/8190W'),
-            this._loadJS('https://cdn.jsdelivr.net/npm/d3@7.0.0',
-                    'sha384-S+Kf0r6YzKIhKA8d1k2/xtYv+j0xYUU3E7+5YLrcPVab6hBh/r1J6cq90OXhw80u'),
-        ]);
-
-        return QueryResultElement._loadDagrePromise;
+        if (QueryResultElement._vizInstance) { return QueryResultElement._vizInstance; }
+        if (!QueryResultElement._loadVizPromise)
+        {
+            QueryResultElement._loadVizPromise = this._loadJS('/js/viz-standalone.js');
+        }
+        await QueryResultElement._loadVizPromise;
+        if (typeof Viz === 'undefined')
+        {
+            throw new Error('Viz.js failed to load from /js/viz-standalone.js.');
+        }
+        QueryResultElement._vizInstance = await Viz.instance();
+        return QueryResultElement._vizInstance;
     }
 
     _loadUplot()
@@ -1965,25 +2083,10 @@ class QueryResultElement extends HTMLElement
     async renderGraph()
     {
         this._clearElement(this._dataTable);
-        await this._loadDagre();
-
-        const dot = this._explain_graph.replace(/shape\s*=\s*box/g, 'shape=rect');
-
-        let graph = graphlibDot.read(dot);
-        let render = new dagreD3.render();
-
-        graph.setGraph({
-            nodesep: 20,
-            rankdir: 'LR',
-        });
-
-        let svg = this._graph;
-        svg.style.display = 'block';
-
-        render(d3.select(svg), graph);
-
-        svg.style.width = graph.graph().width;
-        svg.style.height = graph.graph().height;
+        const viz = await this._getViz();
+        const svg = viz.renderSVGElement(this._explain_graph);
+        this._graph.replaceChildren(svg);
+        this._graph.style.display = 'block';
     }
 
     _legendAsTooltipPlugin({ className, style = {} } = {})
@@ -2507,6 +2610,8 @@ async function loadTables(server_address, user, password, database, container) {
                 query_area.value = value;
                 query_area.dispatchEvent(new Event('input'));
             }
+            /// #main is the scroll container (overflow: auto), so scroll it to bring the query area into view.
+            document.getElementById('main').scrollTo(0, 0);
             e.stopPropagation();
         }
 
@@ -2532,6 +2637,14 @@ async function loadTables(server_address, user, password, database, container) {
         engine_elem.addEventListener('click', e => set_query_or_run(e, `SHOW TABLE "${database}"."${elem.table}"`));
         table_addendum.append(engine_elem);
 
+        table_link.addEventListener('mouseenter', function() {
+            const rect = this.getBoundingClientRect();
+            table_addendum.style.left = rect.right + 'px';
+            table_addendum.style.top = (rect.top + rect.height / 2) + 'px';
+            table_addendum.style.visibility = '';
+            visible_balloon = table_addendum;
+        });
+
         table.appendChild(table_link);
         table.appendChild(table_addendum);
         table.addEventListener('click', e => set_query_or_run(e, `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`));
@@ -2550,6 +2663,32 @@ let databases_toggle = document.getElementById('databases-toggle');
 
 let menu_elem = document.getElementById('menu');
 
+/// Hide the currently visible table-info balloon on any scroll: it uses
+/// position:fixed and would detach from its anchor. Use capture phase so the
+/// listener fires regardless of which element scrolls (scroll events do not
+/// bubble). Only one balloon can be open at a time (the one the cursor most
+/// recently entered), so we track that reference instead of scanning the DOM.
+///
+/// Also set `suppress-balloons` on the body until the next mousemove, so a
+/// different table button scrolled under a stationary cursor cannot reveal its
+/// balloon at an unset position via the CSS `:hover` rule (`mouseenter` does
+/// not fire without actual mouse movement, so JS positioning would be skipped).
+let visible_balloon = null;
+function hideTableBalloons() {
+    if (visible_balloon) {
+        visible_balloon.style.visibility = 'hidden';
+        visible_balloon = null;
+    }
+    document.body.classList.add('suppress-balloons');
+}
+document.addEventListener('scroll', hideTableBalloons, { capture: true, passive: true });
+document.addEventListener('mousemove', () => {
+    /// Guard so the no-op case does not touch classList on every mouse pixel.
+    if (document.body.classList.contains('suppress-balloons')) {
+        document.body.classList.remove('suppress-balloons');
+    }
+}, { passive: true });
+
 function toggleDatabases() {
     if (!databases_toggle.dataset['opened']) {
         loadDatabases(url_elem.value, user_elem.value, password_elem.value).then(ok => {
@@ -2566,12 +2705,24 @@ function toggleDatabases() {
     }
 }
 
+/// The logo is an <a> element so that Ctrl/Cmd/Shift+click and middle-click
+/// natively open the current page (with the query) in a new tab.
+/// We update the href on mousedown so it always reflects the current URL.
+document.getElementById('databases-icon').addEventListener('mousedown', () => {
+    document.getElementById('databases-icon').href = window.location.href;
+});
+
 databases_toggle.addEventListener('click', e => {
     e.stopPropagation();
+    /// Let the browser handle modifier clicks as a link (open in new tab).
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    /// Normal click: toggle the databases panel instead of following the link.
+    e.preventDefault();
     toggleDatabases();
 });
 
 document.getElementById('menu').addEventListener('click', e => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
     if (!e.target.closest('#github-icon') && !e.target.closest('#databases-toggle') && !e.target.closest('button')) {
         toggleDatabases();
     }
@@ -2816,14 +2967,9 @@ async function postSingle(posted_request_num, query, history_query_text)
         return;
     }
 
-    if (resultEl.isExplainGraph) {
-        await resultEl.renderGraph();
-    } else {
-        if (resultEl._extremes['min'] && resultEl._extremes['max']) resultEl.renderExtremes();
-        if (result.is_table) resultEl.renderTotals();
-        if (result.is_table) resultEl.transposeIfNeeded();
-        if (result.is_table) resultEl._changeTableLayout();
-    }
+    /// `postImpl` already performed `renderGraph`/`renderExtremes`/`renderTotals`/`transposeIfNeeded`;
+    /// the only step specific to the single-query path is the final table layout pass.
+    if (result.is_table) resultEl._changeTableLayout();
 
     progressEl.finish();
     document.getElementById('download-div').style.display = 'block';
@@ -3339,6 +3485,9 @@ query_area.onkeydown = (e) => {
         elem.value = text_before_cursor + '\n' + lead_spaces + text_after_cursor;
         elem.selectionStart = cursor_pos + lead_spaces.length + 1;
         elem.selectionEnd = elem.selectionStart;
+        // Notify listeners (e.g. the syntax-highlighting backdrop) that the textarea
+        // value changed — direct assignment to `value` does not fire `input`.
+        elem.dispatchEvent(new Event('input', { bubbles: true }));
 
         e.preventDefault();
         return false;
@@ -3377,6 +3526,9 @@ query_area.onkeydown = (e) => {
         // Adjust selection to keep the user in flow and enable quick reversal
         elem.selectionStart = lineStart;
         elem.selectionEnd = lineStart + replacedText.length;
+        // Notify listeners (e.g. the syntax-highlighting backdrop) that the textarea
+        // value changed — direct assignment to `value` does not fire `input`.
+        elem.dispatchEvent(new Event('input', { bubbles: true }));
 
         e.preventDefault();
         return false;
@@ -3709,32 +3861,123 @@ function updateRunButtons(multi) {
     runAllBtn.style.display = (multi && !selects_all) ? 'inline-block' : 'none';
 }
 
-/// Update the backdrop div behind the textarea to highlight individual queries
-/// with alternating faint background colors.
+/// Update the backdrop div behind the textarea: paint per-query active backgrounds
+/// and per-token syntax-highlighting colors. The textarea above is in
+/// `mix-blend-mode: difference`, so the colors here mix with the user's text.
 const queryBackdrop = document.getElementById('query-backdrop');
 
 function escapeHTML(s) {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-/// Cached boundaries for cursor-tracking updates.
+/// Numeric TokenType values, matching the order of the C++ enum in src/Parsers/Lexer.h.
+/// Only the categories we actually classify are named; everything else is treated as
+/// "default" (unstyled) and renders in the canonical text color via the diff blend.
+const TT = {
+    Whitespace: 0, Comment: 1, BareWord: 2, Number: 3, StringLiteral: 4, QuotedIdentifier: 5,
+    OpeningRoundBracket: 6, ClosingRoundBracket: 7,
+    Semicolon: 13, Asterisk: 16, HereDoc: 17, DollarSign: 18,
+    Plus: 19, Minus: 20, Slash: 21, Percent: 22, Arrow: 23,
+    QuestionMark: 24, Colon: 25, Caret: 26, DoubleColon: 27,
+    Equals: 28, NotEquals: 29, Less: 30, Greater: 31,
+    LessOrEquals: 32, GreaterOrEquals: 33, Spaceship: 34,
+    PipeMark: 35, Concatenation: 36, At: 37, DoubleAt: 38,
+};
+
+/// SQL keywords recognized for highlighting. The lexer reports them as BareWord, so we
+/// disambiguate identifiers from keywords here. Comparisons are case-insensitive.
+const SQL_KEYWORDS = new Set([
+    'ADD', 'AFTER', 'ALL', 'ALTER', 'AND', 'ANTI', 'ANY', 'ARRAY', 'AS', 'ASC', 'ASCENDING',
+    'ASOF', 'AST', 'ASYNC', 'ATTACH', 'BACKUP', 'BEGIN', 'BETWEEN', 'BOTH', 'BY',
+    'CACHE', 'CASCADE', 'CASE', 'CAST', 'CHANGE', 'CHANGED', 'CHECK', 'CLEAR', 'CLUSTER',
+    'CODEC', 'COLLATE', 'COLUMN', 'COLUMNS', 'COMMENT', 'COMMIT', 'CONSTRAINT', 'CREATE',
+    'CROSS', 'CUBE', 'CURRENT',
+    'DATABASE', 'DATABASES', 'DAY', 'DEDUPLICATE', 'DEFAULT', 'DELETE', 'DESC', 'DESCENDING',
+    'DESCRIBE', 'DETACH', 'DICTIONARIES', 'DICTIONARY', 'DISK', 'DISTINCT', 'DISTRIBUTED',
+    'DROP', 'ELSE', 'END', 'ENGINE', 'ESTIMATE', 'EVENTS', 'EXCEPT', 'EXCHANGE', 'EXISTS',
+    'EXPLAIN', 'EXPRESSION', 'EXTENDED', 'EXTRACT',
+    'FALSE', 'FETCH', 'FETCHES', 'FILE', 'FILESYSTEM', 'FINAL', 'FIRST', 'FLUSH', 'FOLLOWING',
+    'FOR', 'FOREIGN', 'FORMAT', 'FREEZE', 'FROM', 'FULL', 'FUNCTION',
+    'GLOBAL', 'GRANT', 'GROUP', 'GROUPS', 'HAVING', 'HIERARCHICAL', 'HOUR',
+    'ID', 'IDENTIFIED', 'IF', 'ILIKE', 'IN', 'INDEX', 'INF', 'INHERIT', 'INJECTIVE',
+    'INNER', 'INSERT', 'INTERSECT', 'INTERVAL', 'INTO', 'INVISIBLE', 'IS', 'IS_OBJECT_ID',
+    'JOIN', 'KEY', 'KEYED', 'KILL',
+    'LAST', 'LATERAL', 'LAYOUT', 'LEADING', 'LEFT', 'LIFETIME', 'LIKE', 'LIMIT', 'LIMITS',
+    'LIVE', 'LOCAL', 'LOGS',
+    'MATERIALIZE', 'MATERIALIZED', 'MAX', 'MERGES', 'MICROSECOND', 'MILLISECOND', 'MIN',
+    'MINUTE', 'MODIFY', 'MONTH', 'MOVE', 'MUTATION',
+    'NAN_SQL', 'NEXT', 'NO', 'NONE', 'NOT', 'NULL', 'NULLS',
+    'OFFSET', 'ON', 'ONLY', 'OPTIMIZE', 'OPTION', 'OR', 'ORDER', 'OUTER', 'OUTFILE', 'OVER',
+    'PARTITION', 'PASTE', 'PERMANENTLY', 'PLAN', 'POPULATE', 'PRECEDING', 'PRECISION',
+    'PREWHERE', 'PRIMARY', 'PROFILE', 'PROJECTION', 'QUARTER', 'QUERY', 'QUOTA',
+    'RANDOMIZED', 'RANGE', 'RECURSIVE', 'REFRESH', 'REGEXP', 'RELOAD', 'REMOTE', 'RENAME',
+    'REPLACE', 'REPLICA', 'REPLICAS', 'RESET', 'RESTORE', 'RESTRICT', 'RESTRICTIVE',
+    'RETURNS', 'REVOKE', 'RIGHT', 'ROLE', 'ROLLBACK', 'ROLLUP', 'ROW', 'ROWS',
+    'SAMPLE', 'SECOND', 'SELECT', 'SEMI', 'SENDS', 'SET', 'SETS', 'SETTINGS', 'SHARD',
+    'SHOW', 'SIGNED', 'SOURCE', 'SQL_SECURITY', 'START', 'STEP', 'STORAGE', 'STRICT',
+    'STRICTLY_ASCENDING', 'SUBPARTITION', 'SUBSTRING', 'SUSPEND', 'SYNC', 'SYNTAX', 'SYSTEM',
+    'TABLE', 'TABLES', 'TEMPORARY', 'TEST', 'THEN', 'TIES', 'TIMESTAMP', 'TO', 'TOP',
+    'TOTALS', 'TRACKING', 'TRAILING', 'TRANSACTION', 'TRIGGER', 'TRIM', 'TRUE', 'TRUNCATE',
+    'TYPE',
+    'UNBOUNDED', 'UNFREEZE', 'UNION', 'UNIQUE', 'UNSIGNED', 'UPDATE', 'USE', 'USING',
+    'UUID', 'VALUES', 'VARYING', 'VIEW', 'VIRTUAL', 'VISIBLE',
+    'WATCH', 'WEEK', 'WHEN', 'WHERE', 'WINDOW', 'WITH', 'WORK', 'WRITABLE',
+    'XOR', 'YEAR', 'ZKPATH',
+]);
+
+/// Map a single token to a CSS class. For BareWords we also peek at the next
+/// non-whitespace token to distinguish a function call (`foo(`) from a plain
+/// identifier — the lexer alone cannot tell them apart.
+function tokenClass(tokens, i) {
+    const elem = tokens[i];
+    switch (elem.type) {
+        case TT.Comment: return 'q-com';
+        case TT.Number: return 'q-num';
+        case TT.StringLiteral:
+        case TT.HereDoc: return 'q-str';
+        case TT.QuotedIdentifier: return 'q-qid';
+        case TT.BareWord: {
+            if (SQL_KEYWORDS.has(elem.token.toUpperCase())) return 'q-kw';
+            for (let j = i + 1; j < tokens.length; ++j) {
+                if (tokens[j].type === TT.Whitespace) continue;
+                return tokens[j].type === TT.OpeningRoundBracket ? 'q-fn' : 'q-id';
+            }
+            return 'q-id';
+        }
+        case TT.Asterisk: case TT.Plus: case TT.Minus: case TT.Slash: case TT.Percent:
+        case TT.Arrow: case TT.QuestionMark: case TT.Colon: case TT.DoubleColon: case TT.Caret:
+        case TT.Equals: case TT.NotEquals:
+        case TT.Less: case TT.Greater: case TT.LessOrEquals: case TT.GreaterOrEquals:
+        case TT.Spaceship: case TT.PipeMark: case TT.Concatenation:
+        case TT.At: case TT.DoubleAt: case TT.DollarSign:
+            return 'q-op';
+        default:
+            return '';
+    }
+}
+
+/// Cached state for cursor-tracking re-renders that do not re-tokenize.
+let currentTokens = [];
 let currentBoundaries = [];
 let currentBackdropText = '';
 
-function updateQueryBackdrop(text, boundaries) {
-    currentBoundaries = boundaries;
-    currentBackdropText = text;
+function updateQueryBackdrop(text, tokens, boundaries) {
+    currentTokens = tokens || [];
+    currentBoundaries = boundaries || [];
+    currentBackdropText = text || '';
     renderQueryBackdrop();
 }
 
 function renderQueryBackdrop() {
     const text = currentBackdropText;
+    const tokens = currentTokens;
     const boundaries = currentBoundaries;
 
     /// Update button labels to reflect current selection state.
     updateRunButtons(boundaries.length > 1);
 
-    if (boundaries.length <= 1) {
+    /// No content, or the WASM lexer is not available — fall back to the unstyled textarea.
+    if (!text || tokens.length === 0) {
         queryBackdrop.style.display = 'none';
         query_area.classList.remove('has-backdrop');
         return;
@@ -3743,32 +3986,57 @@ function renderQueryBackdrop() {
     const cursor = query_area.selectionStart;
     const focused = document.activeElement === query_area;
 
-    /// Find which query contains the cursor (only when textarea is focused).
-    let activeIdx = -1;
-    if (focused) for (let i = 0; i < boundaries.length; ++i) {
-        if (cursor >= boundaries[i].start && cursor <= boundaries[i].end) {
-            activeIdx = i;
-            break;
+    /// Find which query contains the cursor (only when textarea is focused and we are
+    /// actually in multi-query mode).
+    let activeStart = -1;
+    let activeEnd = -1;
+    if (focused && boundaries.length > 1) {
+        for (let i = 0; i < boundaries.length; ++i) {
+            if (cursor >= boundaries[i].start && cursor <= boundaries[i].end) {
+                activeStart = boundaries[i].start;
+                activeEnd = boundaries[i].end;
+                break;
+            }
         }
     }
 
     let html = '';
-    let pos = 0;
-    for (let i = 0; i < boundaries.length; ++i) {
-        const b = boundaries[i];
-        if (b.start > pos) {
-            html += escapeHTML(text.substring(pos, b.start));
+    let offset = 0;
+    let activeOpen = false;
+
+    for (let i = 0; i < tokens.length; ++i) {
+        const elem = tokens[i];
+        const tokStart = offset;
+        const tokEnd = offset + elem.token.length;
+        offset = tokEnd;
+
+        const inActive = activeStart >= 0 && tokEnd > activeStart && tokStart < activeEnd;
+        if (inActive && !activeOpen) {
+            html += '<span class="q-active">';
+            activeOpen = true;
+        } else if (!inActive && activeOpen) {
+            html += '</span>';
+            activeOpen = false;
         }
-        if (i === activeIdx) {
-            html += '<span class="q-active">' + escapeHTML(text.substring(b.start, b.end)) + '</span>';
+
+        const cls = tokenClass(tokens, i);
+        const escaped = escapeHTML(elem.token);
+        if (cls) {
+            html += '<span class="' + cls + '">' + escaped + '</span>';
         } else {
-            html += escapeHTML(text.substring(b.start, b.end));
+            html += escaped;
         }
-        pos = b.end;
     }
-    if (pos < text.length) {
-        html += escapeHTML(text.substring(pos));
+    if (activeOpen) {
+        html += '</span>';
     }
+
+    /// Any tail not covered by tokens (lexer hit an error or reached the size limit)
+    /// is shown with the error style.
+    if (offset < text.length) {
+        html += '<span class="q-err">' + escapeHTML(text.substring(offset)) + '</span>';
+    }
+
     /// Trailing newline fix: browsers collapse a trailing \n in a div.
     if (html.endsWith('\n')) html += ' ';
 
@@ -3870,25 +4138,54 @@ async function updateQueryParams()
         return;
     }
 
+    /// Bump the generation up-front so that any in-flight older runs (which only
+    /// check this counter after their `await tokenize`) see a newer value and bail
+    /// out — including the empty-query fast path below, where we would otherwise
+    /// clear state and return, and a stale older run could then overwrite it.
+    const generation = ++updateQueryParamsGeneration;
+
     const query = query_area.value;
     if (!query)
     {
         queryParamsContainer.innerHTML = '';
         currentQueryParams = [];
         updateRunButtons(false);
-        updateQueryBackdrop('', []);
+        updateQueryBackdrop('', [], []);
         return;
     }
 
-    const generation = ++updateQueryParamsGeneration;
-    const tokens = await tokenize(query);
+    /// If tokenization or rendering throws (e.g. the query is larger than the WASM
+    /// memory window currently allocated to the lexer), fall back to the unstyled
+    /// textarea instead of leaving the previous `.has-backdrop` state in place —
+    /// otherwise `#query.has-backdrop` keeps the real text invisible
+    /// (`color: transparent`) while the stale backdrop is shown.
+    let tokens;
+    try
+    {
+        tokens = await tokenize(query);
+    }
+    catch (e)
+    {
+        if (generation !== updateQueryParamsGeneration) { return; }
+        console.error('Tokenization failed, disabling syntax highlighting:', e);
+        updateQueryBackdrop('', [], []);
+        return;
+    }
     if (generation !== updateQueryParamsGeneration) { return; }
     const params = extractQueryParams(tokens);
 
     /// Detect multi-query mode from the same token stream.
     const boundaries = getQueryBoundaries(tokens, query);
     updateRunButtons(boundaries.length > 1);
-    updateQueryBackdrop(query, boundaries);
+    try
+    {
+        updateQueryBackdrop(query, tokens, boundaries);
+    }
+    catch (e)
+    {
+        console.error('Rendering syntax highlighting failed, disabling backdrop:', e);
+        updateQueryBackdrop('', [], []);
+    }
 
     if (JSON.stringify(params) === JSON.stringify(currentQueryParams))
     {
@@ -3941,11 +4238,16 @@ async function updateQueryParams()
     }
 }
 
-let paramDebounceTimer = null;
 query_area.addEventListener('input', () =>
 {
-    clearTimeout(paramDebounceTimer);
-    paramDebounceTimer = setTimeout(updateQueryParams, 100);
+    /// Run the update synchronously instead of with a setTimeout: the heavy work
+    /// (WASM tokenize, building backdrop HTML) is fast, and the await chain inside
+    /// `updateQueryParams` runs in microtasks — i.e. it finishes before the browser
+    /// paints the next frame. If we deferred this with `setTimeout`, the browser
+    /// would render one frame with the textarea's own text hidden (`color:
+    /// transparent` from `.has-backdrop`) and the backdrop still showing the
+    /// pre-edit contents, so the freshly typed characters would be invisible.
+    updateQueryParams();
 });
 
 function setColorTheme(new_theme, update_preference) {
@@ -4084,6 +4386,13 @@ document.getElementById('download-format').addEventListener('change', function()
     }
 });
 
+const formatExtensions = {
+  CSVWithNames: "csv",
+  NDJSON: "jsonl",
+  JSONEachRow: "jsonl",
+  Markdown: "md"
+};
+
 // Handle download button click
 document.getElementById('download-button').addEventListener('click', async function() {
     const formatSelect = document.getElementById('download-format');
@@ -4097,6 +4406,8 @@ document.getElementById('download-button').addEventListener('click', async funct
             return;
         }
     }
+
+    const extension = formatExtensions[format] || format.toLowerCase();
 
     // Get current values
     const user = user_elem.value;
@@ -4116,7 +4427,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         '&enable_http_compression=1' +
         '&use_query_cache=1&enable_reads_from_query_cache=1&enable_writes_to_query_cache=0&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save&query_cache_system_table_handling=ignore' +
         '&default_format=' + encodeURIComponent(format) +
-        '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(format.toLowerCase())}"'}`);
+        '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(extension)}"'}`);
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
 
@@ -4147,5 +4458,164 @@ document.getElementById('download-button').addEventListener('click', async funct
     // Close dropdown
     document.getElementById('download-dropdown').classList.remove('show');
 });
+
+// Web Terminal integration
+{
+    const terminalIcon = document.getElementById('terminal-icon');
+    const terminalPanel = document.getElementById('terminal-panel');
+    const terminalResizer = document.getElementById('terminal-resizer');
+    const mainEl = document.getElementById('main');
+    let terminalIframe = null;
+    let terminalActive = false;
+    let terminalHiddenByResize = false;
+    const MIN_TERMINAL_HEIGHT = 20;
+
+    /// Hide the terminal icon if /webterminal is not available (gated by allow_experimental_webterminal)
+    terminalIcon.style.display = 'none';
+    fetch('/webterminal', {method: 'HEAD'}).then(function(resp) {
+        if (resp.ok) terminalIcon.style.display = '';
+    }).catch(function() {});
+
+    function getTerminalURL() {
+        return '/webterminal';
+    }
+
+    function sendCredentialsToTerminal() {
+        if (terminalIframe && terminalIframe.contentWindow) {
+            terminalIframe.contentWindow.postMessage({
+                type: 'webterminal-credentials',
+                user: user_elem.value || 'default',
+                password: password_elem.value || ''
+            }, window.location.origin);
+        }
+    }
+
+    function activateTerminal() {
+        if (terminalActive) return;
+        terminalActive = true;
+        terminalIcon.classList.add('active');
+        terminalPanel.classList.add('active');
+
+        if (!terminalIframe) {
+            terminalPanel.style.height = Math.round(window.innerHeight * 0.4) + 'px';
+            terminalIframe = document.createElement('iframe');
+            terminalIframe.id = 'terminal-iframe';
+            terminalIframe.src = getTerminalURL();
+            terminalIframe.addEventListener('load', sendCredentialsToTerminal);
+            terminalPanel.insertBefore(terminalIframe, terminalResizer);
+        } else if (terminalHiddenByResize) {
+            terminalPanel.style.height = Math.round(window.innerHeight * 0.4) + 'px';
+        }
+        terminalHiddenByResize = false;
+
+        // Tell the iframe to refit the terminal after becoming visible again, and focus it
+        if (terminalIframe && terminalIframe.contentWindow) {
+            terminalIframe.contentWindow.postMessage({type: 'webterminal-refit'}, window.location.origin);
+            terminalIframe.focus();
+        }
+    }
+
+    /// Hide the terminal panel but keep the iframe alive so the session persists.
+    function hideTerminal() {
+        if (!terminalActive) return;
+        terminalActive = false;
+        terminalIcon.classList.remove('active');
+        terminalPanel.classList.remove('active');
+    }
+
+    /// Destroy the terminal: remove the iframe and hide the panel.
+    function closeTerminal() {
+        hideTerminal();
+        if (terminalIframe) {
+            terminalIframe.remove();
+            terminalIframe = null;
+        }
+    }
+
+    function toggleTerminal() {
+        if (terminalActive) hideTerminal();
+        else activateTerminal();
+    }
+
+    terminalIcon.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleTerminal();
+    });
+
+    // ~ key toggles terminal (Quake-style), but not when typing in inputs
+    document.addEventListener('keydown', function(e) {
+        if ((e.key === '`' || e.key === '~') && !e.ctrlKey && !e.altKey && !e.metaKey) {
+            const tag = e.target.tagName;
+            if (tag === 'INPUT' || tag === 'SELECT' || e.target.isContentEditable) return;
+            // In the query textarea: activate terminal if ~ is typed into an empty field
+            if (tag === 'TEXTAREA' && e.target.id === 'query') {
+                if (!terminalActive && e.target.value === '') {
+                    e.preventDefault();
+                    activateTerminal();
+                }
+                return;
+            }
+            e.preventDefault();
+            toggleTerminal();
+        }
+    });
+
+    // Drag-to-resize terminal panel
+    let termDrag = { active: false, startY: 0, startHeight: 0 };
+
+    terminalResizer.addEventListener('pointerdown', function(e) {
+        if (e.button !== 0) return;
+        termDrag.active = true;
+        termDrag.startY = e.clientY;
+        termDrag.startHeight = terminalPanel.offsetHeight;
+        terminalResizer.classList.add('terminal-resizer-dragging');
+
+        // Overlay to prevent iframe from stealing pointer events
+        const overlay = document.createElement('div');
+        overlay.id = 'terminal-drag-overlay';
+        overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;cursor:row-resize;';
+        document.body.appendChild(overlay);
+
+        document.addEventListener('pointermove', termMove);
+        document.addEventListener('pointerup', termStop);
+        document.addEventListener('pointercancel', termStop);
+    });
+
+    function termMove(e) {
+        if (!termDrag.active) return;
+        const newHeight = termDrag.startHeight + (e.clientY - termDrag.startY);
+        if (newHeight < MIN_TERMINAL_HEIGHT) {
+            terminalHiddenByResize = true;
+            hideTerminal();
+            termStop(e);
+            return;
+        }
+        terminalPanel.style.height = newHeight + 'px';
+    }
+
+    function termStop() {
+        termDrag.active = false;
+        terminalResizer.classList.remove('terminal-resizer-dragging');
+        const overlay = document.getElementById('terminal-drag-overlay');
+        if (overlay) overlay.remove();
+
+        document.removeEventListener('pointermove', termMove);
+        document.removeEventListener('pointerup', termStop);
+        document.removeEventListener('pointercancel', termStop);
+    }
+
+    terminalResizer.addEventListener('touchstart', function(e) { e.preventDefault(); });
+
+    // Listen for messages from the webterminal iframe
+    window.addEventListener('message', function(e) {
+        if (!e.data) return;
+        if (e.data.type === 'webterminal-closed') {
+            closeTerminal();
+        } else if (e.data.type === 'webterminal-escape') {
+            hideTerminal();
+        }
+    });
+}
 </script>
 </html>

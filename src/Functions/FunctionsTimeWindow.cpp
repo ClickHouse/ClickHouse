@@ -495,7 +495,11 @@ struct TimeWindowImpl<WINDOW_ID>
 
         IntervalKind window_interval_kind = extractIntervalKind(arguments.at(1));
 
-        if (arguments.size() >= 3 && window_interval_kind != extractIntervalKind(arguments.at(2)))
+        /// The 3rd argument may be either an `Interval` (hop) or a `String` (timezone).
+        /// Only compare interval kinds when the 3rd argument is actually an `Interval`,
+        /// otherwise `extractIntervalKind` would dereference a null `DataTypeInterval`.
+        if (arguments.size() >= 3 && isInterval(*arguments.at(2).type)
+            && window_interval_kind != extractIntervalKind(arguments.at(2)))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal type of window and hop column of function {}, must be same",
                 function_name);
 
