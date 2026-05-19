@@ -23,6 +23,7 @@ from .tablecheck import SparkAndClickHouseCheck
 
 from utils.backgroundworker import BackgroundWorker
 
+
 """
 ┌─────────────────┬────────────────┬──────────────────────────────────────┐
 │ Catalog Type    │ Mixed Support  │ How It Works                         │
@@ -255,6 +256,17 @@ logger.jetty.level = warn
                         )
                 self.logger.info(f"Starting UC server using pid = {self.uc_server.pid}")
                 if not wait_for_port("localhost", uc_port, timeout=120):
+                    # Print a few lines of output to help debug
+                    try:
+                        for _ in range(50):
+                            line = self.uc_server.stdout.readline()
+                            if not line:
+                                break
+                            self.logger.error(
+                                f"UC server did not start: Here is a line {line}"
+                            )
+                    except Exception:
+                        pass
                     raise TimeoutError(
                         f"UC server did not start on localhost:{uc_port} within timeout"
                     )
@@ -269,19 +281,15 @@ logger.jetty.level = warn
             )
         cmd: list[str] = [str(self.uc_server_dir / "bin" / "uc")]
         cmd.extend(args)
-        result = subprocess.run(
-            cmd,
-            cwd=str(self.uc_server_run_dir),
-            env=os.environ.copy(),
-            text=True,
-            capture_output=True,
+        proc = subprocess.Popen(
+            cmd, cwd=str(self.uc_server_run_dir), env=os.environ.copy(), text=True
         )
-        if result.returncode != 0:
+        if proc.returncode != 0:
             self.logger.error(
-                f"UC CLI failed (exit {result.returncode}).\n"
+                f"UC CLI failed (exit {proc.returncode}).\n"
                 f"Command: {' '.join(cmd)}\n"
-                f"stdout:\n{result.stdout}\n"
-                f"stderr:\n{result.stderr}"
+                f"stdout:\n{proc.stdout}\n"
+                f"stderr:\n{proc.stderr}"
             )
 
     def get_spark(
@@ -329,12 +337,6 @@ logger.jetty.level = warn
                 if catalog == LakeCatalogs.Unity
                 else "org.apache.spark.sql.delta.catalog.DeltaCatalog"
             )
-        elif lake == LakeFormat.Paimon:
-            all_jars.append("org.apache.paimon:paimon-spark-4.0_2.13:1.4.1")
-            catalog_extension = (
-                "org.apache.paimon.spark.extensions.PaimonSparkSessionExtensions"
-            )
-            catalog_format = "org.apache.paimon.spark.SparkCatalog"
         else:
             raise Exception("Unknown lake format")
 
@@ -425,23 +427,6 @@ logger.jetty.level = warn
                         f"spark.sql.catalog.{catalog_name}.warehouse",
                         "s3://warehouse-glue/data",
                     )
-                elif storage == TableStorage.Azure:
-                    builder.config(
-                        f"spark.sql.catalog.{catalog_name}.io-impl",
-                        "org.apache.iceberg.azure.AzureFileIO",
-                    )
-                    builder.config(
-                        f"spark.sql.catalog.{catalog_name}.adls.account-name",
-                        cluster.azurite_account,
-                    )
-                    builder.config(
-                        f"spark.sql.catalog.{catalog_name}.adls.account-key",
-                        cluster.azurite_key,
-                    )
-                    builder.config(
-                        f"spark.sql.catalog.{catalog_name}.warehouse",
-                        f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}.blob.core.windows.net/warehouse-glue",
-                    )
             elif catalog == LakeCatalogs.Hive:
                 builder.config(
                     "spark.sql.catalog.hive.catalog-impl",
@@ -481,23 +466,6 @@ logger.jetty.level = warn
                     builder.config(
                         f"spark.sql.catalog.{catalog_name}.warehouse",
                         "s3a://warehouse-hms/data",
-                    )
-                elif storage == TableStorage.Azure:
-                    builder.config(
-                        f"spark.sql.catalog.{catalog_name}.io-impl",
-                        "org.apache.iceberg.azure.AzureFileIO",
-                    )
-                    builder.config(
-                        f"spark.sql.catalog.{catalog_name}.adls.account-name",
-                        cluster.azurite_account,
-                    )
-                    builder.config(
-                        f"spark.sql.catalog.{catalog_name}.adls.account-key",
-                        cluster.azurite_key,
-                    )
-                    builder.config(
-                        f"spark.sql.catalog.{catalog_name}.warehouse",
-                        f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}.blob.core.windows.net/warehouse-hms",
                     )
             elif catalog == LakeCatalogs.REST or (
                 catalog == LakeCatalogs.Unity and lake == LakeFormat.Iceberg
@@ -539,23 +507,6 @@ logger.jetty.level = warn
                         f"spark.sql.catalog.{catalog_name}.warehouse",
                         "s3://warehouse-rest/data",
                     )
-                elif storage == TableStorage.Azure:
-                    builder.config(
-                        f"spark.sql.catalog.{catalog_name}.io-impl",
-                        "org.apache.iceberg.azure.AzureFileIO",
-                    )
-                    builder.config(
-                        f"spark.sql.catalog.{catalog_name}.adls.account-name",
-                        cluster.azurite_account,
-                    )
-                    builder.config(
-                        f"spark.sql.catalog.{catalog_name}.adls.account-key",
-                        cluster.azurite_key,
-                    )
-                    builder.config(
-                        f"spark.sql.catalog.{catalog_name}.warehouse",
-                        f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}.blob.core.windows.net/warehouse-rest",
-                    )
             elif catalog == LakeCatalogs.Unity and lake == LakeFormat.DeltaLake:
                 builder.config(
                     f"spark.sql.catalog.{catalog_name}.uri", "http://localhost:8085"
@@ -579,8 +530,6 @@ logger.jetty.level = warn
                 builder.config("datanucleus.fixedDatastore", "false")
                 builder.config("spark.sql.catalogImplementation", "hive")
                 builder.enableHiveSupport()
-            elif lake == LakeFormat.Paimon:
-                pass
 
             # ============================================================
             # STORAGE CONFIGURATIONS
@@ -792,42 +741,10 @@ logger.jetty.level = warn
             else:
                 raise Exception("I have not implemented this case yet")
             next_catalog_impl = load_catalog(catalog_name, **params)
-        elif next_lake == LakeFormat.Iceberg and next_storage == TableStorage.Azure:
-            params = {
-                "adls.account-name": cluster.azurite_account,
-                "adls.account-key": cluster.azurite_key,
-            }
-            if next_catalog == LakeCatalogs.REST:
-                params.update(
-                    {
-                        "type": "rest",
-                        "uri": f"http://localhost:{cluster.iceberg_rest_catalog_port}",
-                    }
-                )
-            elif next_catalog == LakeCatalogs.Glue:
-                params.update(
-                    {
-                        "type": "glue",
-                        "glue.endpoint": f"http://localhost:{cluster.glue_catalog_port}",
-                        "glue.region": "us-east-1",
-                    }
-                )
-            elif next_catalog == LakeCatalogs.Hive:
-                params.update(
-                    {
-                        "type": "hive",
-                        "uri": f"thrift://0.0.0.0:{cluster.hms_catalog_port}",
-                    }
-                )
-            else:
-                raise Exception("I have not implemented this case yet")
-            next_catalog_impl = load_catalog(catalog_name, **params)
         elif next_catalog == LakeCatalogs.Unity:
             self.start_uc_server()
             self.logger.info(f"Creating unity catalog {catalog_name}")
             self.run_unity_cmd(["catalog", "create", "--name", catalog_name])
-        elif next_lake == LakeFormat.Paimon:
-            pass
         else:
             raise Exception("I have not implemented this case yet")
 
@@ -837,10 +754,7 @@ logger.jetty.level = warn
                 next_catalog,
                 next_catalog_impl,
             )
-        if next_lake == LakeFormat.Iceberg and next_storage in (
-            TableStorage.S3,
-            TableStorage.Azure,
-        ):
+        if next_lake == LakeFormat.Iceberg and next_storage == TableStorage.S3:
             try:
                 self.logger.info(f"Creating Iceberg catalog {catalog_name}")
                 next_catalog_impl.create_namespace("test")
@@ -1009,10 +923,10 @@ logger.jetty.level = warn
                 res = self.kafka_handler.update_table(
                     cluster, data["catalog_name"], data["table_name"]
                 )
-            elif data["engine"] in ["iceberg", "deltalake", "paimon"]:
+            elif data["engine"] in ["iceberg", "deltalake"]:
                 res = (
                     self.data_generator.update_table(next_session, next_table)
-                    if random.randint(1, 10) < 8
+                    if random.randint(1, 10) < 9
                     else self.table_check.check_table(cluster, next_session, next_table)
                 )
         except Exception as e:

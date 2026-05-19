@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/types.h>
-#include <limits>
 namespace DB::Iceberg
 {
 /// This file define the field name appearing in Iceberg files.
@@ -19,8 +18,6 @@ DEFINE_ICEBERG_FIELD(data_file);
 DEFINE_ICEBERG_FIELD(element);
 DEFINE_ICEBERG_FIELD(fields);
 DEFINE_ICEBERG_FIELD(float);
-DEFINE_ICEBERG_FIELD(geometry);
-DEFINE_ICEBERG_FIELD(geography);
 DEFINE_ICEBERG_FIELD(key);
 DEFINE_ICEBERG_FIELD(list)
 DEFINE_ICEBERG_FIELD(location);
@@ -42,8 +39,6 @@ DEFINE_ICEBERG_FIELD(summary);
 DEFINE_ICEBERG_FIELD(time);
 DEFINE_ICEBERG_FIELD(timestamp);
 DEFINE_ICEBERG_FIELD(timestamptz);
-DEFINE_ICEBERG_FIELD(timestamp_ns);
-DEFINE_ICEBERG_FIELD(timestamptz_ns);
 DEFINE_ICEBERG_FIELD(type)
 DEFINE_ICEBERG_FIELD(transform);
 DEFINE_ICEBERG_FIELD(direction);
@@ -67,7 +62,6 @@ DEFINE_ICEBERG_FIELD(file_format);
 DEFINE_ICEBERG_FIELD(file_size_in_bytes);
 DEFINE_ICEBERG_FIELD(refs);
 DEFINE_ICEBERG_FIELD(branch);
-DEFINE_ICEBERG_FIELD(tag);
 DEFINE_ICEBERG_FIELD(main);
 DEFINE_ICEBERG_FIELD(operation);
 DEFINE_ICEBERG_FIELD(append);
@@ -88,9 +82,6 @@ DEFINE_ICEBERG_FIELD(key_metadata);
 /// These variables replace `-` with underscore `_` to be compatible with c++ code.
 DEFINE_ICEBERG_FIELD_ALIAS(format_version, format-version);
 DEFINE_ICEBERG_FIELD_ALIAS(current_snapshot_id, current-snapshot-id);
-DEFINE_ICEBERG_FIELD_ALIAS(first_row_id, first-row-id);
-DEFINE_ICEBERG_FIELD_ALIAS(added_rows, added-rows);
-DEFINE_ICEBERG_FIELD_ALIAS(next_row_id, next-row-id);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_snapshot_id, snapshot-id);
 DEFINE_ICEBERG_FIELD_ALIAS(parent_snapshot_id, parent-snapshot-id);
 DEFINE_ICEBERG_FIELD_ALIAS(snapshot_log, snapshot-log);
@@ -134,16 +125,7 @@ DEFINE_ICEBERG_FIELD_ALIAS(field_id, field-id);
 DEFINE_ICEBERG_FIELD_ALIAS(last_sequence_number, last-sequence-number);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_file, metadata-file);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_log, metadata-log);
-DEFINE_ICEBERG_FIELD_ALIAS(partition_statistics, partition-statistics);
-DEFINE_ICEBERG_FIELD_ALIAS(statistics_path, statistics-path);
 DEFINE_ICEBERG_FIELD_ALIAS(metadata_sequence_number, sequence-number);
-DEFINE_ICEBERG_FIELD_ALIAS(min_snapshots_to_keep, history.expire.min-snapshots-to-keep);
-DEFINE_ICEBERG_FIELD_ALIAS(max_snapshot_age_ms, history.expire.max-snapshot-age-ms);
-DEFINE_ICEBERG_FIELD_ALIAS(max_ref_age_ms, history.expire.max-ref-age-ms);
-/// Ref-level override fields (short names inside the "refs" map per Iceberg spec).
-DEFINE_ICEBERG_FIELD_ALIAS(ref_min_snapshots_to_keep, min-snapshots-to-keep);
-DEFINE_ICEBERG_FIELD_ALIAS(ref_max_snapshot_age_ms, max-snapshot-age-ms);
-DEFINE_ICEBERG_FIELD_ALIAS(ref_max_ref_age_ms, max-ref-age-ms);
 /// These are compound fields like `data_file.file_path`, we use prefix 'c_' to distinguish them.
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_path);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_format);
@@ -157,14 +139,4 @@ DEFINE_ICEBERG_FIELD_COMPOUND(data_file, lower_bounds);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, upper_bounds);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, referenced_data_file);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, sort_order_id);
-DEFINE_ICEBERG_FIELD_COMPOUND(data_file, record_count);
-DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_size_in_bytes);
-
-/// Fallback defaults for snapshot retention policy when table properties are absent.
-/// These values follow the Java reference implementation; the Iceberg spec does not
-/// mandate specific defaults. They are used as defaults for corresponding ClickHouse
-/// settings `iceberg_expire_default_*`.
-constexpr Int32 default_min_snapshots_to_keep = 1;
-constexpr Int64 default_max_snapshot_age_ms = 432000000; // 5 days
-constexpr Int64 default_max_ref_age_ms = std::numeric_limits<Int64>::max(); // forever, main branch never expires
 }
