@@ -1,4 +1,3 @@
-from datetime import datetime
 import glob
 import json as json_module
 import os
@@ -13,6 +12,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import List
 
+from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.praktika import Secret
 from ci.praktika.info import Info
@@ -36,19 +36,6 @@ remote_servers:
 """
 CLICKHOUSE_CI_LOGS_CLUSTER = "system_logs_export"
 CLICKHOUSE_CI_LOGS_USER = "ci"
-
-
-def collect_and_encrypt_cores(directory, key_path: str, aes_key_path: str = None) -> List[str]:
-    if aes_key_path is None:
-        aes_key_path = str(Path(directory) / "aes.key")
-    encrypted = []
-    for core in sorted(Path(directory).glob("core.*"))[:3]:
-        if not core.name.endswith(".zst") and not core.name.endswith(".enc"):
-            zst_path = Utils.compress_zst(core)
-            encrypted.append(Utils.encrypt(str(zst_path), key_path, aes_key_path))
-    if encrypted and Path(f"{aes_key_path}.rsa").exists():
-        encrypted.append(f"{aes_key_path}.rsa")
-    return encrypted
 
 
 class ClickHouseProc:
@@ -83,8 +70,6 @@ class ClickHouseProc:
         self.log_dir = f"{temp_dir}/var/log/clickhouse-server"
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
         self.config_file = f"{self.ch_config_dir}/config.xml"
-        self.aes_key = f"{temp_dir}/aes.key"
-
         # NOTE: should be the same for all replicas (for database replicated), since some tests uses CREATE TABLE Engine=File(${USER_FILES_PATH})
         self.user_files_path = f"{self.run_path0}/user_files"
         self.test_output_file = f"{temp_dir}/test_result.txt"
@@ -178,15 +163,30 @@ class ClickHouseProc:
         return False
 
     def start_azurite(self):
+        # Raise the open files limit before launching azurite-rs.
+        # Each concurrent test query opens a TCP connection plus an in-memory
+        # blob handle, and the default soft limit (1024) was exhausted under
+        # parallel load, causing `accept error: Too many open files`.
+        # Fall back to the hard limit if 1048576 cannot be set.
         command = (
-            f"cd {temp_dir} && azurite-rs --host 0.0.0.0 --blob-port 10000 --silent --in-memory",
+            f"cd {temp_dir} && "
+            "(ulimit -n 1048576 2>/dev/null || ulimit -n $(ulimit -Hn)) && "
+            "azurite-rs --host 0.0.0.0 --blob-port 10000 --silent --in-memory"
         )
         with open(self.AZURITE_LOG, "w") as log_file:
             self.azurite_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT, shell=True
             )
         print(f"Started azurite-rs asynchronously with PID {self.azurite_proc.pid}")
-        return True
+
+        if Shell.check(
+            "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:10000/ | grep -qE '400|200'",
+            verbose=False,
+            retries=6,
+        ):
+            return True
+        print("Failed to start azurite-rs")
+        return False
 
     def start_kafka(self):
         command = [
@@ -337,25 +337,10 @@ profiles:
     <max_server_memory_usage_to_ram_ratio>0.75</max_server_memory_usage_to_ram_ratio>
 </clickhouse>
 """
-        c2 = """
-<clickhouse>
-    <core_dump>
-        <!-- 100GiB -->
-        <size_limit>107374182400</size_limit>
-    </core_dump>
-    <!-- NOTE: no need to configure core_path,
-    since clickhouse is not started as daemon (via clickhouse start)
-    -->
-    <core_path>$PWD</core_path>
-</clickhouse>
-"""
         file_path = f"{temp_dir}/config.d/max_server_memory_usage_to_ram_ratio.xml"
         with open(file_path, "w") as file:
             file.write(c1)
 
-        file_path = f"{temp_dir}/config.d/core.xml"
-        with open(file_path, "w") as file:
-            file.write(c2)
         res = True
         for command in commands:
             res = res and Shell.check(command, verbose=True)
@@ -778,10 +763,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
             def _reader():
                 for line in process.stdout:
-                    # we generally want timestamps for any test, not just a fast test
-                    ts_line = f"{datetime.now():%Y-%m-%d %H:%M:%S} {line}"
-                    print(ts_line, end="")
-                    f.write(ts_line)
+                    print(line, end="")
+                    f.write(line)
 
             reader_thread = threading.Thread(target=_reader)
             reader_thread.start()
@@ -899,19 +882,15 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         except Exception as e:
             print(f"WARNING: Failed to collect logs: {e}")
             traceback.print_exc()
-            info.add_workflow_report_message(
-                f"Failed to collect all logs in job [{info.job_name}], ex [{e}], see job.log"
+            info.add_workflow_warning(
+                f"Failed to collect all logs, ex [{e}], see job.log"
             )
         return res
 
     def _collect_core_dumps(self) -> List[str]:
         result = []
         for run_dir in sorted(p_temp_dir.glob("run_r*")):
-            result.extend(
-                collect_and_encrypt_cores(
-                    run_dir, f"{repo_dir}/ci/defs/public.pem", self.aes_key
-                )
-            )
+            result.extend(ClickHouseService.collect_cores(run_dir))
         return result
 
     @classmethod
@@ -1032,7 +1011,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                     Result.create_from(
                         name="Sanitizer assert or Fatal messages in server logs",
                         info="no server logs found",
-                        status=Result.StatusExtended.FAIL,
+                        status=Result.Status.FAIL,
                         labels=[Result.Label.BLOCKER],  # to explicitly block the merge
                     )
                 )
@@ -1048,7 +1027,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         Result.create_from(
                             name=name,
                             info=description,
-                            status=Result.StatusExtended.FAIL,
+                            status=Result.Status.FAIL,
                             files=files,
                             labels=[
                                 Result.Label.BLOCKER
@@ -1060,7 +1039,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         Result.create_from(
                             name="Failed to parse sanitizer/fatal failure from server logs",
                             info=traceback.format_exc(),
-                            status=Result.StatusExtended.FAIL,
+                            status=Result.Status.FAIL,
                             labels=[
                                 Result.Label.BLOCKER
                             ],  # to explicitly block the merge
@@ -1099,9 +1078,9 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         # convert statuses to CH tests notation
         for result in results:
             if result.is_ok():
-                result.set_status(Result.StatusExtended.OK)
+                result.set_status(Result.Status.OK)
             else:
-                result.set_status(Result.StatusExtended.FAIL)
+                result.set_status(Result.Status.FAIL)
         return results
 
     def dump_system_tables(self):
@@ -1168,7 +1147,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             for cache_status_path in cache_status_files:
                 Shell.check(f"rm {cache_status_path}", verbose=True)
 
-        scraping_system_table = Result(name=f"Scraping system tables", status="OK")
+        scraping_system_table = Result(name=f"Scraping system tables", status=Result.Status.OK)
         for table in TABLES:
             path_arg = f" --path {self.run_path0}"
             res, stdout, stderr = Shell.get_res_stdout_stderr(
@@ -1248,7 +1227,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         )
 
         if scraping_system_table.info:
-            scraping_system_table.set_status(Result.StatusExtended.FAIL)
+            scraping_system_table.set_status(Result.Status.FAIL)
             self.extra_tests_results.append(scraping_system_table)
         return [f for f in glob.glob(f"{temp_dir}/system_tables/*.tsv")]
 
@@ -1374,6 +1353,8 @@ if __name__ == "__main__":
             param = sys.argv[2]
             assert param in ["stateless"]
             res = ch.start_minio(param)
+        elif command == "start_azurite":
+            res = ch.start_azurite()
         else:
             raise ValueError(f"Unknown command: {command}")
     except Exception as e:

@@ -331,6 +331,7 @@ ASTPtr UserDefinedSQLObjectsZooKeeperStorage::parseObjectData(const String & obj
     switch (object_type)
     {
         case UserDefinedSQLObjectType::Function: {
+            auto context = getContext();
             ParserCreateFunctionQuery parser;
             ASTPtr ast = parseQuery(
                 parser,
@@ -338,8 +339,8 @@ ASTPtr UserDefinedSQLObjectsZooKeeperStorage::parseObjectData(const String & obj
                 object_data.data() + object_data.size(),
                 "",
                 0,
-                global_context->getSettingsRef()[Setting::max_parser_depth],
-                global_context->getSettingsRef()[Setting::max_parser_backtracks]);
+                context->getSettingsRef()[Setting::max_parser_depth],
+                context->getSettingsRef()[Setting::max_parser_backtracks]);
             return ast;
         }
     }

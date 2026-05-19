@@ -7,8 +7,6 @@ title: 'Operators'
 doc_type: 'reference'
 ---
 
-# Operators
-
 ClickHouse transforms operators to their corresponding functions at the query parsing stage according to their priority, precedence, and associativity.
 
 ## Access Operators {#access-operators}
@@ -117,6 +115,15 @@ SELECT
 └──────────────────────────┴──────────────────────────┘
 ```
 
+## Operators for Working with Strings {#operators-for-working-with-strings}
+
+### OVERLAY {#overlay}
+
+- `OVERLAY(string PLACING replacement FROM offset)` - The `overlay(string, replacement, offset)` function.
+- `OVERLAY(string PLACING replacement FROM offset FOR length)` - The `overlay(string, replacement, offset, length)` function.
+- `OVERLAYUTF8(string PLACING replacement FROM offset)` - The `overlayUTF8(string, replacement, offset)` function.
+- `OVERLAYUTF8(string PLACING replacement FROM offset FOR length)` - The `overlayUTF8(string, replacement, offset, length)` function.
+
 ## Operators for Working with Data Sets {#operators-for-working-with-data-sets}
 
 See [IN operators](../../sql-reference/operators/in.md) and [EXISTS](../../sql-reference/operators/exists.md) operator.
@@ -149,13 +156,11 @@ See [IN operators](../../sql-reference/operators/in.md) and [EXISTS](../../sql-r
 
 Query with ALL:
 
-```sql
+```sql title="Query"
 SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3, 3));
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─a─┐
 │ 6 │
 │ 7 │
@@ -166,13 +171,11 @@ Result:
 
 Query with ANY:
 
-```sql
+```sql title="Query"
 SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3, 3));
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─a─┐
 │ 4 │
 │ 5 │

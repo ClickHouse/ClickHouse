@@ -2,9 +2,11 @@
 
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <string_view>
 #include <variant>
+#include <list>
 
 namespace DB
 {
@@ -15,7 +17,7 @@ using QueryPipelineBuilders = std::vector<QueryPipelineBuilderPtr>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::vector<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>;
 
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
@@ -32,13 +34,7 @@ struct ExplainPlanOptions;
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 
-namespace QueryPlanFormat
-{
-    std::string_view trimColumnIdentifier(std::string_view name);
-    void formatOutputColumns(WriteBuffer & out, const IQueryPlanStep & step, const String & prefix);
-    void formatJoinOutputColumns(WriteBuffer & out, const IQueryPlanStep & step, const String & prefix);
-}
-
+struct ExplainFormatSettings;
 
 /// Single step of query plan.
 class IQueryPlanStep
@@ -86,18 +82,7 @@ public:
 
     virtual const SortDescription & getSortDescription() const;
 
-    struct FormatSettings
-    {
-        WriteBuffer & out;
-        std::string header_prefix;
-        std::string detail_prefix;
-        size_t offset = 0;
-        const size_t base_indent = 2;
-        const char indent_char = ' ';
-        const bool write_header = false;
-        bool compact = false;
-        bool pretty = false;
-    };
+    using FormatSettings = ExplainFormatSettings;
 
     /// Get detailed description of step actions. This is shown in EXPLAIN query with options `actions = 1`.
     virtual void describeActions(JSONBuilder::JSONMap & /*map*/) const {}
@@ -134,6 +119,13 @@ public:
     void updateInputHeaders(SharedHeaders input_headers_);
     void updateInputHeader(SharedHeader input_header, size_t idx = 0);
 
+    /// Returns true if this step's expressions contain correlated columns (`PLACEHOLDER` action nodes).
+    /// Such plans cannot be executed standalone and require decorrelation first.
+    /// The default returns false; every subclass that stores an `ActionsDAG` (or any
+    /// other container of expression actions that may hold `PLACEHOLDER` nodes) MUST
+    /// override this to check its expressions. Otherwise correlated subqueries may
+    /// silently bypass the guards in `FutureSetFromSubquery::buildSetInplace` and
+    /// `buildOrderedSetInplace`, and trigger `Trying to execute PLACEHOLDER action`.
     virtual bool hasCorrelatedExpressions() const;
 
     virtual bool supportsDataflowStatisticsCollection() const { return false; }
