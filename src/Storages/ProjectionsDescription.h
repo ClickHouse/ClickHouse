@@ -27,6 +27,8 @@ struct KeyDescription;
 
 class ASTProjectionSelectQuery;
 
+struct MergeTreeSettings;
+
 /// Description of projections for Storage
 struct ProjectionDescription
 {
@@ -81,12 +83,6 @@ struct ProjectionDescription
     /// logic during query execution to optimize data access paths.
     ProjectionIndexPtr index;
 
-    bool add_minmax_index_for_numeric_columns = false;
-    bool add_minmax_index_for_string_columns = false;
-    bool add_minmax_index_for_temporal_columns = false;
-    bool add_minmax_index_for_block_number_column = false;
-    bool add_minmax_index_for_block_offset_column = false;
-
     /// Optional SETTINGS overrides for the projection.
     SettingsChanges settings_changes;
 
@@ -107,7 +103,8 @@ struct ProjectionDescription
         const ASTProjectionSelectQuery & query,
         const ColumnsDescription & columns,
         const KeyDescription * partition_key,
-        const ContextPtr & query_context);
+        const ContextPtr & query_context,
+        const MergeTreeSettings & projection_settings);
 
     static ProjectionDescription getMinMaxCountProjection(
         const ColumnsDescription & columns,

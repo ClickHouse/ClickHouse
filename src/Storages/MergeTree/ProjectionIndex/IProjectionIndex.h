@@ -33,7 +33,8 @@ public:
         const IAST * index_expr,
         const ColumnsDescription & columns,
         const KeyDescription * partition_key,
-        const ContextPtr & query_context) const
+        const ContextPtr & query_context,
+        const MergeTreeSettings & projection_settings) const
         = 0;
 
     virtual Block calculate(

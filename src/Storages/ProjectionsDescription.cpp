@@ -70,6 +70,11 @@ namespace MergeTreeSetting
 {
 
 extern const MergeTreeSettingsUInt64 index_granularity_bytes;
+extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
+extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
+extern const MergeTreeSettingsBool add_minmax_index_for_temporal_columns;
+extern const MergeTreeSettingsBool add_minmax_index_for_block_number_column;
+extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
 
 }
 
@@ -110,11 +115,6 @@ ProjectionDescription ProjectionDescription::clone() const
     other.with_block_number = with_block_number;
     other.with_block_offset = with_block_offset;
     other.index = index;
-    other.add_minmax_index_for_numeric_columns = add_minmax_index_for_numeric_columns;
-    other.add_minmax_index_for_string_columns = add_minmax_index_for_string_columns;
-    other.add_minmax_index_for_temporal_columns = add_minmax_index_for_temporal_columns;
-    other.add_minmax_index_for_block_number_column = add_minmax_index_for_block_number_column;
-    other.add_minmax_index_for_block_offset_column = add_minmax_index_for_block_offset_column;
     other.settings_changes = settings_changes;
     other.has_index_granularity_overrides = has_index_granularity_overrides;
 
@@ -264,13 +264,12 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     {
         chassert(projection_definition->type);
         result.index = ProjectionIndexFactory::instance().get(*projection_definition);
-        result.index->fillProjectionDescription(result, projection_definition->index, columns, partition_key, query_context);
-    }
-    else
-    {
-        fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, partition_key, query_context);
     }
 
+    /// Compute effective MergeTree settings for the projection (defaults possibly contributed by
+    /// the projection index, with user-supplied WITH SETTINGS overrides applied on top). This must
+    /// happen before fillProjectionDescription[ByQuery] because the latter reconstructs settings
+    /// from result.settings_changes to drive implicit-minmax skip-index creation.
     auto merge_tree_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
     if (projection_definition->with_settings)
         merge_tree_settings->applyChanges(projection_definition->with_settings->changes);
@@ -288,11 +287,25 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
         }
     }
 
+    if (result.index)
+    {
+        result.index->fillProjectionDescription(result, projection_definition->index, columns, partition_key, query_context, *merge_tree_settings);
+    }
+    else
+    {
+        fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, partition_key, query_context, *merge_tree_settings);
+    }
+
     if (mode <= LoadingStrictnessLevel::CREATE)
     {
         static const std::unordered_set<std::string_view> ALLOWED_PROJECTION_SETTINGS = {
             "index_granularity",
             "index_granularity_bytes",
+            "add_minmax_index_for_numeric_columns",
+            "add_minmax_index_for_string_columns",
+            "add_minmax_index_for_temporal_columns",
+            "add_minmax_index_for_block_number_column",
+            "add_minmax_index_for_block_offset_column",
             "min_compress_block_size",
             "max_compress_block_size",
             "min_bytes_for_wide_part",
@@ -318,7 +331,11 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
         const auto & ac = query_context->getAccessControl();
         bool allow_experimental = ac.getAllowExperimentalTierSettings();
         bool allow_beta = ac.getAllowBetaTierSettings();
-        merge_tree_settings->sanityCheck(query_context->getMergeMutateExecutor()->getMaxTasksCount(), allow_experimental, allow_beta);
+        merge_tree_settings->sanityCheck(
+            query_context->getMergeMutateExecutor()->getMaxTasksCount(),
+            allow_experimental,
+            allow_beta,
+            query_context->wasBackgroundPoolAutoLowered());
     }
 
     /// Ensure index_granularity_bytes is non-zero to prevent the projection from falling back
@@ -337,7 +354,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     const ASTProjectionSelectQuery & query,
     const ColumnsDescription & columns,
     const KeyDescription * partition_key,
-    const ContextPtr & query_context)
+    const ContextPtr & query_context,
+    const MergeTreeSettings & projection_settings)
 {
     auto projection_order_by = query.orderBy();
     result.query_ast = query.cloneToASTSelect();
@@ -498,12 +516,13 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     metadata.setColumns(ColumnsDescription(metadata_columns));
     metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));
 
-    /// Initialize implicit-minmax skip indices from projection-level settings.
-    metadata.add_minmax_index_for_numeric_columns = result.add_minmax_index_for_numeric_columns;
-    metadata.add_minmax_index_for_string_columns = result.add_minmax_index_for_string_columns;
-    metadata.add_minmax_index_for_temporal_columns = result.add_minmax_index_for_temporal_columns;
-    metadata.add_minmax_index_for_block_number_column = result.add_minmax_index_for_block_number_column;
-    metadata.add_minmax_index_for_block_offset_column = result.add_minmax_index_for_block_offset_column;
+    /// Initialize implicit-minmax skip indices from the effective projection-level MergeTree settings
+    /// (defaults from the projection index plus any user-supplied WITH SETTINGS overrides).
+    metadata.add_minmax_index_for_numeric_columns = projection_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
+    metadata.add_minmax_index_for_string_columns = projection_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
+    metadata.add_minmax_index_for_temporal_columns = projection_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
+    metadata.add_minmax_index_for_block_number_column = projection_settings[MergeTreeSetting::add_minmax_index_for_block_number_column];
+    metadata.add_minmax_index_for_block_offset_column = projection_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column];
     metadata.addImplicitIndicesForVirtualColumns(query_context);
     for (const auto & column : metadata.columns)
         metadata.addImplicitIndicesForColumn(column, query_context);
