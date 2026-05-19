@@ -84,7 +84,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
                 /// Let's make a copy, so the next call won't interfere with this one.
                 auto info_copy = info;
                 /// Make sure that {uuid} macro is allowed, if present.
-                args.getContext()->getMacros()->expand(path, info);
+                args.getContext()->getMacros()->expand(path, info_copy);
             }
 
             /// Actually expand all the macros except {uuid} macro.
