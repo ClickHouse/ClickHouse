@@ -88,7 +88,11 @@ bool SerializationCustomSimpleText::tryDeserializeTextEscaped(IColumn & column, 
 
 void SerializationCustomSimpleText::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeQuotedString(serializeToString(*this, column, row_num, settings), ostr);
+    auto str = serializeToString(*this, column, row_num, settings);
+    if (settings.values.escape_quote_with_quote)
+        writeQuotedStringPostgreSQL(str, ostr);
+    else
+        writeQuotedString(str, ostr);
 }
 
 void SerializationCustomSimpleText::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

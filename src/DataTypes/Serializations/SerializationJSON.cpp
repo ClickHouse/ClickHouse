@@ -321,7 +321,10 @@ void SerializationJSON<Parser>::serializeTextQuoted(const IColumn & column, size
 {
     WriteBufferFromOwnString buf;
     serializeTextImpl(column, row_num, buf, settings);
-    writeQuotedString(buf.str(), ostr);
+    if (settings.values.escape_quote_with_quote)
+        writeQuotedStringPostgreSQL(buf.str(), ostr);
+    else
+        writeQuotedString(buf.str(), ostr);
 }
 
 template <typename Parser>
