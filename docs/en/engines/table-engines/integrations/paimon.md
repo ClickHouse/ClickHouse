@@ -8,8 +8,6 @@ title: 'Paimon table engine'
 doc_type: 'reference'
 ---
 
-# Paimon table engine {#paimon-table-engine}
-
 This engine provides a read-only integration with existing Apache [Paimon](https://paimon.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
 It supports snapshot reads, incremental reads, and basic partition pruning provided by the engine.
 
