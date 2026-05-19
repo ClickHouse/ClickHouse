@@ -1,65 +1,65 @@
 case 1: chain - dphyp plan
         Type: INNER
-        Clauses: [(__table2.key) = (__table1.key)]
-              ReadFromMergeTree (default.tp_fact)
+        Clauses: [(__table1.key) = (__table2.key)]
+              ReadFromMergeTree (default.tp_dim_a)
               Type: INNER
-              Clauses: [(__table1.key) = (__table3.key)]
-                    ReadFromMergeTree (default.tp_dim_a)
+              Clauses: [(__table2.key) = (__table3.key)]
+                    ReadFromMergeTree (default.tp_fact)
                     ReadFromMergeTree (default.tp_dim_b)
 case 1: chain - dpsize plan (for comparison)
         Type: INNER
-        Clauses: [(__table2.key) = (__table1.key)]
-              ReadFromMergeTree (default.tp_fact)
+        Clauses: [(__table2.key) = (__table3.key)]
               Type: INNER
-              Clauses: [(__table1.key) = (__table3.key)]
+              Clauses: [(__table2.key) = (__table1.key)]
+                    ReadFromMergeTree (default.tp_fact)
                     ReadFromMergeTree (default.tp_dim_a)
-                    ReadFromMergeTree (default.tp_dim_b)
+              ReadFromMergeTree (default.tp_dim_b)
 case 1: chain - result check
 10000
 case 2: 4-table chain - dphyp plan
         Type: INNER
-        Clauses: [(__table2.key) = (__table1.key)]
-              ReadFromMergeTree (default.tp_fact)
+        Clauses: [(__table1.key) = (__table2.key)]
+              ReadFromMergeTree (default.tp_dim_a)
               Type: INNER
-              Clauses: [(__table1.key) = (__table3.key)]
-                    ReadFromMergeTree (default.tp_dim_a)
+              Clauses: [(__table3.key) = (__table2.key)]
+                    ReadFromMergeTree (default.tp_dim_b)
                     Type: INNER
-                    Clauses: [(__table3.key) = (__table4.key)]
-                          ReadFromMergeTree (default.tp_dim_b)
+                    Clauses: [(__table2.key) = (__table4.key)]
+                          ReadFromMergeTree (default.tp_fact)
                           ReadFromMergeTree (default.tp_dim_c)
 case 2: 4-table chain - dpsize plan (for comparison)
         Type: INNER
-        Clauses: [(__table2.key) = (__table1.key)]
-              ReadFromMergeTree (default.tp_fact)
+        Clauses: [(__table3.key) = (__table2.key)]
+              ReadFromMergeTree (default.tp_dim_b)
               Type: INNER
-              Clauses: [(__table3.key) = (__table4.key)]
-                    ReadFromMergeTree (default.tp_dim_b)
+              Clauses: [(__table1.key) = (__table2.key)]
+                    ReadFromMergeTree (default.tp_dim_a)
                     Type: INNER
-                    Clauses: [(__table1.key) = (__table4.key)]
-                          ReadFromMergeTree (default.tp_dim_a)
+                    Clauses: [(__table2.key) = (__table4.key)]
+                          ReadFromMergeTree (default.tp_fact)
                           ReadFromMergeTree (default.tp_dim_c)
 case 2: 4-table chain - result check
 5000
 case 3: star - dphyp plan
         Type: INNER
-        Clauses: [(__table1.key) = (__table2.key)]
-              ReadFromMergeTree (default.tp_fact)
+        Clauses: [(__table3.key) = (__table1.key)]
+              ReadFromMergeTree (default.tp_dim_b)
               Type: INNER
-              Clauses: [(__table2.key) = (__table3.key)]
+              Clauses: [(__table2.key) = (__table1.key)]
                     ReadFromMergeTree (default.tp_dim_a)
                     Type: INNER
-                    Clauses: [(__table3.key) = (__table4.key)]
-                          ReadFromMergeTree (default.tp_dim_b)
+                    Clauses: [(__table1.key) = (__table4.key)]
+                          ReadFromMergeTree (default.tp_fact)
                           ReadFromMergeTree (default.tp_dim_c)
 case 3: star - result check
 5000
 case 4: diamond - dphyp plan
         Type: INNER
-        Clauses: [(__table2.key) = (__table1.key)]
-              ReadFromMergeTree (default.tp_fact)
+        Clauses: [(__table1.key) = (__table2.key)]
+              ReadFromMergeTree (default.tp_dim_a)
               Type: INNER
-              Clauses: [(__table1.key) = (__table3.key)]
-                    ReadFromMergeTree (default.tp_dim_a)
+              Clauses: [(__table2.key) = (__table3.key)]
+                    ReadFromMergeTree (default.tp_fact)
                     ReadFromMergeTree (default.tp_dim_b)
 case 4: diamond - result check
 10000
