@@ -33,7 +33,7 @@ INSERT INTO t_expand_mutate SELECT number, number * 2, number * 3 FROM numbers(2
 SELECT 'before_expand_indices_materialized', secondary_indices_compressed_bytes > 0
 FROM system.parts WHERE database = currentDatabase() AND table = 't_expand_mutate' AND active;
 
-ALTER TABLE t_expand_mutate MODIFY SETTING packed_skip_index_max_bytes = 4194304;
+ALTER TABLE t_expand_mutate MODIFY SETTING packed_skip_index_max_bytes = '1M';
 ALTER TABLE t_expand_mutate UPDATE w = w + 1 WHERE id < 100 SETTINGS mutations_sync = 2;
 
 -- Both indices must remain usable: m_v carried over from source archive, bf_w freshly packed.

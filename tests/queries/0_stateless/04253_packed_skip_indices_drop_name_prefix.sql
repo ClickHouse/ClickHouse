@@ -17,7 +17,7 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS escape_index_filenames = 0,
          min_bytes_for_wide_part = 0,
-         packed_skip_index_max_bytes = 4194304,
+         packed_skip_index_max_bytes = '1M',
          auto_statistics_types = '',
          index_granularity = 1024;
 
@@ -52,7 +52,7 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS escape_index_filenames = 0,
          min_bytes_for_wide_part = 0,
-         packed_skip_index_max_bytes = 4194304,
+         packed_skip_index_max_bytes = '1M',
          auto_statistics_types = '',
          index_granularity = 1024;
 

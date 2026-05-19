@@ -68,14 +68,29 @@ skip_granules() {
             END { if (!found) print "missing" }'
 }
 
-# Run a scenario and print the qualitative outcome:
-#  - the surviving index still gates granules (or not),
+# Run a mutation against a prepared table and report the qualitative outcome:
+#  - the surviving skip index still gates granules (or not),
 #  - the post-mutation query count matches expectations,
 #  - secondary_indices_compressed_bytes is qualified as "materialized" / "cleared" without
 #    asserting absolute size comparisons that random merge-tree settings perturb,
 #  - CHECK TABLE passes.
 #
-# Usage: run_scenario <label> <table> <mutation_sql> <where> <expected_count> <granules_index>
+# Inputs:
+#   $1 label     - scenario label printed in brackets at the top of the block (e.g.
+#                  "A_wide_update_indexed"); shows up in the .reference for diffing.
+#   $2 table     - target table name; used for system.parts lookups and the data query below.
+#   $3 mutation  - the SQL mutation to run (ALTER UPDATE / ALTER DELETE / ALTER DROP INDEX /
+#                  ALTER ADD COLUMN / DELETE FROM ...); executed with mutations_sync=2 and
+#                  alter_sync=2 so the test is synchronous.
+#   $4 where     - WHERE clause used for the post-mutation count() AND for the EXPLAIN that
+#                  determines whether $6 (the index of interest) still filters. Should be a
+#                  predicate the index can prune (e.g. "v BETWEEN 70 AND 700").
+#   $5 expected  - expected row count for $where after the mutation. The test prints both
+#                  "count=N expected=N" so a divergence is obvious in the diff.
+#   $6 idx       - name of the skip index whose post-mutation usability we report. When the
+#                  mutation removed the index entirely, skip_granules() prints "missing"; when
+#                  the index is present but the EXPLAIN shows kept==total, it prints
+#                  "no_filter"; otherwise "filtered".
 run_scenario() {
     local label="$1"; local table="$2"; local mutation="$3"; local where="$4"; local expected="$5"; local idx="$6"
 
@@ -103,7 +118,7 @@ $CLIENT -q "
     CREATE TABLE a_wide_indexed (
         id UInt64, v UInt64, INDEX m_v v TYPE minmax GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4194304, index_granularity = 1024"
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024"
 $CLIENT -q "INSERT INTO a_wide_indexed SELECT number, number * 7 FROM numbers(10000)"
 run_scenario "A_wide_update_indexed" a_wide_indexed \
     "ALTER TABLE a_wide_indexed UPDATE v = v + 1 WHERE id < 100" \
@@ -116,7 +131,7 @@ $CLIENT -q "
     CREATE TABLE b_wide_unindexed (
         id UInt64, v UInt64, s String, INDEX m_v v TYPE minmax GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4194304, index_granularity = 1024"
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024"
 $CLIENT -q "INSERT INTO b_wide_unindexed SELECT number, number * 7, toString(number % 50) FROM numbers(10000)"
 run_scenario "B_wide_update_unindexed" b_wide_unindexed \
     "ALTER TABLE b_wide_unindexed UPDATE s = concat(s, '_x') WHERE id < 100" \
@@ -128,7 +143,7 @@ $CLIENT -q "
     CREATE TABLE c_wide_lwd (
         id UInt64, v UInt64, INDEX m_v v TYPE minmax GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4194304, index_granularity = 1024"
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024"
 $CLIENT -q "INSERT INTO c_wide_lwd SELECT number, number * 7 FROM numbers(10000)"
 run_scenario "C_wide_lightweight_delete" c_wide_lwd \
     "DELETE FROM c_wide_lwd WHERE id < 100" \
@@ -143,7 +158,7 @@ $CLIENT -q "
         INDEX m_v v TYPE minmax GRANULARITY 1,
         INDEX s_s s TYPE set(100) GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4194304, index_granularity = 1024"
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024"
 $CLIENT -q "INSERT INTO d_wide_mixed_update_set SELECT number, number * 7, toString(number % 50) FROM numbers(10000)"
 run_scenario "D_wide_mixed_update_set" d_wide_mixed_update_set \
     "ALTER TABLE d_wide_mixed_update_set UPDATE s = concat(s, '_x') WHERE id < 100" \
@@ -157,7 +172,7 @@ $CLIENT -q "
         INDEX m_v v TYPE minmax GRANULARITY 1,
         INDEX s_s s TYPE set(100) GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4194304, index_granularity = 1024"
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024"
 $CLIENT -q "INSERT INTO e_wide_mixed_update_minmax SELECT number, number * 7, toString(number % 50) FROM numbers(10000)"
 run_scenario "E_wide_mixed_update_minmax" e_wide_mixed_update_minmax \
     "ALTER TABLE e_wide_mixed_update_minmax UPDATE v = v + 1 WHERE id < 100" \
@@ -173,7 +188,7 @@ $CLIENT -q "
         INDEX m_v v TYPE minmax GRANULARITY 1,
         INDEX m_w w TYPE minmax GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4194304, index_granularity = 1024"
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024"
 $CLIENT -q "INSERT INTO f_wide_drop_packed SELECT number, number * 7, number * 11 FROM numbers(10000)"
 run_scenario "F_wide_drop_one_of_two_packed" f_wide_drop_packed \
     "ALTER TABLE f_wide_drop_packed DROP INDEX m_v" \
@@ -188,7 +203,7 @@ $CLIENT -q "
         INDEX m_v v TYPE minmax GRANULARITY 1,
         INDEX s_s s TYPE set(100) GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4194304, index_granularity = 1024"
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024"
 $CLIENT -q "INSERT INTO g_wide_drop_perfile SELECT number, number * 7, toString(number % 50) FROM numbers(10000)"
 run_scenario "G_wide_drop_perfile_index" g_wide_drop_perfile \
     "ALTER TABLE g_wide_drop_perfile DROP INDEX s_s" \
@@ -201,7 +216,7 @@ $CLIENT -q "
     CREATE TABLE h_wide_add_column (
         id UInt64, v UInt64, INDEX m_v v TYPE minmax GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4194304, index_granularity = 1024"
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024"
 $CLIENT -q "INSERT INTO h_wide_add_column SELECT number, number * 7 FROM numbers(10000)"
 run_scenario "H_wide_add_column" h_wide_add_column \
     "ALTER TABLE h_wide_add_column ADD COLUMN extra String DEFAULT ''" \
@@ -215,7 +230,7 @@ $CLIENT -q "
     CREATE TABLE i_compact_update_indexed (
         id UInt64, v UInt64, INDEX m_v v TYPE minmax GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS packed_skip_index_max_bytes = 4194304, index_granularity = 1024"
+    SETTINGS packed_skip_index_max_bytes = '1M', index_granularity = 1024"
 $CLIENT -q "INSERT INTO i_compact_update_indexed SELECT number, number * 7 FROM numbers(10000)"
 run_scenario "I_compact_update_indexed" i_compact_update_indexed \
     "ALTER TABLE i_compact_update_indexed UPDATE v = v + 1 WHERE id < 100" \
@@ -230,7 +245,7 @@ $CLIENT -q "
     CREATE TABLE j_wide_drop_only (
         id UInt64, v UInt64, INDEX m_v v TYPE minmax GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4194304, index_granularity = 1024"
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024"
 $CLIENT -q "INSERT INTO j_wide_drop_only SELECT number, number * 7 FROM numbers(10000)"
 sec_before_J=$(part_metric j_wide_drop_only secondary_indices_compressed_bytes)
 $CLIENT $SYNC_ALTER -q "ALTER TABLE j_wide_drop_only DROP INDEX m_v"

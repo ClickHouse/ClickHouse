@@ -28,7 +28,7 @@ INSERT INTO t_wide_off_to_on SELECT number, number * 7 FROM numbers(10000);
 SELECT 'wide_off2on_index_materialized_before', secondary_indices_compressed_bytes > 0
 FROM system.parts WHERE database = currentDatabase() AND table = 't_wide_off_to_on' AND active;
 
-ALTER TABLE t_wide_off_to_on MODIFY SETTING packed_skip_index_max_bytes = 4194304;
+ALTER TABLE t_wide_off_to_on MODIFY SETTING packed_skip_index_max_bytes = '1M';
 
 -- Old part still queries correctly with the new setting in metadata.
 SELECT 'wide_off2on_query_old_part', count() FROM t_wide_off_to_on WHERE v BETWEEN 70 AND 700;
@@ -61,7 +61,7 @@ CREATE TABLE t_wide_on_to_off
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4194304, auto_statistics_types = '', index_granularity = 1024;
+SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', auto_statistics_types = '', index_granularity = 1024;
 
 INSERT INTO t_wide_on_to_off SELECT number, number * 7 FROM numbers(10000);
 SELECT 'wide_on2off_index_materialized_before', secondary_indices_compressed_bytes > 0
@@ -103,7 +103,7 @@ INSERT INTO t_compact_off_to_on SELECT number, number * 7 FROM numbers(10000);
 SELECT 'compact_off2on_index_materialized_before', secondary_indices_compressed_bytes > 0
 FROM system.parts WHERE database = currentDatabase() AND table = 't_compact_off_to_on' AND active;
 
-ALTER TABLE t_compact_off_to_on MODIFY SETTING packed_skip_index_max_bytes = 4194304;
+ALTER TABLE t_compact_off_to_on MODIFY SETTING packed_skip_index_max_bytes = '1M';
 
 SELECT 'compact_off2on_query_old_part', count() FROM t_compact_off_to_on WHERE v BETWEEN 70 AND 700;
 
@@ -133,7 +133,7 @@ CREATE TABLE t_compact_on_to_off
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS packed_skip_index_max_bytes = 4194304, auto_statistics_types = '', index_granularity = 1024;
+SETTINGS packed_skip_index_max_bytes = '1M', auto_statistics_types = '', index_granularity = 1024;
 
 INSERT INTO t_compact_on_to_off SELECT number, number * 7 FROM numbers(10000);
 SELECT 'compact_on2off_index_materialized_before', secondary_indices_compressed_bytes > 0
@@ -173,7 +173,7 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 0, auto_statistics_types = '', index_granularity = 1024;
 INSERT INTO t_wide_flip_mutate_off2on SELECT number, number * 7 FROM numbers(10000);
-ALTER TABLE t_wide_flip_mutate_off2on MODIFY SETTING packed_skip_index_max_bytes = 4194304;
+ALTER TABLE t_wide_flip_mutate_off2on MODIFY SETTING packed_skip_index_max_bytes = '1M';
 ALTER TABLE t_wide_flip_mutate_off2on UPDATE v = v + 1 WHERE id < 100 SETTINGS mutations_sync = 2;
 SELECT 'wide_flip_off2on_count', count() FROM t_wide_flip_mutate_off2on WHERE v BETWEEN 70 AND 700;
 CHECK TABLE t_wide_flip_mutate_off2on SETTINGS check_query_single_value_result = 1;
@@ -186,7 +186,7 @@ CREATE TABLE t_wide_flip_mutate_on2off
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4194304, auto_statistics_types = '', index_granularity = 1024;
+SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', auto_statistics_types = '', index_granularity = 1024;
 INSERT INTO t_wide_flip_mutate_on2off SELECT number, number * 7 FROM numbers(10000);
 ALTER TABLE t_wide_flip_mutate_on2off MODIFY SETTING packed_skip_index_max_bytes = 0;
 ALTER TABLE t_wide_flip_mutate_on2off UPDATE v = v + 1 WHERE id < 100 SETTINGS mutations_sync = 2;

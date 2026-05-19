@@ -19,7 +19,7 @@ CREATE TABLE t_long_pack
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0,
-         packed_skip_index_max_bytes = 4194304,
+         packed_skip_index_max_bytes = '1M',
          replace_long_file_name_to_hash = 1,
          max_file_name_length = 64,
          auto_statistics_types = '',

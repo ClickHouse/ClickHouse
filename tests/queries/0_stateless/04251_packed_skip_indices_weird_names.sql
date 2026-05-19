@@ -24,7 +24,7 @@ SETTINGS
     min_bytes_for_wide_part = 0,
     index_granularity = 2,
     add_minmax_index_for_numeric_columns = 0,
-    packed_skip_index_max_bytes = 4194304;
+    packed_skip_index_max_bytes = '1M';
 
 INSERT INTO t_packed_long_idx VALUES
     (1, 100), (2, 200), (3, 300), (4, 400),
@@ -58,7 +58,7 @@ ORDER BY tuple()
 SETTINGS
     add_minmax_index_for_numeric_columns = 0,
     min_bytes_for_wide_part = 0,
-    packed_skip_index_max_bytes = 4194304;
+    packed_skip_index_max_bytes = '1M';
 
 INSERT INTO t_packed_bad_utf8 SELECT number FROM numbers(1);
 INSERT INTO t_packed_bad_utf8 SELECT number FROM numbers(10000);
