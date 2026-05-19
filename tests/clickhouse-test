@@ -1502,6 +1502,7 @@ class SettingsRandomizer:
         "execute_exists_as_scalar_subquery": lambda: random.random() > 0.05,
         "normalize_function_names": lambda: random.random() > 0.05,
         "enable_join_runtime_filters": lambda: random.random() > 0.05,
+        "join_runtime_filter_min_probe_rows": lambda: 0 if random.random() < 0.1 else random.randint(1, 10000),
         "enable_parallel_blocks_marshalling": lambda: random.random() > 0.05,
         # Default-false query_plan_* toggles: enable with 0.3 probability
         "query_plan_reuse_storage_ordering_for_window_functions": lambda: random.random() < 0.3,

@@ -5,6 +5,7 @@ SET enable_analyzer = 1;
 SET enable_materialized_cte = 1;
 SET optimize_group_by_function_keys = 1;
 SET enable_join_runtime_filters = 1; -- reference includes BuildRuntimeFilter node in first EXPLAIN
+SET join_runtime_filter_min_probe_rows=0;
 
 CREATE TABLE users (uid Int16, name String, age Int16) ENGINE=Memory;
 
