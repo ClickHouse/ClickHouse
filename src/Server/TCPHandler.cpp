@@ -6,7 +6,6 @@
 #include <optional>
 #include <string_view>
 #include <thread>
-#include <Common/ThreadPool.h>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Columns/ColumnBLOB.h>
@@ -27,9 +26,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
-#include <Common/PODArray.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -37,6 +34,7 @@
 #include <Interpreters/Squashing.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/detachQuery.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -135,7 +133,7 @@ namespace Setting
     extern const SettingsSeconds wait_for_async_insert_timeout;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool apply_settings_from_server;
-    extern const SettingsBool allow_experimental_detach_non_readonly_queries;
+    extern const SettingsBool allow_experimental_detach_queries;
 }
 
 namespace ServerSetting
@@ -615,16 +613,16 @@ void TCPHandler::runImpl()
             /// So it's better to update the connection settings for flexibility.
             extractConnectionSettingsFromContext(query_state->query_context);
 
-            /// Apply SETTINGS embedded in the query text (e.g. `INSERT ... SETTINGS allow_experimental_detach_non_readonly_queries=1`)
+            /// Apply SETTINGS embedded in the query text (e.g. `INSERT ... SETTINGS allow_experimental_detach_queries=1`)
             /// before the detach decision so that inline settings can trigger the detach path.
-            /// `settings_ref` is a reference to query_context's settings, so it reflects changes made here.
-            /// `executeQueryImpl` will call `applySettingsFromQuery` again — that call is idempotent.
-            /// Guard: only pre-parse when the setting is already on (session/client-level) OR the query
-            /// text references it inline — avoids an unconditional extra parse on the hot path.
+            /// `settings_ref` reflects changes made here. `executeQueryImpl` will call
+            /// `applySettingsFromQuery` again — that call is idempotent.
+            /// Guard: only pre-parse when the setting is already on (session/client-level) OR the
+            /// query text references it inline — avoids an unconditional extra parse on the hot path.
             {
                 const auto & pre_settings = query_state->query_context->getSettingsRef();
-                if (pre_settings[Setting::allow_experimental_detach_non_readonly_queries]
-                    || query_state->query.find("allow_experimental_detach_non_readonly_queries") != std::string::npos)
+                if (pre_settings[Setting::allow_experimental_detach_queries]
+                    || query_state->query.find("allow_experimental_detach_queries") != std::string::npos)
                 {
                     const size_t max_query_size_pre
                         = pre_settings[Setting::max_query_size] ? pre_settings[Setting::max_query_size] : std::numeric_limits<size_t>::max();
@@ -650,95 +648,68 @@ void TCPHandler::runImpl()
                 }
             }
 
-            /// Detach path: for non-readonly queries when allow_experimental_detach_non_readonly_queries is on, run the query in a background thread and return query_id immediately.
-            /// Skip when async_insert is set (preserve async-insert queue semantics). Only detach when the query does not need data from the client (e.g. INSERT...SELECT, not INSERT FORMAT ...).
+            /// Detach path: when `allow_experimental_detach_queries` is on, dispatch the query to
+            /// a background thread and reply with a one-row block holding the `query_id`. Skipped
+            /// (with a one-line WARN) when `async_insert=1` — the async-insert queue owns the wait
+            /// semantics for `INSERT`s. Skipped for `INSERT ... FORMAT ...` queries that read data
+            /// from a separate native packet — the background thread can't drain that packet.
             const auto & settings_ref = query_state->query_context->getSettingsRef();
-            if (settings_ref[Setting::allow_experimental_detach_non_readonly_queries] && !settings_ref[Setting::async_insert])
+            const bool want_detach = settings_ref[Setting::allow_experimental_detach_queries];
+            if (want_detach && settings_ref[Setting::async_insert])
             {
-                /// Set by the thread once the query is registered in ProcessList and quotas are checked.
-                /// Kept outside the try/catch below so that query-start failures (quota, duplicate query_id,
-                /// permissions) propagate to the client rather than silently falling back to sync execution.
-                std::optional<std::future<void>> detach_started;
+                LOG_WARNING(
+                    log,
+                    "Both `allow_experimental_detach_queries` and `async_insert` are enabled; running synchronously via the async-insert path. "
+                    "These settings are mutually exclusive — set only one.");
+            }
+            if (want_detach && !settings_ref[Setting::async_insert])
+            {
                 String detach_query_id;
+                bool detach_started = false;
 
                 try
                 {
-                    const size_t max_query_size = settings_ref[Setting::max_query_size] ? settings_ref[Setting::max_query_size] : std::numeric_limits<size_t>::max();
-                    ParserQuery parser(query_state->query.data() + query_state->query.size(), settings_ref[Setting::allow_settings_after_format_in_insert], settings_ref[Setting::implicit_select]);
-                    ASTPtr ast = parseQuery(parser, query_state->query.data(), query_state->query.data() + query_state->query.size(), "", max_query_size, settings_ref[Setting::max_parser_depth], settings_ref[Setting::max_parser_backtracks]);
+                    const size_t max_query_size = settings_ref[Setting::max_query_size]
+                        ? settings_ref[Setting::max_query_size]
+                        : std::numeric_limits<size_t>::max();
+                    ParserQuery parser(
+                        query_state->query.data() + query_state->query.size(),
+                        settings_ref[Setting::allow_settings_after_format_in_insert],
+                        settings_ref[Setting::implicit_select]);
+                    ASTPtr ast = parseQuery(
+                        parser,
+                        query_state->query.data(),
+                        query_state->query.data() + query_state->query.size(),
+                        "",
+                        max_query_size,
+                        settings_ref[Setting::max_parser_depth],
+                        settings_ref[Setting::max_parser_backtracks]);
 
-                    if (ast && IAST::isNonReadOnlyQuery(ast.get()))
+                    if (ast && IAST::isDetachableQuery(ast.get()))
                     {
                         const auto * insert_ast = ast->as<ASTInsertQuery>();
-                        bool insert_needs_client_data = insert_ast && !insert_ast->select && !insert_ast->hasInlinedData();
+                        const bool insert_needs_client_data = insert_ast && !insert_ast->select && !insert_ast->hasInlinedData();
                         if (!insert_needs_client_data)
                         {
                             ContextMutablePtr async_context = Context::createCopy(query_state->query_context);
-                            async_context->setProgressCallback(nullptr);
-                            String query_copy = query_state->query;
-
-                            auto started_promise = std::make_shared<std::promise<void>>();
-                            auto started_future = started_promise->get_future();
-
-                            GlobalThreadPool::instance().scheduleOrThrow([async_context, query_copy, started_promise]() mutable
-                            {
-                                setThreadName(ThreadName::QUERY_ASYNC_EXECUTOR);
-                                ThreadStatus thread_status;
-                                QueryScope async_query_scope = QueryScope::create(async_context);
-                                bool query_started = false;
-
-                                /// Called by executeQuery after ProcessList::insert and quota checks pass —
-                                /// the earliest point where ExceptionBeforeStart can no longer occur.
-                                auto on_started = [&]()
-                                {
-                                    if (!query_started)
-                                    {
-                                        query_started = true;
-                                        started_promise->set_value();
-                                    }
-                                };
-
-
-                                try
-                                {
-                                    PODArray<char> discard_buf;
-                                    WriteBufferFromVector<PODArray<char>> discard_ostr(discard_buf);
-                                    executeQuery(
-                                        std::make_unique<ReadBufferFromString>(query_copy),
-                                        discard_ostr,
-                                        async_context, SetResultDetailsFunc{}, QueryFlags{}, std::nullopt,
-                                        HandleExceptionInOutputFormatFunc{}, QueryFinishCallback{},
-                                        HTTPContinueCallback{}, std::move(on_started));
-                                }
-                                catch (...)
-                                {
-                                    if (!query_started)
-                                        started_promise->set_exception(std::current_exception());
-                                    else
-                                        tryLogCurrentException(getLogger("TCPHandler"), "Detached native non-readonly query failed after start");
-                                }
-                            });
-
-                            detach_started = std::move(started_future);
-                            detach_query_id = query_state->query_context->getClientInfo().current_query_id;
+                            detach_query_id = detachQuery(query_state->query, async_context).query_id;
+                            detach_started = true;
                         }
                     }
                 }
                 catch (...)
                 {
-
-                    /// Mechanism failure (e.g. parse error): fall back to sync execution.
+                    /// Pre-start failures (parse error, quota, permissions, duplicate query_id)
+                    /// re-throw out of `detachQuery` after `detach_started` is set — propagate
+                    /// them to the client via `runImpl`'s `sendException`. Mechanism failures
+                    /// before that point fall back to sync execution.
+                    if (detach_started)
+                        throw;
                     tryLogCurrentException(log, "Cannot run native query in detach mode, falling back to sync");
                 }
 
-                if (detach_started.has_value())
+                if (detach_started)
                 {
-                    /// Block until the background thread signals that the query has passed
-                    /// ProcessList::insert and quota checks. Re-throw on failure so the
-                    /// outer exception handler (runImpl) sends it to the client via sendException.
-                    detach_started->get();
-
-                    /// Send result block with query_id (single column, single row)
                     auto col = ColumnString::create();
                     col->insertData(detach_query_id.data(), detach_query_id.size());
                     Block block({{std::move(col), std::make_shared<DataTypeString>(), "query_id"}});

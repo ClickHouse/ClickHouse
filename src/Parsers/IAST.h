@@ -470,9 +470,12 @@ public:
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
 
-    /// Returns true if the query is a "write" query (non-readonly), e.g. INSERT, DELETE, CREATE, etc.
-    /// Useful for deciding whether a query needs to be detached or run asynchronously.
-    static bool isNonReadOnlyQuery(const IAST * ast);
+    /// Returns true if the query can be safely dispatched to a background thread and have its
+    /// `query_id` returned to the client before completion (see `allow_experimental_detach_queries`).
+    /// False for session-mutating kinds (`SET`, `USE`, transaction control, `KILL QUERY`) which
+    /// would silently no-op on a detached context, and for internal kinds (`AsyncInsertFlush`,
+    /// `ParallelWithQuery`, `None`).
+    static bool isDetachableQuery(const IAST * ast);
 
 protected:
     virtual void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;

@@ -21,6 +21,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Interpreters/detachQuery.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/IAST.h>
@@ -36,7 +37,6 @@
 #include <Common/Logger.h>
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils.h>
-#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
@@ -53,12 +53,9 @@
 #include <Poco/Net/HTTPMessage.h>
 
 #include <algorithm>
-#include <future>
 #include <memory>
 #include <optional>
 #include <string_view>
-#include <thread>
-#include <Common/ThreadPool.h>
 #include <unordered_map>
 #include <utility>
 #include <boost/algorithm/string/trim.hpp>
@@ -73,7 +70,7 @@ extern const SettingsBool allow_settings_after_format_in_insert;
 extern const SettingsBool async_insert;
 extern const SettingsBool cancel_http_readonly_queries_on_client_close;
 extern const SettingsBool enable_http_compression;
-extern const SettingsBool allow_experimental_detach_non_readonly_queries;
+extern const SettingsBool allow_experimental_detach_queries;
 extern const SettingsBool implicit_select;
 extern const SettingsUInt64 http_headers_progress_interval_ms;
 extern const SettingsUInt64 http_max_request_param_data_size;
@@ -552,16 +549,16 @@ void HTTPHandler::processQuery(
             });
     }
 
-    /// Apply SETTINGS embedded in the query text itself (e.g. `INSERT ... SETTINGS allow_experimental_detach_non_readonly_queries=1`)
+    /// Apply SETTINGS embedded in the query text itself (e.g. `INSERT ... SETTINGS allow_experimental_detach_queries=1`)
     /// before the detach decision so that inline settings can trigger the detach path.
-    /// `settings` is a reference to context->getSettingsRef(), so it reflects any changes made here.
+    /// `settings` is a reference to `context->getSettingsRef()`, so it reflects changes made here.
     /// `executeQueryImpl` will call `applySettingsFromQuery` again — that call is idempotent.
     /// Guard: only pre-parse when the setting is already on (session/URL-level) OR the query text
     /// references it inline — avoids an unconditional extra parse on every request on the hot path.
     if (!query.empty()
-        && (settings[Setting::allow_experimental_detach_non_readonly_queries]
-            || params.has("allow_experimental_detach_non_readonly_queries")
-            || query.find("allow_experimental_detach_non_readonly_queries") != std::string::npos))
+        && (settings[Setting::allow_experimental_detach_queries]
+            || params.has("allow_experimental_detach_queries")
+            || query.find("allow_experimental_detach_queries") != std::string::npos))
     {
         ParserQuery parser_for_inline_settings(
             query.data() + query.size(),
@@ -586,43 +583,33 @@ void HTTPHandler::processQuery(
             InterpreterSetQuery::applySettingsFromQuery(inline_ast, context);
     }
 
-    /// Detach path: for non-readonly queries (e.g. INSERT-SELECT) when allow_experimental_detach_non_readonly_queries is on,
-    /// run the query in a background thread and return immediately with query_id.
-    /// Supports both query in URL (?query=...) and query in POST body (e.g. curl -X POST --data-binary "INSERT ...").
-    /// We skip this path when async_insert=1 so that the server's async-insert queue semantics (and wait_for_async_insert) are preserved.
-    /// Prepared-statement parameters from the URL (param_xxx) are already on the context and are copied into the background thread's context.
-    /// Also check params directly so the detach path is taken when the client sends allow_experimental_detach_non_readonly_queries=1 in the URL.
-    const bool want_detach_non_readonly
-        = settings[Setting::allow_experimental_detach_non_readonly_queries] || params.getParsedLast<bool>("allow_experimental_detach_non_readonly_queries", false);
+    /// Detach path: when `allow_experimental_detach_queries` is on, dispatch the query to a
+    /// background thread and return its `query_id` immediately. The data for `INSERT ... FORMAT ...`
+    /// arrives in the same POST body, so HTTP can detach those too — we concatenate URL query
+    /// and body and hand the full text to `detachQuery`.
+    ///
+    /// Skipped (with a one-line WARN) when `async_insert=1`: the async-insert queue owns the
+    /// wait semantics for `INSERT`s, and they are mutually exclusive by design.
+    const bool want_detach
+        = settings[Setting::allow_experimental_detach_queries]
+        || params.getParsedLast<bool>("allow_experimental_detach_queries", false);
     /// Tracks whether the detach path already ran `customizeContext` on `context`.
     /// `Context::setQueryParameter` throws on duplicate names, so the sync fallback
     /// below must skip its own call when this is set.
     bool context_customized = false;
-    if (want_detach_non_readonly && !settings[Setting::async_insert] && request.getMethod() == HTTPServerRequest::HTTP_POST
-        && !has_external_data)
+    if (want_detach && settings[Setting::async_insert])
     {
-        String query_to_parse;
+        LOG_WARNING(
+            log,
+            "Both `allow_experimental_detach_queries` and `async_insert` are enabled; running synchronously via the async-insert path. "
+            "These settings are mutually exclusive — set only one.");
+    }
+    if (want_detach && !settings[Setting::async_insert] && request.getMethod() == HTTPServerRequest::HTTP_POST && !has_external_data)
+    {
+        String detach_query_id;
+        bool detach_started = false;
         PODArray<char> body_data;
         const bool query_was_in_body = query_from_body;
-        auto restore_input_for_sync = [&]()
-        {
-            if (query_was_in_body)
-            {
-                in_param = std::make_unique<ReadBufferFromString>(String(body_data.data(), body_data.size()));
-                in_post_maybe_compressed = std::make_unique<ReadBufferFromString>(String());
-            }
-            else
-            {
-                in_param = std::make_unique<ReadBufferFromString>(query);
-                in_post_maybe_compressed = std::make_unique<ReadBufferFromString>(String(body_data.data(), body_data.size()));
-            }
-        };
-
-        /// Set by the thread once the query is registered in ProcessList and quotas are checked.
-        /// Separating this from the fallback-to-sync catch below ensures that errors reaching
-        /// the client before query start are not silently swallowed by the sync fallback.
-        std::optional<std::future<void>> detach_started;
-        String detach_query_id;
 
         try
         {
@@ -633,10 +620,11 @@ void HTTPHandler::processQuery(
             if (query_from_body)
                 body_data.insert(body_data.end(), query.data(), query.data() + query.size());
 
-            query_to_parse = query;
+            String query_to_parse = query;
             boost::trim_right(query_to_parse);
             if (query_to_parse.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty query after trim");
+
             if (!query_from_body)
             {
                 LimitReadBuffer limit(*in_post_maybe_compressed, LimitReadBuffer::Settings{.read_no_more = max_post_body_size});
@@ -654,11 +642,7 @@ void HTTPHandler::processQuery(
                 const char * pos = query_to_parse.data();
                 const char * end = pos + query_to_parse.size();
                 ast = parseQueryAndMovePosition(
-                    parser,
-                    pos,
-                    end,
-                    "",
-                    false,
+                    parser, pos, end, "", false,
                     max_query_size_val,
                     settings[Setting::max_parser_depth],
                     settings[Setting::max_parser_backtracks]);
@@ -673,96 +657,38 @@ void HTTPHandler::processQuery(
                     settings[Setting::max_parser_depth],
                     settings[Setting::max_parser_backtracks]);
 
-            if (ast && IAST::isNonReadOnlyQuery(ast.get()))
+            if (ast && IAST::isDetachableQuery(ast.get()))
             {
                 /// Populate query parameters from URL/header regex captures and `_request_body`
-                /// before forking into the detached thread, so `PredefinedQueryHandler` routes
-                /// see the same context the sync path would. Running this on the parent `context`
-                /// means the copy below inherits the parameters.
+                /// before forking, so `PredefinedQueryHandler` routes see the same context as
+                /// the sync path. Running this on the parent `context` means the copy below
+                /// inherits the parameters.
                 ReadBufferFromString body_buf_for_customize(std::string_view(body_data.data(), body_data.size()));
                 customizeContext(request, context, body_buf_for_customize);
                 context_customized = true;
 
+                String full_input = query_was_in_body
+                    ? String(body_data.data(), body_data.size())
+                    : (body_data.empty() ? query : query + String(body_data.data(), body_data.size()));
+
                 ContextMutablePtr async_context = Context::createCopy(context);
-                async_context->setProgressCallback(nullptr);
-
-                auto started_promise = std::make_shared<std::promise<void>>();
-                auto started_future = started_promise->get_future();
-
-                auto async_body_data = std::make_shared<PODArray<char>>(std::move(body_data));
-                GlobalThreadPool::instance().scheduleOrThrow(
-                    [query_was_in_body, query, body_for_thread = std::move(async_body_data), async_context, started_promise]() mutable
-                    {
-                        // TODO(kavi): should we need new ThreadName?
-                        setThreadName(ThreadName::QUERY_ASYNC_EXECUTOR);
-                        ThreadStatus thread_status;
-                        QueryScope async_query_scope = QueryScope::create(async_context);
-                        bool query_started = false;
-
-                        /// Called by executeQuery after ProcessList::insert and quota checks pass —
-                        /// the earliest point where ExceptionBeforeStart can no longer occur.
-                        auto on_started = [&]()
-                        {
-                            if (!query_started)
-                            {
-                                query_started = true;
-                                started_promise->set_value();
-                            }
-                        };
-
-                        try
-                        {
-                            String full_input = query_was_in_body
-                                ? String(body_for_thread->data(), body_for_thread->size())
-                                : (body_for_thread->empty() ? query : query + String(body_for_thread->data(), body_for_thread->size()));
-                            PODArray<char> discard_buf;
-                            WriteBufferFromVector<PODArray<char>> discard_ostr(discard_buf);
-                            executeQuery(
-                                std::make_unique<ReadBufferFromString>(full_input),
-                                discard_ostr,
-                                async_context,
-                                SetResultDetailsFunc{},
-                                QueryFlags{},
-                                std::nullopt,
-                                HandleExceptionInOutputFormatFunc{},
-                                QueryFinishCallback{},
-                                HTTPContinueCallback{},
-                                std::move(on_started));
-                        }
-                        catch (...)
-                        {
-                            if (!query_started)
-                                started_promise->set_exception(std::current_exception());
-                            else
-                                tryLogCurrentException(getLogger("HTTPHandler"), "Detached HTTP non-readonly query failed after start");
-                        }
-                    });
-
-                detach_started = std::move(started_future);
-                detach_query_id = context->getClientInfo().current_query_id;
-            }
-            else
-            {
-                restore_input_for_sync();
+                detach_query_id = detachQuery(std::move(full_input), async_context).query_id;
+                detach_started = true;
             }
         }
         catch (...)
         {
-            /// Mechanism failure (e.g. parse error, empty query): fall back to sync execution.
-            /// Only restore input if the detach thread was never launched.
+            /// Pre-start failures (parse error, quota, permissions, duplicate query_id) re-throw
+            /// out of `detachQuery` and reach the client through the normal HTTP error path.
+            /// `detach_started` only flips after that point, so we rethrow before falling back.
+            if (detach_started)
+                throw;
+            /// Mechanism failure (parse error, empty query): fall back to sync.
             tryLogCurrentException(log, "Cannot run HTTP query in detach mode, falling back to sync");
-            if (!detach_started.has_value() && (query_was_in_body || !body_data.empty()))
-                restore_input_for_sync();
         }
 
-        if (detach_started.has_value())
+        if (detach_started)
         {
-            /// Block until the background thread signals that the query has passed
-            /// ProcessList::insert and quota checks. Throws if those checks fail,
-            /// which propagates the exception to the client through the normal HTTP
-            /// error path — not the sync fallback above.
-            detach_started->get();
-
             in_post_maybe_compressed.reset();
             applyHTTPResponseHeaders(response, http_response_headers_override);
             response.setStatus(HTTPResponse::HTTP_OK);
@@ -772,6 +698,19 @@ void HTTPHandler::processQuery(
             used_output.cancel();
             releaseOrCloseSession(session_id, close_session);
             return;
+        }
+
+        /// Restore the input streams for the sync fallback. The body was drained into
+        /// `body_data` above (or already was the query); rebuild what the sync path expects.
+        if (query_was_in_body)
+        {
+            in_param = std::make_unique<ReadBufferFromString>(String(body_data.data(), body_data.size()));
+            in_post_maybe_compressed = std::make_unique<ReadBufferFromString>(String());
+        }
+        else if (!body_data.empty())
+        {
+            in_param = std::make_unique<ReadBufferFromString>(query);
+            in_post_maybe_compressed = std::make_unique<ReadBufferFromString>(String(body_data.data(), body_data.size()));
         }
     }
 

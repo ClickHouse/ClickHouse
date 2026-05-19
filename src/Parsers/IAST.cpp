@@ -364,18 +364,14 @@ std::string IAST::dumpTree(size_t indent) const
     return wb.str();
 }
 
-// TODO(kavi): may be rename it to "isWriteOnlyQuery"?
-// unwanted negation (Non) here I think.
-//
-// NOTE: covered all possible query types explicitly without `default`
-// because adding new query kind in the future would return false
-// silently otherwise.
-bool IAST::isNonReadOnlyQuery(const IAST * ast)
+// Exhaustive switch (no `default`): adding a new QueryKind must force an explicit decision here.
+bool IAST::isDetachableQuery(const IAST * ast)
 {
     if (!ast)
         return false;
     switch (ast->getQueryKind())
     {
+        case QueryKind::Select:
         case QueryKind::Insert:
         case QueryKind::Delete:
         case QueryKind::Update:
@@ -392,26 +388,27 @@ bool IAST::isNonReadOnlyQuery(const IAST * ast)
         case QueryKind::Restore:
         case QueryKind::Copy:
         case QueryKind::Snapshot:
-            return true;
-
-        case QueryKind::None:
-        case QueryKind::Select:
         case QueryKind::Check:
         case QueryKind::System:
-        case QueryKind::Set:
-        case QueryKind::Use:
         case QueryKind::Show:
         case QueryKind::Exists:
         case QueryKind::Describe:
         case QueryKind::Explain:
-        case QueryKind::KillQuery:
         case QueryKind::ExternalDDL:
+            return true;
+
+        /// Session-mutating: would silently no-op on a detached context.
+        case QueryKind::Set:
+        case QueryKind::Use:
         case QueryKind::Begin:
         case QueryKind::Commit:
         case QueryKind::Rollback:
         case QueryKind::SetTransactionSnapshot:
+        case QueryKind::KillQuery:
+        /// Internal kinds:
         case QueryKind::AsyncInsertFlush:
         case QueryKind::ParallelWithQuery:
+        case QueryKind::None:
             return false;
     }
     UNREACHABLE();
