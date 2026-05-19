@@ -1,16 +1,18 @@
 #pragma once
 
 #include <Functions/FunctionHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Core/callOnTypeIndex.h>
 #include <Columns/ColumnVector.h>
 #include <Common/intExp10.h>
 #include <Interpreters/castColumn.h>
 #include <Functions/IFunction.h>
 #include <Common/intExp.h>
-#include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <cmath>
@@ -213,7 +215,7 @@ public:
 
     static VectorType prepare(size_t scale)
     {
-        return load1(static_cast<ScalarType>(scale));
+        return load1(scale);
     }
 };
 
@@ -234,7 +236,7 @@ public:
 
     static VectorType prepare(size_t scale)
     {
-        return load1(static_cast<ScalarType>(scale));
+        return load1(scale);
     }
 };
 
@@ -414,11 +416,6 @@ public:
         const T * __restrict p_in = in.data();
         T * __restrict p_out = out.data();
 
-        /// clang-21 vectorization on aarch64 shows 20% performance decrease.
-        /// Let's use scalar variant instead.
-#if defined(__aarch64__)
-        _Pragma("clang loop vectorize(disable)")
-#endif
         while (p_in < end_in)
         {
             Op::compute(p_in, scale, p_out);
@@ -475,7 +472,7 @@ private:
 public:
     static NO_INLINE void apply(const Container & in, UInt32 in_scale, Container & out, Scale scale_arg)
     {
-        scale_arg = static_cast<Scale>(in_scale - scale_arg);
+        scale_arg = in_scale - scale_arg;
         if (scale_arg > 0)
         {
             auto scale = intExp10OfSize<NativeType>(scale_arg);
@@ -499,7 +496,7 @@ public:
 
     static void applyOne(NativeType in, UInt32 in_scale, NativeType& out, Scale scale_arg)
     {
-        scale_arg = static_cast<Scale>(in_scale - scale_arg);
+        scale_arg = in_scale - scale_arg;
         if (scale_arg > 0)
         {
             auto scale = intExp10OfSize<NativeType>(scale_arg);
@@ -526,7 +523,7 @@ inline Scale getScaleArg(const ColumnConst* scale_col)
     Int64 scale64 = scale_field.safeGet<Int64>();
     validateScale(scale64);
 
-    return static_cast<Scale>(scale64);
+    return scale64;
 }
 
 /// Generic dispatcher
@@ -581,9 +578,9 @@ struct Dispatcher
 
                     for (size_t i = 0; i < rows; ++i)
                     {
-                        Int64 scale64 = static_cast<Int64>(scale_data[i]);
+                        Int64 scale64 = scale_data[i];
                         validateScale(scale64);
-                        Scale raw_scale = static_cast<Scale>(scale64);
+                        Scale raw_scale = scale64;
 
                         if (raw_scale == 0)
                         {
@@ -640,7 +637,7 @@ public:
                 if (scale_col == nullptr || isColumnConst(*scale_col))
                 {
                     auto scale_arg = scale_col == nullptr ? 0 : getScaleArg(checkAndGetColumnConst<ColumnVector<ScaleType>>(scale_col));
-                    DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::apply(vec_src, value_col_typed->getScale(), vec_res, static_cast<Scale>(scale_arg));
+                    DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::apply(vec_src, value_col_typed->getScale(), vec_res, scale_arg);
                 }
                 /// Non-const scale argument:
                 else if (const auto * scale_col_typed = checkAndGetColumn<ColumnVector<ScaleType>>(scale_col))
@@ -650,9 +647,9 @@ public:
 
                     for (size_t i = 0; i < rows; ++i)
                     {
-                        Int64 scale64 = static_cast<Int64>(scale[i]);
+                        Int64 scale64 = scale[i];
                         validateScale(scale64);
-                        Scale raw_scale = static_cast<Scale>(scale64);
+                        Scale raw_scale = scale64;
 
                         DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::applyOne(value_col_typed->getElement(i), value_col_typed->getScale(),
                             reinterpret_cast<typename ColumnDecimal<T>::NativeT&>(col_res->getElement(i)), raw_scale);
@@ -754,10 +751,8 @@ public:
         return true;
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field & left, const Field & right) const override
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
-        if (isNaNField(left) || isNaNField(right))
-            return {};
         return { .is_monotonic = true, .is_always_monotonic = true };
     }
 };
@@ -887,10 +882,6 @@ private:
         size_t size = src.size();
         dst.resize(size);
 
-        /// NaN inputs have no defined position in the boundary ordering: every comparison
-        /// against NaN is false, which breaks both the linear-search carry-over hint and
-        /// `std::upper_bound`'s strict-weak-ordering contract. Propagate NaN through
-        /// unchanged so the result is the same in scalar and vector paths.
         if (boundary_values.size() < 32)    /// Just a guess
         {
             /// Linear search with value on previous iteration as a hint.
@@ -903,15 +894,6 @@ private:
             for (size_t i = 0; i < size; ++i)
             {
                 auto value = src[i];
-
-                if constexpr (is_floating_point<ValueType>)
-                {
-                    if (isNaN(value))
-                    {
-                        dst[i] = value;
-                        continue;
-                    }
-                }
 
                 if (*it < value)
                 {
@@ -933,15 +915,6 @@ private:
         {
             for (size_t i = 0; i < size; ++i)
             {
-                if constexpr (is_floating_point<ValueType>)
-                {
-                    if (isNaN(src[i]))
-                    {
-                        dst[i] = src[i];
-                        continue;
-                    }
-                }
-
                 auto it = std::upper_bound(boundary_values.begin(), boundary_values.end(), src[i]);
                 if (it == boundary_values.end())
                 {
