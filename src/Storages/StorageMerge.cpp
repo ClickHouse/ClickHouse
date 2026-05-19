@@ -418,7 +418,17 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
         }
     }
 
-    return selected_table_size == 1 ? stage_in_source_tables : std::min(stage_in_source_tables, QueryProcessingStage::WithMergeableState);
+    auto stage = selected_table_size == 1 ? stage_in_source_tables : std::min(stage_in_source_tables, QueryProcessingStage::WithMergeableState);
+
+    /// Caller asked for at most WithMergeableState but a child reported a higher stage
+    /// (e.g. Distributed with `distributed_group_by_no_merge=1` reports Complete).
+    /// Cap to WithMergeableState so we don't emit finalized values where the caller
+    /// expects AggregateFunction states - otherwise `convertAndFilterSourceStream`
+    /// throws CANNOT_CONVERT_TYPE. The multi-table branch above already caps at
+    /// WithMergeableState for the same reason; this extends it to the single-table branch.
+    if (to_stage <= QueryProcessingStage::WithMergeableState && stage > to_stage)
+        stage = QueryProcessingStage::WithMergeableState;
+    return stage;
 }
 
 VirtualColumnsDescription StorageMerge::createVirtuals()
