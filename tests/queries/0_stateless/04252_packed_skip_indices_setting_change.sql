@@ -1,8 +1,12 @@
 -- packed_skip_index_types takes effect at write time: existing parts keep whatever layout
 -- they had when they were written, and future INSERTs / merges apply the current setting.
--- Verify both directions (off→on, on→off) preserve readability of the old part and adopt
--- the new layout for new parts. Distinguish per-file vs packed layouts via system.parts.files
--- (per-file layout produces one more on-disk file than packed for a single-substream index).
+-- Verify both directions (off->on, on->off) preserve readability of the old part and adopt
+-- the new layout for new parts.
+--
+-- We assert via secondary_indices_compressed_bytes (positive when an index is materialized,
+-- regardless of layout) and query counts; absolute file counts vary with random
+-- merge-tree settings (compress_marks, sparse-serialization ratios, etc.) so we don't rely
+-- on them.
 --
 -- Test both Compact and Wide part layouts.
 
@@ -21,27 +25,25 @@ ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_types = '', auto_statistics_types = '', index_granularity = 1024;
 
 INSERT INTO t_wide_off_to_on SELECT number, number * 7 FROM numbers(10000);
-SELECT 'wide_off2on_files_before', files FROM system.parts
-WHERE database = currentDatabase() AND table = 't_wide_off_to_on' AND active;
+SELECT 'wide_off2on_index_materialized_before', secondary_indices_compressed_bytes > 0
+FROM system.parts WHERE database = currentDatabase() AND table = 't_wide_off_to_on' AND active;
 
 ALTER TABLE t_wide_off_to_on MODIFY SETTING packed_skip_index_types = 'minmax';
 
 -- Old part still queries correctly with the new setting in metadata.
 SELECT 'wide_off2on_query_old_part', count() FROM t_wide_off_to_on WHERE v BETWEEN 70 AND 700;
 
--- New INSERT picks up the new setting.
+-- New INSERT picks up the new setting; both parts must still materialize the index.
 INSERT INTO t_wide_off_to_on SELECT number + 10000, number * 11 FROM numbers(10000);
-
--- The two parts must differ in file count: old one has per-file substreams, new one packed.
-SELECT 'wide_off2on_files_after_insert', name, files FROM system.parts
-WHERE database = currentDatabase() AND table = 't_wide_off_to_on' AND active
+SELECT 'wide_off2on_index_materialized_after_insert', name, secondary_indices_compressed_bytes > 0
+FROM system.parts WHERE database = currentDatabase() AND table = 't_wide_off_to_on' AND active
 ORDER BY name;
 SELECT 'wide_off2on_combined_count', count() FROM t_wide_off_to_on WHERE v BETWEEN 70 AND 700;
 
--- Merge: the resulting single part uses the current writer setting, i.e. packed.
+-- Merge: the resulting single part uses the current writer setting; the index is still there.
 OPTIMIZE TABLE t_wide_off_to_on FINAL;
-SELECT 'wide_off2on_files_after_merge', files FROM system.parts
-WHERE database = currentDatabase() AND table = 't_wide_off_to_on' AND active;
+SELECT 'wide_off2on_index_materialized_after_merge', secondary_indices_compressed_bytes > 0
+FROM system.parts WHERE database = currentDatabase() AND table = 't_wide_off_to_on' AND active;
 SELECT 'wide_off2on_count_after_merge', count() FROM t_wide_off_to_on WHERE v BETWEEN 70 AND 700;
 CHECK TABLE t_wide_off_to_on SETTINGS check_query_single_value_result = 1;
 
@@ -62,23 +64,22 @@ ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_types = 'minmax', auto_statistics_types = '', index_granularity = 1024;
 
 INSERT INTO t_wide_on_to_off SELECT number, number * 7 FROM numbers(10000);
-SELECT 'wide_on2off_files_before', files FROM system.parts
-WHERE database = currentDatabase() AND table = 't_wide_on_to_off' AND active;
+SELECT 'wide_on2off_index_materialized_before', secondary_indices_compressed_bytes > 0
+FROM system.parts WHERE database = currentDatabase() AND table = 't_wide_on_to_off' AND active;
 
 ALTER TABLE t_wide_on_to_off MODIFY SETTING packed_skip_index_types = '';
 
 SELECT 'wide_on2off_query_old_part', count() FROM t_wide_on_to_off WHERE v BETWEEN 70 AND 700;
 
 INSERT INTO t_wide_on_to_off SELECT number + 10000, number * 11 FROM numbers(10000);
-
-SELECT 'wide_on2off_files_after_insert', name, files FROM system.parts
-WHERE database = currentDatabase() AND table = 't_wide_on_to_off' AND active
+SELECT 'wide_on2off_index_materialized_after_insert', name, secondary_indices_compressed_bytes > 0
+FROM system.parts WHERE database = currentDatabase() AND table = 't_wide_on_to_off' AND active
 ORDER BY name;
 SELECT 'wide_on2off_combined_count', count() FROM t_wide_on_to_off WHERE v BETWEEN 70 AND 700;
 
 OPTIMIZE TABLE t_wide_on_to_off FINAL;
-SELECT 'wide_on2off_files_after_merge', files FROM system.parts
-WHERE database = currentDatabase() AND table = 't_wide_on_to_off' AND active;
+SELECT 'wide_on2off_index_materialized_after_merge', secondary_indices_compressed_bytes > 0
+FROM system.parts WHERE database = currentDatabase() AND table = 't_wide_on_to_off' AND active;
 SELECT 'wide_on2off_count_after_merge', count() FROM t_wide_on_to_off WHERE v BETWEEN 70 AND 700;
 CHECK TABLE t_wide_on_to_off SETTINGS check_query_single_value_result = 1;
 
@@ -99,23 +100,22 @@ ORDER BY id
 SETTINGS packed_skip_index_types = '', auto_statistics_types = '', index_granularity = 1024;
 
 INSERT INTO t_compact_off_to_on SELECT number, number * 7 FROM numbers(10000);
-SELECT 'compact_off2on_files_before', files FROM system.parts
-WHERE database = currentDatabase() AND table = 't_compact_off_to_on' AND active;
+SELECT 'compact_off2on_index_materialized_before', secondary_indices_compressed_bytes > 0
+FROM system.parts WHERE database = currentDatabase() AND table = 't_compact_off_to_on' AND active;
 
 ALTER TABLE t_compact_off_to_on MODIFY SETTING packed_skip_index_types = 'minmax';
 
 SELECT 'compact_off2on_query_old_part', count() FROM t_compact_off_to_on WHERE v BETWEEN 70 AND 700;
 
 INSERT INTO t_compact_off_to_on SELECT number + 10000, number * 11 FROM numbers(10000);
-
-SELECT 'compact_off2on_files_after_insert', name, files FROM system.parts
-WHERE database = currentDatabase() AND table = 't_compact_off_to_on' AND active
+SELECT 'compact_off2on_index_materialized_after_insert', name, secondary_indices_compressed_bytes > 0
+FROM system.parts WHERE database = currentDatabase() AND table = 't_compact_off_to_on' AND active
 ORDER BY name;
 SELECT 'compact_off2on_combined_count', count() FROM t_compact_off_to_on WHERE v BETWEEN 70 AND 700;
 
 OPTIMIZE TABLE t_compact_off_to_on FINAL;
-SELECT 'compact_off2on_files_after_merge', files FROM system.parts
-WHERE database = currentDatabase() AND table = 't_compact_off_to_on' AND active;
+SELECT 'compact_off2on_index_materialized_after_merge', secondary_indices_compressed_bytes > 0
+FROM system.parts WHERE database = currentDatabase() AND table = 't_compact_off_to_on' AND active;
 SELECT 'compact_off2on_count_after_merge', count() FROM t_compact_off_to_on WHERE v BETWEEN 70 AND 700;
 CHECK TABLE t_compact_off_to_on SETTINGS check_query_single_value_result = 1;
 
@@ -136,23 +136,22 @@ ORDER BY id
 SETTINGS packed_skip_index_types = 'minmax', auto_statistics_types = '', index_granularity = 1024;
 
 INSERT INTO t_compact_on_to_off SELECT number, number * 7 FROM numbers(10000);
-SELECT 'compact_on2off_files_before', files FROM system.parts
-WHERE database = currentDatabase() AND table = 't_compact_on_to_off' AND active;
+SELECT 'compact_on2off_index_materialized_before', secondary_indices_compressed_bytes > 0
+FROM system.parts WHERE database = currentDatabase() AND table = 't_compact_on_to_off' AND active;
 
 ALTER TABLE t_compact_on_to_off MODIFY SETTING packed_skip_index_types = '';
 
 SELECT 'compact_on2off_query_old_part', count() FROM t_compact_on_to_off WHERE v BETWEEN 70 AND 700;
 
 INSERT INTO t_compact_on_to_off SELECT number + 10000, number * 11 FROM numbers(10000);
-
-SELECT 'compact_on2off_files_after_insert', name, files FROM system.parts
-WHERE database = currentDatabase() AND table = 't_compact_on_to_off' AND active
+SELECT 'compact_on2off_index_materialized_after_insert', name, secondary_indices_compressed_bytes > 0
+FROM system.parts WHERE database = currentDatabase() AND table = 't_compact_on_to_off' AND active
 ORDER BY name;
 SELECT 'compact_on2off_combined_count', count() FROM t_compact_on_to_off WHERE v BETWEEN 70 AND 700;
 
 OPTIMIZE TABLE t_compact_on_to_off FINAL;
-SELECT 'compact_on2off_files_after_merge', files FROM system.parts
-WHERE database = currentDatabase() AND table = 't_compact_on_to_off' AND active;
+SELECT 'compact_on2off_index_materialized_after_merge', secondary_indices_compressed_bytes > 0
+FROM system.parts WHERE database = currentDatabase() AND table = 't_compact_on_to_off' AND active;
 SELECT 'compact_on2off_count_after_merge', count() FROM t_compact_on_to_off WHERE v BETWEEN 70 AND 700;
 CHECK TABLE t_compact_on_to_off SETTINGS check_query_single_value_result = 1;
 

@@ -1070,7 +1070,8 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
     IDataPartStorage & new_storage,
     const WriteSettings & write_settings,
     const ReadSettings & read_settings,
-    MergeTreeDataPartChecksums & checksums) const
+    MergeTreeDataPartChecksums & checksums,
+    bool sync) const
 {
     const auto * source_archive = getSkipIndicesPackedReader();
     if (!source_archive)
@@ -1114,6 +1115,12 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
     checksum.file_hash = hashing.getHash();
 
     out->finalize();
+    /// Match the rest of the mutated part's durability: with need_sync=true the caller fsyncs
+    /// other on-disk artifacts (checksums.txt, column streams), so the rewritten archive must
+    /// reach the device too. Otherwise a crash between finalize and checksum publication could
+    /// leave the new part referencing an archive whose contents weren't flushed.
+    if (sync)
+        out->sync();
 }
 
 }

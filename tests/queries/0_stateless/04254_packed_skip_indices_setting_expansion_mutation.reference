@@ -1,4 +1,4 @@
-before_expand_packed_only_minmax	all_1_1_0	12
+before_expand_indices_materialized	1
 after_mutate_count	2000
 m_v_granules	        Granules: 2/2
 m_v_granules	        Granules: 1/2

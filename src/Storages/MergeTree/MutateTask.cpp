@@ -924,14 +924,25 @@ static NameSet collectFilesToSkip(
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
     files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
 
-    auto skip_index = [&files_to_skip, &mrk_extension](const MergeTreeIndexPtr & index)
+    auto skip_index = [&files_to_skip, &mrk_extension, &source_part](const MergeTreeIndexPtr & index)
     {
-        auto index_substreams = index->getSubstreams();
-
-        for (const auto & index_substream : index_substreams)
+        /// The substream may live on disk under either its logical name (skp_idx_<name>) or a
+        /// hash of it when replace_long_file_name_to_hash kicks in for long / case-insensitive
+        /// names. Resolve the actual stored name against source checksums so the hardlink loop
+        /// really skips both shapes; otherwise the old per-file substream survives in the new
+        /// part without a matching checksum entry and CHECK TABLE fails.
+        for (const auto & index_substream : index->getSubstreams())
         {
-            files_to_skip.insert(index->getFileName() + index_substream.suffix + index_substream.extension);
-            files_to_skip.insert(index->getFileName() + index_substream.suffix + mrk_extension);
+            const String stream_name = index->getFileName() + index_substream.suffix;
+            const String logical_data = stream_name + index_substream.extension;
+            const String logical_mrk = stream_name + mrk_extension;
+            files_to_skip.insert(logical_data);
+            files_to_skip.insert(logical_mrk);
+
+            if (auto hashed_data = IMergeTreeDataPart::getStreamNameOrHash(stream_name, index_substream.extension, source_part->checksums))
+                files_to_skip.insert(*hashed_data + index_substream.extension);
+            if (auto hashed_mrk = IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, source_part->checksums))
+                files_to_skip.insert(*hashed_mrk + mrk_extension);
         }
     };
 
@@ -2332,7 +2343,8 @@ private:
                     ctx->new_data_part->getDataPartStorage(),
                     ctx->context->getWriteSettings(),
                     ctx->context->getReadSettings(),
-                    ctx->new_data_part->checksums);
+                    ctx->new_data_part->checksums,
+                    ctx->need_sync);
             }
         }
 

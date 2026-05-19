@@ -86,7 +86,8 @@ public:
         IDataPartStorage & new_storage,
         const WriteSettings & write_settings,
         const ReadSettings & read_settings,
-        MergeTreeDataPartChecksums & checksums) const;
+        MergeTreeDataPartChecksums & checksums,
+        bool sync) const;
 
     ReplicatedFilesDescription getReplicatedFilesDescription(const NameSet & file_names) const override;
     ReplicatedFilesDescription getReplicatedFilesDescriptionForRemoteDisk(const NameSet & file_names) const override;
