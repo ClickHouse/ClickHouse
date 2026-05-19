@@ -58,7 +58,7 @@ public:
 
     static const VectorWithMemoryTracking<std::string> & getNameAndAliases()
     {
-        static const VectorWithMemoryTracking<std::string> aliases = {"groupConcat", "group_concat", "string_agg"};
+        static const VectorWithMemoryTracking<std::string> aliases = {"groupConcat", "group_concat"};
         return aliases;
     }
 

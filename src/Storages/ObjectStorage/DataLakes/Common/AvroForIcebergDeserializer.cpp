@@ -37,7 +37,7 @@ try
     , manifest_file_path(manifest_file_path_)
 {
     auto manifest_file_reader
-        = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer), MAX_AVRO_SCHEMA_DEPTH);
+        = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
 
     avro::NodePtr root_node = manifest_file_reader->dataSchema().root();
     auto data_type = AvroSchemaReader::avroNodeToDataType(root_node);
