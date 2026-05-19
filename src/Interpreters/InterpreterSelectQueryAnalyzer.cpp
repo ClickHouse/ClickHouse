@@ -204,17 +204,19 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
 }
 
 /// For `partial_aggregate_cache_query_hash`: only a single non-`GROUPING SETS` `AggregatingStep` is unambiguous (otherwise leave unset).
-void collectNonGroupingSetsAggregatingSteps(const QueryPlan::Node * node, std::vector<const AggregatingStep *> & out)
+void collectAggregatingSteps(const QueryPlan::Node * node, std::vector<const AggregatingStep *> & out, bool & has_grouping_sets_step)
 {
     if (!node)
         return;
     if (const auto * agg = typeid_cast<const AggregatingStep *>(node->step.get()))
     {
-        if (!agg->isGroupingSets())
+        if (agg->isGroupingSets())
+            has_grouping_sets_step = true;
+        else
             out.push_back(agg);
     }
     for (QueryPlan::Node * child : node->children)
-        collectNonGroupingSetsAggregatingSteps(child, out);
+        collectAggregatingSteps(child, out, has_grouping_sets_step);
 }
 
 std::optional<IASTHash> tryPartialAggregateCacheQueryHashFromAnalyzerPlan(const QueryPlan & query_plan, const ContextPtr & query_context)
@@ -224,8 +226,11 @@ std::optional<IASTHash> tryPartialAggregateCacheQueryHashFromAnalyzerPlan(const 
         return std::nullopt;
 
     std::vector<const AggregatingStep *> aggregating_steps;
-    collectNonGroupingSetsAggregatingSteps(root, aggregating_steps);
-    if (aggregating_steps.size() != 1)
+    bool has_grouping_sets_step = false;
+    collectAggregatingSteps(root, aggregating_steps, has_grouping_sets_step);
+
+    /// `GROUPING SETS` uses per-set hashes, while planner-stage probe accepts only a single hash.
+    if (has_grouping_sets_step || aggregating_steps.size() != 1)
         return std::nullopt;
 
     auto cache = Context::getGlobalContextInstance()->getPartialAggregateCache();

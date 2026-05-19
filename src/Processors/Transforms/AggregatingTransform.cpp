@@ -964,7 +964,10 @@ void AggregatingTransform::consume(Chunk chunk)
         if (const auto plan_hit = chunk.getChunkInfos().get<PartialAggregatePlanHitInfo>())
         {
             /// Must match the hash `ReadFromMergeTree` used for this plan-hit pipe.
-            chassert(plan_hit->cache_key.query_hash == *params->partial_aggregate_query_hash);
+            if (plan_hit->cache_key.query_hash != *params->partial_aggregate_query_hash)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Mismatched partial aggregate cache query hash for plan-hit chunk");
 
             if (partial_aggregate_cache_parts_served.contains(plan_hit->cache_key))
                 return;

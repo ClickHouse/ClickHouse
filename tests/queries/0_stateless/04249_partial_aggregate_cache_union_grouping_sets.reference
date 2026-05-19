@@ -1,0 +1,7 @@
+--- Warm non-grouping-sets query
+2	A	3
+2	B	30
+--- UNION DISTINCT with GROUPING SETS: must succeed and return deterministic result
+2	A	3
+2	B	30
+4		33
