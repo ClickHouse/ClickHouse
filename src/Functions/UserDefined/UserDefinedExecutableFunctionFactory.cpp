@@ -245,7 +245,7 @@ public:
         }
         catch (...)
         {
-            std::vector<String> quoted_arguments_with_parameters;
+            VectorWithMemoryTracking<String> quoted_arguments_with_parameters;
             for (const auto & argument : command_arguments_with_parameters)
                 quoted_arguments_with_parameters.push_back("\"" + argument + "\"");
             String quoted_arguments_string = boost::algorithm::join(quoted_arguments_with_parameters, ", ");

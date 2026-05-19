@@ -35,9 +35,9 @@ namespace
       * Example: test_script.py {parameter_name: UInt64}
       * After run function: test_script.py {parameter_name}
       */
-    std::vector<UserDefinedExecutableFunctionParameter> extractParametersFromCommand(String & command_value)
+    VectorWithMemoryTracking<UserDefinedExecutableFunctionParameter> extractParametersFromCommand(String & command_value)
     {
-        std::vector<UserDefinedExecutableFunctionParameter> parameters;
+        VectorWithMemoryTracking<UserDefinedExecutableFunctionParameter> parameters;
         std::unordered_map<std::string_view, DataTypePtr> parameter_name_to_type;
 
         size_t previous_parameter_match_position = 0;
@@ -154,7 +154,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
     bool execute_direct = config.getBool(key_in_config + ".execute_direct", true);
 
     String command_value = config.getString(key_in_config + ".command");
-    std::vector<UserDefinedExecutableFunctionParameter> parameters = extractParametersFromCommand(command_value);
+    VectorWithMemoryTracking<UserDefinedExecutableFunctionParameter> parameters = extractParametersFromCommand(command_value);
 
     if (!execute_direct && !parameters.empty())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Parameters are not supported if executable user defined function is not direct");
@@ -203,7 +203,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
     if (config.has(key_in_config + ".lifetime"))
         lifetime = ExternalLoadableLifetime(config, key_in_config + ".lifetime");
 
-    std::vector<UserDefinedExecutableFunctionArgument> arguments;
+    VectorWithMemoryTracking<UserDefinedExecutableFunctionArgument> arguments;
 
     Poco::Util::AbstractConfiguration::Keys config_elems;
     config.keys(key_in_config, config_elems);

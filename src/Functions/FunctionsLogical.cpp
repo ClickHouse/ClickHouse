@@ -158,7 +158,7 @@ namespace
 using namespace FunctionsLogicalDetail;
 
 using UInt8Container = ColumnUInt8::Container;
-using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
+using UInt8ColumnPtrs = VectorWithMemoryTracking<const ColumnUInt8 *>;
 
 
 MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data, bool make_nullable)

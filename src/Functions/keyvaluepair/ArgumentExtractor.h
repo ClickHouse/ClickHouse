@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <list>
 #include <optional>
@@ -20,7 +21,7 @@ class ArgumentExtractor
 {
 public:
     using CharArgument = std::optional<char>;
-    using VectorArgument = std::vector<char>;
+    using VectorArgument = VectorWithMemoryTracking<char>;
     using ColumnsWithTypeAndNameList = std::list<ColumnWithTypeAndName>;
 
     struct ParsedArguments

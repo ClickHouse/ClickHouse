@@ -1,4 +1,5 @@
 #include <Functions/FunctionsConversion.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -79,8 +80,8 @@ ColumnPtr ConvertImplFromDynamicToColumn::execute(
 
     /// First, cast usual variants to result type.
     const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
-    std::vector<ColumnPtr> cast_variant_columns(variant_types.size());
-    std::vector<bool> cast_variant_columns_is_const(variant_types.size(), false);
+    VectorWithMemoryTracking<ColumnPtr> cast_variant_columns(variant_types.size());
+    VectorWithMemoryTracking<bool> cast_variant_columns_is_const(variant_types.size(), false);
     for (size_t i = 0; i != variant_types.size(); ++i)
     {
         /// Skip shared variant, it will be processed later.
@@ -98,7 +99,7 @@ ColumnPtr ConvertImplFromDynamicToColumn::execute(
     }
 
     /// Second, collect all variants stored in shared variant and cast them to result type.
-    std::vector<MutableColumnPtr> variant_columns_from_shared_variant;
+    VectorWithMemoryTracking<MutableColumnPtr> variant_columns_from_shared_variant;
     DataTypes variant_types_from_shared_variant;
     /// We will need to know what variant to use when we see discriminator of a shared variant.
     /// To do it, we remember what variant was extracted from each row and what was it's offset.
@@ -145,8 +146,8 @@ ColumnPtr ConvertImplFromDynamicToColumn::execute(
     }
 
     /// Cast all extracted variants into result type.
-    std::vector<ColumnPtr> cast_shared_variant_columns(variant_types_from_shared_variant.size());
-    std::vector<bool> cast_shared_variant_columns_is_const(variant_types_from_shared_variant.size(), false);
+    VectorWithMemoryTracking<ColumnPtr> cast_shared_variant_columns(variant_types_from_shared_variant.size());
+    VectorWithMemoryTracking<bool> cast_shared_variant_columns_is_const(variant_types_from_shared_variant.size(), false);
     for (size_t i = 0; i != variant_types_from_shared_variant.size(); ++i)
     {
         ColumnsWithTypeAndName new_args = arguments;
@@ -734,8 +735,8 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
     const auto & from_element_types = from_type->getElements();
     const auto & to_element_types = to_type->getElements();
 
-    std::vector<WrapperType> element_wrappers;
-    std::vector<std::optional<size_t>> to_reverse_index;
+    ElementWrappers element_wrappers;
+    VectorWithMemoryTracking<std::optional<size_t>> to_reverse_index;
 
     /// For named tuples allow conversions for tuples with
     /// different sets of elements. If element exists in @to_type
@@ -1012,7 +1013,7 @@ ColumnPtr FunctionCast::convertArrayToQBit(
         }
 
         /// Insert default values for each FixedString column and keep pointers to them
-        std::vector<char *> row_ptrs(size);
+        VectorWithMemoryTracking<char *> row_ptrs(size);
         for (size_t j = 0; j < size; ++j)
         {
             auto & fixed_string_column = assert_cast<ColumnFixedString &>(*tuple_columns[j]);
@@ -1304,7 +1305,7 @@ FunctionCast::WrapperType FunctionCast::createVariantToVariantWrapper(const Data
     }
 
     /// Collect variant types and their global discriminators that should be added to the old Variant to get the new Variant.
-    std::vector<std::pair<DataTypePtr, ColumnVariant::Discriminator>> variant_types_and_discriminators_to_add;
+    VectorWithMemoryTracking<std::pair<DataTypePtr, ColumnVariant::Discriminator>> variant_types_and_discriminators_to_add;
     variant_types_and_discriminators_to_add.reserve(new_variants.size() - old_variants.size());
     for (size_t i = 0; i != new_variants.size(); ++i)
     {
@@ -1362,7 +1363,7 @@ FunctionCast::WrapperType FunctionCast::createWrapperIfCanConvert(const DataType
 FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataTypeVariant & from_variant, const DataTypePtr & to_type) const
 {
     const auto & variant_types = from_variant.getVariants();
-    std::vector<WrapperType> variant_wrappers;
+    ElementWrappers variant_wrappers;
     variant_wrappers.reserve(variant_types.size());
 
     /// Create conversion wrapper for each variant.
@@ -1387,7 +1388,7 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
         const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
 
         /// First, cast each variant to the result type.
-        std::vector<ColumnPtr> cast_variant_columns;
+        VectorWithMemoryTracking<ColumnPtr> cast_variant_columns;
         cast_variant_columns.reserve(variant_types.size());
         for (size_t i = 0; i != variant_types.size(); ++i)
         {
@@ -1754,7 +1755,7 @@ FunctionCast::WrapperType FunctionCast::createDynamicToDynamicWrapper(const Data
         const auto & statistics = dynamic_column.getStatistics();
         const auto & variant_column = dynamic_column.getVariantColumn();
         auto shared_variant_discr = dynamic_column.getSharedVariantDiscriminator();
-        std::vector<std::tuple<size_t, String, DataTypePtr>> variants_with_sizes;
+        VectorWithMemoryTracking<std::tuple<size_t, String, DataTypePtr>> variants_with_sizes;
         variants_with_sizes.reserve(variant_info.variant_names.size());
         for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
         {
@@ -1795,7 +1796,7 @@ FunctionCast::WrapperType FunctionCast::createDynamicToDynamicWrapper(const Data
         auto & result_variant_column = result_dynamic_column->getVariantColumn();
         auto result_shared_variant_discr = result_dynamic_column->getSharedVariantDiscriminator();
         /// Create mapping from old discriminators to the new ones.
-        std::vector<ColumnVariant::Discriminator> old_to_new_discriminators;
+        VectorWithMemoryTracking<ColumnVariant::Discriminator> old_to_new_discriminators;
         old_to_new_discriminators.resize(variant_info.variant_name_to_discriminator.size(), result_shared_variant_discr);
         for (const auto & [name, discr] : result_variant_info.variant_name_to_discriminator)
         {
@@ -1931,7 +1932,7 @@ void FunctionCast::checkEnumToEnumConversion(const EnumTypeFrom * from_type, con
 
     using ValueType = std::common_type_t<typename EnumTypeFrom::FieldType, typename EnumTypeTo::FieldType>;
     using NameValuePair = std::pair<std::string, ValueType>;
-    using EnumValues = std::vector<NameValuePair>;
+    using EnumValues = VectorWithMemoryTracking<NameValuePair>;
 
     EnumValues name_intersection;
     std::set_intersection(std::begin(from_values), std::end(from_values),

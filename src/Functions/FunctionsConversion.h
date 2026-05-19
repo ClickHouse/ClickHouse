@@ -72,6 +72,7 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/IPv6ToBinary.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
@@ -4555,7 +4556,7 @@ private:
 
     WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const;
 
-    using ElementWrappers = std::vector<WrapperType>;
+    using ElementWrappers = VectorWithMemoryTracking<WrapperType>;
 
     ElementWrappers getElementWrappers(const DataTypes & from_element_types, const DataTypes & to_element_types) const;
 

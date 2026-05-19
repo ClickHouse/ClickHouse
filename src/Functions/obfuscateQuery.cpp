@@ -22,6 +22,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Poco/String.h>
 #include <boost/algorithm/string/split.hpp>
 #include <string_view>
@@ -66,7 +67,7 @@ const KnownIdentifierFunc & getKnownIdentifierFunc()
 
         for (const auto * it = auto_time_zones; *it; ++it)
         {
-            std::vector<std::string> split;
+            VectorWithMemoryTracking<std::string> split;
             boost::split(split, std::string(*it), [](char c) { return c == '/'; });
             for (const auto & word : split)
                 if (!word.empty())
