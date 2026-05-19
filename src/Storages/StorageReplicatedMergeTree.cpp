@@ -6290,9 +6290,12 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalBytesUncompressed(const S
 
 void StorageReplicatedMergeTree::assertNotReadonly() const
 {
+    /// Check static storage first: an `ATTACH` on a static disk (e.g. `s3_plain`) makes both
+    /// `is_readonly` and `isStaticStorage` true. Reporting the permanent state lets the caller
+    /// distinguish from a transient ZooKeeper disconnect, which is retriable in `DDLWorker`.
+    assertNotStaticStorage();
     if (is_readonly)
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode (replica path: {})", replica_path);
-    assertNotStaticStorage();
 }
 
 void StorageReplicatedMergeTree::assertNotStaticStorage() const
