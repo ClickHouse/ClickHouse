@@ -22,6 +22,11 @@ public:
     static constexpr size_t DEFAULT_MAX_DYNAMIC_PATHS = 1024;
     static constexpr const char * SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION = "__special_subcolumn_name_for_distinct_paths_calculation";
 
+    /// Prefix character for sub-object subcolumns, e.g. "^`some`.path.path".
+    static constexpr char SUB_OBJECT_SUBCOLUMN_PREFIX = '^';
+    /// Prefix character for combined literal+sub-object subcolumns, e.g. "@`some`.path.path".
+    static constexpr char COMBINED_SUBCOLUMN_PREFIX = '@';
+
     explicit DataTypeObject(
         const SchemaFormat & schema_format_,
         std::unordered_map<String, DataTypePtr> typed_paths_ = {},
@@ -39,6 +44,8 @@ public:
     MutableColumnPtr createColumn() const override;
 
     Field getDefault() const override { return Object(); }
+
+    void insertDefaultInto(IColumn & column) const override;
 
     bool isParametric() const override { return true; }
     bool canBeInsideNullable() const override { return true; }

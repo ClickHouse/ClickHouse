@@ -11,7 +11,6 @@
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Algorithms.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/arithmeticOverflow.h>
 
@@ -109,7 +108,37 @@ public:
                 }
             }
             else
-                sliceFromRightDynamicLength(source, StringSink(*col_res, input_rows_count), *column_length);
+            {
+                /// Per-row handling so that negative lengths use the same code path as the
+                /// constant-length case: `getSliceFromLeft(|length|)` (unbounded). The
+                /// previous `sliceFromRightDynamicLength` reformulated `right(s, -k)` as
+                /// `getSliceFromRight(elemSize - k, elemSize - k)`, which on a UTF-8 source
+                /// trips an internal inconsistency for invalid UTF-8 input: `countCodePoints`
+                /// (used for `elemSize`) skips lone continuation bytes while
+                /// `skipCodePointsForward/Backward` treats them as 1-byte code points, so
+                /// the result silently lost trailing bytes.
+                StringSink sink(*col_res, input_rows_count);
+                while (!source.isEnd())
+                {
+                    const size_t row = source.rowNum();
+                    const Int64 length = column_length->getInt(row);
+                    typename std::decay_t<decltype(source)>::Slice slice;
+                    if (length > 0)
+                        slice = source.getSliceFromRight(static_cast<UInt64>(length), static_cast<UInt64>(length));
+                    else if (length < 0)
+                    {
+                        Int64 abs_length;
+                        if (common::subOverflow(Int64(0), length, abs_length))
+                            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                "Argument of function {} is out of bound: {}", getName(), length);
+                        slice = source.getSliceFromLeft(static_cast<size_t>(abs_length));
+                    }
+                    if (length != 0)
+                        writeSlice(slice, sink);
+                    sink.next();
+                    source.next();
+                }
+            }
         }
 
         return col_res;
