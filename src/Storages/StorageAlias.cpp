@@ -22,14 +22,12 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsBool allow_experimental_alias_table_engine;
 }
 
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
-    extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -354,11 +352,6 @@ void registerStorageAlias(StorageFactory & factory)
         //  CREATE TABLE t2 ENGINE = Alias('db', 't')
 
         auto local_context = args.getLocalContext();
-
-        // Compatible with existing Alias tables
-        if (args.mode == LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef()[Setting::allow_experimental_alias_table_engine])
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED, "Experimental Alias table engine is not enabled (turn on setting 'allow_experimental_alias_table_engine')");
 
         String target_database;
         String target_table;
