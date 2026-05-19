@@ -1914,15 +1914,17 @@ void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPt
     /// Materialize the resolved URL into engine args so that DETACH/ATTACH and server restart
     /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
     /// `uri` is the URL after `url_base` resolution (computed by `getConfiguration`).
+    /// `skip_userinfo=true` avoids persisting credentials that may originate from `url_base`
+    /// into the CREATE TABLE AST.
+    overrideURLInEngineArgs(args, uri, context, /*skip_userinfo=*/ true);
+}
+
+void StorageURL::overrideURLInEngineArgs(ASTs & args, const String & resolved_url, const ContextPtr & context, bool skip_userinfo)
+{
     if (args.empty())
         return;
 
-    /// Skip materialization when the resolved URL contains userinfo (`user:pass@host`).
-    /// Credentials may originate from `url_base` (e.g. `SET url_base = 'http://user:pass@base/dir/'`)
-    /// rather than from the user-written engine arguments, and persisting them into the
-    /// CREATE TABLE AST would expose secrets via `SHOW CREATE TABLE`. Persistence in this case
-    /// relies on `url_base` being set with the same value at attach/restart time.
-    if (urlHasUserInfo(uri))
+    if (skip_userinfo && urlHasUserInfo(resolved_url))
         return;
 
     /// Positional form: `URL('url', ...)` — replace the first literal argument.
@@ -1930,26 +1932,23 @@ void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPt
         existing_literal && existing_literal->value.getType() == Field::Types::String)
     {
         const auto & current_url = existing_literal->value.safeGet<String>();
-        if (current_url != uri)
-            args[0] = make_intrusive<ASTLiteral>(uri);
+        if (current_url != resolved_url)
+            args[0] = make_intrusive<ASTLiteral>(resolved_url);
         return;
     }
 
     /// Named-collection or key-value form: `URL(nc)`, `URL(nc, url='...')`, or `URL(url='...', ...)`.
-    /// Only materialize when `url_base` actually changed the URL — otherwise we would copy
-    /// fields from the named collection (e.g. credentials in `user:pass@host`) into the
-    /// stored CREATE TABLE query, which is visible via `SHOW CREATE TABLE`.
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context, /*throw_unknown_collection=*/false))
     {
         Configuration unresolved;
         StorageURL::processNamedCollectionResult(unresolved, *named_collection);
-        if (unresolved.url == uri)
+        if (unresolved.url == resolved_url)
             return;
     }
 
     /// If a `url='...'` key-value override is already present, update its literal in place.
     /// Otherwise, append a `url='<resolved>'` override so that named-collection resolution
-    /// picks up the resolved URL at restart time.
+    /// picks up the resolved URL.
     for (auto & arg : args)
     {
         auto * func = arg->as<ASTFunction>();
@@ -1961,11 +1960,11 @@ void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPt
         const auto * key_ast = func_args->children[0]->as<ASTIdentifier>();
         if (!key_ast || key_ast->name() != "url")
             continue;
-        func_args->children[1] = make_intrusive<ASTLiteral>(uri);
+        func_args->children[1] = make_intrusive<ASTLiteral>(resolved_url);
         return;
     }
 
-    ASTs key_value_args = {make_intrusive<ASTIdentifier>("url"), make_intrusive<ASTLiteral>(uri)};
+    ASTs key_value_args = {make_intrusive<ASTIdentifier>("url"), make_intrusive<ASTLiteral>(resolved_url)};
     args.push_back(makeASTOperator("equals", std::move(key_value_args)));
 }
 
@@ -2061,6 +2060,14 @@ void registerStorageURL(StorageFactory & factory)
 
             if (args.mode <= LoadingStrictnessLevel::CREATE)
                 checkExperimentalURLWildcardFromIndexPages(context);
+
+            /// `getConfiguration` resolves `config.url` through `url_base`, but `engine_args[0]`
+            /// still holds the raw user-provided URL. Without this override, e.g.
+            /// `SET url_base = 'http://host'; ENGINE = URL('/data/**/part*.tsv', 'TSV')`
+            /// would build the object storage from an unresolved relative URL.
+            /// `skip_userinfo=false`: the object storage stays in memory and credentials are
+            /// not persisted to the AST.
+            StorageURL::overrideURLInEngineArgs(engine_args, config.url, context, /*skip_userinfo=*/ false);
 
             auto configuration = std::make_shared<StorageWebConfiguration>();
             StorageObjectStorageConfiguration::initialize(*configuration, engine_args, context, /* with_table_structure */ false);
