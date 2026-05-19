@@ -1000,8 +1000,14 @@ def test_cancel_during_commit_on_select(started_cluster):
     `Cancelled`, and throws `QUERY_WAS_CANCELLED`. Same code path as a real
     `KILL QUERY` reaching `isCancelled() == true` mid-file, without the
     timing fragility of having to interrupt a running query.
+
+    Uses an instance without Keeper fault injection: with fault injection
+    enabled, a KEEPER_EXCEPTION thrown from `commit()`'s `tryMulti` can
+    supersede the original `QUERY_WAS_CANCELLED` (the catch in `generate()`
+    calls `commit(false, ...)` whose own throw replaces the in-flight
+    exception), confounding the cancellation signal we are asserting.
     """
-    node = started_cluster.instances["instance"]
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
     table_name = f"test_cancel_commit_on_select_{generate_random_string()}"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
@@ -1087,8 +1093,13 @@ def test_shutdown_dedup_off_no_duplicates(started_cluster):
     - With the gate: file finishes, marked Processed, no retry, exact row count.
     - Without the gate (regression): file marked Cancelled, retried on restart,
       partial-write rows duplicated, destination > expected row count.
+
+    Uses an instance without Keeper fault injection: a fault-induced commit
+    failure could trigger an unrelated retry of an already-inserted file under
+    `deduplication_v2 = 0`, inflating the row count and confounding the strict
+    `actual_rows == expected_rows` assertion that is the regression signal.
     """
-    node = started_cluster.instances["instance"]
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
     table_name = f"test_shutdown_dedup_off_{generate_random_string()}"
     dst_table_name = f"a_{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
