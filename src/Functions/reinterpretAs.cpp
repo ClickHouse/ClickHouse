@@ -457,7 +457,7 @@ public:
         else
             data_type = std::make_shared<ToDataType>();
 
-        auto type_name_column = DataTypeString().createColumnConst(1, data_type->getName());
+        ColumnPtr type_name_column = DataTypeString().createColumnConst(1, data_type->getName());
         ColumnWithTypeAndName type_column(type_name_column, std::make_shared<DataTypeString>(), "");
 
         ColumnsWithTypeAndName arguments_with_type

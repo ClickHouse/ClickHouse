@@ -1635,7 +1635,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (!can_transform_constant)
         return false;
 
-    auto const_column = out_type->createColumnConst(1, out_value);
+    ColumnPtr const_column = out_type->createColumnConst(1, out_value);
 
     ColumnPtr transformed_const_column;
     DataTypePtr transformed_const_type;
@@ -2069,7 +2069,7 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
 
     out_is_injective = isDeterministicTransformInjective(dag.actions->getActionsDAG(), expr_name, dag.output_name);
 
-    auto const_column = out_type->createColumnConst(1, out_value);
+    ColumnPtr const_column = out_type->createColumnConst(1, out_value);
 
     ColumnPtr transformed_const_column;
     DataTypePtr transformed_const_type;

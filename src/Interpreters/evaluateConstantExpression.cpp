@@ -630,7 +630,7 @@ namespace
         if (node->result_type->isNullable() && set->hasNull())
         {
             auto col_null = node->result_type->createColumnConst(1, Field());
-            res.push_back({ConjunctionMap{{node, {col_null, node->result_type, node->result_name}}}});
+            res.push_back({ConjunctionMap{{node, {std::move(col_null), node->result_type, node->result_name}}}});
         }
 
         size_t num_rows = column->size();

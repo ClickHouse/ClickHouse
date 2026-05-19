@@ -5,8 +5,8 @@
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -961,7 +961,7 @@ private:
             return DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
         }
 
-        auto column_converted = type_to_compare->createColumnConst(input_rows_count, converted);
+        ColumnPtr column_converted = type_to_compare->createColumnConst(input_rows_count, converted);
 
         ColumnsWithTypeAndName tmp_columns{
             {left_const ? column_converted : col_left_untyped->getPtr(), type_to_compare, ""},

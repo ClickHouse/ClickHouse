@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Common/ProfileEvents.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>

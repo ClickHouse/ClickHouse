@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>

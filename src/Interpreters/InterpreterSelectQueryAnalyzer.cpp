@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>

@@ -10,6 +10,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/RemoteHostFilter.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/Field.h>

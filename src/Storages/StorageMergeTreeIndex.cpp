@@ -1,5 +1,6 @@
 
 #include <Storages/StorageMergeTreeIndex.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
