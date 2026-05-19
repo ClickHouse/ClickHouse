@@ -12,6 +12,7 @@
 #include <Server/WebTerminalRequestHandler.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <boost/algorithm/string/predicate.hpp>
 #if CLICKHOUSE_CLOUD
 #include <Server/CloudReadinessHandler.h>
 #endif
@@ -517,6 +518,25 @@ void addDefaultHandlersFactory(
             /// the closest matching handler name with the closest matching database/table name.
             /// When all path features are off, simple paths fall through to `NotFoundHandler`
             /// to preserve the original "Maybe you meant /dashboard?" hint behaviour.
+            ///
+            /// Additionally, skip the loosening when the request carries an Authorization
+            /// header with a scheme ClickHouse does not implement (e.g. `AWS4-HMAC-SHA256`,
+            /// which `clickhouse-local`'s S3 client sends to probe paths like `/nonexistent`):
+            /// the dynamic handler would otherwise reject the request with
+            /// `AUTHENTICATION_FAILED` (HTTP 403) before it has a chance to look up the path
+            /// against the catalog, whereas the `NotFoundHandler` fallback returns a plain
+            /// 404 the S3 client is already prepared to handle as non-retriable. Supported
+            /// schemes (Basic, Negotiate) still get the dynamic-handler treatment.
+            if (request.has("Authorization"))
+            {
+                const auto & auth_header = request.get("Authorization");
+                std::string_view scheme = auth_header;
+                auto sep = scheme.find(' ');
+                if (sep != std::string_view::npos)
+                    scheme = scheme.substr(0, sep);
+                if (!boost::iequals(scheme, "Basic") && !boost::iequals(scheme, "Negotiate"))
+                    return false;
+            }
             const auto & default_settings = server.context()->getSettingsRef();
             return default_settings[Setting::http_allow_database_as_path]
                 || default_settings[Setting::http_allow_table_as_file]
