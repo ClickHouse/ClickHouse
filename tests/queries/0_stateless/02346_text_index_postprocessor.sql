@@ -295,31 +295,7 @@ SELECT count() FROM tab WHERE has(val, 'xyz');   -- 0
 
 DROP TABLE tab;
 
-SELECT '12. Array tokenizer + preprocessor: has() / hasAll() / hasAny() apply the preprocessor.';
--- Index build applies the preprocessor unconditionally (stores 'foo', 'bar', 'baz').
--- has/hasAll/hasAny apply the preprocessor to the needle for the granule lookup, so
--- 'Foo' -> 'foo' finds the right granule; row-level still does literal comparison.
-
-CREATE TABLE tab
-(
-    id UInt64,
-    val Array(String),
-    INDEX idx(val) TYPE text(tokenizer = 'array', preprocessor = lower(val))
-)
-ENGINE = MergeTree ORDER BY id;
-
-INSERT INTO tab VALUES (1, ['Foo']), (2, ['BAR']), (3, ['baz']);
-
-SELECT count() FROM tab WHERE has(val, 'Foo');         -- 1 (preprocessed needle 'foo' finds granule; literal 'Foo' matches row)
-SELECT count() FROM tab WHERE has(val, 'foo');         -- 0 (granule kept, but literal 'foo' ≠ 'Foo')
-SELECT count() FROM tab WHERE hasAll(val, ['BAR']);    -- 1
-SELECT count() FROM tab WHERE hasAll(val, ['bar']);    -- 0
-SELECT count() FROM tab WHERE hasAny(val, ['baz']);    -- 1
-SELECT count() FROM tab WHERE hasAny(val, ['BAZ']);    -- 0
-
-DROP TABLE tab;
-
-SELECT '13. String tokenizer + non-commutative postprocessor: row-scan matches index.';
+SELECT '12. String tokenizer + non-commutative postprocessor: row-scan matches index.';
 -- The postprocessor strips the suffix 'ing' from each token (token-level operation).
 -- Applying the postprocessor to the whole haystack string ('running walking') gives
 -- 'running walking' (no match at end), not ['runn', 'walk']. The rewrite to
@@ -349,7 +325,7 @@ SELECT count() FROM tab WHERE hasAllTokens(val, 'running cat');      -- 0
 
 DROP TABLE tab;
 
-SELECT '14. Partially materialized index.';
+SELECT '13. Partially materialized index.';
 
 -- The index is added after the initial insert, so old parts have no index.
 -- The postprocessor is applied to the needle at the query plan level in both cases:
@@ -378,7 +354,7 @@ SELECT count() FROM tab WHERE hasToken(val, 'xyz');
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
-SELECT '15. Partially materialized index + postprocessor: haystack is not postprocessed on row-scan.';
+SELECT '14. Partially materialized index + postprocessor: haystack is not postprocessed on row-scan.';
 
 -- Old parts use row-level scan. The postprocessor is applied to the needle only,
 -- never to the haystack. When old-part data is uppercase and the postprocessor lowercases
@@ -404,7 +380,7 @@ SELECT count() FROM tab WHERE hasToken(val, 'xyz');  -- 0
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
-SELECT '16. Partially materialized index + non-trivial postprocessor: postprocessed needle vs. raw haystack token.';
+SELECT '15. Partially materialized index + non-trivial postprocessor: postprocessed needle vs. raw haystack token.';
 
 -- When the postprocessor significantly transforms tokens (here: strips the suffix "ing"),
 -- the postprocessed needle no longer matches the raw token in an unindexed part.
@@ -431,7 +407,7 @@ SELECT count() FROM tab WHERE hasToken(val, 'xyz');      -- 0
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
-SELECT '17. Legacy predicates (hasPhrase / startsWith / endsWith) work correctly with a postprocessor.';
+SELECT '16. Legacy predicates (hasPhrase / startsWith / endsWith) work correctly with a postprocessor.';
 
 CREATE TABLE tab
 (
@@ -450,7 +426,7 @@ SELECT count() FROM tab WHERE endsWith(val, 'walking');           -- 1
 
 DROP TABLE tab;
 
-SELECT '18. startsWith / endsWith use hint with postprocessor when normalized tokens survive.';
+SELECT '17. startsWith / endsWith use hint with postprocessor when normalized tokens survive.';
 
 CREATE TABLE tab
 (
@@ -468,7 +444,7 @@ SELECT count() FROM tab WHERE endsWith(val, 'cat dog');            -- 1
 
 DROP TABLE tab;
 
-SELECT '19. startsWith stays correct when the postprocessor maps all hint tokens to empty.';
+SELECT '18. startsWith stays correct when the postprocessor maps all hint tokens to empty.';
 
 CREATE TABLE tab
 (
@@ -486,7 +462,7 @@ SELECT count() FROM tab WHERE startsWith(val, 'the quick');  -- 1
 
 DROP TABLE tab;
 
-SELECT '20. startsWith / endsWith stay correct across mixed indexed and non-indexed parts.';
+SELECT '19. startsWith / endsWith stay correct across mixed indexed and non-indexed parts.';
 
 CREATE TABLE tab
 (
@@ -514,7 +490,7 @@ SELECT count() FROM tab WHERE endsWith(val, 'running walking');    -- 2
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
-SELECT '21. val IN (...) routes set elements through the postprocessor.';
+SELECT '20. val IN (...) routes set elements through the postprocessor.';
 -- The bug: tryPrepareSetForTextSearch built set tokens with preprocessor + tokenizer
 -- only, ignoring the postprocessor. Index stored 'foo' (postprocessed); a query
 -- val IN ('FOO') would search for token 'FOO', miss, prune the granule, and drop
@@ -570,7 +546,7 @@ SELECT count() FROM tab WHERE val IN ('the', 'cat');    -- 2
 
 DROP TABLE tab;
 
-SELECT '22. Array tokenizer + postprocessor: rewrite path matches index for mixed parts.';
+SELECT '21. Array tokenizer + postprocessor: rewrite path matches index for mixed parts.';
 
 -- Index lookup (materialized) and rewrite-on-row-scan (non-materialized) must both
 -- compare needles to raw elements when the tokenizer is 'array'.
@@ -593,7 +569,7 @@ SELECT count() FROM tab WHERE hasAllTokens(val, ['foo']);  -- 0
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
-SELECT '23. Map column + postprocessor: mapContainsKey / mapContainsKeyLike normalize the needle.';
+SELECT '22. Map column + postprocessor: mapContainsKey / mapContainsKeyLike normalize the needle.';
 
 CREATE TABLE tab
 (
@@ -612,7 +588,7 @@ SELECT count() FROM tab WHERE mapContainsKeyLike(val, '%FOO%');   -- 1
 
 DROP TABLE tab;
 
-SELECT '24. Map column + postprocessor: mapContainsValue / mapContainsValueLike normalize the needle.';
+SELECT '23. Map column + postprocessor: mapContainsValue / mapContainsValueLike normalize the needle.';
 
 CREATE TABLE tab
 (
@@ -629,7 +605,7 @@ SELECT count() FROM tab WHERE mapContainsValueLike(val, '%FOO%');   -- 1
 
 DROP TABLE tab;
 
-SELECT '25. Map column + array tokenizer + postprocessor: mapContains* bypass postprocessor (raw key/value match).';
+SELECT '24. Map column + array tokenizer + postprocessor: mapContains* bypass postprocessor (raw key/value match).';
 -- Mirrors test 11 (has/hasAll/hasAny + array tokenizer): the index build skips the postprocessor on
 -- the array tokenizer, so the lookup must skip it too. Otherwise the postprocessed needle would never
 -- match the raw stored key/value and matching granules would be falsely pruned.
@@ -666,7 +642,7 @@ SELECT count() FROM tab WHERE mapContainsValue(val, 'foo');   -- 0
 
 DROP TABLE tab;
 
-SELECT '26. String column + array tokenizer + postprocessor: equals / hasAllTokens bypass postprocessor (raw match).';
+SELECT '25. String column + array tokenizer + postprocessor: equals / hasAllTokens bypass postprocessor (raw match).';
 -- With tokenizer=array the index build skips the postprocessor (stores raw values).
 -- equals and hasAllTokens must also skip it on the lookup side; otherwise the postprocessed
 -- needle would never match the raw stored value and matching granules would be falsely pruned.
@@ -695,7 +671,7 @@ SELECT count() FROM tab WHERE val IN ('foo', 'bar');              -- 0
 
 DROP TABLE tab;
 
-SELECT '27. hasTokenOrNull: stop-word postprocessor is honored consistently across index and row-scan paths.';
+SELECT '26. hasTokenOrNull: stop-word postprocessor is honored consistently across index and row-scan paths.';
 -- Mirrors test 10 for hasTokenOrNull. hasTokenOrNull is treated like hasToken in the optimization
 -- (Exact direct-read mode + needApplyPostprocessor), so the rewrite applies on both materialized
 -- and non-materialized parts. Without the fix, granule pruning would diverge from row-level
@@ -728,7 +704,7 @@ SELECT countIf(hasTokenOrNull(val, 'missing') IS NULL) FROM tab;   -- 0
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
-SELECT '28. Negative tests.';
+SELECT '27. Negative tests.';
 
 SELECT '- The postprocessor expression must reference the index column';
 CREATE TABLE tab

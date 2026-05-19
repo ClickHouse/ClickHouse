@@ -195,3 +195,10 @@ Baz	3
 0
 0
 0
+18. Array tokenizer + preprocessor: has() / hasAll() / hasAny() apply the preprocessor.
+1
+0
+1
+0
+1
+0

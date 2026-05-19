@@ -77,21 +77,14 @@ started	1
 1
 0
 0
-12. Array tokenizer + preprocessor: has() / hasAll() / hasAny() apply the preprocessor.
-1
-0
-1
-0
-1
-0
-13. String tokenizer + non-commutative postprocessor: row-scan matches index.
+12. String tokenizer + non-commutative postprocessor: row-scan matches index.
 1
 1
 1
 0
 1
 0
-14. Partially materialized index.
+13. Partially materialized index.
 1
 1
 1
@@ -99,29 +92,29 @@ started	1
 1
 1
 0
-15. Partially materialized index + postprocessor: haystack is not postprocessed on row-scan.
+14. Partially materialized index + postprocessor: haystack is not postprocessed on row-scan.
 1
 1
 0
-16. Partially materialized index + non-trivial postprocessor: postprocessed needle vs. raw haystack token.
+15. Partially materialized index + non-trivial postprocessor: postprocessed needle vs. raw haystack token.
 1
 2
 0
-17. Legacy predicates (hasPhrase / startsWith / endsWith) work correctly with a postprocessor.
+16. Legacy predicates (hasPhrase / startsWith / endsWith) work correctly with a postprocessor.
 1
 1
 1
-18. startsWith / endsWith use hint with postprocessor when normalized tokens survive.
+17. startsWith / endsWith use hint with postprocessor when normalized tokens survive.
 1
 1
-19. startsWith stays correct when the postprocessor maps all hint tokens to empty.
+18. startsWith stays correct when the postprocessor maps all hint tokens to empty.
 1
-20. startsWith / endsWith stay correct across mixed indexed and non-indexed parts.
+19. startsWith / endsWith stay correct across mixed indexed and non-indexed parts.
 2
 2
 2
 2
-21. val IN (...) routes set elements through the postprocessor.
+20. val IN (...) routes set elements through the postprocessor.
 1
 1
 1
@@ -133,26 +126,26 @@ started	1
 1
 1
 2
-22. Array tokenizer + postprocessor: rewrite path matches index for mixed parts.
+21. Array tokenizer + postprocessor: rewrite path matches index for mixed parts.
 2
 2
 0
-23. Map column + postprocessor: mapContainsKey / mapContainsKeyLike normalize the needle.
+22. Map column + postprocessor: mapContainsKey / mapContainsKeyLike normalize the needle.
 1
 0
 1
-24. Map column + postprocessor: mapContainsValue / mapContainsValueLike normalize the needle.
+23. Map column + postprocessor: mapContainsValue / mapContainsValueLike normalize the needle.
 1
 0
 1
-25. Map column + array tokenizer + postprocessor: mapContains* bypass postprocessor (raw key/value match).
+24. Map column + array tokenizer + postprocessor: mapContains* bypass postprocessor (raw key/value match).
 1
 1
 0
 1
 1
 0
-26. String column + array tokenizer + postprocessor: equals / hasAllTokens bypass postprocessor (raw match).
+25. String column + array tokenizer + postprocessor: equals / hasAllTokens bypass postprocessor (raw match).
 1
 1
 1
@@ -163,7 +156,7 @@ started	1
 0
 2
 0
-27. hasTokenOrNull: stop-word postprocessor is honored consistently across index and row-scan paths.
+26. hasTokenOrNull: stop-word postprocessor is honored consistently across index and row-scan paths.
 0
 1
 1
@@ -171,7 +164,7 @@ started	1
 4
 4
 0
-28. Negative tests.
+27. Negative tests.
 - The postprocessor expression must reference the index column
 - The postprocessor expression must be a function, not an identifier
 - The postprocessor expression must return String
