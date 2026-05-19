@@ -95,7 +95,7 @@ ColumnPtr getFilteredTables(
                 filter_by_uuid = true;
         }
 
-        if (filter_by_engine)
+        if (filter_by_engine && !is_detached)
             engine_column = ColumnString::create();
 
         if (filter_by_uuid)
@@ -115,6 +115,8 @@ ColumnPtr getFilteredTables(
             for (; table_it->isValid(); table_it->next())
             {
                 table_column->insert(table_it->table());
+                if (uuid_column)
+                    uuid_column->insert(table_it->uuid());
             }
         }
         else

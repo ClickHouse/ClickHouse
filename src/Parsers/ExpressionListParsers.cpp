@@ -34,7 +34,6 @@
 #include <Common/logger_useful.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionOperatorPrettyLookup.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <fmt/core.h>
@@ -626,6 +625,20 @@ public:
             return OperatorType::None;
 
         return operators.back().type;
+    }
+
+    /// True when any operator of the given type is pending anywhere on the
+    /// operators stack of the current element. Used to detect a pending lambda
+    /// in `SubstringLayer` / `PositionLayer` state-0 closing-bracket handling:
+    /// a lambda body can leave higher-priority binary operators on top of the
+    /// lambda operator (e.g. `[..., Lambda, Plus]` for `x -> x + 1`), so
+    /// inspecting only the stack top via `previousType` would miss the lambda.
+    bool hasPendingOperator(OperatorType type) const
+    {
+        for (const auto & op : operators)
+            if (op.type == type)
+                return true;
+        return false;
     }
 
     int isCurrentElementEmpty() const
@@ -1697,7 +1710,9 @@ public:
     {
         /// Either SUBSTRING(expr FROM start [FOR length]) or SUBSTRING(expr, start, length)
         ///
-        /// 0: Parse first separator: FROM or comma (-> 1)
+        /// 0: Parse first separator: FROM or comma (-> 1), or closing bracket
+        ///    when a lambda is pending (round-trip for the merged-tuple lambda
+        ///    sugar, see issue #104605)
         /// 1: Parse second separator: FOR or comma (-> 2)
         /// 1 or 2: Parse closing bracket (finished)
 
@@ -1712,6 +1727,29 @@ public:
                     return false;
 
                 state = 1;
+            }
+            /// Accept the one-argument form ONLY when a lambda operator is
+            /// pending anywhere on the operators stack. This is the AST shape
+            /// produced by the documented lambda-merging sugar (`mapApply`,
+            /// `arrayFold`, …): the formatter emits `substring((x, y) -> z)`
+            /// for `substring(lambda(tuple(x, y), z))` and the re-parser must
+            /// accept that exact form to keep the AST format/re-parse
+            /// round-trip invariant in `executeQueryImpl`. We must scan the
+            /// whole stack — and not just the top via `previousType` — because
+            /// a lambda body can leave higher-priority binary operators above
+            /// the `lambda` operator (e.g. `[..., Lambda, Plus]` for
+            /// `(x) -> x + 1`); `mergeElement` below drains them in priority
+            /// order before combining the lambda. Bare `substring(x)`
+            /// continues to fail with `SYNTAX_ERROR` at parse time —
+            /// `02154_parser_backtracking` depends on this for
+            /// exponential-backtracking protection. See issue #104605.
+            else if (hasPendingOperator(OperatorType::Lambda)
+                && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            {
+                if (!mergeElement())
+                    return false;
+
+                finished = true;
             }
         }
 
@@ -1882,7 +1920,9 @@ public:
     {
         /// position(haystack, needle[, start_pos]) or position(needle IN haystack)
         ///
-        /// 0: Parse separator: comma (-> 1) or IN (-> 2)
+        /// 0: Parse separator: comma (-> 1) or IN (-> 2), or closing bracket
+        ///    when a lambda is pending (round-trip for the merged-tuple lambda
+        ///    sugar, see issue #104605)
         /// 1: Parse second separator: comma
         /// 1 or 2: Parse closing bracket (finished)
 
@@ -1897,7 +1937,7 @@ public:
 
                 state = 1;
             }
-            if (ParserKeyword(Keyword::IN).ignore(pos, expected))
+            else if (ParserKeyword(Keyword::IN).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -1905,6 +1945,27 @@ public:
                     return false;
 
                 state = 2;
+            }
+            /// Accept the one-argument form ONLY when a lambda operator is
+            /// pending anywhere on the operators stack. This is the AST shape
+            /// produced by the documented lambda-merging sugar: the formatter
+            /// emits `position((x, y) -> z)` for `position(lambda(tuple(x, y), z))`
+            /// and the re-parser must accept that exact form to keep the
+            /// round-trip invariant. We must scan the whole stack — and not
+            /// just the top via `previousType` — because a lambda body can
+            /// leave higher-priority binary operators above the `lambda`
+            /// operator (e.g. `[..., Lambda, Plus]` for `(x) -> x + 1`);
+            /// `mergeElement` drains them in priority order before combining
+            /// the lambda. Bare `position(x)` continues to fail with
+            /// `SYNTAX_ERROR` — `02154_parser_backtracking` depends on this.
+            /// See issue #104605.
+            else if (hasPendingOperator(OperatorType::Lambda)
+                && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            {
+                if (!mergeElement())
+                    return false;
+
+                finished = true;
             }
         }
 
@@ -2709,57 +2770,6 @@ private:
     bool if_permitted;
 };
 
-/// Layer for table function 'kql'
-class KustoLayer : public Layer
-{
-public:
-    KustoLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
-
-    bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
-    {
-        /// kql('table|project ...')
-        /// 0. Parse the kql query
-        /// 1. Parse closing token
-        if (state == 0)
-        {
-            ASTPtr query;
-            --pos;
-            if (!ParserKQLTableFunction().parse(pos, query, expected))
-                return false;
-            --pos;
-            pushResult(query);
-
-            if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
-                return false;
-
-            finished = true;
-            state = 1;
-            return true;
-        }
-
-        if (state == 1)
-        {
-            if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
-            {
-                if (!mergeElement())
-                    return false;
-
-                finished = true;
-            }
-        }
-
-        return true;
-    }
-
-protected:
-    bool getResultImpl(ASTPtr & node) override
-    {
-        node = makeASTFunction("view", std::move(elements)); // reuse view function for kql
-        return true;
-    }
-};
-
-
 /// We use Layers to parse elements consisting of other elements.
 /// In some cases, we are interested in the first element that is an identifier
 /// e.g. for a table function it would be the name of the function
@@ -2805,8 +2815,6 @@ std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_functio
             return std::make_unique<ViewLayer>(false);
         if (function_name_lowercase == "viewifpermitted")
             return std::make_unique<ViewLayer>(true);
-        if (function_name_lowercase == "kql")
-            return std::make_unique<KustoLayer>();
     }
 
     if (function_name == "tuple")
@@ -3151,7 +3159,7 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
 
     if (layers.front()->is_table_function)
     {
-        if (typeid_cast<ViewLayer *>(layers.back().get()) || typeid_cast<KustoLayer *>(layers.back().get()))
+        if (typeid_cast<ViewLayer *>(layers.back().get()))
         {
             if (function_name_parser.parse(pos, tmp, expected)
                 && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
