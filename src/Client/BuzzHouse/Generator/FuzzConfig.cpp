@@ -780,7 +780,7 @@ ORDER BY f.name)sql";
 
         found++;
 
-        const bool is_deterministic = (det_str != "\\N" && det_str != "0");
+        const bool is_deterministic = (det_str != "0");
         const bool is_higher_order = (ho_str != "\\N" && ho_str == "1");
         const uint32_t min_args = min_args_str == "\\N" ? 0 : static_cast<uint32_t>(std::stoul(min_args_str));
         const uint32_t max_args = max_args_str == "\\N" ? ulimited_params : static_cast<uint32_t>(std::stoul(max_args_str));
@@ -810,11 +810,9 @@ ORDER BY f.name)sql";
         else
         {
             CHFunction func(name, is_higher_order, min_args, max_args);
+            /// arrayJoin may not be deterministic
             if (common_func_names.contains(name))
-            {
-                chassert(is_deterministic, "Common functions must be deterministic");
                 common_funcs.push_back(func);
-            }
             if (is_deterministic)
                 det_funcs.push_back(func);
             else
