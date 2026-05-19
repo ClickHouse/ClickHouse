@@ -273,6 +273,19 @@ void listFilesWithRegexpMatchingOnDisk(
     if (first_glob_pos == std::string::npos)
     {
         String full_path = dir_path + for_match;
+        /// Reject paths that resolve outside the disk root via a symlink
+        /// (e.g. `<disk_root>/link -> /etc`) before any disk-side metadata
+        /// access. This branch is reached only from a recursive call where
+        /// `dir_path` was already verified to be inside the root and
+        /// `for_match` is the user-supplied glob remainder (the non-glob
+        /// case in `getPathsListOnDisk` does not call into here), so a
+        /// failure here means the user-supplied path crosses the boundary
+        /// and must surface as `DATABASE_ACCESS_DENIED` rather than an
+        /// empty result.
+        if (!isDiskRelativePathInsideRoot(disk, full_path))
+            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                "Path `{}` resolves outside user files disk root `{}` after symlink resolution",
+                full_path, disk->getPath());
         if (disk->existsFile(full_path))
         {
             try
@@ -317,6 +330,19 @@ void listFilesWithRegexpMatchingOnDisk(
         ? dir_path
         : dir_path + for_match.substr(0, end_of_path_without_globs + 1);
 
+    /// Enforce the disk-root boundary on the literal prefix before any
+    /// `existsDirectory` / `iterateDirectory` / `getFileSize` call: without this,
+    /// `file('escape_link/*', ...)` on an in-root symlink `escape_link -> /etc`
+    /// would iterate `/etc` and read metadata for `/etc/*` before the post-filter
+    /// at the call site drops the matches. The literal prefix comes from the
+    /// user-supplied glob (the iteration-discovered portion is checked entry by
+    /// entry inside the loop below), so an out-of-root prefix is surfaced as
+    /// `DATABASE_ACCESS_DENIED` rather than a silently empty result.
+    if (!isDiskRelativePathInsideRoot(disk, prefix_without_globs))
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+            "Path `{}` resolves outside user files disk root `{}` after symlink resolution",
+            prefix_without_globs, disk->getPath());
+
     if (!disk->existsDirectory(prefix_without_globs))
         return;
 
@@ -327,6 +353,13 @@ void listFilesWithRegexpMatchingOnDisk(
         const String entry_name = it->name();
         const String full_entry_path = prefix_without_globs + entry_name;
         const String file_name = "/" + entry_name;
+
+        /// An iterated entry can itself be an in-root symlink pointing outside
+        /// the disk root. Skip such entries before any metadata access so the
+        /// regex match / `getFileSize` / recursion below never touches a path
+        /// that resolves outside the configured user files disk.
+        if (!isDiskRelativePathInsideRoot(disk, full_entry_path))
+            continue;
 
         bool is_dir = disk->existsDirectory(full_entry_path);
 

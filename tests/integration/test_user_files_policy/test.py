@@ -157,6 +157,15 @@ def test_local_symlink_escape_rejected():
             node_local.query(
                 "SELECT * FROM file('/test_user_files_disk1/escape_link/passwd', 'CSV', 'x String')"
             )
+        # Glob with an in-root symlink prefix must also fail closed - otherwise
+        # the iteration would call `iterateDirectory`/`getFileSize` on entries
+        # outside the disk root and merely drop matches in a post-filter,
+        # leaking metadata about files like `/etc/*` even when the query
+        # returns no rows.
+        result = node_local.query_and_get_error(
+            "SELECT * FROM file('escape_link/*', 'CSV', 'x String')"
+        )
+        assert "DATABASE_ACCESS_DENIED" in result or "FILE_DOESNT_EXIST" in result
     finally:
         node_local.exec_in_container(
             ["bash", "-c", "rm -f /test_user_files_disk1/escape_link"]
