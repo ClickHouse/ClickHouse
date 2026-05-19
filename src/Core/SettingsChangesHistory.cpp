@@ -93,6 +93,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_compaction_delay_bias", 60 * 60 * 3, 60 * 60 * 3, "New setting"},
             {"allow_experimental_cleanup_old_data_files_compaction", false, false, "New setting"},
             {"iceberg_compaction_data_cleanup", 60 * 60 * 3, 60 * 60 * 3, "New setting"},
+            {"http_allow_redirects_on_post", false, false, "New setting to allow HTTP 3xx redirects on POST/PUT requests in URL engine writes."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
@@ -132,7 +133,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
             {"materialize_statistics_on_insert", true, false, "Disable building statistics on INSERT by default, rely on merges instead"},
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
-            {"http_allow_redirects_on_post", false, false, "New setting to allow HTTP 3xx redirects on POST/PUT requests in URL engine writes."},
             {"input_format_column_name_matching_mode", "match_case", "match_case", "New setting."},
             {"enable_join_fixed_hash_table_conversion", false, true, "New setting to enable converting the hash table to a flat array for joins when the key is a single integer with a small value range."},
             {"allow_experimental_ai_functions", false, false, "New setting"},
