@@ -423,7 +423,10 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     if (context->getApplicationType() == Context::ApplicationType::SERVER && read_method == LocalFSReadMethod::mmap)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Using storage_file_read_method=mmap is not safe in server mode. Consider using pread.");
 
-    if (S_ISREG(file_stat.st_mode) && read_method == LocalFSReadMethod::mmap)
+    /// Avoid zero-length mmap: empty regular files still read as empty via `pread`, while
+    /// pseudo-files such as `/proc` and `/sys` may report `st_size == 0` despite readable content.
+    /// See #69070.
+    if (S_ISREG(file_stat.st_mode) && read_method == LocalFSReadMethod::mmap && file_stat.st_size > 0)
     {
         try
         {
