@@ -885,11 +885,16 @@ static std::unordered_map<String, size_t> getStreamCounts(
 
     for (const auto & column_name : column_names)
     {
+        auto column = data_part->getColumns().tryGetByName(column_name);
+        if (!column)
+            continue;
+
         if (auto serialization = data_part->tryGetSerialization(column_name))
         {
-            auto callback = [&](const ISerialization::SubstreamPath & substream_path)
+            auto callback = [&, column_desc = *column](const ISerialization::SubstreamPath & substream_path)
             {
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part_checksums, data_part->storage.getSettings());
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                    column_desc, substream_path, ".bin", source_part_checksums, data_part->storage.getSettings());
                 if (stream_name)
                     ++stream_counts[*stream_name];
             };
