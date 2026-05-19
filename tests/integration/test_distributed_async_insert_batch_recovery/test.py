@@ -99,7 +99,23 @@ def test_recover_batch_with_broken_middle_file(started_cluster):
     # Simulate the abnormal-shutdown state described in the issue: a
     # `current_batch.txt` referencing all three files, plus a corrupted middle
     # file. The server must observe this state on startup.
-    node_dist.stop_clickhouse()
+    #
+    # `kill=True` is required: a graceful shutdown calls
+    # `StorageDistributed::flushAndPrepareForShutdown`, which flushes all
+    # pending `.bin` files to the remote shard regardless of
+    # `SYSTEM STOP DISTRIBUTED SENDS` (and `flush_on_detach=0` is forbidden
+    # together with `background_insert_batch=1`). Without a hard kill, the
+    # three queued files would be delivered before the simulated abnormal
+    # state could be set up.
+    node_dist.stop_clickhouse(kill=True)
+
+    # Sanity-check that the hard kill preserved the queued files on disk.
+    bin_files_after_kill = node_dist.exec_in_container(
+        ["bash", "-c", f"ls {queue_path}/*.bin | sort"]
+    ).strip().splitlines()
+    assert len(bin_files_after_kill) == 3, (
+        f"Expected 3 .bin files to survive the hard kill, got: {bin_files_after_kill}"
+    )
 
     current_batch_lines = "".join(f"{i}\n" for i in indices)
     encoded = base64.b64encode(current_batch_lines.encode()).decode()
