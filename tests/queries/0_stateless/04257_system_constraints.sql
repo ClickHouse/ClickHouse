@@ -1,4 +1,3 @@
--- Tags: no-parallel
 -- Test the system.constraints table: creation, ALTER ADD/DROP, and secret hiding.
 DROP TABLE IF EXISTS test_constraints;
 
