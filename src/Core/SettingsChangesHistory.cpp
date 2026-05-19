@@ -81,6 +81,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_streams_for_union_step", 0, 0, "New setting to limit the number of simultaneously active data streams in a UNION step to reduce peak memory usage."},
             {"max_streams_for_union_step_to_max_threads_ratio", 0, 8, "New setting: the limit on simultaneously active streams in a UNION step is computed as min(max_streams_for_union_step, max_threads * max_streams_for_union_step_to_max_threads_ratio), either being 0 disables that input."},
             {"send_table_structure_on_insert_with_inline_data", true, true, "New setting to control whether server sends table structure for INSERT queries with inline data."},
+            {"query_plan_use_logical_join_step", true, true, "Obsolete setting, the logical join step is now always used."},
+            {"query_plan_use_new_logical_join_step", true, true, "Obsolete setting, the logical join step is now always used."},
             {"query_plan_top_k_through_join", false, true, "New setting to enable a query-plan-level optimization that pushes ORDER BY ... LIMIT n through a LEFT/RIGHT join when the sort key only references the preserved side."},
             {"allow_experimental_unique_key", false, false, "New setting to gate the experimental UNIQUE KEY clause on MergeTree-family tables"},
             {"system_metric_log_show_zero_values_in_histograms", false, false, "New setting controlling whether zero-valued histogram data is written to the histograms nested column of system.metric_log."},
@@ -88,6 +90,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
             {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
             {"max_static_subcolumns", 0, 10000, "Limit on the number of static subcolumns for persistent tables. Excludes dynamic columns in `JSON`, `Dynamic`, etc. types. Zero value disables check."},
+            {"iceberg_data_file_size_lower_threshold_compaction", 10_MiB, 10_MiB, "New setting"},
+            {"iceberg_data_file_size_upper_threshold_compaction", 10_GiB, 10_GiB, "New setting"},
+            {"iceberg_max_number_datafiles_to_compact", 1000, 1000, "New setting"},
+            {"iceberg_compaction_delay_bias", 60 * 60 * 3, 60 * 60 * 3, "New setting"},
+            {"allow_experimental_cleanup_old_data_files_compaction", false, false, "New setting"},
+            {"iceberg_compaction_data_cleanup", 60 * 60 * 3, 60 * 60 * 3, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
