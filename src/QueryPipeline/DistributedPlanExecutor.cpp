@@ -476,8 +476,13 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
 
     auto logger = Poco::Logger::getShared("executeDistributedQuery");
 
-    const Strings & input_exchange_streams = task.input_exchange_streams;
-    const Strings & output_exchange_streams = task.output_exchange_streams;
+    Strings input_exchange_streams;
+    for (const auto & stream_id : task.input_exchange_streams)
+        input_exchange_streams.push_back(stream_id.toString());
+
+    Strings output_exchange_streams;
+    for (const auto & stream_id : task.output_exchange_streams)
+        output_exchange_streams.push_back(stream_id.toString());
 
     LOG_TRACE(logger, "Task '{}' input exchange streams: [{}], output exchange streams: [{}]",
         task.task_id, fmt::join(input_exchange_streams, ", "), fmt::join(output_exchange_streams, ", "));
@@ -726,7 +731,7 @@ void TaskToHostMap::assignHostsForTasks(const DistributedQueryPlan & distributed
             current_host = (current_host + 1) % hostnames.size();
             task_hosts[task.task_id] = assigned_host;
             for (const auto & output_stream : task.output_exchange_streams)
-                exchange_stream_source_hosts[output_stream] = assigned_host;
+                exchange_stream_source_hosts[output_stream.toString()] = assigned_host;
         }
     }
 }
@@ -1090,7 +1095,8 @@ protected:
             task_description.exchange_stream_sources = {};
             for (const auto & input_stream : task.input_exchange_streams)
             {
-                task_description.exchange_stream_sources.stream_hosts[input_stream] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream);
+                String input_stream_name = input_stream.toString();
+                task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
             }
 
             running_tasks.addTask(stage_name, startTask(task_description));

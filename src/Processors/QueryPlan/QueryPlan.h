@@ -6,9 +6,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
-#if CLICKHOUSE_CLOUD
 #include <Processors/QueryPlan/ExchangeLookup.h>
-#endif
 #include <Parsers/IAST_fwd.h>
 
 #include <list>
@@ -265,8 +263,8 @@ struct DistributedQueryTask
 {
     String task_id;
     QueryPlanParameters parameters;
-    std::vector<String> input_exchange_streams;
-    std::vector<String> output_exchange_streams;
+    std::vector<ExchangeStreamId> input_exchange_streams;
+    std::vector<ExchangeStreamId> output_exchange_streams;
 };
 
 /// A group of tasks with the same plan fragment and differenet parameters
