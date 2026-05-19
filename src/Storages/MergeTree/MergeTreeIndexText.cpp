@@ -1122,6 +1122,10 @@ TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
     {
         UInt64 codec_type;
         readVarUInt(codec_type, istr);
+
+        if (codec_type > static_cast<UInt64>(IPostingListCodec::Type::Bitpacking))
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown posting list codec type in text index header: {}", codec_type);
+
         header.codec_type = static_cast<IPostingListCodec::Type>(codec_type);
     }
 

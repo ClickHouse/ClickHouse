@@ -159,6 +159,19 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
     last_decoded_doc_id = requireUInt32(first_row_id, "first_row_id");
     segment_first_row_id = last_decoded_doc_id;
 
+    /// Cap `payload_bytes` before resizing so corrupted metadata can't force a huge allocation. Per-block
+    /// upper bound: `1` (bits header) + `4 * BLOCK_SIZE` (bit-pure max at `bits = 32`) + 16 (SIMD alignment).
+    const UInt64 max_blocks_count = (static_cast<UInt64>(segment_doc_count) + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    const UInt64 max_payload_bytes = max_blocks_count * (1 + sizeof(UInt32) * BLOCK_SIZE + 16);
+
+    if (payload_bytes > max_payload_bytes)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy posting list cursor: payload_bytes {} exceeds upper bound {} "
+            "for segment with {} documents",
+            payload_bytes, max_payload_bytes, segment_doc_count);
+    }
+
     /// Bulk-read the entire payload into memory.
     payload_buffer.resize(payload_bytes);
     data_buffer->readStrict(reinterpret_cast<char *>(payload_buffer.data()), payload_bytes);
@@ -265,8 +278,15 @@ void PostingListCursor::decodeBlock(size_t block_idx)
     if (bits > 32)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected bits <= 32, but got {}", bits);
 
-    /// The packed payload must fit in the remaining block bytes
-    chassert(BitpackingBlockCodec::bitpackingCompressedBytes(count, bits) <= block_data.size());
+    /// Validate the budget before decode so corrupted metadata can't drive the SIMD intrinsic past `payload_buffer`.
+    const size_t required_bytes = BitpackingBlockCodec::bitpackingCompressedBytes(count, bits);
+    if (required_bytes > block_data.size())
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy posting list cursor: block {} requires {} packed bytes for "
+            "count={} bits={}, but only {} bytes remain in payload",
+            block_idx, required_bytes, count, bits, block_data.size());
+    }
 
     std::span<uint32_t> out_span(decoded_values, count);
     BitpackingBlockCodec::decode(block_data, count, bits, out_span);
