@@ -365,6 +365,11 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::CLEAR_QUERY_CACHE:
         {
+            if (query_result_cache_type.has_value())
+            {
+                print_keyword(" TYPE ");
+                ostr << quoteString(*query_result_cache_type);
+            }
             if (query_result_cache_tag.has_value())
             {
                 print_keyword(" TAG ");

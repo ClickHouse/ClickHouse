@@ -376,6 +376,8 @@ QueryResultCache::Key::Key(
 
 QueryResultCache::Key::Key(IASTHash ast_hash_)
     : ast_hash(ast_hash_)
+    , is_shared(false)
+    , is_compressed(false)
 {
 }
 
@@ -942,6 +944,12 @@ void QueryResultCache::writeDisk(const Key & key, const QueryResultCache::Cache:
     if (!disk || disk->isBroken())
         return;
 
+    /// Remove any existing entry under this key first. Otherwise, when we later call
+    /// `disk_cache.set(key, ...)`, the old `DiskEntry`'s deleter would run after the new
+    /// files were written and would `removeRecursive(entry_path)` of the freshly written data
+    /// (the on-disk path is the same for both old and new entries with the same key).
+    disk_cache.remove(key);
+
     auto entry_path = fs::path(path) / key.getKeyPath();
     auto disk_entry = std::shared_ptr<DiskEntry>(
         new DiskEntry,
@@ -1052,15 +1060,15 @@ std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromDisk
 
     try
     {
-        auto [header, entry_, disk_entry_]  = deserializeEntry(key);
+        auto [header, entry_, disk_entry_]  = deserializeEntry(disk_entry_key);
         if (!entry_)
             return std::nullopt;
 
-        if (key.is_compressed)
+        if (disk_entry_key.is_compressed)
             compressEntry(entry_);
 
-        memory_cache.set(key, entry_);
-        return {{disk_entry->key, entry_}};
+        memory_cache.set(disk_entry_key, entry_);
+        return {{disk_entry_key, entry_}};
     }
     catch (...)
     {
@@ -1198,7 +1206,10 @@ void QueryResultCache::loadEntrysFromDisk()
         for (auto entry_it = disk->iterateDirectory(it->path()); entry_it->isValid(); entry_it->next())
         {
             auto entry_path = fs::path(entry_it->path());
-            String ast_hash_str = entry_path.parent_path().filename();
+            /// The entry directory is named like "<low64>_<high64>". Use `entry_it->name()`
+            /// directly, as path-based filename extraction is not stable across disk iterator
+            /// implementations (some return paths with a trailing slash, some without).
+            String ast_hash_str = entry_it->name();
             size_t separator_pos = ast_hash_str.find('_');
             chassert(separator_pos != String::npos);
             String low64_str = ast_hash_str.substr(0, separator_pos);
