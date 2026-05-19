@@ -3515,7 +3515,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
         fuzz(with_union->list_of_selects);
         /// Fuzzing SELECT query to EXPLAIN query randomly.
-        /// And we only fuzzing the root query into an EXPLAIN query, not fuzzing subquery.
+        /// And we only fuzz the root query into an EXPLAIN query, not fuzzing subquery.
         /// In oracle mode, never convert to EXPLAIN — it makes the query untestable.
         if (!oracle_mode && fuzz_rand() % 20 == 0 && current_ast_depth <= 1)
         {

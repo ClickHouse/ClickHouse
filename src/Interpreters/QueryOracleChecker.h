@@ -7,25 +7,25 @@
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
+#include <optional>
 #include <vector>
 
 
 namespace DB
 {
 
-/// Applies correctness oracle checks (TLP WHERE and NoREC) to a successfully-executed
-/// fuzzed SELECT query. Throws LOGICAL_ERROR on oracle mismatch — the bug-finding signal.
+/// Applies a suite of correctness oracle checks to a successfully-executed fuzzed SELECT
+/// query. Throws `AST_FUZZER_ORACLE_MISMATCH` on a real mismatch — the bug-finding signal.
 ///
-/// TLP WHERE: verifies that removing the WHERE predicate and instead partitioning via
-/// UNION ALL of (WHERE p, WHERE NOT p, WHERE p IS NULL) produces the same result set.
-///
-/// NoREC: verifies that SELECT count() ... WHERE cond equals SELECT countIf(cond) FROM ...
+/// The current set of oracles is implemented in the corresponding `check*` methods below
+/// (TLP WHERE/DISTINCT/GROUP BY/HAVING/Aggregate, NoREC, DQP, Identity WHERE, Subquery wrap).
+/// See `check` for the dispatch logic and per-oracle preconditions.
 class QueryOracleChecker
 {
 public:
     /// Run oracle checks on a successfully-executed fuzzed query AST.
     /// Returns true if at least one oracle check was performed.
-    /// Throws LOGICAL_ERROR on oracle mismatch.
+    /// Throws `AST_FUZZER_ORACLE_MISMATCH` on oracle mismatch.
     bool check(const ASTPtr & query_ast, const ContextMutablePtr & context);
 
 private:
@@ -58,15 +58,19 @@ private:
     static bool hasAggregates(const ASTSelectQuery & select);
 
     /// Execute a query and return sorted deduplicated rows (set semantics).
-    static std::vector<String> executeAndCollectSortedUniqueRows(const String & query, const ContextMutablePtr & context);
+    /// `std::nullopt` means the output exceeded `MAX_ORACLE_OUTPUT_SIZE` and the
+    /// caller should skip the oracle rather than treat the result as empty.
+    static std::optional<std::vector<String>> executeAndCollectSortedUniqueRows(const String & query, const ContextMutablePtr & context);
 
-    /// Execute a query with specific settings overrides.
-    static std::vector<String> executeWithSettings(const String & query, const ContextMutablePtr & context, const std::vector<std::pair<String, Field>> & settings);
+    /// Execute a query with specific settings overrides. Returns `std::nullopt` on overflow.
+    static std::optional<std::vector<String>> executeWithSettings(const String & query, const ContextMutablePtr & context, const std::vector<std::pair<String, Field>> & settings);
 
     /// Execute a query using the ReadBuffer/WriteBuffer executeQuery API and return
     /// the output as a sorted vector of rows (one string per row, tab-separated columns).
     /// This is crash-safe because ClickHouse handles all serialization internally.
-    static std::vector<String> executeAndCollectSortedRows(const String & query, const ContextMutablePtr & context);
+    /// Returns `std::nullopt` if the formatted output exceeds `MAX_ORACLE_OUTPUT_SIZE`,
+    /// so callers don't mistake "skipped due to overflow" for "real empty result".
+    static std::optional<std::vector<String>> executeAndCollectSortedRows(const String & query, const ContextMutablePtr & context);
 
     /// Execute a scalar query (returns a single value) and return the Field.
     static Field executeScalar(const String & query, const ContextMutablePtr & context);

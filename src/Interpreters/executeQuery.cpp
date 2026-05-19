@@ -2641,8 +2641,8 @@ void executeQuery(
                 }
                 catch (const Exception & e)
                 {
-                    if (e.code() == ErrorCodes::LOGICAL_ERROR)
-                        throw; /// Oracle mismatch — propagate to abort the server
+                    if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                        throw; /// Oracle mismatch — propagate so CI sees it
                     tryLogCurrentException("ASTFuzzer");
                 }
                 catch (...)

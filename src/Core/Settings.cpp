@@ -3297,7 +3297,7 @@ The fuzzer accumulates AST fragments from all queries across all sessions, produ
 When false (default), the server-side AST fuzzer (controlled by `ast_fuzzer_runs`) only fuzzes read-only queries (SELECT, EXPLAIN, SHOW, DESCRIBE, EXISTS). When true, all query types including DDL and INSERT are fuzzed.
 )", EXPERIMENTAL) \
     DECLARE(Bool, ast_fuzzer_oracle, false, R"(
-When enabled together with `ast_fuzzer_runs`, applies correctness oracle checks (TLP and NoREC) to successfully executed fuzzed SELECT queries. A mismatch throws an exception.
+When enabled together with `ast_fuzzer_runs`, applies a suite of correctness oracle checks to successfully executed fuzzed SELECT queries: TLP WHERE/DISTINCT/GROUP BY/HAVING/Aggregate, NoREC, DQP (toggling individual optimizer settings), Identity WHERE, and Subquery wrap. A mismatch throws an `AST_FUZZER_ORACLE_MISMATCH` exception.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_fuzz_query_functions, false, R"(
 Enables the `fuzzQuery` function that applies random AST mutations to a query string.

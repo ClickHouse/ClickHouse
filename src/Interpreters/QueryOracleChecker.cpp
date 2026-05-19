@@ -75,14 +75,20 @@ const std::unordered_set<String> non_deterministic_functions = {
     "quantileTiming", "quantileTimingWeighted",
     "quantileDeterministic",
     /// Order-dependent or floating-point aggregates whose State/Merge path
-    /// can differ from direct computation.
+    /// can differ from direct computation. `sum` / `sumWithOverflow` are
+    /// blocked because floating-point addition is non-associative — the
+    /// metamorphic `sumState`/`sumMerge` rewrite can legitimately produce a
+    /// different rounded value than direct `sum` over Float32/Float64
+    /// arguments. We don't try to inspect argument types here, so we exclude
+    /// `sum` family unconditionally — that costs some integer-sum coverage
+    /// but eliminates a flaky-mismatch source.
     "deltaSum", "deltaSumTimestamp",
     "stddevPop", "stddevSamp", "stddevPopStable", "stddevSampStable",
     "varPop", "varSamp", "varPopStable", "varSampStable",
     "covarPop", "covarSamp", "covarPopStable", "covarSampStable", "corr", "corrStable",
     "avg", "avgWeighted",
     "skewPop", "skewSamp", "kurtPop", "kurtSamp",
-    "sumKahan",
+    "sum", "sumWithOverflow", "sumKahan",
     "stochasticLinearRegression", "stochasticLogisticRegression",
     "initializeAggregation",
     /// Order-dependent aggregate functions.
@@ -100,6 +106,10 @@ constexpr size_t MAX_ORACLE_QUERY_LENGTH = 10000;
 
 /// Maximum total output size from an oracle sub-query (bytes).
 constexpr size_t MAX_ORACLE_OUTPUT_SIZE = 10 * 1024 * 1024;
+
+/// Maximum row count for an oracle sub-query result. Caps memory before the
+/// post-execution size check in `executeAndCollect*` triggers.
+constexpr size_t MAX_ORACLE_RESULT_ROWS = 10'000'000;
 
 /// Walk an AST tree and check if any ASTFunction has a name in the given set.
 bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast)
@@ -414,17 +424,22 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     oracle_context->setSetting("max_execution_time", Field(UInt64(10)));
     /// Prevent the optimizer from pushing TLP predicates across subquery/JOIN boundaries.
     oracle_context->setSetting("enable_optimize_predicate_expression", Field(false));
-    /// Remove result size limits that the fuzzer context may inherit — oracle
-    /// sub-queries (especially TLP's UNION ALL) legitimately produce more rows.
-    oracle_context->setSetting("max_result_rows", Field(UInt64(0)));
-    oracle_context->setSetting("max_result_bytes", Field(UInt64(0)));
+    /// Cap result size so oracle sub-queries (especially TLP's UNION ALL of three
+    /// partitions) cannot allocate unbounded memory. We use `result_overflow_mode=break`
+    /// so an oversized result silently truncates instead of throwing; callers detect
+    /// truncation via `MAX_ORACLE_OUTPUT_SIZE` on the formatted output and report a
+    /// distinct "skipped" state, rather than letting truncated output appear as a
+    /// real empty result.
+    oracle_context->setSetting("max_result_rows", Field(UInt64(MAX_ORACLE_RESULT_ROWS)));
+    oracle_context->setSetting("max_result_bytes", Field(UInt64(MAX_ORACLE_OUTPUT_SIZE)));
     oracle_context->setSetting("result_overflow_mode", String("break"));
     oracle_context->setCurrentQueryId("");
     return oracle_context;
 }
 
 
-std::vector<String> QueryOracleChecker::executeAndCollectSortedRows(const String & query, const ContextMutablePtr & context)
+std::optional<std::vector<String>>
+QueryOracleChecker::executeAndCollectSortedRows(const String & query, const ContextMutablePtr & context)
 {
     auto oracle_context = makeOracleContext(context);
     oracle_context->setDefaultFormat("TabSeparated");
@@ -439,7 +454,7 @@ std::vector<String> QueryOracleChecker::executeAndCollectSortedRows(const String
 
     String output = ostr.str();
     if (output.size() > MAX_ORACLE_OUTPUT_SIZE)
-        return {}; /// Too much output, skip
+        return std::nullopt; /// Truncated — caller must skip, not treat as empty.
 
     auto rows = splitIntoRows(output);
     std::sort(rows.begin(), rows.end());
@@ -475,15 +490,20 @@ Field QueryOracleChecker::executeScalar(const String & query, const ContextMutab
 }
 
 
-std::vector<String> QueryOracleChecker::executeAndCollectSortedUniqueRows(const String & query, const ContextMutablePtr & context)
+std::optional<std::vector<String>>
+QueryOracleChecker::executeAndCollectSortedUniqueRows(const String & query, const ContextMutablePtr & context)
 {
-    auto rows = executeAndCollectSortedRows(query, context);
+    auto rows_opt = executeAndCollectSortedRows(query, context);
+    if (!rows_opt)
+        return std::nullopt;
+    auto & rows = *rows_opt;
     rows.erase(std::unique(rows.begin(), rows.end()), rows.end());
-    return rows;
+    return rows_opt;
 }
 
 
-std::vector<String> QueryOracleChecker::executeWithSettings(
+std::optional<std::vector<String>>
+QueryOracleChecker::executeWithSettings(
     const String & query, const ContextMutablePtr & context,
     const std::vector<std::pair<String, Field>> & settings)
 {
@@ -498,7 +518,7 @@ std::vector<String> QueryOracleChecker::executeWithSettings(
 
     String output = ostr.str();
     if (output.size() > MAX_ORACLE_OUTPUT_SIZE)
-        return {};
+        return std::nullopt;
 
     auto rows = splitIntoRows(output);
     std::sort(rows.begin(), rows.end());
@@ -577,8 +597,12 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
     LOG_TRACE(logger, "TLP WHERE oracle: partitioned query: {}", union_sql);
 
     /// Execute both and collect sorted rows for full content comparison.
-    auto ref_rows = executeAndCollectSortedRows(ref_sql, context);
-    auto part_rows = executeAndCollectSortedRows(union_sql, context);
+    auto ref_rows_opt = executeAndCollectSortedRows(ref_sql, context);
+    auto part_rows_opt = executeAndCollectSortedRows(union_sql, context);
+    if (!ref_rows_opt || !part_rows_opt)
+        return false; /// Output exceeded MAX_ORACLE_OUTPUT_SIZE — skip rather than false-pass on truncation.
+    auto & ref_rows = *ref_rows_opt;
+    auto & part_rows = *part_rows_opt;
 
     if (ref_rows != part_rows)
     {
@@ -775,8 +799,12 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
     LOG_TRACE(logger, "TLP DISTINCT oracle: reference: {}", ref_sql);
     LOG_TRACE(logger, "TLP DISTINCT oracle: partitioned: {}", union_sql);
 
-    auto ref_rows = executeAndCollectSortedRows(ref_sql, context);
-    auto part_rows = executeAndCollectSortedRows(union_sql, context);
+    auto ref_rows_opt = executeAndCollectSortedRows(ref_sql, context);
+    auto part_rows_opt = executeAndCollectSortedRows(union_sql, context);
+    if (!ref_rows_opt || !part_rows_opt)
+        return false; /// Output exceeded MAX_ORACLE_OUTPUT_SIZE — skip.
+    auto & ref_rows = *ref_rows_opt;
+    auto & part_rows = *part_rows_opt;
 
     if (ref_rows != part_rows)
     {
@@ -856,8 +884,12 @@ bool QueryOracleChecker::checkTLPGroupBy(const ASTSelectQuery & select, const Co
     LOG_TRACE(logger, "TLP GROUP BY oracle: partitioned: {}", union_sql);
 
     /// Compare as sets — deduplicate both sides since each partition produces its own groups.
-    auto ref_rows = executeAndCollectSortedUniqueRows(ref_sql, context);
-    auto part_rows = executeAndCollectSortedUniqueRows(union_sql, context);
+    auto ref_rows_opt = executeAndCollectSortedUniqueRows(ref_sql, context);
+    auto part_rows_opt = executeAndCollectSortedUniqueRows(union_sql, context);
+    if (!ref_rows_opt || !part_rows_opt)
+        return false; /// Output exceeded MAX_ORACLE_OUTPUT_SIZE — skip.
+    auto & ref_rows = *ref_rows_opt;
+    auto & part_rows = *part_rows_opt;
 
     if (ref_rows != part_rows)
     {
@@ -936,8 +968,12 @@ bool QueryOracleChecker::checkTLPHaving(const ASTSelectQuery & select, const Con
     LOG_TRACE(logger, "TLP HAVING oracle: partitioned: {}", union_sql);
 
     /// Compare as sets — HAVING partitions produce independent group sets.
-    auto ref_rows = executeAndCollectSortedUniqueRows(ref_sql, context);
-    auto part_rows = executeAndCollectSortedUniqueRows(union_sql, context);
+    auto ref_rows_opt = executeAndCollectSortedUniqueRows(ref_sql, context);
+    auto part_rows_opt = executeAndCollectSortedUniqueRows(union_sql, context);
+    if (!ref_rows_opt || !part_rows_opt)
+        return false; /// Output exceeded MAX_ORACLE_OUTPUT_SIZE — skip.
+    auto & ref_rows = *ref_rows_opt;
+    auto & part_rows = *part_rows_opt;
 
     if (ref_rows != part_rows)
     {
@@ -976,7 +1012,10 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
         return false;
 
     /// Execute with default settings.
-    auto default_rows = executeAndCollectSortedRows(query_sql, context);
+    auto default_rows_opt = executeAndCollectSortedRows(query_sql, context);
+    if (!default_rows_opt)
+        return false; /// Output exceeded MAX_ORACLE_OUTPUT_SIZE — skip.
+    auto & default_rows = *default_rows_opt;
 
     /// Skip empty results — DQP is most valuable for non-empty results.
     if (default_rows.empty())
@@ -1011,7 +1050,10 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
 
     try
     {
-        auto variant_rows = executeWithSettings(query_sql, context, settings);
+        auto variant_rows_opt = executeWithSettings(query_sql, context, settings);
+        if (!variant_rows_opt)
+            return false; /// Output exceeded MAX_ORACLE_OUTPUT_SIZE — skip this oracle run.
+        auto & variant_rows = *variant_rows_opt;
 
         if (default_rows != variant_rows)
         {
@@ -1249,8 +1291,12 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
 
     /// Compare full sorted row content. The State/Merge path should produce
     /// identical results for deterministic aggregates (which we already filter for).
-    auto ref_rows = executeAndCollectSortedRows(ref_sql, context);
-    auto meta_rows = executeAndCollectSortedRows(metamorphic_sql, context);
+    auto ref_rows_opt = executeAndCollectSortedRows(ref_sql, context);
+    auto meta_rows_opt = executeAndCollectSortedRows(metamorphic_sql, context);
+    if (!ref_rows_opt || !meta_rows_opt)
+        return false; /// Output exceeded MAX_ORACLE_OUTPUT_SIZE — skip.
+    auto & ref_rows = *ref_rows_opt;
+    auto & meta_rows = *meta_rows_opt;
 
     if (ref_rows != meta_rows)
     {
@@ -1303,8 +1349,11 @@ bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const
     if (hasNonDeterministicFunctions(select.clone()))
         return false;
 
-    /// Skip if LIMIT without ORDER BY — would be non-deterministic.
-    if (select.limitLength() && !select.orderBy())
+    /// LIMIT is unsafe even with ORDER BY: if the sort key is not unique the
+    /// engine can legitimately pick different rows among ties for the reference
+    /// vs the rewritten predicate, producing a spurious "mismatch". Forbid LIMIT
+    /// entirely for Identity WHERE.
+    if (select.limitLength())
         return false;
 
     ASTPtr predicate = select.where()->clone();
@@ -1349,10 +1398,16 @@ bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const
     LOG_TRACE(logger, "Identity WHERE oracle: variant AND 1: {}", v2_sql);
     LOG_TRACE(logger, "Identity WHERE oracle: variant OR 0: {}", v3_sql);
 
-    auto ref_rows = executeAndCollectSortedRows(ref_sql, context);
-    auto v1_rows = executeAndCollectSortedRows(v1_sql, context);
-    auto v2_rows = executeAndCollectSortedRows(v2_sql, context);
-    auto v3_rows = executeAndCollectSortedRows(v3_sql, context);
+    auto ref_rows_opt = executeAndCollectSortedRows(ref_sql, context);
+    auto v1_rows_opt = executeAndCollectSortedRows(v1_sql, context);
+    auto v2_rows_opt = executeAndCollectSortedRows(v2_sql, context);
+    auto v3_rows_opt = executeAndCollectSortedRows(v3_sql, context);
+    if (!ref_rows_opt || !v1_rows_opt || !v2_rows_opt || !v3_rows_opt)
+        return false; /// Output exceeded MAX_ORACLE_OUTPUT_SIZE — skip.
+    auto & ref_rows = *ref_rows_opt;
+    auto & v1_rows = *v1_rows_opt;
+    auto & v2_rows = *v2_rows_opt;
+    auto & v3_rows = *v3_rows_opt;
 
     auto check_variant = [&](const String & name, const String & sql, const std::vector<String> & rows)
     {
@@ -1419,8 +1474,12 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
     LOG_TRACE(logger, "Subquery wrap oracle: reference: {}", ref_sql);
     LOG_TRACE(logger, "Subquery wrap oracle: wrapped: {}", wrapped_sql);
 
-    auto ref_rows = executeAndCollectSortedRows(ref_sql, context);
-    auto wrapped_rows = executeAndCollectSortedRows(wrapped_sql, context);
+    auto ref_rows_opt = executeAndCollectSortedRows(ref_sql, context);
+    auto wrapped_rows_opt = executeAndCollectSortedRows(wrapped_sql, context);
+    if (!ref_rows_opt || !wrapped_rows_opt)
+        return false; /// Output exceeded MAX_ORACLE_OUTPUT_SIZE — skip.
+    auto & ref_rows = *ref_rows_opt;
+    auto & wrapped_rows = *wrapped_rows_opt;
 
     if (ref_rows != wrapped_rows)
     {
