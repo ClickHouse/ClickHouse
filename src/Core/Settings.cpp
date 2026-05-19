@@ -5488,6 +5488,14 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Bool, query_cache_for_subqueries, false, R"(
+If turned on, subquery results may be written to and read from the [query cache](../query-cache.md). This enables propagation of `use_query_cache` into all subqueries.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
     DECLARE(QueryResultCacheNondeterministicFunctionHandling, query_cache_nondeterministic_function_handling, QueryResultCacheNondeterministicFunctionHandling::Throw, R"(
 Controls how the [query cache](../query-cache.md) handles `SELECT` queries with non-deterministic functions like `rand()` or `now()`.
 

@@ -87,6 +87,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_top_k_dynamic_filtering_for_variable_length_types", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."},
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
             {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
+            {"query_cache_for_subqueries", false, false, "New setting to enable propagation of `use_query_cache` into all subqueries. Without it, subqueries are only cached on explicit per-subquery `SETTINGS use_query_cache = true` opt-in."},
             {"iceberg_data_file_size_lower_threshold_compaction", 10_MiB, 10_MiB, "New setting"},
             {"iceberg_data_file_size_upper_threshold_compaction", 10_GiB, 10_GiB, "New setting"},
             {"iceberg_max_number_datafiles_to_compact", 1000, 1000, "New setting"},
