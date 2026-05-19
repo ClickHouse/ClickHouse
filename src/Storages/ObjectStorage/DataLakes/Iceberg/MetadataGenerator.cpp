@@ -37,6 +37,46 @@ Poco::JSON::Object::Ptr deepCopy(Poco::JSON::Object::Ptr obj)
     return result.extract<Poco::JSON::Object::Ptr>();
 }
 
+/// Read a numeric `total-*` field from the parent snapshot's summary.
+/// Iceberg only requires totals on snapshots that change row-level state, so older
+/// Spark-written tables (especially v1, or post-removeOrphanFiles) routinely omit
+/// some of total-data-files/total-delete-files/total-position-deletes/
+/// total-equality-deletes. Treat any missing or null field as 0.
+Int64 readParentTotal(Poco::JSON::Object::Ptr parent_snapshot, const char * field_name)
+{
+    if (!parent_snapshot || !parent_snapshot->has(Iceberg::f_summary))
+        return 0;
+    auto parent_summary = parent_snapshot->getObject(Iceberg::f_summary);
+    if (!parent_summary || !parent_summary->has(field_name) || parent_summary->isNull(field_name))
+        return 0;
+    return parse<Int64>(parent_summary->getValue<String>(field_name));
+}
+
+/// Write the standard set of `total-*` counters into `summary` by adding the per-field
+/// delta to the corresponding parent value. Manifest-only rewrites pass all deltas as 0
+/// so the totals are inherited unchanged.
+void setSnapshotTotals(
+    Poco::JSON::Object::Ptr summary,
+    Poco::JSON::Object::Ptr parent_snapshot,
+    Int64 added_records,
+    Int64 added_files_size,
+    Int64 added_data_files,
+    Int64 added_delete_files,
+    Int64 added_position_deletes,
+    Int64 added_equality_deletes)
+{
+    auto set_total = [&](const char * field_name, Int64 added)
+    {
+        summary->set(field_name, std::to_string(readParentTotal(parent_snapshot, field_name) + added));
+    };
+    set_total(Iceberg::f_total_records, added_records);
+    set_total(Iceberg::f_total_files_size, added_files_size);
+    set_total(Iceberg::f_total_data_files, added_data_files);
+    set_total(Iceberg::f_total_delete_files, added_delete_files);
+    set_total(Iceberg::f_total_position_deletes, added_position_deletes);
+    set_total(Iceberg::f_total_equality_deletes, added_equality_deletes);
+}
+
 bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var new_type)
 {
     if (old_type.isString() && new_type.isString() && old_type.extract<String>() == new_type.extract<String>())
@@ -163,18 +203,15 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         summary->set(Iceberg::f_changed_partition_count, std::to_string(num_partitions));
     }
 
-    auto sum_with_parent_snapshot = [&](const char * field_name, Int64 snapshot_value)
-    {
-        Int64 prev_value = parent_snapshot ? parse<Int64>(parent_snapshot->getObject(Iceberg::f_summary)->getValue<String>(field_name)) : 0;
-        summary->set(field_name, std::to_string(prev_value + snapshot_value));
-    };
-
-    sum_with_parent_snapshot(Iceberg::f_total_records, added_records);
-    sum_with_parent_snapshot(Iceberg::f_total_files_size, added_files_size);
-    sum_with_parent_snapshot(Iceberg::f_total_data_files, added_files);
-    sum_with_parent_snapshot(Iceberg::f_total_delete_files, added_delete_files);
-    sum_with_parent_snapshot(Iceberg::f_total_position_deletes, num_deleted_rows);
-    sum_with_parent_snapshot(Iceberg::f_total_equality_deletes, 0);
+    setSnapshotTotals(
+        summary,
+        parent_snapshot,
+        /*added_records=*/added_records,
+        /*added_files_size=*/added_files_size,
+        /*added_data_files=*/added_files,
+        /*added_delete_files=*/added_delete_files,
+        /*added_position_deletes=*/num_deleted_rows,
+        /*added_equality_deletes=*/0);
     new_snapshot->set(Iceberg::f_summary, summary);
 
     new_snapshot->set(Iceberg::f_schema_id, metadata_object->getValue<Int32>(Iceberg::f_current_schema_id));
@@ -264,28 +301,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
     summary->set(Iceberg::f_added_files_size, "0");
     summary->set(Iceberg::f_changed_partition_count, "0");
 
-    /// Iceberg only requires totals on snapshots that change row-level state, so older
-    /// Spark-written tables (especially v1, or post-removeOrphanFiles) routinely omit
-    /// some of total-data-files/total-delete-files/total-position-deletes/
-    /// total-equality-deletes. Treat any missing or null field as 0.
-    auto carry_total_from_parent = [&](const char * field_name)
-    {
-        Int64 prev_value = 0;
-        if (parent_snapshot && parent_snapshot->has(Iceberg::f_summary))
-        {
-            auto parent_summary = parent_snapshot->getObject(Iceberg::f_summary);
-            if (parent_summary && parent_summary->has(field_name) && !parent_summary->isNull(field_name))
-                prev_value = parse<Int64>(parent_summary->getValue<String>(field_name));
-        }
-        summary->set(field_name, std::to_string(prev_value));
-    };
-
-    carry_total_from_parent(Iceberg::f_total_records);
-    carry_total_from_parent(Iceberg::f_total_files_size);
-    carry_total_from_parent(Iceberg::f_total_data_files);
-    carry_total_from_parent(Iceberg::f_total_delete_files);
-    carry_total_from_parent(Iceberg::f_total_position_deletes);
-    carry_total_from_parent(Iceberg::f_total_equality_deletes);
+    setSnapshotTotals(summary, parent_snapshot, 0, 0, 0, 0, 0, 0);
     new_snapshot->set(Iceberg::f_summary, summary);
 
     new_snapshot->set(Iceberg::f_schema_id, metadata_object->getValue<Int32>(Iceberg::f_current_schema_id));
