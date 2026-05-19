@@ -1,4 +1,5 @@
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Common/FieldVisitorToString.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -200,26 +201,27 @@ namespace QueryPlanFormat
 
         String formatConstant(const ActionsDAG::Node * node)
         {
-            if (!node->column || node->column->empty())
+            if (!node->column)
                 return node->result_name;
 
             if (node->result_type && WhichDataType(node->result_type).isSet())
                 return node->result_name;
 
+            /// node->column is a size-0 ColumnConst; read the value from its data column.
+            const auto & data_col = node->column->getDataColumnPtr();
             WhichDataType data_type(node->result_type);
 
             if (data_type.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64())
             {
                 WriteBufferFromOwnString buf;
                 writeChar('\'', buf);
-                const auto & col = node->column->convertToFullColumnIfConst();
-                node->result_type->getDefaultSerialization()->serializeText(*col, 0, buf, {});
+                node->result_type->getDefaultSerialization()->serializeText(*data_col, 0, buf, {});
                 writeChar('\'', buf);
                 return buf.str();
             }
 
             Field value;
-            node->column->get(0, value);
+            data_col->get(0, value);
             return applyVisitor(FieldVisitorToString(), value);
         }
 
