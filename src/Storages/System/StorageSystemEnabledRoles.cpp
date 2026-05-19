@@ -26,14 +26,9 @@ ColumnsDescription StorageSystemEnabledRoles::getColumnsDescription()
 
 void StorageSystemEnabledRoles::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    /// In a context with no user attached (e.g. the query context built by
-    /// `DDLWorker` for a replicated DDL when `distributed_ddl_use_initial_user_and_roles`
-    /// is disabled), `Context::getRolesInfo` already returns an empty set, so
-    /// the loop below is a no-op. Use `tryGetUser` to avoid throwing a
-    /// `LOGICAL_ERROR` on this legitimate state — that turns into a SIGABRT
-    /// in debug/sanitizer builds and was reported by `BuzzHouse` (`STID: 2436-3d64`).
     auto access = context->getAccess();
     auto roles_info = access->getRolesInfo();
+    /// `tryGetUser` can return nullptr if no user is attached.
     auto user = access->tryGetUser();
 
     size_t column_index = 0;
