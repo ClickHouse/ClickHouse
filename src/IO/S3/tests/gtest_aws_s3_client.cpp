@@ -725,6 +725,7 @@ TEST(IOTestAwsS3Client, TwoClientsWithSharedCacheUnregisterRefcount)
     client1.reset();
     client2.reset();
     // If refcount was wrong, unregisterClient would throw when the second client is destroyed
+}
 
 TEST(IOTestAwsS3Client, WebIdentityConfiguredFromEnvironment)
 {
