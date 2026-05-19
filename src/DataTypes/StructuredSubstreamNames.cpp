@@ -39,11 +39,11 @@ size_t countSubstreamsInRange(const SubstreamPath & path, size_t begin, size_t e
     return count;
 }
 
-/// Tuple / Variant path components that must stay in the suffix to disambiguate columns.
-String getPathPrefixBeforeNullableArray(const SubstreamPath & path, size_t end_index)
+/// Tuple / Variant path components in [begin_index, end_index) that disambiguate nested streams.
+String getPathPrefixInRange(const SubstreamPath & path, size_t begin_index, size_t end_index)
 {
     String stream_name;
-    for (size_t i = 0; i < end_index && i < path.size(); ++i)
+    for (size_t i = begin_index; i < end_index && i < path.size(); ++i)
     {
         const auto & element = path[i];
         if (element.type == Substream::TupleElement)
@@ -60,6 +60,23 @@ String getPathPrefixBeforeNullableArray(const SubstreamPath & path, size_t end_i
             stream_name += ".variant_offsets";
     }
     return stream_name;
+}
+
+String getPathPrefixBeforeNullableArray(const SubstreamPath & path, size_t end_index)
+{
+    return getPathPrefixInRange(path, 0, end_index);
+}
+
+std::optional<size_t> findLastSubstreamInRange(
+    const SubstreamPath & path, size_t begin_index, size_t end_index, Substream::Type type)
+{
+    std::optional<size_t> last_index;
+    for (size_t i = begin_index; i < end_index && i < path.size(); ++i)
+    {
+        if (path[i].type == type)
+            last_index = i;
+    }
+    return last_index;
 }
 
 /// Index of the outer Nullable(Array) null map: first NullMap not preceded by ArrayElements.
@@ -111,21 +128,24 @@ String getNullableArrayStructuredSuffix(const SubstreamPath & path, size_t nulla
         && path[path_size - 1].type == Substream::NullMap
         && pathContainsSubstreamInRange(path, nullable_array_start, path_size, Substream::ArrayElements))
     {
-        return ".array.nested.null";
+        const auto outer_array_elements = findLastSubstreamInRange(path, nullable_array_start, path_size, Substream::ArrayElements);
+        const String element_context = outer_array_elements
+            ? getPathPrefixInRange(path, *outer_array_elements + 1, path_size - 1)
+            : String{};
+        return ".array.nested" + element_context + ".null";
     }
 
     if (path_size >= 2 && path[path_size - 1].type == Substream::Regular)
     {
+        const auto outer_array_elements = findLastSubstreamInRange(path, nullable_array_start, path_size, Substream::ArrayElements);
+        if (!outer_array_elements)
+            return "";
+
         if (path[path_size - 2].type == Substream::ArrayElements)
             return ".array.nested";
 
-        if (path_size >= 4
-            && path[path_size - 2].type == Substream::NullableElements
-            && path[path_size - 3].type == Substream::NullMap
-            && path[path_size - 4].type == Substream::ArrayElements)
-        {
-            return ".array.nested";
-        }
+        const String element_context = getPathPrefixInRange(path, *outer_array_elements + 1, path_size - 1);
+        return ".array.nested" + element_context;
     }
 
     return "";
