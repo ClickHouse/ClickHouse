@@ -150,14 +150,8 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
         auto index_name = skip_index->getFileName();
         auto index_substreams = skip_index->getSubstreams();
 
-        /// Text (full-text) indices route their MERGE output through MergeTextIndexesTask, which
-        /// builds its own writer streams via TextIndexUtils::makeOutputStreams and does NOT
-        /// thread a PackedFilesWriter. If we packed text during INSERT, OPTIMIZE FINAL would
-        /// then un-pack it (the merge produces standalone files), leaving a confusing
-        /// per-INSERT vs per-merge layout drift. Keep the layout consistent by never packing
-        /// text indices in either path. (Plumbing the packed writer through the text-index
-        /// merge pipeline is the proper long-term fix; this stays per-file for the current
-        /// experimental rollout.)
+        /// Full-text indices are not supported and never packed: their merge output goes
+        /// through MergeTextIndexesTask which writes standalone files.
         const bool packs_this_index = packing_enabled
             && dynamic_cast<const MergeTreeIndexText *>(skip_index.get()) == nullptr;
 

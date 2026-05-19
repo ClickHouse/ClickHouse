@@ -1,8 +1,7 @@
--- Text (full-text) indices are intentionally excluded from packing. Their merge pipeline
--- (MergeTextIndexesTask via TextIndexUtils::makeOutputStreams) doesn't thread a
--- PackedFilesWriter, so packing them on INSERT would cause OPTIMIZE FINAL to un-pack them
--- and produce a confusing per-INSERT vs per-merge layout drift. This test asserts the layout
--- stays per-file in both directions.
+-- Full-text indices are not supported by packed_skip_index_max_bytes and are always written
+-- per-file. This test verifies the layout stays per-file across INSERT and OPTIMIZE FINAL,
+-- and that DROP INDEX removes all skip-index bytes (a stray skp_idx.packed would leak past
+-- the drop).
 
 SET allow_experimental_full_text_index = 1;
 

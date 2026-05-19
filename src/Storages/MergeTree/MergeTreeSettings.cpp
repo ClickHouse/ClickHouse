@@ -1910,9 +1910,7 @@ namespace ErrorCodes
     writing scales with `2 * packed_skip_index_max_bytes * (number of substreams that stay
     below the threshold)`.
 
-    Text (full-text) indices are never packed: their merge pipeline produces standalone
-    files, so packing them on INSERT would only result in OPTIMIZE FINAL un-packing them
-    later. For the current experimental rollout the layout is forced to per-file for text.
+    Full-text indices are not supported by this setting and are never packed.
 
     Packing reduces inode pressure when many skip indices are defined on a table (for example
     with `add_minmax_index_for_numeric_columns`).
