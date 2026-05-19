@@ -5446,16 +5446,25 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
 namespace
 {
 
-/** Returns true if the subtree contains a function call that prevents moving the conjunct from `HAVING` to `WHERE`.
+/** Classify a HAVING conjunct subtree for the `HAVING` -> `WHERE` rewrite.
   *
-  * A conjunct is unsafe to move if it contains:
-  * - an aggregate function (must stay in HAVING);
-  * - a window function (not allowed in WHERE either; let validation surface it);
-  * - a `grouping()` call (only valid post-aggregation);
-  * - a stateful or non-deterministic function (re-evaluation in WHERE has different semantics).
+  * `AbortRewrite` outranks `KeepInHaving` outranks `Move`:
+  * - any window function or stateful function -> `AbortRewrite` (matches legacy `return false`);
+  * - else any aggregate function -> `KeepInHaving`;
+  * - else any non-deterministic function -> `KeepInHaving` (stricter than legacy, which moved them);
+  * - else -> `Move`.
   */
-bool hasFunctionPreventingHavingToWhereMove(const QueryTreeNodePtr & node)
+enum class HavingConjunctMoveAction
 {
+    Move,
+    KeepInHaving,
+    AbortRewrite,
+};
+
+HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & node)
+{
+    HavingConjunctMoveAction verdict = HavingConjunctMoveAction::Move;
+
     QueryTreeNodes nodes_to_visit = {node};
     while (!nodes_to_visit.empty())
     {
@@ -5468,19 +5477,23 @@ bool hasFunctionPreventingHavingToWhereMove(const QueryTreeNodePtr & node)
 
         if (auto * function_node = current->as<FunctionNode>())
         {
-            if (function_node->isAggregateFunction()
-                || function_node->isWindowFunction()
-                || function_node->getFunctionName() == "grouping")
-                return true;
+            if (function_node->isWindowFunction())
+                return HavingConjunctMoveAction::AbortRewrite;
 
             if (function_node->isOrdinaryFunction())
             {
                 if (auto function_base = function_node->getFunction())
                 {
-                    if (function_base->isStateful() || !function_base->isDeterministicInScopeOfQuery())
-                        return true;
+                    if (function_base->isStateful())
+                        return HavingConjunctMoveAction::AbortRewrite;
+
+                    if (!function_base->isDeterministicInScopeOfQuery() && verdict == HavingConjunctMoveAction::Move)
+                        verdict = HavingConjunctMoveAction::KeepInHaving;
                 }
             }
+
+            if (function_node->isAggregateFunction() && verdict == HavingConjunctMoveAction::Move)
+                verdict = HavingConjunctMoveAction::KeepInHaving;
         }
 
         for (const auto & child : current->getChildren())
@@ -5488,18 +5501,21 @@ bool hasFunctionPreventingHavingToWhereMove(const QueryTreeNodePtr & node)
                 nodes_to_visit.push_back(child);
     }
 
-    return false;
+    return verdict;
 }
 
 /** Mimic the legacy `tryMovePredicatesFromHavingToWhere` rewrite at the QueryTree level.
   *
-  * The old analyzer rewrote `SELECT ... GROUP BY k HAVING k = 1 AND non_grouped = 2`
-  * by moving every non-aggregate AND-conjunct from `HAVING` to `WHERE`, silently
-  * accepting queries that the new analyzer rejects with `NOT_AN_AGGREGATE`.
+  * All-or-nothing for stateful and window functions: if any conjunct contains either,
+  * the entire rewrite is skipped (matches legacy `return false`).
+  *
+  * Stricter than legacy for non-determinism: conjuncts containing non-deterministic calls
+  * (e.g. `rand`) stay in `HAVING` instead of moving. Legacy moved them, silently changing
+  * per-group evaluation to per-row; we intentionally keep them in `HAVING`.
   *
   * Gated behind `analyzer_compatibility_allow_non_aggregate_in_having`. Skipped for
   * `WITH CUBE`/`WITH ROLLUP`/`WITH TOTALS`/`GROUPING SETS` and when `group_by_use_nulls`
-  * is in effect, since each changes the semantics of the HAVING-side scope.
+  * is in effect.
   */
 void tryMoveNonAggregateHavingPredicatesToWhere(const QueryTreeNodePtr & query_node, const IdentifierResolveScope & scope)
 {
@@ -5533,17 +5549,27 @@ void tryMoveNonAggregateHavingPredicatesToWhere(const QueryTreeNodePtr & query_n
     else
         conjuncts.push_back(having_node);
 
+    std::vector<HavingConjunctMoveAction> classifications;
+    classifications.reserve(conjuncts.size());
+    for (const auto & conjunct : conjuncts)
+    {
+        auto action = classifyHavingConjunctForMove(conjunct);
+        if (action == HavingConjunctMoveAction::AbortRewrite)
+            return;
+        classifications.push_back(action);
+    }
+
     QueryTreeNodes keep_in_having;
     QueryTreeNodes move_to_where;
     keep_in_having.reserve(conjuncts.size());
     move_to_where.reserve(conjuncts.size());
 
-    for (auto & conjunct : conjuncts)
+    for (size_t i = 0; i < conjuncts.size(); ++i)
     {
-        if (hasFunctionPreventingHavingToWhereMove(conjunct))
-            keep_in_having.push_back(std::move(conjunct));
+        if (classifications[i] == HavingConjunctMoveAction::KeepInHaving)
+            keep_in_having.push_back(std::move(conjuncts[i]));
         else
-            move_to_where.push_back(std::move(conjunct));
+            move_to_where.push_back(std::move(conjuncts[i]));
     }
 
     if (move_to_where.empty())

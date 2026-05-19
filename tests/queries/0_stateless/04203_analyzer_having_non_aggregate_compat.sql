@@ -159,6 +159,20 @@ SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_havi
 SELECT category, sum(value) FROM test_a1 GROUP BY category WITH ROLLUP HAVING service = 'svc1'
 SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1, group_by_use_nulls = 1; -- { serverError NOT_AN_AGGREGATE }
 
+-- A stateful function in any conjunct aborts the legacy rewrite; matches `tryMovePredicatesFromHavingToWhere` legacy behavior.
+SELECT category, sum(value) FROM test_a1 GROUP BY category HAVING rowNumberInBlock() >= 0 AND service = 'svc1'
+SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1; -- { serverError NOT_AN_AGGREGATE }
+
+-- A window function in any conjunct aborts the legacy rewrite; legacy `tryMovePredicatesFromHavingToWhere` also `return false`s on window funcs. Window funcs in HAVING are invalid; validation surfaces its own error.
+SELECT category, sum(value) FROM test_a1 GROUP BY category HAVING (count() OVER ()) > 0 AND service = 'svc1'
+SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1; -- { serverError ILLEGAL_AGGREGATION }
+
+-- Non-deterministic predicates stay in HAVING (stricter than legacy, which would have moved them to WHERE and silently changed per-group evaluation to per-row). Sibling deterministic conjuncts still move to WHERE.
+SELECT 'A.7 non-deterministic conjunct stays in HAVING';
+SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING ((rand() % 1) = 0) AND service = 'svc1'
+ORDER BY category
+SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
+
 DROP TABLE test_a1;
 DROP TABLE test_a2;
 DROP TABLE test_a3;

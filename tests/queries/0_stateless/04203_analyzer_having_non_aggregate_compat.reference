@@ -26,3 +26,6 @@ a	10
 b	30
 no-aggregation no-op
 3
+A.7 non-deterministic conjunct stays in HAVING
+a	10
+b	30

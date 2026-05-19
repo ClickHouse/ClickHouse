@@ -59,7 +59,7 @@ WHERE number > 5
 GROUP BY n
 ```
 
-As a migration aid, the analyzer can replicate the old `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts. Enable `analyzer_compatibility_allow_non_aggregate_in_having = 1` to opt into this behavior. The setting is available since ClickHouse `26.5`. The setting is ignored for `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS`, and `GROUPING SETS`, and conjuncts containing aggregate, window, `grouping`, stateful, or non-deterministic functions are not moved.
+As a migration aid, the analyzer can replicate the old `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts. Enable `analyzer_compatibility_allow_non_aggregate_in_having = 1` to opt into this behavior. The setting is available since ClickHouse `26.5`. The setting is ignored for `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS`, and `GROUPING SETS`. Conjuncts containing aggregate, `grouping`, or non-deterministic functions stay in `HAVING`; if any conjunct contains a window function or a stateful function (for example `rowNumberInBlock`), the rewrite is disabled for the whole `HAVING`, matching the legacy behavior.
 
 ### `CREATE VIEW` with an invalid query {#create-view-with-invalid-query}
 
@@ -263,7 +263,7 @@ Error: `Column ... is not under aggregate function and not in GROUP BY keys (NOT
 
 Cause: The old analyzer silently moved non-aggregate AND-conjuncts of `HAVING` to `WHERE`, treating them as pre-aggregation filters. The analyzer adheres to standard SQL: `HAVING` may only reference aggregation keys and aggregate functions.
 
-Solution: Move the predicate from `HAVING` to `WHERE` manually, or enable `analyzer_compatibility_allow_non_aggregate_in_having = 1` (available since ClickHouse `26.5`) to restore the legacy rewrite as a migration aid. The compatibility setting is ignored for `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS`, and `GROUPING SETS`, and conjuncts containing aggregate, window, `grouping`, stateful, or non-deterministic functions are not moved.
+Solution: Move the predicate from `HAVING` to `WHERE` manually, or enable `analyzer_compatibility_allow_non_aggregate_in_having = 1` (available since ClickHouse `26.5`) to restore the legacy rewrite as a migration aid. The compatibility setting is ignored for `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS`, and `GROUPING SETS`. Conjuncts containing aggregate, `grouping`, or non-deterministic functions stay in `HAVING`; if any conjunct contains a window function or a stateful function (for example `rowNumberInBlock`), the rewrite is disabled for the whole `HAVING`, matching the legacy behavior.
 
 ```sql
 /* ORIGINAL QUERY */
