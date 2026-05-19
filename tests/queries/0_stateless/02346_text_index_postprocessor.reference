@@ -177,3 +177,4 @@ started	1
 - The postprocessor expression must return String
 - The postprocessor must not contain non-deterministic functions
 - The postprocessor must not contain arrayJoin
+- A postprocessor that produces a token containing separator characters throws BAD_ARGUMENTS at query time
