@@ -185,15 +185,11 @@ DROP TABLE IF EXISTS test_key_noninjective_of_partition;
 CREATE TABLE test_key_noninjective_of_partition (a UInt32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a;
 INSERT INTO test_key_noninjective_of_partition SELECT number % 8 FROM numbers_mt(1e3);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT a FROM test_key_noninjective_of_partition LIMIT 1 BY (a % 4) SETTINGS allow_limit_by_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
-Skip stream merging: 1
-Read each partition through separate port: 1
 DROP TABLE test_key_noninjective_of_partition;
 DROP TABLE IF EXISTS test_key_coarser_than_partition;
 CREATE TABLE test_key_coarser_than_partition (a UInt32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a;
 INSERT INTO test_key_coarser_than_partition SELECT number % 16 FROM numbers_mt(1e3);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT intDiv(a, 2) AS a1 FROM test_key_coarser_than_partition LIMIT 1 BY a1 SETTINGS allow_limit_by_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
-Skip stream merging: 1
-Read each partition through separate port: 1
 DROP TABLE test_key_coarser_than_partition;
 DROP TABLE IF EXISTS test_mismatched_divisors;
 CREATE TABLE test_mismatched_divisors (a UInt32) ENGINE = MergeTree ORDER BY a PARTITION BY intDiv(a, 2);
