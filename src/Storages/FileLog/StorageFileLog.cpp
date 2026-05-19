@@ -965,14 +965,15 @@ bool StorageFileLog::updateFileInfos()
                     {
                         auto inode = getInode(file_path);
 
-                        file_infos.file_names.push_back(file_name);
-
                         /// If the file already existed with a different inode (deleted and recreated),
                         /// clean up the old inode's meta entry and on-disk meta file to prevent
                         /// two meta_by_inode entries mapping to the same filename.
                         /// Guard the cleanup by filename ownership: a rename within the same
                         /// event batch may have re-assigned the old inode to a different
                         /// filename, and we must not drop the meta tracking that other file.
+                        /// Only push the name to `file_names` when the context entry is fresh;
+                        /// otherwise a remove+add pair in the same batch would leave a duplicate
+                        /// slot for the same name.
                         if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                         {
                             if (it->second.inode != inode)
@@ -987,7 +988,10 @@ bool StorageFileLog::updateFileInfos()
                             it->second = FileContext{.status = FileStatus::OPEN, .inode = inode};
                         }
                         else
+                        {
+                            file_infos.file_names.push_back(file_name);
                             file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
+                        }
 
                         if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
                             it->second = FileMeta{.file_name = file_name};
@@ -1023,12 +1027,13 @@ bool StorageFileLog::updateFileInfos()
                     /// should obtain old meta file and rename meta file
                     if (std::filesystem::is_regular_file(file_path))
                     {
-                        file_infos.file_names.push_back(file_name);
                         auto inode = getInode(file_path);
 
                         /// If the file name was previously tracked with a different inode,
                         /// clean up the stale meta entry. Guard by filename ownership so a
                         /// rename within the same batch does not drop another file's meta.
+                        /// Only push the name to `file_names` for a fresh context entry to
+                        /// avoid a duplicate slot when remove+move-to land in the same batch.
                         if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                         {
                             if (it->second.inode != inode)
@@ -1043,7 +1048,10 @@ bool StorageFileLog::updateFileInfos()
                             it->second = FileContext{.inode = inode};
                         }
                         else
+                        {
+                            file_infos.file_names.push_back(file_name);
                             file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
+                        }
 
                         /// File has been renamed, we should also rename meta file
                         if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
