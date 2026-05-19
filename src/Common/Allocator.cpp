@@ -141,7 +141,7 @@ void * Allocator<clear_memory_, populate>::alloc(size_t size, size_t alignment)
 
 
 template <bool clear_memory_, bool populate>
-void Allocator<clear_memory_, populate>::free(void * buf, size_t size)
+void Allocator<clear_memory_, populate>::free(void * buf, size_t size, size_t /* alignment */)
 {
     try
     {

@@ -678,6 +678,32 @@ def test_headers_in_response():
         assert response_predefined.headers["X-My-Common-Header"] == "Common header present"
 
 
+def test_common_headers_without_per_handler():
+    """Test that common_http_response_headers are present in responses from
+    dynamic_query_handler and predefined_query_handler even when those handlers
+    have no per-handler http_response_headers configured."""
+    with contextlib.closing(
+            SimpleCluster(
+                ClickHouseCluster(__file__), "common_headers_no_per_handler",
+                "test_common_headers_without_per_handler"
+            )
+    ) as cluster:
+        # dynamic_query_handler without per-handler headers
+        response = cluster.instance.http_request("?query=SELECT%201", method="GET")
+        assert response.status_code == 200
+        assert "X-My-Common-Header" in response.headers, \
+            "common_http_response_headers missing from dynamic_query_handler without per-handler headers"
+        assert response.headers["X-My-Common-Header"] == "Common header present"
+
+        # predefined_query_handler without per-handler headers
+        response_predefined = cluster.instance.http_request(
+            "query_param_with_url", method="GET", headers={"PARAMS_XXX": "test_param"})
+        assert response_predefined.status_code == 200
+        assert "X-My-Common-Header" in response_predefined.headers, \
+            "common_http_response_headers missing from predefined_query_handler without per-handler headers"
+        assert response_predefined.headers["X-My-Common-Header"] == "Common header present"
+
+
 def test_redirect_handler():
     with contextlib.closing(
         SimpleCluster(
