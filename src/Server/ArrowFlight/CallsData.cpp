@@ -24,9 +24,12 @@ Timestamp CallsData::now()
     return std::chrono::system_clock::now();
 }
 
-CallsData::CallsData(std::optional<Duration> tickets_lifetime_, std::optional<Duration> poll_descriptors_lifetime_, LoggerPtr log_)
+CallsData::CallsData(std::optional<Duration> tickets_lifetime_, std::optional<Duration> poll_descriptors_lifetime_, std::optional<Duration> prepared_statements_lifetime_, bool use_session_timeout_for_ps_lifetime_, size_t max_prepared_statements_per_user_, LoggerPtr log_)
     : tickets_lifetime(tickets_lifetime_)
     , poll_descriptors_lifetime(poll_descriptors_lifetime_)
+    , prepared_statements_lifetime(prepared_statements_lifetime_)
+    , use_session_timeout_for_ps_lifetime(use_session_timeout_for_ps_lifetime_)
+    , max_prepared_statements_per_user(max_prepared_statements_per_user_)
     , log(log_)
 {
 }
@@ -460,6 +463,16 @@ void CallsData::cancelExpired()
             eraseFlightDescriptorMapEntryLocked(it->second);
             it = poll_descriptors_by_expiration_time.erase(it);
         }
+
+        {
+            auto & by_exp = prep_statements.get<ByExpirationTime>();
+            for (auto it = by_exp.begin(); it != by_exp.end() && it->expiration_time < current_time;)
+            {
+                LOG_DEBUG(log, "Cancelling expired prepared statement {}", it->handle);
+                it = by_exp.erase(it);
+            }
+        }
+
         updateNextExpirationTime();
     }
 
@@ -532,6 +545,175 @@ String CallsData::generatePollDescriptorName()
     return POLL_DESCRIPTOR_PREFIX + toString(UUIDHelpers::generateV4());
 }
 
+String CallsData::generatePreparedStatementHandle()
+{
+    return PREPARED_STATEMENT_HANDLE_PREFIX + toString(UUIDHelpers::generateV4());
+}
+
+arrow::Result<String> CallsData::createPreparedStatement(PreparedStatementInfo info, const String & session_id, std::optional<Duration> session_timeout)
+{
+    String handle = generatePreparedStatementHandle();
+    LOG_DEBUG(log, "Creating prepared statement {} for user {}", handle, info.username);
+    auto shared_info = std::make_shared<PreparedStatementInfo>(std::move(info));
+    std::optional<Timestamp> expiration_time;
+    if (use_session_timeout_for_ps_lifetime && session_timeout)
+        expiration_time = now() + *session_timeout;
+    else
+        expiration_time = calculatePreparedStatementExpirationTime(now());
+    shared_info->expiration_time = expiration_time;
+    Timestamp entry_expiration = expiration_time.value_or(Timestamp::max());
+    std::lock_guard lock{mutex};
+    if (max_prepared_statements_per_user > 0)
+    {
+        auto & by_user = prep_statements.get<ByUsername>();
+        if (by_user.count(shared_info->username) >= max_prepared_statements_per_user)
+            return arrow::Status::CapacityError(
+                "Too many prepared statements for user ", shared_info->username,
+                " (limit: ", std::to_string(max_prepared_statements_per_user), ")");
+    }
+    prep_statements.emplace(PreparedStatementEntry{handle, session_id, shared_info->username, entry_expiration, std::move(shared_info)});
+    if (expiration_time)
+        updateNextExpirationTime();
+    return handle;
+}
+
+arrow::Result<PreparedStatementInfo> CallsData::getPreparedStatement(const String & handle, const String & username) const
+{
+    std::lock_guard lock{mutex};
+    const auto & by_handle = prep_statements.get<ByHandle>();
+    auto it = by_handle.find(handle);
+    if (it == by_handle.end())
+        return arrow::Status::KeyError("Prepared statement handle not found");
+    if (it->username != username)
+        return arrow::Status::KeyError("Prepared statement handle not found");
+    return *it->info;
+}
+
+arrow::Status CallsData::bindParameters(const String & handle, const String & username, std::shared_ptr<arrow::RecordBatch> params)
+{
+    std::lock_guard lock{mutex};
+    auto & by_handle = prep_statements.get<ByHandle>();
+    auto it = by_handle.find(handle);
+    if (it == by_handle.end())
+        return arrow::Status::KeyError("Prepared statement handle not found");
+    if (it->username != username)
+        return arrow::Status::KeyError("Prepared statement handle not found");
+
+    const auto & ps_info = it->info;
+    size_t num_params = ps_info->numParams();
+
+    if (params && params->num_rows() > 1)
+        return arrow::Status::NotImplemented("Multiple parameter sets are not supported (got ", params->num_rows(), " rows)");
+
+    if (params && params->num_rows() > 0 && static_cast<size_t>(params->num_columns()) != num_params)
+        return arrow::Status::Invalid(
+            "Parameter count mismatch: query has ", num_params,
+            " '?' placeholders but ", params->num_columns(), " columns were bound");
+
+    it->info->bound_parameters = std::move(params);
+    return arrow::Status::OK();
+}
+
+void CallsData::closePreparedStatement(const String & handle, const String & username)
+{
+    std::lock_guard lock{mutex};
+    auto & by_handle = prep_statements.get<ByHandle>();
+    auto it = by_handle.find(handle);
+    if (it == by_handle.end())
+        return;
+    if (it->username != username)
+        return;
+    bool had_expiration = (it->expiration_time != Timestamp::max());
+    LOG_DEBUG(log, "Closing prepared statement {} for user {}", handle, username);
+    by_handle.erase(it);
+    if (had_expiration)
+        updateNextExpirationTime();
+}
+
+void CallsData::closeAllPreparedStatements(const String & username, const String & session_id)
+{
+    std::lock_guard lock{mutex};
+    bool any_erased = false;
+
+    if (!session_id.empty())
+    {
+        /// Session-scoped: close only statements in this session that belong to this user.
+        auto & by_session = prep_statements.get<BySessionId>();
+        auto [first, last] = by_session.equal_range(session_id);
+        for (auto it = first; it != last;)
+        {
+            if (it->username == username)
+            {
+                LOG_DEBUG(log, "Closing prepared statement {} (close-all for user={}, session={})", it->handle, username, session_id);
+                it = by_session.erase(it);
+                any_erased = true;
+            }
+            else
+                ++it;
+        }
+    }
+    else
+    {
+        /// Session-less: close only statements for this user that have no session association.
+        auto & by_user = prep_statements.get<ByUsername>();
+        auto [first, last] = by_user.equal_range(username);
+        for (auto it = first; it != last;)
+        {
+            if (it->session_id.empty())
+            {
+                LOG_DEBUG(log, "Closing prepared statement {} (close-all for user={}, session={})", it->handle, username, session_id);
+                it = by_user.erase(it);
+                any_erased = true;
+            }
+            else
+                ++it;
+        }
+    }
+
+    if (any_erased)
+        updateNextExpirationTime();
+}
+
+void CallsData::closeSessionPreparedStatements(const String & session_id, const String & username)
+{
+    std::lock_guard lock{mutex};
+    auto & by_session = prep_statements.get<BySessionId>();
+    auto [first, last] = by_session.equal_range(session_id);
+    for (auto it = first; it != last;)
+    {
+        if (it->username == username)
+        {
+            LOG_DEBUG(log, "Closing prepared statement {} (session {} closed)", it->handle, session_id);
+            it = by_session.erase(it);
+        }
+        else
+            ++it;
+    }
+    updateNextExpirationTime();
+}
+
+void CallsData::refreshSessionPreparedStatements(const String & session_id, const String & username, Duration session_timeout)
+{
+    std::lock_guard lock{mutex};
+    auto & by_session = prep_statements.get<BySessionId>();
+    auto [first, last] = by_session.equal_range(session_id);
+    auto new_expiration = now() + session_timeout;
+    bool any_modified = false;
+    for (auto it = first; it != last; ++it)
+    {
+        if (it->username == username)
+        {
+            by_session.modify(it, [&](PreparedStatementEntry & entry)
+            {
+                entry.expiration_time = new_expiration;
+            });
+            any_modified = true;
+        }
+    }
+    if (any_modified)
+        updateNextExpirationTime();
+}
+
 std::optional<Timestamp> CallsData::calculateTicketExpirationTime(Timestamp current_time) const
 {
     if (!tickets_lifetime)
@@ -546,6 +728,13 @@ std::optional<Timestamp> CallsData::calculatePollDescriptorExpirationTime(Timest
     return current_time + *poll_descriptors_lifetime;
 }
 
+std::optional<Timestamp> CallsData::calculatePreparedStatementExpirationTime(Timestamp current_time) const
+{
+    if (!prepared_statements_lifetime)
+        return std::nullopt;
+    return current_time + *prepared_statements_lifetime;
+}
+
 void CallsData::updateNextExpirationTime()
 {
     auto expiration_time = next_expiration_time;
@@ -556,6 +745,14 @@ void CallsData::updateNextExpirationTime()
     {
         auto other_expiration_time = poll_descriptors_by_expiration_time.begin()->first;
         next_expiration_time = next_expiration_time ? std::min(*next_expiration_time, other_expiration_time) : other_expiration_time;
+    }
+    {
+        auto & by_exp = prep_statements.get<ByExpirationTime>();
+        if (!by_exp.empty() && by_exp.begin()->expiration_time != Timestamp::max())
+        {
+            auto other_expiration_time = by_exp.begin()->expiration_time;
+            next_expiration_time = next_expiration_time ? std::min(*next_expiration_time, other_expiration_time) : other_expiration_time;
+        }
     }
     if (next_expiration_time != expiration_time)
         next_expiration_time_updated.notify_all();
