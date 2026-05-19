@@ -1682,9 +1682,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     auto minmax_index = part->getMinMaxIndex();
     if (minmax_index && minmax_index->initialized)
     {
-        const auto & partition_key = metadata_snapshot->getPartitionKey();
         const auto minmax_names = MergeTreeData::getMinMaxColumns(
-            partition_key, data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames();
+            metadata_snapshot->getPartitionKey(), part->storage->getSettings(), MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames();
 
         const auto & hyperrectangle = minmax_index->hyperrectangle;
         if (hyperrectangle.size() == minmax_names.size())
