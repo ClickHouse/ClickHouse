@@ -791,20 +791,11 @@ namespace
                     expected_type->getName());
         };
 
-        const auto is_string_like = [](const DataTypePtr & t)
-        {
-            WhichDataType w{*t};
-            if (w.isString()) return true;
-            if (w.isLowCardinality())
-                return WhichDataType{*typeid_cast<const DataTypeLowCardinality &>(*t).getDictionaryType()}.isString();
-            return false;
-        };
-
-        auto check_column_is_string_like = [&](std::string_view column_name)
+        auto check_column_is_string = [&](std::string_view column_name)
         {
             check_column(column_name);
             const auto * col = target_table_columns.tryGet(String(column_name));
-            if (!is_string_like(col->type))
+            if (!isString(removeLowCardinalityAndNullable(col->type)))
                 throw Exception(
                     ErrorCodes::BAD_TYPE_OF_FIELD,
                     "{}: Column {} in the {} table has type {}, but expected String or LowCardinality(String)",
@@ -823,7 +814,8 @@ namespace
             if (which.isMap())
             {
                 const auto & map_type = typeid_cast<const DataTypeMap &>(*col->type);
-                ok = is_string_like(map_type.getKeyType()) && is_string_like(map_type.getValueType());
+                ok = isString(removeLowCardinality(map_type.getKeyType()))
+                    && isString(removeLowCardinality(map_type.getValueType()));
             }
             if (!ok)
                 throw Exception(
@@ -848,14 +840,14 @@ namespace
             case ViewTarget::Tags:
             {
                 check_column_type(TimeSeriesColumnNames::ID, time_series_settings[TimeSeriesSetting::id_type]);
-                check_column_is_string_like(TimeSeriesColumnNames::MetricName);
+                check_column_is_string(TimeSeriesColumnNames::MetricName);
 
                 const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
                 for (const auto & tag_name_and_column_name : tags_to_columns)
                 {
                     const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
                     const auto & column_name = tuple.at(1).safeGet<String>();
-                    check_column_is_string_like(column_name);
+                    check_column_is_string(column_name);
                 }
 
                 check_column_is_string_map(TimeSeriesColumnNames::Tags);
@@ -864,10 +856,10 @@ namespace
 
             case ViewTarget::Metrics:
             {
-                check_column_is_string_like(TimeSeriesColumnNames::MetricFamilyName);
-                check_column_is_string_like(TimeSeriesColumnNames::Type);
-                check_column_is_string_like(TimeSeriesColumnNames::Unit);
-                check_column_is_string_like(TimeSeriesColumnNames::Help);
+                check_column_is_string(TimeSeriesColumnNames::MetricFamilyName);
+                check_column_is_string(TimeSeriesColumnNames::Type);
+                check_column_is_string(TimeSeriesColumnNames::Unit);
+                check_column_is_string(TimeSeriesColumnNames::Help);
                 break;
             }
 
