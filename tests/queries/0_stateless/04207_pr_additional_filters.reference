@@ -1,2 +1,53 @@
 3
 3
+Expression ((Project names + Projection))
+Actions: INPUT :: 0 -> count() UInt64 : 0
+Positions: 0
+  MergingAggregated
+  Keys:
+  Aggregates:
+      count()
+        Function: count() → UInt64
+        Arguments: none
+    Union
+      Aggregating
+      Keys:
+      Aggregates:
+          count()
+            Function: count() → UInt64
+            Arguments: none
+      Skip merging: 0
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+        Positions:
+          Filter (additional filter)
+          Filter column: lessOrEquals(x, 2_UInt8) (removed)
+          Actions: INPUT : 0 -> x UInt64 : 0
+                   COLUMN Const(UInt8) -> 2_UInt8 UInt8 : 1
+                   FUNCTION lessOrEquals(x :: 0, 2_UInt8 :: 1) -> lessOrEquals(x, 2_UInt8) UInt8 : 2
+          Positions: 2
+            ReadFromMergeTree (default.atf_p)
+            ReadType: Default
+            Parts: 1
+            Granules: 1
+      ReadFromRemoteParallelReplicas (Query: SELECT count() AS `count()` FROM `default`.`atf_p` AS `__table1` Replicas: 127.0.0.2:9000, 127.0.0.3:9000)
+        Aggregating
+        Keys:
+        Aggregates:
+            count()
+              Function: count() → UInt64
+              Arguments: none
+        Skip merging: 0
+          Expression (Before GROUP BY)
+          Actions: INPUT :: 0 -> __table1.x UInt64 : 0
+          Positions:
+            Expression (Change column names to column identifiers)
+            Actions: INPUT : 0 -> x UInt64 : 0
+                     ALIAS x :: 0 -> __table1.x UInt64 : 1
+            Positions: 1
+              Filter (additional filter)
+              Filter column: lessOrEquals(x, 2_UInt8) (removed)
+              Actions: INPUT : 0 -> x UInt64 : 0
+                       COLUMN Const(UInt8) -> 2_UInt8 UInt8 : 1
+                       FUNCTION lessOrEquals(x : 0, 2_UInt8 :: 1) -> lessOrEquals(x, 2_UInt8) UInt8 : 2
+              Positions: 2 0
+                ReadFromTable

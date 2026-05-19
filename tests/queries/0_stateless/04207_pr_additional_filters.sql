@@ -52,5 +52,18 @@ SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'
     parallel_replicas_local_plan = 1,
     serialize_query_plan = 1;
 
+-- Verify the additional filter is present in the serialized plan shipped to followers.
+SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
+EXPLAIN PLAN actions = 1, distributed = 1
+SELECT count() FROM atf_p SETTINGS additional_table_filters = {'atf_p': 'x <= 2'},
+    enable_analyzer = 1,
+    enable_parallel_replicas = 2,
+    automatic_parallel_replicas_mode = 0,
+    max_parallel_replicas = 3,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+    parallel_replicas_for_non_replicated_merge_tree = 1,
+    parallel_replicas_local_plan = 1,
+    serialize_query_plan = 1;
+
 SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 DROP TABLE atf_p;
