@@ -1,12 +1,14 @@
 #include <Common/UDFProcessSubtreeSampler.h>
 
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+
 #include <dirent.h>
 #include <fcntl.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <fstream>
-#include <sstream>
 #include <string>
 
 
@@ -107,7 +109,7 @@ void clearRefs(pid_t pid) noexcept
     const char data[] = "5\n";
     ssize_t written = ::write(fd, data, sizeof(data) - 1);
     (void)written;
-    ::close(fd);
+    [[maybe_unused]] int close_err = ::close(fd);
 #else
     (void)pid;
 #endif
@@ -137,20 +139,25 @@ bool readStat(pid_t pid, UInt64 & utime_us, UInt64 & stime_us) noexcept
     if (close_paren == std::string::npos || close_paren + 1 >= line.size())
         return false;
 
-    std::istringstream rest(line.substr(close_paren + 1));
-    std::string token;
+    const std::string rest_str = line.substr(close_paren + 1);
+    ReadBufferFromString rest(rest_str);
     /// After comm, the next token is state (field 3). utime is field 14,
     /// stime is field 15 — skip 11 fields to land on utime.
     for (int i = 0; i < 11; ++i)
     {
-        if (!(rest >> token))
+        skipWhitespaceIfAny(rest);
+        skipStringUntilWhitespace(rest);
+        if (rest.eof())
             return false;
     }
+    skipWhitespaceIfAny(rest);
+
     UInt64 utime_ticks = 0;
     UInt64 stime_ticks = 0;
-    if (!(rest >> utime_ticks))
+    if (!tryReadIntText(utime_ticks, rest))
         return false;
-    if (!(rest >> stime_ticks))
+    skipWhitespaceIfAny(rest);
+    if (!tryReadIntText(stime_ticks, rest))
         return false;
 
     utime_us = ticksToMicroseconds(utime_ticks);
@@ -180,9 +187,11 @@ bool readPeakRss(pid_t pid, UInt64 & bytes) noexcept
         if (line.compare(0, 6, "VmHWM:") != 0)
             continue;
 
-        std::istringstream parser(line.substr(6));
+        const std::string value_str = line.substr(6);
+        ReadBufferFromString parser(value_str);
+        skipWhitespaceIfAny(parser);
         UInt64 kib = 0;
-        if (!(parser >> kib))
+        if (!tryReadIntText(kib, parser))
             return false;
         bytes = kib * 1024ULL;
         return true;
