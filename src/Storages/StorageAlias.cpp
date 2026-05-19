@@ -22,14 +22,13 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsBool allow_experimental_alias_table_engine;
 }
 
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
-    extern const int SUPPORT_IS_DISABLED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 StorageAlias::StorageAlias(
@@ -83,6 +82,31 @@ public:
 
     String getName() const override { return "AliasSink"; }
 
+    void onStart() override
+    {
+        StoragePtr target = storage.getTargetTable();
+
+        std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
+        insert->table_id = target->getStorageID();
+        ASTPtr query_ptr(insert.release());
+
+        auto insert_context = Context::createCopy(getContext());
+        insert_context->makeQueryContext();
+        addInterpreterContext(insert_context);
+
+        InterpreterInsertQuery interpreter(
+            query_ptr,
+            insert_context,
+            /* allow_materialized */ false,
+            /* no_squash */ false,
+            /* no_destination */ false,
+            /* async_insert */ false);
+
+        block_io = interpreter.execute();
+        executor = std::make_unique<PushingPipelineExecutor>(block_io.pipeline);
+        executor->start();
+    }
+
     void consume(Chunk & chunk) override
     {
         if (chunk.getNumRows() == 0)
@@ -94,34 +118,34 @@ public:
         for (const auto & col : non_materialized_header)
             non_materialized_block.insert(block.getByName(col.name));
 
-        StoragePtr target = storage.getTargetTable();
-        StorageID target_id = target->getStorageID();
+        Chunk non_materialized_chunk(non_materialized_block.getColumns(), non_materialized_block.rows());
+        non_materialized_chunk.setChunkInfos(chunk.getChunkInfos().clone());
+        executor->push(std::move(non_materialized_chunk));
+    }
 
-        std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-        insert->table_id = target_id;
-        ASTPtr query_ptr(insert.release());
+    void onFinish() override
+    {
+        executor->finish();
+        executor.reset();
 
-        auto insert_context = Context::createCopy(getContext());
-        insert_context->makeQueryContext();
+        block_io.onFinish();
+        block_io = {};
+    }
 
-        InterpreterInsertQuery interpreter(
-            query_ptr,
-            insert_context,
-            /* allow_materialized */ false,
-            /* no_squash */ false,
-            /* no_destination */ false,
-            /* async_insert */ false);
-
-        BlockIO block_io = interpreter.execute();
-        PushingPipelineExecutor executor(block_io.pipeline);
-        executor.start();
-        executor.push(std::move(non_materialized_block));
-        executor.finish();
+    void onException(std::exception_ptr) override
+    {
+        if (executor)
+            executor->cancel();
+        executor.reset();
+        block_io.onException();
+        block_io = {};
     }
 
 private:
     StorageAlias & storage;
     Block non_materialized_header;
+    BlockIO block_io;
+    std::unique_ptr<PushingPipelineExecutor> executor;
 };
 
 void StorageAlias::read(
@@ -176,6 +200,26 @@ void StorageAlias::alter(
     AlterLockHolder & table_lock_holder)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
+
+    /// ALTER through alias on a table in a Replicated database is not supported
+    /// when the alias and target are in different databases. This is because the
+    /// DDL worker path is bypassed and metadata changes won't be replicated to
+    /// other replicas in ZooKeeper. If both are in the same Replicated database,
+    /// the DDL worker handles the ALTER correctly.
+    auto target_storage_id = target_storage->getStorageID();
+    if (getStorageID().database_name != target_storage_id.database_name)
+    {
+        auto target_db = DatabaseCatalog::instance().tryGetDatabase(target_storage_id.database_name);
+        if (target_db && target_db->getEngineName() == "Replicated")
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "ALTER through alias is not supported when the target table is in a different Replicated database. "
+                "Execute the ALTER directly on the target table: {}",
+                target_storage_id.getNameForLogs());
+        }
+    }
+
     target_storage->alter(params, local_context, table_lock_holder);
 }
 
@@ -308,11 +352,6 @@ void registerStorageAlias(StorageFactory & factory)
         //  CREATE TABLE t2 ENGINE = Alias('db', 't')
 
         auto local_context = args.getLocalContext();
-
-        // Compatible with existing Alias tables
-        if (args.mode == LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef()[Setting::allow_experimental_alias_table_engine])
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED, "Experimental Alias table engine is not enabled (turn on setting 'allow_experimental_alias_table_engine')");
 
         String target_database;
         String target_table;
