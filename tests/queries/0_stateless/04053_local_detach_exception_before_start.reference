@@ -1,8 +1,9 @@
-=== Local: Detach non-readonly mode: INSERT-SELECT returns query_id ===
+=== Local: Detach mode: INSERT-SELECT returns query_id ===
 Detach returned query_id: yes
 Inserted data visible after detach: yes
 === Local: ExceptionBeforeStart — error returned when query fails before start ===
 Error returned to client: yes
-=== Local: SELECT remains synchronous with allow_experimental_detach_non_readonly_queries=1 ===
-SELECT result returned: yes
+=== Local: SELECT is detached when allow_experimental_detach_queries=1 ===
+SELECT returned query_id: yes
+Follow-up sync SELECT returned: yes
 OK

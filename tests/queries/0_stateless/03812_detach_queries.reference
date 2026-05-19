@@ -1,23 +1,25 @@
 === HTTP: Sync mode (default): INSERT-SELECT waits for completion ===
 Sync response body length: 0
 Sync has X-ClickHouse-Query-Id header: yes
-=== HTTP: Detach non-readonly mode: INSERT-SELECT returns immediately with query_id ===
-Detach non-readonly response body (query_id): <query_id>
-=== HTTP: SELECT remains synchronous even with allow_experimental_detach_non_readonly_queries=1 ===
-SELECT result: 3
+=== HTTP: Detach mode: INSERT-SELECT returns immediately with query_id ===
+Detach response body (query_id): <query_id>
+=== HTTP: SELECT is detached when allow_experimental_detach_queries=1 ===
+Detached SELECT response (query_id): <query_id>
+Sync SELECT result: 3
 Rows in table after HTTP detached inserts: 3
 === HTTP: INSERT with body data is detached (query in URL, data in POST body) ===
 INSERT with body HTTP code: 200
 INSERT with body response has query_id: yes
-=== HTTP: Detach non-readonly with query in POST body only (no query= param) ===
-Detach non-readonly POST body-only response (query_id): <query_id>
+=== HTTP: Detach with query in POST body only (no query= param) ===
+Detach POST body-only response (query_id): <query_id>
 HTTP final row count: 5
 === Native: Sync mode (default): INSERT...SELECT waits for completion ===
 Sync insert done
-=== Native: Detach non-readonly mode: INSERT...SELECT returns immediately with query_id ===
+=== Native: Detach mode: INSERT...SELECT returns immediately with query_id ===
 Detach response (query_id): <query_id>
-=== Native: SELECT remains synchronous even with allow_experimental_detach_non_readonly_queries=1 ===
-SELECT result: 7
+=== Native: SELECT is detached when allow_experimental_detach_queries=1 ===
+Detached SELECT response (query_id): <query_id>
+Sync SELECT result: 7
 Rows in table: 7
 === HTTP: ExceptionBeforeStart — error returned (not query_id) when query fails before start ===
 Error returned to client: yes
@@ -27,6 +29,8 @@ Error returned to client: yes
 Query visible in system.processes: yes
 === Native: Detached query visible in system.processes immediately after query_id returned ===
 Query visible in system.processes: yes
+=== HTTP: Detached SELECT visible in system.processes ===
+Detached SELECT visible in system.processes: yes
 === HTTP: ExceptionBeforeStart — duplicate query_id rejected ===
 First detach response: <query_id>
 Duplicate query_id error returned: yes
@@ -37,4 +41,6 @@ Duplicate query_id error returned: yes
 Inline SETTINGS detach response: <query_id>
 === Native: Detach triggered by inline SETTINGS in query text ===
 Inline SETTINGS detach response: <query_id>
+=== HTTP: SET runs synchronously even with allow_experimental_detach_queries=1 ===
+SET response body length: 0
 OK

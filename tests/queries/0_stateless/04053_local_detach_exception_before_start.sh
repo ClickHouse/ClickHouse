@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test that allow_experimental_detach_non_readonly_queries in clickhouse-local (LocalConnection)
+# Test that allow_experimental_detach_queries in clickhouse-local (LocalConnection)
 # behaves like the TCP and HTTP handlers:
 # - ExceptionBeforeStart (unknown table, quota, etc.) is propagated to the client
 #   rather than silently swallowed while returning a stale query_id.
@@ -36,10 +36,10 @@ run_local_interactive() {
 }
 
 # --- 1. Successful detach: INSERT into existing table returns a query_id block ---
-echo "=== Local: Detach non-readonly mode: INSERT-SELECT returns query_id ==="
+echo "=== Local: Detach mode: INSERT-SELECT returns query_id ==="
 OUT=$(run_local_interactive \
     "CREATE TABLE t_local_detach (x UInt64) ENGINE=Memory;" \
-    "INSERT INTO t_local_detach SELECT 99 SETTINGS allow_experimental_detach_non_readonly_queries=1, async_insert=0;" \
+    "INSERT INTO t_local_detach SELECT 99 SETTINGS allow_experimental_detach_queries=1, async_insert=0;" \
     "SELECT * FROM t_local_detach;")
 
 # The detached INSERT returns a single-column "query_id" block; verify it appeared.
@@ -64,7 +64,7 @@ fi
 # --- 2. ExceptionBeforeStart: INSERT into nonexistent table must return an error, not query_id ---
 echo "=== Local: ExceptionBeforeStart — error returned when query fails before start ==="
 OUT_ERR=$(run_local_interactive \
-    "INSERT INTO table_does_not_exist_04053 SELECT 1 SETTINGS allow_experimental_detach_non_readonly_queries=1, async_insert=0;")
+    "INSERT INTO table_does_not_exist_04053 SELECT 1 SETTINGS allow_experimental_detach_queries=1, async_insert=0;")
 
 if echo "$OUT_ERR" | grep -qi "UNKNOWN_TABLE\|does not exist"; then
     echo "Error returned to client: yes"
@@ -74,16 +74,28 @@ else
     exit 1
 fi
 
-# --- 3. SELECT is never detached, always returns data synchronously ---
-echo "=== Local: SELECT remains synchronous with allow_experimental_detach_non_readonly_queries=1 ==="
+# --- 3. SELECT is also detached when the setting is on: returns query_id, not the row ---
+echo "=== Local: SELECT is detached when allow_experimental_detach_queries=1 ==="
 OUT_SEL=$(run_local_interactive \
-    "SELECT 42 SETTINGS allow_experimental_detach_non_readonly_queries=1;")
+    "SELECT 42 SETTINGS allow_experimental_detach_queries=1, async_insert=0;" \
+    "SELECT 'sync_value';")
 
-if echo "$OUT_SEL" | grep -q "42"; then
-    echo "SELECT result returned: yes"
+# Detached SELECT returns the single-column "query_id" block (the value "42" is discarded). The
+# next query joins the background thread and then runs synchronously.
+if echo "$OUT_SEL" | grep -q "query_id"; then
+    echo "SELECT returned query_id: yes"
 else
-    echo "SELECT result returned: no"
-    echo "FAIL: Expected 42 in synchronous SELECT result, got: $OUT_SEL"
+    echo "SELECT returned query_id: no"
+    echo "FAIL: Expected 'query_id' in detached SELECT output, got: $OUT_SEL"
+    exit 1
+fi
+
+# The follow-up sync SELECT must still produce its result after the detached thread is joined.
+if echo "$OUT_SEL" | grep -q "sync_value"; then
+    echo "Follow-up sync SELECT returned: yes"
+else
+    echo "Follow-up sync SELECT returned: no"
+    echo "FAIL: Expected sync SELECT result after detach, got: $OUT_SEL"
     exit 1
 fi
 
