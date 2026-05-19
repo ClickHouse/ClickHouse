@@ -555,6 +555,16 @@ protected:
 
                 ++rows_count;
 
+                /// `SHOW_TABLES` gates row visibility above; `SHOW_COLUMNS` gates the columns
+                /// of this row that reveal schema details (full CREATE statement, engine
+                /// arguments, key expressions, view body). Without this check, a user with
+                /// only column-level grants (e.g. `GRANT SELECT(x) ON db.t`) can read the
+                /// full DDL of `db.t` here despite `DESCRIBE TABLE` and `SHOW CREATE TABLE`
+                /// correctly refusing them. Mirrors the precedent of commits `5875e4daaf5`
+                /// (DESCRIBE via `remote`) and `64efbbeb906` (`CREATE AS`).
+                const bool can_show_columns = !need_to_check_access_for_tables
+                    || access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
+
                 size_t src_index = 0;
                 size_t res_index = 0;
 
@@ -620,6 +630,14 @@ protected:
                         views_database_name_array.reserve(view_ids.size());
                         for (const auto & view_id : view_ids)
                         {
+                            /// Only expose dependent views the user has `SHOW_TABLES` on.
+                            /// The names of these views are `SHOW_TABLES`-grade information
+                            /// about *the dependent tables*, not `SHOW_COLUMNS`-grade about
+                            /// the current row's table.
+                            if (need_to_check_access_for_tables
+                                && !access->isGranted(AccessType::SHOW_TABLES, view_id.database_name, view_id.table_name))
+                                continue;
+
                             views_table_name_array.push_back(view_id.table_name);
                             views_database_name_array.push_back(view_id.database_name);
                         }
@@ -634,7 +652,9 @@ protected:
 
                 if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2])
                 {
-                    ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
+                    ASTPtr ast = can_show_columns
+                        ? database->tryGetCreateTableQuery(table_name, context)
+                        : nullptr;
                     auto * ast_create = ast ? ast->as<ASTCreateQuery>() : nullptr;
 
                     if (ast_create && !context->getSettingsRef()[Setting::show_table_uuid_in_table_create_query_if_not_nil])
@@ -681,7 +701,7 @@ protected:
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPartitionKeyAST()))
+                    if (can_show_columns && metadata_snapshot && (expression_ptr = metadata_snapshot->getPartitionKeyAST()))
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -689,7 +709,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
+                    if (can_show_columns && metadata_snapshot && (expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -697,7 +717,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPrimaryKey().expression_list_ast))
+                    if (can_show_columns && metadata_snapshot && (expression_ptr = metadata_snapshot->getPrimaryKey().expression_list_ast))
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -705,7 +725,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSamplingKeyAST()))
+                    if (can_show_columns && metadata_snapshot && (expression_ptr = metadata_snapshot->getSamplingKeyAST()))
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -713,7 +733,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getUniqueKeyAST()))
+                    if (can_show_columns && metadata_snapshot && (expression_ptr = metadata_snapshot->getUniqueKeyAST()))
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();

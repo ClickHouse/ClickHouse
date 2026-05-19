@@ -1,0 +1,13 @@
+--- column-only grant ---
+secret
+0	0	0	0	0	0
+0	0
+--- + SHOW COLUMNS grant ---
+1	1	1	1	1	1
+--- table-level SELECT grant (regression guard) ---
+1	1	1	1	1	1
+--- SHOW TABLES only grant ---
+secret
+0	0	0	0	0	0
+--- dependent view visibility ---
+1	1
