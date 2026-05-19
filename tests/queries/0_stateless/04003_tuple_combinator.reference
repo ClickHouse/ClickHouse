@@ -52,3 +52,15 @@ multiple nested combinators
 (2,3)
 (7,10)
 multi argument error
+sparse tuple
+(1,2)
+(0.009900990099009901,0.019801980198019802)
+(0,0)
+(1,2)
+null element with int
+(NULL,1)	Tuple(Nullable(Nothing), Int64)
+(2,NULL)	Tuple(Int64, Nullable(Nothing))
+(NULL,1,2.5)	Tuple(Nullable(Nothing), Int64, Float64)
+quantilesTDigestTupleMerge
+([8])
+([49,89])

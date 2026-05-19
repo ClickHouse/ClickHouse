@@ -105,3 +105,38 @@ SELECT sumTuple([1, 2, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- Error: empty tuple
 SELECT sumTuple(tuple()); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Sparse-serialized tuple elements must not crash with `Bad cast from ColumnSparse`.
+SELECT 'sparse tuple';
+DROP TABLE IF EXISTS test_tuple_sparse;
+CREATE TABLE test_tuple_sparse (x Tuple(Int64, Float64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS ratio_of_defaults_for_sparse_serialization = 0.1;
+INSERT INTO test_tuple_sparse SELECT tuple(0, 0.0) FROM numbers(100);
+INSERT INTO test_tuple_sparse SELECT tuple(1, 2.0);
+SELECT sumTuple(x) FROM test_tuple_sparse;
+SELECT avgTuple(x) FROM test_tuple_sparse;
+SELECT minTuple(x) FROM test_tuple_sparse;
+SELECT maxTuple(x) FROM test_tuple_sparse;
+DROP TABLE test_tuple_sparse;
+
+-- Element of type `Nullable(Nothing)` mixed with a real type: must preserve real-type result and not collapse to all NULLs.
+SELECT 'null element with int';
+SELECT sumTuple(tuple(NULL, toInt64(1))) AS res, toTypeName(res);
+SELECT sumTuple(tuple(toInt64(2), NULL)) AS res, toTypeName(res);
+SELECT sumTuple(tuple(NULL, toInt64(1), toFloat64(2.5))) AS res, toTypeName(res);
+
+-- Parametric aggregate function with `-TupleMerge`: states with different parameter values must be considered same-state.
+SELECT 'quantilesTDigestTupleMerge';
+SELECT quantilesTDigestTupleMerge(0.9)(s)
+FROM
+(
+    SELECT quantilesTDigestTupleState(0.5)(tuple(toFloat64(number))) AS s
+    FROM numbers(10)
+);
+
+-- The same with a longer single-element pipeline that exercises parametric `-State`/`-Merge`.
+SELECT quantilesTDigestTupleMerge(0.5, 0.9)(s)
+FROM
+(
+    SELECT quantilesTDigestTupleState(0.25)(tuple(toFloat64(number))) AS s
+    FROM numbers(100)
+);

@@ -3,6 +3,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionTuple.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Columns/ColumnSparse.h>
 #include <Common/Arena.h>
 #include <Common/memory.h>
 #include <Common/typeid_cast.h>
@@ -157,12 +158,60 @@ bool AggregateFunctionTuple::hasTrivialDestructor() const
 
 void AggregateFunctionTuple::add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const
 {
-    const auto & tuple_column = assert_cast<const ColumnTuple &>(*columns[0]);
+    /// Per-row fallback path: materialize sparse children defensively so callers that bypass
+    /// our batch overrides (e.g. direct add() calls in tests or future code paths) stay correct.
+    /// The hot paths (addBatch/addBatchSinglePlace) materialize once up front and avoid this cost.
+    ColumnPtr materialized = recursiveRemoveSparse(columns[0]->getPtr());
+    const auto & tuple_column = assert_cast<const ColumnTuple &>(*materialized);
     for (size_t i = 0; i < num_elements; ++i)
     {
         const IColumn * nested_col = &tuple_column.getColumn(i);
         nested_functions[i]->add(place + state_offsets[i], &nested_col, row_num, arena);
     }
+}
+
+void AggregateFunctionTuple::addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const
+{
+    ColumnPtr materialized = recursiveRemoveSparse(columns[0]->getPtr());
+    const IColumn * full_columns[1] = {materialized.get()};
+    IAggregateFunctionHelper<AggregateFunctionTuple>::addManyDefaults(place, full_columns, length, arena);
+}
+
+void AggregateFunctionTuple::addBatch(
+    size_t row_begin,
+    size_t row_end,
+    AggregateDataPtr * places,
+    size_t place_offset,
+    const IColumn ** columns,
+    Arena * arena,
+    ssize_t if_argument_pos) const
+{
+    /// MergeTree may store individual Tuple elements as ColumnSparse while the outer ColumnTuple is dense.
+    /// Nested aggregate functions cast their column to its concrete type, so we materialize once per batch.
+    ColumnPtr materialized = recursiveRemoveSparse(columns[0]->getPtr());
+    const IColumn * full_columns[2] = {materialized.get(), nullptr};
+    if (if_argument_pos >= 0)
+        full_columns[1] = columns[if_argument_pos];
+    ssize_t mapped_if_pos = if_argument_pos >= 0 ? 1 : -1;
+    IAggregateFunctionHelper<AggregateFunctionTuple>::addBatch(
+        row_begin, row_end, places, place_offset, full_columns, arena, mapped_if_pos);
+}
+
+void AggregateFunctionTuple::addBatchSinglePlace(
+    size_t row_begin,
+    size_t row_end,
+    AggregateDataPtr __restrict place,
+    const IColumn ** columns,
+    Arena * arena,
+    ssize_t if_argument_pos) const
+{
+    ColumnPtr materialized = recursiveRemoveSparse(columns[0]->getPtr());
+    const IColumn * full_columns[2] = {materialized.get(), nullptr};
+    if (if_argument_pos >= 0)
+        full_columns[1] = columns[if_argument_pos];
+    ssize_t mapped_if_pos = if_argument_pos >= 0 ? 1 : -1;
+    IAggregateFunctionHelper<AggregateFunctionTuple>::addBatchSinglePlace(
+        row_begin, row_end, place, full_columns, arena, mapped_if_pos);
 }
 
 void AggregateFunctionTuple::merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const
@@ -209,6 +258,19 @@ bool AggregateFunctionTuple::isState() const
     return false;
 }
 
+bool AggregateFunctionTuple::haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const
+{
+    const auto * rhs_tuple = typeid_cast<const AggregateFunctionTuple *>(&rhs);
+    if (!rhs_tuple)
+        return false;
+    if (num_elements != rhs_tuple->num_elements)
+        return false;
+    for (size_t i = 0; i < num_elements; ++i)
+        if (!nested_functions[i]->haveSameStateRepresentation(*rhs_tuple->nested_functions[i]))
+            return false;
+    return true;
+}
+
 namespace
 {
 
@@ -236,8 +298,15 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Tuple must not be empty for aggregate function with {} suffix", getName());
 
-        /// Return first element type as a placeholder so that the factory can resolve the nested function name.
-        /// The actual per-element functions will be created inside AggregateFunctionTuple.
+        /// Return a representative element type as a placeholder so that the factory can resolve the nested function name.
+        /// Prefer the first non-only-null element: if the first element happens to be `Nullable(Nothing)`, the recursive
+        /// `get()` would wrap with the `Null` combinator and collapse to `AggregateFunctionNothing*`, which would then
+        /// be used as the base function name and force every per-element nested function to also collapse to Nothing.
+        /// The actual per-element functions are still created inside AggregateFunctionTuple based on real elem_types.
+        for (const auto & type : elem_types)
+            if (!type->onlyNull())
+                return DataTypes({type});
+
         return DataTypes({elem_types[0]});
     }
 
