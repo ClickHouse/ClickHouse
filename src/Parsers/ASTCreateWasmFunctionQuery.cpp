@@ -142,6 +142,7 @@ void ASTCreateWasmFunctionQuery::writeJSON(WriteBuffer & out) const
 
     w.writeBool("or_replace", or_replace);
     w.writeBool("if_not_exists", if_not_exists);
+    w.writeBool("is_deterministic", is_deterministic);
 
     if (!cluster.empty())
         w.writeString("cluster", cluster);
@@ -178,6 +179,7 @@ void ASTCreateWasmFunctionQuery::readJSON(const Poco::JSON::Object & json)
 
     or_replace = r.getBool("or_replace");
     if_not_exists = r.getBool("if_not_exists");
+    is_deterministic = r.getBool("is_deterministic");
     cluster = r.getString("cluster");
 
     children.clear();
