@@ -820,6 +820,8 @@ public:
 ) // DECLARE_X86_64_V4_SPECIFIC_CODE
 
 
+#ifndef MD5_GTEST_UNIT_TEST
+
 /// Runtime dispatch via ImplementationSelector.
 class FunctionMD5 : public TargetSpecific::Default::FunctionMD5Impl
 {
@@ -878,4 +880,7 @@ SELECT HEX(MD5('abc'));
 
     factory.registerFunction<FunctionMD5>(documentation_MD5);
 }
+
+#endif // MD5_GTEST_UNIT_TEST
+
 }
