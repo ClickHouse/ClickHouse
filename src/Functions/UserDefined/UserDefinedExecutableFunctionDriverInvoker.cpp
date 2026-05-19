@@ -23,24 +23,28 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Shell-quote a single argument so it can be embedded into a `/bin/sh -c` command.
-    String shellQuote(const String & str)
-    {
-        String out;
-        out.reserve(str.size() + 2);
-        out.push_back('\'');
-        for (char c : str)
-        {
-            if (c == '\'')
-                out += "'\\''";
-            else
-                out.push_back(c);
-        }
-        out.push_back('\'');
-        return out;
-    }
+    /// `/usr/bin/env` is exec'd directly (no shell), so command arguments are passed as
+    /// distinct `argv` entries and are not subject to shell quoting/expansion rules.
+    /// `env -C` sets the child's working directory, and `KEY=VAL` entries set environment
+    /// variables before exec'ing `action_command`.
+    constexpr auto ENV_BINARY = "/usr/bin/env";
 
-    String buildCommand(
+    struct DirectCommand
+    {
+        /// Arguments after `argv[0]`. The binary is always `ENV_BINARY`.
+        std::vector<String> arguments;
+
+        String describe() const
+        {
+            WriteBufferFromOwnString out;
+            out << ENV_BINARY;
+            for (const auto & arg : arguments)
+                out << ' ' << arg;
+            return out.str();
+        }
+    };
+
+    DirectCommand buildCommand(
         const UserDefinedExecutableFunctionDriver & driver,
         const String & action_command,
         const String & function_name,
@@ -49,26 +53,39 @@ namespace
         const String & working_directory,
         const std::vector<std::pair<String, String>> & engine_argument_values)
     {
-        WriteBufferFromOwnString out;
+        DirectCommand cmd;
 
         if (!working_directory.empty())
-            out << "cd " << shellQuote(working_directory) << " && ";
+        {
+            cmd.arguments.emplace_back("-C");
+            cmd.arguments.emplace_back(working_directory);
+        }
 
-        out << "exec env";
         for (const auto & [name, value] : driver.env)
-            out << ' ' << shellQuote(name + '=' + value);
+            cmd.arguments.emplace_back(name + '=' + value);
 
-        out << ' ' << shellQuote(action_command);
-        out << " --name " << shellQuote(function_name);
+        cmd.arguments.emplace_back(action_command);
+
+        cmd.arguments.emplace_back("--name");
+        cmd.arguments.emplace_back(function_name);
         if (!return_type.empty())
-            out << " --return " << shellQuote(return_type);
+        {
+            cmd.arguments.emplace_back("--return");
+            cmd.arguments.emplace_back(return_type);
+        }
         if (!args_signature.empty())
-            out << " --args " << shellQuote(args_signature);
+        {
+            cmd.arguments.emplace_back("--args");
+            cmd.arguments.emplace_back(args_signature);
+        }
 
         for (const auto & [name, value] : engine_argument_values)
-            out << " --" << name << ' ' << shellQuote(value);
+        {
+            cmd.arguments.emplace_back("--" + name);
+            cmd.arguments.emplace_back(value);
+        }
 
-        return out.str();
+        return cmd;
     }
 
     String readPipeToString(ReadBuffer & pipe)
@@ -159,15 +176,17 @@ String UserDefinedExecutableFunctionDriverInvoker::runCreateCommand(
         throw Exception(ErrorCodes::UDF_EXECUTION_FAILED,
             "Driver '{}' is missing create_command", driver.name);
 
-    String shell_command = buildCommand(
+    DirectCommand cmd = buildCommand(
         driver, driver.create_command, function_name, return_type, args_signature,
         working_directory, engine_argument_values);
 
     auto log = getLogger("UserDefinedExecutableFunctionDriverInvoker");
-    LOG_DEBUG(log, "Invoking driver '{}' create_command: {}", driver.name, shell_command);
+    LOG_DEBUG(log, "Invoking driver '{}' create_command: {}", driver.name, cmd.describe());
 
-    ShellCommand::Config config(shell_command);
-    auto process = ShellCommand::execute(config);
+    ShellCommand::Config config(ENV_BINARY);
+    for (const auto & arg : cmd.arguments)
+        config.arguments.emplace_back(arg);
+    auto process = ShellCommand::executeDirect(config);
 
     /// `tryWait` returns the actual exit code without throwing on non-zero codes,
     /// so we can decorate the resulting exception with the full driver stderr.
@@ -228,15 +247,17 @@ void UserDefinedExecutableFunctionDriverInvoker::runDropCommand(
     if (driver.drop_command.empty())
         return;
 
-    String shell_command = buildCommand(
+    DirectCommand cmd = buildCommand(
         driver, driver.drop_command, function_name, return_type, args_signature,
         working_directory, engine_argument_values);
 
     auto log = getLogger("UserDefinedExecutableFunctionDriverInvoker");
-    LOG_DEBUG(log, "Invoking driver '{}' drop_command: {}", driver.name, shell_command);
+    LOG_DEBUG(log, "Invoking driver '{}' drop_command: {}", driver.name, cmd.describe());
 
-    ShellCommand::Config config(shell_command);
-    auto process = ShellCommand::execute(config);
+    ShellCommand::Config config(ENV_BINARY);
+    for (const auto & arg : cmd.arguments)
+        config.arguments.emplace_back(arg);
+    auto process = ShellCommand::executeDirect(config);
 
     CommandResult result = writeAndWait(*process, /*source_code=*/ "");
 
