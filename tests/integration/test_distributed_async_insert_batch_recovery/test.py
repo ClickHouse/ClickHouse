@@ -7,14 +7,14 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node_dist = cluster.add_instance(
-    "node_dist",
+# Single-node setup: the Distributed table points back at the same node via
+# the `test_cluster` definition, and each `INSERT` is issued with
+# `prefer_localhost_replica = 0` so the engine still goes through the
+# async-insert batch queue (instead of the local-shortcut path).
+node = cluster.add_instance(
+    "node",
     main_configs=["configs/remote_servers.xml"],
     stay_alive=True,
-)
-node_shard = cluster.add_instance(
-    "node_shard",
-    main_configs=["configs/remote_servers.xml"],
 )
 
 
@@ -63,29 +63,31 @@ def test_recover_batch_with_broken_middle_file(started_cluster):
     `false`, `current_batch.txt` is removed, and the intact files are
     re-processed individually so their rows reach the remote shard.
     """
-    node_dist.query("DROP TABLE IF EXISTS dist SYNC")
-    node_dist.query("DROP TABLE IF EXISTS local SYNC")
-    node_shard.query("DROP TABLE IF EXISTS local SYNC")
+    node.query("DROP TABLE IF EXISTS dist SYNC")
+    node.query("DROP TABLE IF EXISTS local SYNC")
 
-    node_shard.query("CREATE TABLE local (x UInt32) ENGINE = MergeTree ORDER BY tuple()")
-    # `local` on `node_dist` is only used to satisfy the Distributed engine signature;
-    # all rows are routed to `node_shard` via the cluster definition.
-    node_dist.query("CREATE TABLE local (x UInt32) ENGINE = MergeTree ORDER BY tuple()")
-    node_dist.query(
+    node.query("CREATE TABLE local (x UInt32) ENGINE = MergeTree ORDER BY tuple()")
+    node.query(
         "CREATE TABLE dist (x UInt32) ENGINE = Distributed(test_cluster, default, local)"
         " SETTINGS background_insert_batch = 1, background_insert_split_batch_on_failure = 0"
     )
 
     # Stop sends so the inserts accumulate as separate `.bin` files in the queue.
-    node_dist.query("SYSTEM STOP DISTRIBUTED SENDS dist")
+    node.query("SYSTEM STOP DISTRIBUTED SENDS dist")
+
+    # `prefer_localhost_replica = 0` forces the Distributed engine to treat the
+    # local replica as remote and route the insert through the async-insert
+    # batch queue (otherwise it would take the local shortcut and bypass `.bin`
+    # file creation entirely).
+    insert_settings = {"prefer_localhost_replica": 0}
 
     # Three separate inserts -> three `.bin` files (1.bin, 2.bin, 3.bin).
-    node_dist.query("INSERT INTO dist VALUES (1)")
-    node_dist.query("INSERT INTO dist VALUES (2)")
-    node_dist.query("INSERT INTO dist VALUES (3)")
+    node.query("INSERT INTO dist VALUES (1)", settings=insert_settings)
+    node.query("INSERT INTO dist VALUES (2)", settings=insert_settings)
+    node.query("INSERT INTO dist VALUES (3)", settings=insert_settings)
 
-    queue_path = _shard_queue_path(node_dist, "dist")
-    bin_files = node_dist.exec_in_container(
+    queue_path = _shard_queue_path(node, "dist")
+    bin_files = node.exec_in_container(
         ["bash", "-c", f"ls {queue_path}/*.bin | sort"]
     ).strip().splitlines()
     assert len(bin_files) == 3, f"Expected 3 .bin files, got: {bin_files}"
@@ -107,10 +109,10 @@ def test_recover_batch_with_broken_middle_file(started_cluster):
     # together with `background_insert_batch=1`). Without a hard kill, the
     # three queued files would be delivered before the simulated abnormal
     # state could be set up.
-    node_dist.stop_clickhouse(kill=True)
+    node.stop_clickhouse(kill=True)
 
     # Sanity-check that the hard kill preserved the queued files on disk.
-    bin_files_after_kill = node_dist.exec_in_container(
+    bin_files_after_kill = node.exec_in_container(
         ["bash", "-c", f"ls {queue_path}/*.bin | sort"]
     ).strip().splitlines()
     assert len(bin_files_after_kill) == 3, (
@@ -119,7 +121,7 @@ def test_recover_batch_with_broken_middle_file(started_cluster):
 
     current_batch_lines = "".join(f"{i}\n" for i in indices)
     encoded = base64.b64encode(current_batch_lines.encode()).decode()
-    node_dist.exec_in_container(
+    node.exec_in_container(
         [
             "bash",
             "-c",
@@ -128,23 +130,23 @@ def test_recover_batch_with_broken_middle_file(started_cluster):
     )
     # Truncate the middle file so reading its header fails with
     # ATTEMPT_TO_READ_AFTER_EOF, which `isDistributedSendBroken` treats as broken.
-    node_dist.exec_in_container(["truncate", "-s", "0", middle_file])
+    node.exec_in_container(["truncate", "-s", "0", middle_file])
 
-    node_dist.start_clickhouse()
+    node.start_clickhouse()
 
     # Drain the queue. With the fix, `recoverBatch` detects the broken middle
     # file, returns false, `current_batch.txt` is removed, and the surviving
     # files are re-processed individually.
-    node_dist.query("SYSTEM FLUSH DISTRIBUTED dist")
+    node.query("SYSTEM FLUSH DISTRIBUTED dist")
 
     # The two intact files must have made it through; the corrupted file is
     # moved to `broken/`.
-    rows = node_shard.query("SELECT x FROM local ORDER BY x").strip().splitlines()
+    rows = node.query("SELECT x FROM local ORDER BY x").strip().splitlines()
     assert rows == [str(i) for i in indices if i != middle_idx], (
         f"Expected the two intact files to be delivered, got: {rows}"
     )
 
-    broken_files = node_dist.exec_in_container(
+    broken_files = node.exec_in_container(
         ["bash", "-c", f"ls {queue_path}/broken/ 2>/dev/null || true"]
     ).strip().splitlines()
     assert f"{middle_idx}.bin" in broken_files, (
