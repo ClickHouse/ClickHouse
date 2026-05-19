@@ -14,22 +14,23 @@ DB="${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${DB}.dashboards"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${DB}.dashboards (x Int) ENGINE=Memory"
 
-# Strip release-dependent and run-dependent fragments before diff so the output is stable:
-#  - the trailing "(version X.Y.Z)" suffix
-#  - the per-run database name (replaced with the literal "<db>")
-strip_dynamic() {
-    sed -E "s/ \(version [^)]+\)//; s/\\b${DB}\\b/<db>/g"
-}
+# Grep for each hint substring independently so the output stays free of raw
+# `DB::Exception` text (which the test framework flags as a failure).
 
-echo "===== /dashbord  (looked up as table; close to both table and handler) ====="
-curl -sS -H "X-ClickHouse-Database: ${DB}" "${BASE_URL}/dashbord" | strip_dynamic
-echo
+echo "===== /dashbord  (close to both /dashboard handler and 'dashboards' table) ====="
+out=$(${CLICKHOUSE_CURL} -sS -H "X-ClickHouse-Database: ${DB}" "${BASE_URL}/dashbord")
+echo "$out" | grep -oE "There is no handle /dashbord\."
+echo "$out" | grep -oE "Maybe you meant /dashboard\?"
+echo "$out" | grep -oE "maybe you meant table .?dashboards.?"
 
 echo "===== /sashboards  (no close table name; only handler hint applies) ====="
-curl -sS -H "X-ClickHouse-Database: ${DB}" "${BASE_URL}/sashboards" | strip_dynamic
-echo
+out=$(${CLICKHOUSE_CURL} -sS -H "X-ClickHouse-Database: ${DB}" "${BASE_URL}/sashboards")
+echo "$out" | grep -oE "There is no handle /sashboards\."
+echo "$out" | grep -oE "Maybe you meant /dashboard\?"
 
 echo "===== /dashbord_db/hits  (missing database; handler hint /dashboard applies) ====="
-curl -sS "${BASE_URL}/dashbord_db/hits" | strip_dynamic
+out=$(${CLICKHOUSE_CURL} -sS "${BASE_URL}/dashbord_db/hits")
+echo "$out" | grep -oE "Database dashbord_db does not exist"
+echo "$out" | grep -oE "Or maybe HTTP handler /dashboard\?"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${DB}.dashboards"

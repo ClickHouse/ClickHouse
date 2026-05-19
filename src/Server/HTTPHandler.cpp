@@ -770,8 +770,15 @@ void HTTPHandler::processQuery(
         /// hint with the closest configured-handler hint (e.g. `/dashboard`). Without this check
         /// the table-existence error would be raised later from query execution and would carry
         /// only the table-name hint.
+        ///
+        /// Skip the pre-check when the parsed table name still contains a dot: that means the
+        /// path parser tried to extract a format/compression extension and failed (e.g.
+        /// `/hits.Parquet` on a build that does not register Parquet). Deferring to the normal
+        /// query execution path preserves the existing response headers (Content-Disposition,
+        /// X-ClickHouse-Format) that other tests assert on.
         const String table_db = path_info.database.empty() ? context->getCurrentDatabase() : path_info.database;
-        if (!table_db.empty())
+        bool table_name_is_simple = path_info.table.find('.') == String::npos;
+        if (table_name_is_simple && !table_db.empty())
         {
             StorageID table_id(table_db, path_info.table);
             if (!DatabaseCatalog::instance().isTableExist(table_id, context))
@@ -779,15 +786,21 @@ void HTTPHandler::processQuery(
                 auto db_ptr = DatabaseCatalog::instance().tryGetDatabase(table_db);
                 TableNameHints table_hints(db_ptr, context);
                 auto table_name_hints = table_hints.getHints(path_info.table);
-                String message = fmt::format("Table {} does not exist.", table_id.getNameForLogs());
-                if (!table_name_hints.empty())
-                    message += fmt::format(" Maybe you meant table {}?", backQuoteIfNeed(table_name_hints.front()));
+                /// Format the message so it remains greppable by historical tests that look for
+                /// `There is no handle /X. Maybe you meant /Y` (02842, 03522). The leading clause
+                /// matches `NotFoundHandler` exactly; the trailing clauses add the database/table
+                /// context that the original handler did not have.
+                String message = fmt::format("There is no handle /{}.", path_info.table);
                 if (path_hints)
                 {
                     auto handler_hints = path_hints->getHints("/" + path_info.table);
                     if (!handler_hints.empty())
-                        message += fmt::format(" Or maybe HTTP handler {}?", handler_hints.front());
+                        message += fmt::format(" Maybe you meant {}?", handler_hints.front());
                 }
+                message += fmt::format(" Or table {} (which does not exist)", table_id.getNameForLogs());
+                if (!table_name_hints.empty())
+                    message += fmt::format(" - maybe you meant table {}", backQuoteIfNeed(table_name_hints.front()));
+                message += ".";
                 throw Exception(ErrorCodes::UNKNOWN_TABLE, "{}", message);
             }
         }
