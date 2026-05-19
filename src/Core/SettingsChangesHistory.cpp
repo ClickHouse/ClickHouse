@@ -88,7 +88,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
             {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
             {"count_distinct_optimization", false, true, "Enable `count_distinct_optimization` by default."},
-            {"optimize_trivial_group_by_limit_query", false, true, "A new setting."},
             {"query_plan_push_down_order_by_limit", false, true, "A new setting."},
             {"query_plan_rewrite_order_by_limit", false, true, "A new setting to rewrite `ORDER BY ... LIMIT` queries to use a more efficient plan."},
             {"query_plan_max_limit_for_rewrite_order_by_limit", 1000000, 1000000, "A new setting to control the maximum `LIMIT` value that allows to use the rewrite for `ORDER BY ... LIMIT`. Zero disables the limit."},
