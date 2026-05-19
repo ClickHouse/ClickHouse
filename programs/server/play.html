@@ -3511,6 +3511,9 @@ query_area.onkeydown = (e) => {
         elem.value = text_before_cursor + '\n' + lead_spaces + text_after_cursor;
         elem.selectionStart = cursor_pos + lead_spaces.length + 1;
         elem.selectionEnd = elem.selectionStart;
+        // Notify listeners (e.g. the syntax-highlighting backdrop) that the textarea
+        // value changed — direct assignment to `value` does not fire `input`.
+        elem.dispatchEvent(new Event('input', { bubbles: true }));
 
         e.preventDefault();
         return false;
@@ -3549,6 +3552,9 @@ query_area.onkeydown = (e) => {
         // Adjust selection to keep the user in flow and enable quick reversal
         elem.selectionStart = lineStart;
         elem.selectionEnd = lineStart + replacedText.length;
+        // Notify listeners (e.g. the syntax-highlighting backdrop) that the textarea
+        // value changed — direct assignment to `value` does not fire `input`.
+        elem.dispatchEvent(new Event('input', { bubbles: true }));
 
         e.preventDefault();
         return false;
