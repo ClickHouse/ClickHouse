@@ -731,7 +731,7 @@ void TaskToHostMap::assignHostsForTasks(const DistributedQueryPlan & distributed
             current_host = (current_host + 1) % hostnames.size();
             task_hosts[task.task_id] = assigned_host;
             for (const auto & output_stream : task.output_exchange_streams)
-                exchange_stream_source_hosts[output_stream.toString()] = assigned_host;
+                exchange_stream_source_hosts[output_stream] = assigned_host;
         }
     }
 }
@@ -1095,8 +1095,7 @@ protected:
             task_description.exchange_stream_sources = {};
             for (const auto & input_stream : task.input_exchange_streams)
             {
-                String input_stream_name = input_stream.toString();
-                task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
+                task_description.exchange_stream_sources.stream_hosts[input_stream] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream);
             }
 
             running_tasks.addTask(stage_name, startTask(task_description));

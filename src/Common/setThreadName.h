@@ -56,6 +56,7 @@ namespace DB
     M(DISTRIBUTED_SCHEDULE_POOL, "BgDistSchPool") \
     M(DISTRIBUTED_SINK, "DistrOutStrProc") \
     M(DISTRIBUTED_INDEX_ANALYSIS, "DistIdxAnalysis") \
+    M(DISTRIBUTED_QUERY_TASK, "DistQueryTask") \
     M(DROP_TABLES, "DropTables") \
     M(DWARF_DECODER, "DWARFDecoder") \
     M(ERROR_LOG, "ErrorLog") \
