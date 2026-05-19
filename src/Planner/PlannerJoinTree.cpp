@@ -92,6 +92,7 @@
 #include <Planner/Utils.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
+#include <Planner/collectSelectedColumnsFromTable.h>
 
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -1226,6 +1227,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// so each shard receives the full view body (aliases, WHERE, etc.) against its local table.
                 StoragePtr effective_storage = storage;
                 StorageSnapshotPtr effective_snapshot = storage_snapshot;
+                /// Context used to ship the read into the underlying distributed table when the
+                /// view-pushdown optimization fires. For SECURITY NONE it carries the no-user
+                /// override built below (matching StorageView::readImpl, which uses the override for
+                /// both the inner interpreter and the inner storage read); for INVOKER and the
+                /// legacy unset case it is just a copy of query_context. Stays equal to
+                /// query_context whenever the pushdown does not apply.
+                ContextPtr effective_context = query_context;
                 const auto * view = query_context->getSettingsRef()[Setting::optimize_trivial_view_pushdown_to_distributed]
                     ? typeid_cast<const StorageView *>(storage.get())
                     : nullptr;
@@ -1234,6 +1242,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     auto underlying_dist = view->tryGetUnderlyingDistributed(storage_snapshot, query_context);
                     if (underlying_dist)
                     {
+                        const auto & view_sql_security = storage_snapshot->metadata->sql_security_type;
+
+                        /// For SQL SECURITY NONE, the inner query normally executes with a no-user
+                        /// (global) context via getSQLSecurityOverriddenContext, so caller-specific
+                        /// row policies do not apply to the underlying distributed table. Use that
+                        /// same context here to match readImpl behaviour.
+                        const ContextPtr inner_context = (view_sql_security && *view_sql_security == SQLSecurityType::NONE)
+                            ? storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context)
+                            : query_context;
+
                         /// Analyze the view's inner query to obtain its query tree.
                         const auto & inner_query_ast = storage_snapshot->metadata->getSelectQuery().inner_query;
 
@@ -1250,7 +1268,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                 view_id.getDatabaseName(), view_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
 
                             const auto & dist_id = underlying_dist->getStorageID();
-                            auto dist_row_policy = query_context->getRowPolicyFilter(
+                            auto dist_row_policy = inner_context->getRowPolicyFilter(
                                 dist_id.getDatabaseName(), dist_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
 
                             ASTPtr combined_policy;
@@ -1290,7 +1308,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         }
 
                         auto options = SelectQueryOptions(QueryProcessingStage::FetchColumns).subquery();
-                        InterpreterSelectQueryAnalyzer inner_interp(effective_inner_query_ast, query_context, options);
+                        InterpreterSelectQueryAnalyzer inner_interp(effective_inner_query_ast, inner_context, options);
                         const auto & inner_query_tree = inner_interp.getQueryTree();
                         /// Mark as subquery so it serializes as (SELECT ...) in the FROM clause.
                         inner_query_tree->as<QueryNode &>().setIsSubquery(true);
@@ -1300,6 +1318,34 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         auto dist_table_node = findTableNodeByStorage(inner_query_tree, underlying_dist);
                         if (dist_table_node)
                         {
+                            /// Column-aware access check for the underlying distributed table, gated on
+                            /// the same security modes readImpl would check under (INVOKER and legacy
+                            /// unset). The check runs on a freshly-analyzed PRE-POLICY tree so that
+                            /// columns referenced only by the injected row policy do not enter the grant
+                            /// requirement: readImpl's access check fires before buildRowPolicyFilterIfNeeded
+                            /// injects the row policy, and ClickHouse intentionally allows row policies
+                            /// to reference columns the user is not granted on.
+                            if (!view_sql_security || *view_sql_security == SQLSecurityType::INVOKER)
+                            {
+                                /// Pass columns_names so the analyzer wraps the inner query as
+                                /// SELECT <columns_names> FROM (<inner_query_ast>) and prunes columns
+                                /// the outer caller does not read. Mirrors StorageView::readImpl, which
+                                /// receives the same column list via IStorage::read and is the access
+                                /// check this pushdown path is meant to be equivalent to. Without this,
+                                /// collectSelectedColumnsFromTable would pick up every column the view
+                                /// body mentions and over-require grants on the underlying table.
+                                InterpreterSelectQueryAnalyzer access_check_interp(inner_query_ast, inner_context, options, columns_names);
+                                auto pre_policy_tree = access_check_interp.getQueryTree();
+                                auto pre_policy_dist_node = findTableNodeByStorage(pre_policy_tree, underlying_dist);
+                                /// Pre-policy and post-policy trees only differ by an injected WHERE clause,
+                                /// which cannot add or remove table references; if the post-policy lookup
+                                /// found the dist table, the pre-policy one must too.
+                                chassert(pre_policy_dist_node);
+                                auto referenced_columns = collectSelectedColumnsFromTable(
+                                    pre_policy_tree, underlying_dist->getStorageID(), query_context);
+                                checkAccessRights(pre_policy_dist_node->as<TableNode &>(), referenced_columns, query_context);
+                            }
+
                             /// Merge table expression modifiers (FINAL, SAMPLE) from the outer view
                             /// reference into the distributed table node. The outer modifiers come from
                             /// the caller (e.g. SELECT * FROM my_view FINAL SAMPLE 0.1); the inner
@@ -1331,6 +1377,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             effective_storage = underlying_dist;
                             effective_snapshot = underlying_dist->getStorageSnapshot(
                                 underlying_dist->getInMemoryMetadataPtr(query_context, false), query_context);
+                            effective_context = inner_context;
                         }
                     }
                 }
@@ -1395,7 +1442,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     if (no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode)
                     {
                         bool disable_parallel_replicas_for_storage = true;
-                        ContextPtr updated_context = query_context;
+                        ContextPtr updated_context = effective_context;
                         if (const UnionNode * table_union = planner_context->getGlobalPlannerContext()->parallel_replicas_table_union)
                         {
                             SelectQueryOptions options;
@@ -1411,7 +1458,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                         if (disable_parallel_replicas_for_storage)
                         {
-                            auto mutable_context = Context::createCopy(query_context);
+                            auto mutable_context = Context::createCopy(effective_context);
                             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                             updated_context = mutable_context;
                         }
@@ -1433,7 +1480,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             columns_names,
                             effective_snapshot,
                             table_expression_query_info,
-                            query_context,
+                            effective_context,
                             till_stage,
                             max_block_size,
                             max_streams);
