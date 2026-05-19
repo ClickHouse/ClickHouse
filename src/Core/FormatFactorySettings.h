@@ -214,8 +214,11 @@ Verify page checksums when reading parquet files.
 Determines the data type used by schema inference for Parquet timestamps with isAdjustedToUTC=false. If true: DateTime64(..., 'UTC'), if false: DateTime64(...). Neither behavior is fully correct as ClickHouse doesn't have a data type for local wall-clock time. Counterintuitively, 'true' is probably the less incorrect option, because formatting the 'UTC' timestamp as String will produce representation of the correct local time.
 )", 0) \
     DECLARE(Bool, input_format_allow_seeks, true, R"(
-Allow seeks while reading in ORC/Parquet/Arrow input formats.
-
+Allow seeks (or range reads) while reading ORC, Parquet, and Arrow input formats.
+When enabled and the source supports it (e.g. local file, S3, HTTP with range support and known size),
+ClickHouse can read only the needed byte ranges and use less memory.
+When disabled, or when the source does not support seeks (e.g. no file size, or stream not seekable),
+some readers may fall back to loading the full file into memory.
 Enabled by default.
 )", 0) \
     DECLARE(Bool, input_format_orc_allow_missing_columns, true, R"(
@@ -820,6 +823,15 @@ Write data types in binary format instead of type names in RowBinaryWithNamesAnd
     DECLARE(URI, format_avro_schema_registry_url, "", R"(
 For AvroConfluent format: Confluent Schema Registry URL.
 )", 0) \
+    DECLARE(UInt64, format_avro_schema_registry_connection_timeout, 1, R"(
+For AvroConfluent format: connection timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0 and less than 600 (10 minutes).
+)", 0) \
+    DECLARE(UInt64, format_avro_schema_registry_send_timeout, 1, R"(
+For AvroConfluent format: send timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0 and less than 600 (10 minutes).
+)", 0) \
+    DECLARE(UInt64, format_avro_schema_registry_receive_timeout, 1, R"(
+For AvroConfluent format: receive timeout in seconds for the Confluent Schema Registry HTTP client. Used by both schema fetch and schema registration. Must be greater than 0 and less than 600 (10 minutes).
+)", 0) \
     DECLARE(Bool, input_format_binary_read_json_as_string, false, R"(
 Read values of [JSON](../../sql-reference/data-types/newjson.md) data type as JSON [String](../../sql-reference/data-types/string.md) values in RowBinary input format.
 )", 0) \
@@ -1205,6 +1217,9 @@ For Avro format: regexp of String columns to select as AVRO string.
 )", 0) \
     DECLARE(UInt64, output_format_avro_rows_in_file, 1, R"(
 Max rows in a file (if permitted by storage)
+)", 0) \
+    DECLARE(String, output_format_avro_confluent_subject, "", R"(
+For AvroConfluent output format: the subject name under which the schema is registered in the Confluent Schema Registry. Required when writing AvroConfluent output.
 )", 0) \
     DECLARE(Bool, output_format_tsv_crlf_end_of_line, false, R"(
 If it is set true, end of line in TSV format will be \\r\\n instead of \\n.
