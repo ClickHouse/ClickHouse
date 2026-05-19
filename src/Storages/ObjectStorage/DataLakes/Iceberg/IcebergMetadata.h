@@ -47,7 +47,7 @@ struct IcebergFileRecord
     std::map<Int32, Int64> null_value_counts;
     std::map<Int32, Int64> column_sizes;
     std::map<Int32, Int64> value_counts;
-    std::optional<std::vector<Int32>> equality_ids;
+    std::vector<Int32> equality_ids;
 };
 
 class IcebergMetadata : public IDataLakeMetadata

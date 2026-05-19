@@ -960,7 +960,7 @@ IcebergFileRecord buildIcebergFileRecord(
             record.null_value_counts.emplace(column_id, *info.nulls_count);
     }
 
-    record.equality_ids = parsed.equality_ids;
+    record.equality_ids = parsed.equality_ids.value_or(std::vector<Int32>{});
 
     return record;
 }

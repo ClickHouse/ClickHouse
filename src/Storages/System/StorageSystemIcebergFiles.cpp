@@ -186,12 +186,9 @@ protected:
                     insert_id_to_int_map(col_value_counts, file.value_counts);
 
                     Array equality_ids_array;
-                    if (file.equality_ids.has_value())
-                    {
-                        equality_ids_array.reserve(file.equality_ids->size());
-                        for (auto id : *file.equality_ids)
-                            equality_ids_array.push_back(id);
-                    }
+                    equality_ids_array.reserve(file.equality_ids.size());
+                    for (auto id : file.equality_ids)
+                        equality_ids_array.push_back(id);
                     col_equality_ids->insert(equality_ids_array);
 
                     ++num_rows;
