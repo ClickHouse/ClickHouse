@@ -63,10 +63,16 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsDouble offset;
+    extern const SettingsDouble page;
     extern const SettingsString format;
     extern const SettingsString output_format;
     extern const SettingsString default_format;
     extern const SettingsString compression;
+    extern const SettingsString select;
+    extern const SettingsString order;
+    extern const SettingsString sort;
+    extern const SettingsString filter;
+    extern const SettingsString additional_result_filter;
     extern const SettingsBool optimize_skip_unused_shards;
     extern const SettingsUInt64 optimize_skip_unused_shards_nesting;
     extern const SettingsBool optimize_skip_unused_shards_rewrite_in;
@@ -187,6 +193,17 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
         new_settings[Setting::skip_unavailable_shards].changed = true;
     }
 
+    /// All of the settings below are interpreted only at the initiator: they either shape the
+    /// final query (`select`, `order`, `sort`, `filter`, `limit`, `offset`, `page`,
+    /// `additional_result_filter`) or shape how the result is serialised to the user
+    /// (`format`, `output_format`, `default_format`, `compression`). Forwarding them to remote
+    /// shards is at best wasted work and at worst breaks distributed queries — `format = 'Null'`,
+    /// for example, sets `null_format = true` on each shard, suppressing TCP `sendData` and
+    /// producing empty blocks; `getStructureOfRemoteTable` then `continue`s without throwing
+    /// `NetException`, leaving `fail_messages` empty and surfacing as
+    /// `NO_REMOTE_SHARD_AVAILABLE. Log: ` with an empty body. The query-shaping settings would
+    /// similarly cause the per-shard subquery to be re-shaped a second time. Strip the settings
+    /// here so the inter-server `Settings` packet does not carry them.
     if (settings[Setting::offset] != 0)
     {
         new_settings[Setting::offset] = 0;
@@ -197,14 +214,36 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
         new_settings[Setting::limit] = 0;
         new_settings[Setting::limit].changed = false;
     }
-
-    /// Output-shaping settings only make sense at the initiator: they describe how the final
-    /// result should be serialized to the user (HTTP body, CLI display, etc.). Forwarding them
-    /// to remote shards is harmful — `format = 'Null'`, for example, would set `null_format`
-    /// on each remote shard, suppressing its TCP `sendData` and producing empty blocks. That
-    /// turns `getStructureOfRemoteTable`'s DESC TABLE probes into silently-empty results and
-    /// surfaces as `NO_REMOTE_SHARD_AVAILABLE. Log: ` with an empty body. Strip the settings
-    /// here so the inter-server `Settings` packet does not carry them.
+    if (settings[Setting::page] != 0)
+    {
+        new_settings[Setting::page] = 0;
+        new_settings[Setting::page].changed = false;
+    }
+    if (!settings[Setting::select].value.empty())
+    {
+        new_settings[Setting::select] = "";
+        new_settings[Setting::select].changed = false;
+    }
+    if (!settings[Setting::order].value.empty())
+    {
+        new_settings[Setting::order] = "";
+        new_settings[Setting::order].changed = false;
+    }
+    if (!settings[Setting::sort].value.empty())
+    {
+        new_settings[Setting::sort] = "";
+        new_settings[Setting::sort].changed = false;
+    }
+    if (!settings[Setting::filter].value.empty())
+    {
+        new_settings[Setting::filter] = "";
+        new_settings[Setting::filter].changed = false;
+    }
+    if (!settings[Setting::additional_result_filter].value.empty())
+    {
+        new_settings[Setting::additional_result_filter] = "";
+        new_settings[Setting::additional_result_filter].changed = false;
+    }
     if (!settings[Setting::format].value.empty())
     {
         new_settings[Setting::format] = "";
