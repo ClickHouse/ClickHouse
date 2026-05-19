@@ -78,10 +78,21 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 This engine uses the same settings as the corresponding object storage engines and adds Paimon-specific settings:
 
 - `allow_experimental_paimon_storage_engine` — enables creation of `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS`, and `PaimonLocal` table engines. Default: `0` (disabled).
+- `use_paimon_metadata_files_cache` — enables Paimon metadata files cache for the Paimon table engine and table functions. Set to `1` to enable metadata cache, `0` to disable. Default: `0`.
 - `paimon_incremental_read` — enable incremental read mode.
 - `paimon_metadata_refresh_interval_sec` — background metadata refresh interval in seconds. When set to a value greater than 0, a background task periodically pulls the latest snapshot and schema from object storage. Default: 30.
 - `paimon_keeper_path` — Keeper path for incremental read state. Must be set and unique per table; supports macros such as `{database}`, `{table}`, `{uuid}`.
 - `paimon_replica_name` — Replica name for incremental read state. Must be set and unique per replica; supports macros such as `{replica}`.
+
+Example (enable experimental Paimon engine and metadata files cache):
+
+```sql
+SET allow_experimental_paimon_storage_engine = 1;
+SET use_paimon_metadata_files_cache = 1;
+
+CREATE TABLE paimon_cached
+ENGINE = PaimonS3(paimon_conf, filename = 'paimon_all_types');
+```
 
 ## Incremental read examples {#incremental-read-examples}
 

@@ -106,6 +106,7 @@ class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
 class IcebergMetadataFilesCache;
+class PaimonMetadataFilesCache;
 class ParquetMetadataCache;
 class VectorSimilarityIndexCache;
 class TextIndexTokensCache;
@@ -1426,6 +1427,11 @@ public:
     void updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<IcebergMetadataFilesCache> getIcebergMetadataFilesCache() const;
     void clearIcebergMetadataFilesCache() const;
+
+    void setPaimonMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updatePaimonMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<PaimonMetadataFilesCache> getPaimonMetadataFilesCache() const;
+    void clearPaimonMetadataFilesCache() const;
 #endif
 
 #if USE_PARQUET

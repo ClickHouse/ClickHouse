@@ -1419,6 +1419,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_hedged_requests", trueOrFalseSetting},
     {"use_hive_partitioning", trueOrFalseSettingNoOracle},
     {"use_iceberg_metadata_files_cache", trueOrFalseSetting},
+    {"use_paimon_metadata_files_cache", trueOrFalseSetting},
     {"use_legacy_to_time", trueOrFalseSettingNoOracle},
     {"use_page_cache_for_disks_without_file_cache", trueOrFalseSetting},
     {"use_page_cache_for_local_disks", trueOrFalseSetting},

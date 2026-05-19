@@ -31,6 +31,7 @@
 #include <base/MemorySanitizer.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
+#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <fmt/format.h>
@@ -44,6 +45,7 @@ using namespace Paimon;
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int FILE_DOESNT_EXIST;
 extern const int LOGICAL_ERROR;
 extern const int NO_ZOOKEEPER;
 extern const int REPLICA_IS_ALREADY_ACTIVE;
@@ -52,6 +54,7 @@ extern const int REPLICA_IS_ALREADY_ACTIVE;
 namespace Setting
 {
 extern const SettingsBool use_paimon_partition_pruning;
+extern const SettingsBool use_paimon_metadata_files_cache;
 extern const SettingsInt64 paimon_target_snapshot_id;
 extern const SettingsUInt64 max_consume_snapshots;
 }
@@ -62,6 +65,31 @@ extern const DataLakeStorageSettingsBool paimon_incremental_read;
 extern const DataLakeStorageSettingsInt64 paimon_metadata_refresh_interval_sec;
 extern const DataLakeStorageSettingsString paimon_keeper_path;
 extern const DataLakeStorageSettingsString paimon_replica_name;
+}
+
+namespace
+{
+/// Build a cache-key prefix that uniquely identifies a Paimon table instance.
+///
+/// Paimon's own table UUID defaults to the table name, so it cannot
+/// distinguish two tables that once shared the same path (e.g. after
+/// DROP + re-CREATE).  Instead we hash three orthogonal components:
+///   - data-source description  (host:port/bucket for S3, URL/container
+///     for Azure, full URL for HDFS — isolates different storage backends)
+///   - table path               (isolates different tables on the same backend)
+///   - schema-0 timeMillis      (isolates DROP-then-recreate of the same path,
+///     because every CREATE writes a fresh schema-0 with a new timestamp)
+String buildPaimonCacheKeyPrefix(
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const String & table_name,
+    Int64 schema0_time_millis)
+{
+    const String link_identity = configuration->getDataSourceDescription();
+    const String identity_material
+        = fmt::format("{}|{}|{}", link_identity, table_name, schema0_time_millis);
+    const auto key_prefix_hash = sipHash64(identity_material);
+    return fmt::format("{:016x}", key_prefix_hash);
+}
 }
 
 DataLakeMetadataPtr PaimonMetadata::create(
@@ -143,12 +171,49 @@ DataLakeMetadataPtr PaimonMetadata::create(
             LOG_WARNING(stream_log, "Replica {} not activated for Paimon incremental read (maybe already active elsewhere)", replica_name);
     }
 
+    PaimonMetadataFilesCachePtr cache_ptr = nullptr;
+    if (local_context->getSettingsRef()[Setting::use_paimon_metadata_files_cache])
+        cache_ptr = local_context->getPaimonMetadataFilesCache();
+    else
+        LOG_TRACE(
+            log,
+            "Not using in-memory cache for paimon metadata files, because the setting use_paimon_metadata_files_cache is false.");
+
+    String table_cache_key_prefix;
+    if (cache_ptr)
+    {
+        Int64 schema0_time_millis = schema->time_mills;
+        try
+        {
+            auto schema0_info = table_client->getTableSchemaInfoById(0);
+            auto schema0_json = table_client->getTableSchemaJSON(schema0_info);
+            Paimon::getValueFromJSON(schema0_time_millis, schema0_json, "timeMillis");
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                throw;
+            LOG_WARNING(
+                log,
+                "schema-0 was not found for table path {}, fallback to latest schema timeMillis {} to build cache key prefix",
+                table_path,
+                schema0_time_millis);
+        }
+
+        const String table_name = configuration_ptr->getRawPath().path.empty()
+            ? table_path
+            : configuration_ptr->getRawPath().path;
+        table_cache_key_prefix = buildPaimonCacheKeyPrefix(configuration_ptr, table_name, schema0_time_millis);
+    }
+
     /// Create persistent components
     PaimonPersistentComponents persistent_components(
         schema_processor,
+        cache_ptr,
         stream_state,
         configuration_ptr->getPathForRead().path,
         table_path,
+        table_cache_key_prefix,
         partition_default_name,
         incremental_read_enabled,
         metadata_refresh_interval_sec);
@@ -375,7 +440,19 @@ std::vector<PaimonManifestFileMeta> PaimonMetadata::getManifestList(const String
     if (manifest_list_path.empty())
         return {};
 
-    /// No cache, load directly
+    if (persistent_components.hasMetadataCache())
+    {
+        String cache_key = PaimonMetadataFilesCache::makeKey(persistent_components.table_cache_key_prefix, manifest_list_path);
+        auto log_ptr = log;
+        auto client = table_client;
+        auto load_manifest_list = [log_ptr, client, manifest_list_path]()
+        {
+            LOG_TRACE(log_ptr, "Loading manifest list (cache miss): {}", manifest_list_path);
+            return client->getManifestMeta(manifest_list_path);
+        };
+        return persistent_components.metadata_cache->getOrSetManifestList(cache_key, load_manifest_list);
+    }
+
     LOG_TRACE(log, "Loading manifest list (no cache): {}", manifest_list_path);
     return table_client->getManifestMeta(manifest_list_path);
 }
@@ -386,7 +463,20 @@ PaimonManifest PaimonMetadata::getManifest(const String & manifest_path, Int64 s
     if (!schema)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Schema with id {} not found", schema_id);
 
-    /// No cache, load directly
+    if (persistent_components.hasMetadataCache())
+    {
+        String cache_key = PaimonMetadataFilesCache::makeKey(persistent_components.table_cache_key_prefix, manifest_path);
+        auto log_ptr = log;
+        auto client = table_client;
+        auto partition_default_name = persistent_components.partition_default_name;
+        auto load_manifest = [log_ptr, client, manifest_path, schema, partition_default_name]()
+        {
+            LOG_TRACE(log_ptr, "Loading manifest (cache miss): {}", manifest_path);
+            return client->getDataManifest(manifest_path, *schema, partition_default_name);
+        };
+        return persistent_components.metadata_cache->getOrSetManifest(cache_key, load_manifest);
+    }
+
     LOG_TRACE(log, "Loading manifest (no cache): {}", manifest_path);
     return table_client->getDataManifest(manifest_path, *schema, persistent_components.partition_default_name);
 }

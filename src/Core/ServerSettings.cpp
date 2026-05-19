@@ -524,6 +524,10 @@ namespace
     DECLARE(UInt64, iceberg_metadata_files_cache_size, DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE, "Maximum size of iceberg metadata cache in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, iceberg_metadata_files_cache_max_entries, DEFAULT_ICEBERG_METADATA_CACHE_MAX_ENTRIES, "Maximum size of iceberg metadata files cache in entries. Zero means disabled.", 0) \
     DECLARE(Double, iceberg_metadata_files_cache_size_ratio, DEFAULT_ICEBERG_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the iceberg metadata cache relative to the cache's total size.", 0) \
+    DECLARE(String, paimon_metadata_files_cache_policy, DEFAULT_PAIMON_METADATA_CACHE_POLICY, "Paimon metadata cache policy name.", 0) \
+    DECLARE(UInt64, paimon_metadata_files_cache_size, DEFAULT_PAIMON_METADATA_CACHE_MAX_SIZE, "Maximum size of paimon metadata cache in bytes. Zero means disabled.", 0) \
+    DECLARE(UInt64, paimon_metadata_files_cache_max_entries, DEFAULT_PAIMON_METADATA_CACHE_MAX_ENTRIES, "Maximum size of paimon metadata files cache in entries. Zero means disabled.", 0) \
+    DECLARE(Double, paimon_metadata_files_cache_size_ratio, DEFAULT_PAIMON_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the paimon metadata cache relative to the cache's total size.", 0) \
     DECLARE(String, parquet_metadata_cache_policy, DEFAULT_PARQUET_METADATA_CACHE_POLICY, "Parquet metadata cache policy name.", 0) \
     DECLARE(UInt64, parquet_metadata_cache_size, DEFAULT_PARQUET_METADATA_CACHE_MAX_SIZE, "Maximum size of parquet metadata cache in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, parquet_metadata_cache_max_entries, DEFAULT_PARQUET_METADATA_CACHE_MAX_ENTRIES, "Maximum size of parquet metadata files cache in entries. Zero means disabled.", 0) \

@@ -16,11 +16,13 @@
 #include <utility>
 #include <vector>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/IStoragePolicy.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
@@ -50,6 +52,11 @@ namespace ErrorCodes
 {
 extern const int FILE_DOESNT_EXIST;
 extern const int CANNOT_PARSE_NUMBER;
+}
+
+namespace Setting
+{
+extern const SettingsBool use_paimon_metadata_files_cache;
 }
 
 PaimonSnapshot::PaimonSnapshot(const Poco::JSON::Object::Ptr & json_object)
@@ -98,6 +105,15 @@ PaimonTableClient::PaimonTableClient(ObjectStoragePtr object_storage_, const Str
     , table_location(table_location_)
     , log(getLogger("PaimonTableClient"))
 {}
+
+ReadSettings PaimonTableClient::getPaimonMetadataReadSettings() const
+{
+    auto context = getContext();
+    auto read_settings = context->getReadSettings();
+    if (context->getSettingsRef()[Setting::use_paimon_metadata_files_cache] && context->getPaimonMetadataFilesCache())
+        read_settings.enable_filesystem_cache = false;
+    return read_settings;
+}
 
 std::pair<Int32, String> PaimonTableClient::getLatestTableSchemaInfo()
 {
@@ -152,7 +168,9 @@ Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJSON(const std::pair<In
     const auto [max_schema_version, max_schema_path] = schema_meta_info;
     /// parse schema json
     RelativePathWithMetadata object_info(max_schema_path);
-    auto buf = createReadBuffer(object_info, object_storage, getContext(), log);
+    auto context = getContext();
+    auto read_settings = getPaimonMetadataReadSettings();
+    auto buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
     Poco::JSON::Parser parser;
@@ -173,7 +191,9 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
     {
         if (object_storage->exists(StoredObject(relative_path_with_metadata.relative_path)))
         {
-            auto buf = createReadBuffer(relative_path_with_metadata, object_storage, getContext(), log);
+            auto context = getContext();
+            auto read_settings = getPaimonMetadataReadSettings();
+            auto buf = createReadBuffer(relative_path_with_metadata, object_storage, context, log, read_settings);
             String hint_version_string;
             readStringUntilEOF(hint_version_string, *buf);
             {
@@ -255,7 +275,9 @@ PaimonSnapshot PaimonTableClient::getSnapshot(const std::pair<Int64, String> & s
 
     /// read snapshot and parse
     RelativePathWithMetadata snapshot_object(latest_snapshot_path);
-    auto snapshot_buf = createReadBuffer(snapshot_object, object_storage, getContext(), log);
+    auto context = getContext();
+    auto read_settings = getPaimonMetadataReadSettings();
+    auto snapshot_buf = createReadBuffer(snapshot_object, object_storage, context, log, read_settings);
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *snapshot_buf);
     Poco::JSON::Parser parser;
@@ -269,7 +291,8 @@ std::vector<PaimonManifestFileMeta> PaimonTableClient::getManifestMeta(String ma
     /// read manifest list file
     auto context = getContext();
     RelativePathWithMetadata relative_path(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_list_path);
-    auto manifest_list_buf = createReadBuffer(relative_path, object_storage, context, log);
+    auto read_settings = getPaimonMetadataReadSettings();
+    auto manifest_list_buf = createReadBuffer(relative_path, object_storage, context, log, read_settings);
     Iceberg::AvroForIcebergDeserializer manifest_list_deserializer(
         std::move(manifest_list_buf), Iceberg::IcebergPathFromMetadata::deserialize(manifest_list_path), getFormatSettings(getContext()));
 
@@ -292,7 +315,8 @@ PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema
 
     auto context = getContext();
     RelativePathWithMetadata object_info(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_path);
-    auto manifest_buf = createReadBuffer(object_info, object_storage, context, log);
+    auto read_settings = getPaimonMetadataReadSettings();
+    auto manifest_buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
     Iceberg::AvroForIcebergDeserializer manifest_deserializer(std::move(manifest_buf), Iceberg::IcebergPathFromMetadata::deserialize(manifest_path), getFormatSettings(getContext()));
 
     PaimonManifest paimon_manifest;
