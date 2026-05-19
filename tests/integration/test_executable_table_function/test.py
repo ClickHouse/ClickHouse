@@ -52,6 +52,11 @@ def test_executable_function_echo_arguments_bash(started_cluster):
     assert node.query_and_get_error(
             "SELECT * FROM executable('', 'LineAsString', 'value String')"
     )
+    error = node.query_and_get_error(
+            r"""SELECT * FROM executable('echo_arguments.sh test\1', 'LineAsString', 'value String')"""
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "Failed to parse script name and arguments" in error
     assert (
         node.query(
             r"""SELECT * FROM executable('echo_arguments.sh \'Key 1\' \'Key 2\'', 'LineAsString', 'value String')"""

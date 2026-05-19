@@ -330,6 +330,11 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
     bool has_file_size = isBufferWithFileSize(in);
     auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&in);
 
+    // When the source is not seekable (or seekable_read is off), we cannot use
+    // RandomAccessFileFromSeekableReadBuffer / RandomAccessFileFromRandomAccessReadBuffer.
+    // We then load the entire file into memory and optionally log a warning for schema inference.
+    std::string fallback_reason;
+
     if (has_file_size && seekable_in && settings.seekable_read)
     {
         if (avoid_buffering && seekable_in->supportsReadAt())
@@ -337,9 +342,30 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
 
         if (seekable_in->checkIfActuallySeekable())
             return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*seekable_in, std::nullopt, avoid_buffering);
+
+        fallback_reason = "checkIfActuallySeekable() returned false";
+    }
+    else if (!settings.seekable_read)
+    {
+        fallback_reason = "seekable_read disabled in format settings";
+    }
+    else if (!has_file_size)
+    {
+        fallback_reason = "file size unavailable";
+    }
+    else
+    {
+        fallback_reason = "stream is not seekable";
     }
 
-    // fallback to loading the entire file in memory
+    if (settings.log_full_buffer_fallback_during_schema_inference)
+    {
+        LOG_WARNING(
+            getLogger("ArrowBufferedInputStream"),
+            "Cannot read {} as seekable stream ({}), falling back to loading the entire file into memory",
+            format_name,
+            fallback_reason);
+    }
     return asArrowFileLoadIntoMemory(in, is_cancelled, format_name, magic_bytes);
 }
 

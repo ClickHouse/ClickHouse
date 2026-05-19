@@ -16,6 +16,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <boost/program_options/parsers.hpp>
+#include <boost/token_functions.hpp>
 #include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -122,7 +123,19 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
     auto script_name_with_arguments_value = checkAndGetLiteralArgument<String>(args[0], "script_name_with_arguments_value");
-    auto script_name_with_arguments = boost::program_options::split_unix(script_name_with_arguments_value);
+
+    auto script_name_with_arguments = [&]()
+    {
+        try
+        {
+            return boost::program_options::split_unix(script_name_with_arguments_value);
+        }
+        catch (const boost::escaped_list_error & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse script name and arguments: {}", e.what());
+        }
+    }();
+
     if (script_name_with_arguments.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Script name cannot be empty");
 
