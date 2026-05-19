@@ -199,11 +199,16 @@ bool readPeakRss(pid_t pid, UInt64 & bytes) noexcept
 UDFProcessSubtreeSampler::UDFProcessSubtreeSampler() = default;
 
 
-void UDFProcessSubtreeSampler::recordBorrowAcquired(pid_t root_pid_)
+void UDFProcessSubtreeSampler::recordPoolWaitDone()
 {
     pool_wait_us = entry_watch.elapsedMicroseconds();
     borrow_watch.restart();
+    pool_wait_done = true;
+}
 
+
+void UDFProcessSubtreeSampler::recordPidAcquired(pid_t root_pid_)
+{
     root_pid = root_pid_;
     borrow_acquired = true;
     pre_snapshot.clear();

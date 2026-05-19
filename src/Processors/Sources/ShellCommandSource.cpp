@@ -761,6 +761,13 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             },
             configuration.max_command_execution_time_seconds * 10000);
 
+        /// Pool wait is frozen here on both the success and the timeout-failure
+        /// paths so that `PoolWaitMicroseconds` always records contention for a
+        /// slot. Any time spent below in `buildCommand` (cold spawn) lands in
+        /// `ElapsedMicroseconds` instead.
+        if (source_configuration.sampler)
+            source_configuration.sampler->recordPoolWaitDone();
+
         if (!result)
             throw Exception(
                 ErrorCodes::TIMEOUT_EXCEEDED,
@@ -769,12 +776,11 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 
         process = process_holder->buildCommand();
 
-        /// Borrow acquired: capture pid for procfs sampling. Pool-wait time is
-        /// also frozen here. The few microseconds spent in buildCommand on
-        /// warm reuse are folded into pool wait — buildCommand is essentially
-        /// free on the warm path because the worker process already exists.
+        /// Borrow acquired: capture pid for procfs sampling. The pre-snapshot
+        /// runs here so `clear_refs` and the utime/stime baseline cover only
+        /// the work attributable to this borrow.
         if (source_configuration.sampler)
-            source_configuration.sampler->recordBorrowAcquired(process->getPid());
+            source_configuration.sampler->recordPidAcquired(process->getPid());
     }
     else
     {

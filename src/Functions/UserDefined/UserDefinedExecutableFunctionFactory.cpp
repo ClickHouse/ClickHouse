@@ -242,9 +242,20 @@ public:
             /// `~ShellCommandSource` during that destruction and the
             /// sampler holds the final counters by the time this guard runs.
             SCOPE_EXIT({
-                if (sampler && sampler->borrowAcquired())
-                {
+                if (!sampler)
+                    return;
+
+                /// `PoolWaitMicroseconds` fires whenever `tryBorrowObject`
+                /// returned (success OR timeout). On timeout the throw
+                /// short-circuits the borrow but pool contention still
+                /// happened and is worth reporting.
+                if (sampler->poolWaitDone())
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionPoolWaitMicroseconds, sampler->getPoolWaitMicroseconds());
+
+                /// The remaining counters depend on the worker actually being
+                /// borrowed and observable via `/proc/<pid>`.
+                if (sampler->borrowAcquired())
+                {
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionElapsedMicroseconds, sampler->getElapsedMicroseconds());
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionUserTimeMicroseconds, sampler->getUserTimeMicroseconds());
                     ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionSystemTimeMicroseconds, sampler->getSystemTimeMicroseconds());

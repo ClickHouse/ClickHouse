@@ -20,10 +20,11 @@ namespace DB
   * factory queries the accumulators after the pipeline drains and feeds them
   * into ProfileEvents.
   *
-  * Lifecycle (all callbacks tolerate being skipped if the borrow never
-  * happened, e.g. `tryBorrowObject` timed out):
+  * Lifecycle (callbacks tolerate being skipped — e.g. `tryBorrowObject`
+  * may time out, in which case only `recordPoolWaitDone` fires):
   *   ctor                    -- implicitly starts the wall clock for pool wait
-  *   recordBorrowAcquired    -- tryBorrowObject returned; pid known
+  *   recordPoolWaitDone      -- `tryBorrowObject` returned (success OR timeout)
+  *   recordPidAcquired       -- `buildCommand` returned; pid known (success only)
   *   recordInputBytes / recordOutputBytes -- IO buffers report bytes pushed
   *   recordReleased          -- ShellCommandSource cleanup, before returnObject
   *
@@ -41,7 +42,8 @@ class UDFProcessSubtreeSampler
 public:
     UDFProcessSubtreeSampler();
 
-    void recordBorrowAcquired(pid_t root_pid);
+    void recordPoolWaitDone();
+    void recordPidAcquired(pid_t root_pid);
     void recordInputBytes(size_t bytes) noexcept;
     void recordOutputBytes(size_t bytes) noexcept;
     void recordReleased();
@@ -59,6 +61,7 @@ public:
     UInt64 getInputBytes() const noexcept { return input_bytes.load(std::memory_order_relaxed); }
     UInt64 getOutputBytes() const noexcept { return output_bytes.load(std::memory_order_relaxed); }
 
+    bool poolWaitDone() const noexcept { return pool_wait_done; }
     bool borrowAcquired() const noexcept { return borrow_acquired; }
 
 private:
@@ -66,6 +69,7 @@ private:
     Stopwatch borrow_watch;
 
     pid_t root_pid = -1;
+    bool pool_wait_done = false;
     bool borrow_acquired = false;
 
     UInt64 pool_wait_us = 0;
