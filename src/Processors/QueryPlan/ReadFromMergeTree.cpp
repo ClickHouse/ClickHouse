@@ -1779,7 +1779,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         && storage_snapshot->metadata->hasPartitionKey())
     {
         const auto & partition_key = storage_snapshot->metadata->getPartitionKey();
-        minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
+        minmax_column_names = MergeTreeData::getMinMaxColumns(
+            partition_key, data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames();
         num_minmax_columns = minmax_column_names.size();
     }
 
@@ -1930,11 +1931,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
             for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)
             {
                 const auto & part = part_it->data_part;
-                if (!part->minmax_idx)
+                auto minmax_index = part->getMinMaxIndex();
+                if (!minmax_index)
                     continue;
-                for (size_t mm = 0; mm < num_minmax_columns && mm < part->minmax_idx->hyperrectangle.size(); ++mm)
+                for (size_t mm = 0; mm < num_minmax_columns && mm < minmax_index->hyperrectangle.size(); ++mm)
                 {
-                    const auto & range = part->minmax_idx->hyperrectangle[mm];
+                    const auto & range = minmax_index->hyperrectangle[mm];
                     if (!per_col[mm].initialized)
                     {
                         per_col[mm].min_value = range.left;
