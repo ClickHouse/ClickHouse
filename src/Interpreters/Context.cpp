@@ -1222,6 +1222,7 @@ ContextData::ContextData(const ContextData &o) :
     access(o.access),
     need_recalculate_access(o.need_recalculate_access),
     current_database(o.current_database),
+    can_use_query_result_cache(o.can_use_query_result_cache),
     settings(std::make_unique<Settings>(*o.settings)),
     progress_callback(o.progress_callback),
     file_progress_callback(o.file_progress_callback),
@@ -4647,6 +4648,16 @@ void Context::clearCaches() const
     shared->query_condition_cache->clear();
 
     /// Intentionally not clearing the query result cache which is transactionally inconsistent by design.
+}
+
+void Context::setCanUseQueryResultCache(bool can_use_query_result_cache_)
+{
+    can_use_query_result_cache = can_use_query_result_cache_;
+}
+
+bool Context::getCanUseQueryResultCache() const
+{
+    return can_use_query_result_cache;
 }
 
 void Context::setAsynchronousMetrics(AsynchronousMetrics * asynchronous_metrics_)

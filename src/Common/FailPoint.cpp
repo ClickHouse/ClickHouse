@@ -68,6 +68,8 @@ static struct InitFiu
     ONCE(distributed_cache_fail_choose_server) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     REGULAR(cache_filesystem_failure) \
+    REGULAR(file_segment_range_writer_partial_write_then_network_error) \
+    REGULAR(distributed_cache_simulate_writer_not_keeping_up) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
     ONCE(distributed_cache_simulate_stale_connection) \
@@ -88,6 +90,7 @@ static struct InitFiu
     REGULAR(smt_outdated_parts_exception_response) \
     REGULAR(object_storage_queue_fail_in_the_middle_of_file) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
+    ONCE(replicated_merge_tree_restore_attach_retry) \
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
     PAUSEABLE_ONCE(smt_wait_next_mutation) \
