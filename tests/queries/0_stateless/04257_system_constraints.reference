@@ -1,0 +1,16 @@
+assume_b	ASSUME	b < 1000
+check_a	CHECK	a > 0
+1
+1
+assume_b	ASSUME	b < 1000
+check_a	CHECK	a > 0
+check_b	CHECK	b > 0
+assume_b	ASSUME	b < 1000
+check_b	CHECK	b > 0
+0
+check_enc	CHECK	length(encrypt(\'aes-128-ecb\', \'[HIDDEN]\')) > 0
+test_constraints_t1	c1	CHECK	x > 0
+test_constraints_t2	c2	CHECK	y < 100
+test_constraints_t2	c3	ASSUME	y > 0
+check_mem	CHECK	a != 0
+0
