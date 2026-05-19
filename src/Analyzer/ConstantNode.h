@@ -47,7 +47,7 @@ public:
     explicit ConstantNode(Field value_);
 
     /// Get constant value
-    const ColumnPtr & getColumn() const
+    const ColumnConstPtr & getColumn() const
     {
         return constant_value.getColumn();
     }
