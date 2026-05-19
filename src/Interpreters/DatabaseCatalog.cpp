@@ -15,6 +15,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/TableNameHints.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Storages/IStorage.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -1309,6 +1311,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
 
     /// Table was removed from database. Enqueue removal of its data from disk.
     time_t drop_time;
+    bool skip_disk_cleanup = false;
     if (table)
     {
         chassert(hasUUIDMapping(table_id.uuid));
@@ -1344,6 +1347,30 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
                                             ". Will remove metadata and " + data_path +
                                             ". Garbage may be left in ZooKeeper.");
             }
+
+            /// Fail close: if the storage object could not be materialized but the
+            /// metadata declares `leader_election = 1`, the table's data lives on
+            /// shared object storage owned by another node. `removeRecursive` here
+            /// would delete data the live leader still owns. Skip per-disk cleanup
+            /// instead — leaking the metadata file is preferable to destroying
+            /// shared data on a transient load failure.
+            if (!table && create->storage && create->storage->settings)
+            {
+                if (const Field * value = create->storage->settings->changes.tryGet("leader_election"))
+                {
+                    try
+                    {
+                        skip_disk_cleanup = !value->isNull() && applyVisitor(FieldVisitorConvertToNumber<bool>(), *value);
+                    }
+                    catch (...)
+                    {
+                        /// Treat an unparsable `leader_election` value as fail close: we
+                        /// cannot prove the table is local, so do not risk a destructive
+                        /// `removeRecursive` against shared object storage.
+                        skip_disk_cleanup = true;
+                    }
+                }
+            }
         }
         else
         {
@@ -1360,7 +1387,8 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
         /// Insert it before first_async_drop_in_queue, so sync drop queries will have priority over async ones,
         /// but the queue will remain fair for multiple sync drop queries.
         tables_marked_dropped.emplace(
-            first_async_drop_in_queue, TableMarkedAsDropped{table_id, table, db_disk, dropped_metadata_path, drop_time});
+            first_async_drop_in_queue,
+            TableMarkedAsDropped{table_id, table, db_disk, dropped_metadata_path, drop_time, skip_disk_cleanup});
     }
     else
     {
@@ -1370,7 +1398,8 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
              db_disk,
              dropped_metadata_path,
              drop_time
-                 + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec])});
+                 + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec]),
+             skip_disk_cleanup});
         if (first_async_drop_in_queue == tables_marked_dropped.end())
             --first_async_drop_in_queue;
     }
@@ -1638,7 +1667,13 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     /// the per-table dropper retries indefinitely on every failure — hanging
     /// `DROP TABLE ... SYNC` on every node except the one that actually owned the
     /// data when it was dropped.
-    bool skip_disk_cleanup = table.table && table.table->dropSkipsDataDirectoryCleanup();
+    ///
+    /// If the storage object itself could not be materialized (`table.table` is
+    /// null because `createTableFromAST` failed during dropped-metadata recovery),
+    /// `enqueueDroppedTableCleanup` precomputes the same skip from the metadata
+    /// AST — see `TableMarkedAsDropped::skip_disk_cleanup`.
+    bool skip_disk_cleanup = table.skip_disk_cleanup
+        || (table.table && table.table->dropSkipsDataDirectoryCleanup());
     if (skip_disk_cleanup)
     {
         LOG_INFO(log,

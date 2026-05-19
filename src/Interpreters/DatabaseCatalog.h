@@ -260,6 +260,12 @@ public:
         DiskPtr db_disk;
         String metadata_path;
         time_t drop_time{};
+        /// Set when the storage object could not be materialized but the metadata
+        /// signals that table data lives on shared object storage (for example,
+        /// `MergeTree` with `leader_election = 1`). In that case `dropTableFinally`
+        /// must fail close: it must not run `removeRecursive` against disks because
+        /// the data is shared with another node that still owns the lease.
+        bool skip_disk_cleanup = false;
     };
     using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
 
