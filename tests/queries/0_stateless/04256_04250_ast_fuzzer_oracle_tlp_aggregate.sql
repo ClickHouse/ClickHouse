@@ -1,4 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-fasttest, no-parallel
+-- no-fasttest: SET ast_fuzzer_runs / ast_fuzzer_oracle are EXPERIMENTAL-tier settings and
+--              are not allowed when `allow_feature_tier=0` (the Fast test default).
 --
 -- Smoke coverage for `QueryOracleChecker::checkTLPAggregate` so the dedicated
 -- aggregate-oracle rewrite path (State/Merge + WHERE -> UNION ALL) doesn't

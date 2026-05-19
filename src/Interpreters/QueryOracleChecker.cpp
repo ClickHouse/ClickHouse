@@ -39,6 +39,8 @@ extern const SettingsBool ast_fuzzer_oracle;
 namespace ErrorCodes
 {
 extern const int AST_FUZZER_ORACLE_MISMATCH;
+extern const int TOO_MANY_ROWS;
+extern const int TOO_MANY_BYTES;
 }
 
 
@@ -425,14 +427,14 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     /// Prevent the optimizer from pushing TLP predicates across subquery/JOIN boundaries.
     oracle_context->setSetting("enable_optimize_predicate_expression", Field(false));
     /// Cap result size so oracle sub-queries (especially TLP's UNION ALL of three
-    /// partitions) cannot allocate unbounded memory. We use `result_overflow_mode=break`
-    /// so an oversized result silently truncates instead of throwing; callers detect
-    /// truncation via `MAX_ORACLE_OUTPUT_SIZE` on the formatted output and report a
-    /// distinct "skipped" state, rather than letting truncated output appear as a
-    /// real empty result.
+    /// partitions) cannot allocate unbounded memory. We use `result_overflow_mode=throw`
+    /// — `break` would silently truncate the result before the cap fires, and the
+    /// caller's post-check on `output.size() > MAX_ORACLE_OUTPUT_SIZE` would then never
+    /// trip (the output sits at exactly the cap). The caller catches the resulting
+    /// `TOO_MANY_ROWS` / `TOO_MANY_BYTES` exception and treats the query as skipped.
     oracle_context->setSetting("max_result_rows", Field(UInt64(MAX_ORACLE_RESULT_ROWS)));
     oracle_context->setSetting("max_result_bytes", Field(UInt64(MAX_ORACLE_OUTPUT_SIZE)));
-    oracle_context->setSetting("result_overflow_mode", String("break"));
+    oracle_context->setSetting("result_overflow_mode", String("throw"));
     oracle_context->setCurrentQueryId("");
     return oracle_context;
 }
@@ -450,11 +452,24 @@ QueryOracleChecker::executeAndCollectSortedRows(const String & query, const Cont
     ReadBufferFromString istr(query);
     WriteBufferFromOwnString ostr;
 
-    executeQuery(istr, ostr, oracle_context, {}, QueryFlags{.internal = true});
+    try
+    {
+        executeQuery(istr, ostr, oracle_context, {}, QueryFlags{.internal = true});
+    }
+    catch (const Exception & e)
+    {
+        /// `result_overflow_mode=throw` makes oracle sub-queries that exceed
+        /// `max_result_rows` / `max_result_bytes` throw rather than silently
+        /// truncate. Catch the size-cap exceptions here and signal "skipped"
+        /// so the oracle never compares partial results.
+        if (e.code() == ErrorCodes::TOO_MANY_ROWS || e.code() == ErrorCodes::TOO_MANY_BYTES)
+            return std::nullopt;
+        throw;
+    }
 
     String output = ostr.str();
     if (output.size() > MAX_ORACLE_OUTPUT_SIZE)
-        return std::nullopt; /// Truncated — caller must skip, not treat as empty.
+        return std::nullopt; /// Belt-and-braces: still cap the formatted output.
 
     auto rows = splitIntoRows(output);
     std::sort(rows.begin(), rows.end());
@@ -514,7 +529,16 @@ QueryOracleChecker::executeWithSettings(
 
     ReadBufferFromString istr(query);
     WriteBufferFromOwnString ostr;
-    executeQuery(istr, ostr, oracle_context, {}, QueryFlags{.internal = true});
+    try
+    {
+        executeQuery(istr, ostr, oracle_context, {}, QueryFlags{.internal = true});
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::TOO_MANY_ROWS || e.code() == ErrorCodes::TOO_MANY_BYTES)
+            return std::nullopt;
+        throw;
+    }
 
     String output = ostr.str();
     if (output.size() > MAX_ORACLE_OUTPUT_SIZE)
