@@ -134,7 +134,15 @@ public:
     void forEachSubcolumn(ColumnCallback callback) const override;
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
     bool structureEquals(const IColumn & rhs) const override;
-    void finalize() override { nested->finalize(); }
+    void finalize() override
+    {
+        /// `nested` can be shared by a row-input format serializer that retains a `ColumnPtr` to it
+        /// between rows of the same chunk; the format then calls `finalize()` on the owning column
+        /// while the borrowed reference is still alive. Go through the const dereference so that
+        /// `WrappedPtr` does not trigger its `use_count() == 1` assertion in this safe case.
+        const auto & nested_ref = nested;
+        const_cast<IColumn &>(*nested_ref).finalize();
+    }
     bool isFinalized() const override { return nested->isFinalized(); }
 
     const ColumnArray & getNestedColumn() const;
