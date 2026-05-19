@@ -49,6 +49,11 @@ namespace HistogramMetrics
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TABLE_IS_READ_ONLY;
+}
+
 namespace
 {
 
@@ -409,8 +414,17 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                         }
                         catch (...)
                         {
+                            /// The table can transition to readonly between the `status.is_readonly`
+                            /// check above and the call to `getReplicaDelays` (which calls
+                            /// `assertNotReadonly` internally). This is a benign race for a
+                            /// background metrics thread, so do not pollute the error log /
+                            /// stderr with `TABLE_IS_READ_ONLY` exceptions caused by it.
+                            auto level = getCurrentExceptionCode() == ErrorCodes::TABLE_IS_READ_ONLY
+                                ? LogsLevel::debug
+                                : LogsLevel::error;
                             tryLogCurrentException(__PRETTY_FUNCTION__,
-                                "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()));
+                                "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()),
+                                level);
                         }
                     }
                 }
