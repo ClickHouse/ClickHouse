@@ -429,9 +429,15 @@ public:
     struct PrefetchCallable
     {
         template <typename Map, typename KeyHolder>
-        void ALWAYS_INLINE operator()(Map & map, KeyHolder &&, size_t hash)
+        void ALWAYS_INLINE operator()(Map & map, KeyHolder && key_holder, size_t hash)
         {
             map.prefetchByHash(hash);
+            /// Release any temporary key memory held by the holder. Needed for the `ms` (long string) and
+            /// trailing-zero dispatch paths where `dispatch` forwards the holder without discarding.
+            /// For the short-string dispatch paths the holder was already discarded inside `dispatch`,
+            /// and the parameter received here is a `StringKey8`/`StringKey16`/`StringKey24`/`VoidKey`
+            /// for which `keyHolderDiscardKey` is a no-op.
+            keyHolderDiscardKey(key_holder);
         }
     };
 
