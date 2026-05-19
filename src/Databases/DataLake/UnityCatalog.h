@@ -69,7 +69,7 @@ private:
         const std::string & table_name,
         TableMetadata & result) const;
 
-    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & table_id) override;
 };
 
 }

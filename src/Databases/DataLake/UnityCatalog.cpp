@@ -443,13 +443,21 @@ UnityCatalog::UnityCatalog(
 {
 }
 
-ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCallback(const DB::StorageID &)
+ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCallback(const DB::StorageID & table_id)
 {
-    return [this] () -> std::shared_ptr<IStorageCredentials>
+    return [this, table_id] () -> std::shared_ptr<IStorageCredentials>
     {
         LOG_DEBUG(log, "Update credentials in the catalog");
 
-        auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, {});
+        auto callback = [table_id] (std::ostream & os)
+        {
+            Poco::JSON::Object obj;
+            obj.set("table_id", table_id);
+            obj.set("operation", "READ");
+            obj.stringify(os);
+        };
+
+        auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
         const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
         if (hasValueAndItsNotNone("aws_temp_credentials", object))
