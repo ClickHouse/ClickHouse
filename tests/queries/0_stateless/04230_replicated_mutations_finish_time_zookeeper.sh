@@ -12,7 +12,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 table_r1="replicated_mutations_finish_time_r1"
 table_r2="replicated_mutations_finish_time_r2"
-zk_path="/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/replicated_mutations_finish_time"
 
 function cleanup()
 {
@@ -67,7 +66,7 @@ ${CLICKHOUSE_CLIENT} --query="
         id UInt64,
         value UInt64
     )
-    ENGINE = ReplicatedMergeTree('${zk_path}', 'r1')
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/replicated_mutations_finish_time', 'r1')
     ORDER BY id
     SETTINGS finished_mutations_to_keep = 100"
 
@@ -77,7 +76,7 @@ ${CLICKHOUSE_CLIENT} --query="
         id UInt64,
         value UInt64
     )
-    ENGINE = ReplicatedMergeTree('${zk_path}', 'r2')
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/replicated_mutations_finish_time', 'r2')
     ORDER BY id
     SETTINGS finished_mutations_to_keep = 100"
 

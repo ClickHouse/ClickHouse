@@ -154,34 +154,40 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     /// For backward compatibility in old mutation files, the finish time is initialised with zero
     finish_time = 0;
 
-    /// `checkString` advances the buffer even on a partial match. Use this helper
-    /// to detect optional field names without changing the parser position.
-    /// Restore buffer position is safe because the buffer is only few hundred bytes
-    auto check_string_no_advance = [](const char * s, ReadBuffer & buffer) -> bool
+    String optional_fields;
+    readStringUntilEOF(optional_fields, *buf);
+    ReadBufferFromString optional_buf(optional_fields);
+
+    /// `checkString` advances the buffer even on a partial match. Use this helper to detect
+    /// optional field names without changing the parser position if there is no match.
+    auto check_string_no_advance_on_failure = [](const char * s, ReadBuffer & buffer) -> bool
     {
         char * pos = buffer.position();
-        bool result = checkString(s, buffer);
+        if (checkString(s, buffer))
+            return true;
         buffer.position() = pos;
-        return result;
+        return false;
     };
 
-    while (!buf->eof())
+    static const char * tid_prefix = "tid: ";
+    static const char * csn_prefix = "csn: ";
+    static const char * finish_time_prefix = "finish time: ";
+
+    while (!optional_buf.eof())
     {
-        if (check_string_no_advance("tid: ", *buf))
+        if (check_string_no_advance_on_failure(tid_prefix, optional_buf))
         {
-            *buf >> "tid: ";
-            tid = TransactionID::read(*buf);
-            *buf >> "\n";
+            tid = TransactionID::read(optional_buf);
+            assertChar('\n', optional_buf);
         }
-        else if (check_string_no_advance("csn: ", *buf))
+        else if (check_string_no_advance_on_failure(csn_prefix, optional_buf))
         {
-            *buf >> "csn: " >> csn >> "\n";
+            optional_buf >> csn >> "\n";
         }
-        else if (check_string_no_advance("finish time: ", *buf))
+        else if (check_string_no_advance_on_failure(finish_time_prefix, optional_buf))
         {
-            *buf >> "finish time: ";
             LocalDateTime finish_time_dt;
-            *buf >> finish_time_dt >> "\n";
+            optional_buf >> finish_time_dt >> "\n";
             finish_time = makeDateTime(DateLUT::serverTimezoneInstance(),
                 finish_time_dt.year(), finish_time_dt.month(), finish_time_dt.day(),
                 finish_time_dt.hour(), finish_time_dt.minute(), finish_time_dt.second());
@@ -189,13 +195,13 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
         else
         {
             String unexpected_field;
-            readStringUntilNewlineInto(unexpected_field, *buf);
+            readStringUntilNewlineInto(unexpected_field, optional_buf);
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Cannot parse mutation entry {}, unexpected field after commands: {}", file_name, unexpected_field);
+                "Cannot parse mutation entry {}, unexpected field after commands: {}", file_name, unexpected_field);
         }
     }
 
-    assertEOF(*buf);
+    assertEOF(optional_buf);
 }
 
 MergeTreeMutationEntry::~MergeTreeMutationEntry()

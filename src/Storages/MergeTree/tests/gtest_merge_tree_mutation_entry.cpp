@@ -45,7 +45,7 @@ struct MutationEntryFixture
     }
 
     /// Writes a mutation file with optional tail fields.
-    void writeMutationFile(const String & file_name, const std::vector<String> & tail_fields = {})
+    void writeMutationFile(const String & file_name, const std::vector<String> & tail_fields = {}) const
     {
         auto out = disk->writeFile(file_name);
         *out << "format version: 1\n";
@@ -57,7 +57,7 @@ struct MutationEntryFixture
         out->sync();
     }
 
-    MergeTreeMutationEntry load(const String & file_name)
+    MergeTreeMutationEntry load(const String & file_name) const
     {
         return MergeTreeMutationEntry(disk, "", file_name);
     }

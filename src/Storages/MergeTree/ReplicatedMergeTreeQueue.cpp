@@ -2522,10 +2522,36 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
     if (!finished.empty())
     {
         time_t now = time(nullptr);
-        Coordination::Requests ops;
-        ops.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "mutation_pointer", finished.back()->znode_name, -1));
-        ops.emplace_back(zkutil::makeSetRequest(fs::path(replica_path) / "mutation_finish_time", toString(now), -1));
-        zookeeper->multi(ops);
+        const String mutation_pointer_path = fs::path(replica_path) / "mutation_pointer";
+        const String mutation_finish_time_path = fs::path(replica_path) / "mutation_finish_time";
+
+        auto make_ops = [&]
+        {
+            Coordination::Requests ops;
+            ops.emplace_back(zkutil::makeSetRequest(mutation_pointer_path, finished.back()->znode_name, -1));
+            ops.emplace_back(zkutil::makeSetRequest(mutation_finish_time_path, toString(now), -1));
+            return ops;
+        };
+
+        Coordination::Requests ops = make_ops();
+        Coordination::Responses responses;
+        auto code = zookeeper->tryMulti(ops, responses);
+
+        chassert(responses.size() == ops.size());
+        if (code == Coordination::Error::ZNONODE && responses[1]->error == Coordination::Error::ZNONODE)
+        {
+            /// `mutation_finish_time` was added after `mutation_pointer`, so upgraded replicas may not have
+            /// the znode yet. Create it once and retry the atomic update of both nodes.
+            auto create_code = zookeeper->tryCreate(mutation_finish_time_path, "", zkutil::CreateMode::Persistent);
+            if (create_code != Coordination::Error::ZOK && create_code != Coordination::Error::ZNODEEXISTS)
+                throw zkutil::KeeperException::fromPath(create_code, mutation_finish_time_path);
+
+            ops = make_ops();
+            responses.clear();
+            code = zookeeper->tryMulti(ops, responses);
+        }
+
+        zkutil::KeeperMultiException::check(code, ops, responses);
 
         std::lock_guard lock(state_mutex);
 
