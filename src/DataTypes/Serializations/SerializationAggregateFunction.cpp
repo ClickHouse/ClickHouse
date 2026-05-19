@@ -312,9 +312,13 @@ void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, Re
 }
 
 
-void SerializationAggregateFunction::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void SerializationAggregateFunction::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeQuotedString(serializeToString(function, column, row_num, version), ostr);
+    auto str = serializeToString(function, column, row_num, version);
+    if (settings.values.escape_quote_with_quote)
+        writeQuotedStringPostgreSQL(str, ostr);
+    else
+        writeQuotedString(str, ostr);
 }
 
 
