@@ -4933,7 +4933,13 @@ void StorageReplicatedMergeTree::startBeingLeader(const ZooKeeperRetriesInfo & z
     if (zookeeper_retries_info.max_retries > 0)
     {
         ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::startBeingLeader", log.load(), zookeeper_retries_info};
-        retries_ctl.retryLoop([&] { start_being_leader(); });
+        retries_ctl.retryLoop([&]
+        {
+            /// Refresh current_zookeeper on retry since it's not auto-updated during creation (RestartingThread not yet running).
+            if (retries_ctl.isRetry())
+                setZooKeeper();
+            start_being_leader();
+        });
     }
     else
     {
