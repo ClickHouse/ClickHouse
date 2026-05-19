@@ -2,6 +2,8 @@
 
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromIndexPages.h>
 #include <Common/logger_useful.h>
+#include <Common/CurrentThread.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 #include <Disks/IO/ReadBufferFromWebServer.h>
@@ -62,6 +64,11 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
+namespace Setting
+{
+    extern const SettingsUInt64 url_wildcard_max_directories_to_read;
+}
+
 WebObjectStorage::WebObjectStorage(
     const String & url_,
     const String & query_fragment_,
@@ -110,6 +117,7 @@ bool WebObjectStorage::exists(const std::string & path) const
 void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
     MetadataStorageFromIndexPages metadata_storage(*this);
+    const size_t max_directories_to_read_for_query = getMaxDirectoriesToRead();
 
     std::string normalized_path = stripLeadingSlashes(path);
     if (normalized_path == "/")
@@ -143,13 +151,13 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
                 if (!known_directories.emplace(directory_key).second)
                     continue;
 
-                if (max_directories_to_read && known_directories.size() > max_directories_to_read)
+                if (max_directories_to_read_for_query && known_directories.size() > max_directories_to_read_for_query)
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Too many directories while expanding URL wildcard, maximum: {}. This limit is controlled by "
                         "setting `url_wildcard_max_directories_to_read`",
-                        max_directories_to_read);
+                        max_directories_to_read_for_query);
                 }
                 pending_directories.emplace_back(entry->relative_path, entry->read_source_index);
                 continue;
@@ -162,6 +170,17 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
             children.emplace_back(entry);
         }
     }
+}
+
+size_t WebObjectStorage::getMaxDirectoriesToRead() const
+{
+    if (CurrentThread::isInitialized())
+    {
+        if (const auto query_context = CurrentThread::tryGetQueryContext())
+            return query_context->getSettingsRef()[Setting::url_wildcard_max_directories_to_read];
+    }
+
+    return max_directories_to_read;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT

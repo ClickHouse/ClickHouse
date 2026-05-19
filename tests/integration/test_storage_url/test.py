@@ -409,6 +409,26 @@ def test_url_engine_wildcard_preserves_failover_options():
         node1.query(f"DROP TABLE IF EXISTS {table_name}")
 
 
+def test_url_engine_wildcard_limit_uses_query_setting():
+    table_name = "url_wildcard_directory_limit"
+    node1.query(f"DROP TABLE IF EXISTS {table_name}")
+    try:
+        node1.query(
+            f"CREATE TABLE {table_name} (x UInt64) "
+            "ENGINE = URL('http://resolver:8087/data/deep/**/part*.tsv', 'TSV')",
+            settings={"allow_experimental_url_wildcard_from_index_pages": 1},
+        )
+
+        error = node1.query_and_get_error(
+            f"SELECT count() FROM {table_name} "
+            "SETTINGS allow_experimental_url_wildcard_from_index_pages=1, url_wildcard_max_directories_to_read=3"
+        )
+        assert "Too many directories while expanding URL wildcard" in error
+        assert "url_wildcard_max_directories_to_read" in error
+    finally:
+        node1.query(f"DROP TABLE IF EXISTS {table_name}")
+
+
 def test_url_wildcard_is_experimental():
     error = node1.query_and_get_error(
         "SELECT sum(x) FROM url('http://resolver:8087/data/**/part*.tsv', 'TSV', 'x UInt64')"

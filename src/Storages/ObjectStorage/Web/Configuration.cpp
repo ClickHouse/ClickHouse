@@ -24,7 +24,6 @@ namespace Setting
     extern const SettingsSchemaInferenceMode schema_inference_mode;
     extern const SettingsBool schema_inference_use_cache_for_url;
     extern const SettingsUInt64 glob_expansion_max_elements;
-    extern const SettingsUInt64 url_wildcard_max_directories_to_read;
 }
 
 namespace ErrorCodes
@@ -136,8 +135,7 @@ ObjectStoragePtr StorageWebConfiguration::createObjectStorage(ContextPtr context
     return std::make_shared<WebObjectStorage>(
         url_shards,
         context,
-        headers_from_ast,
-        context->getSettingsRef()[Setting::url_wildcard_max_directories_to_read]);
+        headers_from_ast);
 }
 
 void StorageWebConfiguration::addStructureAndFormatToArgsIfNeeded(

@@ -121,6 +121,7 @@ private:
 
     HeadSupport getHeadSupportForOrigin(const Poco::URI & uri) const;
     void setHeadSupportForOrigin(const Poco::URI & uri, HeadSupport support) const;
+    size_t getMaxDirectoriesToRead() const;
 
     static constexpr size_t max_head_support_cache_size = 65536;
 
