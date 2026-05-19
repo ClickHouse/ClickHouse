@@ -162,7 +162,7 @@ Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJSON(const std::pair<In
     return shcema_json;
 }
 
-std::optional<std::pair<Int64, String>> PaimonTableClient::getLastestTableSnapshotInfo()
+std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapshotInfo()
 {
     /// try to read latest hint
     Int64 snapshot_version{-1};

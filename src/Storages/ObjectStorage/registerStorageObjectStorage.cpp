@@ -452,6 +452,14 @@ void registerStoragePaimon(StorageFactory & factory)
         {
             .supports_settings = true,
             .supports_schema_inference = true,
+            /// source_access_type is hardcoded to S3 even though this auto-detect
+            /// engine can resolve to Azure / Local backends at runtime.  This is a
+            /// known limitation shared by Iceberg (see its auto-detect registration
+            /// comment) and DeltaLake auto-detect registrations: the registration
+            /// struct requires a static value, but the actual backend is determined
+            /// inside the factory lambda.  Fixing this requires refactoring the
+            /// StorageFactory registration mechanism to support dynamic / deferred
+            /// access-type resolution.
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         });

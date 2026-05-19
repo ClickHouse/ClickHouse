@@ -22,7 +22,7 @@ struct PaimonPersistentComponents
 
     /// Stream state for incremental read (optional, can be nullptr)
     /// Controlled by paimon_incremental_read setting
-    /// Stores committed snapshot ID in Keeper for exactly-once semantics
+    /// Stores committed snapshot ID in Keeper for at-most-once delivery
     PaimonStreamStatePtr stream_state;
 
     /// Immutable table location (e.g., s3://bucket/path/to/table)

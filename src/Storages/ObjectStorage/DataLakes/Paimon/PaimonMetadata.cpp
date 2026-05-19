@@ -28,6 +28,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <base/scope_guard.h>
 #include <base/defines.h>
+#include <base/MemorySanitizer.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/assert_cast.h>
@@ -45,6 +46,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int NO_ZOOKEEPER;
+extern const int REPLICA_IS_ALREADY_ACTIVE;
 }
 
 namespace Setting
@@ -110,6 +112,15 @@ DataLakeMetadataPtr PaimonMetadata::create(
     const auto & data_lake_settings = configuration_ptr->getDataLakeSettings();
     bool incremental_read_enabled = data_lake_settings[DataLakeStorageSetting::paimon_incremental_read].value;
     Int64 metadata_refresh_interval_sec = data_lake_settings[DataLakeStorageSetting::paimon_metadata_refresh_interval_sec].value;
+
+    /// The settings framework accesses field values through a pointer-to-member
+    /// dereference (impl.get()->*t). MSan cannot track initialization across this
+    /// indirection, so values read via operator[] appear tainted. Unpoison at the
+    /// source to prevent taint from propagating through PaimonPersistentComponents
+    /// into PaimonMetadata members used on background threads.
+    __msan_unpoison(&incremental_read_enabled, sizeof(incremental_read_enabled));
+    __msan_unpoison(&metadata_refresh_interval_sec, sizeof(metadata_refresh_interval_sec));
+
     PaimonStreamStatePtr stream_state = nullptr;
 
     if (incremental_read_enabled)
@@ -124,14 +135,12 @@ DataLakeMetadataPtr PaimonMetadata::create(
                 ErrorCodes::BAD_ARGUMENTS,
                 "To use Paimon incremental read both paimon_keeper_path and paimon_replica_name must be specified");
 
-        String replica_path = keeper_path + "/replicas/" + replica_name;
-
         auto keeper = local_context->getZooKeeper();
         auto stream_log = getLogger("PaimonStreamState");
-        stream_state = std::make_shared<PaimonStreamState>(keeper, keeper_path, replica_path, stream_log);
+        stream_state = std::make_shared<PaimonStreamState>(keeper, keeper_path, replica_name, stream_log);
         stream_state->initializeKeeperNodes();
         if (!stream_state->activate())
-            LOG_WARNING(stream_log, "Replica {} not activated for Paimon incremental read (maybe already active elsewhere)", replica_path);
+            LOG_WARNING(stream_log, "Replica {} not activated for Paimon incremental read (maybe already active elsewhere)", replica_name);
     }
 
     /// Create persistent components
@@ -159,10 +168,19 @@ PaimonMetadata::PaimonMetadata(
     , table_client(std::move(table_client_))
     , object_storage(std::move(object_storage_))
     , log(getLogger("PaimonMetadata"))
-    , refresh_interval_sec(persistent_components.metadata_refresh_interval_sec > 0
-            ? std::chrono::seconds(persistent_components.metadata_refresh_interval_sec)
-            : std::chrono::seconds(0))
+    , refresh_in_progress(false)
 {
+    /// The settings framework reads field values through a pointer-to-member
+    /// dereference across an inheritance chain (impl.get()->*t). MSan cannot
+    /// track initialization through this pattern, tainting all downstream values.
+    /// Even though the source value is already unpoisoned in create(), compiler
+    /// optimizations (register reuse, cmov) may re-introduce shadow taint through
+    /// intermediate computations. Unpoison the member directly to guarantee the
+    /// background thread always reads a clean value.
+    refresh_interval_sec = persistent_components.metadata_refresh_interval_sec > 0
+        ? static_cast<size_t>(persistent_components.metadata_refresh_interval_sec) : 0;
+    __msan_unpoison(&refresh_interval_sec, sizeof(refresh_interval_sec));
+
     /// Load initial state
     auto initial_state = loadLatestState();
     if (initial_state)
@@ -209,7 +227,7 @@ PaimonTableStatePtr PaimonMetadata::getCurrentState() const
 PaimonTableStatePtr PaimonMetadata::loadLatestState() const
 {
     /// Get latest snapshot info
-    auto snapshot_info_opt = table_client->getLastestTableSnapshotInfo();
+    auto snapshot_info_opt = table_client->getLatestTableSnapshotInfo();
     if (!snapshot_info_opt)
     {
         LOG_WARNING(log, "Paimon table has no snapshots yet");
@@ -418,6 +436,11 @@ ObjectIterator PaimonMetadata::iterate(
     if (persistent_components.incremental_read_enabled && target_snapshot_id > 0)
     {
         auto target_state = loadStateForSnapshot(target_snapshot_id);
+        if (target_state->isCompact())
+            LOG_WARNING(log, "Target snapshot_id={} is a COMPACT snapshot. "
+                "Its delta manifest contains compaction output (not incremental changes). "
+                "Consider using a non-COMPACT snapshot for accurate incremental semantics.",
+                target_snapshot_id);
         data_files = collectDeltaFilesForSnapshot(target_state, partition_pruner);
     }
     /// 4.b Regular incremental mode
@@ -429,14 +452,26 @@ ObjectIterator PaimonMetadata::iterate(
             auto keeper = getContext()->getZooKeeper();
             stream_state->setKeeper(keeper);
             stream_state->initializeKeeperNodes();
-            stream_state->activate();
+            if (!stream_state->activate())
+                throw Exception(
+                    ErrorCodes::REPLICA_IS_ALREADY_ACTIVE,
+                    "Failed to activate Paimon replica after Keeper reconnection. "
+                    "Another server may be using the same replica_name.");
         }
 
         bool lock_acquired = false;
         SCOPE_EXIT(
         {
-            if (lock_acquired)
-                stream_state->releaseProcessingLock();
+            try
+            {
+                if (lock_acquired)
+                    stream_state->releaseProcessingLock();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__,
+                    "Failed to release Paimon processing lock in SCOPE_EXIT");
+            }
         });
 
         stream_state->acquireProcessingLock();
@@ -484,7 +519,7 @@ void PaimonMetadata::commitSnapshot(Int64 snapshot_id)
 
 void PaimonMetadata::scheduleBackgroundRefresh()
 {
-    if (refresh_interval_sec.count() == 0)
+    if (refresh_interval_sec == 0)
         return;
 
     auto & schedule_pool = getContext()->getSchedulePool();
@@ -494,7 +529,7 @@ void PaimonMetadata::scheduleBackgroundRefresh()
         {
             runBackgroundRefresh();
         });
-    refresh_task->scheduleAfter(std::chrono::duration_cast<std::chrono::milliseconds>(refresh_interval_sec).count());
+    refresh_task->scheduleAfter(refresh_interval_sec * 1000);
 }
 
 void PaimonMetadata::runBackgroundRefresh()
@@ -506,7 +541,7 @@ void PaimonMetadata::runBackgroundRefresh()
     bool expected = false;
     if (!refresh_in_progress.compare_exchange_strong(expected, true))
     {
-        refresh_task->scheduleAfter(std::chrono::duration_cast<std::chrono::milliseconds>(refresh_interval_sec).count());
+        refresh_task->scheduleAfter(refresh_interval_sec * 1000);
         return;
     }
 
@@ -520,7 +555,7 @@ void PaimonMetadata::runBackgroundRefresh()
     }
 
     refresh_in_progress.store(false);
-    refresh_task->scheduleAfter(std::chrono::duration_cast<std::chrono::milliseconds>(refresh_interval_sec).count());
+    refresh_task->scheduleAfter(refresh_interval_sec * 1000);
 }
 
 PaimonTableStatePtr PaimonMetadata::loadStateForSnapshot(Int64 snapshot_id) const
@@ -554,9 +589,15 @@ PaimonTableStatePtr PaimonMetadata::loadStateForSnapshot(Int64 snapshot_id) cons
 }
 
 std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
-    Int64 from_snapshot_id, Int64 to_snapshot_id, UInt64 max_snapshots_to_load, bool skip_compact) const
+    Int64 from_snapshot_id,
+    Int64 to_snapshot_id,
+    UInt64 max_snapshots_to_load,
+    bool skip_compact,
+    std::optional<Int64> & last_scanned_snapshot_id) const
 {
     std::vector<PaimonTableStatePtr> snapshots;
+    last_scanned_snapshot_id.reset();
+
     if (to_snapshot_id <= from_snapshot_id)
         return snapshots;
 
@@ -570,7 +611,36 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
         if (max_snapshots_to_load > 0 && snapshots.size() >= max_snapshots_to_load)
             break;
 
-        auto state = loadStateForSnapshot(snapshot_id);
+        /// Track the highest snapshot_id we attempted to scan, regardless of whether
+        /// the snapshot was loaded, skipped (compact), or missing (expired by compaction).
+        /// The caller uses this to advance the watermark past gaps.
+        last_scanned_snapshot_id = snapshot_id;
+
+        PaimonTableStatePtr state;
+        try
+        {
+            state = loadStateForSnapshot(snapshot_id);
+        }
+        catch (...)
+        {
+            /// Snapshot file may have been removed by Paimon compaction.
+            /// Log and skip — the watermark will still advance past it.
+            ///
+            /// We use catch(...) rather than filtering for specific "file not found"
+            /// exceptions because IObjectStorage has no unified "not found" exception
+            /// type — each backend (S3, Azure, Local, HDFS) throws its own SDK-level
+            /// exception.  Coupling this metadata layer to backend-specific exception
+            /// types would violate layering and require updating every time a new
+            /// backend is added.  Under At-Most-Once semantics the worst outcome of
+            /// a false positive (transient error mistaken for a missing snapshot) is
+            /// skipping one snapshot — which is within the accepted data-loss budget.
+            /// The logged error message provides sufficient observability for operators
+            /// to distinguish transient failures from genuine compaction gaps.
+            LOG_WARNING(log, "Failed to load snapshot_id={}, it may have been removed by "
+                "Paimon compaction. Skipping. Error: {}",
+                snapshot_id, getCurrentExceptionMessage(false));
+            continue;
+        }
 
         if (skip_compact && state->isCompact())
         {
@@ -621,12 +691,23 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
         /// In Paimon, each snapshot's delta_manifest_list contains the changes in that snapshot.
         /// We need to read all delta manifests from snapshots between committed+1 and current.
         /// Skip Compact snapshots: their delta manifests contain compaction output (not new data).
-        auto snapshots = getSnapshotsBetween(*committed_snapshot_id, state->snapshot_id, max_consume_snapshots, /*skip_compact=*/true);
-        if (snapshots.empty())
-            return {};
+        std::optional<Int64> last_scanned_snapshot_id;
+        auto snapshots = getSnapshotsBetween(
+            *committed_snapshot_id, state->snapshot_id, max_consume_snapshots,
+            /*skip_compact=*/true, last_scanned_snapshot_id);
 
-        data_files = collectDataFilesFromManifests(snapshots, ManifestKind::Delta, partition_pruner, true, false);
-        last_consumed_snapshot_id = snapshots.back()->snapshot_id;
+        if (snapshots.empty())
+        {
+            /// All snapshots in the range were either compact or missing.
+            /// Still advance the watermark so we don't re-scan them next time.
+            if (last_scanned_snapshot_id)
+                last_consumed_snapshot_id = last_scanned_snapshot_id;
+            return {};
+        }
+
+        data_files = collectDataFilesFromManifests(snapshots, ManifestKind::Delta, partition_pruner, true, true);
+        /// Use last_scanned (not snapshots.back()) to advance past trailing compact/missing snapshots.
+        last_consumed_snapshot_id = last_scanned_snapshot_id.value_or(snapshots.back()->snapshot_id);
     }
 
     return data_files;

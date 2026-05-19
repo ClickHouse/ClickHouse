@@ -7,7 +7,6 @@
 #include <mutex>
 #include <optional>
 #include <vector>
-#include <Core/Block.h>
 #include <Disks/IStoragePolicy.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
@@ -97,7 +96,8 @@ public:
     std::optional<Int64> getCommittedSnapshotId() const;
 
     /// Commit snapshot after successful processing (for incremental read)
-    /// This should be called after data has been successfully written to destination
+    /// Note: in normal incremental mode, committed_snapshot is already advanced
+    /// inside iterate(). This method exists for manual overrides only.
     void commitSnapshot(Int64 snapshot_id);
 
 private:
@@ -128,8 +128,15 @@ private:
     /// If max_snapshots_to_load > 0, stop loading once the limit is reached.
     /// If skip_compact is true, snapshots with commit_kind == "COMPACT" are excluded
     /// (used by incremental read to avoid re-processing compacted data).
+    /// last_scanned_snapshot_id is set to the highest snapshot_id actually visited
+    /// (including skipped compact / missing ones), so the caller can advance the watermark
+    /// past gaps that produced no data files.
     std::vector<PaimonTableStatePtr> getSnapshotsBetween(
-        Int64 from_snapshot_id, Int64 to_snapshot_id, UInt64 max_snapshots_to_load = 0, bool skip_compact = false) const;
+        Int64 from_snapshot_id,
+        Int64 to_snapshot_id,
+        UInt64 max_snapshots_to_load,
+        bool skip_compact,
+        std::optional<Int64> & last_scanned_snapshot_id) const;
 
     /// Extract table state from storage_metadata
     static PaimonTableStatePtr extractTableState(StorageMetadataPtr storage_metadata);
@@ -181,10 +188,12 @@ private:
 
     constexpr static String PARTITION_DEFAULT_VALUE = "__DEFAULT_PARTITION__";
 
-    /// Background refresh
-    BackgroundSchedulePoolTaskHolder refresh_task;
-    const std::chrono::seconds refresh_interval_sec{0};
+    /// Background refresh. `refresh_task` must be declared last so it is destroyed first:
+    /// ~BackgroundSchedulePoolTaskHolder calls deactivate() which synchronizes with runBackgroundRefresh()
+    /// before `refresh_interval_sec`, `refresh_in_progress`, and other members are destroyed.
+    size_t refresh_interval_sec = 0;
     std::atomic_bool refresh_in_progress{false};
+    BackgroundSchedulePoolTaskHolder refresh_task;
 };
 
 }

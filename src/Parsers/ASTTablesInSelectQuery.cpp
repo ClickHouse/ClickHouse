@@ -237,7 +237,6 @@ void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSetting
 
 void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
     frame.expression_list_prepend_whitespace = false;
 
     if (using_expression_list)
@@ -267,10 +266,19 @@ void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings
 
 
         if (on_need_parens)
+        {
             ostr << "(";
-        on_expression->format(ostr, settings, state, frame);
-        if (on_need_parens)
+            /// We have just emitted `(` around the ON expression, so suppress the
+            /// child's own `parenthesized` parens (which would otherwise duplicate ours).
+            FormatStateStacked inner_frame = frame;
+            inner_frame.wrapped_in_parens = true;
+            on_expression->format(ostr, settings, state, inner_frame);
             ostr << ")";
+        }
+        else
+        {
+            on_expression->format(ostr, settings, state, frame);
+        }
     }
 }
 

@@ -3,8 +3,8 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -15,6 +15,10 @@
 #include <IO/MMappedFileCache.h>
 #include <Common/PageCache.h>
 #include <Common/quoteString.h>
+#include <Common/HTTPConnectionPool.h>
+#include <Common/HistogramMetrics.h>
+#include <Common/TCPSocketMemInfo.h>
+
 
 #include "config.h"
 #if USE_AWS_S3
@@ -24,8 +28,23 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/StorageSharedMergeTree.h>
+#endif
 
 #include <Coordination/KeeperAsynchronousMetrics.h>
+
+#if defined(OS_LINUX) && __has_include(<linux/sock_diag.h>)
+namespace HistogramMetrics
+{
+    extern Metric & HTTPPoolTCPBufBytesDiskRcv;
+    extern Metric & HTTPPoolTCPBufBytesDiskSnd;
+    extern Metric & HTTPPoolTCPBufBytesStorageRcv;
+    extern Metric & HTTPPoolTCPBufBytesStorageSnd;
+    extern Metric & HTTPPoolTCPBufBytesHTTPRcv;
+    extern Metric & HTTPPoolTCPBufBytesHTTPSnd;
+}
+#endif
 
 namespace DB
 {
@@ -49,6 +68,71 @@ void calculateMaxAndSum(Max & max, Sum & sum, T x)
 }
 
 }
+
+#if defined(OS_LINUX) && __has_include(<linux/sock_diag.h>)
+
+/// For one connection pool group, observe each tracked socket's rmem/wmem into the
+/// corresponding histogram and emit per-group total async metrics.
+void emitTCPBufferMetrics(
+    const std::vector<uint64_t> & inodes,
+    const char * group_name,
+    HistogramMetrics::Metric & rcv_histogram,
+    HistogramMetrics::Metric & snd_histogram,
+    const std::unordered_map<uint64_t, TCPSocketMemInfo> & meminfo_by_inode,
+    AsynchronousMetricValues & new_values)
+{
+    bool any = false;
+    uint64_t rmem_total = 0;
+    uint64_t wmem_total = 0;
+
+    for (uint64_t inode : inodes)
+    {
+        if (auto it = meminfo_by_inode.find(inode); it != meminfo_by_inode.end())
+        {
+            any = true;
+            rcv_histogram.observe(static_cast<double>(it->second.rmem));
+            snd_histogram.observe(static_cast<double>(it->second.wmem));
+            rmem_total += it->second.rmem;
+            wmem_total += it->second.wmem;
+        }
+    }
+
+    if (!any)
+        return;
+
+    new_values[fmt::format("HTTPConnectionPool{}TCPRcvBufTotalBytes", group_name)]
+        = {static_cast<double>(rmem_total),
+           "Total kernel TCP receive buffer memory (sk_rmem_alloc) across all HTTP connection pool sockets."};
+    new_values[fmt::format("HTTPConnectionPool{}TCPSndBufTotalBytes", group_name)]
+        = {static_cast<double>(wmem_total),
+           "Total kernel TCP transmit buffer memory (sk_wmem_alloc) across all HTTP connection pool sockets."};
+}
+
+/// Observe kernel TCP buffer memory of HTTP connection pool sockets into per-group histograms,
+/// and emit per-group total async metrics. Uses sock_diag netlink to read per-socket rmem/wmem.
+void updateHTTPConnectionPoolTCPBufferMetrics(
+    const HTTPConnectionPools::PoolSocketInodes & pool_inodes,
+    AsynchronousMetricValues & new_values)
+{
+    if (pool_inodes.empty())
+        return;
+
+    auto meminfo_by_inode = getTCPSocketMemInfoByInode();
+    if (meminfo_by_inode.empty())
+        return;
+
+    emitTCPBufferMetrics(pool_inodes.disk, "Disk",
+        HistogramMetrics::HTTPPoolTCPBufBytesDiskRcv, HistogramMetrics::HTTPPoolTCPBufBytesDiskSnd,
+        meminfo_by_inode, new_values);
+    emitTCPBufferMetrics(pool_inodes.storage, "Storage",
+        HistogramMetrics::HTTPPoolTCPBufBytesStorageRcv, HistogramMetrics::HTTPPoolTCPBufBytesStorageSnd,
+        meminfo_by_inode, new_values);
+    emitTCPBufferMetrics(pool_inodes.http, "HTTP",
+        HistogramMetrics::HTTPPoolTCPBufBytesHTTPRcv, HistogramMetrics::HTTPPoolTCPBufBytesHTTPSnd,
+        meminfo_by_inode, new_values);
+}
+
+#endif
 
 ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     ContextPtr global_context_,
@@ -240,6 +324,11 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         size_t total_index_granularity_bytes_in_memory = 0;
         size_t total_index_granularity_bytes_in_memory_allocated = 0;
 
+        size_t total_projection_primary_key_bytes_memory = 0;
+        size_t total_projection_primary_key_bytes_memory_allocated = 0;
+        size_t total_projection_index_granularity_bytes_in_memory = 0;
+        size_t total_projection_index_granularity_bytes_in_memory_allocated = 0;
+
         for (const auto & db : databases)
         {
             /// Check if database can contain MergeTree tables
@@ -287,6 +376,14 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                         total_primary_key_bytes_memory_allocated += part->getIndexSizeInAllocatedBytes();
                         total_index_granularity_bytes_in_memory += part->getIndexGranularityBytes();
                         total_index_granularity_bytes_in_memory_allocated += part->getIndexGranularityAllocatedBytes();
+
+                        for (const auto & [_, proj_part] : part->getProjectionParts())
+                        {
+                            total_projection_primary_key_bytes_memory += proj_part->getIndexSizeInBytes();
+                            total_projection_primary_key_bytes_memory_allocated += proj_part->getIndexSizeInAllocatedBytes();
+                            total_projection_index_granularity_bytes_in_memory += proj_part->getIndexGranularityBytes();
+                            total_projection_index_granularity_bytes_in_memory_allocated += proj_part->getIndexGranularityAllocatedBytes();
+                        }
                     }
                 }
 
@@ -352,6 +449,11 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["TotalPrimaryKeyBytesInMemoryAllocated"] = { total_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for primary key values (only takes active parts into account)." };
         new_values["TotalIndexGranularityBytesInMemory"] = { total_index_granularity_bytes_in_memory, "The total amount of memory (in bytes) used by index granulas (only takes active parts into account)." };
         new_values["TotalIndexGranularityBytesInMemoryAllocated"] = { total_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for index granulas (only takes active parts into account)." };
+
+        new_values["TotalProjectionPrimaryKeyBytesInMemory"] = { total_projection_primary_key_bytes_memory, "The total amount of memory (in bytes) used by projection primary key values (only takes active parts into account)." };
+        new_values["TotalProjectionPrimaryKeyBytesInMemoryAllocated"] = { total_projection_primary_key_bytes_memory_allocated, "The total amount of memory (in bytes) reserved for projection primary key values (only takes active parts into account)." };
+        new_values["TotalProjectionIndexGranularityBytesInMemory"] = { total_projection_index_granularity_bytes_in_memory, "The total amount of memory (in bytes) used by projection index granularity (only takes active parts into account)." };
+        new_values["TotalProjectionIndexGranularityBytesInMemoryAllocated"] = { total_projection_index_granularity_bytes_in_memory_allocated, "The total amount of memory (in bytes) reserved for projection index granularity (only takes active parts into account)." };
     }
 
     {
@@ -383,6 +485,10 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         if (keeper_dispatcher)
             updateKeeperInformation(*keeper_dispatcher, new_values);
     }
+#endif
+
+#if defined(OS_LINUX) && __has_include(<linux/sock_diag.h>)
+    updateHTTPConnectionPoolTCPBufferMetrics(HTTPConnectionPools::instance().getSocketInodes(), new_values);
 #endif
 
     if (update_heavy_metrics)

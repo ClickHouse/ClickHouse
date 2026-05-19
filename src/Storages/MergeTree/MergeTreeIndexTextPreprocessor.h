@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/IAST_fwd.h>
 

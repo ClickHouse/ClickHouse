@@ -65,6 +65,7 @@ namespace Paimon
             partition_key = DB::KeyDescription::getKeyFromAST(
                 partition_key_ast,
                 partition_columns_description,
+                {},
                 context_);
 
             DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag_.getOutputs().front(), context_);

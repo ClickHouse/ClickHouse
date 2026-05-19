@@ -52,20 +52,22 @@ fi
 # Mutation replaces the part; the old part becomes Outdated
 $CLICKHOUSE_CLIENT --query "ALTER TABLE tab DELETE WHERE id = 0 SETTINGS mutations_sync = 2"
 
-# Wait until the old part is cleaned up (removed from disk and caches cleared)
+# Wait for the old part's cache entries to be evicted.
+# We poll the cache metric directly because system.parts count drops to 1
+# when grabOldParts() transitions the part to Deleting state, but clearCaches()
+# runs later during clearPartsFromFilesystemImpl(). Checking system.parts first
+# would introduce a race between the state transition and the actual eviction.
+cache_decreased=0
 for _ in $(seq 1 60); do
-    cnt=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'tab'")
-    if [ "$cnt" -eq 1 ]; then
+    cache_after=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'VectorSimilarityIndexCacheBytes'")
+    if [ "$cache_after" -lt "$cache_before" ]; then
+        cache_decreased=1
         break
     fi
     sleep 1
 done
 
-# The old part's cache entries must have been evicted.
-# The new (mutated) part has not been queried yet.
-# Use a delta-based check: cache must have decreased from the pre-mutation value.
-cache_after=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'VectorSimilarityIndexCacheBytes'")
-if [ "$cache_after" -lt "$cache_before" ]; then
+if [ "$cache_decreased" -eq 1 ]; then
     echo "VectorSimilarityIndexCacheBytes	Decreased"
 else
     echo "VectorSimilarityIndexCacheBytes	NOT_DECREASED (before=$cache_before, after=$cache_after)"
