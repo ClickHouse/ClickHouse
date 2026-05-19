@@ -960,7 +960,7 @@ private:
     void startBackgroundMovesIfNeeded() override;
 
     /// Attaches restored parts to the storage.
-    void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) override;
+    void attachRestoredParts(MutableDataPartsVector && parts) override;
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 

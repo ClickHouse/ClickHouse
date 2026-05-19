@@ -74,7 +74,6 @@ namespace FailPoints
     extern const char replicated_merge_tree_insert_quorum_fail_0[];
     extern const char replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault[];
     extern const char replicated_merge_tree_insert_retry_pause[];
-    extern const char replicated_merge_tree_restore_attach_retry[];
     extern const char rmt_delay_commit_part[];
 }
 
@@ -116,8 +115,7 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     bool majority_quorum,
     ContextPtr context_,
     bool is_attach_,
-    bool allow_attach_while_readonly_,
-    std::optional<ZooKeeperRetriesInfo> keeper_retries_info_)
+    bool allow_attach_while_readonly_)
     : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
@@ -134,7 +132,6 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     , log(getLogger(storage.getLogName() + " (Replicated OutputStream)"))
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
-    , keeper_retries_info(std::move(keeper_retries_info_))
     , is_async_insert(async_insert_)
     , insert_deduplication_version(context->getServerSettings()[ServerSetting::insert_deduplication_version].value)
 {
@@ -708,22 +705,17 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
     /// For now, consider it is ok. See 02461_alter_update_respect_part_column_type_bug for an example.
     ///
     /// metadata_snapshot->check(part->getColumns());
-#if CLICKHOUSE_CLOUD
-    part->is_prewarmed = true;
-#endif
 
     CommitRetryContext retry_context;
 
     const auto & settings = context->getSettingsRef();
-    ZooKeeperRetriesInfo retries_info = keeper_retries_info.value_or(ZooKeeperRetriesInfo{
-        settings[Setting::insert_keeper_max_retries],
-        settings[Setting::insert_keeper_retry_initial_backoff_ms],
-        settings[Setting::insert_keeper_retry_max_backoff_ms],
-        context->getProcessListElement()});
     ZooKeeperRetriesControl retries_ctl(
         "commitPart",
         log,
-        retries_info);
+        {settings[Setting::insert_keeper_max_retries],
+         settings[Setting::insert_keeper_retry_initial_backoff_ms],
+         settings[Setting::insert_keeper_retry_max_backoff_ms],
+         context->getProcessListElement()});
 
     auto resolve_duplicate_stage = [&] () -> CommitRetryContext::Stages
     {
@@ -845,16 +837,6 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
 
     auto commit_new_part_stage = [&]() -> CommitRetryContext::Stages
     {
-        if (is_attach)
-        {
-            fiu_do_on(FailPoints::replicated_merge_tree_restore_attach_retry,
-            {
-                retries_ctl.setUserError(
-                    Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Injected read-only error while attaching restored part"));
-                return CommitRetryContext::LOCK_AND_COMMIT;
-            });
-        }
-
         if (storage.is_readonly)
         {
             /// stop retries if in shutdown
