@@ -123,6 +123,8 @@ struct ScalarMD5Trait
     using Ops = DB::TargetSpecific::Default::ScalarMD5Ops;
     static constexpr size_t lanes = Ops::lanes;
 
+    static void skipIfUnsupported() { }
+
     static void compute(const uint8_t * const inputs[], const size_t lengths[], uint8_t * output, size_t actual_count)
     {
         DB::TargetSpecific::Default::md5MultiBufCompute<Ops>(inputs, lengths, output, actual_count);
@@ -136,6 +138,12 @@ struct AVX2MD5Trait
     using Ops = DB::TargetSpecific::x86_64_v3::AVX2MD5Ops;
     static constexpr size_t lanes = Ops::lanes;
 
+    static void skipIfUnsupported()
+    {
+        if (!DB::isArchSupported(DB::TargetArch::x86_64_v3))
+            GTEST_SKIP() << "x86_64_v3 (AVX2) not supported on this host";
+    }
+
     static void compute(const uint8_t * const inputs[], const size_t lengths[], uint8_t * output, size_t actual_count)
     {
         DB::TargetSpecific::x86_64_v3::md5MultiBufCompute<Ops>(inputs, lengths, output, actual_count);
@@ -146,6 +154,12 @@ struct AVX512MD5Trait
 {
     using Ops = DB::TargetSpecific::x86_64_v4::AVX512MD5Ops;
     static constexpr size_t lanes = Ops::lanes;
+
+    static void skipIfUnsupported()
+    {
+        if (!DB::isArchSupported(DB::TargetArch::x86_64_v4))
+            GTEST_SKIP() << "x86_64_v4 (AVX-512) not supported on this host";
+    }
 
     static void compute(const uint8_t * const inputs[], const size_t lengths[], uint8_t * output, size_t actual_count)
     {
@@ -163,6 +177,11 @@ struct AVX512MD5Trait
 template <typename T>
 class MD5MultiBufTest : public ::testing::Test
 {
+protected:
+    void SetUp() override
+    {
+        T::skipIfUnsupported();
+    }
 };
 
 using MD5Implementations = ::testing::Types<

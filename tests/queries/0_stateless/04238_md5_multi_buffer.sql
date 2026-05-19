@@ -18,28 +18,19 @@ SELECT hex(MD5(repeat('x', 56)));  -- spills to 2 blocks
 SELECT hex(MD5(repeat('x', 64)));  -- exactly 1 full block + padding block
 SELECT hex(MD5(repeat('x', 128))); -- 2 full blocks + padding block
 
--- Batch boundary tests: exercise partial batches at each dispatch level.
--- Scalar path: 2 lanes x 2 groups = 4 digests per iteration.
--- 3 rows (partial scalar batch)
+-- Batch boundary tests with various row counts.
+-- Note: ImplementationSelector only benchmarks implementations for input_rows_count > 1000,
+-- so these small batches run the default (scalar) path via the selector.
+-- The gtest (gtest_md5.cpp) provides deterministic per-arch SIMD coverage.
 SELECT sum(reinterpretAsUInt64(substring(MD5(toString(number)), 1, 8))) FROM numbers(3);
--- 4 rows (exact scalar batch)
 SELECT sum(reinterpretAsUInt64(substring(MD5(toString(number)), 1, 8))) FROM numbers(4);
--- 5 rows (scalar batch + 1 overflow)
 SELECT sum(reinterpretAsUInt64(substring(MD5(toString(number)), 1, 8))) FROM numbers(5);
--- AVX2 = 8 lanes x 2 groups = 16 digests, AVX-512 = 16 lanes x 2 groups = 32 digests.
--- 7 rows (partial AVX2 batch)
 SELECT sum(reinterpretAsUInt64(substring(MD5(toString(number)), 1, 8))) FROM numbers(7);
--- 8 rows (exact AVX2 batch)
 SELECT sum(reinterpretAsUInt64(substring(MD5(toString(number)), 1, 8))) FROM numbers(8);
--- 9 rows (AVX2 batch + 1 overflow)
 SELECT sum(reinterpretAsUInt64(substring(MD5(toString(number)), 1, 8))) FROM numbers(9);
--- 15 rows (partial AVX-512 batch)
 SELECT sum(reinterpretAsUInt64(substring(MD5(toString(number)), 1, 8))) FROM numbers(15);
--- 16 rows (exact AVX-512 batch)
 SELECT sum(reinterpretAsUInt64(substring(MD5(toString(number)), 1, 8))) FROM numbers(16);
--- 17 rows (AVX-512 batch + 1 overflow)
 SELECT sum(reinterpretAsUInt64(substring(MD5(toString(number)), 1, 8))) FROM numbers(17);
--- Larger batch to exercise multiple full SIMD iterations
 SELECT sum(reinterpretAsUInt64(substring(MD5(toString(number)), 1, 8))) FROM numbers(100);
 
 -- FixedString input
@@ -62,3 +53,7 @@ SELECT hex(MD5(repeat('x', 100000)));
 
 -- Single row (tests batch size = 1)
 SELECT hex(MD5('single'));
+
+-- Large batch: crosses the ImplementationSelector threshold (> 1000 rows),
+-- enabling it to benchmark and potentially select a SIMD implementation.
+SELECT sum(reinterpretAsUInt64(substring(MD5(toString(number)), 1, 8))) FROM numbers(10000);
