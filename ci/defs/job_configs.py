@@ -776,57 +776,57 @@ class JobConfigs:
     stress_test_jobs = common_stress_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_debug",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.STYLE_CHECK_AMD,
             requires=[ArtifactNames.DEB_AMD_DEBUG],
         ),
         Job.ParamSet(
             parameter="amd_asan_ubsan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.STYLE_CHECK_AMD,
             requires=[ArtifactNames.DEB_AMD_ASAN_UBSAN],
         ),
         Job.ParamSet(
             parameter="amd_tsan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.STYLE_CHECK_AMD,
             requires=[ArtifactNames.DEB_AMD_TSAN],
         ),
         Job.ParamSet(
             parameter="amd_msan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            runs_on=RunnerLabels.STYLE_CHECK_AMD,
             requires=[ArtifactNames.DEB_AMD_MSAN],
         ),
         Job.ParamSet(
             parameter="arm_release",
-            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            runs_on=RunnerLabels.STYLE_CHECK_ARM,
             requires=[ArtifactNames.DEB_ARM_RELEASE],
         ),
         Job.ParamSet(
             parameter="arm_debug",
-            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            runs_on=RunnerLabels.STYLE_CHECK_ARM,
             requires=[ArtifactNames.DEB_ARM_DEBUG],
         ),
         Job.ParamSet(
             parameter="arm_asan_ubsan",
-            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            runs_on=RunnerLabels.STYLE_CHECK_ARM,
             requires=[ArtifactNames.DEB_ARM_ASAN_UBSAN],
         ),
         Job.ParamSet(
             parameter="arm_asan_ubsan, s3",
-            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            runs_on=RunnerLabels.STYLE_CHECK_ARM,
             requires=[ArtifactNames.DEB_ARM_ASAN_UBSAN],
         ),
         Job.ParamSet(
             parameter="arm_tsan",
-            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            runs_on=RunnerLabels.STYLE_CHECK_ARM,
             requires=[ArtifactNames.DEB_ARM_TSAN],
         ),
         Job.ParamSet(
             parameter="arm_msan",
-            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            runs_on=RunnerLabels.STYLE_CHECK_ARM,
             requires=[ArtifactNames.DEB_ARM_MSAN],
         ),
         Job.ParamSet(
             parameter="arm_ubsan",
-            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            runs_on=RunnerLabels.STYLE_CHECK_ARM,
             requires=[ArtifactNames.DEB_ARM_UBSAN],
         ),
     )
