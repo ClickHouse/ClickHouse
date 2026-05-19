@@ -20,6 +20,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/TableNameHints.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Parsers/QueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
@@ -109,6 +111,7 @@ namespace ErrorCodes
     extern const int HTTP_LENGTH_REQUIRED;
     extern const int SESSION_ID_EMPTY;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace
@@ -183,12 +186,13 @@ HTTPHandlerConnectionConfig::HTTPHandlerConnectionConfig(const Poco::Util::Abstr
 }
 
 
-HTTPHandler::HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_, const std::string & url_prefix_)
+HTTPHandler::HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_, const std::string & url_prefix_, HTTPPathHintsPtr path_hints_)
     : log(getLogger(name))
     , server(server_)
     , default_settings(server.context()->getSettingsRef())
     , http_response_headers_override(http_response_headers_override_)
     , url_prefix(url_prefix_)
+    , path_hints(std::move(path_hints_))
     , connection_config(connection_config_)
 {
     server_display_name = server.config().getString("display_name", getFQDNOrHostName());
@@ -422,6 +426,9 @@ void HTTPHandler::processQuery(
     /// — if `setCurrentDatabase` throws (e.g. the database doesn't exist), the exception unwinds
     /// cleanly without leaving an in-flight query scope behind that would deadlock the response
     /// buffers.
+    /// When the URL path supplied the database, we additionally append a hint about the closest
+    /// matching configured HTTP handler path (e.g. `/dashboard`) so a user who typed `/sashbord`
+    /// sees both the closest-handler suggestion and the closest-database-name suggestion.
     {
         const String & database_setting = settings[Setting::database];
         String resolved_database = database_setting;
@@ -435,7 +442,22 @@ void HTTPHandler::processQuery(
                     path_info.database, resolved_database);
         }
         if (!resolved_database.empty())
-            context->setCurrentDatabase(resolved_database);
+        {
+            try
+            {
+                context->setCurrentDatabase(resolved_database);
+            }
+            catch (Exception & e)
+            {
+                if (!path_info.database.empty() && path_hints)
+                {
+                    auto handler_hints = path_hints->getHints("/" + path_info.database);
+                    if (!handler_hints.empty())
+                        e.addMessage("Or maybe HTTP handler {}?", handler_hints.front());
+                }
+                throw;
+            }
+        }
     }
 
     /// Initialize query scope, once query_id is initialized.
@@ -742,6 +764,33 @@ void HTTPHandler::processQuery(
             qualified_table = backQuoteIfNeed(path_info.database) + "." + backQuoteIfNeed(path_info.table);
         else
             qualified_table = backQuoteIfNeed(path_info.table);
+
+        /// Validate up-front that the table from the URL path actually exists, so a typo like
+        /// `/sashboards` produces a single clean response that combines the closest table-name
+        /// hint with the closest configured-handler hint (e.g. `/dashboard`). Without this check
+        /// the table-existence error would be raised later from query execution and would carry
+        /// only the table-name hint.
+        const String table_db = path_info.database.empty() ? context->getCurrentDatabase() : path_info.database;
+        if (!table_db.empty())
+        {
+            StorageID table_id(table_db, path_info.table);
+            if (!DatabaseCatalog::instance().isTableExist(table_id, context))
+            {
+                auto db_ptr = DatabaseCatalog::instance().tryGetDatabase(table_db);
+                TableNameHints table_hints(db_ptr, context);
+                auto table_name_hints = table_hints.getHints(path_info.table);
+                String message = fmt::format("Table {} does not exist.", table_id.getNameForLogs());
+                if (!table_name_hints.empty())
+                    message += fmt::format(" Maybe you meant table {}?", backQuoteIfNeed(table_name_hints.front()));
+                if (path_hints)
+                {
+                    auto handler_hints = path_hints->getHints("/" + path_info.table);
+                    if (!handler_hints.empty())
+                        message += fmt::format(" Or maybe HTTP handler {}?", handler_hints.front());
+                }
+                throw Exception(ErrorCodes::UNKNOWN_TABLE, "{}", message);
+            }
+        }
 
         /// Always set implicit_table_at_top_level so a FROM-less SELECT (whether user-supplied
         /// or auto-generated) picks up the table from the URL path.
@@ -1164,8 +1213,9 @@ DynamicQueryHandler::DynamicQueryHandler(
     const HTTPHandlerConnectionConfig & connection_config_,
     const std::string & param_name_,
     const HTTPResponseHeaderSetup & http_response_headers_override_,
-    const std::string & url_prefix_)
-    : HTTPHandler(server_, connection_config_, "DynamicQueryHandler", http_response_headers_override_, url_prefix_)
+    const std::string & url_prefix_,
+    HTTPPathHintsPtr path_hints_)
+    : HTTPHandler(server_, connection_config_, "DynamicQueryHandler", http_response_headers_override_, url_prefix_, std::move(path_hints_))
     , param_name(param_name_)
 {
 }

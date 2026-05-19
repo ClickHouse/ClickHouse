@@ -7,6 +7,7 @@
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <Server/HTTPPathHints.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/QueryScope.h>
 #include <IO/CascadeWriteBuffer.h>
@@ -48,7 +49,7 @@ struct HTTPHandlerConnectionConfig
 class HTTPHandler : public HTTPRequestHandler
 {
 public:
-    HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_, const std::string & url_prefix_ = "");
+    HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_, const std::string & url_prefix_ = "", HTTPPathHintsPtr path_hints_ = nullptr);
     ~HTTPHandler() override;
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
@@ -143,6 +144,11 @@ private:
     /// Empty by default (handler is at the URL root).
     std::string url_prefix;
 
+    /// Optional registry of known HTTP handler paths. Used to enrich UNKNOWN_DATABASE / UNKNOWN_TABLE
+    /// exceptions thrown during path resolution with a "Maybe you meant /dashboard?"-style hint,
+    /// alongside the database/table name hint computed by the catalog.
+    HTTPPathHintsPtr path_hints;
+
     // session is reset at the end of each request/response.
     std::unique_ptr<Session> session;
 
@@ -190,7 +196,8 @@ public:
         const HTTPHandlerConnectionConfig & connection_config,
         const std::string & param_name_ = "query",
         const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt,
-        const std::string & url_prefix_ = "");
+        const std::string & url_prefix_ = "",
+        HTTPPathHintsPtr path_hints_ = nullptr);
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) override;
 

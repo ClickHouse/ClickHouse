@@ -1,0 +1,8 @@
+===== /dashbord  (looked up as table; close to both table and handler) =====
+Code: 60. DB::Exception: Table <db>.dashbord does not exist. Maybe you meant table dashboards? Or maybe HTTP handler /dashboard?. (UNKNOWN_TABLE)
+
+===== /sashboards  (no close table name; only handler hint applies) =====
+Code: 60. DB::Exception: Table <db>.sashboards does not exist. Maybe you meant table dashboards? Or maybe HTTP handler /dashboard?. (UNKNOWN_TABLE)
+
+===== /dashbord_db/hits  (missing database; handler hint /dashboard applies) =====
+Code: 81. DB::Exception: Database dashbord_db does not exist: Or maybe HTTP handler /dashboard?. (UNKNOWN_DATABASE)

@@ -10,6 +10,8 @@
 #include <Server/StaticRequestHandler.h>
 #include <Server/WebUIRequestHandler.h>
 #include <Server/WebTerminalRequestHandler.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #if CLICKHOUSE_CLOUD
 #include <Server/CloudReadinessHandler.h>
 #endif
@@ -30,6 +32,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
+}
+
+namespace Setting
+{
+    extern const SettingsBool http_allow_database_as_path;
+    extern const SettingsBool http_allow_table_as_file;
+    extern const SettingsBool http_allow_filters_as_path;
 }
 
 namespace
@@ -454,12 +463,13 @@ void addDefaultHandlersFactory(
     if (auto prometheus_handler = createPrometheusHandlerFactoryForHTTPRuleDefaults(server, config, async_metrics))
         factory.addHandler(prometheus_handler);
 
-    auto dynamic_creator = [&server] () -> std::unique_ptr<DynamicQueryHandler>
+    auto path_hints = factory.getPathHints();
+    auto dynamic_creator = [&server, path_hints] () -> std::unique_ptr<DynamicQueryHandler>
     {
-        return std::make_unique<DynamicQueryHandler>(server, HTTPHandlerConnectionConfig{}, "query");
+        return std::make_unique<DynamicQueryHandler>(server, HTTPHandlerConnectionConfig{}, "query", std::nullopt, "", path_hints);
     };
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
-    query_handler->addFilter([](const auto & request)
+    query_handler->addFilter([&server](const auto & request)
         {
             const auto & uri = request.getURI();
             const auto & method = request.getMethod();
@@ -485,10 +495,6 @@ void addDefaultHandlersFactory(
             ///   * has more than one `/` separator (e.g. `/db/hits`), or
             ///   * has a `.` in its last component (e.g. `/hits.CSV`), or
             ///   * has a `=`, `<`, `>`, or `!` (filter-component or unrecognized-param form).
-            /// This deliberately rejects simple single-component paths like `/sashboards` so that
-            /// `NotFoundHandler` can still produce its "Maybe you meant /dashboard" hint for typos.
-            /// The path features themselves are still gated on the authenticated user's
-            /// `http_allow_*_as_path` settings inside `HTTPHandler::processQuery`.
             auto qmark = uri.find('?');
             if (qmark != std::string::npos && qmark + 1 < uri.size())
                 return true;
@@ -503,7 +509,18 @@ void addDefaultHandlersFactory(
                 return true;
             if (rest.find_first_of("=<>!") != std::string::npos)
                 return true;
-            return false;
+
+            /// Simple single-component paths (e.g. `/sashboards`, `/dashbord`) are routed to the
+            /// dynamic handler only when the server's default profile has at least one of the
+            /// path-as-file features enabled. In that case the handler attempts to resolve the
+            /// segment as a database/table and, on failure, returns an exception that combines
+            /// the closest matching handler name with the closest matching database/table name.
+            /// When all path features are off, simple paths fall through to `NotFoundHandler`
+            /// to preserve the original "Maybe you meant /dashboard?" hint behaviour.
+            const auto & default_settings = server.context()->getSettingsRef();
+            return default_settings[Setting::http_allow_database_as_path]
+                || default_settings[Setting::http_allow_table_as_file]
+                || default_settings[Setting::http_allow_filters_as_path];
         }
     );
     factory.addHandler(query_handler);
