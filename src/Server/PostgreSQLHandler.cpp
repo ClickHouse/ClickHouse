@@ -892,18 +892,25 @@ void PostgreSQLHandler::processCloseQuery()
         /// otherwise a later Bind/Execute on the same statement would fail.
         if (query->close_target == 'S')
         {
+            /// If the bind currently references the statement being deallocated,
+            /// the bind becomes stale and must be dropped. Closing a *different*
+            /// statement must not touch unrelated bind state — otherwise
+            /// `Parse s1; Parse s2; Bind(s1); Close('S', 's2'); Execute` would
+            /// fail with `Execute without prior Bind`.
+            if (prepared_statements_manager.bindReferencesStatement(query->function_name))
+                prepared_statements_manager.resetBindQuery();
             prepared_statements_manager.deleteStatement(query->function_name);
         }
-        else if (query->close_target == 'P' && !query->function_name.empty())
+        else if (query->close_target == 'P')
         {
             /// Only the unnamed portal is supported; rejecting named portals
             /// keeps the behaviour consistent with `Bind` and `Execute`.
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Close on a named portal is not supported in the PostgreSQL wire protocol, "
-                "got portal name '{}'", query->function_name);
+            if (!query->function_name.empty())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Close on a named portal is not supported in the PostgreSQL wire protocol, "
+                    "got portal name '{}'", query->function_name);
+            prepared_statements_manager.resetBindQuery();
         }
-
-        prepared_statements_manager.resetBindQuery();
 
         /// Acknowledge the `Close` request. Clients that strictly track the
         /// extended-protocol state machine wait for `CloseComplete` before

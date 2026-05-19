@@ -1741,6 +1741,11 @@ public:
         bind_query.reset();
     }
 
+    bool bindReferencesStatement(const String & function_name) const
+    {
+        return bind_query && bind_query->function_name == function_name;
+    }
+
 private:
     std::unordered_map<String, String> statements;
     std::optional<size_t> limit_statements;
