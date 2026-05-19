@@ -136,15 +136,22 @@ private:
 
         Float64 value_difference = last_value - first_value + accumulated_resets_in_window;
 
-        const auto range_end = current_timestamp;
-        const auto range_start = current_timestamp - Base::window;
-
         /// The following logic is copied from Prometheus' rate calculation
         /// https://github.com/prometheus/prometheus/blob/5e124cf4f2b9467e4ae1c679840005e727efd599/promql/functions.go#L127
         /// which is licensed under the Apache License 2.0
         // Duration between first/last samples and boundary of range.
-        Float64 duration_to_start = static_cast<Float64>(first_timestamp - range_start);
-        Float64 duration_to_end = static_cast<Float64>(range_end - last_timestamp);
+        //
+        // The two durations are mathematically:
+        //   duration_to_start = first_timestamp - (current_timestamp - window)
+        //                     = first_timestamp - current_timestamp + window
+        //   duration_to_end   = current_timestamp - last_timestamp
+        // Both terms are computed in `Float64` to avoid signed integer overflow on the
+        // intermediate `current_timestamp - Base::window` subtraction when `Base::window`
+        // is set near `INT64_MAX` by adversarial AST fuzzer inputs.
+        Float64 duration_to_start =
+            static_cast<Float64>(first_timestamp) - static_cast<Float64>(current_timestamp)
+            + static_cast<Float64>(Base::window);
+        Float64 duration_to_end = static_cast<Float64>(current_timestamp) - static_cast<Float64>(last_timestamp);
 
         const auto sampled_interval = time_difference;
         const Float64 average_duration_between_samples = static_cast<Float64>(sampled_interval) / static_cast<Float64>(samples_in_window.size() - 1);
@@ -259,8 +266,11 @@ public:
                 }
             }
 
-            /// Remove samples that are out of the window
-            while (!samples_in_window.empty() && samples_in_window.front().first + Base::window <= current_timestamp)
+            /// Remove samples that are out of the window. Use `Base::isSampleOutOfWindow` so
+            /// the comparison does not signed-overflow `TimestampType` when `Base::window`
+            /// is set near `INT64_MAX` by adversarial AST fuzzer inputs.
+            while (!samples_in_window.empty()
+                   && Base::isSampleOutOfWindow(samples_in_window.front().first, current_timestamp))
             {
                 Float64 removed_value = samples_in_window.front().second;
                 samples_in_window.pop_front();
