@@ -1,8 +1,14 @@
 #include <Storages/MergeTree/SizeAdaptiveSpoolBuffer.h>
 
 #include <IO/PackedFilesWriter.h>
+#include <Common/Exception.h>
 
 #include <cstring>
+
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace DB
 {
@@ -15,7 +21,7 @@ SizeAdaptiveSpoolBuffer::SizeAdaptiveSpoolBuffer(
     const String & packed_virtual_name_,
     const WriteSettings & packed_write_settings_,
     const String & display_file_name_,
-    SizeAdaptiveSpoolCoordinatorPtr coordinator_)
+    bool * coupled_spilled_flag_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , spill_threshold(spill_threshold_)
     , open_per_file(std::move(open_per_file_))
@@ -23,7 +29,7 @@ SizeAdaptiveSpoolBuffer::SizeAdaptiveSpoolBuffer(
     , packed_virtual_name(packed_virtual_name_)
     , packed_write_settings(packed_write_settings_)
     , display_file_name(display_file_name_)
-    , coordinator(std::move(coordinator_))
+    , coupled_spilled_flag(coupled_spilled_flag_)
 {
 }
 
@@ -37,7 +43,7 @@ void SizeAdaptiveSpoolBuffer::nextImpl()
 
     /// Peer (e.g. our marks file vs our data file) crossed the threshold first; we must spill
     /// too so the substream stays consistent (both packed or both per-file).
-    if (!spilled && coordinator && coordinator->spilled)
+    if (!spilled && coupled_spilled_flag && *coupled_spilled_flag)
         promoteToPerFile();
 
     if (spilled)
@@ -65,8 +71,8 @@ void SizeAdaptiveSpoolBuffer::promoteToPerFile()
     spilled = true;
     /// Tell our peer file (data file vs marks file of the same substream) to spill as well, so
     /// the on-disk substream stays in a single layout the reader can pick up.
-    if (coordinator)
-        coordinator->spilled = true;
+    if (coupled_spilled_flag)
+        *coupled_spilled_flag = true;
 }
 
 void SizeAdaptiveSpoolBuffer::commitToPackedIfNeeded()
@@ -74,14 +80,9 @@ void SizeAdaptiveSpoolBuffer::commitToPackedIfNeeded()
     if (spilled || committed_to_packed)
         return;
 
-    /// No packed_writer means the caller never wired up an archive (shouldn't happen for
-    /// skip-index streams when packing is enabled). Treat as a logic error rather than
-    /// silently losing the bytes.
     if (!packed_writer)
-    {
-        promoteToPerFile();
-        return;
-    }
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "SizeAdaptiveSpoolBuffer for '{}' has no packed writer at commit time", display_file_name);
 
     auto packed_buf = packed_writer->writeFile(packed_virtual_name, packed_write_settings);
     if (!accumulator.empty())
@@ -101,7 +102,7 @@ void SizeAdaptiveSpoolBuffer::finalizeImpl()
     /// Last chance to honour a peer's late spill: if the data file spilled but the marks file
     /// had no more flushes between the spill and finalize, we still need to move marks to
     /// per-file before committing.
-    if (!spilled && coordinator && coordinator->spilled)
+    if (!spilled && coupled_spilled_flag && *coupled_spilled_flag)
         promoteToPerFile();
 
     if (spilled)

@@ -104,7 +104,6 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -1422,13 +1421,13 @@ struct MutationContext
     /// Exact in-archive virtual filenames belonging to indices listed in indices_to_drop_names.
     /// Built by probing the source archive across known substream/extension patterns so the filter
     /// step removes only those files (and not unrelated entries that share a name prefix).
-    NameSet dropped_archive_file_names;
+    NameSet dropped_skip_index_archive_file_names;
     /// Exact in-archive virtual filenames belonging to surviving (not dropped, not recalc'd)
     /// indices that live in the source archive. The writer pre-loads them into its in-memory
     /// PackedFilesWriter before the first block is written so the new archive contains both
     /// the freshly recomputed entries and the preserved ones, without hardlinking (and risking
     /// truncating) the source's skp_idx.packed inode.
-    NameSet preserved_archive_file_names;
+    NameSet preserved_skip_index_archive_file_names;
     ColumnsStatistics stats_to_recalc;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     NameSet files_to_skip;
@@ -1863,7 +1862,8 @@ private:
         /// were rebuilt elsewhere. Force every surviving in-archive index to be recomputed so
         /// the writer rebuilds skp_idx.packed from scratch.
         const auto * source_disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&ctx->source_part->getDataPartStorage());
-        auto is_in_packed_archive = [&](const IMergeTreeIndex & index) {
+        auto is_in_packed_archive = [&](const IMergeTreeIndex & index)
+        {
             if (!source_disk_storage)
                 return false;
             /// Match the partial-mutation detector: enumerate the index's substreams (text
@@ -2294,13 +2294,12 @@ private:
         ctx->new_data_part->checksums = ctx->source_part->checksums;
 
         /// When the archive will not be hardlinked from source (packed_skip_index_archive_dirty),
-        /// the inherited skp_idx.packed entry will point at a file that won't exist in the new
-        /// part unless something re-adds it: filterPackedSkipIndicesArchiveTo writes a fresh
-        /// archive and updates the checksum, the writer emits a new archive when any packed
-        /// index is in indices_to_recalc, otherwise no archive should appear in the new part.
-        /// Drop the stale checksum up front so the third case (e.g. ALTER UPDATE after the
-        /// setting flipped from 'minmax' to '') doesn't leave a dangling entry that CHECK TABLE
-        /// would flag as missing.
+        /// the inherited skp_idx.packed entry must not survive untouched into the new part's
+        /// checksums: it points at a file that may not exist in the new part. Drop it up front;
+        /// filterPackedSkipIndicesArchiveTo (drop-only path) or the writer (any other path)
+        /// re-adds the entry with the correct size/hash if a fresh archive is produced, and if
+        /// neither path produces one (e.g. ALTER UPDATE that moves the part fully to per-file
+        /// layout) the new part legitimately has no archive at all.
         if (ctx->packed_skip_index_archive_dirty)
             ctx->new_data_part->checksums.remove(String(SKIP_INDICES_PACKED_FILENAME));
 
@@ -2348,7 +2347,7 @@ private:
             if (const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&ctx->source_part->getDataPartStorage()))
             {
                 disk_storage->filterPackedSkipIndicesArchiveTo(
-                    ctx->dropped_archive_file_names,
+                    ctx->dropped_skip_index_archive_file_names,
                     ctx->new_data_part->getDataPartStorage(),
                     ctx->context->getWriteSettings(),
                     ctx->context->getReadSettings(),
@@ -2421,12 +2420,12 @@ private:
             /// contain only the freshly-computed indices (writer side) and lose every preserved
             /// substream; CHECK TABLE still passes because the inherited skp_idx.packed checksum
             /// is removed above, but queries lose the index.
-            if (!ctx->preserved_archive_file_names.empty())
+            if (!ctx->preserved_skip_index_archive_file_names.empty())
             {
                 if (const auto * source_disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&ctx->source_part->getDataPartStorage()))
                 {
                     auto out_typed = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out);
-                    out_typed->preloadPackedSkipIndicesArchive(*source_disk_storage, ctx->preserved_archive_file_names);
+                    out_typed->preloadPackedSkipIndicesArchive(*source_disk_storage, ctx->preserved_skip_index_archive_file_names);
                 }
             }
 
@@ -2847,11 +2846,11 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
                 {
                     const String candidate = idx_file_name + sub + ext;
                     if (source_disk_storage->isFileInPackedSkipIndicesArchive(candidate))
-                        ctx->dropped_archive_file_names.insert(candidate);
+                        ctx->dropped_skip_index_archive_file_names.insert(candidate);
                 }
                 const String mrk_candidate = idx_file_name + sub + ctx->mrk_extension;
                 if (source_disk_storage->isFileInPackedSkipIndicesArchive(mrk_candidate))
-                    ctx->dropped_archive_file_names.insert(mrk_candidate);
+                    ctx->dropped_skip_index_archive_file_names.insert(mrk_candidate);
             }
         }
 
@@ -2869,7 +2868,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             (*ctx->data->getSettings())[MergeTreeSetting::packed_skip_index_max_bytes] > 0
             && (!ctx->indices_to_recalc.empty() || !ctx->text_indices_to_recalc.empty());
 
-        bool archive_dirty = !ctx->dropped_archive_file_names.empty()
+        bool archive_dirty = !ctx->dropped_skip_index_archive_file_names.empty()
             || (source_has_archive && writer_can_open_archive);
         if (!archive_dirty)
             for (const auto & idx : ctx->indices_to_recalc)
@@ -2904,10 +2903,10 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
                 {
                     const String data = file_name + sub.suffix + sub.extension;
                     if (source_disk_storage->isFileInPackedSkipIndicesArchive(data))
-                        ctx->preserved_archive_file_names.insert(data);
+                        ctx->preserved_skip_index_archive_file_names.insert(data);
                     const String mrk = file_name + sub.suffix + ctx->mrk_extension;
                     if (source_disk_storage->isFileInPackedSkipIndicesArchive(mrk))
-                        ctx->preserved_archive_file_names.insert(mrk);
+                        ctx->preserved_skip_index_archive_file_names.insert(mrk);
                 }
             }
         }

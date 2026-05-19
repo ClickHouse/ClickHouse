@@ -1066,7 +1066,7 @@ void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
 }
 
 void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
-    const NameSet & dropped_archive_file_names,
+    const NameSet & dropped_skip_index_archive_file_names,
     IDataPartStorage & new_storage,
     const WriteSettings & write_settings,
     const ReadSettings & read_settings,
@@ -1088,10 +1088,10 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
 
     for (const auto & file_name : source_archive->getFileNames())
     {
-        /// Exact match: dropped_archive_file_names lists the full virtual filenames inside the
+        /// Exact match: dropped_skip_index_archive_file_names lists the full virtual filenames inside the
         /// archive, not name prefixes. This is what prevents an index named "a" from also
         /// dropping files belonging to "a.b" when escape_index_filenames is off.
-        if (dropped_archive_file_names.contains(file_name))
+        if (dropped_skip_index_archive_file_names.contains(file_name))
             continue;
 
         any_kept = true;
@@ -1105,7 +1105,7 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
     if (!any_kept)
         return;
 
-    auto out = new_storage.writeFile(packed_filename, 4096, write_settings);
+    auto out = new_storage.writeFile(packed_filename, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     HashingWriteBuffer hashing(*out);
     writer.finalize(hashing);
     hashing.finalize();

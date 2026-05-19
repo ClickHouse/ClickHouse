@@ -3,7 +3,6 @@
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Storages/MergeTree/SizeAdaptiveSpoolBuffer.h>
 
 namespace DB
 {
@@ -56,10 +55,15 @@ struct MergeTreeWriterStream
     std::string data_file_extension;
     std::string marks_file_extension;
 
-    /// Shared between the substream's data and marks SizeAdaptiveSpoolBuffers, so the first to
-    /// cross the spill threshold forces the other to spill too. Null when not using a packed
-    /// archive (column streams, or skip indices when packing is disabled).
-    SizeAdaptiveSpoolCoordinatorPtr spool_coordinator;
+    /// True when this stream is wired through SizeAdaptiveSpoolBuffer (skip indices with
+    /// packing enabled). Decided at construction; needed because spool_coupled_spilled stays
+    /// false in two unrelated cases ("never routed through spool" vs "routed but didn't
+    /// spill") and isPacked() must distinguish them.
+    bool is_size_adaptive = false;
+    /// Shared between this substream's data and marks SizeAdaptiveSpoolBuffers, so the first
+    /// to cross the spill threshold forces the other to spill too. Must be declared before
+    /// plain_file / marks_file so it outlives them at destruction.
+    bool spool_coupled_spilled = false;
 
     /// compressed_hashing -> compressor -> plain_hashing -> plain_file
     std::unique_ptr<WriteBufferFromFileBase> plain_file;

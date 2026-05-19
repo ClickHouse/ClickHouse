@@ -35,22 +35,17 @@ class PackedFilesWriter;
   *   - packed   -> the bytes are in @packed_writer; only the archive's single skp_idx.packed
   *                  checksum is emitted, by the writer that finalizes the archive.
   */
-/// A substream's data file and marks file must travel together: either both are inside the
-/// archive or both are standalone per-file artifacts. The reader can't satisfy the half-and-half
-/// shape. The two SizeAdaptiveSpoolBuffers belonging to one substream share an instance of
-/// this state so the first to cross the threshold forces the other to spill too on its next
-/// flush (or at finalize).
-struct SizeAdaptiveSpoolCoordinator
-{
-    bool spilled = false;
-};
-using SizeAdaptiveSpoolCoordinatorPtr = std::shared_ptr<SizeAdaptiveSpoolCoordinator>;
-
 class SizeAdaptiveSpoolBuffer : public WriteBufferFromFileBase
 {
 public:
     using OpenPerFileFunc = std::function<std::unique_ptr<WriteBufferFromFileBase>()>;
 
+    /// @coupled_spilled_flag: optional shared spill flag (lifetime owned by the caller). A
+    /// substream's data file and marks file must travel together: either both are inside the
+    /// archive or both are standalone per-file artifacts (the reader can't satisfy the
+    /// half-and-half shape). Pass the same flag to both buffers so the first to cross the
+    /// threshold forces the other to spill on its next flush (or at finalize). Pass nullptr
+    /// when there's no peer to coordinate with.
     SizeAdaptiveSpoolBuffer(
         size_t spill_threshold_,
         size_t buf_size_,
@@ -59,7 +54,7 @@ public:
         const String & packed_virtual_name_,
         const WriteSettings & packed_write_settings_,
         const String & display_file_name_,
-        SizeAdaptiveSpoolCoordinatorPtr coordinator_);
+        bool * coupled_spilled_flag_);
 
     ~SizeAdaptiveSpoolBuffer() override;
 
@@ -98,7 +93,8 @@ private:
     /// gets written; if spilled, sync the per-file writer directly.
     bool sync_requested = false;
 
-    SizeAdaptiveSpoolCoordinatorPtr coordinator;
+    /// See constructor docs. Non-owning.
+    bool * coupled_spilled_flag = nullptr;
 };
 
 }

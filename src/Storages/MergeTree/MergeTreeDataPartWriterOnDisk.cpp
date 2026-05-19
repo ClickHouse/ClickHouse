@@ -426,7 +426,7 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
     if (skip_indices_packed_writer && skip_indices_packed_writer->hasModifiedFiles())
     {
         const String packed_filename{SKIP_INDICES_PACKED_FILENAME};
-        skip_indices_packed_file = getDataPartStorage().writeFile(packed_filename, 4096, settings.query_write_settings);
+        skip_indices_packed_file = getDataPartStorage().writeFile(packed_filename, DBMS_DEFAULT_BUFFER_SIZE, settings.query_write_settings);
         HashingWriteBuffer packed_hashing(*skip_indices_packed_file);
 
         skip_indices_packed_writer->finalize(packed_hashing);
@@ -485,9 +485,8 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
                 /// separately via skip_indices_packed_file->sync() above. Streams that spilled
                 /// (mixed-layout part: some packed, some per-file) still need their per-file
                 /// data and marks synced.
-                if (stream->isPacked())
-                    continue;
-                streams_to_sync.push_back(stream);
+                if (!stream->isPacked())
+                    streams_to_sync.push_back(stream);
             }
         }
         if (!streams_to_sync.empty())

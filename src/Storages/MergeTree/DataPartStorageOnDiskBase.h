@@ -65,7 +65,7 @@ public:
     /// mutations to preserve surviving in-archive indices that aren't being recomputed when the
     /// source archive cannot be hardlinked (because the writer is about to write into the same
     /// file name in the new part). Names not present in the archive are skipped silently; this
-    /// matches the contract of dropped_archive_file_names where probing for absent extensions is
+    /// matches the contract of dropped_skip_index_archive_file_names where probing for absent extensions is
     /// expected.
     void copyPackedSkipIndicesFilesInto(
         const NameSet & file_names,
@@ -74,7 +74,7 @@ public:
         const WriteSettings & write_settings) const;
 
     /// Rewrite this storage's skp_idx.packed into a fresh archive on @new_storage, dropping any
-    /// virtual file whose name is in @dropped_archive_file_names (exact match). Callers must
+    /// virtual file whose name is in @dropped_skip_index_archive_file_names (exact match). Callers must
     /// pre-resolve the full in-archive substream filenames; passing only an index-name prefix
     /// would over-match when two indices share a prefix (e.g. "a" and "a.b" with
     /// escape_index_filenames=0). If every entry would be dropped, no archive is written and the
@@ -82,7 +82,7 @@ public:
     /// when DROP INDEX targets an in-archive index and there's no writer pipeline to rebuild
     /// from data.
     void filterPackedSkipIndicesArchiveTo(
-        const NameSet & dropped_archive_file_names,
+        const NameSet & dropped_skip_index_archive_file_names,
         IDataPartStorage & new_storage,
         const WriteSettings & write_settings,
         const ReadSettings & read_settings,

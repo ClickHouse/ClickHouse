@@ -22,11 +22,12 @@ static std::unique_ptr<WriteBufferFromFileBase> openStreamFile(
     size_t buf_size,
     const WriteSettings & write_settings,
     size_t packed_spill_threshold,
-    const SizeAdaptiveSpoolCoordinatorPtr & coordinator)
+    bool * coupled_spilled_flag)
 {
     if (packed_writer && !packed_virtual_name.empty())
     {
-        auto open_per_file = [data_part_storage, file_path, buf_size, write_settings]() {
+        auto open_per_file = [data_part_storage, file_path, buf_size, write_settings]()
+        {
             return data_part_storage->writeFile(file_path, buf_size, write_settings);
         };
         return std::make_unique<SizeAdaptiveSpoolBuffer>(
@@ -37,7 +38,7 @@ static std::unique_ptr<WriteBufferFromFileBase> openStreamFile(
             packed_virtual_name,
             write_settings,
             file_path,
-            coordinator);
+            coupled_spilled_flag);
     }
     return data_part_storage->writeFile(file_path, buf_size, write_settings);
 }
@@ -111,14 +112,12 @@ MergeTreeWriterStream::MergeTreeWriterStream(
     escaped_column_name(escaped_column_name_),
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
-    spool_coordinator(packed_writer && (!packed_data_name_.empty() || !packed_marks_name_.empty())
-        ? std::make_shared<SizeAdaptiveSpoolCoordinator>()
-        : nullptr),
-    plain_file(openStreamFile(data_part_storage, packed_writer, packed_data_name_, data_path_ + data_file_extension, max_compress_block_size_, query_write_settings, packed_spill_threshold_, spool_coordinator)),
+    is_size_adaptive(packed_writer != nullptr && (!packed_data_name_.empty() || !packed_marks_name_.empty())),
+    plain_file(openStreamFile(data_part_storage, packed_writer, packed_data_name_, data_path_ + data_file_extension, max_compress_block_size_, query_write_settings, packed_spill_threshold_, &spool_coupled_spilled)),
     plain_hashing(*plain_file),
     compressor(plain_hashing, compression_codec_, max_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
     compressed_hashing(compressor),
-    marks_file(openStreamFile(data_part_storage, packed_writer, packed_marks_name_, marks_path_ + marks_file_extension, 4096, query_write_settings, packed_spill_threshold_, spool_coordinator)),
+    marks_file(openStreamFile(data_part_storage, packed_writer, packed_marks_name_, marks_path_ + marks_file_extension, 4096, query_write_settings, packed_spill_threshold_, &spool_coupled_spilled)),
     marks_hashing(*marks_file),
     marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
     marks_compressed_hashing(marks_compressor),
@@ -129,9 +128,8 @@ MergeTreeWriterStream::MergeTreeWriterStream(
 bool MergeTreeWriterStream::isPacked() const
 {
     /// "Packed" iff we wired the stream through the size-adaptive path AND neither the data
-    /// file nor the marks file ever spilled. The coordinator tracks the shared state, so a
-    /// single check is enough.
-    return spool_coordinator && !spool_coordinator->spilled;
+    /// file nor the marks file ever spilled. The shared flag tracks both files.
+    return is_size_adaptive && !spool_coupled_spilled;
 }
 
 void MergeTreeWriterStream::addToChecksums(MergeTreeDataPartChecksums & checksums, bool is_compressed)
