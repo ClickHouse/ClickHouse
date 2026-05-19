@@ -285,12 +285,12 @@ This function is the same as `arraySort` but with an additional `limit` argument
 To retain only the sorted elements use `arrayResize`.
 :::
     )";
-    syntax = "arrayPartialSort([f,] arr [, arr1, ... ,arrN], limit)";
+    syntax = "arrayPartialSort([f,] limit, arr [, arr1, ... ,arrN])";
     arguments = {
         {"f(arr[, arr1, ... ,arrN])", "The lambda function to apply to elements of array `x`.", {"Lambda function"}},
+        {"limit", "Index value up until which sorting will occur.", {"(U)Int*"}},
         {"arr", "Array to be sorted.", {"Array(T)"}},
-        {"arr1, ... ,arrN", "N additional arrays, in the case when `f` accepts multiple arguments.", {"Array(T)"}},
-        {"limit", "Index value up until which sorting will occur.", {"(U)Int*"}}
+        {"arr1, ... ,arrN", "N additional arrays, in the case when `f` accepts multiple arguments.", {"Array(T)"}}
     };
     returned_value = {R"(
 Returns an array of the same size as the original array where elements in the range `[1..limit]` are sorted
@@ -315,7 +315,7 @@ This function is the same as `arrayReverseSort` but with an additional `limit` a
 To retain only the sorted elements use `arrayResize`.
 :::
     )";
-    syntax = "arrayPartialReverseSort([f,] arr [, arr1, ... ,arrN], limit)";
+    syntax = "arrayPartialReverseSort([f,] limit, arr [, arr1, ... ,arrN])";
     returned_value = {R"(
 Returns an array of the same size as the original array where elements in the range `[1..limit]` are sorted
 in descending order. The remaining elements `(limit..N]` are in an unspecified order.
