@@ -8,10 +8,25 @@
 #include <ranges>
 
 
-namespace
+namespace ProfileEvents
 {
+extern const Event ParallelReplicasReadMarks;
+}
 
-size_t chooseSegmentSize(
+namespace DB
+{
+namespace Setting
+{
+    extern const SettingsUInt64 parallel_replicas_mark_segment_size;
+}
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
+}
+
+size_t MergeTreeReadPoolParallelReplicas::chooseSegmentSize(
     LoggerPtr log, size_t mark_segment_size, size_t min_marks_per_task, size_t threads, size_t sum_marks, size_t number_of_replicas)
 {
     /// Mark segment size determines the granularity of work distribution between replicas.
@@ -70,40 +85,22 @@ size_t chooseSegmentSize(
     UNREACHABLE();
 }
 
-size_t getMinMarksPerTask(size_t min_marks_per_task, const std::vector<DB::MergeTreeReadTaskInfoPtr> & per_part_infos)
+size_t MergeTreeReadPoolParallelReplicas::getMinMarksPerTask(
+    size_t min_marks_for_concurrent_read, const std::vector<MergeTreeReadTaskInfoPtr> & infos)
 {
     /// For each part the value of `min_marks_per_task` is capped by `sum_marks / (threads * total_query_nodes) / 2` (see calculateMinMarksPerTask()),
     /// unless `merge_tree_min_read_task_size` or `min_*_for_concurrent_read` settings are set too high. So, we can safely take the maximum of all parts.
     /// On the flip side, it is not safe to take the minimum, because e.g. for compact parts we don't know individual column sizes, so we use whole part size as approximation,
     /// and as the result we might end up with a very small `min_marks_per_task` that will cause too many requests to the coordinator.
     const auto max_across_parts = std::ranges::max(
-        per_part_infos, [](const auto & lhs, const auto & rhs) { return lhs->min_marks_per_task < rhs->min_marks_per_task; });
-    min_marks_per_task = std::max(min_marks_per_task, max_across_parts->min_marks_per_task);
+        infos, [](const auto & lhs, const auto & rhs) { return lhs->min_marks_per_task < rhs->min_marks_per_task; });
+    size_t min_marks_per_task = std::max(min_marks_for_concurrent_read, max_across_parts->min_marks_per_task);
 
     if (min_marks_per_task == 0)
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
 
     return min_marks_per_task;
-}
-}
-
-namespace ProfileEvents
-{
-extern const Event ParallelReplicasReadMarks;
-}
-
-namespace DB
-{
-namespace Setting
-{
-    extern const SettingsUInt64 parallel_replicas_mark_segment_size;
-}
-
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-extern const int BAD_ARGUMENTS;
 }
 
 MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
@@ -141,24 +138,13 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
     const size_t min_marks_per_task = getMinMarksPerTask(pool_settings.min_marks_for_concurrent_read, per_part_infos);
     min_marks_per_request = min_marks_per_task * pool_settings.threads;
 
-    const size_t mark_segment_size = chooseSegmentSize(
+    mark_segment_size = chooseSegmentSize(
         log,
         context_->getSettingsRef()[Setting::parallel_replicas_mark_segment_size],
         min_marks_per_task,
         pool_settings.threads,
         pool_settings.sum_marks,
         extension.getTotalNodesCount());
-
-    /// Build descriptions with per-part `min_marks_per_task` so the coordinator can propagate
-    /// them to other replicas that may not have done primary key analysis.
-    auto descriptions = parts_ranges.getDescriptions();
-    chassert(descriptions.size() == per_part_infos.size());
-    for (size_t i = 0; i < descriptions.size(); ++i)
-        descriptions[i].min_marks_per_task = per_part_infos[i]->min_marks_per_task;
-
-    /// Default pool ignores the announcement response.
-    /// The latter is relevant only to InOrder reading when we split table into multiple splits for parallelism.
-    std::ignore = extension.sendInitialRequest(coordination_mode, std::move(descriptions), mark_segment_size, min_marks_per_request);
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_idx*/, MergeTreeReadTask * previous_task)

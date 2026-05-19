@@ -503,7 +503,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         data.getStorageID().getFullTableName()};
 
     auto pool = std::make_shared<MergeTreeReadPoolParallelReplicas>(
-        std::move(extension),
+        extension,
         std::move(parts_with_range),
         mutations_snapshot,
         shared_virtual_fields,
@@ -517,6 +517,14 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         pool_settings,
         block_size,
         context);
+
+    /// Default pool ignores the announcement response. The latter is relevant only to InOrder
+    /// reading where we split the table into multiple streams for intra-replica parallelism.
+    std::ignore = extension.sendInitialRequest(
+        CoordinationMode::Default,
+        pool->buildAnnouncementDescriptions(),
+        pool->getMarkSegmentSize(),
+        pool->getMinMarksPerRequest());
 
     Pipes pipes;
 
@@ -675,6 +683,14 @@ Pipe ReadFromMergeTree::readInOrder(
 
     MergeTreeReadPoolPtr pool;
 
+    /// Authoritative set of (parent_info, projection_name) reported by the coordinator for this
+    /// split's stream. Populated below when parallel-replicas is on and the initiator speaks the
+    /// announcement-response protocol (DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE).
+    /// On followers, the pool is constructed over all local parts but the stream owns only a
+    /// subset assigned by the snapshot replica; this set drives source-construction filtering
+    /// below so phantom consumers are never built.
+    std::optional<std::set<std::pair<MergeTreePartInfo, String>>> initiator_selected_parts;
+
     if (is_parallel_reading_from_replicas)
     {
         const auto & client_info = context->getClientInfo();
@@ -696,8 +712,8 @@ Pipe ReadFromMergeTree::readInOrder(
             ? CoordinationMode::WithOrder
             : CoordinationMode::ReverseOrder;
 
-        pool = std::make_shared<MergeTreeReadPoolParallelReplicasInOrder>(
-            std::move(extension),
+        auto in_order_pool = std::make_shared<MergeTreeReadPoolParallelReplicasInOrder>(
+            extension,
             mode,
             parts_with_ranges,
             mutations_snapshot,
@@ -714,6 +730,24 @@ Pipe ReadFromMergeTree::readInOrder(
             pool_settings,
             block_size,
             context);
+
+        /// Send the initial announcement at the caller's layer (rather than inside the pool ctor).
+        /// The response tells us exactly which parts this stream owns: phantom parts are skipped
+        /// during source construction below, so the pool never sees `getTask` for them.
+        auto response = extension.sendInitialRequest(
+            mode,
+            in_order_pool->buildAnnouncementDescriptions(),
+            /*mark_segment_size=*/0,
+            in_order_pool->getMinMarksPerRequest());
+
+        if (response)
+        {
+            initiator_selected_parts.emplace();
+            for (const auto & part : response->parts)
+                initiator_selected_parts->emplace(part.info, part.projection_name);
+        }
+
+        pool = std::move(in_order_pool);
     }
     else
     {
@@ -742,24 +776,23 @@ Pipe ReadFromMergeTree::readInOrder(
     const UInt64 in_order_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
     const bool set_total_rows_approx = !is_parallel_reading_from_replicas || isParallelReplicasLocalPlanForInitiator();
 
-    /// On followers, the pool was constructed over all local parts but the coordinator's stream
-    /// only owns a subset. Skip constructing source processors for parts initiator didn't select.
-    auto * pr_in_order_pool = is_parallel_reading_from_replicas
-        ? dynamic_cast<MergeTreeReadPoolParallelReplicasInOrder *>(pool.get())
-        : nullptr;
-
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
     {
         const auto & part_with_ranges = parts_with_ranges[i];
 
-        /// For projection parts, the authoritative set is keyed by the parent part's info plus
-        /// the projection name (same convention used in the pool's announcement and getTask).
-        const bool is_projection = part_with_ranges.data_part->isProjectionPart();
-        const auto & part_info_for_check = is_projection ? part_with_ranges.parent_part->info : part_with_ranges.data_part->info;
-        const String & projection_name_for_check = is_projection ? part_with_ranges.data_part->name : "";
-        if (pr_in_order_pool && !pr_in_order_pool->wasSelectedByInitiator(part_info_for_check, projection_name_for_check))
-            continue;
+        /// On followers, skip constructing source processors for parts the initiator's stream
+        /// doesn't own. Projection parts are keyed by parent part info + projection name. If the
+        /// initiator didn't send a response (older protocol), `initiator_selected_parts` is
+        /// nullopt and we build sources for every part (legacy behavior).
+        if (initiator_selected_parts)
+        {
+            const bool is_projection = part_with_ranges.data_part->isProjectionPart();
+            const auto & part_info_for_check = is_projection ? part_with_ranges.parent_part->info : part_with_ranges.data_part->info;
+            const String & projection_name_for_check = is_projection ? part_with_ranges.data_part->name : "";
+            if (!initiator_selected_parts->contains({part_info_for_check, projection_name_for_check}))
+                continue;
+        }
 
         UInt64 total_rows = part_with_ranges.getRowsCount();
         if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)

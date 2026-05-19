@@ -318,6 +318,15 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
     patch_join_cache->init(ranges_in_patch_parts);
 }
 
+RangesInDataPartsDescription MergeTreeReadPoolBase::buildAnnouncementDescriptions() const
+{
+    auto descriptions = parts_ranges.getDescriptions();
+    chassert(descriptions.size() == per_part_infos.size());
+    for (size_t i = 0; i < descriptions.size(); ++i)
+        descriptions[i].min_marks_per_task = per_part_infos[i]->min_marks_per_task;
+    return descriptions;
+}
+
 std::vector<size_t> MergeTreeReadPoolBase::getPerPartSumMarks() const
 {
     std::vector<size_t> per_part_sum_marks;

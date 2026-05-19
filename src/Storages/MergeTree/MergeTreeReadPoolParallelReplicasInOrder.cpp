@@ -73,33 +73,7 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
         buffered_tasks.push_back({.info = std::move(info), .ranges = MarkRanges{}, .projection_name = std::move(projection_name)});
     }
 
-    auto descriptions = parts_ranges.getDescriptions();
-    chassert(descriptions.size() == per_part_infos.size());
-    for (size_t i = 0; i < descriptions.size(); ++i)
-        descriptions[i].min_marks_per_task = per_part_infos[i]->min_marks_per_task;
-
-    auto response = extension.sendInitialRequest(mode, std::move(descriptions), /*mark_segment_size=*/0, min_marks_per_request);
-
-    /// Build the authoritative parts set from the coordinator's response. Consumers for parts
-    /// outside this set finish immediately (no phantom getTask spinning), and read requests
-    /// only carry parts the coordinator's stream actually contains. `std::nullopt` means the
-    /// initiator is on an older protocol and didn't send a response — leave the flag unset and
-    /// fall back to the pre-pruning behavior. An engaged optional with empty `parts` is a
-    /// valid response that means the stream owns nothing (over-announced split) — every
-    /// consumer of this pool should finish.
-    if (response)
-    {
-        authoritative_parts_received = true;
-        for (const auto & part : response->parts)
-            authoritative_parts.emplace(part.info, part.projection_name);
-    }
-
     per_part_marks_in_range.resize(per_part_infos.size(), 1);
-}
-
-bool MergeTreeReadPoolParallelReplicasInOrder::wasSelectedByInitiator(const MergeTreePartInfo & info, const String & projection_name) const
-{
-    return authoritative_parts_received && authoritative_parts.contains({info, projection_name});
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
@@ -115,15 +89,6 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
 
     const auto & part_info = is_projection ? per_part_infos[task_idx]->parent_part->info : per_part_infos[task_idx]->data_part->info;
     const auto & projection_name = is_projection ? per_part_infos[task_idx]->data_part->name : "";
-
-    /// Phantom consumers: this consumer's (part, projection_name) isn't in the coordinator's stream
-    /// — finish it immediately rather than spinning on getTask. We only filter when the coordinator
-    /// actually reported its authoritative set; if it didn't (older initiator), fall back to the
-    /// pre-existing behavior (no pruning). An empty authoritative set with the flag set means the
-    /// stream doesn't exist on the coordinator (over-announced split) — every consumer of this
-    /// pool should finish.
-    if (authoritative_parts_received && !authoritative_parts.contains({part_info, projection_name}))
-        return nullptr;
 
     auto & marks_in_range = per_part_marks_in_range[task_idx];
     auto get_from_buffer = [&]() -> std::optional<MarkRanges>
