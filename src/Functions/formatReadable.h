@@ -60,18 +60,6 @@ public:
 
         validateFunctionArguments(getName(), arguments, mandatory_arguments, optional_arguments);
 
-        /// 'ToFixed' in 'double-conversion' fails when requested_digits > 'kMaxFixedDigitsAfterPoint' (100);
-        /// the formatter then silently falls back to 'ToShortest', ignoring the requested precision.
-        if (arguments.size() == 2)
-        {
-            const UInt8 precision = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<UInt8>();
-            if (precision > double_conversion::DoubleToStringConverter::kMaxFixedDigitsAfterPoint)
-                throw Exception(
-                    DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
-                    "Too high precision requested, must not be more than 100, got {}",
-                    static_cast<uint8_t>(precision));
-        }
-
         return std::make_shared<DataTypeString>();
     }
 
@@ -87,8 +75,18 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         UInt8 precision = DEFAULT_PRECISION;
-        if (arguments.size() == 2)
+        if (arguments.size() == 2 && !arguments[1].column->empty())
+        {
             precision = assert_cast<const ColumnConst &>(*arguments[1].column).getValue<UInt8>();
+
+            /// 'ToFixed' in 'double-conversion' fails when requested_digits > 'kMaxFixedDigitsAfterPoint' (100);
+            /// the formatter then silently falls back to 'ToShortest', ignoring the requested precision.
+            if (precision > double_conversion::DoubleToStringConverter::kMaxFixedDigitsAfterPoint)
+                throw Exception(
+                    DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
+                    "Too high precision requested, must not be more than {}, got {}",
+                     static_cast<int>(double_conversion::DoubleToStringConverter::kMaxFixedDigitsAfterPoint), static_cast<uint8_t>(precision));
+        }
 
         auto col_to = ColumnString::create();
 
