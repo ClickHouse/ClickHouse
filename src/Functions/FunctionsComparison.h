@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/FixedEncodedText.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -1398,6 +1399,45 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
+
+    ColumnPtr executeFixedEncodedTextComparison(
+        const ColumnWithTypeAndName & left,
+        const ColumnWithTypeAndName & right,
+        size_t /*input_rows_count*/) const
+    {
+        auto left_info = getFixedEncodedTextInfo(*left.type);
+        auto right_info = getFixedEncodedTextInfo(*right.type);
+
+        if (!left_info && !right_info)
+            return nullptr;
+
+        if (left_info && right_info)
+        {
+            if (left_info->n != right_info->n)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Cannot compare {} and {} because their decoded byte sizes differ",
+                    left.type->getName(),
+                    right.type->getName());
+
+            return executeString(left.column.get(), right.column.get());
+        }
+
+        const bool left_is_target = static_cast<bool>(left_info);
+        const ColumnWithTypeAndName & target = left_is_target ? left : right;
+        const ColumnWithTypeAndName & source = left_is_target ? right : left;
+
+        if (!WhichDataType(source.type).isStringOrFixedString())
+            return nullptr;
+
+        ColumnPtr converted_source = castColumnAccurate(source, target.type);
+
+        if (left_is_target)
+            return executeString(target.column.get(), converted_source.get());
+
+        return executeString(converted_source.get(), target.column.get());
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         checkStackSize();
@@ -1472,6 +1512,10 @@ public:
         bool types_equal = left_type->equals(*right_type);
 
         ColumnPtr res;
+        if ((res = executeFixedEncodedTextComparison(col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count)))
+        {
+            return res;
+        }
         if (left_is_num && right_is_num && !date_and_time_datetime
             && (!left_is_interval || !right_is_interval || types_equal))
         {

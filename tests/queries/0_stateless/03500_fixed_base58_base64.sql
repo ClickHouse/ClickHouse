@@ -1,0 +1,63 @@
+DROP TABLE IF EXISTS fixed_encoded_text;
+
+CREATE TABLE fixed_encoded_text
+(
+    id58 FixedBase58(32),
+    ids58 Array(FixedBase58(32)),
+    id64 FixedBase64(32),
+    ids64 Array(FixedBase64(32))
+)
+ENGINE = Memory;
+
+INSERT INTO fixed_encoded_text VALUES
+(
+    '11111111111111111111111111111111',
+    ['11111111111111111111111111111111'],
+    'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+    ['AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=']
+);
+
+SELECT toTypeName(id58), toTypeName(ids58), toTypeName(id64), toTypeName(ids64)
+FROM fixed_encoded_text;
+
+SELECT id58, id64
+FROM fixed_encoded_text;
+
+SELECT count()
+FROM fixed_encoded_text
+WHERE id58 = '11111111111111111111111111111111';
+
+SELECT count()
+FROM fixed_encoded_text
+WHERE '11111111111111111111111111111111' IN
+(
+    SELECT id58 FROM fixed_encoded_text
+);
+
+SELECT has(ids58, '11111111111111111111111111111111'), hasAny(ids58, ['11111111111111111111111111111111'])
+FROM fixed_encoded_text;
+
+SELECT count()
+FROM fixed_encoded_text
+WHERE id64 = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+
+SELECT count()
+FROM fixed_encoded_text
+WHERE 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' IN
+(
+    SELECT id64 FROM fixed_encoded_text
+);
+
+SELECT has(ids64, 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='), hasAny(ids64, ['AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='])
+FROM fixed_encoded_text;
+
+-- { serverError INCORRECT_DATA }
+SELECT CAST('not_base58' AS FixedBase58(32));
+
+-- { serverError INCORRECT_DATA }
+SELECT CAST('1' AS FixedBase58(32));
+
+-- { serverError INCORRECT_DATA }
+SELECT CAST('!' AS FixedBase64(32));
+
+DROP TABLE fixed_encoded_text;

@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime.h>
@@ -22,6 +23,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/FixedEncodedText.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeObject.h>
@@ -72,6 +74,63 @@ DataTypePtr throwOrReturn(const DataTypes & types, std::string_view message_suff
         throw Exception(error_code, "There is no supertype for types {}", getExceptionMessagePrefix(types));
 
     throw Exception(error_code, "There is no supertype for types {} {}", getExceptionMessagePrefix(types), message_suffix);
+}
+
+
+
+template <LeastSupertypeOnError on_error>
+DataTypePtr getFixedEncodedTextSupertypeIfAny(const DataTypes & types)
+{
+    std::optional<FixedEncodedTextInfo> target;
+
+    for (const auto & type : types)
+    {
+        auto info = getFixedEncodedTextInfo(*type);
+        if (!info)
+            continue;
+
+        if (!target)
+        {
+            target = info;
+            continue;
+        }
+
+        if (target->kind != info->kind || target->n != info->n)
+            return throwOrReturn<on_error>(
+                types,
+                "because FixedBase58/FixedBase64 types with different encodings or decoded sizes are not implicitly compatible",
+                ErrorCodes::NO_COMMON_TYPE);
+    }
+
+    if (!target)
+        return nullptr;
+
+    for (const auto & type : types)
+    {
+        if (getFixedEncodedTextInfo(*type))
+            continue;
+
+        if (type->getTypeId() == TypeIndex::String)
+            continue;
+
+        if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(type.get()))
+        {
+            if (fixed_string->getN() == target->n)
+                continue;
+
+            return throwOrReturn<on_error>(
+                types,
+                "because FixedString size differs from the decoded FixedBase58/FixedBase64 size",
+                ErrorCodes::NO_COMMON_TYPE);
+        }
+
+        return throwOrReturn<on_error>(
+            types,
+            "because FixedBase58/FixedBase64 can be combined only with String or compatible FixedString",
+            ErrorCodes::NO_COMMON_TYPE);
+    }
+
+    return createFixedEncodedTextType(target->kind, target->n);
 }
 
 template <LeastSupertypeOnError on_error>
@@ -384,7 +443,11 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             }
         }
 
-        if (all_equal)
+        bool have_fixed_encoded_text = false;
+        for (const auto & type : types)
+            have_fixed_encoded_text = have_fixed_encoded_text || getFixedEncodedTextInfo(*type).has_value();
+
+        if (all_equal && !have_fixed_encoded_text)
             return types[0];
     }
 
@@ -683,6 +746,9 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
     TypeIndexSet type_ids;
     for (const auto & type : types)
         type_ids.insert(type->getTypeId());
+
+    if (auto fixed_encoded_text_supertype = getFixedEncodedTextSupertypeIfAny<on_error>(types))
+        return fixed_encoded_text_supertype;
 
     /// For String and FixedString, or for different FixedStrings, the common type is String.
     /// If there are Enums and any type of Strings, the common type is String.

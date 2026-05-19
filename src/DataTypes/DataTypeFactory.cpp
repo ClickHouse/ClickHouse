@@ -344,6 +344,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeTime(*this);
     registerDataTypeString(*this);
     registerDataTypeFixedString(*this);
+    registerDataTypeFixedEncodedText(*this);
     registerDataTypeEnum(*this);
     registerDataTypeArray(*this);
     registerDataTypeTuple(*this);

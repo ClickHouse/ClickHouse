@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/FixedEncodedText.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -488,6 +489,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         if (src.getType() == Field::Types::String)
         {
+            if (getFixedEncodedTextInfo(type))
+            {
+                auto column = type.createColumn();
+                ReadBufferFromString in_buffer(src.safeGet<String>());
+                type.getDefaultSerialization()->deserializeWholeText(*column, in_buffer, format_settings);
+                return (*column)[0];
+            }
+
             if (which_type.isFixedString())
             {
                 size_t n = assert_cast<const DataTypeFixedString &>(type).getN();

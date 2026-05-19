@@ -85,6 +85,7 @@ void registerDataTypeDateTime(DataTypeFactory & factory);
 void registerDataTypeTime(DataTypeFactory & factory);
 void registerDataTypeString(DataTypeFactory & factory);
 void registerDataTypeFixedString(DataTypeFactory & factory);
+void registerDataTypeFixedEncodedText(DataTypeFactory & factory);
 void registerDataTypeEnum(DataTypeFactory & factory);
 void registerDataTypeArray(DataTypeFactory & factory);
 void registerDataTypeTuple(DataTypeFactory & factory);
