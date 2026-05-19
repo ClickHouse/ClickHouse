@@ -85,3 +85,47 @@ SELECT k, count() AS c
 FROM (SELECT number % 7 AS k FROM numbers(50000))
 GROUP BY k
 ORDER BY k;
+
+-- Uneven split-resize groups: when `num_streams` is not divisible by the number of split
+-- groups, `addSplitResizeTransform` pads the last group's outputs with `NullSink` and
+-- inputs with `NullSource`. `GradualResizeProcessor` uses many-to-many routing and
+-- activates all outputs once the threshold is crossed. The padded `NullSink` output is
+-- finished immediately by `NullSink::prepare`, so it must never receive data after
+-- activation; otherwise rows would be dropped. With `max_threads = 14` upstream streams
+-- and `min_outstreams_per_resize_after_split = 4`, groups = 3 and each group has 5
+-- ports — so the last group has one padded input wired to `NullSource` and one padded
+-- output wired to `NullSink`. The query must still produce all input rows.
+DROP TABLE IF EXISTS test_gradual_resize_split;
+CREATE TABLE test_gradual_resize_split (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 256;
+SYSTEM STOP MERGES test_gradual_resize_split;
+INSERT INTO test_gradual_resize_split SELECT number,         number FROM numbers(10000);
+INSERT INTO test_gradual_resize_split SELECT number+ 10000,  number FROM numbers(10000);
+INSERT INTO test_gradual_resize_split SELECT number+ 20000,  number FROM numbers(10000);
+INSERT INTO test_gradual_resize_split SELECT number+ 30000,  number FROM numbers(10000);
+INSERT INTO test_gradual_resize_split SELECT number+ 40000,  number FROM numbers(10000);
+INSERT INTO test_gradual_resize_split SELECT number+ 50000,  number FROM numbers(10000);
+INSERT INTO test_gradual_resize_split SELECT number+ 60000,  number FROM numbers(10000);
+INSERT INTO test_gradual_resize_split SELECT number+ 70000,  number FROM numbers(10000);
+INSERT INTO test_gradual_resize_split SELECT number+ 80000,  number FROM numbers(10000);
+INSERT INTO test_gradual_resize_split SELECT number+ 90000,  number FROM numbers(10000);
+INSERT INTO test_gradual_resize_split SELECT number+100000,  number FROM numbers(10000);
+INSERT INTO test_gradual_resize_split SELECT number+110000,  number FROM numbers(10000);
+INSERT INTO test_gradual_resize_split SELECT number+120000,  number FROM numbers(10000);
+INSERT INTO test_gradual_resize_split SELECT number+130000,  number FROM numbers(10000);
+
+SET min_rows_per_stream_for_gradual_resize = 100;
+SET min_bytes_per_stream_for_gradual_resize = 0;
+SET min_outstreams_per_resize_after_split = 4;
+SET max_threads = 14;
+SET optimize_aggregation_in_order = 0;
+SET max_block_size = 100;
+
+SELECT sum(c) FROM
+(
+    SELECT k % 1000 AS k2, count() AS c
+    FROM test_gradual_resize_split
+    GROUP BY k2
+);
+
+DROP TABLE test_gradual_resize_split;
