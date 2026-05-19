@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/demangle.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/IColumn.h>
@@ -138,7 +139,7 @@ struct FunctionArgumentDescriptor
     int isValid(const DataTypePtr & data_type, const ColumnPtr & column) const;
 };
 
-using FunctionArgumentDescriptors = std::vector<FunctionArgumentDescriptor>;
+using FunctionArgumentDescriptors = VectorWithMemoryTracking<FunctionArgumentDescriptor>;
 
 /// Validates that the user-provided arguments match the expected arguments.
 ///

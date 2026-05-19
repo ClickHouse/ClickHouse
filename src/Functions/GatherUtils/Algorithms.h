@@ -200,7 +200,7 @@ void NO_INLINE concat(SourceA && src_a, SourceB && src_b, Sink && sink)
 }
 
 template <typename Source, typename Sink>
-void concat(const std::vector<std::unique_ptr<IArraySource>> & array_sources, Sink && sink)
+void concat(const VectorWithMemoryTracking<std::unique_ptr<IArraySource>> & array_sources, Sink && sink)
 {
     size_t sources_num = array_sources.size();
     VectorWithMemoryTracking<char> is_const(sources_num);
