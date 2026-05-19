@@ -45,7 +45,7 @@ CH_CLIENT_NO_FALLBACK="${CLICKHOUSE_CLIENT} --input_format_values_interpret_expr
 # them is `SerializationJSON::deserializeTextQuoted`.
 ${CLICKHOUSE_CLIENT} -q "SELECT '--- JSON, SQL-style apostrophe escape (was broken pre-fix) ---' FORMAT LineAsString;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_json_roundtrip_103860; CREATE TABLE t_json_roundtrip_103860 (j JSON) ENGINE = Memory SETTINGS enable_json_type = 1;"
-printf "('{\"k\":\"a''b\"}')" | ${CH_CLIENT_NO_FALLBACK} --query="INSERT INTO t_json_roundtrip_103860 FORMAT Values" --enable_json_type=1
+echo "('{\"k\":\"a''b\"}')" | ${CH_CLIENT_NO_FALLBACK} --query="INSERT INTO t_json_roundtrip_103860 FORMAT Values" --enable_json_type=1
 ${CLICKHOUSE_CLIENT} -q "SELECT toString(j) FROM t_json_roundtrip_103860;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_json_roundtrip_103860;"
 echo
@@ -53,7 +53,7 @@ echo
 # Same JSON parse path, with the legacy backslash form — must keep working.
 ${CLICKHOUSE_CLIENT} -q "SELECT '--- JSON, legacy backslash apostrophe escape (must still parse) ---' FORMAT LineAsString;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_json_roundtrip_103860; CREATE TABLE t_json_roundtrip_103860 (j JSON) ENGINE = Memory SETTINGS enable_json_type = 1;"
-printf "('{\"k\":\"a\\\\'b\"}')" | ${CH_CLIENT_NO_FALLBACK} --query="INSERT INTO t_json_roundtrip_103860 FORMAT Values" --enable_json_type=1
+echo "('{\"k\":\"a\\'b\"}')" | ${CH_CLIENT_NO_FALLBACK} --query="INSERT INTO t_json_roundtrip_103860 FORMAT Values" --enable_json_type=1
 ${CLICKHOUSE_CLIENT} -q "SELECT toString(j) FROM t_json_roundtrip_103860;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_json_roundtrip_103860;"
 echo
@@ -61,7 +61,7 @@ echo
 # --- Enum ---
 ${CLICKHOUSE_CLIENT} -q "SELECT '--- Enum, SQL-style apostrophe escape ---' FORMAT LineAsString;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_enum_roundtrip_103860; CREATE TABLE t_enum_roundtrip_103860 (e Enum8('a''b' = 1)) ENGINE = Memory;"
-printf "('a''b')" | ${CH_CLIENT_NO_FALLBACK} --query="INSERT INTO t_enum_roundtrip_103860 FORMAT Values"
+echo "('a''b')" | ${CH_CLIENT_NO_FALLBACK} --query="INSERT INTO t_enum_roundtrip_103860 FORMAT Values"
 ${CLICKHOUSE_CLIENT} -q "SELECT e FROM t_enum_roundtrip_103860;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_enum_roundtrip_103860;"
 echo
@@ -74,7 +74,7 @@ echo
 # regress the common case.
 ${CLICKHOUSE_CLIENT} -q "SELECT '--- Bool (CustomSimpleText) ---' FORMAT LineAsString;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_bool_roundtrip_103860; CREATE TABLE t_bool_roundtrip_103860 (b Bool) ENGINE = Memory;"
-printf "('true')\n('false')" | ${CH_CLIENT_NO_FALLBACK} --query="INSERT INTO t_bool_roundtrip_103860 FORMAT Values"
+echo "('true'),('false')" | ${CH_CLIENT_NO_FALLBACK} --query="INSERT INTO t_bool_roundtrip_103860 FORMAT Values"
 ${CLICKHOUSE_CLIENT} -q "SELECT b FROM t_bool_roundtrip_103860 ORDER BY b;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_bool_roundtrip_103860;"
 echo
