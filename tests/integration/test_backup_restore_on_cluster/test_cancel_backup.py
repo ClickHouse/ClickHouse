@@ -781,15 +781,6 @@ def test_short_disconnection_doesnt_stop_restore():
         assert get_status(initiator, restore_id=restore_id) == "RESTORING"
         assert get_num_system_processes(initiator, restore_id=restore_id) >= 1
 
-        no_trash_checker.allow_errors = [
-            "KEEPER_EXCEPTION",
-            "SOCKET_TIMEOUT",
-            "CANNOT_READ_ALL_DATA",
-            "NETWORK_ERROR",
-            "TABLE_IS_READ_ONLY",
-            "NO_REPLICA_HAS_PART",
-        ]
-
         # Dropping connection for less than `failure_after_host_disconnected_for_seconds`
         # When using faster_zk_disconnect_detect.xml (session_timeout_ms=5000),
         # the drop duration must be short enough to avoid ZK session expiry.
@@ -809,3 +800,12 @@ def test_short_disconnection_doesnt_stop_restore():
         # Restore must be successful.
         wait_status(initiator, "RESTORED", restore_id=restore_id)
         assert get_num_system_processes(nodes, restore_id=restore_id) == 0
+
+        no_trash_checker.allow_errors = [
+            "KEEPER_EXCEPTION",
+            "SOCKET_TIMEOUT",
+            "CANNOT_READ_ALL_DATA",
+            "NETWORK_ERROR",
+            "TABLE_IS_READ_ONLY",
+            "NO_REPLICA_HAS_PART",
+        ]
