@@ -31,21 +31,6 @@ public:
     void profileFeedback(ReadBufferFromFileBase::ProfileInfo) override {}
     MergeTreeReadTaskPtr getTask(size_t task_idx, MergeTreeReadTask * previous_task) override;
 
-    /// Aggregate per-part `min_marks_per_task` into a single value (max-across-parts). Throws if
-    /// the resulting value is zero. Used by the caller before sending the initial announcement.
-    static size_t getMinMarksPerTask(size_t min_marks_for_concurrent_read, const std::vector<MergeTreeReadTaskInfoPtr> & infos);
-
-    /// Pick `mark_segment_size` based on the user-provided value (0 = auto), aggregate
-    /// `min_marks_per_task * threads`, and `sum_marks / number_of_replicas^2`. See the comment
-    /// in `chooseSegmentSize` for the heuristic.
-    static size_t chooseSegmentSize(
-        LoggerPtr log,
-        size_t mark_segment_size,
-        size_t min_marks_per_task,
-        size_t threads,
-        size_t sum_marks,
-        size_t number_of_replicas);
-
     size_t getMinMarksPerRequest() const { return min_marks_per_request; }
     size_t getMarkSegmentSize() const { return mark_segment_size; }
 
