@@ -1,0 +1,36 @@
+wide_off2on_files_before	9
+wide_off2on_query_old_part	91
+wide_off2on_files_after_insert	all_1_1_0	9
+wide_off2on_files_after_insert	all_2_2_0	8
+wide_off2on_combined_count	148
+wide_off2on_files_after_merge	8
+wide_off2on_count_after_merge	148
+1
+wide_on2off_files_before	8
+wide_on2off_query_old_part	91
+wide_on2off_files_after_insert	all_1_1_0	8
+wide_on2off_files_after_insert	all_2_2_0	9
+wide_on2off_combined_count	148
+wide_on2off_files_after_merge	9
+wide_on2off_count_after_merge	148
+1
+compact_off2on_files_before	7
+compact_off2on_query_old_part	91
+compact_off2on_files_after_insert	all_1_1_0	7
+compact_off2on_files_after_insert	all_2_2_0	6
+compact_off2on_combined_count	148
+compact_off2on_files_after_merge	6
+compact_off2on_count_after_merge	148
+1
+compact_on2off_files_before	6
+compact_on2off_query_old_part	91
+compact_on2off_files_after_insert	all_1_1_0	6
+compact_on2off_files_after_insert	all_2_2_0	7
+compact_on2off_combined_count	148
+compact_on2off_files_after_merge	7
+compact_on2off_count_after_merge	148
+1
+wide_flip_off2on_count	91
+1
+wide_flip_on2off_count	91
+1

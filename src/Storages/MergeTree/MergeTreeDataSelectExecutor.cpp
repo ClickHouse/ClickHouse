@@ -1953,7 +1953,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     PartialDisjunctionResult & partial_disjunction_result,
     LoggerPtr log)
 {
-    if (!index_helper->getDeserializedFormat(part->checksums, index_helper->getFileName()))
+    if (!index_helper->getDeserializedFormat(part->checksums, index_helper->getFileName(), &part->getDataPartStorage()))
     {
         LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name),
             (fs::path(part->getDataPartStorage().getFullPath()) / index_helper->getFileName()).string());
@@ -2372,7 +2372,7 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache)
 {
-    if (!skip_index_minmax->getDeserializedFormat(part->checksums, skip_index_minmax->getFileName()))
+    if (!skip_index_minmax->getDeserializedFormat(part->checksums, skip_index_minmax->getFileName(), &part->getDataPartStorage()))
     {
         return nullptr;
     }

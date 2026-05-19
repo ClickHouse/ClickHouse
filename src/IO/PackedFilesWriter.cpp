@@ -29,7 +29,16 @@ PackedFilesWriter::writeFile(const String & file_name)
     auto [it, inserted] = written_files.try_emplace(file_name);
 
     if (!inserted)
-        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File {} already exists", file_name);
+    {
+        String existing_files;
+        for (const auto & [name, _] : written_files)
+        {
+            if (!existing_files.empty()) existing_files += ", ";
+            existing_files += name;
+        }
+        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
+            "File {} already exists in packed archive (existing files: [{}])", file_name, existing_files);
+    }
 
     it->second = std::make_shared<Data>();
     return std::make_unique<FakeWriteBufferFromFile>(file_name, it->second);

@@ -15,6 +15,8 @@
 namespace DB
 {
 
+class IDataPartStorage;
+
 namespace Internal
 {
 
@@ -261,8 +263,13 @@ struct IMergeTreeIndex
     /// (to avoid breaking backward compatibility).
     virtual MergeTreeIndexSubstreams getSubstreams() const { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}; }
 
-    /// Returns substreams and version for deserialization.
-    virtual MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const;
+    /// Returns substreams and version for deserialization. @storage is consulted so that packed
+    /// substreams (whose virtual filenames are not in @checksums) can still be discovered via
+    /// the skp_idx.packed overlay. Passing null disables the archive check.
+    virtual MergeTreeIndexFormat getDeserializedFormat(
+        const MergeTreeDataPartChecksums & checksums,
+        const std::string & relative_path_prefix,
+        const IDataPartStorage * storage = nullptr) const;
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
@@ -367,10 +374,13 @@ void textIndexValidator(const IndexDescription & index, bool attach);
 
 String getIndexFileName(const String & index_name, bool escape_filename);
 
-/// Check if index file exists in checksums, checking both original and hashed filenames.
-/// This supports long index names that were hashed due to replace_long_file_name_to_hash setting.
+/// Check if an index substream file exists for the part. Returns true if the file is listed
+/// directly in checksums.txt (original or hashed name) OR if it's a virtual file inside
+/// skp_idx.packed (resolved through the storage overlay). Passing a null @storage skips
+/// the archive check, which is fine for callers that only see standalone per-file layouts.
 bool indexFileExistsInChecksums(
     const MergeTreeDataPartChecksums & checksums,
     const std::string & path_prefix,
-    const std::string & extension);
+    const std::string & extension,
+    const IDataPartStorage * storage = nullptr);
 }

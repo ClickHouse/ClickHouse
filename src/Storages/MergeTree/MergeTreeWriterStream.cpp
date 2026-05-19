@@ -1,9 +1,22 @@
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
+#include <IO/PackedFilesWriter.h>
 
 namespace DB
 {
+
+static std::unique_ptr<WriteBufferFromFileBase> openStreamFile(
+    const MutableDataPartStoragePtr & data_part_storage,
+    PackedFilesWriter * packed_writer,
+    const String & name,
+    size_t buf_size,
+    const WriteSettings & write_settings)
+{
+    if (packed_writer)
+        return packed_writer->writeFile(name, write_settings);
+    return data_part_storage->writeFile(name, buf_size, write_settings);
+}
 
 void MergeTreeWriterStream::preFinalize()
 {
@@ -65,15 +78,16 @@ MergeTreeWriterStream::MergeTreeWriterStream(
     size_t max_compress_block_size_,
     const CompressionCodecPtr & marks_compression_codec_,
     size_t marks_compress_block_size_,
-    const WriteSettings & query_write_settings) :
+    const WriteSettings & query_write_settings,
+    PackedFilesWriter * packed_writer) :
     escaped_column_name(escaped_column_name_),
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
-    plain_file(data_part_storage->writeFile(data_path_ + data_file_extension, max_compress_block_size_, query_write_settings)),
+    plain_file(openStreamFile(data_part_storage, packed_writer, data_path_ + data_file_extension, max_compress_block_size_, query_write_settings)),
     plain_hashing(*plain_file),
     compressor(plain_hashing, compression_codec_, max_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
     compressed_hashing(compressor),
-    marks_file(data_part_storage->writeFile(marks_path_ + marks_file_extension, 4096, query_write_settings)),
+    marks_file(openStreamFile(data_part_storage, packed_writer, marks_path_ + marks_file_extension, 4096, query_write_settings)),
     marks_hashing(*marks_file),
     marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
     marks_compressed_hashing(marks_compressor),

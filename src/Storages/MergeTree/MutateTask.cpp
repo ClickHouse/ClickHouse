@@ -31,6 +31,7 @@
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -80,6 +81,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
     extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
     extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
+    extern const MergeTreeSettingsString packed_skip_index_types;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
@@ -102,6 +104,7 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -114,6 +117,7 @@ enum class ExecuteTTLType : uint8_t
 
 namespace MutationHelpers
 {
+
 
 static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & data_part, const MutationCommands & commands)
 {
@@ -912,7 +916,8 @@ static NameSet collectFilesToSkip(
     const std::set<MergeTreeIndexPtr> & indices_to_drop,
     const String & mrk_extension,
     const std::vector<ProjectionDescriptionRawPtr> & projections_to_skip,
-    const NameSet & updated_columns_in_patches)
+    const NameSet & updated_columns_in_patches,
+    bool packed_skip_index_archive_dirty)
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
@@ -934,6 +939,13 @@ static NameSet collectFilesToSkip(
         skip_index(index);
     for (const auto & index : indices_to_drop)
         skip_index(index);
+
+    /// The packed skip-index archive bundles multiple indices into one file. Hardlinking it would
+    /// carry along data of indices we're about to recalculate or drop. updateIndicesToRecalculateAndDrop
+    /// already added every surviving archive-contained index to indices_to_recalc when this flag
+    /// is true, so the new writer rebuilds the archive from scratch.
+    if (packed_skip_index_archive_dirty)
+        files_to_skip.insert(String(SKIP_INDICES_PACKED_FILENAME));
 
     for (const auto & projection : projections_to_skip)
         files_to_skip.insert(projection->getDirectoryName());
@@ -1392,6 +1404,20 @@ struct MutationContext
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<MergeTreeIndexPtr> text_indices_to_recalc;
     std::set<MergeTreeIndexPtr> indices_to_drop;
+    /// True iff at least one index that currently lives inside the source part's skp_idx.packed
+    /// is being recomputed or dropped. When set, the mutation rebuilds the archive (writer side)
+    /// and stops hardlinking the source's archive (see collectFilesToSkip).
+    bool packed_skip_index_archive_dirty = false;
+    /// Exact in-archive virtual filenames belonging to indices listed in indices_to_drop_names.
+    /// Built by probing the source archive across known substream/extension patterns so the filter
+    /// step removes only those files (and not unrelated entries that share a name prefix).
+    NameSet dropped_archive_file_names;
+    /// Exact in-archive virtual filenames belonging to surviving (not dropped, not recalc'd)
+    /// indices that live in the source archive. The writer pre-loads them into its in-memory
+    /// PackedFilesWriter before the first block is written so the new archive contains both
+    /// the freshly recomputed entries and the preserved ones, without hardlinking (and risking
+    /// truncating) the source's skp_idx.packed inode.
+    NameSet preserved_archive_file_names;
     ColumnsStatistics stats_to_recalc;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     NameSet files_to_skip;
@@ -1821,6 +1847,21 @@ private:
         bool is_full_wide_part = is_full_part_storage && isWidePart(ctx->new_data_part);
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
+        /// Source skp_idx.packed bundles several indices into one file: hardlinking it would
+        /// inherit data for every contained index, including ones we're about to drop or that
+        /// were rebuilt elsewhere. Force every surviving in-archive index to be recomputed so
+        /// the writer rebuilds skp_idx.packed from scratch.
+        const auto * source_disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&ctx->source_part->getDataPartStorage());
+        auto is_in_packed_archive = [&](const String & name, bool escape) {
+            if (!source_disk_storage)
+                return false;
+            const String prefix = getIndexFileName(name, escape);
+            for (const auto * ext : {".idx2", ".idx"})
+                if (source_disk_storage->isFileInPackedSkipIndicesArchive(prefix + ext))
+                    return true;
+            return false;
+        };
+
         MergeTreeIndices skip_indices;
         for (const auto & idx : indices)
         {
@@ -1834,7 +1875,8 @@ private:
             /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
             /// with different number of marks.
             bool need_recalculate = ctx->materialized_indices.contains(idx.name)
-                || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot));
+                || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot))
+                || is_in_packed_archive(idx.name, idx.escape_filenames);
 
             if (need_recalculate)
             {
@@ -2230,11 +2272,29 @@ private:
         (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
+
+        /// When the archive will not be hardlinked from source (packed_skip_index_archive_dirty),
+        /// the inherited skp_idx.packed entry will point at a file that won't exist in the new
+        /// part unless something re-adds it: filterPackedSkipIndicesArchiveTo writes a fresh
+        /// archive and updates the checksum, the writer emits a new archive when any packed
+        /// index is in indices_to_recalc, otherwise no archive should appear in the new part.
+        /// Drop the stale checksum up front so the third case (e.g. ALTER UPDATE after the
+        /// setting flipped from 'minmax' to '') doesn't leave a dangling entry that CHECK TABLE
+        /// would flag as missing.
+        if (ctx->packed_skip_index_archive_dirty)
+            ctx->new_data_part->checksums.remove(String(SKIP_INDICES_PACKED_FILENAME));
+
         /// We weed to remove checksums for dropped indices
-        for (const auto & index : ctx->indices_to_drop)
+        /// Strip any inherited per-substream skip-index checksum entries for indices that are
+        /// either being dropped (no replacement) or recomputed (writer will repopulate, with a
+        /// potentially different layout). Skipping this for recalc'd indices is fine when the
+        /// new layout still uses the same per-file names because the writer overwrites the
+        /// entry in-place, but breaks when the layout changes (per-file -> packed): in that
+        /// case the writer never touches the per-file checksum and the stale entry would point
+        /// at a file that doesn't exist in the new part.
+        auto remove_per_substream_checksums = [&](const MergeTreeIndexPtr & index)
         {
-            auto index_substreams = index->getSubstreams();
-            for (const auto & index_substream : index_substreams)
+            for (const auto & index_substream : index->getSubstreams())
             {
                 String stream_name = index->getFileName() + index_substream.suffix;
 
@@ -2246,6 +2306,33 @@ private:
                 auto actual_mark_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, ctx->mrk_extension, ctx->source_part->checksums);
                 if (actual_mark_stream_name)
                     ctx->new_data_part->checksums.remove(*actual_mark_stream_name + ctx->mrk_extension);
+            }
+        };
+
+        for (const auto & index : ctx->indices_to_drop)
+            remove_per_substream_checksums(index);
+        for (const auto & index : ctx->indices_to_recalc)
+            remove_per_substream_checksums(index);
+        for (const auto & index : ctx->text_indices_to_recalc)
+            remove_per_substream_checksums(index);
+
+        /// When DROP INDEX targets an index that lives inside skp_idx.packed there is no
+        /// mutations pipeline (DROP INDEX commands never produce one), so no writer will
+        /// rebuild the archive. We've already excluded the source archive from the hardlink
+        /// loop above (files_to_skip), so the new part would be left without one. Rewrite the
+        /// archive here by copying the surviving virtual files from source's archive into a
+        /// fresh skp_idx.packed; if every entry belongs to a dropped index, skip the write so
+        /// the new part has no archive at all.
+        if (ctx->packed_skip_index_archive_dirty && !ctx->mutating_pipeline_builder.initialized())
+        {
+            if (const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&ctx->source_part->getDataPartStorage()))
+            {
+                disk_storage->filterPackedSkipIndicesArchiveTo(
+                    ctx->dropped_archive_file_names,
+                    ctx->new_data_part->getDataPartStorage(),
+                    ctx->context->getWriteSettings(),
+                    ctx->context->getReadSettings(),
+                    ctx->new_data_part->checksums);
             }
         }
 
@@ -2307,6 +2394,20 @@ private:
                 ctx->source_part->index_granularity,
                 ctx->source_part->getBytesUncompressedOnDisk(),
                 static_cast<WrittenOffsetSubstreams *>(nullptr));
+
+            /// Carry surviving in-archive entries that aren't being recomputed into the writer's
+            /// PackedFilesWriter before any block lands. Without this, the new archive would
+            /// contain only the freshly-computed indices (writer side) and lose every preserved
+            /// substream; CHECK TABLE still passes because the inherited skp_idx.packed checksum
+            /// is removed above, but queries lose the index.
+            if (!ctx->preserved_archive_file_names.empty())
+            {
+                if (const auto * source_disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&ctx->source_part->getDataPartStorage()))
+                {
+                    auto out_typed = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out);
+                    out_typed->preloadPackedSkipIndicesArchive(*source_disk_storage, ctx->preserved_archive_file_names);
+                }
+            }
 
             ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
             ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -2642,6 +2743,17 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
     const auto & indices = metadata_snapshot->getSecondaryIndices();
     bool is_full_part_storage = isFullPartStorage(source_part->getDataPartStorage());
 
+    /// DROP INDEX commands do not go through the mutations interpreter (they live in
+    /// for_file_renames), so ctx->indices_to_drop_names (normally filled by the interpreter) is
+    /// empty when DROP INDEX is the only command. Pull DROP_INDEX targets out of commands_for_part
+    /// here so the rest of this function (and downstream files_to_skip / archive-filter logic)
+    /// can rely on indices_to_drop_names as the single source of truth.
+    for (const auto & cmd : ctx->commands_for_part)
+    {
+        if (cmd.type == MutationCommand::Type::DROP_INDEX)
+            ctx->indices_to_drop_names.insert(cmd.column_name);
+    }
+
     for (const auto & index : indices)
     {
         if (ctx->indices_to_drop_names.contains(index.name))
@@ -2668,6 +2780,121 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
                 ASTPtr expr_list = index.expression_list_ast->clone();
                 for (const auto & expr : expr_list->children)
                     indices_recalc_expr_list->children.push_back(expr->clone());
+            }
+        }
+    }
+
+    /// The packed skip-index archive is a single file holding several indices' data. If at least
+    /// one index inside the archive is being recomputed or dropped, we cannot preserve a subset
+    /// of the archive by hardlinking it: the new writer must rewrite skp_idx.packed from scratch
+    /// and therefore needs every surviving index that lives inside the archive in indices_to_recalc.
+    /// On the other hand, a mutation that only touches per-file indices (or materializes a brand
+    /// new index that isn't packed) leaves the archive untouched.
+    const auto * source_disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&source_part->getDataPartStorage());
+
+    auto index_is_in_archive = [&](const IMergeTreeIndex & idx) -> bool
+    {
+        if (!source_disk_storage)
+            return false;
+        const auto file_name = idx.getFileName();
+        for (const auto & sub : idx.getSubstreams())
+        {
+            if (source_disk_storage->isFileInPackedSkipIndicesArchive(file_name + sub.suffix + sub.extension))
+                return true;
+        }
+        return false;
+    };
+
+    if (source_disk_storage)
+    {
+        /// DROP INDEX removes the index from metadata before the mutation runs, so ctx->indices_to_drop
+        /// (set of shared_ptr keyed off current metadata) stays empty here. Probe the source archive
+        /// directly for each dropped name across the union of substream/extension patterns used by
+        /// all skip-index types. This both detects archive_dirty for drop-only mutations and yields
+        /// the exact in-archive filenames the filter must remove (avoiding a prefix collision when
+        /// two indices share a getIndexFileName prefix, e.g. "a" and "a.b" with escape_index_filenames=0).
+        static const std::array<String, 3> known_substream_suffixes = {"", ".dct", ".pst"};
+        static const std::array<String, 2> known_index_extensions = {".idx2", ".idx"};
+        const bool escape_filenames = ctx->metadata_snapshot->escape_index_filenames;
+
+        for (const auto & idx_name : ctx->indices_to_drop_names)
+        {
+            const String idx_file_name = getIndexFileName(idx_name, escape_filenames);
+            for (const auto & sub : known_substream_suffixes)
+            {
+                for (const auto & ext : known_index_extensions)
+                {
+                    const String candidate = idx_file_name + sub + ext;
+                    if (source_disk_storage->isFileInPackedSkipIndicesArchive(candidate))
+                        ctx->dropped_archive_file_names.insert(candidate);
+                }
+                const String mrk_candidate = idx_file_name + sub + ctx->mrk_extension;
+                if (source_disk_storage->isFileInPackedSkipIndicesArchive(mrk_candidate))
+                    ctx->dropped_archive_file_names.insert(mrk_candidate);
+            }
+        }
+
+        /// Setting expansion: the source has a skp_idx.packed and at least one recalc'd index
+        /// would be packed under the current setting but isn't in the source archive yet. The
+        /// source archive must not be hardlinked (the writer would truncate the shared inode),
+        /// and the surviving in-archive entries that aren't being recomputed must be carried
+        /// into the new archive so the new part doesn't lose them. We pre-load those entries
+        /// into the writer's PackedFilesWriter below; here we just flip archive_dirty.
+        const auto packed_types_now = parsePackedSkipIndexTypes(
+            (*ctx->data->getSettings())[MergeTreeSetting::packed_skip_index_types].toString());
+        bool archive_needs_preload = false;
+        if (!packed_types_now.empty() && source_disk_storage->hasSkipIndicesPackedArchive())
+        {
+            auto recalc_writes_archive = [&](const auto & recalc_set) {
+                for (const auto & idx : recalc_set)
+                    if (packed_types_now.contains(Poco::toLower(idx->index.type)) && !index_is_in_archive(*idx))
+                        return true;
+                return false;
+            };
+            archive_needs_preload =
+                recalc_writes_archive(ctx->indices_to_recalc)
+                || recalc_writes_archive(ctx->text_indices_to_recalc);
+        }
+
+        bool archive_dirty = !ctx->dropped_archive_file_names.empty() || archive_needs_preload;
+        if (!archive_dirty)
+            for (const auto & idx : ctx->indices_to_recalc)
+                if (index_is_in_archive(*idx)) { archive_dirty = true; break; }
+        if (!archive_dirty)
+            for (const auto & idx : ctx->text_indices_to_recalc)
+                if (index_is_in_archive(*idx)) { archive_dirty = true; break; }
+
+        if (archive_dirty)
+        {
+            ctx->packed_skip_index_archive_dirty = true;
+
+            /// Collect exact in-archive filenames for every surviving (not dropped, not
+            /// recalc'd) index that lives inside the source archive. The writer will pre-load
+            /// these bytes into its PackedFilesWriter so the new archive contains them without
+            /// needing the index's columns in the mutation pipeline (which only carries the
+            /// columns the interpreter chose to read).
+            NameSet already_in_recalc;
+            for (const auto & p : ctx->indices_to_recalc) already_in_recalc.insert(p->index.name);
+            for (const auto & p : ctx->text_indices_to_recalc) already_in_recalc.insert(p->index.name);
+
+            for (const auto & index : indices)
+            {
+                if (ctx->indices_to_drop_names.contains(index.name))
+                    continue;
+                if (already_in_recalc.contains(index.name))
+                    continue;
+
+                auto index_ptr = index_factory.get(index);
+                const String file_name = index_ptr->getFileName();
+                for (const auto & sub : index_ptr->getSubstreams())
+                {
+                    const String data = file_name + sub.suffix + sub.extension;
+                    if (source_disk_storage->isFileInPackedSkipIndicesArchive(data))
+                        ctx->preserved_archive_file_names.insert(data);
+                    const String mrk = file_name + sub.suffix + ctx->mrk_extension;
+                    if (source_disk_storage->isFileInPackedSkipIndicesArchive(mrk))
+                        ctx->preserved_archive_file_names.insert(mrk);
+                }
             }
         }
     }
@@ -3028,7 +3255,8 @@ bool MutateTask::prepare()
             ctx->indices_to_drop,
             ctx->mrk_extension,
             projections_to_skip,
-            updated_columns_in_patches);
+            updated_columns_in_patches,
+            ctx->packed_skip_index_archive_dirty);
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->metadata_snapshot,

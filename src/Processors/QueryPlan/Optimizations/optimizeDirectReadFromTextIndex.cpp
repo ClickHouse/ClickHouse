@@ -192,7 +192,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         /// Index may be not materialized in some parts, e.g. after ALTER ADD INDEX query.
         size_t num_materialized_parts = std::ranges::count_if(unique_parts, [&](const auto & part)
         {
-            return !!index.index->getDeserializedFormat(part->checksums, index.index->getFileName());
+            return !!index.index->getDeserializedFormat(part->checksums, index.index->getFileName(), &part->getDataPartStorage());
         });
 
         text_index_read_infos[index.index->index.name] =

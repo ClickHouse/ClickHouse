@@ -815,21 +815,23 @@ void IMergeTreeDataPart::loadIndexMarksToCache(MarkCache * index_mark_cache) con
     {
         auto skip_index = MergeTreeIndexFactory::instance().get(index_description);
         auto index_name = skip_index->getFileName();
-        auto index_format = skip_index->getDeserializedFormat(checksums, index_name);
+        auto index_format = skip_index->getDeserializedFormat(checksums, index_name, &getDataPartStorage());
 
         if (!index_format)
             continue;
 
         for (const auto & substream : index_format.substreams)
         {
-            auto stream_name = getStreamNameOrHash(index_name + substream.suffix, substream.extension, checksums);
-            if (!stream_name)
-                continue;
+            auto full_stream_name = index_name + substream.suffix;
+            auto stream_name_opt = getStreamNameOrHash(full_stream_name, substream.extension, checksums);
+            /// For packed substreams the per-virtual-file entry is not in checksums; use the
+            /// non-hashed name and rely on the storage overlay to resolve it.
+            String stream_name = stream_name_opt.value_or(full_stream_name);
 
             loaders.emplace_back(std::make_unique<MergeTreeMarksLoader>(
                 info_for_read,
                 index_mark_cache,
-                index_granularity_info.getMarksFilePath(*stream_name),
+                index_granularity_info.getMarksFilePath(stream_name),
                 index_granularity->getMarksCountForSkipIndex(index_description.granularity),
                 index_granularity_info,
                 /*save_marks_in_cache=*/ true,
@@ -861,18 +863,18 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
     {
         auto skip_index = MergeTreeIndexFactory::instance().get(index_description);
         auto index_name = skip_index->getFileName();
-        auto index_format = skip_index->getDeserializedFormat(checksums, index_name);
+        auto index_format = skip_index->getDeserializedFormat(checksums, index_name, &getDataPartStorage());
 
         if (!index_format)
             continue;
 
         for (const auto & substream : index_format.substreams)
         {
-            auto stream_name = getStreamNameOrHash(index_name + substream.suffix, substream.extension, checksums);
-            if (!stream_name)
-                continue;
+            auto full_stream_name = index_name + substream.suffix;
+            auto stream_name_opt = getStreamNameOrHash(full_stream_name, substream.extension, checksums);
+            String stream_name = stream_name_opt.value_or(full_stream_name);
 
-            auto marks_file = index_granularity_info.getMarksFilePath(*stream_name);
+            auto marks_file = index_granularity_info.getMarksFilePath(stream_name);
             auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / marks_file).string());
             index_mark_cache->remove(key);
         }
@@ -2648,6 +2650,13 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
     auto secondary_indices_descriptions = storage.getInMemoryMetadataPtr(storage.getContext(), false)->secondary_indices;
     IndexSizeByName new_secondary_index_sizes;
 
+    /// For packed-archive substreams the per-virtual-file entry is intentionally absent from
+    /// checksums.txt (the archive's own entry covers them). Fall back to the storage overlay
+    /// here so `secondary_indices_compressed_bytes` reflects packed indices too: existsFile /
+    /// getFileSize transparently serve virtual files from skp_idx.packed for names that aren't
+    /// real on-disk files.
+    const auto & storage_ref = getDataPartStorage();
+
     for (auto & index_description : secondary_indices_descriptions)
     {
         auto index_ptr = MergeTreeIndexFactory::instance().get(index_description);
@@ -2677,6 +2686,23 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
                         substream_size.data_uncompressed = bin_checksum->second.file_size;
                 }
             }
+            else
+            {
+                /// Packed substreams: not in checksums.txt as standalone files because they
+                /// live inside skp_idx.packed. The storage overlay routes existsFile /
+                /// getFileSize through the archive's index, so we get the virtual file's size
+                /// without touching the real filesystem.
+                const String virtual_file = index_stream_name + index_substream.extension;
+                if (storage_ref.existsFile(virtual_file))
+                {
+                    const auto size = storage_ref.getFileSize(virtual_file);
+                    substream_size.data_compressed = size;
+                    /// We don't track per-virtual-file uncompressed sizes in the archive index,
+                    /// so approximate uncompressed == compressed (the compressed frame is opaque
+                    /// to the archive layer).
+                    substream_size.data_uncompressed = size;
+                }
+            }
 
             auto actual_marks_file_name = getStreamNameOrHash(index_stream_name, getMarksFileExtension(), checksums);
             if (actual_marks_file_name)
@@ -2685,6 +2711,14 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
                 auto mrk_checksum = checksums.files.find(full_marks_file_name);
                 if (mrk_checksum != checksums.files.end())
                     substream_size.marks = mrk_checksum->second.file_size;
+            }
+            else
+            {
+                /// Same packed-substream fallback as for the data file above: marks for a
+                /// packed skip index live inside skp_idx.packed, served by the storage overlay.
+                const String virtual_marks_file = index_stream_name + getMarksFileExtension();
+                if (storage_ref.existsFile(virtual_marks_file))
+                    substream_size.marks = storage_ref.getFileSize(virtual_marks_file);
             }
 
             total_secondary_indices_size.add(substream_size);
@@ -2771,9 +2805,15 @@ IndexSize IMergeTreeDataPart::getTotalSecondaryIndicesSize() const
 bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const
 {
     auto file_name = getIndexFileName(index_name, metadata->escape_index_filenames);
-    /// Check for both original and hashed filenames
-    return getStreamNameOrHash(file_name, ".idx", checksums).has_value()
-        || getStreamNameOrHash(file_name, ".idx2", checksums).has_value();
+    /// Check checksums first (both original and hashed names) for per-file layout, and fall
+    /// back to the storage overlay for packed substreams (which are not in checksums.txt).
+    if (getStreamNameOrHash(file_name, ".idx", checksums).has_value()
+        || getStreamNameOrHash(file_name, ".idx2", checksums).has_value())
+        return true;
+
+    const auto & storage_ref = getDataPartStorage();
+    return getStreamNameOrHash(file_name, ".idx", storage_ref).has_value()
+        || getStreamNameOrHash(file_name, ".idx2", storage_ref).has_value();
 }
 
 void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const

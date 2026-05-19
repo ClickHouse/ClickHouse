@@ -1,8 +1,10 @@
 #pragma once
+#include <IO/PackedFilesReader.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Disks/IDisk.h>
 #include <Disks/IVolume.h>
 #include <memory>
+#include <mutex>
 #include <string>
 
 namespace DB
@@ -10,6 +12,7 @@ namespace DB
 
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
+class PackedFilesWriter;
 
 class DataPartStorageOnDiskBase : public IDataPartStorage
 {
@@ -46,6 +49,44 @@ public:
     ReservationPtr reserve(UInt64 bytes) const override;
     ReservationPtr tryReserve(UInt64 bytes) const override;
     DiskPtr getDisk() const;
+
+    /// True iff @name resolves to a virtual file inside this part's skp_idx.packed archive (and
+    /// not a standalone file on disk). Lets external callers distinguish per-file substreams
+    /// from packed ones without touching the archive reader directly.
+    bool isFileInPackedSkipIndicesArchive(const std::string & name) const;
+
+    /// True iff this part has a packed skip-index archive (skp_idx.packed). Cheaper than calling
+    /// isFileInPackedSkipIndicesArchive with a sentinel and clearer at call sites that just need
+    /// to know whether the archive must be rebuilt/excluded from hardlinks.
+    bool hasSkipIndicesPackedArchive() const;
+
+    /// Copy the named virtual files from this storage's skp_idx.packed archive into @target so
+    /// the writer can ship a complete archive after also writing fresh recalc'd entries. Used by
+    /// mutations to preserve surviving in-archive indices that aren't being recomputed when the
+    /// source archive cannot be hardlinked (because the writer is about to write into the same
+    /// file name in the new part). Names not present in the archive are skipped silently; this
+    /// matches the contract of dropped_archive_file_names where probing for absent extensions is
+    /// expected.
+    void copyPackedSkipIndicesFilesInto(
+        const NameSet & file_names,
+        PackedFilesWriter & target,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings) const;
+
+    /// Rewrite this storage's skp_idx.packed into a fresh archive on @new_storage, dropping any
+    /// virtual file whose name is in @dropped_archive_file_names (exact match). Callers must
+    /// pre-resolve the full in-archive substream filenames; passing only an index-name prefix
+    /// would over-match when two indices share a prefix (e.g. "a" and "a.b" with
+    /// escape_index_filenames=0). If every entry would be dropped, no archive is written and the
+    /// corresponding checksum entry is removed instead. Used by MutateSomePartColumnsTask::prepare
+    /// when DROP INDEX targets an in-archive index and there's no writer pipeline to rebuild
+    /// from data.
+    void filterPackedSkipIndicesArchiveTo(
+        const NameSet & dropped_archive_file_names,
+        IDataPartStorage & new_storage,
+        const WriteSettings & write_settings,
+        const ReadSettings & read_settings,
+        MergeTreeDataPartChecksums & checksums) const;
 
     ReplicatedFilesDescription getReplicatedFilesDescription(const NameSet & file_names) const override;
     ReplicatedFilesDescription getReplicatedFilesDescriptionForRemoteDisk(const NameSet & file_names) const override;
@@ -120,11 +161,23 @@ protected:
     DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_);
     virtual MutableDataPartStoragePtr create(VolumePtr volume_, std::string root_path_, std::string part_dir_, bool initialize_) const = 0;
 
+    /// Lazily load the per-part skp_idx.packed archive (if any). Subsequent calls return the
+    /// cached reader (or nullptr if no archive exists). Used internally by the readFile /
+    /// existsFile / getFileSize overlays in the subclasses, and by the public helpers above
+    /// that operate on the archive.
+    const PackedFilesReader * getSkipIndicesPackedReader() const;
+
     VolumePtr volume;
     std::string root_path;
     std::string part_dir;
     DiskTransactionPtr transaction;
     bool has_shared_transaction = false;
+
+    /// Cached probe state for skp_idx.packed. probed=false means we haven't checked the disk yet;
+    /// probed=true with reader=null means we checked and the archive isn't present.
+    mutable std::mutex skip_indices_packed_mutex;
+    mutable bool skip_indices_packed_probed TSA_GUARDED_BY(skip_indices_packed_mutex) = false;
+    mutable std::unique_ptr<PackedFilesReader> skip_indices_packed_reader TSA_GUARDED_BY(skip_indices_packed_mutex);
 
     template <typename Op>
     void executeWriteOperation(Op && op)

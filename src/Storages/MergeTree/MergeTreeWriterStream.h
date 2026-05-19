@@ -9,6 +9,7 @@ namespace DB
 
 struct WriteSettings;
 struct MergeTreeDataPartChecksums;
+class PackedFilesWriter;
 
 class IDataPartStorage;
 using MutableDataPartStoragePtr = std::shared_ptr<IDataPartStorage>;
@@ -20,6 +21,9 @@ using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 /// It is used to write: one column, skip index or all columns (in compact format).
 struct MergeTreeWriterStream
 {
+    /// If @packed_writer is non-null the data and marks files are buffered into it
+    /// instead of being written as standalone files on @data_part_storage. The caller
+    /// is responsible for finalizing the archive into one .packed file on disk.
     MergeTreeWriterStream(
         const String & escaped_column_name_,
         const MutableDataPartStoragePtr & data_part_storage,
@@ -31,7 +35,8 @@ struct MergeTreeWriterStream
         size_t max_compress_block_size_,
         const CompressionCodecPtr & marks_compression_codec_,
         size_t marks_compress_block_size_,
-        const WriteSettings & query_write_settings);
+        const WriteSettings & query_write_settings,
+        PackedFilesWriter * packed_writer = nullptr);
 
     ~MergeTreeWriterStream()
     {

@@ -13,6 +13,7 @@
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
@@ -1896,6 +1897,20 @@ namespace ErrorCodes
     Comma-separated list of statistics types to calculate automatically on all suitable columns.
     Supported statistics types: tdigest, countmin, minmax, nullcount, uniq.
     )", 0) \
+    DECLARE(String, packed_skip_index_types, "", R"(
+    Comma-separated list of skip index types whose data and marks are packed into a single
+    `skp_idx.packed` archive per part instead of being written as separate `skp_idx_<name>.idx2`
+    / `.mrk2` files. This reduces inode pressure and the number of distinct files inside packed
+    parts when many skip indices are defined on a table (for example with
+    `add_minmax_index_for_numeric_columns`).
+
+    Supported types: `minmax`, `bloom_filter`, `tokenbf_v1`, `ngrambf_v1`. Index types not listed
+    here keep the legacy per-file layout. An empty value (the default) disables packing.
+
+    The on-disk format is self-describing: readers detect `skp_idx.packed` and serve substreams
+    from inside it transparently. Changing this setting affects newly written parts only;
+    existing parts retain whatever layout they had at write time.
+    )", EXPERIMENTAL) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
     When enabled, allows summing columns in a SummingMergeTree table to be used in
     the partition or sorting key.
@@ -2436,6 +2451,25 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
             (*this)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_optimize_entire_partition].value,
             background_pool_tasks);
+    }
+
+    /// Reject typos and unsupported types in packed_skip_index_types: the writer silently
+    /// ignores anything outside getSupportedPackedSkipIndexTypes, so a mistyped name would
+    /// degrade the layout to per-file without any signal. Validating here catches the typo at
+    /// CREATE/ALTER time.
+    if ((*this)[MergeTreeSetting::packed_skip_index_types].changed)
+    {
+        const auto requested = parsePackedSkipIndexTypes((*this)[MergeTreeSetting::packed_skip_index_types].toString());
+        const auto & supported = getSupportedPackedSkipIndexTypes();
+        for (const auto & type : requested)
+        {
+            if (!supported.contains(type))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "packed_skip_index_types: '{}' is not a supported packed skip-index type. "
+                    "Supported types: minmax, bloom_filter, tokenbf_v1, ngrambf_v1.",
+                    type);
+        }
     }
 
     // Zero index_granularity is nonsensical.

@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
+#include <IO/PackedFilesWriter.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -63,6 +64,8 @@ public:
 
     void cancel() noexcept override;
 
+    void preloadPackedSkipIndicesArchive(const class DataPartStorageOnDiskBase & source, const NameSet & files) override;
+
     const Block & getColumnsSample() const override { return block_sample; }
     const ColumnsSubstreams & getColumnsSubstreams() const override { return columns_substreams; }
 
@@ -115,9 +118,18 @@ protected:
 
     std::vector<StreamPtr> skip_indices_streams_holders;
     std::vector<MergeTreeIndexOutputStreams> skip_indices_streams;
+    /// Parallel to skip_indices: true if the corresponding index is routed into skip_indices_packed_writer.
+    std::vector<bool> skip_indices_is_packed;
 
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_accumulated_marks;
+
+    /// Aggregates packed skip-index substreams in memory and flushes them as a single
+    /// skp_idx.packed archive on disk. Null when no index opted in.
+    std::unique_ptr<PackedFilesWriter> skip_indices_packed_writer;
+    /// Output buffer for the skp_idx.packed file itself. Constructed lazily during
+    /// fillSkipIndicesChecksums when the writer has content to flush.
+    std::unique_ptr<WriteBufferFromFileBase> skip_indices_packed_file;
 
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_file_hashing_stream;

@@ -46,6 +46,13 @@ public:
 
     virtual void write(const Block & block, const IColumnPermutation * permutation) = 0;
 
+    /// Copy a set of virtual files from another part's packed skip-index archive into this
+    /// writer's in-flight archive, BEFORE any block is written. Used by mutations to preserve
+    /// surviving in-archive indices when the source archive cannot be hardlinked (e.g. because
+    /// the writer is also producing fresh entries that would otherwise truncate the shared
+    /// inode). Default implementation is a no-op for writers that don't pack skip indices.
+    virtual void preloadPackedSkipIndicesArchive(const class DataPartStorageOnDiskBase & /*source*/, const NameSet & /*files*/) {}
+
     virtual void finalizeIndexGranularity() = 0;
     virtual void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) = 0;
 

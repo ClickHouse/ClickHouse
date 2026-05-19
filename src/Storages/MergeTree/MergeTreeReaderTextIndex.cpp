@@ -64,7 +64,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     }
 
     auto data_part = getDataPart();
-    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName());
+    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName(), &data_part->getDataPartStorage());
     chassert(index_format);
 
     MergeTreeIndexDeserializationState state

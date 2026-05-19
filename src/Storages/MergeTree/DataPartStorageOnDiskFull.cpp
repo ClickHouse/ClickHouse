@@ -2,10 +2,12 @@
 
 #include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
+#include <IO/PackedFilesReader.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -14,6 +16,17 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+/// Skip-index substream filenames always start with SKIP_INDEX_FILE_PREFIX (underscore-suffixed).
+/// The archive itself is SKIP_INDICES_PACKED_FILENAME ("skp_idx.packed", dot-suffixed), so this
+/// check never matches the archive and we don't re-enter the lookup recursively.
+bool looksLikePackedSkipIndexFile(const std::string & name)
+{
+    return name.starts_with(SKIP_INDEX_FILE_PREFIX);
+}
 }
 
 DataPartStorageOnDiskFull::DataPartStorageOnDiskFull(VolumePtr volume_, std::string root_path_, std::string part_dir_)
@@ -50,6 +63,11 @@ bool DataPartStorageOnDiskFull::exists() const
 
 bool DataPartStorageOnDiskFull::existsFile(const std::string & name) const
 {
+    if (looksLikePackedSkipIndexFile(name))
+    {
+        if (const auto * reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
+            return true;
+    }
     return volume->getDisk()->existsFile(fs::path(root_path) / part_dir / name);
 }
 
@@ -91,6 +109,11 @@ Poco::Timestamp DataPartStorageOnDiskFull::getFileLastModified(const String & fi
 
 size_t DataPartStorageOnDiskFull::getFileSize(const String & file_name) const
 {
+    if (looksLikePackedSkipIndexFile(file_name))
+    {
+        if (const auto * reader = getSkipIndicesPackedReader(); reader && reader->exists(file_name))
+            return reader->getFileSize(file_name);
+    }
     return volume->getDisk()->getFileSize(fs::path(root_path) / part_dir / file_name);
 }
 
@@ -127,6 +150,11 @@ std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFile(
     const ReadSettings & settings,
     std::optional<size_t> read_hint) const
 {
+    if (looksLikePackedSkipIndexFile(name))
+    {
+        if (const auto * reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
+            return reader->readFile(name, settings, read_hint);
+    }
     return volume->getDisk()->readFile(fs::path(root_path) / part_dir / name, settings, read_hint);
 }
 
@@ -135,6 +163,11 @@ std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExi
     const ReadSettings & settings,
     std::optional<size_t> read_hint) const
 {
+    if (looksLikePackedSkipIndexFile(name))
+    {
+        if (const auto * reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
+            return reader->readFile(name, settings, read_hint);
+    }
     return volume->getDisk()->readFileIfExists(fs::path(root_path) / part_dir / name, settings, read_hint);
 }
 

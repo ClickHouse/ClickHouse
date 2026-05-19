@@ -1,0 +1,13 @@
+wide_count	91
+wide_secondary_bytes_positive	1
+1
+compact_count	91
+compact_secondary_bytes_positive	1
+1
+out_of_range_wide	0
+merge_active_parts_before	2
+merge_combined_count	148
+merge_active_parts_after	1
+merge_count_after_optimize	148
+merge_secondary_bytes_positive	1
+1
