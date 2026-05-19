@@ -1,6 +1,16 @@
 #pragma once
 
+#include <bit>
+
 #include <base/StringViewHash.h>
+
+/// `PackedStringRef` encodes payload and tag bits inside two `uint64_t`
+/// words using `memcpy` into byte offsets that assume the LSB sits at the
+/// lowest address. On big-endian architectures, the inline payload, size
+/// bits, and large-string tag would alias to different bit positions, so
+/// build, isSmall and operator std::string_view would misdecode keys.
+static_assert(std::endian::native == std::endian::little,
+              "PackedStringRef encoding is little-endian specific");
 
 /// PackedStringRef layout (16 bytes total):
 ///
