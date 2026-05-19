@@ -1,5 +1,14 @@
 SELECT '*** In-memory aggregation.';
 
+-- Pin `max_threads = 1` so the server-level `additional_memory_tracking_per_thread`
+-- speculative reservation (4 MiB by default) charges a single fixed offset on
+-- the query memory tracker. With multiple pipeline workers the cumulative
+-- reservation pushes `current_memory_usage` past
+-- `max_bytes_before_external_group_by = 1000000` before any aggregation data
+-- accumulates, which makes external aggregation kick in too eagerly and
+-- changes `after_having_exclusive` totals.
+SET max_threads = 1;
+
 SET max_rows_to_group_by = 100000;
 SET max_block_size = 100001;
 SET group_by_overflow_mode = 'any';

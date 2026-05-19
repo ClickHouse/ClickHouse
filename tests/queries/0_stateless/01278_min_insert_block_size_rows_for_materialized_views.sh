@@ -70,7 +70,10 @@ echo "create table out_01278 as data_01278 Engine=Merge('$CLICKHOUSE_DATABASE', 
 #
 function execute_insert()
 {
-    ${CLICKHOUSE_CLIENT} --parallel_view_processing=0 --max_memory_usage=$TEST_01278_MEMORY --optimize_trivial_insert_select='false' "$@" -q "
+    # `max_threads=1` keeps the `additional_memory_tracking_per_thread`
+    # speculative reservation (4 MiB default) to a single fixed offset against
+    # `max_memory_usage`, which is bumped by 4 MiB in `TEST_01278_MEMORY`.
+    ${CLICKHOUSE_CLIENT} --parallel_view_processing=0 --max_threads=1 --max_memory_usage=$TEST_01278_MEMORY --optimize_trivial_insert_select='false' "$@" -q "
 insert into data_01278 select
     number,
     reinterpretAsString(number), // s1
