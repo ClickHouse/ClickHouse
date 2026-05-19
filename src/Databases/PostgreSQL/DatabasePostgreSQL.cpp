@@ -486,13 +486,26 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     }
     else
     {
-        /// Remove extra engine argument (`schema` and `use_table_cache`)
-        if (storage_engine_arguments->children.size() >= 5)
-            storage_engine_arguments->children.resize(4);
+        ASTPtr host_port = storage_engine_arguments->children.size() > 0 ? storage_engine_arguments->children[0] : make_intrusive<ASTLiteral>(configuration.addresses_expr);
+        ASTPtr db = storage_engine_arguments->children.size() > 1 ? storage_engine_arguments->children[1] : make_intrusive<ASTLiteral>(configuration.database);
+        ASTPtr user = storage_engine_arguments->children.size() > 2 ? storage_engine_arguments->children[2] : make_intrusive<ASTLiteral>(configuration.username);
+        ASTPtr pass = storage_engine_arguments->children.size() > 3 ? storage_engine_arguments->children[3] : make_intrusive<ASTLiteral>(configuration.password);
 
-        /// Add table_name to engine arguments.
-        if (storage_engine_arguments->children.size() >= 2)
-            storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, make_intrusive<ASTLiteral>(table_id.table_name));
+        storage_engine_arguments->children.clear();
+        storage_engine_arguments->children.push_back(host_port);
+        storage_engine_arguments->children.push_back(db);
+        storage_engine_arguments->children.push_back(make_intrusive<ASTLiteral>(table_id.table_name));
+        storage_engine_arguments->children.push_back(user);
+        storage_engine_arguments->children.push_back(pass);
+
+        if (!configuration.schema.empty() || !configuration.compression.empty())
+            storage_engine_arguments->children.push_back(make_intrusive<ASTLiteral>(configuration.schema));
+
+        if (!configuration.compression.empty())
+        {
+            storage_engine_arguments->children.push_back(make_intrusive<ASTLiteral>(""));
+            storage_engine_arguments->children.push_back(make_intrusive<ASTLiteral>(configuration.compression));
+        }
     }
 
     return create_table_query;
