@@ -443,7 +443,14 @@ void MemoryWorker::updateResidentMemoryThread()
             Int64 speculative_rss = resident;
             if (rss_speculative_reserve_ratio > 0.0)
             {
-                Int64 tracked = total_memory_tracker.get();
+                /// `total_memory_tracker.get()` can legitimately go negative (the lazy
+                /// correction below handles this via `MemoryTracker::updateAllocated`).
+                /// That correction runs *after* this branch, so if we used the raw
+                /// value here a transiently-negative tracker would make `delta` larger
+                /// than `resident` and push the speculative `rss` arbitrarily far above
+                /// real resident, triggering false `MEMORY_LIMIT_EXCEEDED` decisions in
+                /// `MemoryTracker::allocImpl`. Clamp `tracked` to `0` first.
+                Int64 tracked = std::max<Int64>(0, total_memory_tracker.get());
                 Int64 delta = resident - tracked;
                 if (delta > 0)
                 {
