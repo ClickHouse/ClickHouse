@@ -486,6 +486,41 @@ void MergeTreeRangeReader::ReadResult::checkInternalConsistency() const
     }
 }
 
+MarkRanges MergeTreeRangeReader::ReadResult::computeUnmatchedMarkRanges() const
+{
+    if (rows_per_granule.empty() || started_ranges.empty())
+        return {};
+
+    MarkRanges result;
+    size_t range_idx = 0;
+
+    for (size_t i = 0; i < rows_per_granule.size(); ++i)
+    {
+        /// Advance to the started_range that contains granule i.
+        /// started_ranges[j].num_granules_read_before_start is the rows_per_granule index
+        /// of the first granule in range j, so we move forward while the next range
+        /// has already started at or before i.
+        while (range_idx + 1 < started_ranges.size()
+               && started_ranges[range_idx + 1].num_granules_read_before_start <= i)
+            ++range_idx;
+
+        if (rows_per_granule[i] == 0)
+        {
+            size_t offset = i - started_ranges[range_idx].num_granules_read_before_start;
+            size_t mark = started_ranges[range_idx].range.begin + offset;
+
+            /// Merge with the previous entry when marks are consecutive to keep the
+            /// MarkRanges compact (fewer cache lock acquisitions on write).
+            if (!result.empty() && result.back().end == mark)
+                ++result.back().end;
+            else
+                result.emplace_back(mark, mark + 1);
+        }
+    }
+
+    return result;
+}
+
 std::string MergeTreeRangeReader::ReadResult::dumpInfo() const
 {
     WriteBufferFromOwnString out;
