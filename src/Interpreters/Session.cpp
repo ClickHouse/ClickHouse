@@ -322,8 +322,10 @@ Session::~Session()
     {
         if (auto audit_log = getAuditLoggerIfEnabled())
         {
+            const auto & client_info = getClientInfo();
+            std::string host = client_info.current_address ? client_info.current_address->host().toString() : "Unknown Host";
             LOG_AUDIT(audit_log, "User, {}, {}, Logout",
-                    user ? user->getName() : "", getClientInfo().current_address->host().toString());
+                    user ? user->getName() : "", host);
         }
 
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(user_id.value_or(UUID{})));
@@ -765,8 +767,10 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
 
     if (auto audit_log = getAuditLoggerIfEnabled())
     {
+        const auto & client_info = getClientInfo();
+        std::string host = client_info.current_address ? client_info.current_address->host().toString() : "Unknown Host";
         LOG_AUDIT(audit_log, "User, {}, {}, LoginSuccess",
-                user ? user->getName() : "", getClientInfo().current_address->host().toString());
+                user ? user->getName() : "", host);
     }
 
     notified_session_log_about_login = true;

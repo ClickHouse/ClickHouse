@@ -1058,10 +1058,12 @@ void auditLog(const QueryLogElement & elem, ContextPtr context)
         }
     }
 
+    std::string host = elem.client_info.current_address ? elem.client_info.current_address->host().toString() : "Unknown Host";
+
     /// TYPE, COMMAND, EXCEPTION_CODE, USER_NAME, CLIENT_IP, OBJECT_NAMES, QUERY
     LOG_AUDIT(audit_log, "{}, {}, {}, {}, {}, {}, {}",
             audit_type, elem.query_kind, elem.exception_code, elem.client_info.current_user,
-            elem.client_info.current_address->host().toString(), object_names, elem.query);
+            host, object_names, elem.query);
 }
 
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)
