@@ -1,0 +1,3 @@
+<clickhouse>
+    <oom_canary_enable>1</oom_canary_enable>
+</clickhouse>
