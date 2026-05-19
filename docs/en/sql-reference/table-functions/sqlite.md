@@ -26,15 +26,11 @@ sqlite('db_path', 'table_name')
 
 ## Example {#example}
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─col1──┬─col2─┐
 │ line1 │    1 │
 │ line2 │    2 │
