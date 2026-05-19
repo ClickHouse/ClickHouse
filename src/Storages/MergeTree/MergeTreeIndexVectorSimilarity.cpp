@@ -116,7 +116,7 @@ String joinByComma(const T & t)
     std::unreachable();
 }
 
-bool granuleLocalKeyAllowed(USearchIndex::vector_key_t key, const IMergeTreeIndexCondition::GranuleRowFilter & filter)
+bool granuleLocalKeyAllowed(USearchIndex::vector_key_t key, const GranuleRowFilter & filter)
 {
     const MergeTreeIndexGranularity * index_granularity = filter.index_granularity;
 
@@ -127,41 +127,21 @@ bool granuleLocalKeyAllowed(USearchIndex::vector_key_t key, const IMergeTreeInde
 
     const size_t end_mark = std::min(base_mark + filter.skip_index_granularity, marks_without_final);
     const size_t granule_row_base = index_granularity->getMarkStartingRow(base_mark);
-    const size_t rows_in_granule = index_granularity->getRowsCountInRange(base_mark, end_mark);
-
-    const auto key_u64 = static_cast<UInt64>(key);
-    if (key_u64 >= rows_in_granule)
+    const size_t granule_row_end = index_granularity->getMarkStartingRow(end_mark);
+    if (granule_row_end <= granule_row_base)
         return false;
 
-    /// Find containing mark using only current skip-index granule boundaries [base_mark, end_mark):
-    /// avoids full-part lookup in getMarkRangeForRowOffset for every predicate invocation.
-    const size_t target_row_in_granule = static_cast<size_t>(key_u64);
-    size_t left = base_mark + 1;
-    size_t right = end_mark;
-    while (left < right)
-    {
-        const size_t mid = left + (right - left) / 2;
-        const size_t mid_row_in_granule = index_granularity->getMarkStartingRow(mid) - granule_row_base;
-        if (mid_row_in_granule <= target_row_in_granule)
-            left = mid + 1;
-        else
-            right = mid;
-    }
-    const size_t data_mark = left - 1;
-    chassert(data_mark >= base_mark && data_mark < end_mark);
-    chassert(data_mark < marks_without_final);
+    const auto key_u64 = static_cast<UInt64>(key);
+    if (key_u64 >= granule_row_end - granule_row_base)
+        return false;
 
-    if (filter.pk_ranges.size() == 1)
+    const size_t part_row = granule_row_base + static_cast<size_t>(key_u64);
+    for (const auto & [row_begin, row_end] : filter.allowed_part_row_ranges)
     {
-        const MarkRange & pk_range = filter.pk_ranges.front();
-        return data_mark >= pk_range.begin && data_mark < pk_range.end;
-    }
-
-    for (const auto & pk_range : filter.pk_ranges)
-    {
-        if (data_mark >= pk_range.begin && data_mark < pk_range.end)
+        if (part_row >= row_begin && part_row < row_end)
             return true;
     }
+
     return false;
 }
 
@@ -592,7 +572,7 @@ bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
 }
 
 NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(
-    MergeTreeIndexGranulePtr granule_, const std::optional<IMergeTreeIndexCondition::GranuleRowFilter> & row_filter) const
+    MergeTreeIndexGranulePtr granule_, const ANNSearchOverrides & overrides) const
 {
     if (!parameters)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected vector_search_parameters to be set");
@@ -612,13 +592,13 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
         granule->scalar_kind, ErrorCodes::INCORRECT_QUERY, "reference vector in the SELECT query");
 
     size_t limit = parameters->limit;
-    if (parameters->additional_filters_present || is_rescoring || row_filter.has_value())
+    if (parameters->additional_filters_present || is_rescoring || overrides.row_filter.has_value())
         /// Fewer hits after post-filter, rescoring, or PK row filter: raise fetch limit by index_fetch_multiplier.
         limit = std::min(static_cast<size_t>(static_cast<double>(limit) * index_fetch_multiplier), max_limit);
 
     auto search_result = [&]()
     {
-        if (!row_filter.has_value())
+        if (!overrides.row_filter.has_value())
         {
             /// We want to run the search with the user-provided value for setting hnsw_candidate_list_size_for_search (aka. expansion_search).
             /// The way to do this in USearch is to call index_dense_gt::change_expansion_search. Unfortunately, this introduces a need to
@@ -629,7 +609,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
 
         /// Copy filter into the closure: filtered_search may retain the predicate until the search completes, but a
         /// reference capture would be unsafe if evaluation ever outlived the local optional in the caller.
-        auto predicate = [rf = row_filter.value()](USearchIndex::vector_key_t key) { return granuleLocalKeyAllowed(key, rf); };
+        auto predicate = [rf = overrides.row_filter.value()](USearchIndex::vector_key_t key) { return granuleLocalKeyAllowed(key, rf); };
         return index->filtered_search(parameters->reference_vector.data(), limit, std::move(predicate), USearchIndex::any_thread(), false, expansion_search);
     }();
 

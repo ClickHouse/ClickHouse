@@ -19,6 +19,8 @@ namespace DB
 
 class MergeTreeIndexGranularity;
 
+struct ANNSearchOverrides;
+
 namespace Internal
 {
 
@@ -170,25 +172,15 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support filtering in bulk");
     }
 
-    /// PK ranges for the current data range (see filterMarksUsingIndex).
-    struct GranuleRowFilter
-    {
-        const MergeTreeIndexGranularity * index_granularity;
-        MarkRanges pk_ranges;
-        size_t index_mark;
-        size_t skip_index_granularity;
-    };
-
     /// Special method for vector similarity indexes:
     /// Returns the N nearest neighbors of a reference vector in the index granule.
     /// The nearest neighbors are returned as row positions.
     /// If VectorSearchParameters::return_distances = true, then the distances are returned as well.
-    /// row_filter restricts keys to pk_ranges; fewer than requested hits is allowed.
+    /// overrides.row_filter restricts keys to pk_ranges; fewer than requested hits is allowed.
     virtual NearestNeighbours calculateApproximateNearestNeighbors(
         MergeTreeIndexGranulePtr /*granule*/,
-        const std::optional<GranuleRowFilter> & row_filter) const
+        const ANNSearchOverrides & /*overrides*/) const
     {
-        (void)row_filter;
         throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
     }
 

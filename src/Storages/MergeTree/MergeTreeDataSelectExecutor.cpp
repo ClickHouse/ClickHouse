@@ -2164,21 +2164,58 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                         auto search_result_it = vector_search_results_by_index_mark.find(index_mark);
                         if (search_result_it == vector_search_results_by_index_mark.end())
                         {
-                            std::optional<IMergeTreeIndexCondition::GranuleRowFilter> row_filter{
-                                IMergeTreeIndexCondition::GranuleRowFilter{
-                                    part->index_granularity.get(),
-                                    pk_ranges_by_index_mark.at(index_mark),
-                                    index_mark,
-                                    skip_index_granularity}};
+                            GranuleRowFilter granule_row_filter{
+                                part->index_granularity.get(),
+                                pk_ranges_by_index_mark.at(index_mark),
+                                index_mark,
+                                skip_index_granularity,
+                                {}};
+
+                            auto & allowed_part_row_ranges = granule_row_filter.allowed_part_row_ranges;
+                            const size_t base_mark = index_mark * skip_index_granularity;
+                            const size_t end_mark = std::min(base_mark + skip_index_granularity, part->index_granularity->getMarksCountWithoutFinal());
+                            for (const auto & pk_range : granule_row_filter.pk_ranges)
+                            {
+                                const size_t intersect_begin_mark = std::max(pk_range.begin, base_mark);
+                                const size_t intersect_end_mark = std::min(pk_range.end, end_mark);
+                                if (intersect_begin_mark >= intersect_end_mark)
+                                    continue;
+
+                                const size_t row_begin = part->index_granularity->getMarkStartingRow(intersect_begin_mark);
+                                const size_t row_end = part->index_granularity->getMarkStartingRow(intersect_end_mark);
+                                if (row_begin >= row_end)
+                                    continue;
+
+                                allowed_part_row_ranges.emplace_back(row_begin, row_end);
+                            }
+
+                            std::sort(allowed_part_row_ranges.begin(), allowed_part_row_ranges.end());
+
+                            if (!allowed_part_row_ranges.empty())
+                            {
+                                size_t merged_size = 1;
+                                for (size_t i = 1; i < allowed_part_row_ranges.size(); ++i)
+                                {
+                                    auto & last = allowed_part_row_ranges[merged_size - 1];
+                                    const auto & current = allowed_part_row_ranges[i];
+                                    if (current.first <= last.second)
+                                        last.second = std::max(last.second, current.second);
+                                    else
+                                        allowed_part_row_ranges[merged_size++] = current;
+                                }
+                                allowed_part_row_ranges.resize(merged_size);
+                            }
+
+                            ANNSearchOverrides ann_overrides{.row_filter = std::move(granule_row_filter)};
                             search_result_it = vector_search_results_by_index_mark.emplace(
                                 index_mark,
-                                condition->calculateApproximateNearestNeighbors(granule, row_filter)).first;
+                                condition->calculateApproximateNearestNeighbors(granule, ann_overrides)).first;
                         }
                         nn_ptr = &search_result_it->second;
                     }
                     else
                     {
-                        uncached_vector_search_result = condition->calculateApproximateNearestNeighbors(granule, std::nullopt);
+                        uncached_vector_search_result = condition->calculateApproximateNearestNeighbors(granule, ANNSearchOverrides{});
                         nn_ptr = &uncached_vector_search_result.value();
                     }
                     const NearestNeighbours & nn = *nn_ptr;
