@@ -99,10 +99,13 @@ class FuzzerLogParser:
                 )
             else:
                 if flag_name == "is_sanitizer_error":
-                    assert self.stderr_log
+                    if not self.stderr_log:
+                        # stderr.log may be absent when stress_runner.sh exits early (e.g. server failed to restart).
+                        # Skip sanitizer patterns and let the loop check the server log for other error types.
+                        continue
                     file = self.stderr_log
                 else:
-                    assert self.server_log
+                    assert self.server_log, "No server log provided"
                     file = self.server_log
                 output = Shell.get_output(
                     f"rg --text -A 10 -o '{pattern}' {file} | head -n10",

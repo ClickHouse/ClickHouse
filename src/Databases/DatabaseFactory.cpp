@@ -96,7 +96,7 @@ void DatabaseFactory::validate(const ASTCreateQuery & create_query) const
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine `{}` cannot have table overrides", engine_name);
 }
 
-DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
+DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode)
 {
     const auto engine_name = create.storage->engine->name;
     /// check if the database engine is a valid one before proceeding
@@ -113,7 +113,7 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
     validate(create);
     cckMetadataPathForOrdinary(create, metadata_path);
 
-    DatabasePtr impl = getImpl(create, metadata_path, context);
+    DatabasePtr impl = getImpl(create, metadata_path, context, mode);
 
     if (impl && context->hasQueryContext() && context->getSettingsRef()[Setting::log_queries])
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
@@ -137,7 +137,15 @@ DatabaseFactory & DatabaseFactory::instance()
     return db_fact;
 }
 
-DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
+bool DatabaseFactory::isDatabaseExternal(const String & engine_name) const
+{
+    auto it = database_engines.find(engine_name);
+    if (it == database_engines.end())
+        return false;
+    return it->second.features.is_external;
+}
+
+DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode)
 {
     auto * storage = create.storage;
     const String & database_name = create.getDatabase();
@@ -155,7 +163,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         .database_name = database_name,
         .metadata_path = metadata_path,
         .uuid = create.uuid,
-        .context = context};
+        .context = context,
+        .mode = mode};
 
     // creator_fn creates and returns a DatabasePtr with the supplied arguments
     auto creator_fn = database_engines.at(engine_name).creator_fn;
