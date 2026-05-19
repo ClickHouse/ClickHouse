@@ -22,7 +22,7 @@ public:
 
     String getName() const override { return "MemoryAwareResize"; }
 
-    Status prepare(const PortNumbers &, const PortNumbers &) override;
+    Status prepare(const UpdatedInputPorts &, const UpdatedOutputPorts &) override;
 
 private:
     InsertMemoryThrottlePtr throttle;

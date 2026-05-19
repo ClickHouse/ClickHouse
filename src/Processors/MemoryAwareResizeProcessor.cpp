@@ -48,7 +48,7 @@ void MemoryAwareResizeProcessor::updateAllowedOutputs()
     }
 }
 
-IProcessor::Status MemoryAwareResizeProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
+IProcessor::Status MemoryAwareResizeProcessor::prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs)
 {
     if (!initialized)
     {
@@ -87,7 +87,7 @@ IProcessor::Status MemoryAwareResizeProcessor::prepare(const PortNumbers & updat
         }
     }
 
-    /// if every active output is finished but inactive ones remain, 
+    /// if every active output is finished but inactive ones remain,
     /// expand `allowed_outputs` so the pipeline can drain
     if (allowed_outputs < output_ports.size())
     {

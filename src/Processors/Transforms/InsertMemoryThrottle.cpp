@@ -81,9 +81,7 @@ void InsertMemoryThrottle::observeChunkBytes(size_t bytes)
         {
             const double smoothed = EWMA_ALPHA * static_cast<double>(sample)
                                   + (1.0 - EWMA_ALPHA) * static_cast<double>(prev);
-            next = static_cast<Int64>(smoothed);
-            if (next < 1)
-                next = 1;
+            next = std::max<Int64>(1, static_cast<Int64>(smoothed));
         }
     }
     while (!avg_chunk_bytes.compare_exchange_weak(prev, next, std::memory_order_relaxed));
