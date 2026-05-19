@@ -1,13 +1,14 @@
--- Regression: expanding packed_skip_index_max_bytes to cover a new index type, then mutating a
--- column of that type, must:
---   1. Not hardlink the source's skp_idx.packed into the new part (the writer is also about
---      to write into skp_idx.packed; a shared inode would be truncated, corrupting source).
---   2. Preserve the surviving in-archive indices (their columns aren't in the mutation
---      pipeline, so they can't be recomputed; their bytes must be carried over from source).
+-- Regression: raising packed_skip_index_max_bytes from a value where only the small minmax
+-- fits to one where the bloom_filter also fits, then mutating the bloom_filter's column, must:
+--   1. Not hardlink the source's skp_idx.packed into the new part. The writer in the new
+--      part is about to open skp_idx.packed to add the freshly-packed bloom_filter; a shared
+--      inode would be truncated, both corrupting the source and overwriting the minmax bytes.
+--   2. Preserve m_v's archive bytes into the new part (its column v isn't in the mutation
+--      pipeline, so it can't be recomputed; only carrying over works).
 --
--- Setup: source has a packed minmax(v) and a per-file bloom_filter(w). Expand the setting to
--- cover bloom_filter, then ALTER UPDATE w. The new part must keep m_v working AND have a
--- newly-packed bf_w.
+-- Setup: source has m_v inside skp_idx.packed (small enough at threshold = 200) and bf_w as a
+-- per-file substream (over threshold). Raise the threshold so bf_w also fits, then ALTER
+-- UPDATE w. The new part must keep m_v gating granules AND have bf_w packed too.
 
 DROP TABLE IF EXISTS t_expand_mutate;
 CREATE TABLE t_expand_mutate
@@ -21,14 +22,14 @@ CREATE TABLE t_expand_mutate
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0,
-         packed_skip_index_max_bytes = 4194304,
+         packed_skip_index_max_bytes = 200,
          auto_statistics_types = '',
          index_granularity = 1024;
 
 INSERT INTO t_expand_mutate SELECT number, number * 2, number * 3 FROM numbers(2000);
 
--- Source layout has both indices materialized; absolute file count varies with random
--- merge-tree settings so we only assert that the index data is present.
+-- Source layout: m_v packed (small), bf_w per-file (larger than threshold). Assert both are
+-- materialized via secondary_indices_compressed_bytes > 0 (works for either layout).
 SELECT 'before_expand_indices_materialized', secondary_indices_compressed_bytes > 0
 FROM system.parts WHERE database = currentDatabase() AND table = 't_expand_mutate' AND active;
 

@@ -81,6 +81,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
     extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
     extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
+    extern const MergeTreeSettingsUInt64 packed_skip_index_max_bytes;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
@@ -1862,13 +1863,20 @@ private:
         /// were rebuilt elsewhere. Force every surviving in-archive index to be recomputed so
         /// the writer rebuilds skp_idx.packed from scratch.
         const auto * source_disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&ctx->source_part->getDataPartStorage());
-        auto is_in_packed_archive = [&](const String & name, bool escape) {
+        auto is_in_packed_archive = [&](const IMergeTreeIndex & index) {
             if (!source_disk_storage)
                 return false;
-            const String prefix = getIndexFileName(name, escape);
-            for (const auto * ext : {".idx2", ".idx"})
-                if (source_disk_storage->isFileInPackedSkipIndicesArchive(prefix + ext))
+            /// Match the partial-mutation detector: enumerate the index's substreams (text
+            /// indices have .dct/.pst suffixes alongside the base; bloom-family and minmax
+            /// just have the base substream). Probing only ".idx" / ".idx2" misses the side
+            /// streams and would treat a mixed-layout text index as not in the archive,
+            /// losing its packed side streams during a full rewrite.
+            const String file_name = index.getFileName();
+            for (const auto & sub : index.getSubstreams())
+            {
+                if (source_disk_storage->isFileInPackedSkipIndicesArchive(file_name + sub.suffix + sub.extension))
                     return true;
+            }
             return false;
         };
 
@@ -1881,16 +1889,18 @@ private:
             if (ctx->indices_to_drop_names.contains(idx.name))
                 continue;
 
+            auto index_ptr = MergeTreeIndexFactory::instance().get(idx);
+
             /// For packed part we need to recalculate all indices because they are stored inside packed parts format
             /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
             /// with different number of marks.
             bool need_recalculate = ctx->materialized_indices.contains(idx.name)
                 || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot))
-                || is_in_packed_archive(idx.name, idx.escape_filenames);
+                || is_in_packed_archive(*index_ptr);
 
             if (need_recalculate)
             {
-                skip_indices.push_back(MergeTreeIndexFactory::instance().get(idx));
+                skip_indices.push_back(std::move(index_ptr));
             }
             else
             {
@@ -2845,11 +2855,22 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             }
         }
 
-        /// archive_dirty: source's skp_idx.packed cannot be hardlinked into the new part
-        /// because some virtual file inside it is either being dropped or being recomputed.
-        /// The writer (or filter, for drop-only) will produce a fresh archive containing the
-        /// surviving entries.
-        bool archive_dirty = !ctx->dropped_archive_file_names.empty();
+        /// archive_dirty: source's skp_idx.packed cannot be hardlinked into the new part,
+        /// either because a virtual file inside it is being dropped / recomputed, OR because the
+        /// writer in the new part may produce a fresh archive on its own and would otherwise
+        /// truncate the source's inode. The second case fires when packing is enabled in the
+        /// current settings and the mutation will run at least one skip-index aggregator (i.e.
+        /// some index gets recomputed) - the writer creates skp_idx.packed lazily on the first
+        /// substream that decides to pack, which can happen even if no source-archive member is
+        /// in the recalc set (e.g. the threshold was raised and a per-file source index now
+        /// fits inside the archive).
+        const bool source_has_archive = source_disk_storage->hasSkipIndicesPackedArchive();
+        const bool writer_can_open_archive =
+            (*ctx->data->getSettings())[MergeTreeSetting::packed_skip_index_max_bytes] > 0
+            && (!ctx->indices_to_recalc.empty() || !ctx->text_indices_to_recalc.empty());
+
+        bool archive_dirty = !ctx->dropped_archive_file_names.empty()
+            || (source_has_archive && writer_can_open_archive);
         if (!archive_dirty)
             for (const auto & idx : ctx->indices_to_recalc)
                 if (index_is_in_archive(*idx)) { archive_dirty = true; break; }
