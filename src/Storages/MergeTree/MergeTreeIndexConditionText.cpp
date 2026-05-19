@@ -232,7 +232,7 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     /// has/hasAll/hasAny operate on array elements directly and bypass the postprocessor
     /// (just as they bypass the tokenizer and preprocessor), so a postprocessor does not
     /// affect the mode selection for these functions.
-    const bool read_mode_can_be_exact = tokenizer->isArrayTokenizer() && !has_preprocessor;
+    const bool can_be_exact_read_mode = tokenizer->isArrayTokenizer() && !has_preprocessor;
 
     if (function_name == "equals"
         || function_name == "has"
@@ -243,14 +243,14 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         /// These functions compare the searched token as a whole and therefore
         /// exact direct read is only possible with array token extractor, that doesn't
         /// split documents into tokens. Otherwise we can only use direct read as a hint.
-        return read_mode_can_be_exact ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+        return can_be_exact_read_mode ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
     }
 
     if (function_name == "hasAny")
     {
         /// Function hasAny creates several text search queries with
         /// tokenizers that split strings, so we can't use direct read as a hint.
-        return read_mode_can_be_exact ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
+        return can_be_exact_read_mode ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
     }
 
     if (function_name == "like"
@@ -524,8 +524,15 @@ std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & fi
 {
     std::vector<String> tokens;
     const String & raw = field.safeGet<String>();
-    const String value = apply_preprocessor ? preprocessor->processConstant(raw) : raw;
-    tokenizer->stringToTokens(value.data(), value.size(), tokens);
+    if (apply_preprocessor)
+    {
+        const String processed = preprocessor->processConstant(raw);
+        tokenizer->stringToTokens(processed.data(), processed.size(), tokens);
+    }
+    else
+    {
+        tokenizer->stringToTokens(raw.data(), raw.size(), tokens);
+    }
     tokens = tokenizer->compactTokens(tokens);
     return apply_postprocessor ? postprocessor->processTokens(std::move(tokens)) : tokens;
 }
@@ -534,8 +541,15 @@ std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field &
 {
     std::vector<String> tokens;
     const String & raw = field.safeGet<String>();
-    const String value = apply_preprocessor ? preprocessor->processConstant(raw) : raw;
-    tokenizer->substringToTokens(value.data(), value.size(), tokens, is_prefix, is_suffix);
+    if (apply_preprocessor)
+    {
+        const String processed = preprocessor->processConstant(raw);
+        tokenizer->substringToTokens(processed.data(), processed.size(), tokens, is_prefix, is_suffix);
+    }
+    else
+    {
+        tokenizer->substringToTokens(raw.data(), raw.size(), tokens, is_prefix, is_suffix);
+    }
     tokens = tokenizer->compactTokens(tokens);
     return apply_postprocessor ? postprocessor->processTokens(std::move(tokens)) : tokens;
 }
@@ -544,8 +558,15 @@ std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field 
 {
     std::vector<String> tokens;
     const String & raw = field.safeGet<String>();
-    const String value = apply_preprocessor ? preprocessor->processConstant(raw) : raw;
-    tokenizer->stringLikeToTokens(value.data(), value.size(), tokens);
+    if (apply_preprocessor)
+    {
+        const String processed = preprocessor->processConstant(raw);
+        tokenizer->stringLikeToTokens(processed.data(), processed.size(), tokens);
+    }
+    else
+    {
+        tokenizer->stringLikeToTokens(raw.data(), raw.size(), tokens);
+    }
     tokens = tokenizer->compactTokens(tokens);
     return apply_postprocessor ? postprocessor->processTokens(std::move(tokens)) : tokens;
 }
@@ -715,25 +736,25 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (has_map_keys_column)
         {
             if (function_name == "mapContainsKey" || function_name == "has")
-                return make_map_function(stringToTokens(value_field, true, !is_array_tokenizer));
+                return make_map_function(stringToTokens(value_field, has_preprocessor, has_postprocessor && !is_array_tokenizer));
             if (function_name == "mapContainsKeyLike" && tokenizer->supportsStringLike())
-                return make_map_function(stringLikeToTokens(value_field, true, !is_array_tokenizer));
+                return make_map_function(stringLikeToTokens(value_field, has_preprocessor, has_postprocessor && !is_array_tokenizer));
         }
 
         /// mapContainsValue* can be used only with an index defined as `mapValues(Map(String, ...))`
         if (has_map_values_column)
         {
             if (function_name == "mapContainsValue")
-                return make_map_function(stringToTokens(value_field, true, !is_array_tokenizer));
+                return make_map_function(stringToTokens(value_field, has_preprocessor, has_postprocessor && !is_array_tokenizer));
             if (function_name == "mapContainsValueLike" && tokenizer->supportsStringLike())
-                return make_map_function(stringLikeToTokens(value_field, true, !is_array_tokenizer));
+                return make_map_function(stringLikeToTokens(value_field, has_preprocessor, has_postprocessor && !is_array_tokenizer));
         }
 
         return false;
     }
     if (function_name == "equals")
     {
-        auto tokens = stringToTokens(value_field, true, !is_array_tokenizer);
+        auto tokens = stringToTokens(value_field, has_preprocessor, has_postprocessor && !is_array_tokenizer);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;

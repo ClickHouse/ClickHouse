@@ -1508,9 +1508,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     /// just as they bypass the tokenizer and preprocessor. The array tokenizer stores raw
     /// elements; applying the postprocessor here would create a mismatch with query-side
     /// lookups that also skip the postprocessor for these functions.
-    const bool is_array_tokenizer = typeid_cast<const ArrayTokenizer *>(tokenizer) != nullptr;
-
-    if (postprocessor->hasActions() && !is_array_tokenizer)
+    if (postprocessor->hasActions() && !tokenizer->isArrayTokenizer())
     {
         ColumnPtr tokenized = tokenizeToArray(*tokenizer, *preprocessed_column, offset, rows_read);
         ColumnPtr postprocessed = postprocessor->processTokensArrayBatch(assert_cast<const ColumnArray *>(tokenized.get()));

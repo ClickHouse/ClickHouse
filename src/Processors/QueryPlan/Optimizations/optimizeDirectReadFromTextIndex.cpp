@@ -305,7 +305,7 @@ public:
     /// Replaces text-search functions by virtual columns.
     /// Example: hasToken(text_col, 'token') -> __text_index_text_col_idx_hasToken_0.
     ///
-    /// Applies preprocessor, tokenizer and postprocessor for text-search functions.
+    /// Applies preprocessor, tokenizer and postprocessor in chain for text-search functions.
     /// Example: hasAllTokens(text_col, 'token1 token2') -> hasToken(lower(text_col), ['token1', 'token2'], 'splitByNonAlpha').
     ResultReplacement replace(const ContextPtr & context, const String & filter_column_name)
     {

@@ -306,7 +306,7 @@ Typical use cases for the postprocessor argument include:
 4. **Case normalization**. Lower- or upper-casing tokens to enable case-insensitive matching, e.g. [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8).
    We generally recommend using a corresponding preprocessor for lower- and upper-casing.
 
-The postprocessor expression transforms tokens of type [String](/sql-reference/data-types/string.md) to tokens of type [String](/sql-reference/data-types/string.md).
+The postprocessor expression transforms tokens of type [String](/sql-reference/data-types/string.md) to tokens of the same type.
 Also, the postprocessor expression must only reference the column or expression on top of which the text index is defined.
 When the column is of type `Array(String)`, the postprocessor still operates on individual tokens as plain `String` values.
 

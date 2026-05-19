@@ -472,11 +472,11 @@ void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, 
 
 ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, size_t from, size_t rows)
 {
+    chassert(from + rows <= input.size());
+
     auto tokens_data = ColumnString::create();
     auto tokens_offsets = ColumnArray::ColumnOffsets::create();
     tokens_offsets->reserve(rows);
-
-    size_t total_tokens = 0;
 
     auto tokenize = [&](std::string_view doc)
     {
@@ -484,7 +484,6 @@ ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, s
             [&](const char * token_start, size_t token_length)
             {
                 tokens_data->insertData(token_start, token_length);
-                ++total_tokens;
                 return false;
             });
     };
@@ -503,7 +502,7 @@ ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, s
                     continue;
                 tokenize(data.getDataAt(j));
             }
-            tokens_offsets->getData().push_back(total_tokens);
+            tokens_offsets->getData().push_back(tokens_data->size());
         }
     }
     else
@@ -512,7 +511,7 @@ ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, s
         {
             if (!input.isNullAt(i))
                 tokenize(input.getDataAt(i));
-            tokens_offsets->getData().push_back(total_tokens);
+            tokens_offsets->getData().push_back(tokens_data->size());
         }
     }
 
