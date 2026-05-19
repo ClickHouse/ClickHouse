@@ -63,6 +63,10 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsDouble offset;
+    extern const SettingsString format;
+    extern const SettingsString output_format;
+    extern const SettingsString default_format;
+    extern const SettingsString compression;
     extern const SettingsBool optimize_skip_unused_shards;
     extern const SettingsUInt64 optimize_skip_unused_shards_nesting;
     extern const SettingsBool optimize_skip_unused_shards_rewrite_in;
@@ -192,6 +196,34 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     {
         new_settings[Setting::limit] = 0;
         new_settings[Setting::limit].changed = false;
+    }
+
+    /// Output-shaping settings only make sense at the initiator: they describe how the final
+    /// result should be serialized to the user (HTTP body, CLI display, etc.). Forwarding them
+    /// to remote shards is harmful — `format = 'Null'`, for example, would set `null_format`
+    /// on each remote shard, suppressing its TCP `sendData` and producing empty blocks. That
+    /// turns `getStructureOfRemoteTable`'s DESC TABLE probes into silently-empty results and
+    /// surfaces as `NO_REMOTE_SHARD_AVAILABLE. Log: ` with an empty body. Strip the settings
+    /// here so the inter-server `Settings` packet does not carry them.
+    if (!settings[Setting::format].value.empty())
+    {
+        new_settings[Setting::format] = "";
+        new_settings[Setting::format].changed = false;
+    }
+    if (!settings[Setting::output_format].value.empty())
+    {
+        new_settings[Setting::output_format] = "";
+        new_settings[Setting::output_format].changed = false;
+    }
+    if (!settings[Setting::default_format].value.empty())
+    {
+        new_settings[Setting::default_format] = "";
+        new_settings[Setting::default_format].changed = false;
+    }
+    if (!settings[Setting::compression].value.empty())
+    {
+        new_settings[Setting::compression] = "";
+        new_settings[Setting::compression].changed = false;
     }
 
     /// Setting additional_table_filters may be applied to Distributed table.
