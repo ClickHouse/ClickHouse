@@ -490,43 +490,26 @@ void addDefaultHandlersFactory(
             if (!is_get_or_head && !is_post_or_options)
                 return false;
 
-            /// Extended routing for the HTTP-as-file feature: accept arbitrary paths that *look
-            /// like* a database/table/filter reference. A path qualifies if it
-            ///   * has a `?` with a non-empty query string, or
-            ///   * has more than one `/` separator (e.g. `/db/hits`), or
-            ///   * has a `.` in its last component (e.g. `/hits.CSV`), or
-            ///   * has a `=`, `<`, `>`, or `!` (filter-component or unrecognized-param form).
-            auto qmark = uri.find('?');
-            if (qmark != std::string::npos && qmark + 1 < uri.size())
-                return true;
-            std::string path = (qmark == std::string::npos) ? std::string(uri) : std::string(uri.substr(0, qmark));
-            if (path.empty() || path[0] != '/')
+            /// Everything below is the path-as-file extension. Skip it when none of the
+            /// `http_allow_*_as_path`/`as_file` features are enabled in the server's default
+            /// profile, so unknown paths fall through to `NotFoundHandler` (HTTP 404) exactly
+            /// as before this PR. The path features are still gated again per-user inside
+            /// `HTTPHandler::processQuery`; this check is the routing-time approximation.
+            const auto & default_settings = server.context()->getSettingsRef();
+            bool path_features_enabled = default_settings[Setting::http_allow_database_as_path]
+                || default_settings[Setting::http_allow_table_as_file]
+                || default_settings[Setting::http_allow_filters_as_path];
+            if (!path_features_enabled)
                 return false;
-            /// Strip leading slash; "/" alone was already matched above.
-            std::string rest = path.substr(1);
-            if (rest.find('/') != std::string::npos)
-                return true;
-            if (rest.find('.') != std::string::npos)
-                return true;
-            if (rest.find_first_of("=<>!") != std::string::npos)
-                return true;
 
-            /// Simple single-component paths (e.g. `/sashboards`, `/dashbord`) are routed to the
-            /// dynamic handler only when the server's default profile has at least one of the
-            /// path-as-file features enabled. In that case the handler attempts to resolve the
-            /// segment as a database/table and, on failure, returns an exception that combines
-            /// the closest matching handler name with the closest matching database/table name.
-            /// When all path features are off, simple paths fall through to `NotFoundHandler`
-            /// to preserve the original "Maybe you meant /dashboard?" hint behaviour.
-            ///
-            /// Additionally, skip the loosening when the request carries an Authorization
-            /// header with a scheme ClickHouse does not implement (e.g. `AWS4-HMAC-SHA256`,
-            /// which `clickhouse-local`'s S3 client sends to probe paths like `/nonexistent`):
-            /// the dynamic handler would otherwise reject the request with
-            /// `AUTHENTICATION_FAILED` (HTTP 403) before it has a chance to look up the path
-            /// against the catalog, whereas the `NotFoundHandler` fallback returns a plain
-            /// 404 the S3 client is already prepared to handle as non-retriable. Supported
-            /// schemes (Basic, Negotiate) still get the dynamic-handler treatment.
+            /// Skip the path-as-file routing for clients sending an `Authorization` header with a
+            /// scheme ClickHouse does not implement (e.g. `AWS4-HMAC-SHA256`, used by
+            /// `clickhouse-local`'s S3 client when probing paths like `/nonexistent`). The dynamic
+            /// handler would otherwise reject the request with `AUTHENTICATION_FAILED` (HTTP 403)
+            /// before it has a chance to look up the path against the catalog; the
+            /// `NotFoundHandler` fallback returns a plain 404 the S3 client is already prepared to
+            /// handle as non-retriable. Supported schemes (Basic, Negotiate) still get the
+            /// dynamic-handler treatment.
             if (request.has("Authorization"))
             {
                 const auto & auth_header = request.get("Authorization");
@@ -537,10 +520,12 @@ void addDefaultHandlersFactory(
                 if (!boost::iequals(scheme, "Basic") && !boost::iequals(scheme, "Negotiate"))
                     return false;
             }
-            const auto & default_settings = server.context()->getSettingsRef();
-            return default_settings[Setting::http_allow_database_as_path]
-                || default_settings[Setting::http_allow_table_as_file]
-                || default_settings[Setting::http_allow_filters_as_path];
+
+            /// Path-as-file routing: accept any single-component or multi-segment path so the
+            /// dynamic handler can either resolve it as a database/table/filter reference or
+            /// surface the combined handler+catalog hints on a typo. The actual interpretation
+            /// (and "is this really a database?" check) happens inside the handler.
+            return true;
         }
     );
     factory.addHandler(query_handler);
