@@ -68,6 +68,7 @@ static struct InitFiu
     ONCE(distributed_cache_fail_choose_server) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     REGULAR(cache_filesystem_failure) \
+    REGULAR(distributed_cache_simulate_writer_not_keeping_up) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
     ONCE(distributed_cache_simulate_stale_connection) \
@@ -83,14 +84,17 @@ static struct InitFiu
     REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
+    REGULAR(taskstats_counters_reset_throw) \
     REGULAR(shared_set_sleep_during_update) \
     REGULAR(smt_outdated_parts_exception_response) \
     REGULAR(object_storage_queue_fail_in_the_middle_of_file) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
+    ONCE(replicated_merge_tree_restore_attach_retry) \
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
     PAUSEABLE_ONCE(smt_wait_next_mutation) \
     PAUSEABLE_ONCE(delta_lake_metadata_iterate_pause) \
+    PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
@@ -220,6 +224,11 @@ struct FailPointChannel
 void FailPointInjection::pauseFailPoint(const String & fail_point_name)
 {
     fiu_do_on(fail_point_name.c_str(), FailPointInjection::notifyPauseAndWaitForResume(fail_point_name););
+}
+
+bool FailPointInjection::hasAnyFailPointBeenRegistered()
+{
+    return atomic_load_explicit(&has_any_failpoint_been_registered, memory_order_relaxed) != 0;
 }
 
 void FailPointInjection::enableFailPoint(const String & fail_point_name)
@@ -367,6 +376,11 @@ std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints
 
 void FailPointInjection::pauseFailPoint(const String &)
 {
+}
+
+bool FailPointInjection::hasAnyFailPointBeenRegistered()
+{
+    return false;
 }
 
 void FailPointInjection::enableFailPoint(const String &)
