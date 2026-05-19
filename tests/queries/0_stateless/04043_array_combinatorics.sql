@@ -19,6 +19,12 @@ SELECT arrayPartialPermutations([1, 2, 3], 0);
 SELECT arrayCombinations([1, 2], 3); -- {serverError BAD_ARGUMENTS}
 SELECT arrayCombinations([1, 2], -1); -- {serverError BAD_ARGUMENTS}
 SELECT arrayPartialPermutations([1, 2], 3); -- {serverError BAD_ARGUMENTS}
+SELECT arrayPartialPermutations([1, 2], -1); -- {serverError BAD_ARGUMENTS}
+
+-- multi-row inputs with varying array length, to exercise per-row offset transitions
+SELECT arrayCombinations(arr, 2) FROM (SELECT [1, 2, 3] AS arr UNION ALL SELECT [10, 20] UNION ALL SELECT [100, 200, 300, 400]) ORDER BY arr;
+SELECT arrayPermutations(arr) FROM (SELECT [1, 2] AS arr UNION ALL SELECT emptyArrayUInt8() UNION ALL SELECT [7, 8, 9]) ORDER BY arr;
+SELECT arrayPartialPermutations(arr, 2) FROM (SELECT [1, 2, 3] AS arr UNION ALL SELECT [4, 5] UNION ALL SELECT [9, 8, 7]) ORDER BY arr;
 
 -- size limit: should succeed (C(10,3)=120, total elements = 120*3 = 360 < 1M)
 SELECT length(arrayCombinations(range(toUInt8(10)), 3));
