@@ -1646,7 +1646,8 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         result,
         projection,
         ctx->new_data_part.get(),
-        ++projection_block_num);
+        ++projection_block_num,
+        ctx->context);
 
     tmp_part->finalize();
     tmp_part->part->getDataPartStorage().commitTransaction();

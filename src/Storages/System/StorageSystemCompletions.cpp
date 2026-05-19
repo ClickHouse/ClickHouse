@@ -241,10 +241,12 @@ static void fillDataWithDataTypeFamilies(MutableColumns & res_columns)
 
 static void fillDataWithMergeTreeSettings(MutableColumns & res_columns, const ContextPtr & context)
 {
+    /// Both getMergeTreeSettings() and getReplicatedMergeTreeSettings() return the same
+    /// MergeTreeSettings type with identical setting names — they only differ in values
+    /// (replicated adds overrides from the "replicated_merge_tree" config section).
+    /// For completions we only need the names, so dumping one set is sufficient.
     const auto & merge_tree_settings = context->getMergeTreeSettings();
-    const auto & replicated_merge_tree_settings = context->getReplicatedMergeTreeSettings();
     merge_tree_settings.dumpToSystemCompletionsColumns(res_columns);
-    replicated_merge_tree_settings.dumpToSystemCompletionsColumns(res_columns);
 }
 
 static void fillDataWithSettings(MutableColumns & res_columns, const ContextPtr & context)
