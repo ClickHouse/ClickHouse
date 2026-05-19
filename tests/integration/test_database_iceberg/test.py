@@ -438,21 +438,34 @@ def test_hide_sensitive_info(started_cluster):
 
     table = create_table(catalog, namespace, table_name)
 
-    create_clickhouse_iceberg_database(
-        started_cluster,
-        node,
-        CATALOG_NAME,
-        additional_settings={"catalog_credential": "SECRET_1"},
-    )
-    assert "SECRET_1" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
+    def check_secret_hidden(secret, additional_settings):
+        settings = {
+            "catalog_type": "rest",
+            "warehouse": "demo",
+            "storage_endpoint": "http://minio1:9001/warehouse-rest",
+        }
+        settings.update(additional_settings)
 
-    create_clickhouse_iceberg_database(
-        started_cluster,
-        node,
-        CATALOG_NAME,
-        additional_settings={"auth_header": "Authorization: SECRET_2"},
-    )
-    assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
+        node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+        try:
+            node.query(
+                f"""CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
+SETTINGS {",".join((k + "=" + repr(v) for k, v in settings.items()))}""",
+                settings={
+                    "allow_database_iceberg": 1,
+                    "write_full_path_in_iceberg_metadata": 1,
+                },
+            )
+        except QueryRuntimeException as e:
+            assert secret not in str(e), (
+                f"Secret {secret!r} leaked into CREATE DATABASE error message"
+            )
+            return
+
+        assert secret not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
+
+    check_secret_hidden("SECRET_1", {"catalog_credential": "id:SECRET_1"})
+    check_secret_hidden("SECRET_2", {"auth_header": "Authorization: SECRET_2"})
 
 
 def test_no_secrets_in_logs(started_cluster):
@@ -843,18 +856,20 @@ def test_not_specified_catalog_type(started_cluster):
         "storage_endpoint": "http://minio1:9001/warehouse-rest",
     }
 
-    node.query(
-        f"""
-    DROP DATABASE IF EXISTS {CATALOG_NAME};
-    CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
-    SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
-    """,
-        settings={
-            "allow_database_iceberg": 1,
-            "write_full_path_in_iceberg_metadata": 1,
-        },
-    )
-    assert "" == node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
+    with pytest.raises(QueryRuntimeException) as exc_info:
+        node.query(
+            f"""CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
+SETTINGS {",".join((k + "=" + repr(v) for k, v in settings.items()))}""",
+            settings={
+                "allow_database_iceberg": 1,
+                "write_full_path_in_iceberg_metadata": 1,
+            },
+        )
+    message = str(exc_info.value)
+    assert "Unspecified catalog type" in message, message
+    assert "Code: 36" in message, message
 
 
 def test_system_tables_with_nullptr_table(started_cluster):
