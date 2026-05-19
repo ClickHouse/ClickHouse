@@ -1,4 +1,9 @@
+#include "config.h"
+
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/SharedMergeTree/MergeMutateIntention.h>
+#endif
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>

@@ -6,8 +6,6 @@ title: 'WITH Clause'
 doc_type: 'reference'
 ---
 
-# WITH Clause
-
 ClickHouse supports Common Table Expressions ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), Common Scalar Expressions and Recursive Queries.
 
 ## Common Table Expressions {#common-table-expressions}

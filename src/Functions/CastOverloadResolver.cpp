@@ -2,6 +2,9 @@
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -58,13 +61,70 @@ FunctionBasePtr createFunctionBaseCast(
     CastType cast_type,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
 
+/// If `target` is a `DateTime` or `DateTime64` (possibly wrapped in `Nullable` and/or `LowCardinality`)
+/// without an explicit time zone, return a copy of it with the given time zone substituted.
+/// Otherwise return `target` unchanged.
+static DataTypePtr substituteTimeZoneInDateTimeType(const DataTypePtr & target, const String & timezone)
+{
+    if (timezone.empty())
+        return target;
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(target.get()))
+    {
+        auto nested = substituteTimeZoneInDateTimeType(nullable_type->getNestedType(), timezone);
+        if (nested.get() == nullable_type->getNestedType().get())
+            return target;
+        return std::make_shared<DataTypeNullable>(nested);
+    }
+
+    if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(target.get()))
+    {
+        auto nested = substituteTimeZoneInDateTimeType(lc_type->getDictionaryType(), timezone);
+        if (nested.get() == lc_type->getDictionaryType().get())
+            return target;
+        return std::make_shared<DataTypeLowCardinality>(nested);
+    }
+
+    if (const auto * dt_type = typeid_cast<const DataTypeDateTime *>(target.get()))
+    {
+        if (dt_type->hasExplicitTimeZone())
+            return target;
+        return std::make_shared<DataTypeDateTime>(timezone);
+    }
+
+    if (const auto * dt64_type = typeid_cast<const DataTypeDateTime64 *>(target.get()))
+    {
+        if (dt64_type->hasExplicitTimeZone())
+            return target;
+        return std::make_shared<DataTypeDateTime64>(dt64_type->getScale(), timezone);
+    }
+
+    return target;
+}
+
+/// Extract the explicit time zone of the source argument's `DateTime` or `DateTime64` type,
+/// looking through `Nullable` and `LowCardinality` wrappers. Returns an empty string if the
+/// source has no explicit time zone or is not a date-time type.
+static String getExplicitTimeZoneOfDateTimeArgument(const DataTypePtr & source)
+{
+    DataTypePtr unwrapped = removeNullable(recursiveRemoveLowCardinality(source));
+
+    if (const auto * dt = typeid_cast<const DataTypeDateTime *>(unwrapped.get()))
+        return dt->hasExplicitTimeZone() ? dt->getTimeZone().getTimeZone() : String();
+
+    if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(unwrapped.get()))
+        return dt64->hasExplicitTimeZone() ? dt64->getTimeZone().getTimeZone() : String();
+
+    return {};
+}
+
 /** CastInternal does not preserve nullability of the data type,
   * i.e. CastInternal(toNullable(toInt8(1)) as Int32) will be Int32(1).
   *
   * Cast preserves nullability according to setting `cast_keep_nullable`,
   * i.e. Cast(toNullable(toInt8(1)) as Int32) will be Nullable(Int32(1)) if `cast_keep_nullable` == 1.
   */
-class CastOverloadResolverImpl : public IFunctionOverloadResolver
+class CastOverloadResolverImpl : public IFunctionOverloadResolver, private WithContext
 {
 public:
     static const char * getNameImpl(CastType cast_type, bool internal)
@@ -88,7 +148,7 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     explicit CastOverloadResolverImpl(ContextPtr context_, CastType cast_type_, bool internal_, std::optional<CastDiagnostic> diagnostic_, bool keep_nullable_, const DataTypeValidationSettings & data_type_validation_settings_)
-        : context(context_)
+        : WithContext(context_)
         , cast_type(cast_type_)
         , internal(internal_)
         , diagnostic(std::move(diagnostic_))
@@ -97,14 +157,14 @@ public:
     {
     }
 
-    static FunctionOverloadResolverPtr create(ContextPtr context, CastType cast_type, bool internal, std::optional<CastDiagnostic> diagnostic)
+    static FunctionOverloadResolverPtr create(ContextPtr context_, CastType cast_type, bool internal, std::optional<CastDiagnostic> diagnostic)
     {
         if (internal)
-            return std::make_unique<CastOverloadResolverImpl>(context, cast_type, internal, diagnostic, false /*keep_nullable*/, DataTypeValidationSettings{});
+            return std::make_unique<CastOverloadResolverImpl>(context_, cast_type, internal, diagnostic, false /*keep_nullable*/, DataTypeValidationSettings{});
 
-        const auto & settings_ref = context->getSettingsRef();
+        const auto & settings_ref = context_->getSettingsRef();
         return std::make_unique<CastOverloadResolverImpl>(
-            context, cast_type, internal, diagnostic, settings_ref[Setting::cast_keep_nullable], DataTypeValidationSettings(settings_ref));
+            context_, cast_type, internal, diagnostic, settings_ref[Setting::cast_keep_nullable], DataTypeValidationSettings(settings_ref));
     }
 
     static FunctionBasePtr createInternalCast(
@@ -112,7 +172,7 @@ public:
         DataTypePtr to,
         CastType cast_type,
         std::optional<CastDiagnostic> diagnostic,
-        ContextPtr context)
+        ContextPtr context_)
     {
         if (cast_type == CastType::accurateOrNull && !canContainNull(*to))
         {
@@ -125,14 +185,14 @@ public:
         arguments.emplace_back().type = std::make_unique<DataTypeString>();
 
         return createFunctionBaseCast(
-            context, getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type, FormatSettings::DateTimeOverflowBehavior::Saturate);
+            context_, getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type, FormatSettings::DateTimeOverflowBehavior::Saturate);
     }
 
 protected:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         return createFunctionBaseCast(
-            context,
+            getContext(),
             getNameImpl(cast_type, internal),
             arguments,
             return_type,
@@ -155,6 +215,17 @@ protected:
 
         DataTypePtr type = DataTypeFactory::instance().get(type_col->getValue<String>());
         validateDataType(type, data_type_validation_settings);
+
+        /// CAST to `DateTime` or `DateTime64` without an explicit time zone should preserve
+        /// the time zone of the source argument when it is a `DateTime`/`DateTime64` with
+        /// an explicit time zone — matching the behavior of the `toDateTime`/`toDateTime64` functions.
+        /// Internal `_CAST` is excluded because it is used to enforce a target column's exact type.
+        if (!internal && !arguments.empty())
+        {
+            String source_timezone = getExplicitTimeZoneOfDateTimeArgument(arguments.front().type);
+            if (!source_timezone.empty())
+                type = substituteTimeZoneInDateTimeType(type, source_timezone);
+        }
 
         if (cast_type == CastType::accurateOrNull)
         {
@@ -184,7 +255,6 @@ protected:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
 private:
-    ContextPtr context;
     CastType cast_type;
     bool internal;
     std::optional<CastDiagnostic> diagnostic;
