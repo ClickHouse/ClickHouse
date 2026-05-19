@@ -181,4 +181,23 @@ InputOrderInfoPtr ReadFromObjectStorageStep::getDataOrder() const
     return convertSortingKeyToInputOrder(getStorageMetadata()->getSortingKey());
 }
 
+void ReadFromObjectStorageStep::setDistributedRead(size_t bucket_count)
+{
+    distributed_read_bucket_count = bucket_count;
+}
+
+Strings ReadFromObjectStorageStep::getShardsForDistributedRead() const
+{
+    Strings default_shard_list = {"0"};
+
+    if (distributed_read_bucket_count == 0)
+        return default_shard_list;
+
+    Strings list_of_shards;
+    for (size_t i = 0; i < distributed_read_bucket_count; ++i)
+        list_of_shards.push_back(std::to_string(i));
+
+    return list_of_shards;
+}
+
 }

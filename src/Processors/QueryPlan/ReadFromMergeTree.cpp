@@ -4527,4 +4527,30 @@ bool ReadFromMergeTree::canRemoveColumnsFromOutput() const
 
     return canRemoveUnusedColumns() && output_header->columns() > 0;
 }
+
+void ReadFromMergeTree::setDistributedRead(size_t bucket_count)
+{
+    distributed_read_bucket_count = bucket_count;
+}
+
+Strings ReadFromMergeTree::getShardsForDistributedRead() const
+{
+    Strings default_shard_list = {"0"};
+
+    if (distributed_read_bucket_count == 0)
+        return default_shard_list;
+
+    auto analysis_result = selectRangesToRead();
+    if (!analysis_result)
+        return default_shard_list;
+
+    /// TODO: take into account selected ranges?
+
+    Strings list_of_shards;
+    for (size_t i = 0; i < distributed_read_bucket_count; ++i)
+        list_of_shards.push_back(std::to_string(i));
+
+    return list_of_shards;
+}
+
 }
