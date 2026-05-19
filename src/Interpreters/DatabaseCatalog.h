@@ -231,6 +231,8 @@ public:
 
     void waitTableFinallyDropped(const UUID & uuid, std::function<void()> throw_if_cancelled = {});
 
+    bool isShuttingDown() const { return is_shutting_down.load(); }
+
     /// Referential dependencies between tables: table "A" depends on table "B"
     /// if "B" is referenced in the definition of "A".
     /// Loading dependencies were used to check whether a table can be removed before we had those referential dependencies.
@@ -309,8 +311,8 @@ private:
 
     time_t getMinDropTime() TSA_REQUIRES(tables_marked_dropped_mutex);
     std::tuple<size_t, size_t> getDroppedTablesCountAndInuseCount();
-    std::vector<TablesMarkedAsDropped::iterator> getTablesToDrop();
-    void dropTablesParallel(std::vector<TablesMarkedAsDropped::iterator> tables);
+    TablesMarkedAsDropped getTablesToDrop();
+    void dropTablesParallel(TablesMarkedAsDropped tables);
     void rescheduleDropTableTask();
 
     void cleanupStoreDirectoryTask();

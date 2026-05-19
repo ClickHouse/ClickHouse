@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <vector>
 #include <future>
+#include <Common/callOnce.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SetKeys.h>
@@ -106,10 +107,13 @@ public:
     ASTPtr getSourceAST() const override { return ast; }
     Columns getKeyColumns();
 private:
+    void fillSetElementsOnce();
+
     Hash hash;
     ASTPtr ast;
     SetPtr set;
     SetKeyColumns set_key_columns;
+    OnceFlag fill_set_elements_once;
 };
 
 using FutureSetFromTuplePtr = std::shared_ptr<FutureSetFromTuple>;
