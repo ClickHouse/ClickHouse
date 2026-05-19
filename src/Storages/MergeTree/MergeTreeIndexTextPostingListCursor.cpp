@@ -8,6 +8,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <IO/ReadHelpers.h>
 #include <Common/TargetSpecific.h>
+#include <absl/container/flat_hash_set.h>
 #include <algorithm>
 #include <cstring>
 #include <numeric>
@@ -1076,12 +1077,17 @@ void lazyUnionPostingLists(
     auto & data = assert_cast<DB::ColumnUInt8 &>(column).getData();
     UInt8 * out = data.data() + column_offset;
 
+    /// Duplicate search tokens (e.g. `hasAnyTokens(..., ['foo', 'foo'])`) map to the same cursor in `postings`.
     std::vector<PostingListCursorPtr> cursors;
     cursors.reserve(postings.size());
+
+    absl::flat_hash_set<const PostingListCursor *> seen_cursors;
+    seen_cursors.reserve(postings.size());
+
     for (const auto & token : search_tokens)
     {
         auto it = postings.find(token);
-        if (it != postings.end())
+        if (it != postings.end() && seen_cursors.insert(it->second.get()).second)
             cursors.emplace_back(it->second);
     }
 
@@ -1108,12 +1114,17 @@ void lazyIntersectPostingLists(
     auto & data = assert_cast<DB::ColumnUInt8 &>(column).getData();
     UInt8 * __restrict out = data.data() + column_offset;
 
+    /// Duplicate search tokens (e.g. `hasAllTokens(..., ['foo', 'foo'])`) map to the same cursor in `postings`.
     std::vector<PostingListCursorPtr> cursors;
     cursors.reserve(postings.size());
+
+    absl::flat_hash_set<const PostingListCursor *> seen_cursors;
+    seen_cursors.reserve(postings.size());
+
     for (const auto & token : search_tokens)
     {
         auto it = postings.find(token);
-        if (it != postings.end())
+        if (it != postings.end() && seen_cursors.insert(it->second.get()).second)
             cursors.emplace_back(it->second);
     }
 
