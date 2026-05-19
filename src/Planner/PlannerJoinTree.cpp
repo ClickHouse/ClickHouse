@@ -642,15 +642,6 @@ void parseAdditionalFilterAstIfNeeded(const StoragePtr & storage,
 
     auto const & storage_id = storage->getStorageID();
 
-    /// On parallel-replica followers, the initiator forwards `additional_table_filters` verbatim
-    /// (keys may be unqualified, resolved against the initiator's session current database) but the
-    /// `SELECT` is rewritten with fully qualified table names, and the follower's `getCurrentDatabase`
-    /// is the initiator's user-default database, not necessarily the storage's database. So drop the
-    /// `getCurrentDatabase() == getDatabaseName()` requirement for the unqualified match on followers
-    /// — the rewritten query pins this `table_expression` to exactly one storage.
-    /// TODO: remove once parallel replicas use a serialized distributed query plan.
-    const bool on_pr_follower = query_context->canUseParallelReplicasOnFollower();
-
     for (const auto & additional_filter : additional_filters)
     {
         const auto & tuple = additional_filter.safeGet<Tuple>();
@@ -658,8 +649,7 @@ void parseAdditionalFilterAstIfNeeded(const StoragePtr & storage,
         auto const & filter = tuple.at(1).safeGet<String>();
 
         if (table == table_expression_alias ||
-            (table == storage_id.getTableName()
-                && (on_pr_follower || query_context->getCurrentDatabase() == storage_id.getDatabaseName())) ||
+            (table == storage_id.getTableName() && query_context->getCurrentDatabase() == storage_id.getDatabaseName()) ||
             (table == storage_id.getFullNameNotQuoted()))
         {
             ParserExpression parser;

@@ -99,6 +99,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -2046,6 +2047,23 @@ void Planner::buildPlanForQueryNode()
             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
             LOG_DEBUG(log, "Disabling parallel replicas to execute a query with IN with subquery");
         }
+    }
+
+    /// `additional_table_filters` keys are resolved against the initiator's session current database,
+    /// but on followers the rewritten `SELECT` uses fully qualified names and the follower's current
+    /// database is the initiator's user-default DB, so the filter match is unreliable. Rather than
+    /// patch the match (which differs case by case), disable the combination on the analyzer path.
+    /// TODO: remove once parallel replicas use a serialized distributed query plan.
+    if (query_context->canUseParallelReplicasOnInitiator()
+        && !settings[Setting::additional_table_filters].value.empty())
+    {
+        if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "additional_table_filters is not supported with parallel replicas");
+
+        auto & mutable_context = planner_context->getMutableQueryContext();
+        mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        LOG_DEBUG(log, "Disabling parallel replicas to execute a query with additional_table_filters");
     }
 
     collectTableExpressionData(query_tree, planner_context);
