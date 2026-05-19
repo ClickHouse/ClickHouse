@@ -9,6 +9,7 @@
 #include <atomic>
 #include <filesystem>
 #include <memory>
+#include <optional>
 
 namespace DB
 {
@@ -125,12 +126,17 @@ private:
     /// dynamic hard-limit formula. Prefers the cgroup view (`memory.max` minus the cgroup's
     /// `memory.current`-equivalent via `cgroups_reader`) when running in a cgroup with a
     /// finite limit; otherwise falls back to `/proc/meminfo`'s `MemAvailable`.
-    /// Returns 0 if no source is available.
-    uint64_t readAvailableForDynamicLimit();
+    ///
+    /// Returns `std::nullopt` if no source could be read at all. A successful read returning
+    /// `0` is a legitimate "fully under pressure" signal (cgroup at/over its limit, or
+    /// `MemAvailable: 0`) and is distinct from a read failure: the dynamic limit must still
+    /// shrink in that case rather than keep the previous (larger) value.
+    std::optional<uint64_t> readAvailableForDynamicLimit();
 
-    /// Reads `MemAvailable` from /proc/meminfo. Returns 0 if the file can't be read.
+    /// Reads `MemAvailable` from /proc/meminfo. Returns `std::nullopt` if the file can't be
+    /// read or the field is missing; returns `0` if `MemAvailable` is genuinely `0`.
     /// The lazily-opened buffer is owned by `updateResidentMemoryThread`, which is the only caller.
-    uint64_t readSystemAvailableMemory();
+    std::optional<uint64_t> readSystemAvailableMemory();
     std::unique_ptr<ReadBufferFromFile> meminfo_buf;
     [[maybe_unused]] bool meminfo_warnings_printed = false;
 

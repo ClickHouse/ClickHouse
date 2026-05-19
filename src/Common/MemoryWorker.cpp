@@ -489,7 +489,7 @@ void MemoryWorker::setDynamicHardLimitSettings(Int64 ceiling, double ratio)
     total_memory_tracker.setHardLimit(ceiling);
 }
 
-uint64_t MemoryWorker::readAvailableForDynamicLimit()
+std::optional<uint64_t> MemoryWorker::readAvailableForDynamicLimit()
 {
 #if defined(OS_LINUX)
     /// When running in a cgroup with a finite limit, the host-wide `/proc/meminfo` is
@@ -543,6 +543,11 @@ uint64_t MemoryWorker::readAvailableForDynamicLimit()
         }
         if (any_finite)
         {
+            /// If the cgroup is at or over its effective limit, return `0` (a real
+            /// pressure signal), not `nullopt`. The caller must still apply its
+            /// shrink-to-`used + safety_margin` clamp so the dynamic limit shrinks
+            /// at the highest-pressure point instead of staying pinned to the prior
+            /// (larger) value.
             uint64_t used = cgroups_reader->readMemoryUsage();
             return (effective_limit > used) ? (effective_limit - used) : 0;
         }
@@ -551,7 +556,7 @@ uint64_t MemoryWorker::readAvailableForDynamicLimit()
     return readSystemAvailableMemory();
 }
 
-uint64_t MemoryWorker::readSystemAvailableMemory()
+std::optional<uint64_t> MemoryWorker::readSystemAvailableMemory()
 {
 #if defined(OS_LINUX)
     static constexpr std::string_view path = "/proc/meminfo";
@@ -579,7 +584,7 @@ uint64_t MemoryWorker::readSystemAvailableMemory()
 
         if (!std::exchange(meminfo_warnings_printed, true))
             LOG_ERROR(log, "Cannot find 'MemAvailable' in '{}'", path);
-        return 0;
+        return std::nullopt;
     }
     catch (...)
     {
@@ -587,10 +592,10 @@ uint64_t MemoryWorker::readSystemAvailableMemory()
             tryLogCurrentException(log, fmt::format("Cannot read '{}'", path));
         /// Reopen on next attempt in case the descriptor became unusable.
         meminfo_buf.reset();
-        return 0;
+        return std::nullopt;
     }
 #else
-    return 0;
+    return std::nullopt;
 #endif
 }
 
@@ -723,9 +728,14 @@ void MemoryWorker::updateResidentMemoryThread()
                 Int64 ceiling = external_hard_limit.load(std::memory_order_relaxed);
                 if (ceiling >= 0)
                 {
-                    uint64_t available = readAvailableForDynamicLimit();
-                    if (available)
+                    /// Distinguish "couldn't read the metric" (`nullopt`, skip this tick) from
+                    /// "metric is genuinely zero" (`0`, real high-pressure signal). Skipping
+                    /// on `0` would keep the previous (larger) hard limit in place exactly
+                    /// when ClickHouse should be shrinking its budget the most.
+                    std::optional<uint64_t> available_opt = readAvailableForDynamicLimit();
+                    if (available_opt)
                     {
+                        uint64_t available = *available_opt;
                         /// Use `resident` (jemalloc RSS or cgroup `memory.current`) as the baseline
                         /// of "memory we already own", not the MemoryTracker counter. The tracker
                         /// only counts allocations it sees through `Allocator`; jemalloc-internal
