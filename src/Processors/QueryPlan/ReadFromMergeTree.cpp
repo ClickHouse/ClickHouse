@@ -519,7 +519,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         context);
 
     /// Default pool ignores the announcement response. The latter is relevant only to InOrder
-    /// reading where we split the table into multiple streams for intra-replica parallelism.
+    /// reading where we split the table into multiple streams.
     std::ignore = extension.sendInitialRequest(
         CoordinationMode::Default,
         pool->buildAnnouncementDescriptions(),
@@ -731,7 +731,6 @@ Pipe ReadFromMergeTree::readInOrder(
             block_size,
             context);
 
-        /// Send the initial announcement at the caller's layer (rather than inside the pool ctor).
         /// The response tells us exactly which parts this stream owns: phantom parts are skipped
         /// during source construction below, so the pool never sees `getTask` for them.
         auto response = extension.sendInitialRequest(
@@ -1517,10 +1516,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     }
     else if (is_local_plan_follower)
     {
-        /// Non-initiator with local_plan=1: create `num_streams` pools, each with ALL parts.
-        /// We don't run the splitting loop here — the follower can't compute the authoritative
-        /// num_splits anyway (its part set differs from the initiator's), so use num_streams
-        /// directly as the split count.
+        /// Non-initiator with local_plan=1: create `num_streams` pools, each over ALL local parts.
+        /// The follower can't compute the initiator's authoritative split assignment, so it
+        /// optimistically launches `num_streams` streams; the per-stream announcement response
+        /// tells each pool which parts actually belong to its split (the rest are filtered out
+        /// during source construction in `readInOrder`). Streams that own no parts on this
+        /// follower produce empty pipes and are dropped by the `erase_if` below.
         const size_t num_splits = num_streams;
         const PoolSettings per_split_pool_settings = make_per_split_pool_settings(num_splits);
         for (size_t i = 0; i < num_splits; ++i)
@@ -1537,7 +1538,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             std::move(all_parts_for_replicas), index_build_context, column_names, pool_settings, read_type,
             input_order_info->limit));
     }
-    else
+    else /* local reading case */
     {
         const PoolSettings per_split_pool_settings = make_per_split_pool_settings(split_parts_and_ranges.size());
         for (auto & split_parts_and_range : split_parts_and_ranges)
@@ -1547,10 +1548,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         }
     }
 
-    /// Drop pipes that ended up with no source processors. This happens when every part in a
-    /// split was pruned as a phantom (the coordinator's stream owns none of this replica's parts,
-    /// e.g. the follower over-announced more splits than the initiator created). An empty pipe
-    /// has no output port and would crash later code that reads a header from it.
     std::erase_if(pipes, [](const Pipe & p) { return p.empty(); });
 
     Block pipe_header;
@@ -2992,11 +2989,8 @@ void ReadFromMergeTree::updateSortDescription()
 
 bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
 {
-    /// `createLocalPlanForParallelReplicas` only runs with the analyzer, so the split-stream
-    /// topology only exists when the analyzer is enabled. Without it, fall back to the old
-    /// non-split path on both sides — otherwise the follower's local-plan branch creates split
-    /// pools while the initiator's coordinator never registers any streams, leaving followers
-    /// to read all parts and produce duplicates.
+    /// `createLocalPlanForParallelReplicas` only runs with the analyzer,
+    /// so the split-stream topology only exists when the analyzer is enabled.
     return is_parallel_reading_from_replicas && context->getSettingsRef()[Setting::parallel_replicas_local_plan]
         && context->getSettingsRef()[Setting::allow_experimental_analyzer]
         && context->canUseParallelReplicasOnInitiator();

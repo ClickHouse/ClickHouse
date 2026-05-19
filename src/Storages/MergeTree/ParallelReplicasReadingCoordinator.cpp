@@ -1204,11 +1204,7 @@ ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAl
     /// non-snapshot replicas for streams that don't exist yet are dropped (we return
     /// an empty parts list so the announcing replica's pool can finish immediately).
     /// If the snapshot replica wasn't pinned, any replica can be the first announcer for
-    /// a stream — the per-stream coordinator is created on first arrival. We must not
-    /// auto-pin the global snapshot here: with multiple streams (e.g. UNION of MergeTree
-    /// tables) different replicas may announce first for different streams, and pinning
-    /// to whichever announces first globally would silently drop subsequent first-time
-    /// announcements for other streams from other replicas, hanging their read requests.
+    /// a stream — the per-stream coordinator is created on first arrival.
     if (snapshot_replica_num)
     {
         const bool stream_exists = stream_to_coordinator.contains(announcement.stream_id);
@@ -1235,10 +1231,7 @@ ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAl
     /// Capture the authoritative parts list AFTER the coordinator has processed the first
     /// announcement: InOrderCoordinator drops parts that are covered/covering existing ones
     /// during normalization, so the coordinator's working set may be smaller than the raw
-    /// announcement payload. Echoing back the pre-normalized payload would leave followers
-    /// holding consumers for parts that the coordinator never registered, and those consumers
-    /// would issue read requests that handleRequest silently skips (continue) — wasted work
-    /// at best, and a phantom-pruning bug at worst.
+    /// announcement payload.
     if (first_announcement_for_stream)
         stream_to_registered_parts[response.stream_id] = coordinator->getRegisteredParts();
 
@@ -1277,11 +1270,7 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         if (!coordinator)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Got read request from replica {} for unknown stream {}. "
-                "The announcement response carries the authoritative parts list for each stream, "
-                "and over-announced streams report an empty set so the follower's pool finishes immediately "
-                "without ever issuing a read request. Hitting this branch means a follower is on a protocol older "
-                "than DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE, or the follower's pool ignored the response.",
+                "Got read request from replica {} for unknown stream {}.",
                 request.replica_num,
                 request.stream_id);
 
