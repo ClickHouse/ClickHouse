@@ -177,6 +177,20 @@ static std::chrono::steady_clock::duration parseSessionTimeout(
     return std::chrono::seconds(session_timeout);
 }
 
+/// Returns true if `url` starts with `prefix` and either matches it exactly or is followed by a
+/// segment boundary (`/`, `?`, or `#`). Plain `starts_with` would also accept `/api/v11/...` under
+/// prefix `/api/v1`, which leaks unrelated endpoints into the dynamic-query factory and produces
+/// nonsensical path parsing after the prefix is stripped.
+static bool hasUrlPrefixWithSegmentBoundary(std::string_view url, std::string_view prefix)
+{
+    if (!url.starts_with(prefix))
+        return false;
+    if (url.size() == prefix.size())
+        return true;
+    const char next = url[prefix.size()];
+    return next == '/' || next == '?' || next == '#';
+}
+
 HTTPHandlerConnectionConfig::HTTPHandlerConnectionConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
     if (config.has(config_prefix + ".handler.password"))
@@ -406,8 +420,9 @@ void HTTPHandler::processQuery(
         }
 
         /// If this handler is registered under a URL prefix, strip it so only the trailing portion
-        /// is interpreted as `database/table.format` (or filters / hive partitions).
-        if (!url_prefix.empty() && path_only.starts_with(url_prefix))
+        /// is interpreted as `database/table.format` (or filters / hive partitions). Require a
+        /// segment boundary so that prefix `/api/v1` does not also match `/api/v11/...`.
+        if (!url_prefix.empty() && hasUrlPrefixWithSegmentBoundary(path_only, url_prefix))
         {
             path_only = path_only.substr(url_prefix.size());
             if (path_only.empty())
@@ -1409,7 +1424,8 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);
     if (!url_prefix.empty())
-        factory->attachNonStrictPath(url_prefix);
+        factory->addFilter([url_prefix](const auto & request)
+        { return hasUrlPrefixWithSegmentBoundary(request.getURI(), url_prefix); });
     return factory;
 }
 
