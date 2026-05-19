@@ -543,7 +543,7 @@ private:
             /// For hasPhrase the phrase must stay as a string — tokenization is done inside hasPhrase itself.
             if (function_name != "hasPhrase" && needles_field.getType() == Field::Types::String)
             {
-                std::vector<String> needles_array;
+                VectorWithMemoryTracking<String> needles_array;
                 const auto & needles_string = needles_field.safeGet<String>();
                 tokenizer->stringToTokens(needles_string.data(), needles_string.size(), needles_array);
                 needles_array = tokenizer->compactTokens(needles_array);

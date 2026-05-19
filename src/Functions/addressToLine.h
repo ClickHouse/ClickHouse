@@ -69,7 +69,7 @@ protected:
     virtual DataTypePtr getDataType() const = 0;
     virtual ColumnPtr getResultColumn(const typename ColumnVector<UInt64>::Container & data, size_t input_rows_count) const = 0;
     virtual void
-    setResult(ResultT & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> & frames) const = 0;
+    setResult(ResultT & result, const Dwarf::LocationInfo & location, const VectorWithMemoryTracking<Dwarf::SymbolizedFrame> & frames) const = 0;
 
     struct Cache
     {
@@ -102,7 +102,7 @@ protected:
 #endif
 
             Dwarf::LocationInfo location;
-            std::vector<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
+            VectorWithMemoryTracking<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
             ResultT result;
             if (dwarf_it->second.findAddress(dwarf_addr, location, locationInfoMode, frames))
             {

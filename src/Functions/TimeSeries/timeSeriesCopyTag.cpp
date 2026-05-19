@@ -64,7 +64,7 @@ public:
 
         auto tag_to_copy = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 2);
 
-        std::vector<Group> new_groups;
+        VectorWithMemoryTracking<Group> new_groups;
 
         if (dest_groups.size() == 1)
             new_groups = tags_collector->copyTag(dest_groups[0], src_groups, tag_to_copy);
