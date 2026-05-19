@@ -38,9 +38,10 @@ SELECT 'A%B' ILIKE 'a|%b' ESCAPE '|';
 -- NOT ILIKE with ESCAPE
 SELECT '10%' NOT ILIKE '10|%' ESCAPE '|';
 
--- Backslash is literal when custom escape is used
-SELECT 'a\b' LIKE 'a\b' ESCAPE '|';
-SELECT 'a\b' LIKE 'a|%b' ESCAPE '|';
+-- Backslash is literal when custom escape is used.
+-- Use `'a\\b'` (actual backslash payload), not `'a\b'` which is the backspace character.
+SELECT 'a\\b' LIKE 'a\\b' ESCAPE '|';
+SELECT 'a\\b' LIKE 'a|%b' ESCAPE '|';
 
 -- Pattern with mixed escaped and unescaped wildcards
 SELECT 'test%value' LIKE 'test|%%' ESCAPE '|';
