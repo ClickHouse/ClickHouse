@@ -11086,21 +11086,19 @@ MergeTreeData::ColumnsDescriptionCache MergeTreeData::getColumnsDescriptionForCo
 void MergeTreeData::decrefColumnsDescriptionForColumns(const NamesAndTypesList & columns) const
 {
     std::lock_guard lock(columns_descriptions_cache_mutex);
-    if (auto it = columns_descriptions_cache.find(columns); it != columns_descriptions_cache.end())
+    auto it = columns_descriptions_cache.find(columns);
+    if (it == columns_descriptions_cache.end())
+        return;
+
+    /// `original` always contributes one ref from the cache entry. `with_collected_nested`
+    /// is either aliased to `original` (no `Nested` columns or `share_nested_offsets=0`)
+    /// or a distinct object. In the aliased case the cache contributes 2 refs to the
+    /// `original` shared_ptr; otherwise 1. Evict only when no part still holds a ref.
+    const bool aliased = it->second.original == it->second.with_collected_nested;
+    if (it->second.original.use_count() == (aliased ? 2 : 1))
     {
-        /// 1 in the container + 1 in the iterator
-        ///
-        /// Note, we cannot check original.use_count() == with_collected_nested.use_count(),
-        /// since in IMergeTreeDataPart::setColumns() there is a tiny window when it is not correct.
-        ///
-        /// But, if original.use_count() == 2 then it is **always** safe to delete,
-        /// since this means that there are no other references to the shared_ptr
-        /// except in the columns_descriptions_cache and local copy here in iterator.
-        if (it->second.original.use_count() == 2)
-        {
-            columns_descriptions_cache.erase(it);
-            columns_descriptions_metric_handle.sub(1);
-        }
+        columns_descriptions_cache.erase(it);
+        columns_descriptions_metric_handle.sub(1);
     }
 }
 
