@@ -306,7 +306,8 @@ void DiskObjectStorage::copyFile( /// NOLINT
         }
         catch (...)
         {
-            // Roll back any destination blobs that were copied before the exception was thrown.
+            // Roll back any destination blobs that were copied in case copyFile()
+            // threw an exception and commit() was not reached.
             transaction->undo();
             throw;
         }

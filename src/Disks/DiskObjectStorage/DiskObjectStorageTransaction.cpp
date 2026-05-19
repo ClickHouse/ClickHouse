@@ -22,8 +22,8 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
-#include <Common/ThreadPoolTaskTracker.h>
 #include <Common/setThreadName.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <base/defines.h>
 
 #include <cstddef>
@@ -467,8 +467,12 @@ void DiskObjectStorageTransaction::copyFileImpl(
     const ReadSettings & read_settings,
     const WriteSettings & write_settings)
 {
-    const auto enriched_read_settings = updateIOSchedulingSettings(read_settings, read_resource_name, write_resource_name);
-    const auto enriched_write_settings = updateIOSchedulingSettings(write_settings, read_resource_name, write_resource_name);
+    /// Share the enriched settings via shared_ptr so each task lambda captures a cheap refcount bump
+    /// rather than a full copy of ReadSettings / WriteSettings.
+    const auto enriched_read_settings = std::make_shared<const ReadSettings>(
+        updateIOSchedulingSettings(read_settings, read_resource_name, write_resource_name));
+    const auto enriched_write_settings = std::make_shared<const WriteSettings>(
+        updateIOSchedulingSettings(write_settings, read_resource_name, write_resource_name));
 
     const auto blobs_to_copy = src_metadata_storage->getStorageObjects(from_file_path);
     const auto blobs_to_create = blobs_to_copy
@@ -487,35 +491,24 @@ void DiskObjectStorageTransaction::copyFileImpl(
     /// Dispatch `copyObjectToAnotherObjectStorage` calls in parallel onto the disk-level pool.
     /// We can't reuse `IObjectStorage::getThreadPoolWriter()` here because the copy implementation
     /// itself submits onto that pool via `writeObject`, which would risk pool self-deadlock.
-    auto scheduler = threadPoolCallbackRunnerUnsafe<void>(*copy_object_pool, ThreadName::DISK_OBJECT_STORAGE_COPY);
-    /// Bound in-flight tasks so memory stays O(threads) instead of O(locations * blobs),
-    /// and so a worker exception is observed (via future::get) before we enqueue the rest.
-    const size_t max_tasks_inflight = 2 * copy_object_pool->getMaxThreads();
-    TaskTracker task_tracker(std::move(scheduler), max_tasks_inflight, /*limited_log=*/nullptr);
+    /// `ThreadPoolCallbackRunnerLocal` drains tasks in its destructor, so on exception unwinding
+    /// the captured state stays alive until in-flight workers complete.
+    ThreadPoolCallbackRunnerLocal<void> runner(*copy_object_pool, ThreadName::DISK_OBJECT_STORAGE_COPY);
 
-    try
+    for (const auto & location : locations_for_writing)
     {
-        for (const auto & location : locations_for_writing)
+        for (const auto [src_blob, dst_blob] : std::views::zip(blobs_to_copy, blobs_to_create))
         {
-            for (const auto [src_blob, dst_blob] : std::views::zip(blobs_to_copy, blobs_to_create))
-            {
-                task_tracker.add([this, &src_object_storages, src_blob, dst_blob, location, src_local_location, enriched_read_settings, enriched_write_settings]
+            runner.enqueueAndKeepTrack(
+                [this, src_object_storages, src_blob, dst_blob, location, src_local_location, enriched_read_settings, enriched_write_settings]
                 {
                     src_object_storages->takePointingTo(src_local_location)->copyObjectToAnotherObjectStorage(
-                        src_blob, dst_blob, enriched_read_settings, enriched_write_settings, *object_storages->takePointingTo(location));
+                        src_blob, dst_blob, *enriched_read_settings, *enriched_write_settings, *object_storages->takePointingTo(location));
                 });
-            }
         }
+    }
 
-        task_tracker.waitAll();
-    }
-    catch (...)
-    {
-        /// Drain remaining in-flight tasks before unwinding, so workers stop touching
-        /// captured state (this, settings, ...) before TaskTracker is destroyed.
-        task_tracker.safeWaitAll();
-        throw;
-    }
+    runner.waitForAllToFinishAndRethrowFirstError();
 
     operations_to_execute.push_back([blobs_to_create, missing_locations, to_file_path](MetadataTransactionPtr tx)
     {
