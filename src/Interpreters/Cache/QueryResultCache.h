@@ -343,7 +343,10 @@ class QueryResultCacheWriter
 {
 public:
     QueryResultCacheWriter(const QueryResultCacheWriter & other) = delete;
-    QueryResultCacheWriter(QueryResultCacheWriter && other) noexcept;
+    /// Not `noexcept`: the constructor copies `key` (a `const QueryResultCache::Key` member),
+    /// whose `String` and `std::vector` fields may throw `std::bad_alloc`.
+    /// NOLINTNEXTLINE(hicpp-noexcept-move,performance-noexcept-move-constructor)
+    QueryResultCacheWriter(QueryResultCacheWriter && other);
     QueryResultCacheWriter & operator=(const QueryResultCacheWriter & other) = delete;
     QueryResultCacheWriter & operator=(QueryResultCacheWriter && other) = delete;
     ~QueryResultCacheWriter();

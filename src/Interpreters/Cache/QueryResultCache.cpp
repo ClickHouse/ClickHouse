@@ -727,7 +727,8 @@ QueryResultCacheWriter::QueryResultCacheWriter(
     }
 }
 
-QueryResultCacheWriter::QueryResultCacheWriter(QueryResultCacheWriter && other) noexcept
+// NOLINTNEXTLINE(hicpp-noexcept-move,performance-noexcept-move-constructor)
+QueryResultCacheWriter::QueryResultCacheWriter(QueryResultCacheWriter && other)
     : storage(other.storage)
     , key(other.key)
     , max_entry_size_in_bytes(other.max_entry_size_in_bytes)
