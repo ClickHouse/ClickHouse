@@ -8777,7 +8777,7 @@ void StorageReplicatedMergeTree::clearLockedBlockNumbersInPartition(
                 LOG_WARNING(log, new_version_warning, paths_to_get[i], result.data);
 
             Stopwatch time_waiting;
-            const Int64 timeout = getContext()->getSettingsRef()[Setting::lock_acquire_timeout].value.totalSeconds();
+            const Int64 timeout = getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalSeconds();
             const auto & stop_waiting
                 = [this, &time_waiting, &timeout]() { return partial_shutdown_called || (timeout < Int64(time_waiting.elapsedSeconds())); };
 
@@ -11622,14 +11622,15 @@ void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & rest
     restorePartsFromBackup(restorer, data_path_in_backup, partitions);
 }
 
-void StorageReplicatedMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
+void StorageReplicatedMergeTree::attachRestoredParts(
+    MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::attachRestoredParts");
     auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
 
     auto sink = std::make_shared<ReplicatedMergeTreeSink>(
         /* async_insert */ false, *this, metadata_snapshot, /* quorum */ 0, /* quorum_timeout_ms */ 0, /* max_parts_per_block */ 0, /* quorum_parallel */ false,
-        /* majority_quorum */ false, getContext(), /* is_attach */ true, /* allow_attach_while_readonly */ false);
+        /* majority_quorum */ false, getContext(), /* is_attach */ true, /* allow_attach_while_readonly */ false, zookeeper_retries_info);
 
     for (auto part : parts)
         sink->writeExistingPart(part);
