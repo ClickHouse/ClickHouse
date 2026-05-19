@@ -1124,8 +1124,7 @@ void Connection::sendMergeTreeReadTaskResponse(const ParallelReadResponse & resp
 
 void Connection::sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response)
 {
-    /// Skip if the remote replica doesn't speak the new protocol — it doesn't expect this packet
-    /// and would treat it as unknown. Phantom-consumer pruning won't apply on older followers.
+    /// Skip if the remote replica doesn't speak the new protocol.
     if (server_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
         return;
 

@@ -144,6 +144,11 @@ struct InitialAllRangesAnnouncement
 /// payloads. An empty `parts` list means the stream does not exist on the coordinator
 /// (e.g. follower over-announced more splits than the initiator created); the follower's pool
 /// for that stream should immediately mark itself finished.
+///
+/// The callback wraps the response in `std::optional`: `std::nullopt` means the initiator is on
+/// an older protocol version and did not send a response — pools should fall back to the
+/// pre-existing behavior (no authoritative-set pruning). An engaged optional means the response
+/// was received, even if `parts` is empty.
 struct InitialAllRangesAnnouncementResponse
 {
     RangesInDataPartsDescription parts;
@@ -155,7 +160,7 @@ struct InitialAllRangesAnnouncementResponse
 };
 
 
-using MergeTreeAllRangesCallback = std::function<InitialAllRangesAnnouncementResponse(InitialAllRangesAnnouncement)>;
+using MergeTreeAllRangesCallback = std::function<std::optional<InitialAllRangesAnnouncementResponse>(InitialAllRangesAnnouncement)>;
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
 }

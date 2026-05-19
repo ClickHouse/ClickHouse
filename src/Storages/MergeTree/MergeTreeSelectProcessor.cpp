@@ -92,7 +92,7 @@ ParallelReadingExtension::ParallelReadingExtension(
         std::move(callback_), ProfileEvents::ParallelReplicasReadRequestMicroseconds, "ParallelReplicasReadRequest"};
 }
 
-InitialAllRangesAnnouncementResponse ParallelReadingExtension::sendInitialRequest(
+std::optional<InitialAllRangesAnnouncementResponse> ParallelReadingExtension::sendInitialRequest(
     CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const
 {
     return all_callback(InitialAllRangesAnnouncement{

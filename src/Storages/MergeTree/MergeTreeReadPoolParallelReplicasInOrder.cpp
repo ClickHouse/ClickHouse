@@ -82,13 +82,15 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
 
     /// Build the authoritative parts set from the coordinator's response. Consumers for parts
     /// outside this set finish immediately (no phantom getTask spinning), and read requests
-    /// only carry parts the coordinator's stream actually contains. If the initiator didn't
-    /// send a response (older protocol), `stream_id` will be empty and we leave the flag
-    /// unset, falling back to the pre-pruning behavior.
-    if (!response.stream_id.empty())
+    /// only carry parts the coordinator's stream actually contains. `std::nullopt` means the
+    /// initiator is on an older protocol and didn't send a response — leave the flag unset and
+    /// fall back to the pre-pruning behavior. An engaged optional with empty `parts` is a
+    /// valid response that means the stream owns nothing (over-announced split) — every
+    /// consumer of this pool should finish.
+    if (response)
     {
         authoritative_parts_received = true;
-        for (const auto & part : response.parts)
+        for (const auto & part : response->parts)
             authoritative_parts.emplace(part.info, part.projection_name);
     }
 

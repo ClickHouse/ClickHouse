@@ -753,7 +753,7 @@ void TCPHandler::runImpl()
             });
 
             query_state->query_context->setMergeTreeAllRangesCallback(
-                [this, &query_state](InitialAllRangesAnnouncement announcement) -> InitialAllRangesAnnouncementResponse
+                [this, &query_state](InitialAllRangesAnnouncement announcement) -> std::optional<InitialAllRangesAnnouncementResponse>
                 {
                     Stopwatch watch;
                     CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeAllRangesAnnouncementsSent);
@@ -769,10 +769,11 @@ void TCPHandler::runImpl()
                         ProfileEvents::increment(
                             ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
 
-                        /// Older initiators (protocol < ANNOUNCEMENT_RESPONSE) don't send a response;
-                        /// return empty so the pool falls back to today's behavior (no phantom-consumer pruning).
+                        /// Older initiators (protocol < ANNOUNCEMENT_RESPONSE) don't send a response.
+                        /// Return nullopt so callers can distinguish "no response" from an empty
+                        /// authoritative set on the new protocol.
                         if (client_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
-                            return {};
+                            return std::nullopt;
 
                         return receiveAllRangesAnnouncementResponse(*query_state);
                     }

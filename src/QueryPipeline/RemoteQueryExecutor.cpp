@@ -811,9 +811,6 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
     auto response = extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
-    /// Send the authoritative parts list back to the announcing replica so it can prune
-    /// its per-part state. Older followers that don't speak the new protocol won't expect
-    /// this packet — the version check on the receiving side handles that case gracefully.
     connections->sendMergeTreeAllRangesAnnouncementResponse(response);
 }
 

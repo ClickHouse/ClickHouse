@@ -39,7 +39,7 @@ public:
         String stream_id_
     );
 
-    InitialAllRangesAnnouncementResponse sendInitialRequest(
+    std::optional<InitialAllRangesAnnouncementResponse> sendInitialRequest(
         CoordinationMode mode,
         RangesInDataPartsDescription description,
         size_t mark_segment_size,

@@ -156,9 +156,8 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
     for (size_t i = 0; i < descriptions.size(); ++i)
         descriptions[i].min_marks_per_task = per_part_infos[i]->min_marks_per_task;
 
-    /// Default pool ignores the announcement response: it doesn't have phantom consumers
-    /// (one consumer total, not per-part), and `DefaultCoordinator::handleRequest` doesn't
-    /// consult the request's part list anyway.
+    /// Default pool ignores the announcement response.
+    /// The latter is relevant only to InOrder reading when we split table into multiple splits for parallelism.
     std::ignore = extension.sendInitialRequest(coordination_mode, std::move(descriptions), mark_segment_size, min_marks_per_request);
 }
 
