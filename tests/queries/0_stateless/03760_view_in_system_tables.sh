@@ -211,4 +211,19 @@ SELECT arraySort(dependencies_table) FROM system.tables WHERE database = current
 
 DROP VIEW 03760_cor_view;
 DROP TABLE 03760_cor_src;
+
+-- DETACH VIEW (non-permanent): must clean up plain_view_dependencies edges on the source.
+DROP TABLE IF EXISTS 03760_det_src;
+DROP VIEW  IF EXISTS 03760_det_view;
+
+CREATE TABLE 03760_det_src (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE VIEW 03760_det_view AS SELECT * FROM 03760_det_src;
+
+SELECT arraySort(dependencies_table) FROM system.tables WHERE database = currentDatabase() AND name = '03760_det_src';
+
+DETACH VIEW 03760_det_view;
+
+SELECT arraySort(dependencies_table) FROM system.tables WHERE database = currentDatabase() AND name = '03760_det_src';
+
+DROP TABLE 03760_det_src;
 EOF

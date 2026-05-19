@@ -47,6 +47,7 @@ public:
         size_t num_streams) override;
 
     void drop() override;
+    void shutdown(bool is_drop) override;
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     static void replaceQueryParametersIfParameterizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values);

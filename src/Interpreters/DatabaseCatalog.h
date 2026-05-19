@@ -189,6 +189,7 @@ public:
     std::vector<StorageID> getDependentViews(const StorageID & source_table_id) const;
 
     void addPlainViewDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_plain_view_dependencies);
+    void removePlainViewDependencies(const StorageID & view_id);
     std::vector<StorageID> getAllDependentViews(const StorageID & source_table_id) const;
 
     std::vector<StorageID> takeSourceViewDependencies(const StorageID & source_table_id);

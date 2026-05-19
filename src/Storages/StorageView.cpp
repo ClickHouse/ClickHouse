@@ -394,6 +394,12 @@ void StorageView::drop()
         ViewDefinerDependencies::instance().removeViewDependencies(table_id);
 }
 
+void StorageView::shutdown(bool)
+{
+    /// Mirror `StorageMaterializedView::shutdown` for non-permanent `DETACH TABLE`.
+    DatabaseCatalog::instance().removePlainViewDependencies(getStorageID());
+}
+
 void StorageView::alter(
     const AlterCommands & params,
     ContextPtr context,

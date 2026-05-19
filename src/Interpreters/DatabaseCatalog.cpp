@@ -1076,6 +1076,14 @@ void DatabaseCatalog::addPlainViewDependencies(const QualifiedTableName & table_
         plain_view_dependencies.addDependency(StorageID{source_table}, StorageID{table_name});
 }
 
+void DatabaseCatalog::removePlainViewDependencies(const StorageID & view_id)
+{
+    std::lock_guard lock{databases_mutex};
+    StorageID view_by_name{view_id.database_name, view_id.table_name};
+    for (const auto & source : plain_view_dependencies.getDependents(view_by_name))
+        plain_view_dependencies.removeDependency(source, view_by_name, /* remove_isolated_tables= */ true);
+}
+
 std::vector<StorageID> DatabaseCatalog::getAllDependentViews(const StorageID & source_table_id) const
 {
     std::lock_guard lock{databases_mutex};
