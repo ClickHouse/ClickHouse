@@ -459,17 +459,69 @@ if not args.use_existing_tables:
         the old server fall back to its default for that setting, which is
         the desired behavior when the perf test wants to keep the old
         behavior on the PR side by setting the value explicitly.
+
+        The value of a setting may legitimately contain commas inside quoted
+        strings, parentheses, brackets, or braces (e.g. tuples, arrays,
+        maps). Use a small scanner that tracks quote and bracket state so
+        that the whole `name = value` assignment is removed even for such
+        values.
         """
-        pattern = re.compile(
-            r"(\s*,\s*)?\b" + re.escape(setting_name) + r"\s*=\s*[^,;]+?(?=\s*(?:,|;|$))",
+        name_re = re.compile(
+            r"\b" + re.escape(setting_name) + r"\s*=\s*",
             re.IGNORECASE,
         )
-        stripped = pattern.sub("", query, count=1)
-        # Clean up a leading ", " that may remain when the dropped setting was
-        # the first one in the SETTINGS clause.
+        m = name_re.search(query)
+        if not m:
+            return query
+
+        # Optionally include a preceding comma (and surrounding whitespace)
+        # so the assignment is removed cleanly when it is not the first
+        # entry in the SETTINGS clause.
+        cut_start = m.start()
+        j = cut_start - 1
+        while j >= 0 and query[j] in " \t\r\n":
+            j -= 1
+        if j >= 0 and query[j] == ",":
+            cut_start = j
+
+        # Scan from the start of the value to find its end at the next
+        # top-level comma or semicolon (or end of query).
+        i = m.end()
+        n = len(query)
+        quote = None
+        depth = 0
+        while i < n:
+            c = query[i]
+            if quote is not None:
+                if c == "\\" and i + 1 < n:
+                    i += 2
+                    continue
+                if c == quote:
+                    # `''` inside a single-quoted string is an escaped quote.
+                    if quote == "'" and i + 1 < n and query[i + 1] == "'":
+                        i += 2
+                        continue
+                    quote = None
+            else:
+                if c in "'\"`":
+                    quote = c
+                elif c in "([{":
+                    depth += 1
+                elif c in ")]}":
+                    if depth == 0:
+                        break
+                    depth -= 1
+                elif depth == 0 and c in ",;":
+                    break
+            i += 1
+
+        stripped = query[:cut_start] + query[i:]
+        # Clean up a leading `, ` that may remain when the dropped setting
+        # was the first one in the SETTINGS clause.
         stripped = re.sub(r"\bSETTINGS\s*,\s*", "SETTINGS ", stripped, flags=re.IGNORECASE)
-        # Drop an empty SETTINGS clause (the only setting was the dropped one).
-        stripped = re.sub(r"\bSETTINGS\s*(;|$)", r"\1", stripped, flags=re.IGNORECASE)
+        # Drop an empty SETTINGS clause (the only setting was the dropped one),
+        # along with any whitespace that preceded the SETTINGS keyword.
+        stripped = re.sub(r"\s*\bSETTINGS\s*(;|$)", r"\1", stripped, flags=re.IGNORECASE)
         return stripped
 
     def do_create(connection, index, queries):
