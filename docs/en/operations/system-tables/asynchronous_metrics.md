@@ -388,6 +388,14 @@ An internal metric of the low-level memory allocator (jemalloc). See https://jem
 
 An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
+### jemalloc.cache_arena.pactive {#jemalloccache_arenapactive}
+
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
+
+### jemalloc.cache_arena.pdirty {#jemalloccache_arenapdirty}
+
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
+
 ### jemalloc.epoch {#jemallocepoch}
 
 An internal incremental update number of the statistics of jemalloc (Jason Evans' memory allocator), used in all other `jemalloc` metrics.
@@ -403,6 +411,14 @@ Active bytes in the dedicated jemalloc MergeTree arena. Holds long-lived MergeTr
 ### jemalloc.mergetree_arena.dirty_bytes {#jemallocmergetree_arenadirty_bytes}
 
 Dirty bytes in the MergeTree arena that are eligible for purging back to the OS.
+
+### jemalloc.mergetree_arena.pactive {#jemallocmergetree_arenapactive}
+
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
+
+### jemalloc.mergetree_arena.pdirty {#jemallocmergetree_arenapdirty}
+
+An internal metric of the low-level memory allocator (jemalloc). See https://jemalloc.net/jemalloc.3.html
 
 ### jemalloc.metadata {#jemallocmetadata}
 

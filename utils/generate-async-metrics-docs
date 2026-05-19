@@ -343,9 +343,16 @@ JEMALLOC_HELPER_PATTERN = re.compile(
     r"\s*<[^>]+>\s*\([^,]+,\s*\"(?P<name>[^\"]+)\"\s*\)"
 )
 
+# The MIB-name argument (second arg) is usually a string literal but is sometimes
+# a `fmt::format(...)` call when the arena index is variable. The metric name
+# (third arg) is always a string literal, so we match the body as a sequence of
+# non-paren chars and optional parenthesized blocks (covering `fmt::format(...)`)
+# up to the final `,` and then capture the trailing string literal.
 JEMALLOC_IMPL_PATTERN = re.compile(
-    r"saveJemallocMetricImpl\s*<[^>]+>\s*\([^,]+,\s*\"[^\"]+\"\s*,"
-    r"\s*\"(?P<name>[^\"]+)\"\s*\)"
+    r"saveJemallocMetricImpl\s*<[^>]+>\s*\("
+    r"[^()]*(?:\([^()]*\)[^()]*)*"
+    r",\s*\"(?P<name>[^\"]+)\"\s*\)",
+    re.DOTALL,
 )
 
 # Map-of-pairs literal used to attach a metric name + description to a
