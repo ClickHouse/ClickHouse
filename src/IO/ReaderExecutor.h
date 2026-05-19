@@ -73,13 +73,12 @@ private:
     /// Read a specific physical range through the cache chain and source.
     Rope readPhysicalWindow(ByteRange physical_window);
 
-    /// Read from source, trying live buffer first, falling back to stateless read.
-    size_t readFromSource(const StoredObject & object, size_t offset, size_t size, char * buffer);
+    /// Read from source into a Rope of 1 MiB blocks. Tries live buffer first, falls back to stateless.
+    Rope readFromSource(const StoredObject & object, size_t offset, size_t size, size_t logical_offset);
 
-    /// Read from the live buffer into caller-provided memory.
-    /// Uses external buffer to avoid copying — data goes directly from the
-    /// network/disk into the target memory.
-    size_t readFromLiveBuffer(char * buffer, size_t size);
+    /// Read from the live buffer into a Rope of 1 MiB blocks.
+    /// Uses set() + next() — data goes directly from network into block memory.
+    Rope readFromLiveBufferIntoRope(size_t size, size_t logical_offset);
 
     void maybeTriggerPrefetch();
     void discardPrefetch();
