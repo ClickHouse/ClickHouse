@@ -13,6 +13,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypesCache.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -92,7 +93,7 @@ private:
         const auto & dynamic_path_columns = column_object.getDynamicPaths();
         auto dynamic_serialization = SerializationDynamic::create();
 
-        std::vector<PathInfo> sorted_paths;
+        VectorWithMemoryTracking<PathInfo> sorted_paths;
         sorted_paths.reserve(typed_path_types.size() + dynamic_path_columns.size());
 
         for (const auto & [path, type] : typed_path_types)

@@ -8,6 +8,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
@@ -167,7 +168,7 @@ public:
     static std::string getSupportedAlgorithmsAsString(bool by_lines = false)
     {
         const auto & algorithms = getGroupedAlgorithms();
-        std::vector<std::string> formatted_algorithms;
+        VectorWithMemoryTracking<std::string> formatted_algorithms;
 
         for (const auto & [primary, aliases] : algorithms)
         {

@@ -16,6 +16,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -148,7 +149,7 @@ public:
                 const_multi_polygon = to_multi_polygon(std::move(geometries[0]));
 
             /// Reuse buffer across rows to avoid repeated allocations
-            std::vector<H3Index> hindex_vec;
+            VectorWithMemoryTracking<H3Index> hindex_vec;
 
             for (size_t row = 0; row < input_rows_count; ++row)
             {

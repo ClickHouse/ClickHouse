@@ -1,5 +1,6 @@
 #include <Functions/FunctionDynamicAdaptor.h>
 #include <Common/CurrentThread.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -416,7 +417,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
     }
 
     /// Create set of arguments for each variant using selector.
-    std::vector<ColumnsWithTypeAndName> variants_arguments;
+    VectorWithMemoryTracking<ColumnsWithTypeAndName> variants_arguments;
     variants_arguments.resize(variants.size());
     for (size_t i = 0; i != arguments.size(); ++i)
     {
@@ -434,7 +435,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
     }
 
     /// Execute function over all created sets of arguments and remember all results.
-    std::vector<ColumnPtr> variants_results;
+    VectorWithMemoryTracking<ColumnPtr> variants_results;
     variants_results.reserve(variants.size());
     /// 0 index is allocated for rows with NULL values, it doesn't have any result,
     /// we will insert NULL values in these rows.

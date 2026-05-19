@@ -12,6 +12,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <base/arithmeticOverflow.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <cassert>
 
@@ -35,7 +36,7 @@ struct TupArg
     const IColumn::Offsets & val_offsets;
     bool is_const;
 };
-using TupleMaps = std::vector<TupArg>;
+using TupleMaps = VectorWithMemoryTracking<TupArg>;
 
 enum class OpTypes : uint8_t
 {
