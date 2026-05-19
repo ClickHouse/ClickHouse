@@ -1,4 +1,5 @@
 #include <type_traits>
+#include <unordered_set>
 
 #include <base/range.h>
 
@@ -253,8 +254,15 @@ public:
             if (path.empty())
                 return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
 
-            /// For case-insensitive functions, resolve the user-provided path to
-            /// the actual path stored in the column by comparing case-insensitively.
+            /// For JSONExtractRaw: serialize each value as a JSON string
+            constexpr bool is_extract_raw = std::string_view(TName::name) == std::string_view("JSONExtractRaw")
+                        || std::string_view(TName::name) == std::string_view("JSONExtractRawCaseInsensitive");
+
+            /// For case-insensitive functions, collect every stored path that matches the
+            /// user-provided one ignoring case. With one match we read its `@` subcolumn directly;
+            /// with several (e.g. rows storing `Name` and `name` for query key `name`) we resolve
+            /// the path per row so a row's local match is not shadowed by a column-wide choice.
+            std::vector<String> case_insensitive_matches;
             if constexpr (is_case_insensitive)
             {
                 auto match_case_insensitive = [](std::string_view a, std::string_view b) -> bool
@@ -267,78 +275,154 @@ public:
                     return true;
                 };
 
-                String resolved;
-
-                /// Check typed paths.
-                for (const auto & [typed_path, _] : data_type_object.getTypedPaths())
+                std::unordered_set<String> seen;
+                auto try_add = [&](std::string_view candidate)
                 {
-                    if (match_case_insensitive(typed_path, path))
-                    {
-                        resolved = typed_path;
-                        break;
-                    }
-                }
+                    if (!match_case_insensitive(candidate, path))
+                        return;
+                    String s(candidate);
+                    if (seen.insert(s).second)
+                        case_insensitive_matches.emplace_back(std::move(s));
+                };
 
-                /// Check dynamic paths.
-                if (resolved.empty())
-                {
-                    for (const auto & [dynamic_path, _] : col_object->getDynamicPaths())
-                    {
-                        if (match_case_insensitive(dynamic_path, path))
-                        {
-                            resolved = dynamic_path;
-                            break;
-                        }
-                    }
-                }
-
-                /// Check shared data paths.
-                if (resolved.empty())
+                /// Prefer the exact-case match when present so a query key like `name` is resolved
+                /// to a stored `name` rather than a sibling `Name` in iteration order.
+                bool exact_present = data_type_object.getTypedPaths().contains(path)
+                    || col_object->getDynamicPaths().contains(path);
+                if (!exact_present)
                 {
                     const auto [shared_paths, _] = col_object->getSharedDataPathsAndValues();
                     for (size_t i = 0; i < shared_paths->size(); ++i)
                     {
-                        auto sp = shared_paths->getDataAt(i);
-                        if (match_case_insensitive(sp, path))
+                        if (shared_paths->getDataAt(i) == path)
                         {
-                            resolved = String(sp);
+                            exact_present = true;
                             break;
                         }
                     }
                 }
+                if (exact_present)
+                {
+                    seen.insert(path);
+                    case_insensitive_matches.emplace_back(path);
+                }
 
-                if (!resolved.empty())
-                    path = std::move(resolved);
+                for (const auto & [typed_path, _] : data_type_object.getTypedPaths())
+                    try_add(typed_path);
+                for (const auto & [dynamic_path, _] : col_object->getDynamicPaths())
+                    try_add(dynamic_path);
+                {
+                    const auto [shared_paths, _] = col_object->getSharedDataPathsAndValues();
+                    for (size_t i = 0; i < shared_paths->size(); ++i)
+                        try_add(shared_paths->getDataAt(i));
+                }
+
+                if (case_insensitive_matches.size() == 1)
+                    path = std::move(case_insensitive_matches.front());
+            }
+
+            auto read_merged_for_path = [&](const String & p)
+            {
+                String combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + p + "`";
+                auto merged_type = data_type_object.getSubcolumnType(combined_name);
+                auto merged = data_type_object.getSubcolumn(combined_name, object_column);
+                return std::make_pair(std::move(merged), std::move(merged_type));
+            };
+
+            auto serialize_raw = [&](const IColumn & merged, const ISerialization & serialization, size_t row, ColumnString & out)
+            {
+                if (merged.isDefaultAt(row))
+                {
+                    out.insertDefault();
+                }
+                else
+                {
+                    WriteBufferFromOwnString buf;
+                    serialization.serializeTextJSON(merged, row, buf, format_settings);
+                    out.insert(buf.str());
+                }
+            };
+
+            /// Multiple paths match case-insensitively: resolve per row so each row picks the first
+            /// stored path that actually has a value at that row.
+            if constexpr (is_case_insensitive)
+            {
+                if (case_insensitive_matches.size() > 1)
+                {
+                    const size_t num_paths = case_insensitive_matches.size();
+                    std::vector<ColumnPtr> per_path_merged(num_paths);
+                    std::vector<DataTypePtr> per_path_merged_type(num_paths);
+                    for (size_t k = 0; k < num_paths; ++k)
+                        std::tie(per_path_merged[k], per_path_merged_type[k]) = read_merged_for_path(case_insensitive_matches[k]);
+
+                    if constexpr (is_extract_raw)
+                    {
+                        std::vector<SerializationPtr> serializations(num_paths);
+                        for (size_t k = 0; k < num_paths; ++k)
+                            serializations[k] = per_path_merged_type[k]->getDefaultSerialization();
+
+                        auto raw_col = ColumnString::create();
+                        for (size_t i = 0; i < input_rows_count; ++i)
+                        {
+                            size_t pick = num_paths;
+                            for (size_t k = 0; k < num_paths; ++k)
+                            {
+                                if (!per_path_merged[k]->isDefaultAt(i))
+                                {
+                                    pick = k;
+                                    break;
+                                }
+                            }
+                            if (pick == num_paths)
+                                raw_col->insertDefault();
+                            else
+                                serialize_raw(*per_path_merged[pick], *serializations[pick], i, *raw_col);
+                        }
+                        return raw_col;
+                    }
+                    else
+                    {
+                        std::vector<ColumnPtr> per_path_casted(num_paths);
+                        for (size_t k = 0; k < num_paths; ++k)
+                        {
+                            auto casted = castColumnAccurateOrNull({per_path_merged[k], per_path_merged_type[k], ""}, result_type);
+                            per_path_casted[k] = result_type->isNullable() ? casted : removeNullable(casted);
+                        }
+
+                        auto result_column = result_type->createColumn();
+                        result_column->reserve(input_rows_count);
+                        for (size_t i = 0; i < input_rows_count; ++i)
+                        {
+                            size_t pick = num_paths;
+                            for (size_t k = 0; k < num_paths; ++k)
+                            {
+                                if (!per_path_merged[k]->isDefaultAt(i))
+                                {
+                                    pick = k;
+                                    break;
+                                }
+                            }
+                            if (pick == num_paths)
+                                result_column->insertDefault();
+                            else
+                                result_column->insertFrom(*per_path_casted[pick], i);
+                        }
+                        return result_column;
+                    }
+                }
             }
 
             /// Use combined `@` subcolumn that merges literal value and sub-object.
             /// For typed paths it returns only the literal value. For non-typed paths it returns a Dynamic
             /// column: literal if present, sub-object as JSON if not, NULL otherwise.
-            String combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + path + "`";
-            auto merged_type = data_type_object.getSubcolumnType(combined_name);
-            auto merged = data_type_object.getSubcolumn(combined_name, object_column);
-
-            /// For JSONExtractRaw: serialize each value as a JSON string
-            constexpr bool is_extract_raw = std::string_view(TName::name) == std::string_view("JSONExtractRaw")
-                        || std::string_view(TName::name) == std::string_view("JSONExtractRawCaseInsensitive");
+            auto [merged, merged_type] = read_merged_for_path(path);
 
             if constexpr (is_extract_raw)
             {
                 auto raw_col = ColumnString::create();
                 auto serialization = merged_type->getDefaultSerialization();
                 for (size_t i = 0; i < input_rows_count; ++i)
-                {
-                    if (merged->isDefaultAt(i))
-                    {
-                        raw_col->insertDefault();
-                    }
-                    else
-                    {
-                        WriteBufferFromOwnString buf;
-                        serialization->serializeTextJSON(*merged, i, buf, format_settings);
-                        raw_col->insert(buf.str());
-                    }
-                }
+                    serialize_raw(*merged, *serialization, i, *raw_col);
                 return raw_col;
             }
             else
