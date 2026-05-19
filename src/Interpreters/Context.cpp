@@ -3931,7 +3931,10 @@ void Context::updateColumnsCacheConfiguration(const Poco::Util::AbstractConfigur
         size = max_cache_size;
         LOG_DEBUG(shared->log, "Lowered columns cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
     }
-    shared->columns_cache->setMaxSizeInBytes(size);
+    /// Use the variant that compacts interval_index after the resize, so the
+    /// eviction sweep triggered by shrinking the cache cannot leave stale keys
+    /// (the LRU eviction callback in CacheBase does not receive the key).
+    shared->columns_cache->setMaxSizeInBytesAndCompact(size);
 }
 
 ColumnsCachePtr Context::getColumnsCache() const

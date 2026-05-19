@@ -185,6 +185,20 @@ public:
         interval_index.clear();
     }
 
+    /// Lower the maximum size in bytes and immediately compact the interval index
+    /// so that entries evicted by the resulting eviction sweep do not leave stale
+    /// keys behind. `CacheBase::onEntryRemoval` does not receive the key, so
+    /// without an explicit compaction here a runtime config reload that shrinks
+    /// the cache would leak metadata indefinitely if no further `set` calls
+    /// trigger periodic compaction.
+    void setMaxSizeInBytesAndCompact(size_t max_size_in_bytes)
+    {
+        Base::setMaxSizeInBytes(max_size_in_bytes);
+        std::lock_guard lock(interval_index_mutex);
+        compactIntervalIndex();
+        sets_since_compaction = 0;
+    }
+
     /// Metadata for a cache entry, used by system.columns_cache.
     /// Does not hold a shared_ptr to column data, so it does not pin cached columns in memory.
     struct EntryMetadata
