@@ -2063,7 +2063,7 @@ void Planner::buildPlanForQueryNode()
     {
         if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "additional_table_filters is not supported with parallel replicas");
+                "additional_table_filters is not supported with parallel and without serialize_query_plan=1");
 
         auto & mutable_context = planner_context->getMutableQueryContext();
         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
