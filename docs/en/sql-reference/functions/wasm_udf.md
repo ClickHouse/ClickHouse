@@ -143,13 +143,19 @@ Code: 674. DB::Exception: WebAssembly module 'collatz' not found:
 while adding user defined function `collatz_steps`. (RESOURCE_NOT_FOUND)
 ```
 
-To fan an insert out to every node, write to the `cluster` (or `clusterAllReplicas`) table function instead of the local `system.webassembly_modules` table:
+To fan an insert out to every node, write to the `cluster` table function instead of the local `system.webassembly_modules` table:
 
 ```bash
 cat collatz.wasm | clickhouse client -q "
   INSERT INTO FUNCTION cluster('default', 'system', 'webassembly_modules') (name, code)
   SELECT 'collatz', code FROM input('code String') FORMAT RawBlob"
 ```
+
+:::note
+This pattern relies on the underlying distributed-write path visiting every replica within each shard, which only happens when the cluster is configured with `internal_replication=false`. With `internal_replication=true` (the default for clusters that use `ReplicatedMergeTree` to drive replication themselves), the insert is delivered to a single healthy replica per shard, and `system.webassembly_modules` is not replicated by that path — so some replicas will still be missing the module. In that configuration you need to insert against each replica individually, for example by iterating over `system.clusters` and writing via `remote(...)` per host, or by copying the binary into `user_scripts/wasm/` on every host.
+
+You can inspect `internal_replication` for a cluster with `SELECT cluster, shard_num, internal_replication FROM system.clusters`.
+:::
 
 After the fanned-out insert, the module is present on every replica and `CREATE FUNCTION ... ON CLUSTER` succeeds:
 
