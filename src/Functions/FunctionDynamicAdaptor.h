@@ -11,10 +11,8 @@ class ExecutableFunctionDynamicAdaptor final : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionDynamicAdaptor(
-        std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_, size_t dynamic_argument_index_)
-        : function_overload_resolver(std::move(function_overload_resolver_)), dynamic_argument_index(dynamic_argument_index_)
-    {
-    }
+        std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
+        size_t dynamic_argument_index_);
 
     String getName() const override { return function_overload_resolver->getName(); }
 
@@ -36,6 +34,10 @@ private:
     /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Dynamic column.
     std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver;
     size_t dynamic_argument_index;
+    /// When true, throw an exception if a dynamic variant type is incompatible with the function.
+    /// When false (default), return NULL for incompatible rows instead.
+    /// Read from `dynamic_throw_on_type_mismatch` setting via CurrentThread at construction time.
+    bool throw_on_type_mismatch = true;
 };
 
 class FunctionBaseDynamicAdaptor final : public IFunctionBase
