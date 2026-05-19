@@ -97,6 +97,7 @@ def generate_cluster_def(common_path, port, azure_container):
                 <disk>disk_azure_common</disk>
                 <path>/tmp/azure_cache/</path>
                 <max_size>1000000000</max_size>
+                <skip_access_check>true</skip_access_check>
             </disk_azure_with_cache>
         </disks>
     </storage_configuration>
