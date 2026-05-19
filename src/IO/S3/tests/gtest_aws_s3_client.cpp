@@ -669,62 +669,32 @@ TEST(IOTestAwsS3Client, ClientSharesCacheWithClone)
     EXPECT_EQ(clone->getRawCache(), client->getRawCache()) << "Clone should share the same cache as original";
 }
 
-TEST(IOTestAwsS3Client, TwoClientsWithSharedCacheUnregisterRefcount)
+TEST(IOTestAwsS3Client, ClientCacheRegistryRefcount)
 {
-    DB::RemoteHostFilter remote_host_filter;
-    DB::S3::URI uri("https://s3.us-east-1.amazonaws.com/another-bucket/key");
-    DB::S3::PocoHTTPClientConfiguration client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
-        "us-east-1",
-        remote_host_filter,
-        10,
-        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
-        true,
-        true,
-        false,
-        false,
-        {},
-        {},
-        "https");
-    client_configuration.endpointOverride = uri.endpoint;
+    /// Verify ClientCacheRegistry refcounting directly via the test-only refcount accessor.
+    /// We can't go through Client construction/destruction because Client::~Client catches
+    /// and logs exceptions from unregisterClient, so a refcount bug would be invisible;
+    /// and we can't probe via the throwing path (the entry was already removed) because in
+    /// debug/sanitizer builds LOGICAL_ERROR aborts the process instead of throwing.
+    auto & registry = DB::S3::ClientCacheRegistry::instance();
+    auto shared_cache = registry.getOrCreateCacheForKey(
+        "https://s3.us-east-1.amazonaws.com",
+        "test-refcount-bucket");
 
-    DB::S3::ClientSettings client_settings{
-        .use_virtual_addressing = uri.is_virtual_hosted_style,
-        .disable_checksum = false,
-        .gcs_issue_compose_request = false,
-        .is_s3express_bucket = false,
-    };
+    ASSERT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 0u);
 
-    auto shared_cache = DB::S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(uri.endpoint, uri.bucket);
-    std::unique_ptr<DB::S3::Client> client1 = DB::S3::ClientFactory::instance().create(
-        client_configuration,
-        client_settings,
-        "ak",
-        "sk",
-        "",
-        {},
-        {},
-        DB::S3::CredentialsConfiguration{.use_environment_credentials = false, .use_insecure_imds_request = false},
-        "",
-        shared_cache);
-    std::unique_ptr<DB::S3::Client> client2 = DB::S3::ClientFactory::instance().create(
-        client_configuration,
-        client_settings,
-        "ak",
-        "sk",
-        "",
-        {},
-        {},
-        DB::S3::CredentialsConfiguration{.use_environment_credentials = false, .use_insecure_imds_request = false},
-        "",
-        shared_cache);
+    registry.registerClient(shared_cache);
+    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 1u);
 
-    ASSERT_TRUE(client1);
-    ASSERT_TRUE(client2);
-    EXPECT_EQ(client1->getRawCache(), client2->getRawCache());
+    /// Second registration of the same cache must bump the refcount, not silently no-op.
+    registry.registerClient(shared_cache);
+    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 2u);
 
-    client1.reset();
-    client2.reset();
-    // If refcount was wrong, unregisterClient would throw when the second client is destroyed
+    registry.unregisterClient(shared_cache.get());
+    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 1u);
+
+    registry.unregisterClient(shared_cache.get());
+    EXPECT_EQ(registry.getClientRefcountForTesting(shared_cache.get()), 0u);
 }
 
 TEST(IOTestAwsS3Client, WebIdentityConfiguredFromEnvironment)

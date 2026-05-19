@@ -1132,6 +1132,15 @@ void ClientCacheRegistry::unregisterClient(ClientCache * client)
         client_caches.erase(it);
 }
 
+size_t ClientCacheRegistry::getClientRefcountForTesting(ClientCache * client)
+{
+    std::lock_guard lock(clients_mutex);
+    auto it = client_caches.find(client);
+    if (it == client_caches.end())
+        return 0;
+    return it->second.second;
+}
+
 void ClientCacheRegistry::pruneExpiredCachesLocked()
 {
     std::erase_if(cache_by_endpoint_bucket, [](const auto & pair) { return pair.second.expired(); });

@@ -80,6 +80,9 @@ public:
     void clearCacheForAll();
     std::shared_ptr<ClientCache> getOrCreateCacheForKey(const std::string & endpoint, const std::string & bucket);
 
+    /// Returns the registered refcount for `client`, or 0 if it is not registered. For tests only.
+    size_t getClientRefcountForTesting(ClientCache * client);
+
 private:
     ClientCacheRegistry() = default;
 
