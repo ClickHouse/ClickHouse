@@ -254,7 +254,9 @@ void IDisk::checkAccessImpl(const String & path)
 try
 {
     const std::string_view payload("test", 4);
-    const auto read_settings = getReadSettings();
+    auto read_settings = getReadSettings();
+    /// Disable executor for tiny access-check reads — not worth the overhead.
+    read_settings.use_reader_executor = false;
     auto write_settings = getWriteSettings();
     write_settings.is_initial_access_check = true;
 
