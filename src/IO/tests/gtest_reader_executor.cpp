@@ -460,18 +460,17 @@ TEST(ReaderExecutor, LiveBufferReusesConnection)
 {
     TestThreadGroup tg;
 
-    /// 4 MiB file, window=8MiB (but effective=1MiB with live buffer) → 4 readNextWindow calls.
-    size_t file_size = 4 * 1024 * 1024;
-    String content(file_size, 'Q');
+    /// 2000 bytes, window=500 → 4 sequential readNextWindow calls.
+    String content(2000, 'Q');
     auto source = std::make_shared<OpenableSourceReader>(
         std::unordered_map<String, String>{{"file", content}});
 
     StoredObjects objects;
-    objects.emplace_back("file", "", file_size);
+    objects.emplace_back("file", "", 2000);
 
     auto limit = std::make_shared<SourceBufferLimit>(10);
 
-    ReaderExecutor executor(source, objects, {});
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/500, /*min_bytes_for_seek=*/0);
     executor.setBufferLimit(limit);
 
     String result;
@@ -484,12 +483,12 @@ TEST(ReaderExecutor, LiveBufferReusesConnection)
             result.append(node.data(), node.size);
     }
 
-    EXPECT_EQ(result.size(), file_size);
+    EXPECT_EQ(result.size(), 2000);
     EXPECT_EQ(result, content);
-    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferCreated), 1);       /// Opened once.
-    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferHits), 3);          /// Reused for 3 subsequent reads.
-    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferFallbacks), 0);     /// Never fell back.
-    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferBytes), file_size); /// All bytes through live buffer.
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferCreated), 1);   /// Opened once.
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferHits), 3);      /// Reused for 3 subsequent reads.
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferFallbacks), 0); /// Never fell back.
+    EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferBytes), 2000);  /// All bytes through live buffer.
 }
 
 TEST(ReaderExecutor, LiveBufferFallbackWhenFull)

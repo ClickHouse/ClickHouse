@@ -29,7 +29,6 @@ class ReaderExecutor
 public:
     static constexpr size_t DEFAULT_WINDOW_SIZE = 8 * 1024 * 1024; /// 8 MiB
     static constexpr size_t DEFAULT_MIN_BYTES_FOR_SEEK = 8 * 1024 * 1024; /// 8 MiB
-    static constexpr size_t ROPE_BLOCK_SIZE = 1 * 1024 * 1024; /// 1 MiB per Rope node
 
     ReaderExecutor(
         std::shared_ptr<ISourceReader> source,
@@ -73,12 +72,13 @@ private:
     /// Read a specific physical range through the cache chain and source.
     Rope readPhysicalWindow(ByteRange physical_window);
 
-    /// Pre-allocate a Rope as a chain of ROPE_BLOCK_SIZE blocks covering total_size bytes.
-    static Rope allocateRope(size_t total_size, size_t logical_offset);
+    /// Read from source, trying live buffer first, falling back to stateless read.
+    size_t readFromSource(const StoredObject & object, size_t offset, size_t size, char * buffer);
 
-    /// Fill a pre-allocated Rope from source. Returns actual bytes read.
-    /// Tries live buffer first, falls back to stateless.
-    size_t readFromSource(const StoredObject & object, size_t offset, Rope & rope);
+    /// Read from the live buffer into caller-provided memory.
+    /// Uses external buffer to avoid copying — data goes directly from the
+    /// network/disk into the target memory.
+    size_t readFromLiveBuffer(char * buffer, size_t size);
 
     void maybeTriggerPrefetch();
     void discardPrefetch();
@@ -109,7 +109,6 @@ private:
     {
         String object_path;
         size_t current_position = 0;
-        bool use_external_buffer = false;
         std::unique_ptr<ReadBufferFromFileBase> buffer;
         SourceBufferSlot slot;
     };
