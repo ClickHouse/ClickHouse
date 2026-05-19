@@ -46,6 +46,23 @@ def assert_audit_log_contain_with_retry(instance, substring, retry_count=20, sle
         raise AssertionError("'{}' not found in audit logs".format(substring))
 
 
+def assert_audit_log_count_with_retry(instance, expected, retry_count=20, sleep_time=0.5):
+    last_count = None
+    for i in range(retry_count):
+        try:
+            last_count = instance.count_log_lines("/var/log/clickhouse-server/clickhouse-server.audit.log")
+            if last_count == expected:
+                break
+            time.sleep(sleep_time)
+        except Exception as ex:
+            logging.exception(f"assert_audit_log_count_with_retry retry {i+1} exception {ex}")
+            time.sleep(sleep_time)
+    else:
+        raise AssertionError(
+            "expected {} audit log lines, got {}".format(expected, last_count)
+        )
+
+
 def test_audit_log_filter(start_cluster):
     node_ddl.query("DROP TABLE IF EXISTS test_audit_log")
     node_ddl.query("CREATE TABLE test_audit_log(a int) ENGINE=Memory")
@@ -57,7 +74,7 @@ def test_audit_log_filter(start_cluster):
     assert_audit_log_contain_with_retry(node_ddl, "DDL")
 
     # Audit only DDL queries
-    assert(node_ddl.count_log_lines("/var/log/clickhouse-server/clickhouse-server.audit.log") == 2)
+    assert_audit_log_count_with_retry(node_ddl, 2)
 
     node_dml_misc.query("DROP TABLE IF EXISTS test_audit_log")
     node_dml_misc.query("CREATE TABLE test_audit_log(a int) ENGINE=Memory")
@@ -67,7 +84,7 @@ def test_audit_log_filter(start_cluster):
 
     # Audit DML and MISC queries
     assert_audit_log_contain_with_retry(node_dml_misc, "DML")
-    assert node_dml_misc.contains_in_log("MISC", from_host=True, filename="clickhouse-server.audit.log")
+    assert_audit_log_contain_with_retry(node_dml_misc, "MISC")
 
     # Filter DDL queries
     assert not node_dml_misc.contains_in_log("DDL", from_host=True, filename="clickhouse-server.audit.log")
@@ -82,7 +99,7 @@ def test_audit_log_filter(start_cluster):
     node_user_dcl.query("REVOKE ALL ON t_not_exists FROM user1")
 
     assert_audit_log_contain_with_retry(node_user_dcl, "DCL")
-    assert node_user_dcl.contains_in_log("GRANT", from_host=True, filename="clickhouse-server.audit.log")
+    assert_audit_log_contain_with_retry(node_user_dcl, "GRANT")
 
 def test_audit_log_object_names(start_cluster):
     node_dml_misc.query("CREATE DATABASE IF NOT EXISTS test")
