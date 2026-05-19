@@ -115,8 +115,11 @@
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Server/CloudPlacementInfo.h>
+#include <Server/DistributedQuery/ExchangeConnections.h>
+#include <Server/DistributedQuery/ExchangeServer.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
+#include <Server/StatelessWorker/StatelessWorkerEndpoint.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
@@ -2006,6 +2009,65 @@ try
 
     LOG_DEBUG(log, "Initializing interserver credentials.");
     global_context->updateInterserverCredentials(config());
+
+    std::shared_ptr<StatelessWorkerEndpoint> stateless_worker_endpoint_ptr{nullptr};
+    if (config().getBool("stateless_worker_server.enabled", true))
+    {
+        String stateless_worker_endpoint = config().getString("stateless_worker_server.endpoint", "localhost");
+        stateless_worker_endpoint_ptr = std::make_shared<StatelessWorkerEndpoint>();
+        auto full_endpoint_name = stateless_worker_endpoint_ptr->getId(stateless_worker_endpoint);
+        global_context->getInterserverIOHandler().addEndpoint(full_endpoint_name, stateless_worker_endpoint_ptr);
+        LOG_DEBUG(log, "Added stateless worker endpoint '{}'.", full_endpoint_name);
+    }
+
+    SCOPE_EXIT({
+        if (stateless_worker_endpoint_ptr)
+        {
+            auto full_endpoint_name = stateless_worker_endpoint_ptr->getId("localhost");
+            LOG_DEBUG(log, "Shutting down stateless worker endpoint '{}'.", full_endpoint_name);
+            global_context->getInterserverIOHandler().removeEndpointIfExists(stateless_worker_endpoint_ptr->getId("localhost"));
+
+            stateless_worker_endpoint_ptr->blocker.cancelForever();
+            stateless_worker_endpoint_ptr->shutdown();
+            /// Acquire the lock to wait for all in-flight requests to finish.
+            std::lock_guard lock(stateless_worker_endpoint_ptr->rwlock);
+        }
+        stateless_worker_endpoint_ptr.reset();
+    });
+
+#ifdef OS_LINUX
+    ExchangeConnectionsPtr exchange_connections_ptr = ExchangeConnections::instance();
+    std::vector<std::shared_ptr<ExchangeServer>> exchange_servers;
+    if (auto streaming_exchange_port = config().getUInt("distributed_query.streaming_exchange_port", 0))
+    {
+        for (const auto & listen_host : {"0.0.0.0", "::"})
+        {
+            try
+            {
+                exchange_servers.emplace_back(std::make_shared<ExchangeServer>(listen_host, streaming_exchange_port, exchange_connections_ptr));
+                exchange_servers.back()->start();
+            }
+            catch (Poco::Exception & e)
+            {
+                LOG_INFO(log, "Failed to start exchange server on {}:{}: {}",
+                    listen_host, streaming_exchange_port, e.displayText());
+            }
+        }
+        if (exchange_servers.empty())
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Failed to start ExchangeServer on port {}", streaming_exchange_port);
+    }
+
+    SCOPE_EXIT({
+        for (auto & exchange_server_ptr : exchange_servers)
+        {
+            exchange_server_ptr->stop();
+            exchange_server_ptr.reset();
+        }
+    });
+#else
+    if (config().getUInt("distributed_query.streaming_exchange_port", 0))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ExchangeServer is not supported on non-linux platform");
+#endif
 
     /// Set up caches.
 

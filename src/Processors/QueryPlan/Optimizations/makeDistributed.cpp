@@ -716,6 +716,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
             else
             {
                 /// No children, this means that this is a leaf step.
+                /// Use ReadFromMergeTree with catalog access for distributed reads on public master.
                 auto shards_for_read = makeListOfShardsForReadStep(frame.node->step.get());
 
                 current_plan = std::make_unique<QueryPlan>();
