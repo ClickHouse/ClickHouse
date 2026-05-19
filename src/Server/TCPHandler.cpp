@@ -770,8 +770,6 @@ void TCPHandler::runImpl()
                             ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
 
                         /// Older initiators (protocol < ANNOUNCEMENT_RESPONSE) don't send a response.
-                        /// Return nullopt so callers can distinguish "no response" from an empty
-                        /// authoritative set on the new protocol.
                         if (client_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
                             return std::nullopt;
 

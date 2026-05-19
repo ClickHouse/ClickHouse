@@ -666,7 +666,7 @@ Pipe ReadFromMergeTree::readInOrder(
     PoolSettings pool_settings,
     ReadType read_type,
     UInt64 read_limit,
-    size_t split_id)
+    std::optional<size_t> split_index)
 {
     /// For reading in order it makes sense to read only
     /// one range per task to reduce number of read rows.
@@ -679,11 +679,12 @@ Pipe ReadFromMergeTree::readInOrder(
     {
         const auto & client_info = context->getClientInfo();
         /// Each split gets its own stream_id so the coordinator maintains an independent
-        /// ImplInterface instance per split. With only one split, we use the table name as-is;
-        /// for multi-split reading, the table name is suffixed with the split index.
+        /// ImplInterface instance per split. When splitting, suffix every split — including the
+        /// first — with `#split_{i}` so they're named uniformly. When the whole table is read
+        /// by a single pool (no splitting), keep the bare table name.
         String stream_id = data.getStorageID().getFullTableName();
-        if (split_id > 0)
-            stream_id += fmt::format("#split_{}", split_id);
+        if (split_index)
+            stream_id += fmt::format("#split_{}", *split_index);
 
         ParallelReadingExtension extension{
             all_ranges_callback.value(),
@@ -1491,7 +1492,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         {
             pipes.emplace_back(readInOrder(
                 std::move(split_parts_and_ranges[i]), index_build_context, column_names, per_split_pool_settings, read_type,
-                input_order_info->limit, /*split_id=*/i));
+                input_order_info->limit, /*split_index=*/i));
         }
     }
     else if (is_local_plan_follower)
@@ -1506,7 +1507,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         {
             pipes.emplace_back(readInOrder(
                 RangesInDataParts(all_parts_for_replicas), index_build_context, column_names, per_split_pool_settings, read_type,
-                input_order_info->limit, /*split_id=*/i));
+                input_order_info->limit, /*split_index=*/i));
         }
     }
     else if (is_parallel_reading_from_replicas)

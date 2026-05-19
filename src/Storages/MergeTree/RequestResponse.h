@@ -146,8 +146,7 @@ struct InitialAllRangesAnnouncement
 /// for that stream should immediately mark itself finished.
 ///
 /// The callback wraps the response in `std::optional`: `std::nullopt` means the initiator is on
-/// an older protocol version and did not send a response — pools should fall back to the
-/// pre-existing behavior (no authoritative-set pruning). An engaged optional means the response
+/// an older protocol version and did not send a response. An engaged optional means the response
 /// was received, even if `parts` is empty.
 struct InitialAllRangesAnnouncementResponse
 {
