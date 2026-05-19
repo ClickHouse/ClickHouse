@@ -97,11 +97,9 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     per_part_marks_in_range.resize(per_part_infos.size(), 1);
 }
 
-bool MergeTreeReadPoolParallelReplicasInOrder::isPhantomPart(const MergeTreePartInfo & info, const String & projection_name) const
+bool MergeTreeReadPoolParallelReplicasInOrder::wasSelectedByInitiator(const MergeTreePartInfo & info, const String & projection_name) const
 {
-    if (!authoritative_parts_received)
-        return false;
-    return !authoritative_parts.contains({info, projection_name});
+    return authoritative_parts_received && authoritative_parts.contains({info, projection_name});
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t task_idx, MergeTreeReadTask * previous_task)

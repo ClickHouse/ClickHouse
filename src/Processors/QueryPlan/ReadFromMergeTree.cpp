@@ -679,9 +679,8 @@ Pipe ReadFromMergeTree::readInOrder(
     {
         const auto & client_info = context->getClientInfo();
         /// Each split gets its own stream_id so the coordinator maintains an independent
-        /// ImplInterface instance per split. When splitting, suffix every split — including the
-        /// first — with `#split_{i}` so they're named uniformly. When the whole table is read
-        /// by a single pool (no splitting), keep the bare table name.
+        /// ImplInterface instance per split. When splitting, suffix every split with `#split_{i}`.
+        /// When the whole table is read by a single pool, keep the bare table name.
         String stream_id = data.getStorageID().getFullTableName();
         if (split_index)
             stream_id += fmt::format("#split_{}", *split_index);
@@ -744,9 +743,7 @@ Pipe ReadFromMergeTree::readInOrder(
     const bool set_total_rows_approx = !is_parallel_reading_from_replicas || isParallelReplicasLocalPlanForInitiator();
 
     /// On followers, the pool was constructed over all local parts but the coordinator's stream
-    /// only owns a subset. Skip constructing source processors for parts outside the authoritative
-    /// set so the pipeline structure (and EXPLAIN PIPELINE output) reflects only the consumers
-    /// that will actually do work, instead of phantoms that immediately exit.
+    /// only owns a subset. Skip constructing source processors for parts initiator didn't select.
     auto * pr_in_order_pool = is_parallel_reading_from_replicas
         ? dynamic_cast<MergeTreeReadPoolParallelReplicasInOrder *>(pool.get())
         : nullptr;
@@ -758,18 +755,10 @@ Pipe ReadFromMergeTree::readInOrder(
 
         /// For projection parts, the authoritative set is keyed by the parent part's info plus
         /// the projection name (same convention used in the pool's announcement and getTask).
-        /// The projection name distinguishes mixed projection/base reads on the same parent part:
-        /// a stream may own only the projection variant, in which case the base consumer for the
-        /// same parent part must still be pruned.
         const bool is_projection = part_with_ranges.data_part->isProjectionPart();
-        const auto & part_info_for_phantom_check = is_projection
-            ? part_with_ranges.parent_part->info
-            : part_with_ranges.data_part->info;
-        const String & projection_name_for_phantom_check = is_projection
-            ? part_with_ranges.data_part->name
-            : "";
-        if (pr_in_order_pool
-            && pr_in_order_pool->isPhantomPart(part_info_for_phantom_check, projection_name_for_phantom_check))
+        const auto & part_info_for_check = is_projection ? part_with_ranges.parent_part->info : part_with_ranges.data_part->info;
+        const String & projection_name_for_check = is_projection ? part_with_ranges.data_part->name : "";
+        if (pr_in_order_pool && !pr_in_order_pool->wasSelectedByInitiator(part_info_for_check, projection_name_for_check))
             continue;
 
         UInt64 total_rows = part_with_ranges.getRowsCount();
@@ -860,10 +849,8 @@ Pipe ReadFromMergeTree::readInOrder(
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
-    /// Empty pipe — every part was pruned as a phantom (the coordinator's stream owns none of
-    /// this replica's parts, e.g. follower over-announced more splits than the initiator created).
-    /// Return as-is; the caller in `spreadMarkRangesAmongStreamsWithOrder` filters out empty
-    /// pipes, and `initializePipeline` substitutes a `NullSource` for an empty top-level pipe.
+    /// Empty pipe — return as-is; the caller in `spreadMarkRangesAmongStreamsWithOrder` filters out
+    /// empty pipes, and `initializePipeline` substitutes a `NullSource` for an empty top-level pipe.
     if (pipe.empty())
         return pipe;
 

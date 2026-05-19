@@ -488,10 +488,8 @@ private:
         ReadType read_type,
         UInt64 limit,
         /// Index of this split when reading in-order with parallel replicas; nullopt means
-        /// a single pool reads the whole table (no splitting). When engaged, the stream_id
-        /// gets a `#split_{i}` suffix so all splits are named uniformly.
-        std::optional<size_t> split_index = std::nullopt
-    );
+        /// a single pool reads the whole table (no splitting).
+        std::optional<size_t> split_index = std::nullopt);
 
     Pipe spreadMarkRanges(
         RangesInDataParts && parts_with_ranges,

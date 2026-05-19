@@ -36,14 +36,10 @@ public:
     void profileFeedback(ReadBufferFromFileBase::ProfileInfo) override {}
     MergeTreeReadTaskPtr getTask(size_t task_idx, MergeTreeReadTask * previous_task) override;
 
-    /// Returns true if this (part, projection_name) is not in the coordinator's authoritative set
-    /// for this stream. Used to skip constructing source processors for phantom parts at
-    /// pipeline-build time (instead of running them and having `getTask` short-circuit on every
-    /// call). The `info` argument is the parent part's info for projection parts, matching the
-    /// convention used elsewhere in this pool. Returns false if the coordinator didn't send an
-    /// authoritative set (older protocol): fall back to the pre-existing behavior, which
-    /// constructs all sources.
-    bool isPhantomPart(const MergeTreePartInfo & info, const String & projection_name) const;
+    /// Returns true if this (part, projection_name) is in the coordinator's authoritative set for
+    /// this stream. Returns true if the coordinator didn't send an authoritative set (older protocol):
+    /// fall back to the pre-existing behavior, which constructs all sources.
+    bool wasSelectedByInitiator(const MergeTreePartInfo & info, const String & projection_name) const;
 
 private:
     LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicasInOrder");
