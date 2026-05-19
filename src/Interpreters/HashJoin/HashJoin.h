@@ -605,6 +605,12 @@ private:
     void tryRerangeRightTableDataImpl(Map & map);
 
     bool canConvertToFixedHashMap() const;
+
+    /// If `enable_join_runtime_filter_shared_perfect_hash` is on and the build side has been
+    /// converted to a FixedHashMap, publish a SharedPerfectHashRuntimeFilter into the query's
+    /// RuntimeFilterLookup, replacing any Set/BloomFilter previously installed by
+    /// BuildRuntimeFilterStep for the same filter name.
+    void publishSharedRuntimeFilters();
     void tryConvertToFixedHashMap();
 
     template <bool is_signed, typename Key, typename MapsTemplate>

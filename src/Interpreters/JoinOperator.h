@@ -29,6 +29,12 @@ struct JoinOperator
     /// For INNER JOINs, residual filter is the same as expression
     std::vector<JoinActionRef> residual_filter = {};
 
+    /// Per-key runtime filter descriptors (filter_name, build-side key column name) that
+    /// the join should publish from its FixedHashMap when
+    /// `enable_join_runtime_filter_shared_perfect_hash` is on. Set by the joinRuntimeFilter
+    /// optimizer pass and copied into TableJoin at chooseJoinAlgorithm time.
+    std::vector<std::pair<String, String>> shared_runtime_filter_descriptors = {};
+
     explicit JoinOperator(
         JoinKind kind_ = JoinKind::Cross,
         JoinStrictness strictness_ = JoinStrictness::All,
@@ -110,6 +116,7 @@ struct JoinSettings
     bool use_hash_table_stats_for_join_reordering;
 
     bool enable_join_fixed_hash_table_conversion;
+    bool enable_join_runtime_filter_shared_perfect_hash;
 
     explicit JoinSettings(const Settings & query_settings);
     explicit JoinSettings(const QueryPlanSerializationSettings & settings);

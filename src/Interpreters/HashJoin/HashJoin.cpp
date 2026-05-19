@@ -40,6 +40,11 @@
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 
+#include <Columns/ColumnsNumber.h>
+#include <Common/CurrentThread.h>
+#include <Interpreters/Context.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
+
 namespace DB
 {
 
@@ -2217,6 +2222,206 @@ void HashJoin::reinitUsedFlags()
     }
 }
 
+namespace
+{
+
+/// Probe a FixedHashMapWithSizeBits<Key, Mapped, size_bits>: returns column of UInt8 (0/1) per row.
+/// Handles both signed and unsigned input columns of widths up to sizeof(Key). NULLs are treated
+/// as not present.
+template <typename Key, size_t size_bits, typename Mapped>
+ColumnPtr probeFixedHashMap(
+    const FixedHashMapWithSizeBits<Key, Mapped, size_bits> & ht,
+    Key min_key,
+    size_t range_size,
+    const ColumnWithTypeAndName & values)
+{
+    const IColumn * col = values.column.get();
+
+    const ColumnUInt8 * null_map = nullptr;
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(col))
+    {
+        col = &nullable->getNestedColumn();
+        null_map = &nullable->getNullMapColumn();
+    }
+
+    const size_t n = col->size();
+    auto result_col = ColumnUInt8::create(n);
+    auto & result_data = result_col->getData();
+
+    auto probe_loop = [&]<typename T>(const ColumnVector<T> * typed_col)
+    {
+        const T * src = typed_col->getData().data();
+        for (size_t i = 0; i < n; ++i)
+        {
+            /// Bit-cast widening: signed -> unsigned then promote to Key (UInt32 or UInt64).
+            using SrcU = std::make_unsigned_t<T>;
+            const Key v = static_cast<Key>(static_cast<SrcU>(src[i]));
+            const Key idx = v - min_key;
+            result_data[i] = (idx < range_size) ? (ht.has(idx) ? 1 : 0) : 0;
+        }
+    };
+
+    if (const auto * cu8 = checkAndGetColumn<ColumnVector<UInt8>>(col)) probe_loop(cu8);
+    else if (const auto * cu16 = checkAndGetColumn<ColumnVector<UInt16>>(col)) probe_loop(cu16);
+    else if (const auto * cu32 = checkAndGetColumn<ColumnVector<UInt32>>(col)) probe_loop(cu32);
+    else if (const auto * cu64 = checkAndGetColumn<ColumnVector<UInt64>>(col)) probe_loop(cu64);
+    else if (const auto * ci8 = checkAndGetColumn<ColumnVector<Int8>>(col)) probe_loop(ci8);
+    else if (const auto * ci16 = checkAndGetColumn<ColumnVector<Int16>>(col)) probe_loop(ci16);
+    else if (const auto * ci32 = checkAndGetColumn<ColumnVector<Int32>>(col)) probe_loop(ci32);
+    else if (const auto * ci64 = checkAndGetColumn<ColumnVector<Int64>>(col)) probe_loop(ci64);
+    else
+    {
+        /// Unsupported column type — be conservative and pass everything through.
+        for (size_t i = 0; i < n; ++i)
+            result_data[i] = 1;
+    }
+
+    if (null_map)
+    {
+        const auto & nm = null_map->getData();
+        for (size_t i = 0; i < n; ++i)
+            if (nm[i])
+                result_data[i] = 0;
+    }
+
+    return result_col;
+}
+
+/// Build a SharedPerfectHashRuntimeFilter::ProbeFn that captures `shared_ptr<FixedHashMap>` and range.
+/// The `data_holder` is the outer RightTableData shared_ptr that owns the map, ensuring the map
+/// stays alive as long as the filter is alive.
+template <typename Key, size_t size_bits, typename Mapped>
+SharedPerfectHashRuntimeFilter::ProbeFn
+buildSharedFilterProbeFn(
+    std::shared_ptr<FixedHashMapWithSizeBits<Key, Mapped, size_bits>> range_map_arg,
+    Key min_key,
+    size_t range_size)
+{
+    return [range_map = std::move(range_map_arg), min_key, range_size]
+        (const ColumnWithTypeAndName & values) -> ColumnPtr
+    {
+        return probeFixedHashMap<Key, size_bits, Mapped>(*range_map, min_key, range_size, values);
+    };
+}
+
+} // anonymous namespace
+
+void HashJoin::publishSharedRuntimeFilters()
+{
+    if (!table_join->enableJoinRuntimeFilterSharedPerfectHash())
+        return;
+
+    const auto & descriptors = table_join->getSharedRuntimeFilterDescriptors();
+    if (descriptors.empty())
+        return;
+
+    /// The descriptors hold filter name + build-side key column name. We currently support
+    /// the single-key, single-MapsVariant case (where FixedHashMap conversion is also possible).
+    /// Multi-condition joins fall through to the existing Set/BF runtime filter.
+    if (data->maps.size() != 1)
+        return;
+
+    /// Conversion must have actually happened. If not, leave the existing Set/BF filter alone.
+    const bool is_range_type =
+        data->type == Type::range8_key32 || data->type == Type::range16_key32 ||
+        data->type == Type::range17_key32 || data->type == Type::range18_key32 ||
+        data->type == Type::range8_key64 || data->type == Type::range16_key64 ||
+        data->type == Type::range17_key64 || data->type == Type::range18_key64;
+    if (!is_range_type)
+        return;
+
+    /// When the build side has only one distinct key, `RuntimeFilterBase` already specializes to
+    /// a value == const check (`RuntimeFilterLookup.h:144-150`) which is faster than any hash
+    /// table probe (single register compare). Replacing it with FixedHashMap probe is a small
+    /// regression (~4% on TPC-H Q11/Q21 at SF100). Skip publication in this case to leave the
+    /// `== const` specialization active.
+    if (data->key_range.size <= 1)
+        return;
+
+    auto query_context = CurrentThread::get().tryGetQueryContext();
+    if (!query_context)
+        return;
+    auto lookup = query_context->getRuntimeFilterLookup();
+    if (!lookup)
+        return;
+
+    /// Match the descriptor's build key column name to position 0 of right_table_keys
+    /// (we only have a single-condition join here so it must be the first column).
+    if (right_table_keys.columns() == 0)
+        return;
+    const String build_key_name = right_table_keys.getByPosition(0).name;
+    const auto & filter_column_type = right_table_keys.getByPosition(0).type;
+
+    auto build_probe_fn = [&]() -> SharedPerfectHashRuntimeFilter::ProbeFn
+    {
+        SharedPerfectHashRuntimeFilter::ProbeFn probe_fn;
+        std::visit(
+            [&](auto & map)
+            {
+                using MapType = std::decay_t<decltype(map)>;
+                if constexpr (std::is_same_v<MapType, MapsOne> || std::is_same_v<MapType, MapsAll>)
+                {
+                    using Mapped = typename MapType::MappedType;
+                    auto dispatch = [&]<typename Key, size_t Bits>(auto & range_ptr)
+                    {
+                        if (!range_ptr)
+                            return;
+                        probe_fn = buildSharedFilterProbeFn<Key, Bits, Mapped>(
+                            range_ptr,
+                            static_cast<Key>(data->key_range.min_key),
+                            data->key_range.size);
+                    };
+
+                    switch (data->type)
+                    {
+                        case Type::range8_key32:  dispatch.template operator()<UInt32,  8>(map.range8_key32);  break;
+                        case Type::range16_key32: dispatch.template operator()<UInt32, 16>(map.range16_key32); break;
+                        case Type::range17_key32: dispatch.template operator()<UInt32, 17>(map.range17_key32); break;
+                        case Type::range18_key32: dispatch.template operator()<UInt32, 18>(map.range18_key32); break;
+                        case Type::range8_key64:  dispatch.template operator()<UInt64,  8>(map.range8_key64);  break;
+                        case Type::range16_key64: dispatch.template operator()<UInt64, 16>(map.range16_key64); break;
+                        case Type::range17_key64: dispatch.template operator()<UInt64, 17>(map.range17_key64); break;
+                        case Type::range18_key64: dispatch.template operator()<UInt64, 18>(map.range18_key64); break;
+                        default: break;
+                    }
+                }
+            },
+            data->maps.front());
+        return probe_fn;
+    };
+
+    auto probe_fn = build_probe_fn();
+    if (!probe_fn)
+        return;
+
+    /// Default tuning matching ApproximateRuntimeFilter's defaults; conservative.
+    const Float64 pass_ratio_threshold = 0.7;
+    const UInt64 blocks_to_skip = 30;
+
+    /// Publish the shared filter for each descriptor whose build key matches.
+    /// We replace because BuildRuntimeFilterTransform may have already published a Set/BF.
+    for (const auto & [filter_name, descr_build_key] : descriptors)
+    {
+        if (descr_build_key != build_key_name)
+            continue;
+
+        auto filter = std::make_unique<SharedPerfectHashRuntimeFilter>(
+            filter_column_type,
+            pass_ratio_threshold,
+            blocks_to_skip,
+            probe_fn,
+            /*data_holder=*/data);
+        lookup->addOrReplace(filter_name, std::move(filter));
+
+        LOG_DEBUG(log,
+            "{}Published SharedPerfectHashRuntimeFilter '{}' on build key '{}' "
+            "(min_key={}, range={}, type={})",
+            instance_log_id, filter_name, build_key_name,
+            data->key_range.min_key, data->key_range.size,
+            static_cast<int>(data->type));
+    }
+}
+
 void HashJoin::tryConvertToFixedHashMap()
 {
     if (!canConvertToFixedHashMap())
@@ -2277,5 +2482,6 @@ void HashJoin::runPostBuildPhase()
 {
     tryRerangeRightTableData();
     tryConvertToFixedHashMap();
+    publishSharedRuntimeFilters();
 }
 }

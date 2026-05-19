@@ -168,6 +168,17 @@ private:
     const bool enable_software_prefetch_in_join = false;
     const size_t max_bytes_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
+    const bool enable_join_runtime_filter_shared_perfect_hash = false;
+
+    /// Runtime filter descriptors that should be published from this join's build side
+    /// (filter_name, build-side key column name). Filled in by the joinRuntimeFilter optimizer
+    /// when `enable_join_runtime_filter_shared_perfect_hash` is on. Consumed by HashJoin
+    /// in `runPostBuildPhase` to publish a SharedPerfectHashRuntimeFilter into the lookup
+    /// when conversion to FixedHashMap succeeded.
+    /// We use shared_ptr<vector> so the optimizer can fill it after TableJoin is already
+    /// owned by a JoinStepLogical, and so that all clones of TableJoin share the same list.
+    std::shared_ptr<std::vector<std::pair<String, String>>> shared_runtime_filter_descriptors
+        = std::make_shared<std::vector<std::pair<String, String>>>();
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -332,13 +343,29 @@ public:
     bool enableSoftwarePrefetchInJoin() const { return enable_software_prefetch_in_join; }
     size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
+    bool enableJoinRuntimeFilterSharedPerfectHash() const { return enable_join_runtime_filter_shared_perfect_hash; }
+
+    void addSharedRuntimeFilterDescriptor(const String & filter_name, const String & build_key_column_name)
+    {
+        shared_runtime_filter_descriptors->emplace_back(filter_name, build_key_column_name);
+    }
+    const std::vector<std::pair<String, String>> & getSharedRuntimeFilterDescriptors() const
+    {
+        return *shared_runtime_filter_descriptors;
+    }
 
     bool oneDisjunct() const;
 
     ASTTableJoin & getTableJoin() { return table_join; }
     const ASTTableJoin & getTableJoin() const { return table_join; }
 
-    void setJoinOperator(const JoinOperator & join_operator_) { join_operator = join_operator_; }
+    void setJoinOperator(const JoinOperator & join_operator_)
+    {
+        join_operator = join_operator_;
+        /// Copy descriptors set by the joinRuntimeFilter optimizer pass so HashJoin can see them.
+        for (const auto & descr : join_operator_.shared_runtime_filter_descriptors)
+            addSharedRuntimeFilterDescriptor(descr.first, descr.second);
+    }
 
     JoinOnClause & getOnlyClause() { assertHasOneOnExpr(); return clauses[0]; }
     const JoinOnClause & getOnlyClause() const { assertHasOneOnExpr(); return clauses[0]; }

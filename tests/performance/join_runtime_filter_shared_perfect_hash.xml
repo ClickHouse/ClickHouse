@@ -1,0 +1,20 @@
+<test>
+    <settings>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+        <max_bytes_before_external_join>0</max_bytes_before_external_join>
+        <join_algorithm>hash</join_algorithm>
+        <enable_join_fixed_hash_table_conversion>1</enable_join_fixed_hash_table_conversion>
+    </settings>
+
+    <create_query>CREATE TABLE build (id Int64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE probe (id Int64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO build SELECT number FROM numbers(50000) ORDER BY rand()</fill_query>
+    <fill_query>INSERT INTO probe SELECT randUniform(45000, 95000) FROM numbers(200000000)</fill_query>
+
+    <query>SELECT p.id, b.id FROM probe p INNER JOIN build b ON p.id = b.id FORMAT Null SETTINGS enable_join_runtime_filter_shared_perfect_hash = 0</query>
+    <query>SELECT p.id, b.id FROM probe p INNER JOIN build b ON p.id = b.id FORMAT Null SETTINGS enable_join_runtime_filter_shared_perfect_hash = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS build</drop_query>
+    <drop_query>DROP TABLE IF EXISTS probe</drop_query>
+</test>

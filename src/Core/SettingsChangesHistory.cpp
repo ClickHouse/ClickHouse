@@ -128,6 +128,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
             {"input_format_column_name_matching_mode", "match_case", "match_case", "New setting."},
             {"enable_join_fixed_hash_table_conversion", false, true, "New setting to enable converting the hash table to a flat array for joins when the key is a single integer with a small value range."},
+            {"enable_join_runtime_filter_shared_perfect_hash", false, false, "New setting: when the hash join build side converts to a FixedHashMap, share that map as the runtime filter for the probe side (instead of building a separate Set/BloomFilter)."},
             {"allow_experimental_ai_functions", false, false, "New setting"},
             {"ai_function_request_timeout_sec", 60, 60, "New setting"},
             {"ai_function_max_retries", 0, 0, "New setting"},

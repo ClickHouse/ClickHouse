@@ -8,6 +8,7 @@
 #include <base/types.h>
 #include <boost/noncopyable.hpp>
 #include <cstddef>
+#include <functional>
 #include <memory>
 
 namespace DB
@@ -269,6 +270,35 @@ private:
     BloomFilterPtr bloom_filter;
 };
 
+/// Runtime filter that delegates probe to a function captured at publication time.
+/// Used to share an already-built data structure (e.g. HashJoin's FixedHashMap)
+/// as a runtime filter without copying the data. The `data_holder` keeps the
+/// shared structure alive for the lifetime of the filter.
+class SharedPerfectHashRuntimeFilter final : public IRuntimeFilter
+{
+public:
+    using ProbeFn = std::function<ColumnPtr(const ColumnWithTypeAndName &)>;
+
+    SharedPerfectHashRuntimeFilter(
+        const DataTypePtr & filter_column_target_type_,
+        Float64 pass_ratio_threshold_for_disabling_,
+        UInt64 blocks_to_skip_before_reenabling_,
+        ProbeFn probe_fn_,
+        std::shared_ptr<void> data_holder_);
+
+    /// All "build" entry points are no-ops: the data was built inside HashJoin already.
+    void insert(ColumnPtr) override {}
+    void merge(const IRuntimeFilter *) override {}
+
+protected:
+    void finishInsertImpl() override {}
+    ColumnPtr findImpl(const ColumnWithTypeAndName & values) const override;
+
+private:
+    ProbeFn probe_fn;
+    std::shared_ptr<void> data_holder;
+};
+
 /// Store and find per-query runtime filters that are used for optimizing some kinds of JOINs
 /// by early pre-filtering of the left side of the JOIN.
 struct IRuntimeFilterLookup : boost::noncopyable
@@ -277,6 +307,11 @@ struct IRuntimeFilterLookup : boost::noncopyable
 
     /// Add runtime filter with the specified name
     virtual void add(const String & name, UniqueRuntimeFilterPtr runtime_filter) = 0;
+
+    /// Replace the runtime filter with the specified name (if it exists, it is overwritten).
+    /// Used by HashJoin to install a SharedPerfectHashRuntimeFilter that supersedes the
+    /// Set/BloomFilter built by BuildRuntimeFilterStep.
+    virtual void addOrReplace(const String & name, UniqueRuntimeFilterPtr runtime_filter) = 0;
 
     /// Get filter by name
     virtual RuntimeFilterConstPtr find(const String & name) const = 0;

@@ -332,6 +332,32 @@ void ApproximateRuntimeFilter::checkBloomFilterWorthiness()
         setFullyDisabled();
 }
 
+SharedPerfectHashRuntimeFilter::SharedPerfectHashRuntimeFilter(
+    const DataTypePtr & filter_column_target_type_,
+    Float64 pass_ratio_threshold_for_disabling_,
+    UInt64 blocks_to_skip_before_reenabling_,
+    ProbeFn probe_fn_,
+    std::shared_ptr<void> data_holder_)
+    : IRuntimeFilter(
+        /*filters_to_merge_=*/0,
+        filter_column_target_type_,
+        pass_ratio_threshold_for_disabling_,
+        blocks_to_skip_before_reenabling_)
+    , probe_fn(std::move(probe_fn_))
+    , data_holder(std::move(data_holder_))
+{
+    /// Build was already done elsewhere; nothing left to insert.
+    inserts_are_finished = true;
+}
+
+ColumnPtr SharedPerfectHashRuntimeFilter::findImpl(const ColumnWithTypeAndName & values) const
+{
+    chassert(inserts_are_finished);
+    auto result = probe_fn(values);
+    updateStats(values.column->size(), countPassedStats(result));
+    return result;
+}
+
 class RuntimeFilterLookup : public IRuntimeFilterLookup
 {
 public:
@@ -349,6 +375,15 @@ public:
             filter->merge(runtime_filter.get());    /// Add all new keys to a existing filter
         }
         filter->finishInsert();
+    }
+
+    void addOrReplace(const String & name, UniqueRuntimeFilterPtr runtime_filter) override
+    {
+        std::lock_guard g(rw_lock);
+        auto & filter = filters_by_name[name];
+        if (!filter)
+            ProfileEvents::increment(ProfileEvents::RuntimeFiltersCreated);
+        filter.reset(runtime_filter.release());
     }
 
     RuntimeFilterConstPtr find(const String & name) const override
