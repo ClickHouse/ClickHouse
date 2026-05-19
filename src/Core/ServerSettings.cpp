@@ -26,6 +26,7 @@
 #include <Storages/System/ServerSettingColumnsParams.h>
 #include <base/types.h>
 #include <Common/Config/ConfigReloader.h>
+#include <Common/HTTPConnectionPool.h>
 #include <Common/MemoryTracker.h>
 
 #include <Common/DNSResolver.h>
@@ -1203,6 +1204,10 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, load_marks_threadpool_queue_size, 10000, R"(Number of tasks which is possible to push into prefetches pool)", 0) \
     DECLARE(NonZeroUInt64, threadpool_writer_pool_size, 100, R"(Size of background pool for write requests to object storages)", 0) \
     DECLARE(UInt64, threadpool_writer_queue_size, 10000, R"(Number of tasks which is possible to push into background pool for write requests to object storages)", 0) \
+    DECLARE(UInt64, iceberg_compaction_threadpool_pool_size, 50, R"(Size of background pool for iceberg compaction)", 0) \
+    DECLARE(UInt64, iceberg_compaction_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into iceberg compaction pool)", 0) \
+    DECLARE(UInt64, iceberg_scheduler_compaction_threadpool_pool_size, 50, R"(Size of background pool for iceberg compaction scheduler)", 0) \
+    DECLARE(UInt64, iceberg_scheduler_compaction_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into iceberg compaction scheduler pool)", 0) \
     DECLARE(UInt64, iceberg_catalog_threadpool_pool_size, 50, R"(Size of background pool for iceberg catalog)", 0) \
     DECLARE(UInt64, iceberg_catalog_threadpool_queue_size, 10000, R"(Number of tasks which is possible to push into iceberg catalog pool)", 0) \
     DECLARE(UInt64, iceberg_background_schedule_pool_size, 10, "Size of thread pool to asynchronously fetch the latest metadata from a remote iceberg catalog; the pool is shared by all the active tables.", 0) \
@@ -1339,6 +1344,8 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(String, keeper_hosts, "", R"(Dynamic setting. Contains a set of [Zoo]Keeper hosts ClickHouse can potentially connect to. Doesn't expose information from `<auxiliary_zookeepers>`)", 0) \
     DECLARE(Bool, allow_experimental_webassembly_udf, false, R"(Enable experimental support for WebAssembly UDFs)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_webterminal, false, R"(Enable experimental web terminal interface at the `/webterminal` HTTP endpoint. Provides an interactive `clickhouse-client` session in the browser via WebSocket.)", EXPERIMENTAL) \
+    DECLARE(String, webterminal_allowed_origins, "", R"(Comma-separated list of full origins (scheme + host + optional port) allowed to open `/webterminal` WebSocket sessions. When empty, the same-origin policy is enforced strictly (Origin must match the request scheme, host, and port). Set this for deployments behind a TLS-terminating reverse proxy where `request.isSecure()` is `false` even though the browser uses `https`. Example: `https://example.com,https://app.example.com:8443`.)", EXPERIMENTAL) \
     DECLARE(String, webassembly_udf_engine, "wasmtime", "The engine used to execute WebAssembly UDFs. Supported values are 'wasmtime' and 'wasmedge'.", EXPERIMENTAL) \
     DECLARE(Bool, allow_impersonate_user, false, R"(Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). The setting is deprecated.)", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, s3_credentials_provider_max_cache_size, 100, R"(The maximum number of S3 credentials providers that can be cached)", 0) \
@@ -1643,12 +1650,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
 /// If you add a setting which can be updated at runtime, please update 'changeable_settings' map in dumpToSystemServerSettingsColumns below
 
-DECLARE_SETTINGS_TRAITS_WITH_PATH(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS_WITHOUT_PATH, LIST_OF_SERVER_SETTINGS_WITH_PATH)
-IMPLEMENT_SETTINGS_TRAITS_WITH_PATH(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS_WITHOUT_PATH, LIST_OF_SERVER_SETTINGS_WITH_PATH)
-
-#define LIST_OF_SERVER_SETTINGS(DECLARE, ALIAS) \
-    LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, ALIAS) \
-    LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, ALIAS) \
+DECLARE_SETTINGS_TRAITS_WITH_PATH(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS_WITHOUT_PATH, LIST_OF_SERVER_SETTINGS_WITH_PATH, SERVER_SETTINGS_SUPPORTED_TYPES)
 
 struct ServerSettingsImpl : public BaseSettings<ServerSettingsTraits>
 {
@@ -1696,15 +1698,7 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
     }
 }
 
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) ServerSettings##TYPE NAME = &ServerSettingsImpl ::NAME;
-
-namespace ServerSetting
-{
-LIST_OF_SERVER_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_CUSTOM_IMPL(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS_WITHOUT_PATH, LIST_OF_SERVER_SETTINGS_WITH_PATH, ServerSettings, ServerSetting)
 
 ServerSettings::ServerSettings() : impl(std::make_unique<ServerSettingsImpl>())
 {
@@ -1858,6 +1852,19 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
 
             {"dns_allow_resolve_names_to_ipv4", {std::to_string(DNSResolver::instance().getFilterIPv4()), ChangeableWithoutRestart::Yes}},
             {"dns_allow_resolve_names_to_ipv6", {std::to_string(DNSResolver::instance().getFilterIPv6()), ChangeableWithoutRestart::Yes}},
+
+            {"disk_connections_rcvbuf",
+             {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::DISK).rcvbuf), ChangeableWithoutRestart::Yes}},
+            {"disk_connections_sndbuf",
+             {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::DISK).sndbuf), ChangeableWithoutRestart::Yes}},
+            {"storage_connections_rcvbuf",
+             {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::STORAGE).rcvbuf), ChangeableWithoutRestart::Yes}},
+            {"storage_connections_sndbuf",
+             {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::STORAGE).sndbuf), ChangeableWithoutRestart::Yes}},
+            {"http_connections_rcvbuf",
+             {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::HTTP).rcvbuf), ChangeableWithoutRestart::Yes}},
+            {"http_connections_sndbuf",
+             {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::HTTP).sndbuf), ChangeableWithoutRestart::Yes}},
     };
 
     if (context->areBackgroundExecutorsInitialized())

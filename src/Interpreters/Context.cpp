@@ -1248,7 +1248,9 @@ ContextData::ContextData(const ContextData &o) :
     query_privileges_info(o.query_privileges_info),
     async_read_counters(o.async_read_counters),
     view_source(o.view_source),
-    table_function_results(o.table_function_results),
+    /// `table_function_results` is copied in the body under `o.table_function_results_mutex`
+    /// to avoid a data race with `Context::executeTableFunction` and other writers
+    /// that mutate the source object's map. See issue #104807.
     query_context(o.query_context),
     session_context(o.session_context),
     global_context(o.global_context),
@@ -1256,6 +1258,8 @@ ContextData::ContextData(const ContextData &o) :
     buffer_context(o.buffer_context),
     is_internal_query(o.is_internal_query),
     is_background_operation(o.is_background_operation),
+    is_view_inner_query(o.is_view_inner_query),
+    positional_arguments_already_resolved(o.positional_arguments_already_resolved),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
@@ -1275,6 +1279,8 @@ ContextData::ContextData(const ContextData &o) :
     local_write_query_throttler(o.local_write_query_throttler),
     backups_query_throttler(o.backups_query_throttler)
 {
+    std::lock_guard lock(o.table_function_results_mutex);
+    table_function_results = o.table_function_results;
 }
 
 void ContextData::resetSharedContext()
@@ -2648,8 +2654,30 @@ Context::QueryFactoriesInfo Context::getQueryFactoriesInfo() const
     return query_factories_info;
 }
 
+namespace
+{
+    /// Set on threads that are reading factory metadata for introspection (e.g. system.functions
+    /// fillData), so that resolving every function — and the helper functions they construct
+    /// internally — does not record entries in query_log.used_functions for the user's query.
+    thread_local bool suppress_query_factories_info = false;
+}
+
+Context::SuppressQueryFactoriesInfoScope::SuppressQueryFactoriesInfoScope()
+    : prev(suppress_query_factories_info)
+{
+    suppress_query_factories_info = true;
+}
+
+Context::SuppressQueryFactoriesInfoScope::~SuppressQueryFactoriesInfoScope()
+{
+    suppress_query_factories_info = prev;
+}
+
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
+    if (suppress_query_factories_info)
+        return;
+
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query factories info");
 
@@ -4513,6 +4541,12 @@ std::shared_ptr<ParquetMetadataCache> Context::getParquetMetadataCache() const
     return shared->parquet_metadata_cache;
 }
 
+std::shared_ptr<ParquetMetadataCache> Context::tryGetParquetMetadataCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->parquet_metadata_cache;
+}
+
 void Context::clearParquetMetadataCache() const
 {
     auto cache = getParquetMetadataCache();
@@ -6023,16 +6057,6 @@ std::shared_ptr<TransposedMetricLog> Context::getTransposedMetricLog() const
         return {};
 
     return shared->system_logs->transposed_metric_log;
-}
-
-std::shared_ptr<HistogramMetricLog> Context::getHistogramMetricLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->histogram_metric_log;
 }
 
 std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog() const

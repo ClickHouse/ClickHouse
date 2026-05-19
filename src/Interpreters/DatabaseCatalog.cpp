@@ -28,6 +28,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
+#include <base/scope_guard.h>
 #include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -36,6 +37,9 @@
 #include <mutex>
 #include <string>
 #include <utility>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 #include <base/isSharedPtrUnique.h>
 #include <boost/range/adaptor/map.hpp>
@@ -736,14 +740,23 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
         referential_dependencies.addDependencies(StorageID{new_name, table_name}, removed_ref_deps);
         loading_dependencies.addDependencies(StorageID{new_name, table_name}, removed_loading_deps);
 
+        /// `view_dependencies` is rewired in both directions: the table being renamed
+        /// may be a materialized view (incoming edges from its source) and/or a source
+        /// of materialized views (outgoing edges to its dependent MVs). Both sides must
+        /// be re-keyed under `new_name`, otherwise lookups by the new name fail and
+        /// inserts into the renamed source no longer reach its MVs.
         auto tables_from = view_dependencies.getDependents(StorageID{old_name, table_name});
-        if (!tables_from.empty())
+        for (const auto & the_table_from : tables_from)
         {
-            assert(tables_from.size() == 1);
-            const auto & the_table_from = *tables_from.begin();
-
             view_dependencies.removeDependency(the_table_from, StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
             view_dependencies.addDependency(the_table_from, StorageID{new_name, table_name});
+        }
+
+        auto views_from = view_dependencies.getDependencies(StorageID{old_name, table_name});
+        for (const auto & view : views_from)
+        {
+            view_dependencies.removeDependency(StorageID{old_name, table_name}, view, /* remove_isolated_tables= */ true);
+            view_dependencies.addDependency(StorageID{new_name, table_name}, view);
         }
     }
 }
@@ -1034,6 +1047,24 @@ std::vector<StorageID> DatabaseCatalog::getDependentViews(const StorageID & sour
     return view_dependencies.getDependencies(source_table_id);
 }
 
+std::vector<StorageID> DatabaseCatalog::takeSourceViewDependencies(const StorageID & source_table_id)
+{
+    std::lock_guard lock{databases_mutex};
+    auto views = view_dependencies.getDependencies(source_table_id);
+    for (const auto & view : views)
+        view_dependencies.removeDependency(source_table_id, view, /* remove_isolated_tables= */ true);
+    return views;
+}
+
+void DatabaseCatalog::addSourceViewDependencies(const StorageID & source_table_id, const std::vector<StorageID> & view_ids)
+{
+    if (view_ids.empty())
+        return;
+    std::lock_guard lock{databases_mutex};
+    for (const auto & view_id : view_ids)
+        view_dependencies.addDependency(source_table_id, view_id);
+}
+
 std::vector<StorageID> DatabaseCatalog::getReadyDependentViews(const StorageID & source_table_id, const ContextPtr & query_context) const
 {
     /// During server startup, not all dependent views may be registered yet.
@@ -1123,6 +1154,13 @@ bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
 
 StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr local_context) const
 {
+#if CLICKHOUSE_CLOUD
+    if (SharedDatabaseCatalog::initialized())
+    {
+        if (auto res = SharedDatabaseCatalog::instance().tryGetStorageFromIntentions(table_id, local_context))
+            return res;
+    }
+#endif
     std::optional<Exception> exc;
     auto table = local_context->hasQueryContext() ?
         local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, &exc); }).second :
@@ -1446,19 +1484,25 @@ time_t DatabaseCatalog::getMinDropTime()
     return min_drop_time;
 }
 
-std::vector<DatabaseCatalog::TablesMarkedAsDropped::iterator> DatabaseCatalog::getTablesToDrop()
+DatabaseCatalog::TablesMarkedAsDropped DatabaseCatalog::getTablesToDrop()
 {
     time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-    decltype(getTablesToDrop()) result;
+    TablesMarkedAsDropped result;
 
     std::lock_guard lock(tables_marked_dropped_mutex);
 
-    for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end(); ++it)
+    for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end();)
     {
         bool in_use = it->table && !isSharedPtrUnique(it->table);
         bool old_enough = it->drop_time <= current_time;
         if (!in_use && old_enough)
-            result.emplace_back(it);
+        {
+            if (first_async_drop_in_queue == it)
+                ++first_async_drop_in_queue;
+            result.splice(result.end(), tables_marked_dropped, it++);
+        }
+        else
+            ++it;
     }
 
     return result;
@@ -1484,16 +1528,27 @@ void DatabaseCatalog::rescheduleDropTableTask()
     (*drop_task)->scheduleAfter(schedule_after_ms);
 }
 
-void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMarkedAsDropped::iterator> tables_to_drop)
+void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
 {
     if (tables_to_drop.empty())
         return;
 
     ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), ThreadName::DROP_TABLES);
 
-    for (const auto & item : tables_to_drop)
+    /// Handle cases when enqueueAndKeepTrack() **itself** throws, i.e. CANNOT_SCHEDULE_TASK
+    auto it = tables_to_drop.begin();
+    SCOPE_EXIT({
+        runner.waitForAllToFinish();
+        if (it != tables_to_drop.end())
+        {
+            std::lock_guard lock(tables_marked_dropped_mutex);
+            tables_marked_dropped.splice(tables_marked_dropped.end(), tables_to_drop, it, tables_to_drop.end());
+        }
+    });
+
+    for (; it != tables_to_drop.end(); ++it)
     {
-        auto job = [this, table_iterator = item] ()
+        auto job = [this, table_iterator = it] ()
         {
             try
             {
@@ -1503,14 +1558,10 @@ void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMark
                 {
                     std::lock_guard lock(tables_marked_dropped_mutex);
 
-                    if (first_async_drop_in_queue == table_iterator)
-                        ++first_async_drop_in_queue;
-
                     [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(table_iterator->table_id.uuid);
                     chassert(removed);
 
                     table_to_delete_without_lock = std::move(*table_iterator);
-                    tables_marked_dropped.erase(table_iterator);
 
                     wait_table_finally_dropped.notify_all();
                 }
@@ -1519,18 +1570,13 @@ void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMark
             {
                 tryLogCurrentException(log, "Cannot drop table " + table_iterator->table_id.getNameForLogs() +
                                             ". Will retry later.");
-                {
-                    std::lock_guard lock(tables_marked_dropped_mutex);
+                std::lock_guard lock(tables_marked_dropped_mutex);
 
-                    if (first_async_drop_in_queue == table_iterator)
-                        ++first_async_drop_in_queue;
+                table_iterator->drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + getContext()->getServerSettings()[ServerSetting::database_catalog_drop_error_cooldown_sec];
+                tables_marked_dropped.emplace_back(std::move(*table_iterator));
 
-                    tables_marked_dropped.splice(tables_marked_dropped.end(), tables_marked_dropped, table_iterator);
-                    table_iterator->drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + getContext()->getServerSettings()[ServerSetting::database_catalog_drop_error_cooldown_sec];
-
-                    if (first_async_drop_in_queue == tables_marked_dropped.end())
-                        --first_async_drop_in_queue;
-                }
+                if (first_async_drop_in_queue == tables_marked_dropped.end())
+                    --first_async_drop_in_queue;
             }
         };
 
@@ -1556,7 +1602,7 @@ void DatabaseCatalog::dropTableDataTask()
 
         try
         {
-            dropTablesParallel(tables_to_drop);
+            dropTablesParallel(std::move(tables_to_drop));
         }
         catch (...)
         {
@@ -1648,7 +1694,7 @@ void DatabaseCatalog::addDependencies(
     const std::vector<StorageID> & new_loading_dependencies,
     const std::vector<StorageID> & new_view_dependencies)
 {
-    if (new_referential_dependencies.empty() && new_loading_dependencies.empty())
+    if (new_referential_dependencies.empty() && new_loading_dependencies.empty() && new_view_dependencies.empty())
         return;
     std::lock_guard lock{databases_mutex};
     if (!new_referential_dependencies.empty())
@@ -1734,11 +1780,8 @@ std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID
     if (is_mv)
     {
         auto tables_from = view_dependencies.getDependents(table_id);
-        if (!tables_from.empty())
+        for (const auto & the_table_from : tables_from)
         {
-            assert(tables_from.size() == 1);
-            const auto & the_table_from = *tables_from.begin();
-
             view_dependencies.removeDependency(the_table_from, table_id, /* remove_isolated_tables= */ true);
             old_view_dependencies.push_back(the_table_from);
         }
@@ -1763,18 +1806,13 @@ void DatabaseCatalog::updateDependencies(
         referential_dependencies.addDependencies(table_id, new_referential_dependencies);
     if (!new_loading_dependencies.empty())
         loading_dependencies.addDependencies(table_id, new_loading_dependencies);
+    auto tables_from = view_dependencies.getDependents(table_id);
+    for (const auto & the_table_from : tables_from)
+        view_dependencies.removeDependency(the_table_from, table_id, /* remove_isolated_tables= */ true);
     if (!new_view_dependencies.empty())
     {
         assert(new_view_dependencies.size() == 1);
-        auto tables_from = view_dependencies.getDependents(table_id);
-        if (!tables_from.empty())
-        {
-            assert(tables_from.size() == 1);
-            const auto & the_table_from = *tables_from.begin();
-
-            view_dependencies.removeDependency(the_table_from, table_id, /* remove_isolated_tables= */ true);
-            view_dependencies.addDependency(StorageID{*new_view_dependencies.begin()}, table_id);
-        }
+        view_dependencies.addDependency(StorageID{*new_view_dependencies.begin()}, table_id);
     }
 }
 
