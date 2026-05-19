@@ -105,7 +105,6 @@ struct QueryPlanOptimizationSettings
     bool distributed_aggregation_memory_efficient = true; /// Is the memory-saving mode of distributed aggregation enabled
     bool distributed_plan_prefer_replicas_over_workers = false; /// Use ReadFromMergeTree with catalog access over ReadFromMergeTreeAtWorker
 
-
     /// ------------------------------------------------------
 
     /// Other settings related to plan-level optimizations

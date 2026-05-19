@@ -5,7 +5,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ClientInfo.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Disks/ObjectStorages/ObjectStorageFactory.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
 #include <Core/Block.h>
 #include <Common/SipHash.h>
 #include <Common/QueryScope.h>

@@ -20,7 +20,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/UUID.h>
 #include <Disks/IStoragePolicy.h>
-#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Formats/NativeWriter.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -59,7 +59,7 @@
 
 #include <QueryPipeline/QueryPipeline.h>
 
-#include <Disks/ObjectStorages/ObjectStorageFactory.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Core/ServerUUID.h>
