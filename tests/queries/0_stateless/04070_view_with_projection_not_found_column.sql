@@ -18,7 +18,7 @@ INSERT INTO test_proj SELECT number, toString(number) FROM numbers(1000000);
 
 CREATE VIEW test_proj_view AS SELECT * FROM test_proj;
 
-SELECT count() FROM test_proj_view WHERE name = '42';
+SELECT * FROM test_proj_view WHERE name = '42';
 
 DROP VIEW test_proj_view;
 DROP TABLE test_proj;
