@@ -101,6 +101,10 @@ public:
     void checkMetadataFilenameAvailability(const String & table_name) const override;
     bool isReadOnly() const override;
 
+    /// In read-only (facade) mode the underlying databases own the tables, so DROP DATABASE on the
+    /// Overlay must not try to iterate and drop them via this facade.
+    bool shouldBeEmptyOnDetach() const override { return !readonly; }
+
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
 

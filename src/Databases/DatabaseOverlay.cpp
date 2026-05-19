@@ -17,6 +17,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/logger_useful.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -96,10 +98,11 @@ void DatabaseOverlay::createTable(ContextPtr context_, const String & table_name
 void DatabaseOverlay::dropTable(ContextPtr context_, const String & table_name, bool sync)
 {
     if (readonly)
-    {
-        LOG_TRACE(log, "Ignoring DROP TABLE {}.{} in Overlay Database", getDatabaseName(), table_name);
-        return;
-    }
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Database {} is an Overlay facade (read-only). "
+            "Run DROP TABLE in the underlying database that owns the table",
+            backQuote(getDatabaseName()));
     for (auto & db : databases)
     {
         if (db->isTableExist(table_name, context_))
@@ -144,7 +147,12 @@ void DatabaseOverlay::attachTable(
 
 StoragePtr DatabaseOverlay::detachTable(ContextPtr context_, const String & table_name)
 {
-    StoragePtr result = nullptr;
+    if (readonly)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Database {} is an Overlay facade (read-only). "
+            "Run DETACH TABLE in the underlying database that owns the table",
+            backQuote(getDatabaseName()));
     for (auto & db : databases)
     {
         if (db->isTableExist(table_name, context_))
@@ -389,6 +397,11 @@ bool DatabaseOverlay::empty() const
 
 void DatabaseOverlay::shutdown()
 {
+    /// In read-only (facade) mode the underlying databases are owned by `DatabaseCatalog`,
+    /// not by this Overlay. Propagating `shutdown` would take down those real databases when the
+    /// Overlay alone is dropped, so the facade's `shutdown` must be a no-op here.
+    if (readonly)
+        return;
     for (auto & db : databases)
         db->shutdown();
 }
@@ -685,8 +698,21 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
         if (sources.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} database requires at least 1 source database", engine_name);
 
-        std::sort(sources.begin(), sources.end());
-        sources.erase(std::unique(sources.begin(), sources.end()), sources.end());
+        /// Preserve the user-supplied order of source databases (it is part of the lookup contract:
+        /// for tables with the same name, the database listed earlier wins). Deduplicate in place,
+        /// keeping the first occurrence.
+        {
+            std::unordered_set<String> seen;
+            seen.reserve(sources.size());
+            std::vector<String> deduped;
+            deduped.reserve(sources.size());
+            for (const auto & name : sources)
+            {
+                if (seen.insert(name).second)
+                    deduped.push_back(name);
+            }
+            sources = std::move(deduped);
+        }
 
         for (const auto & source_name : sources)
         {

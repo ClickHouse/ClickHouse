@@ -67,7 +67,9 @@ CREATE DATABASE loop_self ENGINE = Overlay('loop_self'); -- { serverError BAD_AR
 
 CREATE DATABASE bad_overlay ENGINE = Overlay('this_db_does_not_exist'); -- { serverError BAD_ARGUMENTS }
 
-DROP TABLE db_overlay.t_a;
+-- DROP/DETACH TABLE on the facade are rejected so that the underlying tables are not stopped behind the user's back.
+DROP TABLE db_overlay.t_a; -- { serverError BAD_ARGUMENTS }
+DETACH TABLE db_overlay.t_a; -- { serverError BAD_ARGUMENTS }
 
 RENAME TABLE db_a.t_new TO db_a.t_new_renamed;
 
