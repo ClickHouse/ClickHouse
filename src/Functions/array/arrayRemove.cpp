@@ -58,7 +58,7 @@ DataTypePtr FunctionArrayRemove::getReturnTypeImpl(const DataTypes & arguments) 
             "Number of arguments for function {} doesn't match: passed {}, should be 2",
             getName(), arguments.size());
 
-    const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+    const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[0]).get());
     if (!array_type)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "First argument for function {} must be an array but it has type {}.",
@@ -72,14 +72,54 @@ ColumnPtr FunctionArrayRemove::executeImpl(
     const DataTypePtr & return_type,
     size_t input_rows_count) const
 {
-    const auto * return_type_array = checkAndGetDataType<DataTypeArray>(return_type.get());
+    const auto & arr_arg_column_full = arguments[0].column->convertToFullColumnIfConst();
+    const bool argument_type_is_nullable = arguments[0].type->isNullable();
+    if (const auto * nullable_array_column = checkAndGetColumn<ColumnNullable>(arr_arg_column_full.get()))
+    {
+        if (checkAndGetColumn<ColumnArray>(&nullable_array_column->getNestedColumn()))
+        {
+            ColumnsWithTypeAndName nested_arguments = arguments;
+            nested_arguments[0].column = nullable_array_column->getNestedColumnPtr();
+            nested_arguments[0].type = removeNullable(arguments[0].type);
+
+            auto nested_result = executeImpl(nested_arguments, removeNullable(return_type), input_rows_count);
+
+            if (return_type->isNullable())
+            {
+                auto null_map = ColumnUInt8::create();
+                null_map->getData().assign(
+                    nullable_array_column->getNullMapData().begin(), nullable_array_column->getNullMapData().end());
+                return ColumnNullable::create(nested_result, std::move(null_map));
+            }
+
+            return nested_result;
+        }
+    }
+    else if (argument_type_is_nullable)
+    {
+        ColumnsWithTypeAndName nested_arguments = arguments;
+        nested_arguments[0].type = removeNullable(arguments[0].type);
+
+        auto nested_result = executeImpl(nested_arguments, removeNullable(return_type), input_rows_count);
+
+        if (return_type->isNullable())
+        {
+            auto null_map = ColumnUInt8::create();
+            null_map->getData().resize_fill(nested_result->size(), 0);
+            return ColumnNullable::create(nested_result, std::move(null_map));
+        }
+
+        return nested_result;
+    }
+
+    const auto * return_type_array = checkAndGetDataType<DataTypeArray>(removeNullable(return_type).get());
     if (!return_type_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Return type for function {} must be Array, got {}", getName(), return_type->getName());
 
     if (typeid_cast<const DataTypeNothing *>(return_type_array->getNestedType().get()))
         return return_type->createColumnConstWithDefaultValue(input_rows_count);
 
-    const auto & arr_arg_column = arguments[0].column->convertToFullColumnIfConst();
+    const auto & arr_arg_column = arr_arg_column_full;
     const auto * arr_col = checkAndGetColumn<ColumnArray>(arr_arg_column.get());
     if (!arr_col)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
@@ -89,7 +129,7 @@ ColumnPtr FunctionArrayRemove::executeImpl(
     const auto & arr_offsets = arr_col->getOffsets();
     size_t arr_elements_count = arr_data_col->size();
 
-    const auto & arr_data_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
+    const auto & arr_data_type = typeid_cast<const DataTypeArray &>(*removeNullable(arguments[0].type)).getNestedType();
     const auto & elem_type = arguments[1].type;
 
     ColumnPtr filter_col;

@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/StructuredSubstreamNames.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Common/escapeForFileName.h>
 
 #include <gtest/gtest.h>
 
@@ -19,6 +20,35 @@ ISerialization::SubstreamPath makeNullableArrayNullableElementPaths()
     path.push_back({ISerialization::Substream::ArrayElements});
     path.push_back({ISerialization::Substream::NullMap});
     path.push_back({ISerialization::Substream::NullableElements});
+    path.push_back({ISerialization::Substream::Regular});
+
+    return path;
+}
+
+ISerialization::SubstreamPath makeNullableArrayNonNullableElementPaths()
+{
+    ISerialization::SubstreamPath path;
+
+    path.push_back({ISerialization::Substream::NullMap});
+    path.push_back({ISerialization::Substream::NullableElements});
+    path.push_back({ISerialization::Substream::ArraySizes});
+    path.push_back({ISerialization::Substream::ArrayElements});
+    path.push_back({ISerialization::Substream::Regular});
+
+    return path;
+}
+
+ISerialization::SubstreamPath makeTupleNullableArrayElementPaths(const String & tuple_element_name)
+{
+    ISerialization::SubstreamPath path;
+
+    ISerialization::Substream tuple_element(ISerialization::Substream::TupleElement);
+    tuple_element.name_of_substream = tuple_element_name;
+    path.push_back(tuple_element);
+    path.push_back({ISerialization::Substream::NullMap});
+    path.push_back({ISerialization::Substream::NullableElements});
+    path.push_back({ISerialization::Substream::ArraySizes});
+    path.push_back({ISerialization::Substream::ArrayElements});
     path.push_back({ISerialization::Substream::Regular});
 
     return path;
@@ -90,6 +120,27 @@ TEST(StructuredSubstreamNames, UsesStructuredWhenColumnTypeSet)
     path.push_back({ISerialization::Substream::ArraySizes});
 
     EXPECT_EQ(ISerialization::getFileNameForStream("c", path, settings), "c.array.size0");
+}
+
+TEST(StructuredSubstreamNames, NullableArrayNonNullableElementStreamSuffix)
+{
+    const auto path = makeNullableArrayNonNullableElementPaths();
+
+    EXPECT_EQ(getStructuredSubstreamNameSuffix(prefixPath(path, 1)), ".null");
+    EXPECT_EQ(getStructuredSubstreamNameSuffix(prefixPath(path, 3)), ".array.size0");
+    EXPECT_EQ(getStructuredSubstreamNameSuffix(path), ".array.nested");
+}
+
+TEST(StructuredSubstreamNames, TuplePrefixedNullableArrayStreamSuffixes)
+{
+    const auto path_a = makeTupleNullableArrayElementPaths("a");
+    const auto path_b = makeTupleNullableArrayElementPaths("b");
+
+    EXPECT_EQ(getStructuredSubstreamNameSuffix(prefixPath(path_a, 2)), escapeForFileName(".a") + ".null");
+    EXPECT_EQ(getStructuredSubstreamNameSuffix(prefixPath(path_b, 2)), escapeForFileName(".b") + ".null");
+    EXPECT_EQ(getStructuredSubstreamNameSuffix(path_a), escapeForFileName(".a") + ".array.nested");
+    EXPECT_EQ(getStructuredSubstreamNameSuffix(path_b), escapeForFileName(".b") + ".array.nested");
+    EXPECT_NE(getStructuredSubstreamNameSuffix(path_a), getStructuredSubstreamNameSuffix(path_b));
 }
 
 TEST(StructuredSubstreamNames, UsesLegacyWithoutColumnType)

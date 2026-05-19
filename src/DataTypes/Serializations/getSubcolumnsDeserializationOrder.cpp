@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
+#include <Core/NamesAndTypes.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -66,6 +67,23 @@ std::vector<size_t> getSubcolumnsDeserializationOrder(
         subcolumns_positions[i] = i;
     std::sort(subcolumns_positions.begin(), subcolumns_positions.end(), [&](size_t left, size_t right){ return subcolumns_substreams_positions[left] < subcolumns_substreams_positions[right]; });
     return subcolumns_positions;
+}
+
+std::vector<size_t> getSubcolumnsDeserializationOrder(
+    const NameAndTypePair & column,
+    const std::vector<ISerialization::SubstreamData> & subcolumns_data,
+    const std::vector<String> & substreams_in_serialization_order,
+    ISerialization::EnumerateStreamsSettings & enumerate_settings,
+    const ISerialization::StreamFileNameSettings & stream_file_name_settings)
+{
+    auto settings_with_type = stream_file_name_settings;
+    settings_with_type.column_type = column.type.get();
+    return getSubcolumnsDeserializationOrder(
+        column.getNameInStorage(),
+        subcolumns_data,
+        substreams_in_serialization_order,
+        enumerate_settings,
+        settings_with_type);
 }
 
 }

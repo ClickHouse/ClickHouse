@@ -1,5 +1,7 @@
 #include <DataTypes/StructuredSubstreamNames.h>
 
+#include <optional>
+
 #include <Common/escapeForFileName.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypeArray.h>
@@ -16,20 +18,20 @@ namespace
 using Substream = ISerialization::Substream;
 using SubstreamPath = ISerialization::SubstreamPath;
 
-bool pathContainsSubstream(const SubstreamPath & path, Substream::Type type)
+bool pathContainsSubstreamInRange(const SubstreamPath & path, size_t begin, size_t end, Substream::Type type)
 {
-    for (const auto & element : path)
+    for (size_t i = begin; i < end && i < path.size(); ++i)
     {
-        if (element.type == type)
+        if (path[i].type == type)
             return true;
     }
     return false;
 }
 
-size_t countSubstreamsBefore(const SubstreamPath & path, size_t end_index, Substream::Type type)
+size_t countSubstreamsInRange(const SubstreamPath & path, size_t begin, size_t end, Substream::Type type)
 {
     size_t count = 0;
-    for (size_t i = 0; i < end_index && i < path.size(); ++i)
+    for (size_t i = begin; i < end && i < path.size(); ++i)
     {
         if (path[i].type == type)
             ++count;
@@ -37,37 +39,96 @@ size_t countSubstreamsBefore(const SubstreamPath & path, size_t end_index, Subst
     return count;
 }
 
-bool isOuterNullableArrayNullMap(const SubstreamPath & path)
+/// Tuple / Variant path components that must stay in the suffix to disambiguate columns.
+String getPathPrefixBeforeNullableArray(const SubstreamPath & path, size_t end_index)
 {
-    return path.size() == 1 && path[0].type == Substream::NullMap;
+    String stream_name;
+    for (size_t i = 0; i < end_index && i < path.size(); ++i)
+    {
+        const auto & element = path[i];
+        if (element.type == Substream::TupleElement)
+            stream_name += escapeForFileName("." + element.name_of_substream);
+        else if (element.type == Substream::VariantElement)
+            stream_name += "." + escapeForFileName(element.variant_element_name);
+        else if (element.type == Substream::VariantElementNullMap)
+            stream_name += "." + escapeForFileName(element.variant_element_name) + ".null";
+        else if (element.type == Substream::VariantDiscriminators)
+            stream_name += ".variant_discr";
+        else if (element.type == Substream::VariantDiscriminatorsPrefix)
+            stream_name += ".variant_discr_prefix";
+        else if (element.type == Substream::VariantOffsets)
+            stream_name += ".variant_offsets";
+    }
+    return stream_name;
 }
 
-bool isArraySizeInNullableArray(const SubstreamPath & path)
+/// Index of the outer Nullable(Array) null map: first NullMap not preceded by ArrayElements.
+std::optional<size_t> findOuterNullableArrayNullMapIndex(const SubstreamPath & path)
 {
-    if (path.empty() || path.back().type != Substream::ArraySizes)
-        return false;
+    for (size_t i = 0; i < path.size(); ++i)
+    {
+        if (path[i].type != Substream::NullMap)
+            continue;
 
-    return path.size() >= 3
-        && path[0].type == Substream::NullMap
-        && path[1].type == Substream::NullableElements;
+        bool has_array_elements_before = false;
+        for (size_t j = 0; j < i; ++j)
+        {
+            if (path[j].type == Substream::ArrayElements)
+            {
+                has_array_elements_before = true;
+                break;
+            }
+        }
+
+        if (!has_array_elements_before)
+            return i;
+    }
+
+    return std::nullopt;
 }
 
-bool isElementNullMapInNullableArray(const SubstreamPath & path)
+/// Structured suffix for the Nullable(Array) portion of the path (from outer null map onward).
+String getNullableArrayStructuredSuffix(const SubstreamPath & path, size_t nullable_array_start)
 {
-    if (path.empty() || path.back().type != Substream::NullMap)
-        return false;
+    const size_t path_size = path.size();
+    if (nullable_array_start >= path_size)
+        return "";
 
-    return pathContainsSubstream(path, Substream::ArrayElements);
-}
+    const size_t nullable_path_len = path_size - nullable_array_start;
 
-bool isElementDataInNullableArray(const SubstreamPath & path)
-{
-    if (path.size() < 2)
-        return false;
+    if (nullable_path_len == 1 && path[nullable_array_start].type == Substream::NullMap)
+        return ".null";
 
-    return path[path.size() - 1].type == Substream::Regular
-        && path[path.size() - 2].type == Substream::NullableElements
-        && pathContainsSubstream(path, Substream::ArrayElements);
+    if (path_size >= 2
+        && path[path_size - 1].type == Substream::ArraySizes
+        && path[path_size - 2].type == Substream::NullableElements)
+    {
+        const size_t array_sizes_in_path = countSubstreamsInRange(path, nullable_array_start, path_size, Substream::ArraySizes);
+        return ".array.size" + toString(array_sizes_in_path - 1);
+    }
+
+    if (path_size >= 2
+        && path[path_size - 1].type == Substream::NullMap
+        && pathContainsSubstreamInRange(path, nullable_array_start, path_size, Substream::ArrayElements))
+    {
+        return ".array.nested.null";
+    }
+
+    if (path_size >= 2 && path[path_size - 1].type == Substream::Regular)
+    {
+        if (path[path_size - 2].type == Substream::ArrayElements)
+            return ".array.nested";
+
+        if (path_size >= 4
+            && path[path_size - 2].type == Substream::NullableElements
+            && path[path_size - 3].type == Substream::NullMap
+            && path[path_size - 4].type == Substream::ArrayElements)
+        {
+            return ".array.nested";
+        }
+    }
+
+    return "";
 }
 
 String getLegacySubstreamNameSuffix(
@@ -162,20 +223,14 @@ bool needsStructuredSubstreamNames(const IDataType & type)
 
 String getStructuredSubstreamNameSuffix(const SubstreamPath & path)
 {
-    if (isOuterNullableArrayNullMap(path))
-        return ".null";
-
-    if (isArraySizeInNullableArray(path))
+    const auto outer_null_map_index = findOuterNullableArrayNullMapIndex(path);
+    if (outer_null_map_index)
     {
-        const size_t array_level = countSubstreamsBefore(path, path.size(), Substream::ArraySizes) - 1;
-        return ".array.size" + toString(array_level);
+        String result = getPathPrefixBeforeNullableArray(path, *outer_null_map_index);
+        result += getNullableArrayStructuredSuffix(path, *outer_null_map_index);
+        if (!result.empty())
+            return result;
     }
-
-    if (isElementNullMapInNullableArray(path))
-        return ".array.nested.null";
-
-    if (isElementDataInNullableArray(path))
-        return ".array.nested";
 
     return getLegacySubstreamNameSuffix(path.begin(), path.end(), false, true);
 }
