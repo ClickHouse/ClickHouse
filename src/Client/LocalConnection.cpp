@@ -7,12 +7,12 @@
 #include <Core/Settings.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/detachQuery.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -24,7 +24,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/setThreadName.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
@@ -39,7 +39,7 @@ namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool async_insert;
-    extern const SettingsBool allow_experimental_detach_non_readonly_queries;
+    extern const SettingsBool allow_experimental_detach_queries;
     extern const SettingsDialect dialect;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
@@ -97,9 +97,19 @@ LocalConnection::LocalConnection(
 
 LocalConnection::~LocalConnection()
 {
-    /// Wait for any detached non-readonly query to complete so data is persisted before process exit.
-    if (detached_query_thread && detached_query_thread->joinable())
-        detached_query_thread->join();
+    /// Wait for any detached query to complete so data is persisted before process exit.
+    /// Discard any post-start exception — there is no client to surface it to at this point.
+    if (detached_query_completion && detached_query_completion->valid())
+    {
+        try
+        {
+            detached_query_completion->get();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("LocalConnection", "Detached query exception observed during shutdown");
+        }
+    }
     /// Last query may not have been finished or cancelled due to exception on client side.
     if (state && !state->is_finished && !state->is_cancelled)
     {
@@ -223,142 +233,87 @@ void LocalConnection::sendQuery(
 
     next_packet_type.reset();
 
-    /// Wait for any previous detached query to complete before starting a new one.
-    if (detached_query_thread && detached_query_thread->joinable())
+    /// Wait for any previous detached query to finish before starting a new one. The previous
+    /// run already returned a `query_id` to the user; if it failed after start, rethrow now so
+    /// the user sees the failure on the next interaction.
+    if (detached_query_completion && detached_query_completion->valid())
     {
-        detached_query_thread->join();
-        if (detached_query_exception && *detached_query_exception)
+        try
         {
-            std::exception_ptr e = *detached_query_exception;
-            detached_query_exception.reset();
-            std::rethrow_exception(e);
+            detached_query_completion->get();
         }
+        catch (...)
+        {
+            detached_query_completion.reset();
+            throw;
+        }
+        detached_query_completion.reset();
     }
 
-    /// Detach path (interactive mode only): when allow_experimental_detach_non_readonly_queries is on and query is non-readonly
-    /// (and does not need client data), run query in a background thread and return query_id immediately.
+    /// Detach path (interactive mode only): when `allow_experimental_detach_queries` is on and
+    /// the query is detachable, dispatch it in the background and reply with a one-row block
+    /// holding the `query_id`.
     if (is_interactive)
     {
-        /// Set by the background thread once the query is registered in ProcessList and quotas are checked.
-        /// Kept outside the try/catch below so that query-start failures (quota, duplicate query_id,
-        /// permissions) propagate to the client rather than silently falling back to sync execution.
-        std::optional<std::future<void>> detach_started;
         String detach_query_id;
+        bool detach_started = false;
 
         try
         {
             const auto & settings_ref = query_context->getSettingsRef();
-            const size_t max_query_size_val = settings_ref[Setting::max_query_size] ? settings_ref[Setting::max_query_size] : std::numeric_limits<size_t>::max();
+            const size_t max_query_size_val = settings_ref[Setting::max_query_size]
+                ? settings_ref[Setting::max_query_size]
+                : std::numeric_limits<size_t>::max();
             const char * begin = state->query.data();
             const char * end = begin + state->query.size();
             ParserQuery parser(end, settings_ref[Setting::allow_settings_after_format_in_insert], settings_ref[Setting::implicit_select]);
             ASTPtr ast = parseQuery(parser, begin, end, "", max_query_size_val, settings_ref[Setting::max_parser_depth], settings_ref[Setting::max_parser_backtracks]);
 
             /// Apply inline SETTINGS before the detach check so they can trigger the detach path.
-            /// settings_ref is a reference to query_context, so it reflects the changes immediately.
+            /// `settings_ref` is a reference to `query_context`, so changes are visible immediately.
             InterpreterSetQuery::applySettingsFromQuery(ast, query_context);
-            if (settings_ref[Setting::allow_experimental_detach_non_readonly_queries] && !settings_ref[Setting::async_insert]
-                && ast && IAST::isNonReadOnlyQuery(ast.get()))
+
+            const bool want_detach = settings_ref[Setting::allow_experimental_detach_queries];
+            if (want_detach && settings_ref[Setting::async_insert])
+            {
+                LOG_WARNING(
+                    getLogger("LocalConnection"),
+                    "Both `allow_experimental_detach_queries` and `async_insert` are enabled; running synchronously via the async-insert path. "
+                    "These settings are mutually exclusive — set only one.");
+            }
+            if (want_detach && !settings_ref[Setting::async_insert] && ast && IAST::isDetachableQuery(ast.get()))
             {
                 const auto * insert_ast = ast->as<ASTInsertQuery>();
-                bool insert_needs_client_data = insert_ast && !insert_ast->select && !insert_ast->hasInlinedData();
+                const bool insert_needs_client_data = insert_ast && !insert_ast->select && !insert_ast->hasInlinedData();
                 if (!insert_needs_client_data)
                 {
                     ContextMutablePtr async_context = Context::createCopy(query_context);
-                    async_context->setProgressCallback(nullptr);
-                    /// Ensure the background thread uses the same path and current database as this session.
+                    /// The background thread inherits the session path and current database.
                     String path = query_context->getPath();
                     if (!path.empty())
                         async_context->setPath(path);
                     String db = query_context->getCurrentDatabase();
                     if (!db.empty())
                         async_context->setCurrentDatabase(db);
-                    String query_copy = state->query;
-                    QueryProcessingStage::Enum stage_copy = state->stage;
-                    detached_query_exception = std::make_shared<std::exception_ptr>();
 
-                    auto started_promise = std::make_shared<std::promise<void>>();
-                    auto started_future = started_promise->get_future();
-
-                    detached_query_thread = std::make_unique<std::thread>([async_context, query_copy, stage_copy, exc_ptr = detached_query_exception, started_promise]() mutable
-                    {
-                        setThreadName(ThreadName::QUERY_ASYNC_EXECUTOR);
-                        ThreadStatus thread_status;
-                        QueryScope async_query_scope = QueryScope::create(async_context);
-
-                        bool query_started = false;
-
-                        /// Called by executeQuery after ProcessList::insert and quota checks pass —
-                        /// the earliest point where ExceptionBeforeStart can no longer occur.
-                        auto on_started = [&]()
-                        {
-                            if (!query_started)
-                            {
-                                query_started = true;
-                                started_promise->set_value();
-                            }
-                        };
-
-                        try
-                        {
-                            BlockIO io = executeQuery(query_copy, async_context, QueryFlags{}, stage_copy, std::move(on_started)).second;
-                            /// Actually run the pipeline (executeQuery only builds it). Without this, no data is written.
-                            if (io.pipeline.pushing())
-                            {
-                                PushingPipelineExecutor executor(io.pipeline);
-                                executor.start();
-                                executor.finish();
-                            }
-                            else if (io.pipeline.pulling())
-                            {
-                                PullingPipelineExecutor executor(io.pipeline);
-                                Block block;
-                                while (executor.pull(block)) { }
-                            }
-                            else if (io.pipeline.completed())
-                            {
-                                CompletedPipelineExecutor executor(io.pipeline);
-                                executor.execute();
-                            }
-                            io.onFinish();
-                        }
-                        catch (...)
-                        {
-                            if (!query_started)
-                            {
-                                /// Pre-start failure: propagate to the main thread via the promise.
-                                /// Do not store in exc_ptr — the exception already reaches the caller
-                                /// through detach_started->get(), so storing it again would cause a
-                                /// double-throw on the next sendQuery call.
-                                started_promise->set_exception(std::current_exception());
-                            }
-                            else
-                            {
-                                /// Post-start failure: query_id was already returned to the client.
-                                /// Store for later retrieval (rethrown at the next sendQuery).
-                                *exc_ptr = std::current_exception();
-                                tryLogCurrentException("LocalConnection", "Detached local non-readonly query failed after start");
-                            }
-                        }
-                    });
-
-                    detach_started = std::move(started_future);
-                    detach_query_id = query_context->getClientInfo().current_query_id;
+                    auto handle = detachQuery(state->query, async_context);
+                    detach_query_id = std::move(handle.query_id);
+                    detached_query_completion = std::move(handle.completion);
+                    detach_started = true;
                 }
             }
         }
         catch (...)
         {
+            /// Pre-start failures rethrow out of `detachQuery` after `detach_started` flips —
+            /// propagate them. Earlier mechanism failures (parse error, etc.) fall back to sync.
+            if (detach_started)
+                throw;
             tryLogCurrentException("LocalConnection", "Cannot run local query in detach mode, falling back to sync");
         }
 
-        if (detach_started.has_value())
+        if (detach_started)
         {
-            /// Block until the background thread signals that the query has passed
-            /// ProcessList::insert and quota checks. Re-throw on failure so the
-            /// caller receives the exception (e.g. quota exceeded, duplicate query_id).
-            detach_started->get();
-
             auto col = ColumnString::create();
             col->insertData(detach_query_id.data(), detach_query_id.size());
             state->block = Block({{std::move(col), std::make_shared<DataTypeString>(), "query_id"}});

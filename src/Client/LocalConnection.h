@@ -6,8 +6,8 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Common/QueryScope.h>
-#include <thread>
-#include <exception>
+#include <future>
+#include <memory>
 
 
 namespace DB
@@ -210,11 +210,11 @@ private:
 
     bool is_interactive = false;
 
-    /// When allow_experimental_detach_non_readonly_queries is used in interactive mode, the query runs in this thread.
-    /// Joined in destructor and at start of next sendQuery so the process does not exit before the insert completes.
-    std::unique_ptr<std::thread> detached_query_thread;
-    /// Exception from the last detached query (if any); rethrown when main thread joins.
-    std::shared_ptr<std::exception_ptr> detached_query_exception;
+    /// When `allow_experimental_detach_queries` is used in interactive mode, the query runs on
+    /// `GlobalThreadPool` and this future tracks its completion. Waited on at the start of the
+    /// next `sendQuery` (rethrowing any post-start exception) and in the destructor (logging
+    /// any exception, since there is no client to surface it to at shutdown).
+    std::shared_ptr<std::future<void>> detached_query_completion;
 };
 
 }
