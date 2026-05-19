@@ -1679,11 +1679,14 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         else
             pk_column_bounds.push_back(Range::createWholeUniverseWithoutNull());
     }
-    if (part->minmax_idx && part->minmax_idx->initialized)
+    auto minmax_index = part->getMinMaxIndex();
+    if (minmax_index && minmax_index->initialized)
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
-        const auto minmax_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
-        const auto & hyperrectangle = part->minmax_idx->hyperrectangle;
+        const auto minmax_names = MergeTreeData::getMinMaxColumns(
+            partition_key, data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames();
+
+        const auto & hyperrectangle = minmax_index->hyperrectangle;
         if (hyperrectangle.size() == minmax_names.size())
         {
             for (size_t i = 0; i < used_key_size; ++i)
