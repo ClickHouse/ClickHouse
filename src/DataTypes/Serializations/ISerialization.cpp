@@ -5,6 +5,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Common/Exception.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/StructuredSubstreamNames.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <IO/Operators.h>
@@ -405,7 +406,9 @@ String getNameForSubstreamPath(
 
 String ISerialization::getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings)
 {
-    return getFileNameForStream(column.getNameInStorage(), path, settings);
+    auto settings_with_type = settings;
+    settings_with_type.column_type = column.type.get();
+    return getFileNameForStream(column.getNameInStorage(), path, settings_with_type);
 }
 
 static bool isPossibleOffsetsOfNested(const ISerialization::SubstreamPath & path)
@@ -444,7 +447,17 @@ String ISerialization::getFileNameForStream(const String & name_in_storage, cons
         stream_name = escapeForFileName(name_in_storage);
     }
 
-    return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true, false, settings.escape_variant_substreams);
+    if (settings.column_type && needsStructuredSubstreamNames(*settings.column_type))
+    {
+        stream_name += getStructuredSubstreamNameSuffix(path);
+    }
+    else
+    {
+        stream_name += getNameForSubstreamPath(
+            {}, path.begin(), path.end(), true, false, settings.escape_variant_substreams);
+    }
+
+    return stream_name;
 }
 
 String ISerialization::getFileNameForRenamedColumnStream(const String & name_from, const String & name_to, const String & file_name)

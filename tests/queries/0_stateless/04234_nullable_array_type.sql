@@ -1,3 +1,5 @@
+-- Tags: no-random-settings
+
 DROP TABLE IF EXISTS nullable_array_type;
 
 CREATE TABLE nullable_array_type_bad (a Nullable(Array(Int32))) ENGINE = Memory; -- {serverError ILLEGAL_COLUMN}
@@ -44,6 +46,19 @@ FORMAT Null;
 
 SELECT throwIf(toTypeName(a) != 'Nullable(Array(Int32))')
 FROM nullable_array_type
+FORMAT Null;
+
+SELECT throwIf(NOT isNull(arraySlice(a, 1, 1)))
+FROM nullable_array_type
+WHERE id = 1
+FORMAT Null;
+
+SELECT throwIf(arraySlice(a, 2, 1) != [2])
+FROM nullable_array_type
+WHERE id = 3
+FORMAT Null;
+
+SELECT throwIf(arraySlice(CAST([1, 2, 3], 'Nullable(Array(UInt8))'), 2, 2) != [2, 3])
 FORMAT Null;
 
 DROP TABLE nullable_array_type;

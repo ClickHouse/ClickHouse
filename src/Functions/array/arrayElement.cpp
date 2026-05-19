@@ -1400,7 +1400,7 @@ ColumnPtr FunctionArrayElement<mode>::removeNullableIfNeeded(const ColumnPtr & c
     return column;
 }
 
-static ColumnPtr unwrapNullableArrayColumn(const ColumnPtr & column)
+ColumnPtr unwrapNullableArrayColumn(const ColumnPtr & column)
 {
     if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column.get()))
     {

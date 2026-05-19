@@ -1039,9 +1039,13 @@ static NameToNameVector collectFilesForRenames(
         {
             if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
-                ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+                auto column_from = source_part->getColumns().tryGetByName(command.column_name);
+                if (!column_from)
+                    continue;
+
+                ISerialization::StreamCallback callback = [&, column_desc = *column_from](const ISerialization::SubstreamPath & substream_path)
                 {
-                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
+                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_desc, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
 
                     /// Delete files if they are no longer shared with another column.
                     if (stream_name && --stream_counts[*stream_name] == 0)
@@ -1060,14 +1064,18 @@ static NameToNameVector collectFilesForRenames(
                 if (updated_columns_in_patches.contains(command.rename_to))
                     continue;
 
+                auto column_from = source_part->getColumns().tryGetByName(command.column_name);
+                if (!column_from)
+                    continue;
+
                 String escaped_name_from = escapeForFileName(command.column_name);
                 String escaped_name_to = escapeForFileName(command.rename_to);
 
-                ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+                ISerialization::StreamCallback callback = [&, column_desc = *column_from](const ISerialization::SubstreamPath & substream_path)
                 {
                     auto storage_settings = source_part->storage.getSettings();
 
-                    String full_stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+                    String full_stream_from = ISerialization::getFileNameForStream(column_desc, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
                     String full_stream_to = boost::replace_first_copy(full_stream_from, escaped_name_from, escaped_name_to);
 
                     auto stream_from = IMergeTreeDataPart::getStreamNameOrHash(full_stream_from, ".bin", source_part->checksums);

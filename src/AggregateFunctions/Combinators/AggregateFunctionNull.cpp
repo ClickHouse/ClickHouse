@@ -4,7 +4,9 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 
 #include <AggregateFunctions/AggregateFunctionNothing.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 
 
 namespace DB
@@ -126,7 +128,17 @@ public:
             return new_function;
         }
 
-        bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getResultType()->canBeInsideNullable();
+        const auto & result_type = nested_function->getResultType();
+        bool return_type_is_nullable = !properties.returns_default_when_only_null && result_type->canBeInsideNullable();
+
+        /// After `Nullable(Array)` was enabled, `Array::canBeInsideNullable` returns true, which would wrap
+        /// aggregate results such as `Array(Tuple(...))` into `Nullable(Array(...))` and break binary
+        /// compatibility of existing states (for example `sumCountResample` with Nullable arguments).
+        /// The same applies to `Tuple` (see `AggregateFunctionIf::getOwnNullAdapter`).
+        if (return_type_is_nullable
+            && (typeid_cast<const DataTypeTuple *>(result_type.get()) || typeid_cast<const DataTypeArray *>(result_type.get())))
+            return_type_is_nullable = false;
+
         bool serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
 
         if (arguments.size() == 1)

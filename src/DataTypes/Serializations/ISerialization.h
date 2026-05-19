@@ -645,6 +645,9 @@ public:
 
         bool escape_variant_substreams = true;
         bool share_nested_offsets = true;
+
+        /// When set, structured substream names are used for types that require them.
+        const IDataType * column_type = nullptr;
     };
 
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings);

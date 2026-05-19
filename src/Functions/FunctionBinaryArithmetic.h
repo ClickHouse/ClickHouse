@@ -2375,7 +2375,7 @@ public:
         if (valid)
         {
             if constexpr (is_division_or_null)
-                return makeNullable(type_res);
+                return makeNullableSafe(type_res);
             else
                 return type_res;
         }
@@ -2894,8 +2894,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
             const auto & null_bytemap = nullable_column->getNullMapData();
             auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap);
-            /// When the framework declared a non-Nullable result type (e.g. `Array` via `makeNullableSafe`),
-            /// `wrapInNullable` would produce a `ColumnNullable` that disagrees with `result_type`.
+            /// When the declared result is `Nullable(Array)`, propagate denominator nulls via `wrapInNullable`.
             if (!result_type->isNullable())
                 return res;
             return wrapInNullable(res, arguments, result_type, input_rows_count);
@@ -3034,11 +3033,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 return (res = executeNumeric(arguments, left, right, right_nullmap)) != nullptr;
         });
 
-        if (isArray(result_type))
+        const auto nested_result_type = removeNullable(result_type);
+        if (isArray(nested_result_type))
         {
             if (!isArray(arguments[0].type) || !isArray(arguments[1].type))
-                return executeArrayWithNumericImpl(arguments, result_type, input_rows_count);
-            return executeArraysImpl(arguments, result_type, input_rows_count);
+                return executeArrayWithNumericImpl(arguments, nested_result_type, input_rows_count);
+            return executeArraysImpl(arguments, nested_result_type, input_rows_count);
         }
 
         if (!valid)

@@ -625,7 +625,8 @@ public:
         const ISerialization::SubstreamPath & substream_path,
         const String & extension,
         const Checksums & checksums_,
-        const MergeTreeSettingsPtr & settings);
+        const MergeTreeSettingsPtr & settings,
+        const IDataType * column_type = nullptr);
 
     static std::optional<String> getStreamNameForColumn(
         const NameAndTypePair & column,
@@ -639,7 +640,8 @@ public:
         const ISerialization::SubstreamPath & substream_path,
         const String & extension,
         const IDataPartStorage & storage_,
-        const MergeTreeSettingsPtr & settings);
+        const MergeTreeSettingsPtr & settings,
+        const IDataType * column_type = nullptr);
 
     static std::optional<String> getStreamNameForColumn(
         const NameAndTypePair & column,

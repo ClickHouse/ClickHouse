@@ -1,8 +1,10 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -25,6 +27,8 @@ namespace ErrorCodes
 
 std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type)
 {
+    type = removeNullable(type);
+
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
         return std::shared_ptr<const DataTypeArray>{type, array_type};
     if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
@@ -38,9 +42,13 @@ std::shared_ptr<const DataTypeArray> getArrayJoinDataType(DataTypePtr type)
 
 ColumnPtr getArrayJoinColumn(const ColumnPtr & column)
 {
-    if (typeid_cast<const ColumnArray *>(column.get()))
-        return column;
-    if (const auto * map = typeid_cast<const ColumnMap *>(column.get()))
+    ColumnPtr unwrapped_column = column;
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(unwrapped_column.get()))
+        unwrapped_column = nullable->getNestedColumnPtr();
+
+    if (typeid_cast<const ColumnArray *>(unwrapped_column.get()))
+        return unwrapped_column;
+    if (const auto * map = typeid_cast<const ColumnMap *>(unwrapped_column.get()))
         return map->getNestedColumnPtr();
     return nullptr;
 }

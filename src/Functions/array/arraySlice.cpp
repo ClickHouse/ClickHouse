@@ -5,6 +5,9 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
+#include <Functions/FunctionHelpers.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 
@@ -55,7 +58,7 @@ public:
         if (arguments[0]->onlyNull())
             return arguments[0];
 
-        const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
+        const auto * array_type = typeid_cast<const DataTypeArray *>(removeNullable(arguments[0]).get());
         if (!array_type)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "First argument for function {} must be an array but it has type {}.",
@@ -72,11 +75,8 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
+    ColumnPtr executeSlice(const ColumnsWithTypeAndName & arguments) const
     {
-        if (return_type->onlyNull())
-            return return_type->createColumnConstWithDefaultValue(input_rows_count);
-
         auto array_column = arguments[0].column;
         const auto & offset_column = arguments[1].column;
         const auto & length_column = arguments.size() > 2 ? arguments[2].column : nullptr;
@@ -144,6 +144,36 @@ public:
         }
 
         return sink;
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
+    {
+        if (return_type->onlyNull())
+            return return_type->createColumnConstWithDefaultValue(input_rows_count);
+
+        if (const auto * nullable_array_column = checkAndGetColumn<ColumnNullable>(arguments[0].column.get()))
+        {
+            if (checkAndGetColumn<ColumnArray>(&nullable_array_column->getNestedColumn()))
+            {
+                ColumnsWithTypeAndName nested_arguments = arguments;
+                nested_arguments[0].column = nullable_array_column->getNestedColumnPtr();
+                nested_arguments[0].type = removeNullable(arguments[0].type);
+
+                auto nested_result = executeSlice(nested_arguments);
+
+                if (return_type->isNullable())
+                {
+                    auto null_map = ColumnUInt8::create();
+                    null_map->getData().assign(
+                        nullable_array_column->getNullMapData().begin(), nullable_array_column->getNullMapData().end());
+                    return ColumnNullable::create(nested_result, std::move(null_map));
+                }
+
+                return nested_result;
+            }
+        }
+
+        return executeSlice(arguments);
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

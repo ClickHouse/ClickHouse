@@ -77,6 +77,24 @@ namespace
 
     using TransformCachePtr = std::shared_ptr<const TransformCache>;
 
+    const ColumnArray * getConstArrayColumn(const ColumnPtr & column)
+    {
+        if (!column)
+            return nullptr;
+
+        if (const auto * array = checkAndGetColumnConstData<ColumnArray>(column.get()))
+            return array;
+
+        const IColumn * data_column = column.get();
+        if (const auto * col_const = checkAndGetColumn<ColumnConst>(column.get()))
+            data_column = &col_const->getDataColumn();
+
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(data_column))
+            data_column = &nullable->getNestedColumn();
+
+        return checkAndGetColumn<ColumnArray>(data_column);
+    }
+
     /// Forward declaration; defined after FunctionTransform.
     TransformCachePtr initializeTransformCache(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type);
 
@@ -111,7 +129,7 @@ namespace
 
             const DataTypePtr & type_x = arguments[0];
 
-            const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(arguments[1].get());
+            const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[1]).get());
 
             if (!type_arr_from)
                 throw Exception(
@@ -121,7 +139,7 @@ namespace
 
             const auto type_arr_from_nested = type_arr_from->getNestedType();
 
-            const DataTypeArray * type_arr_to = checkAndGetDataType<DataTypeArray>(arguments[2].get());
+            const DataTypeArray * type_arr_to = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[2]).get());
 
             if (!type_arr_to)
                 throw Exception(
@@ -720,8 +738,8 @@ namespace
             return cache;
         }
 
-        const ColumnArray * array_from = checkAndGetColumnConstData<ColumnArray>(arguments[1].column.get());
-        const ColumnArray * array_to = checkAndGetColumnConstData<ColumnArray>(arguments[2].column.get());
+        const ColumnArray * array_from = getConstArrayColumn(arguments[1].column);
+        const ColumnArray * array_to = getConstArrayColumn(arguments[2].column);
 
         if (!array_from || !array_to)
             throw Exception(
@@ -732,7 +750,7 @@ namespace
         cache->from_column = castColumn(
             {
                 from_column_uncast,
-                typeid_cast<const DataTypeArray &>(*arguments[1].type).getNestedType(),
+                typeid_cast<const DataTypeArray &>(*removeNullable(arguments[1].type)).getNestedType(),
                 arguments[1].name
             },
             from_type);
@@ -740,7 +758,7 @@ namespace
         cache->to_column = castColumn(
             {
                 array_to->getDataPtr(),
-                typeid_cast<const DataTypeArray &>(*arguments[2].type).getNestedType(),
+                typeid_cast<const DataTypeArray &>(*removeNullable(arguments[2].type)).getNestedType(),
                 arguments[2].name
             },
             result_type);
@@ -859,7 +877,7 @@ namespace
 
             const DataTypePtr & type_x = arguments[0];
 
-            const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(arguments[1].get());
+            const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[1]).get());
 
             if (!type_arr_from)
                 throw Exception(
@@ -867,7 +885,7 @@ namespace
                     "Second argument of function {}, must be array of source values to transform from",
                     getName());
 
-            const DataTypeArray * type_arr_to = checkAndGetDataType<DataTypeArray>(arguments[2].get());
+            const DataTypeArray * type_arr_to = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[2]).get());
 
             if (!type_arr_to)
                 throw Exception(
@@ -925,10 +943,8 @@ namespace
 
             /// Check if constant columns are available. During analysis passes (e.g. IfTransformStringsToEnumPass),
             /// columns may not be populated yet. In that case, defer cache initialization to execution time.
-            const ColumnArray * array_from = args.size() > 1 && args[1].column
-                ? checkAndGetColumnConstData<ColumnArray>(args[1].column.get()) : nullptr;
-            const ColumnArray * array_to = args.size() > 2 && args[2].column
-                ? checkAndGetColumnConstData<ColumnArray>(args[2].column.get()) : nullptr;
+            const ColumnArray * array_from = args.size() > 1 ? getConstArrayColumn(args[1].column) : nullptr;
+            const ColumnArray * array_to = args.size() > 2 ? getConstArrayColumn(args[2].column) : nullptr;
 
             std::shared_ptr<FunctionTransform> function;
             if (array_from && array_to)

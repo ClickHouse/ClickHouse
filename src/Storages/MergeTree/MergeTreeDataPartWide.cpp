@@ -264,9 +264,13 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
         if (!serialization)
             continue;
 
-        serialization->enumerateStreams([&](const auto & subpath)
+        auto column = columns.tryGetByName(column_name);
+        if (!column)
+            continue;
+
+        serialization->enumerateStreams([&, column_desc = *column](const auto & subpath)
         {
-            auto stream_name = getStreamNameForColumn(column_name, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+            auto stream_name = getStreamNameForColumn(column_desc, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
             if (!stream_name)
                 return;
 
@@ -297,9 +301,13 @@ void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
     const auto & serializations = getSerializations();
     for (const auto & [column_name, serialization] : serializations)
     {
-        serialization->enumerateStreams([&](const auto & subpath)
+        auto column = columns.tryGetByName(column_name);
+        if (!column)
+            continue;
+
+        serialization->enumerateStreams([&, column_desc = *column](const auto & subpath)
         {
-            auto stream_name = getStreamNameForColumn(column_name, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+            auto stream_name = getStreamNameForColumn(column_desc, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
             if (!stream_name)
                 return;
 
