@@ -2258,7 +2258,9 @@ Cloud default value: `10`.
 )", 0) \
     \
     DECLARE(Bool, http_allow_redirects_on_post, false, R"(
-Allow HTTP 3xx redirect responses for POST/PUT requests (e.g. when using the URL engine for writes). When enabled, redirect responses are accepted as success instead of raising an error. The request body is always sent to the original URL since it is streamed and cannot be re-sent to the redirect target.
+Allow HTTP 3xx redirect responses for `POST`/`PUT` requests (e.g. when using the URL engine for writes). When enabled, any 3xx response (`301`, `302`, `303`, `307`, `308`) is accepted as success instead of raising an error.
+
+The request body is streamed to the original URL via chunked transfer encoding and cannot be replayed to the redirect target. Use this setting only when you trust the server to either fully consume the body before responding with a redirect, or to deliberately treat the redirect as an acknowledgment with a canonical or result URL in the `Location` header. With method-preserving statuses `307` and `308` the server is technically allowed to ask the client to repeat the request at a new URL; ClickHouse cannot detect that intent and will report the write as succeeded.
 )", 0) \
     \
     DECLARE(Bool, use_client_time_zone, false, R"(

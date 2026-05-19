@@ -77,14 +77,12 @@ void WriteBufferFromHTTP::finalizeImpl()
 
     if (isRedirect(response.getStatus()) && allow_redirects)
     {
-        auto location = response.get("Location", "");
-        LOG_INFO(
+        LOG_TRACE(
             getLogger("WriteBufferToHTTP"),
-            "POST/PUT to {} returned redirect (HTTP {}) to '{}'. "
-            "Data was already sent to the original URL; treating redirect as success.",
-            initial_uri.toString(),
-            static_cast<int>(response.getStatus()),
-            location);
+            "POST/PUT to {} returned redirect (HTTP {}); "
+            "data was already sent to the original URL, treating redirect as success.",
+            initial_uri.getHost(),
+            static_cast<int>(response.getStatus()));
     }
 
     WriteBufferFromOStream::finalizeImpl();
