@@ -48,6 +48,21 @@ double computeDensity(const TokenPostingsInfo & info)
     return span > 0.0 ? static_cast<double>(info.cardinality) / span : 0.0;
 }
 
+/// Narrow an on-disk UInt64 field to UInt32, throwing CORRUPTED_DATA if the value exceeds
+/// the representable range. Used only on cold per-segment paths (`prepareSegment`); the
+/// hot per-block decode path doesn't validate again.
+inline UInt32 requireUInt32(UInt64 value, std::string_view field_name)
+{
+    if (value > std::numeric_limits<UInt32>::max())
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy posting list cursor: {} value {} exceeds UInt32 max",
+            field_name, value);
+    }
+
+    return static_cast<UInt32>(value);
+}
+
 }
 
 PostingListCursor::PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_)
@@ -139,9 +154,9 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
     UInt64 first_row_id;
     readVarUInt(first_row_id, *data_buffer);
 
-    segment_doc_count = static_cast<UInt32>(seg_cardinality);
-    last_decoded_doc_id = static_cast<UInt32>(first_row_id);
-    segment_first_row_id = static_cast<UInt32>(first_row_id);
+    segment_doc_count = requireUInt32(seg_cardinality, "seg_cardinality");
+    last_decoded_doc_id = requireUInt32(first_row_id, "first_row_id");
+    segment_first_row_id = last_decoded_doc_id;
 
     /// Bulk-read the entire payload into memory.
     payload_buffer.resize(payload_bytes);
@@ -160,11 +175,19 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
     readVarUInt(num_blocks, *data_buffer);
 
     UInt64 max_blocks = (segment_doc_count + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
     if (num_blocks > max_blocks)
     {
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Posting list num_blocks {} exceeds maximum {} for segment with {} documents",
             num_blocks, max_blocks, segment_doc_count);
+    }
+
+    if (num_blocks == 0)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Posting list num_blocks is 0 for segment with {} documents",
+            segment_doc_count);
     }
 
     block_last_row_ids.resize(num_blocks);
@@ -175,6 +198,9 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
         UInt64 v;
         readVarUInt(v, *data_buffer);
         block_last_row_ids[i] = static_cast<UInt32>(v);
+
+        chassert(v <= std::numeric_limits<UInt32>::max());
+        chassert(i == 0 || block_last_row_ids[i] > block_last_row_ids[i - 1]);
     }
 
     for (size_t i = 0; i < num_blocks; ++i)
@@ -237,6 +263,9 @@ void PostingListCursor::decodeBlock(size_t block_idx)
 
     if (bits > 32)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected bits <= 32, but got {}", bits);
+
+    /// The packed payload must fit in the remaining block bytes
+    chassert(BitpackingBlockCodec::bitpackingCompressedBytes(count, bits) <= block_data.size());
 
     std::span<uint32_t> out_span(decoded_values, count);
     BitpackingBlockCodec::decode(block_data, count, bits, out_span);
@@ -422,10 +451,13 @@ bool hasNoZeros(const UInt8 * data, size_t count)
         __m256i v2 = _mm256_loadu_si256(ptr + 2);
         __m256i v3 = _mm256_loadu_si256(ptr + 3);
 
-        __m256i combined = _mm256_and_si256(_mm256_and_si256(v0, v1), _mm256_and_si256(v2, v3));
+        /// "Any byte in the 4 vectors is zero" — compare each vector to zero independently and OR the masks.
         __m256i zero = _mm256_setzero_si256();
-        __m256i cmp = _mm256_cmpeq_epi8(combined, zero);
-        if (_mm256_movemask_epi8(cmp) != 0)
+        __m256i any_zero = _mm256_or_si256(
+            _mm256_or_si256(_mm256_cmpeq_epi8(v0, zero), _mm256_cmpeq_epi8(v1, zero)),
+            _mm256_or_si256(_mm256_cmpeq_epi8(v2, zero), _mm256_cmpeq_epi8(v3, zero)));
+
+        if (_mm256_movemask_epi8(any_zero) != 0)
             return false;
     }
 

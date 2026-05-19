@@ -35,6 +35,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
@@ -92,6 +93,9 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
 
     lazy_mode_requested = (apply_mode == TextIndexPostingListApplyMode::LAZY);
     lazy_density_threshold = ctx_settings[Setting::text_index_density_threshold].value;
+
+    if (!std::isfinite(lazy_density_threshold) || lazy_density_threshold < 0.0f || lazy_density_threshold > 1.0f)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting text_index_density_threshold must be a value in [0.0, 1.0], got {}", lazy_density_threshold);
 
     if (index_granule_)
         setIndexGranule(std::move(index_granule_));
