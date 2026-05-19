@@ -114,6 +114,14 @@ class Runner:
             WORKFLOW_CONFIG=workflow_config,
         ).dump()
 
+        if pr and pr > 0:
+            changed_files = GH.get_changed_files()
+            if changed_files is not None:
+                print(f"Storing {len(changed_files)} changed files in JOB_KV_DATA")
+                Info().store_kv_data("changed_files", changed_files)
+            else:
+                print("WARNING: Failed to fetch changed files for PR")
+
         Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
 
     def _setup_env(self, _workflow, job):

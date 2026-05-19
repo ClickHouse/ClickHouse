@@ -596,6 +596,7 @@ QueryTreeNodePtr QueryAnalyzer::tryGetLambdaFromUserDefinedSQLFunctions(const AS
     return result_node;
 }
 
+
 void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope)
 {
     auto & window_node_typed = window_node->as<WindowNode &>();
