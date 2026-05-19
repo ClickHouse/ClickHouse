@@ -52,6 +52,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_dictget_tuple_element", false, true, "Rewrite tupleElement(dictGet(..., tuple_of_attrs, ...), N) into a single-attribute dictGet call."},
             {"parallel_replicas_prefer_local_replica", true, true, "New setting. When disabled, replicas for parallel reading are selected purely by the load balancing algorithm without forcing the local replica into the set."},
             {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
+            {"enable_software_prefetch_in_join", false, true, "Enable use of software prefetch in hash join probe phase."},
             {"shared_merge_tree_sequential_consistency_initial_parts_update_backoff_ms", 50, 50, "New setting to reduce sporadic UNFINISHED errors in queries with sequential consistency for SharedMergeTree."},
             {"shared_merge_tree_sequential_consistency_max_parts_update_backoff_ms", 1000, 1000, "New setting to reduce sporadic UNFINISHED errors in queries with sequential consistency for SharedMergeTree."},
             {"shared_merge_tree_sequential_consistency_parts_update_max_retries", 10, 10, "New setting to reduce sporadic UNFINISHED errors in queries with sequential consistency for SharedMergeTree."},
@@ -86,6 +87,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_top_k_dynamic_filtering_for_variable_length_types", true, false, "Disable `use_top_k_dynamic_filtering` for variable-length sort columns (e.g. `String`) by default; the previous behavior had the optimization apply unconditionally and is preserved under `compatibility`."},
             {"page_cache_max_coalesced_bytes", 16777216, 16777216, "New setting to bound the size of a single coalesced read used to populate the userspace page cache on cache miss."},
             {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
+            {"iceberg_data_file_size_lower_threshold_compaction", 10_MiB, 10_MiB, "New setting"},
+            {"iceberg_data_file_size_upper_threshold_compaction", 10_GiB, 10_GiB, "New setting"},
+            {"iceberg_max_number_datafiles_to_compact", 1000, 1000, "New setting"},
+            {"iceberg_compaction_delay_bias", 60 * 60 * 3, 60 * 60 * 3, "New setting"},
+            {"allow_experimental_cleanup_old_data_files_compaction", false, false, "New setting"},
+            {"iceberg_compaction_data_cleanup", 60 * 60 * 3, 60 * 60 * 3, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
@@ -1205,6 +1212,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
+            {"part_minmax_index_columns", "partition_key_only", "partition_key_only", "New setting."},
             {"add_minmax_index_for_block_number_column", false, false, "New setting."},
             {"add_minmax_index_for_block_offset_column", false, false, "New setting."},
             {"concurrent_part_removal_threshold_for_remote_disk", 100, 16, "New setting. Lower threshold to enter the concurrent part removal path when any part being removed is on a remote disk, where each removal is typically one network round-trip. The old value (100) matches the legacy `concurrent_part_removal_threshold` default, so older `compatibility` modes preserve the previous behavior."},
