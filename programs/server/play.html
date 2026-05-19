@@ -929,6 +929,7 @@
                     <label for="download-format">Format:</label>
                     <select id="download-format">
                         <option value="CSV">CSV</option>
+                        <option value="CSVWithNames">CSVWithNames</option>
                         <option value="TSV">TSV</option>
                         <option value="JSON">JSON</option>
                         <option value="NDJSON" selected>JSONLines</option>
@@ -4385,6 +4386,13 @@ document.getElementById('download-format').addEventListener('change', function()
     }
 });
 
+const formatExtensions = {
+  CSVWithNames: "csv",
+  NDJSON: "jsonl",
+  JSONEachRow: "jsonl",
+  Markdown: "md"
+};
+
 // Handle download button click
 document.getElementById('download-button').addEventListener('click', async function() {
     const formatSelect = document.getElementById('download-format');
@@ -4398,6 +4406,8 @@ document.getElementById('download-button').addEventListener('click', async funct
             return;
         }
     }
+
+    const extension = formatExtensions[format] || format.toLowerCase();
 
     // Get current values
     const user = user_elem.value;
@@ -4417,7 +4427,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         '&enable_http_compression=1' +
         '&use_query_cache=1&enable_reads_from_query_cache=1&enable_writes_to_query_cache=0&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save&query_cache_system_table_handling=ignore' +
         '&default_format=' + encodeURIComponent(format) +
-        '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(format.toLowerCase())}"'}`);
+        '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(extension)}"'}`);
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
 
