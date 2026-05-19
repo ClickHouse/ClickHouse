@@ -648,15 +648,18 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     if (enabledBlockOffsetColumn(global_ctx))
         addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
 
+    auto parts_info = MergeTreeData::getPartsSnapshotInfo(global_ctx->future_part->parts);
+
     MergeTreeData::IMutationsSnapshot::Params params
     {
         .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
-        .min_part_metadata_version = MergeTreeData::getMinMetadataVersion(global_ctx->future_part->parts),
+        .min_part_metadata_version = parts_info.min_metadata_version,
         .min_part_data_versions = nullptr,
         .max_mutation_versions = nullptr,
         .need_data_mutations = false,
         .need_alter_mutations = !patch_parts.empty(),
         .need_patch_parts = false,
+        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
     };
 
     auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
@@ -2251,7 +2254,6 @@ public:
         : ITransformingStep(input_header_, output_header_, getTraits())
         , WithContext(context_)
         , transform(std::move(transform_))
-        , original_output_header(output_header_)
     {
     }
 
@@ -2279,11 +2281,7 @@ public:
 
     void updateOutputHeader() override
     {
-        /// The output header must be the original header (without extra index
-        /// expression columns), not the input header which may contain extra
-        /// columns added by index expression steps. This is important to keep
-        /// all per-part plan headers compatible in the UnionStep during merge.
-        output_header = original_output_header;
+        output_header = input_headers.front();
     }
 
     String getName() const override { return "BuildTextIndex"; }
@@ -2305,7 +2303,6 @@ private:
     }
 
     std::shared_ptr<BuildTextIndexTransform> transform;
-    const SharedHeader original_output_header;
 };
 
 void MergeTask::addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx)

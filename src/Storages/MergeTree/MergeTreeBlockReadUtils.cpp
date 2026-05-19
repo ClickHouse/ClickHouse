@@ -9,6 +9,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/checkStackSize.h>
+#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
@@ -29,6 +30,11 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+}
+
+namespace FailPoints
+{
+    extern const char patch_parts_reverse_column_order[];
 }
 
 namespace
@@ -203,8 +209,8 @@ NameSet injectRequiredColumns(
 }
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
-    const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation_)
-    : data_part(data_part_), allow_subcolumns_sizes_calculation(allow_subcolumns_sizes_calculation_)
+    const DataPartPtr & data_part_, const Names & columns, const Block & sample_block)
+    : data_part(data_part_)
 {
     number_of_rows_in_part = data_part->rows_count;
     /// Initialize with sample block until update won't called.
@@ -234,8 +240,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         if (typeid_cast<const ColumnConst *>(column_data.get()))
             continue;
 
-        auto column_from_part = data_part->tryGetColumn(column_name);
-        if ((!column_from_part || !column_from_part->isSubcolumn()) && column_data->valuesHaveFixedSize())
+        if (column_data->valuesHaveFixedSize())
         {
             size_t size_of_value = column_data->sizeOfValueIfFixed();
             fixed_columns_bytes_per_row += column_data->sizeOfValueIfFixed();
@@ -246,11 +251,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
             ColumnInfo info;
             info.name = column_name;
             /// If column isn't fixed and doesn't have checksum, than take first
-            ColumnSize column_size;
-            if (column_from_part && column_from_part->isSubcolumn() && allow_subcolumns_sizes_calculation)
-                column_size = data_part->getSubcolumnSize(column_name);
-            else
-                column_size = data_part->getColumnSize(column_from_part ? column_from_part->getNameInStorage() : column_name);
+            ColumnSize column_size = data_part->getColumnSize(column_name);
 
             info.bytes_per_row_global = column_size.data_uncompressed
                 ? static_cast<double>(column_size.data_uncompressed) / static_cast<double>(number_of_rows_in_part)
@@ -390,6 +391,17 @@ void addPatchPartsColumns(
         required_virtuals.insert(patch_system_columns.begin(), patch_system_columns.end());
 
         Names patch_columns_to_read_names(patch_columns_to_read_set.begin(), patch_columns_to_read_set.end());
+
+        fiu_do_on(FailPoints::patch_parts_reverse_column_order,
+        {
+            /// Simulate non-deterministic NameSet iteration producing different column
+            /// orderings for different patches. This reproduces the bug fixed in
+            /// getUpdatedHeader (applyPatches.cpp) where sortColumns() normalizes order
+            /// before the positional assertCompatibleHeader comparison.
+            if (i % 2 == 1)
+                std::reverse(patch_columns_to_read_names.begin(), patch_columns_to_read_names.end());
+        });
+
         result.patch_columns[i] = storage_snapshot->getColumnsByNames(options, patch_columns_to_read_names);
     }
 

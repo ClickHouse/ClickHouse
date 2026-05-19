@@ -122,7 +122,7 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
     bool isDefaultAt(size_t n) const override;
     std::string_view getDataAt(size_t n) const override;
@@ -149,6 +149,13 @@ public:
     std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
+
+    /// Used for deduplication: hashes the raw in-memory representation of typed paths,
+    /// dynamic paths and shared data. The hash is the same for the same INSERT data,
+    /// but NOT necessarily the same for logically equivalent data with different path
+    /// distribution between dynamic paths and shared data.
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
+
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
 

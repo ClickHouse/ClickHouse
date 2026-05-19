@@ -453,7 +453,7 @@ namespace DB
         /// Convert dictionary values to arrow array.
         auto value_type = assert_cast<arrow::DictionaryType *>(builder->type().get())->value_type();
         std::unique_ptr<arrow::ArrayBuilder> values_builder;
-        arrow::Status status = MakeBuilder(arrow::default_memory_pool(), value_type, &values_builder);
+        arrow::Status status = MakeBuilder(ArrowMemoryPool::instance(), value_type, &values_builder);
         checkStatus(status, column->getName(), format_name);
 
         auto dict_column = dynamic_cast<IColumnUnique &>(*dict_values).getNestedNotNullableColumn();
@@ -1203,7 +1203,7 @@ namespace DB
                     column = recursiveRemoveLowCardinality(column);
 
                 std::unique_ptr<arrow::ArrayBuilder> array_builder;
-                arrow::Status status = MakeBuilder(arrow::default_memory_pool(), arrow_schema->field(static_cast<int>(column_i))->type(), &array_builder);
+                arrow::Status status = MakeBuilder(ArrowMemoryPool::instance(), arrow_schema->field(static_cast<int>(column_i))->type(), &array_builder);
                 checkStatus(status, column->getName(), format_name);
 
                 fillArrowArray(

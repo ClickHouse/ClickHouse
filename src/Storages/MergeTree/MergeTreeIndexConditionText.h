@@ -98,9 +98,7 @@ private:
         {
             /// Atoms
             FUNCTION_EQUALS,
-            FUNCTION_NOT_EQUALS,
             FUNCTION_IN,
-            FUNCTION_NOT_IN,
             FUNCTION_MATCH,
             FUNCTION_HAS_ANY_TOKENS,
             FUNCTION_HAS_ALL_TOKENS,
@@ -133,6 +131,10 @@ private:
     TextIndexDirectReadMode getHintOrNoneMode() const;
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
     bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
+
+    /// Returns true if the node represents `arrayElement(map_col, 'key')`
+    /// and there is a text index built on `mapValues(map_col)`.
+    bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
 
     std::vector<String> stringToTokens(const Field & field) const;
     std::vector<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;

@@ -1,3 +1,5 @@
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnVariant.h>
 
 #include <Columns/ColumnCompressed.h>
@@ -14,6 +16,7 @@
 #include <Common/SipHash.h>
 #include <Common/HashTable/Hash.h>
 #include <Columns/MaskOperations.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -418,17 +421,17 @@ void ColumnVariant::get(size_t n, Field & res) const
         variants[discr]->get(offsetAt(n), res);
 }
 
-void ColumnVariant::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+DataTypePtr ColumnVariant::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     Discriminator discr = localDiscriminatorAt(n);
     if (discr == NULL_DISCRIMINATOR)
     {
         if (options.notFull(name_buf))
             name_buf << "NULL";
-        return;
+        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
     }
 
-    variants[discr]->getValueNameImpl(name_buf, offsetAt(n), options);
+    return variants[discr]->getValueNameAndTypeImpl(name_buf, offsetAt(n), options);
 }
 
 bool ColumnVariant::isDefaultAt(size_t n) const
@@ -882,6 +885,62 @@ void ColumnVariant::updateHashWithValue(size_t n, SipHash & hash) const
         variants[localDiscriminatorByGlobal(global_discr)]->updateHashWithValue(offsetAt(n), hash);
 }
 
+void ColumnVariant::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    const auto & local_discriminators_data = getLocalDiscriminators();
+    size_t num_variants = local_to_global_discriminators.size();
+
+    if (begin == 0 && end == local_discriminators_data.size())
+    {
+        /// Fast path: the range covers the entire column, so each variant's
+        /// range is simply [0, variant.size()) — no need to scan offsets.
+        for (size_t i = 0; i < end; ++i)
+            hash.update(globalDiscriminatorByLocal(local_discriminators_data[i]));
+
+        for (Discriminator global_discr = 0;
+             global_discr < static_cast<Discriminator>(num_variants);
+             ++global_discr)
+        {
+            auto local_discr = global_to_local_discriminators[global_discr];
+            variants[local_discr]->updateHashWithValueRange(0, variants[local_discr]->size(), hash);
+        }
+        return;
+    }
+
+    /// General case: scan discriminators to find first offset and count per variant.
+    /// Within a contiguous row range, offsets for each variant are also contiguous,
+    /// so the sub-column range is [first_offset, first_offset + count).
+    const auto & offsets_data = getOffsets();
+    VectorWithMemoryTracking<size_t> variant_first_offset(num_variants, 0);
+    VectorWithMemoryTracking<size_t> variant_count(num_variants, 0);
+
+    for (size_t i = begin; i < end; ++i)
+    {
+        auto local_discr = local_discriminators_data[i];
+        auto global_discr = globalDiscriminatorByLocal(local_discr);
+        hash.update(global_discr);
+        if (local_discr != NULL_DISCRIMINATOR)
+        {
+            if (variant_count[local_discr] == 0)
+                variant_first_offset[local_discr] = offsets_data[i];
+            ++variant_count[local_discr];
+        }
+    }
+
+    /// Hash each variant's data in global discriminator order.
+    for (Discriminator global_discr = 0; global_discr < static_cast<Discriminator>(num_variants); ++global_discr)
+    {
+        auto local_discr = global_to_local_discriminators[global_discr];
+        if (variant_count[local_discr] > 0)
+        {
+            variants[local_discr]->updateHashWithValueRange(
+                variant_first_offset[local_discr],
+                variant_first_offset[local_discr] + variant_count[local_discr],
+                hash);
+        }
+    }
+}
+
 WeakHash32 ColumnVariant::getWeakHash32() const
 {
     auto s = size();
@@ -931,7 +990,10 @@ ColumnPtr ColumnVariant::filter(const Filter & filt, ssize_t result_size_hint) c
     /// If we have only NULLs, just filter local_discriminators column.
     if (hasOnlyNulls())
     {
-        Columns new_variants(variants.begin(), variants.end());
+        Columns new_variants;
+        new_variants.reserve(variants.size());
+        for (const auto & variant : variants)
+            new_variants.emplace_back(variant->cloneEmpty());
         auto new_discriminators = local_discriminators->filter(filt, result_size_hint);
         /// In case of all NULL values offsets doesn't contain any useful values, just resize it.
         ColumnPtr new_offsets = offsets->cloneResized(new_discriminators->size());

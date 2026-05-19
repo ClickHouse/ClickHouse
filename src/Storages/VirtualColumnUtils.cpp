@@ -1,5 +1,6 @@
 #include <memory>
 #include <stack>
+#include <unordered_set>
 
 #include <Storages/VirtualColumnUtils.h>
 
@@ -7,6 +8,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/convertFieldToType.h>
@@ -14,7 +16,6 @@
 
 
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
@@ -42,8 +43,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/HivePartitioningUtils.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Common/HashTable/HashSet.h>
 
 
 namespace DB
@@ -92,6 +91,57 @@ void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, boo
 void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
 {
     buildSetsForDagImpl(dag, context, /* ordered = */ false);
+}
+
+void buildSetsForDAGExcludingGlobalIn(const ActionsDAG & dag, const ContextPtr & context)
+{
+    /// Collect ColumnSet nodes that are arguments to globalIn/globalNotIn functions.
+    /// These sets must NOT be built synchronously here because ReadFromRemote needs to
+    /// attach external tables to them first (via setExternalTable). Building them early
+    /// would make the set "created" without explicit elements, causing a LOGICAL_ERROR.
+    std::unordered_set<const ActionsDAG::Node *> global_in_set_nodes;
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
+        {
+            auto name = node.function_base->getName();
+            if (functionIsGlobalInOperator(name))
+            {
+                /// The set is the second argument (index 1)
+                if (node.children.size() >= 2)
+                    global_in_set_nodes.insert(node.children[1]);
+            }
+        }
+    }
+
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::COLUMN && !global_in_set_nodes.contains(&node))
+        {
+            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+            if (!column_set)
+                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
+
+            if (column_set)
+            {
+                auto future_set = column_set->getData();
+                if (!future_set->get())
+                {
+                    if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
+                    {
+                        /// Prefer ordered build so that the set retains explicit elements,
+                        /// which `KeyCondition` and skip-index analysis require to use the set
+                        /// for primary-key / skip-index filtering (via `buildOrderedSetInplace`).
+                        /// If `use_index_for_in_with_subqueries` is disabled, the ordered build
+                        /// returns `nullptr` without building; fall back to unordered so the set
+                        /// is still ready when PREWHERE is evaluated at read time.
+                        if (!set_from_subquery->buildOrderedSetInplace(context))
+                            set_from_subquery->buildSetInplace(context);
+                    }
+                }
+            }
+        }
+    }
 }
 
 void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
@@ -644,38 +694,6 @@ std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag
     }
 
     return result;
-}
-
-DataPartsVector filterDataPartsWithExpression(
-    const DataPartsVector & data_parts,
-    const std::shared_ptr<ExpressionActions> & virtual_columns_filter)
-{
-    if (!virtual_columns_filter)
-        return data_parts;
-
-    auto all_part_names = ColumnString::create();
-    for (const auto & part : data_parts)
-        all_part_names->insert(part->name);
-
-    Block filtered_block{{std::move(all_part_names), std::make_shared<DataTypeString>(), "part_name"}};
-    filterBlockWithExpression(virtual_columns_filter, filtered_block);
-
-    if (!filtered_block.rows())
-        return {};
-
-    auto part_names = filtered_block.getByPosition(0).column;
-    const auto & part_names_str = assert_cast<const ColumnString &>(*part_names);
-
-    HashSet<std::string_view> part_names_set;
-    for (size_t i = 0; i < part_names_str.size(); ++i)
-        part_names_set.insert(part_names_str.getDataAt(i));
-
-    DataPartsVector filtered_parts;
-    for (const auto & part : data_parts)
-        if (part_names_set.has(part->name))
-            filtered_parts.push_back(part);
-
-    return filtered_parts;
 }
 
 }
