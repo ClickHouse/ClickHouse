@@ -87,7 +87,35 @@ ${CLICKHOUSE_CLIENT} --query "GRANT SHOW TABLES ON $db.dep_view TO $user"
 # Dependent view now exposed.
 run_user "$deps_probe"
 
+echo "--- db-level SHOW TABLES grant ---"
+# A user with `GRANT SHOW TABLES ON $db.*` (no `SHOW COLUMNS`) must still see empty
+# DDL columns — db-level `SHOW TABLES` is not `SHOW COLUMNS`.
+${CLICKHOUSE_CLIENT} --query "DROP USER $user"
+${CLICKHOUSE_CLIENT} --query "CREATE USER $user"
+${CLICKHOUSE_CLIENT} --query "GRANT SHOW TABLES ON $db.* TO $user"
+
+run_user "$name_probe"
+run_user "$ddl_probe"
+
+echo "--- cross-db dependent view filter ---"
+# Dependent view in another database must be filtered when the user has no rights
+# on that database, even when they have db-level `SHOW TABLES` on the source.
+db2="${db}_d"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS $db2"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE $db2"
+${CLICKHOUSE_CLIENT} --query "CREATE MATERIALIZED VIEW $db2.cross_dep ENGINE = MergeTree ORDER BY x AS SELECT x FROM $db.secret"
+
+# User has SHOW TABLES on $db.* (which covers dep_view) but not on $db2.
+# Expected: only dep_view shown, cross_dep filtered out.
+${CLICKHOUSE_CLIENT} --user "$user" --query "
+SELECT
+    length(dependencies_table),
+    arrayExists(x -> x = 'dep_view', dependencies_table),
+    arrayExists(x -> x = 'cross_dep', dependencies_table)
+FROM system.tables WHERE database = '$db' AND name = 'secret'"
+
 ${CLICKHOUSE_CLIENT} <<EOF
+DROP DATABASE IF EXISTS $db2;
 DROP USER IF EXISTS $user;
 DROP TABLE IF EXISTS $db.dep_view;
 DROP TABLE IF EXISTS $db.secret;

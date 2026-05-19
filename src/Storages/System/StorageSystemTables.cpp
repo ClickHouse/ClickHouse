@@ -555,15 +555,8 @@ protected:
 
                 ++rows_count;
 
-                /// `SHOW_TABLES` gates row visibility above; `SHOW_COLUMNS` gates the columns
-                /// of this row that reveal schema details (full CREATE statement, engine
-                /// arguments, key expressions, view body). Without this check, a user with
-                /// only column-level grants (e.g. `GRANT SELECT(x) ON db.t`) can read the
-                /// full DDL of `db.t` here despite `DESCRIBE TABLE` and `SHOW CREATE TABLE`
-                /// correctly refusing them. Mirrors the precedent of commits `5875e4daaf5`
-                /// (DESCRIBE via `remote`) and `64efbbeb906` (`CREATE AS`).
-                const bool can_show_columns = !need_to_check_access_for_tables
-                    || access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
+                /// `SHOW COLUMNS` gates DDL-revealing columns to match `DESCRIBE` / `SHOW CREATE`.
+                const bool can_show_columns = access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
 
                 size_t src_index = 0;
                 size_t res_index = 0;
@@ -630,11 +623,9 @@ protected:
                         views_database_name_array.reserve(view_ids.size());
                         for (const auto & view_id : view_ids)
                         {
-                            /// Only expose dependent views the user has `SHOW_TABLES` on.
-                            /// The names of these views are `SHOW_TABLES`-grade information
-                            /// about *the dependent tables*, not `SHOW_COLUMNS`-grade about
-                            /// the current row's table.
-                            if (need_to_check_access_for_tables
+                            /// Each dependent name leaks `SHOW TABLES` info about *that* table.
+                            /// Filter per view; skip only when the user has global `SHOW TABLES`.
+                            if (need_to_check_access_for_databases
                                 && !access->isGranted(AccessType::SHOW_TABLES, view_id.database_name, view_id.table_name))
                                 continue;
 
