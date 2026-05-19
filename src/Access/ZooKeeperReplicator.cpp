@@ -571,7 +571,10 @@ void ZooKeeperReplicator::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper
 
     const String zookeeper_uuids_path = zookeeper_path + "/uuid";
     Coordination::Stat stat;
-    const auto entity_uuid_strs = zookeeper->getChildrenWatch(zookeeper_uuids_path, &stat, watch_entities_list);
+    const auto entity_uuid_strs = zookeeper->getChildrenWatch(
+        zookeeper_uuids_path,
+        &stat,
+        Coordination::WatchCallbackPtrOrEventPtr{watch_entities_list, Coordination::WatchCallbackKind::ReplicatedAccessControl});
 
     std::vector<UUID> entity_uuids;
     entity_uuids.reserve(entity_uuid_strs.size());
@@ -640,6 +643,7 @@ AccessEntityPtr ZooKeeperReplicator::tryReadEntityFromZooKeeper(const zkutil::Zo
                 [[maybe_unused]] bool push_result = my_watched_queue->push(id);
         };
     });
+    watch.setKind(Coordination::WatchCallbackKind::ReplicatedAccessControl);
 
     Coordination::Stat entity_stat;
     const String entity_path = zookeeper_path + "/uuid/" + toString(id);

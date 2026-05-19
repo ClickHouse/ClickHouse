@@ -75,6 +75,22 @@ namespace ProfileEvents
     extern const Event ZooKeeperBytesSent;
     extern const Event ZooKeeperBytesReceived;
     extern const Event ZooKeeperWatchResponse;
+    extern const Event ZooKeeperWatchCallbackDurationMicroseconds;
+    extern const Event ZooKeeperWatchCallbackErrors;
+    extern const Event ZooKeeperWatchTriggeredOther;
+    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeQueue;
+    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeLog;
+    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeMutations;
+    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection;
+    extern const Event ZooKeeperWatchTriggeredDistributedDDL;
+    extern const Event ZooKeeperWatchTriggeredKeeperMap;
+    extern const Event ZooKeeperWatchTriggeredReplicatedAccessControl;
+    extern const Event ZooKeeperWatchTriggeredUserDefinedSQLObjects;
+    extern const Event ZooKeeperWatchTriggeredBackupCoordination;
+    extern const Event ZooKeeperWatchTriggeredObjectStorageQueue;
+    extern const Event ZooKeeperWatchTriggeredClusterDiscovery;
+    extern const Event ZooKeeperWatchTriggeredMaterializedViewRefresh;
+    extern const Event ZooKeeperWatchTriggeredPartMovesBetweenShards;
 }
 
 namespace CurrentMetrics
@@ -335,6 +351,57 @@ namespace Coordination
 {
 
 using namespace DB;
+
+namespace
+{
+
+ProfileEvents::Event watchTriggeredProfileEvent(WatchCallbackKind kind)
+{
+    switch (kind)
+    {
+        case WatchCallbackKind::Other: return ProfileEvents::ZooKeeperWatchTriggeredOther;
+        case WatchCallbackKind::ReplicatedMergeTreeQueue: return ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeQueue;
+        case WatchCallbackKind::ReplicatedMergeTreeLog: return ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeLog;
+        case WatchCallbackKind::ReplicatedMergeTreeMutations: return ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeMutations;
+        case WatchCallbackKind::ReplicatedMergeTreeLeaderElection: return ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection;
+        case WatchCallbackKind::DistributedDDL: return ProfileEvents::ZooKeeperWatchTriggeredDistributedDDL;
+        case WatchCallbackKind::KeeperMap: return ProfileEvents::ZooKeeperWatchTriggeredKeeperMap;
+        case WatchCallbackKind::ReplicatedAccessControl: return ProfileEvents::ZooKeeperWatchTriggeredReplicatedAccessControl;
+        case WatchCallbackKind::UserDefinedSQLObjects: return ProfileEvents::ZooKeeperWatchTriggeredUserDefinedSQLObjects;
+        case WatchCallbackKind::BackupCoordination: return ProfileEvents::ZooKeeperWatchTriggeredBackupCoordination;
+        case WatchCallbackKind::ObjectStorageQueue: return ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue;
+        case WatchCallbackKind::ClusterDiscovery: return ProfileEvents::ZooKeeperWatchTriggeredClusterDiscovery;
+        case WatchCallbackKind::MaterializedViewRefresh: return ProfileEvents::ZooKeeperWatchTriggeredMaterializedViewRefresh;
+        case WatchCallbackKind::PartMovesBetweenShards: return ProfileEvents::ZooKeeperWatchTriggeredPartMovesBetweenShards;
+    }
+    return ProfileEvents::ZooKeeperWatchTriggeredOther;
+}
+
+void triggerWatchCallback(
+    const WatchCallbackPtrOrEventPtr & event_or_callback,
+    const WatchResponse & response,
+    const LoggerPtr & log)
+{
+    ProfileEvents::increment(watchTriggeredProfileEvent(event_or_callback.getKind()));
+
+    const auto start_time = std::chrono::steady_clock::now();
+    try
+    {
+        event_or_callback.invoke(response);
+    }
+    catch (...)
+    {
+        ProfileEvents::increment(ProfileEvents::ZooKeeperWatchCallbackErrors);
+        if (log)
+            tryLogCurrentException(log);
+    }
+
+    const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - start_time).count();
+    ProfileEvents::increment(ProfileEvents::ZooKeeperWatchCallbackDurationMicroseconds, elapsed_us);
+}
+
+}
 
 template <typename T>
 void ZooKeeper::write(const T & x)
@@ -1013,7 +1080,7 @@ void ZooKeeper::receiveEvent()
             const WatchResponse & watch_response = dynamic_cast<const WatchResponse &>(response_);
 
             auto event_type = watch_response.type;
-            auto trigger_watches = [&watch_response](auto & watches_container)
+            auto trigger_watches = [&watch_response, this](auto & watches_container)
             {
                 auto it = watches_container.find(watch_response.path);
                 if (it == watches_container.end())
@@ -1033,7 +1100,7 @@ void ZooKeeper::receiveEvent()
                 for (const auto & [event_or_callback, _] : it->second)
                 {
                     if (event_or_callback)
-                        event_or_callback(watch_response);
+                        triggerWatchCallback(event_or_callback, watch_response, log);
                 }
 
                 CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, it->second.size());
@@ -1384,16 +1451,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                         watch_callback_count += 1;
                         // TODO: there is impossible to have watch which will be "nullptr"
                         if (event_or_callback)
-                        {
-                            try
-                            {
-                                event_or_callback(response);
-                            }
-                            catch (...)
-                            {
-                                tryLogCurrentException(log);
-                            }
-                        }
+                            triggerWatchCallback(event_or_callback, response, log);
                     }
                 }
 
@@ -1439,15 +1497,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
                 response.type = SESSION;
                 response.state = EXPIRED_SESSION;
                 response.error = Error::ZSESSIONEXPIRED;
-                try
-                {
-                    const WatchCallbackPtrOrEventPtr & event_or_callback = info.watch;
-                    event_or_callback(response);
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(log);
-                }
+                triggerWatchCallback(info.watch, response, log);
             }
         }
     }

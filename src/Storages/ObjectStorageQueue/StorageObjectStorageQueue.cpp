@@ -1814,18 +1814,23 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
                 ///              when the node is first created.
                 std::string dummy_data;
                 Coordination::Stat dummy_stat{};
-                const bool node_exists = zk->tryGetWatch(processed_node_path, dummy_data, &dummy_stat, event);
+                Coordination::WatchCallbackPtrOrEventPtr labelled_event{event, Coordination::WatchCallbackKind::ObjectStorageQueue};
+                const bool node_exists = zk->tryGetWatch(processed_node_path, dummy_data, &dummy_stat, labelled_event);
                 if (!node_exists)
-                    zk->existsWatch(processed_node_path, nullptr, event);
+                    zk->existsWatch(processed_node_path, nullptr, labelled_event);
             }
             else
             {
                 /// Unordered: each file gets its own processed node; watch for its creation.
-                zk->existsWatch(processed_node_path, nullptr, event);
+                zk->existsWatch(
+                    processed_node_path, nullptr,
+                    Coordination::WatchCallbackPtrOrEventPtr{event, Coordination::WatchCallbackKind::ObjectStorageQueue});
             }
 
             /// Per-file failed node: watch for creation regardless of mode.
-            zk->existsWatch(failed_node_path, nullptr, event);
+            zk->existsWatch(
+                failed_node_path, nullptr,
+                Coordination::WatchCallbackPtrOrEventPtr{event, Coordination::WatchCallbackKind::ObjectStorageQueue});
         });
 
         std::string failure_message;

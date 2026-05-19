@@ -179,6 +179,25 @@ using WatchCallback = std::function<void(const WatchResponse &)>;
 using WatchCallbackPtr = std::shared_ptr<WatchCallback>;
 using EventPtr = std::shared_ptr<Poco::Event>;
 struct TestKeeperRequest;
+
+enum class WatchCallbackKind : uint8_t
+{
+    Other,
+    ReplicatedMergeTreeQueue,
+    ReplicatedMergeTreeLog,
+    ReplicatedMergeTreeMutations,
+    ReplicatedMergeTreeLeaderElection,
+    DistributedDDL,
+    KeeperMap,
+    ReplicatedAccessControl,
+    UserDefinedSQLObjects,
+    BackupCoordination,
+    ObjectStorageQueue,
+    ClusterDiscovery,
+    MaterializedViewRefresh,
+    PartMovesBetweenShards,
+};
+
 struct WatchCallbackPtrOrEventPtr
 {
 private:
@@ -189,6 +208,7 @@ private:
 
     WatchCallbackPtr callback;
     EventPtr event;
+    WatchCallbackKind kind = WatchCallbackKind::Other;
 
     void operator()(WatchResponse response) const
     {
@@ -203,6 +223,15 @@ public:
 
     WatchCallbackPtrOrEventPtr(WatchCallbackPtr callback_) : callback(std::move(callback_)) {} // NOLINT(google-explicit-constructor)
     WatchCallbackPtrOrEventPtr(EventPtr event_) : event(std::move(event_)) {} // NOLINT(google-explicit-constructor)
+    WatchCallbackPtrOrEventPtr(WatchCallbackPtr callback_, WatchCallbackKind kind_)
+        : callback(std::move(callback_)), kind(kind_) {} // NOLINT(google-explicit-constructor)
+    WatchCallbackPtrOrEventPtr(EventPtr event_, WatchCallbackKind kind_)
+        : event(std::move(event_)), kind(kind_) {} // NOLINT(google-explicit-constructor)
+
+    WatchCallbackKind getKind() const { return kind; }
+    void setKind(WatchCallbackKind kind_) { kind = kind_; }
+
+    void invoke(WatchResponse response) const { (*this)(std::move(response)); }
 
     WatchCallbackPtrOrEventPtr(WatchCallbackPtrOrEventPtr &&) = default;
     WatchCallbackPtrOrEventPtr(const WatchCallbackPtrOrEventPtr &) = default;

@@ -10928,6 +10928,7 @@ void StorageReplicatedMergeTree::watchZeroCopyLock(const String & part_name, con
                 *flag = false;
             };
         });
+        watch.setKind(Coordination::WatchCallbackKind::ReplicatedMergeTreeLeaderElection);
         bool exists = zookeeper->tryGetWatch(lock_path, replica, nullptr, watch);
 
         if (exists)

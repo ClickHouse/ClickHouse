@@ -302,7 +302,10 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
             auto res = get_nodes_callbacks.insert(std::make_pair(cluster_name, watch_dynamic_callback));
             callback = res.first;
         }
-        nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, callback->second);
+        nodes = zk->getChildrenWatch(
+            getShardsListPath(zk_root),
+            &stat,
+            Coordination::WatchCallbackPtrOrEventPtr{callback->second, Coordination::WatchCallbackKind::ClusterDiscovery});
     }
     else
         nodes = zk->getChildren(getShardsListPath(zk_root), &stat);
@@ -588,7 +591,10 @@ void ClusterDiscovery::findDynamicClusters(
 
         auto zk = context->getDefaultOrAuxiliaryZooKeeper(path.zk_name);
 
-        auto clusters = zk->getChildrenWatch(path.zk_path, nullptr, path.watch_callback);
+        auto clusters = zk->getChildrenWatch(
+            path.zk_path,
+            nullptr,
+            Coordination::WatchCallbackPtrOrEventPtr{path.watch_callback, Coordination::WatchCallbackKind::ClusterDiscovery});
 
         for (const auto & cluster : clusters)
         {
