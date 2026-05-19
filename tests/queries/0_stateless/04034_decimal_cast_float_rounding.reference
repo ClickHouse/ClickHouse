@@ -32,3 +32,4 @@ Column path matches scalar:
 -1.5	-2
 2.7	3
 -2.7	-3
+Float32 -> Decimal256 high-scale non-finite multiplier:

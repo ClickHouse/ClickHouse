@@ -54,3 +54,12 @@ SELECT CAST(toFloat32(2.25), 'Decimal(9, 0)') AS d1, CAST(toFloat32(-2.25), 'Dec
 SELECT 'Column path matches scalar:';
 WITH arrayJoin([0.5, 1.5, -0.5, -1.5, 2.7, -2.7]) AS x
 SELECT toFloat64(x) AS f, CAST(f, 'Decimal(9, 0)') AS d;
+
+-- Float32 -> Decimal256 with high scale: the multiplier overflows to +inf in Float32,
+-- so a finite input still produces a non-finite product. Must surface as DECIMAL_OVERFLOW
+-- instead of silently casting +inf to a wide integer.
+SELECT 'Float32 -> Decimal256 high-scale non-finite multiplier:';
+SELECT CAST(toFloat32(1), 'Decimal256(76)'); -- { serverError DECIMAL_OVERFLOW }
+SELECT CAST(toFloat32(-1), 'Decimal256(76)'); -- { serverError DECIMAL_OVERFLOW }
+-- Same in the column (batch) path.
+SELECT CAST(materialize(toFloat32(1)), 'Decimal256(76)'); -- { serverError DECIMAL_OVERFLOW }
