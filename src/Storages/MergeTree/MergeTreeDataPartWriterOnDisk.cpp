@@ -477,9 +477,9 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
     {
         std::vector<const MergeTreeWriterStream *> streams_to_sync;
         streams_to_sync.reserve(skip_indices_streams_holders.size());
-        for (size_t i = 0; i < skip_indices_streams.size(); ++i)
+        for (const auto & index_streams : skip_indices_streams)
         {
-            for (const auto & [_, stream] : skip_indices_streams[i])
+            for (const auto & [_, stream] : index_streams)
             {
                 /// Packed substreams have no on-disk file to sync; the archive is synced
                 /// separately via skip_indices_packed_file->sync() above. Streams that spilled
