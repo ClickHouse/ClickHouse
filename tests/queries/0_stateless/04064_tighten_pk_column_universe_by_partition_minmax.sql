@@ -31,3 +31,26 @@ OR ((id = 500) AND ((event_time >= toDateTime('2024-01-13 23:00:00')) AND (event
 OR ((id = 600) AND ((event_time >= toDateTime('2024-01-15 23:00:00')) AND (event_time <= toDateTime('2024-06-18 01:00:00'))));
 
 DROP TABLE test_order_by;
+
+CREATE OR REPLACE TABLE test_order_by_skip
+(
+    `event_time` UInt32,
+    `id` UInt32
+)
+ENGINE = MergeTree
+PARTITION BY intDiv(event_time, 5000)
+ORDER BY (id, event_time)
+SETTINGS index_granularity = 512, primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0.1;
+
+INSERT INTO test_order_by_skip                                                                                     
+SELECT
+    number AS event_time, 
+    intDiv(number, 1000) AS id
+FROM numbers(10000);
+
+EXPLAIN ESTIMATE
+SELECT *
+FROM test_order_by_skip
+WHERE ((id = 0) AND (event_time = 1)) OR ((id = 2) AND (event_time > 5000));
+
+DROP TABLE test_order_by_skip;
