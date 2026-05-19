@@ -137,6 +137,16 @@ void optimizeFunctionLength(QueryTreeNodePtr & node, FunctionNode &, ColumnConte
     if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
         return;
 
+    /// If the .size0 subcolumn is actually Nullable (e.g. when the column type is Nullable(Array(...))),
+    /// skip the optimization. The hardcoded UInt64 type would mismatch the actual Nullable(UInt64).
+    if (auto * table_node = ctx.column_source->as<TableNode>())
+    {
+        auto actual = table_node->getStorageSnapshot()->tryGetColumn(
+            GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column.name);
+        if (actual && actual->type->isNullable())
+            return;
+    }
+
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
 

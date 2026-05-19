@@ -38,7 +38,7 @@ public:
 
     bool canBeInsideNullable() const override
     {
-        return false;
+        return true;
     }
 
     MutableColumnPtr createColumn() const override;

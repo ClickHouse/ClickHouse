@@ -35,8 +35,9 @@ struct JSONInferenceInfo
 };
 
 /// Check whether a type can be wrapped into Nullable according to schema inference settings.
-/// Currently, only Tuple is setting-dependent:
+/// Currently, Tuple and Array are setting-dependent:
 /// If `schema_inference_allow_nullable_tuple_type` is disabled, Tuple cannot be wrapped into Nullable.
+/// If `schema_inference_allow_nullable_array_type` is disabled, Array cannot be wrapped into Nullable.
 /// Otherwise this check is equivalent to type->canBeInsideNullable().
 bool canBeInsideNullableBySchemaSettings(const DataTypePtr & type, const FormatSettings & settings);
 
@@ -114,6 +115,8 @@ void transformInferredJSONTypesFromDifferentFilesIfNeeded(DataTypePtr & first, D
 /// Make type Nullable recursively:
 ///  - Type -> Nullable(type)
 ///  - Array(Type) -> Array(Nullable(Type))
+///    If settings.schema_inference_allow_nullable_array_type is enabled, also wraps the whole array:
+///      Array(...) -> Nullable(Array(...))
 ///  - Tuple(Type1, ..., TypeN) -> Tuple(Nullable(Type1), ..., Nullable(TypeN))
 ///    If settings.schema_inference_allow_nullable_tuple_type is enabled, also wraps the whole tuple:
 ///      Tuple(...) -> Nullable(Tuple(...))

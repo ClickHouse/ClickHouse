@@ -128,9 +128,8 @@ struct Reader
     /// All compound types reduce to this structure. E.g. Map is an array of 2-tuples, and array of
     /// tuples is a groups of parallel Array columns.
     ///
-    /// ClickHouse doesn't support Nullable non-primitive columns, so we turn NULL arrays into
-    /// empty arrays at decoding time. This transformation can be done just by modifying
-    /// repetition/definition levels.
+    /// Nullable arrays keep a separate null map at the corresponding array level, so a NULL
+    /// array remains distinct from an empty array.
     ///
     /// For each primitive parquet column, we produce a primitive ClickHouse column (possibly Nullable)
     /// and offsets for each Array level. After decoding all primitive columns, we bundle them into
@@ -355,6 +354,9 @@ struct Reader
         /// ("Arrays offsets" is intentionally grammatically incorrect to emphasize that it's a
         ///  list of lists.)
         std::vector<MutableColumnPtr> arrays_offsets;
+
+        /// Null maps for nullable array levels, parallel to arrays_offsets.
+        std::vector<MutableColumnPtr> arrays_null_maps;
 
         /// Covers `column`, `arrays_offsets`, and also RowSubgroup::output (data can be moved from
         /// the former to the latter).

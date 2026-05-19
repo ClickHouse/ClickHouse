@@ -1400,6 +1400,17 @@ ColumnPtr FunctionArrayElement<mode>::removeNullableIfNeeded(const ColumnPtr & c
     return column;
 }
 
+static ColumnPtr unwrapNullableArrayColumn(const ColumnPtr & column)
+{
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column.get()))
+    {
+        if (checkAndGetColumn<ColumnArray>(&nullable_column->getNestedColumn()))
+            return nullable_column->getNestedColumnPtr();
+    }
+
+    return column;
+}
+
 template <ArrayElementExceptionMode mode>
 template <typename IndexType>
 ColumnPtr FunctionArrayElement<mode>::executeGeneric(
@@ -1580,6 +1591,9 @@ ColumnPtr FunctionArrayElement<mode>::executeMap2(const ColumnsWithTypeAndName &
         result_value_column = removeNullableIfNeeded(col, value_type);
     }
 
+    result_key_column = unwrapNullableArrayColumn(result_key_column);
+    result_value_column = unwrapNullableArrayColumn(result_value_column);
+
     const auto & data_keys = typeid_cast<const ColumnArray &>(*result_key_column).getDataPtr();
     const auto & data_values = typeid_cast<const ColumnArray &>(*result_value_column).getDataPtr();
     const auto & offsets = typeid_cast<const ColumnArray &>(*result_key_column).getOffsetsPtr();
@@ -1740,8 +1754,9 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
     if (tuple_size == 0)
         return ColumnTuple::create(input_rows_count);
 
-    const DataTypes & tuple_types
-        = typeid_cast<const DataTypeTuple &>(*typeid_cast<const DataTypeArray &>(*arguments[0].type).getNestedType()).getElements();
+    const auto & input_array_type = typeid_cast<const DataTypeArray &>(*removeNullable(arguments[0].type));
+    const auto & input_tuple_type = typeid_cast<const DataTypeTuple &>(*removeNullable(input_array_type.getNestedType()));
+    const DataTypes & tuple_types = input_tuple_type.getElements();
 
     /** We will calculate the function for the tuple of the internals of the array.
       * To do this, create a temporary columns.
@@ -2110,13 +2125,15 @@ String FunctionArrayElement<mode>::getName() const
 template <ArrayElementExceptionMode mode>
 DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    if (const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get()))
+    const auto first_argument_type = removeNullable(arguments[0]);
+
+    if (const auto * map_type = checkAndGetDataType<DataTypeMap>(first_argument_type.get()))
     {
         auto value_type = map_type->getValueType();
         return is_null_mode && value_type->canBeInsideNullable() ? makeNullable(value_type) : value_type;
     }
 
-    const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+    const auto * array_type = checkAndGetDataType<DataTypeArray>(first_argument_type.get());
     if (!array_type)
     {
         throw Exception(
@@ -2143,6 +2160,36 @@ template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    if (const auto * nullable_array = checkAndGetColumn<ColumnNullable>(arguments[0].column.get()))
+    {
+        if (checkAndGetColumn<ColumnArray>(&nullable_array->getNestedColumn()))
+        {
+            ColumnsWithTypeAndName nested_arguments = arguments;
+            nested_arguments[0].column = nullable_array->getNestedColumnPtr();
+            nested_arguments[0].type = removeNullable(arguments[0].type);
+
+            auto nested_result_type = removeNullable(result_type);
+            auto nested_result = executeImpl(nested_arguments, nested_result_type, input_rows_count);
+
+            auto null_map = ColumnUInt8::create();
+            auto & null_map_data = null_map->getData();
+            null_map_data.assign(nullable_array->getNullMapData().begin(), nullable_array->getNullMapData().end());
+
+            if (const auto * nullable_result = checkAndGetColumn<ColumnNullable>(nested_result.get()))
+            {
+                const auto & result_null_map = nullable_result->getNullMapData();
+                for (size_t i = 0, size = null_map_data.size(); i < size; ++i)
+                    null_map_data[i] |= result_null_map[i];
+                nested_result = nullable_result->getNestedColumnPtr();
+            }
+
+            if (result_type->isNullable() && nested_result->canBeInsideNullable())
+                return ColumnNullable::create(nested_result, std::move(null_map));
+
+            return nested_result;
+        }
+    }
+
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
 

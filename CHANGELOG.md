@@ -876,6 +876,7 @@
 * Add server-side AST fuzzer controlled by `ast_fuzzer_runs` and `ast_fuzzer_any_query` settings. When enabled, the server runs randomized mutations of each query after its normal execution, discarding the results. [#97568](https://github.com/ClickHouse/ClickHouse/pull/97568) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * Add `iif` function to the experimental KQL dialect. [#94790](https://github.com/ClickHouse/ClickHouse/pull/94790) ([happyso](https://github.com/sunyeongchoi)).
 * Schema inference now respects `allow_experimental_nullable_tuple_type`. When enabled, it allows inferred tuple types to be `Nullable(Tuple(...))`, so missing nested objects can become `NULL` instead of a tuple of `NULL` elements. [#95525](https://github.com/ClickHouse/ClickHouse/pull/95525) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+* Add experimental support for `Nullable(Array(...))` behind the `allow_experimental_nullable_array_type` setting. This keeps `NULL` arrays distinct from empty arrays.
 * The `use_statistics_cache` setting is now enabled by default, so column statistics are cached in memory to speed up query optimization without needing to reload them from each part. [#95950](https://github.com/ClickHouse/ClickHouse/pull/95950) ([Han Fei](https://github.com/hanfei1991)).
 
 #### Performance Improvement

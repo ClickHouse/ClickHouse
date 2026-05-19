@@ -53,6 +53,8 @@ When creating an array on the fly, ClickHouse automatically defines the argument
 
 If ClickHouse couldn't determine the data type, it generates an exception. For instance, this happens when trying to create an array with strings and numbers simultaneously (`SELECT array(1, 'a')`).
 
+You can make the array itself nullable with `Nullable(Array(T))` when the `allow_experimental_nullable_array_type` setting is enabled. This is different from `Array(Nullable(T))`: `Nullable(Array(T))` allows the whole array value to be `NULL`, while `Array(Nullable(T))` allows individual elements to be `NULL`.
+
 Examples of automatic data type detection:
 
 ```sql

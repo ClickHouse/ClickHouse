@@ -206,7 +206,10 @@ void SchemaConverter::processSubtree(TraversalNode & node)
                 {
                     if (levels[i].is_array)
                     {
-                        const DataTypeArray * array = typeid_cast<const DataTypeArray *>(node.type_hint.get());
+                        DataTypePtr array_hint = node.type_hint;
+                        if (array_hint->isNullable())
+                            array_hint = removeNullable(array_hint);
+                        const DataTypeArray * array = typeid_cast<const DataTypeArray *>(array_hint.get());
                         if (!array)
                             throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of nested column {} doesn't match parquet schema: parquet type is Array, requested type is {}", node.getNameForLogging(), node.type_hint->getName());
                         node.type_hint = array->getNestedType();
@@ -241,7 +244,10 @@ void SchemaConverter::processSubtree(TraversalNode & node)
             /// We'll first process schema for array element type, then wrap it in Array type.
             if (node.type_hint)
             {
-                const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(node.type_hint.get());
+                DataTypePtr array_hint = node.type_hint;
+                if (array_hint->isNullable())
+                    array_hint = removeNullable(array_hint);
+                const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(array_hint.get());
                 if (!array_type)
                     throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Array, requested type is {}", node.getNameForLogging(), node.type_hint->getName());
                 node.type_hint = array_type->getNestedType();

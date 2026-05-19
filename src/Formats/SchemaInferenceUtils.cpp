@@ -1403,6 +1403,9 @@ bool canBeInsideNullableBySchemaSettings(const DataTypePtr & type, const FormatS
     if (isTuple(type) && !settings.schema_inference_allow_nullable_tuple_type)
         return false;
 
+    if (isArray(type) && !settings.schema_inference_allow_nullable_array_type)
+        return false;
+
     return type->canBeInsideNullable();
 }
 
@@ -1683,7 +1686,11 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
     {
         const auto * array_type = assert_cast<const DataTypeArray *>(type.get());
         auto nested_type = adjustNullableRecursively(array_type->getNestedType(), make_nullable, settings);
-        return nested_type ? std::make_shared<DataTypeArray>(nested_type) : nullptr;
+        if (!nested_type)
+            return nullptr;
+
+        auto array_res = std::make_shared<DataTypeArray>(nested_type);
+        return (make_nullable && settings.schema_inference_allow_nullable_array_type) ? makeNullableSafe(array_res) : array_res;
     }
 
     if (which.isVariant())

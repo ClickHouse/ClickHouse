@@ -168,7 +168,7 @@ TEST(YTDataType, CheckOptional) {
             optional1->set("type_name", "optional");
             optional1->set("item", optional2);
             json->set("type_v3", optional1);
-            ASSERT_THROW(checkColumnType(json, CH_TYPE("Nullable(Array(Float64))")), DB::Exception);
+            ASSERT_TRUE(checkColumnType(json, CH_TYPE("Nullable(Array(Float64))")));
         }
 
         {

@@ -112,7 +112,7 @@ public:
 
         for (size_t i = 0; i < num_nested_types; ++i)
         {
-            const auto * array_type = checkAndGetDataType<DataTypeArray>(&*arguments[i + 1 + num_fixed_params]);
+            const auto * array_type = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[i + 1 + num_fixed_params]).get());
             if (!array_type)
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -178,7 +178,7 @@ public:
 
         if (arguments.size() == 1 + num_fixed_params)
         {
-            const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[num_fixed_params].type.get());
+            const auto * array_type = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[num_fixed_params].type).get());
 
             if (!array_type)
                 throw Exception(
@@ -242,7 +242,7 @@ public:
         if (arguments.size() < 2 + num_fixed_params)
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect number of arguments: {}", arguments.size());
 
-        const auto * first_array_type = checkAndGetDataType<DataTypeArray>(arguments[1 + num_fixed_params].type.get());
+        const auto * first_array_type = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[1 + num_fixed_params].type).get());
         if (!first_array_type)
             throw DB::Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}", arguments[1 + num_fixed_params].type->getName());
@@ -308,7 +308,7 @@ public:
                 const auto * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
 
                 const auto & array_type_ptr = array_with_type_and_name.type;
-                const auto * array_type = checkAndGetDataType<DataTypeArray>(array_type_ptr.get());
+                const auto * array_type = checkAndGetDataType<DataTypeArray>(removeNullable(array_type_ptr).get());
 
                 if (!column_array)
                 {

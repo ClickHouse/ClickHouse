@@ -12,7 +12,7 @@ doc_type: 'reference'
 Allows to store special marker ([NULL](../../sql-reference/syntax.md)) that denotes "missing value" alongside normal values allowed by `T`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that do not have a value will store `NULL`.
 
 `T` can't be any of the following composite data types:
-- [Array](../../sql-reference/data-types/array.md) — Not supported
+- [Array](../../sql-reference/data-types/array.md) — Experimental support available*
 - [Map](../../sql-reference/data-types/map.md) — Not supported
 - [Tuple](../../sql-reference/data-types/tuple.md) — Experimental support available*
 
@@ -21,6 +21,10 @@ However, composite data types **can contain** `Nullable` type values, e.g. `Arra
 :::note Experimental: Nullable Tuples
 * [Nullable(Tuple(...))](../../sql-reference/data-types/tuple.md#nullable-tuple) is supported when `allow_experimental_nullable_tuple_type = 1` is enabled.
 :::
+
+::::note Experimental: Nullable Arrays
+* `Nullable(Array(...))` is supported when `allow_experimental_nullable_array_type = 1` is enabled. It represents a `NULL` array, which is different from an empty array `[]`.
+::::
 
 A `Nullable` type field can't be included in table indexes.
 

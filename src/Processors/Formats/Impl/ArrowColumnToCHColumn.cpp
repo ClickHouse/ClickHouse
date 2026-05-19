@@ -1690,9 +1690,6 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     bool type_hint_not_nullable_capable = type_hint && !removeNullable(type_hint)->canBeInsideNullable();
     bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && !type_hint_not_nullable_capable && settings.allow_inferring_nullable_columns;
     if (read_as_nullable_column &&
-        arrow_column->type()->id() != arrow::Type::LIST &&
-        arrow_column->type()->id() != arrow::Type::LARGE_LIST &&
-        arrow_column->type()->id() != arrow::Type::FIXED_SIZE_LIST &&
         arrow_column->type()->id() != arrow::Type::MAP &&
         arrow_column->type()->id() != arrow::Type::DICTIONARY)
     {
