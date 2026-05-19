@@ -1358,8 +1358,12 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                 if (!out_file_if_truncated.empty())
                     cleanupTempFile(parsed_query, out_file);
 
-                // We still want to attempt to process whatever we already received or can receive (socket receive buffer can be not empty)
-                receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
+                /// We still want to attempt to process whatever we already received or can receive
+                /// (socket receive buffer can be not empty), but only if the connection is still alive.
+                /// `Connection::sendQuery` resets `in` via its `SCOPE_EXIT` on send failure, so calling
+                /// `receiveResult` after that would dereference a null read buffer (issue #105292).
+                if (connection->isConnected())
+                    receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
                 throw;
             }
 
