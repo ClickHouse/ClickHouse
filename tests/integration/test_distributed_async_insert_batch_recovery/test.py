@@ -135,7 +135,6 @@ def test_recover_batch_with_broken_middle_file(started_cluster):
     # Drain the queue. With the fix, `recoverBatch` detects the broken middle
     # file, returns false, `current_batch.txt` is removed, and the surviving
     # files are re-processed individually.
-    node_dist.query("SYSTEM START DISTRIBUTED SENDS dist")
     node_dist.query("SYSTEM FLUSH DISTRIBUTED dist")
 
     # The two intact files must have made it through; the corrupted file is
