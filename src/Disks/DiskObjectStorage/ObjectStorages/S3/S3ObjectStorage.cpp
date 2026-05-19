@@ -229,6 +229,15 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     std::optional<size_t>) const
 {
     auto settings_ptr = s3_settings.get();
+
+    BlobStorageLogWriterPtr blob_storage_log;
+    if (read_settings.enable_blob_storage_log_for_read_operations)
+    {
+        blob_storage_log = BlobStorageLogWriter::create(disk_name);
+        if (blob_storage_log)
+            blob_storage_log->local_path = object.local_path;
+    }
+
     return std::make_unique<ReadBufferFromS3>(
         client.get(),
         uri.bucket,
@@ -241,7 +250,8 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         /* read_until_position */0,
         read_settings.remote_read_buffer_restrict_seek,
         object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt,
-        credentials_refresh_callback);
+        credentials_refresh_callback,
+        std::move(blob_storage_log));
 }
 
 SmallObjectDataWithMetadata S3ObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
@@ -665,17 +675,20 @@ void S3ObjectStorage::applyNewSettings(
         config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
-    modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
-    modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
 
-    modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
-        ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
-
+    /// Apply global <s3> endpoint settings first (lowest priority).
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
     {
         modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
         modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
     }
+
+    /// Apply disk config settings on top (higher priority than global <s3> section).
+    modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
+    modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
+
+    modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
+        ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
 
     auto current_settings = s3_settings.get();
     if (options.allow_client_change

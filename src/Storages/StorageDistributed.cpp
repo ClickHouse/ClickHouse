@@ -429,6 +429,8 @@ StorageDistributed::StorageDistributed(
 
     if (sharding_key_)
     {
+        /// Check that sharding_key exists in the table and has numeric type.
+        checkShardingKeyExistsAndIsNumeric(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical());
         sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), false);
         sharding_key_column_name = sharding_key_->getColumnName();
         sharding_key_is_deterministic = isExpressionActionsDeterministic(sharding_key_expr);
@@ -1038,9 +1040,10 @@ void StorageDistributed::read(
         shard_filter_generator,
         is_remote_function);
 
-    /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
+    /// This is possible when skip_unavailable_shards is enabled and all shards were skipped
+    /// (e.g., every shard had a missing table with no remote replicas).
     if (!query_plan.isInitialized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline is not initialized");
+        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No available shards to query");
 }
 
 
@@ -2090,9 +2093,6 @@ void registerStorageDistributed(StorageFactory & factory)
             engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], local_context);
             storage_policy = checkAndGetLiteralArgument<String>(engine_args[4], "storage_policy");
         }
-
-        /// Check that sharding_key exists in the table and has numeric type.
-        checkShardingKeyExistsAndIsNumeric(sharding_key_ast, context, args.columns.getAllPhysical());
 
         /// TODO: move some arguments from the arguments to the SETTINGS.
         DistributedSettings distributed_settings = context->getDistributedSettings();
