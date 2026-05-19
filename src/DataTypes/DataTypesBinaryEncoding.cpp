@@ -299,7 +299,7 @@ std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadB
     size_t num_arguments;
     readVarUInt(num_arguments, buf);
     if (num_arguments > MAX_ARRAY_SIZE)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many function arguments during AggregateFunction type decoding: {}. Maximum: {}", num_parameters, MAX_ARRAY_SIZE);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many function arguments during AggregateFunction type decoding: {}. Maximum: {}", num_arguments, MAX_ARRAY_SIZE);
 
     DataTypes arguments_types;
     arguments_types.reserve(num_arguments);
