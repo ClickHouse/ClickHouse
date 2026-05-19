@@ -1,8 +1,6 @@
 drop_a_query_ab	33
-drop_a_ab_granules	        Granules: 2/2
-drop_a_ab_granules	        Granules: 1/2
+drop_a_ab_filtered	1
 1
 drop_ab_query_a	51
-drop_ab_a_granules	        Granules: 2/2
-drop_ab_a_granules	        Granules: 1/2
+drop_ab_a_filtered	1
 1

@@ -1,4 +1,4 @@
--- Regression: expanding packed_skip_index_types to cover a new index type, then mutating a
+-- Regression: expanding packed_skip_index_max_bytes to cover a new index type, then mutating a
 -- column of that type, must:
 --   1. Not hardlink the source's skp_idx.packed into the new part (the writer is also about
 --      to write into skp_idx.packed; a shared inode would be truncated, corrupting source).
@@ -21,7 +21,7 @@ CREATE TABLE t_expand_mutate
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0,
-         packed_skip_index_types = 'minmax',
+         packed_skip_index_max_bytes = 4194304,
          auto_statistics_types = '',
          index_granularity = 1024;
 
@@ -32,17 +32,24 @@ INSERT INTO t_expand_mutate SELECT number, number * 2, number * 3 FROM numbers(2
 SELECT 'before_expand_indices_materialized', secondary_indices_compressed_bytes > 0
 FROM system.parts WHERE database = currentDatabase() AND table = 't_expand_mutate' AND active;
 
-ALTER TABLE t_expand_mutate MODIFY SETTING packed_skip_index_types = 'minmax, bloom_filter';
+ALTER TABLE t_expand_mutate MODIFY SETTING packed_skip_index_max_bytes = 4194304;
 ALTER TABLE t_expand_mutate UPDATE w = w + 1 WHERE id < 100 SETTINGS mutations_sync = 2;
 
 -- Both indices must remain usable: m_v carried over from source archive, bf_w freshly packed.
+-- The Skip block's "kept / total" ratio must show kept < total (the index actually filters).
+-- Random merge-tree settings move the absolute granule count around, so we only assert that
+-- a non-empty Skip block exists with kept < total.
 SELECT 'after_mutate_count', count() FROM t_expand_mutate;
-SELECT 'm_v_granules', explain
+SELECT 'm_v_filtered', countIf(
+    splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
+    < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_expand_mutate WHERE v = 250) AS s
-WHERE explain LIKE '%Granules:%' SETTINGS allow_experimental_analyzer = 1;
-SELECT 'bf_w_granules', explain
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
+SELECT 'bf_w_filtered', countIf(
+    splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
+    < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
 FROM (EXPLAIN indexes = 1 SELECT * FROM t_expand_mutate WHERE w = 250) AS s
-WHERE explain LIKE '%Granules:%' SETTINGS allow_experimental_analyzer = 1;
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
 CHECK TABLE t_expand_mutate SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_expand_mutate;

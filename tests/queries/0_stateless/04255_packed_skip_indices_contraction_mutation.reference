@@ -1,6 +1,4 @@
 count_after	2000
-m_v_granules	        Granules: 2/2
-m_v_granules	        Granules: 1/2
-m_w_granules	        Granules: 2/2
-m_w_granules	        Granules: 1/2
+m_v_filtered	1
+m_w_filtered	1
 1

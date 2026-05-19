@@ -1,4 +1,4 @@
--- Round-trip test for the packed_skip_index_types setting: a minmax index written into
+-- Round-trip test for the packed_skip_index_max_bytes setting: a minmax index written into
 -- skp_idx.packed must be queryable (and actually filter granules) across Compact / Wide part
 -- layouts and across merges that rewrite the archive. State is checked via system tables only
 -- so the test works on any storage (including S3-backed deployments).
@@ -13,7 +13,7 @@ CREATE TABLE t_packed_wide
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_types = 'minmax', index_granularity = 1024;
+SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4194304, index_granularity = 1024;
 
 INSERT INTO t_packed_wide SELECT number, number * 7 FROM numbers(10000);
 
@@ -33,7 +33,7 @@ CREATE TABLE t_packed_compact
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS packed_skip_index_types = 'minmax', index_granularity = 1024;
+SETTINGS packed_skip_index_max_bytes = 4194304, index_granularity = 1024;
 
 INSERT INTO t_packed_compact SELECT number, number * 7 FROM numbers(10000);
 
@@ -60,7 +60,7 @@ CREATE TABLE t_packed_merge
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_types = 'minmax', index_granularity = 1024;
+SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = 4194304, index_granularity = 1024;
 
 INSERT INTO t_packed_merge SELECT number, number * 7 FROM numbers(10000);
 INSERT INTO t_packed_merge SELECT number + 10000, number * 11 FROM numbers(10000);

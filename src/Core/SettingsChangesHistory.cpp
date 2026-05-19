@@ -1211,7 +1211,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"add_minmax_index_for_block_number_column", false, false, "New setting."},
             {"add_minmax_index_for_block_offset_column", false, false, "New setting."},
             {"concurrent_part_removal_threshold_for_remote_disk", 100, 16, "New setting. Lower threshold to enter the concurrent part removal path when any part being removed is on a remote disk, where each removal is typically one network round-trip. The old value (100) matches the legacy `concurrent_part_removal_threshold` default, so older `compatibility` modes preserve the previous behavior."},
-            {"packed_skip_index_types", "", "", "New setting. Opt skip-index types into a single skp_idx.packed archive per part instead of separate skp_idx_<name>.idx2 / .mrk2 files."},
+            {"packed_skip_index_max_bytes", 0, 0, "New setting. Pack any skip-index substream whose uncompressed size is at most this many bytes into a single skp_idx.packed archive per part; larger substreams stay in the standalone skp_idx_<name>.idx2 / .mrk2 layout. Decision is made per substream at write time."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {

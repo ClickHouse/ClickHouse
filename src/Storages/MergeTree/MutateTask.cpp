@@ -81,7 +81,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
     extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
     extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
-    extern const MergeTreeSettingsString packed_skip_index_types;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
@@ -2846,29 +2845,11 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             }
         }
 
-        /// Setting expansion: the source has a skp_idx.packed and at least one recalc'd index
-        /// would be packed under the current setting but isn't in the source archive yet. The
-        /// source archive must not be hardlinked (the writer would truncate the shared inode),
-        /// and the surviving in-archive entries that aren't being recomputed must be carried
-        /// into the new archive so the new part doesn't lose them. We pre-load those entries
-        /// into the writer's PackedFilesWriter below; here we just flip archive_dirty.
-        const auto packed_types_now = parsePackedSkipIndexTypes(
-            (*ctx->data->getSettings())[MergeTreeSetting::packed_skip_index_types].toString());
-        bool archive_needs_preload = false;
-        if (!packed_types_now.empty() && source_disk_storage->hasSkipIndicesPackedArchive())
-        {
-            auto recalc_writes_archive = [&](const auto & recalc_set) {
-                for (const auto & idx : recalc_set)
-                    if (packed_types_now.contains(Poco::toLower(idx->index.type)) && !index_is_in_archive(*idx))
-                        return true;
-                return false;
-            };
-            archive_needs_preload =
-                recalc_writes_archive(ctx->indices_to_recalc)
-                || recalc_writes_archive(ctx->text_indices_to_recalc);
-        }
-
-        bool archive_dirty = !ctx->dropped_archive_file_names.empty() || archive_needs_preload;
+        /// archive_dirty: source's skp_idx.packed cannot be hardlinked into the new part
+        /// because some virtual file inside it is either being dropped or being recomputed.
+        /// The writer (or filter, for drop-only) will produce a fresh archive containing the
+        /// surviving entries.
+        bool archive_dirty = !ctx->dropped_archive_file_names.empty();
         if (!archive_dirty)
             for (const auto & idx : ctx->indices_to_recalc)
                 if (index_is_in_archive(*idx)) { archive_dirty = true; break; }

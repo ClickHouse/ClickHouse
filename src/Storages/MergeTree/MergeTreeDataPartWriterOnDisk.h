@@ -118,14 +118,14 @@ protected:
 
     std::vector<StreamPtr> skip_indices_streams_holders;
     std::vector<MergeTreeIndexOutputStreams> skip_indices_streams;
-    /// Parallel to skip_indices: true if the corresponding index is routed into skip_indices_packed_writer.
-    std::vector<bool> skip_indices_is_packed;
 
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_accumulated_marks;
 
-    /// Aggregates packed skip-index substreams in memory and flushes them as a single
-    /// skp_idx.packed archive on disk. Null when no index opted in.
+    /// Optional packed archive shared by all skip-index substreams that stayed under the
+    /// per-substream size threshold. Substreams that exceeded it were spilled to standalone
+    /// files on data_part_storage by the SizeAdaptiveSpoolBuffer wrapper and are not part of
+    /// this archive. Null when packing is disabled (packed_skip_index_max_bytes = 0).
     std::unique_ptr<PackedFilesWriter> skip_indices_packed_writer;
     /// Output buffer for the skp_idx.packed file itself. Constructed lazily during
     /// fillSkipIndicesChecksums when the writer has content to flush.

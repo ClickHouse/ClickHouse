@@ -1,0 +1,15 @@
+phase1_small_part_index_materialized	1
+phase1_filtered_lookup	1
+phase1_index_in_plan	1
+1
+phase2_index_materialized	1
+phase2_filtered_lookup_old	1
+phase2_filtered_lookup_new	1
+1
+phase3_index_materialized	1
+phase3_filtered_lookup	1
+1
+phase4_index_materialized	1
+phase4_filtered_lookup	1
+phase4_filtered_lookup_unknown	0
+1
