@@ -2194,10 +2194,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                             if (!allowed_part_row_ranges.empty())
                             {
                                 size_t merged_size = 1;
-                                for (size_t i = 1; i < allowed_part_row_ranges.size(); ++i)
+                                for (size_t interval_idx = 1; interval_idx < allowed_part_row_ranges.size(); ++interval_idx)
                                 {
                                     auto & last = allowed_part_row_ranges[merged_size - 1];
-                                    const auto & current = allowed_part_row_ranges[i];
+                                    const auto & current = allowed_part_row_ranges[interval_idx];
                                     if (current.first <= last.second)
                                         last.second = std::max(last.second, current.second);
                                     else
