@@ -7588,6 +7588,9 @@ Normally this setting should be set in user profile (users.xml or queries like `
 
 Note that initially (24.12) there was a server setting (`send_settings_to_client`), but latter it got replaced with this client setting, for better usability.
 )", 0) \
+    DECLARE(Bool, enable_insert_memory_throttle, false, R"(
+When enabled, the INSERT pipeline dynamically disables or re-enables output ports based on the current memory usage. Per-chunk memory cost is estimated from observed chunk sizes; throttling kicks in when the free memory budget can no longer accommodate all sink streams. This is a best-effort mitigation — memory used outside of the chunk flow (aggregations, joins, etc.) may still push the query over the limit, so `MEMORY_LIMIT_EXCEEDED` exceptions are not eliminated.
+)", 0) \
     DECLARE(Bool, allow_archive_path_syntax, true, R"(
 File/S3 engines/table function will parse paths with '::' as `<archive> :: <file>` if the archive has correct extension.
 )", 0) \

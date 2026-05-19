@@ -20,6 +20,7 @@
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/processColumnTransformers.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -35,6 +36,8 @@
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
+#include <Processors/Transforms/InsertMemoryThrottle.h>
+#include <Processors/MemoryAwareResizeProcessor.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -82,6 +85,7 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsString insert_deduplication_token;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool enable_insert_memory_throttle;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool enable_parsing_to_custom_serialization;
@@ -444,6 +448,18 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     });
 
     auto select_streams = pipeline.getNumStreams();
+
+    InsertMemoryThrottlePtr insert_memory_throttle;
+    if (context->getSettingsRef()[Setting::enable_insert_memory_throttle])
+    {
+        MemoryTracker * query_tracker = nullptr;
+        if (auto process_list_element = context->getProcessListElement())
+            query_tracker = process_list_element->getMemoryTracker();
+
+        auto mem_provider = std::make_shared<QueryMemoryProvider>(query_tracker);
+        insert_memory_throttle = std::make_shared<InsertMemoryThrottle>(mem_provider);
+    }
+
     if (select_streams != 1)
         pipeline.resize(1);
 
@@ -501,7 +517,20 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     std::vector<Chain> sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
 
-    pipeline.resize(insert_dependencies->getSinkStreamSize());
+    const size_t sink_stream_size = insert_dependencies->getSinkStreamSize();
+    if (insert_memory_throttle && sink_stream_size > 1)
+    {
+        auto memory_aware_resize = std::make_shared<MemoryAwareResizeProcessor>(
+            pipeline.getSharedHeader(),
+            pipeline.getNumStreams(),
+            sink_stream_size,
+            insert_memory_throttle);
+        pipeline.addTransform(std::move(memory_aware_resize));
+    }
+    else
+    {
+        pipeline.resize(sink_stream_size);
+    }
 
     if (should_squash)
     {

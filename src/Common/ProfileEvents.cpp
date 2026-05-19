@@ -288,6 +288,7 @@
     \
     M(InsertedRows, "Number of rows INSERTed to all tables.", ValueType::Number) \
     M(InsertedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) INSERTed to all tables.", ValueType::Bytes) \
+    M(InsertPipelineThrottled, "Number of times the INSERT pipeline output ports were throttled due to memory pressure (see setting `enable_insert_memory_throttle`).", ValueType::Number) \
     M(DelayedInserts, "Number of times the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.", ValueType::Number) \
     M(RejectedInserts, "Number of times the INSERT of a block to a MergeTree table was rejected with 'Too many parts' exception due to high number of active data parts for partition.", ValueType::Number) \
     M(DelayedInsertsMilliseconds, "Total number of milliseconds spent while the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.", ValueType::Milliseconds) \

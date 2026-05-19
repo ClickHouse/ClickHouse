@@ -78,6 +78,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_blob_storage_log_for_read_operations", false, false, "New setting to log blob storage read operations to system.blob_storage_log"},
             {"max_streams_for_union_step", 0, 0, "New setting to limit the number of simultaneously active data streams in a UNION step to reduce peak memory usage."},
             {"max_streams_for_union_step_to_max_threads_ratio", 0, 8, "New setting: the limit on simultaneously active streams in a UNION step is computed as min(max_streams_for_union_step, max_threads * max_streams_for_union_step_to_max_threads_ratio), either being 0 disables that input."},
+            {"enable_insert_memory_throttle", false, false, "New setting to throttle the INSERT pipeline based on memory usage."},
             {"send_table_structure_on_insert_with_inline_data", true, true, "New setting to control whether server sends table structure for INSERT queries with inline data."},
             {"query_plan_top_k_through_join", false, true, "New setting to enable a query-plan-level optimization that pushes ORDER BY ... LIMIT n through a LEFT/RIGHT join when the sort key only references the preserved side."},
             {"allow_experimental_unique_key", false, false, "New setting to gate the experimental UNIQUE KEY clause on MergeTree-family tables"},
