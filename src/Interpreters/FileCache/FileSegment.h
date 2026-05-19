@@ -192,6 +192,10 @@ public:
 
     void markDelayedRemovalAndResetQueueIterator();
 
+    /// Restore a queue iterator after dynamic-resize eviction failed.
+    /// The segment must have been marked by `markDelayedRemovalAndResetQueueIterator`.
+    void restoreQueueIteratorAfterDelayedRemoval(Priority::IteratorPtr iterator);
+
     KeyMetadataPtr tryGetKeyMetadata() const;
 
     KeyMetadataPtr getKeyMetadata() const;
@@ -308,6 +312,7 @@ private:
     std::atomic<size_t> hits_count = 0; /// cache hits.
     std::atomic<size_t> ref_count = 0; /// Used for getting snapshot state
 
+    /// Guarded by `segment_guard`. Set while dynamic-resize eviction is pending.
     bool on_delayed_removal = false;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::CacheFileSegments};
