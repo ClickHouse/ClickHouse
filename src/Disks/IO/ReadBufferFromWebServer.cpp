@@ -108,10 +108,10 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
                            .withDelayInit(delay_initialization)
                            .create(credentials);
 
-            if (read_until_position)
-                res->setReadUntilPosition(read_until_position);
             if (offset)
                 res->seek(offset, SEEK_SET);
+            if (read_until_position)
+                res->setReadUntilPosition(read_until_position);
 
             current_url = url;
             return res;
