@@ -186,6 +186,14 @@ void validateViewSelectForInsert(const ASTSelectQuery & select, const StorageID 
             "Cannot INSERT into view {} because its query contains a JOIN",
             view_id.getFullTableName());
 
+    /// A `WITH` clause can introduce aliases that look like simple column references in the SELECT list
+    /// (e.g. `WITH a + 1 AS x SELECT x FROM t`) but do not correspond to columns of the underlying table.
+    /// Rejecting `WITH` keeps the "simple projection" contract honest.
+    if (const auto & with_expr = select.with(); with_expr && !with_expr->children.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains a WITH clause",
+            view_id.getFullTableName());
+
     /// If the view has a WHERE clause with identifiers, we need to ensure they can be evaluated.
     /// For now, we accept WHERE clauses as-is and rely on runtime validation during INSERT execution.
     /// Lambda parameters (e.g., in WHERE arrayExists(x -> x > 0, [1])) are not table columns
@@ -194,9 +202,15 @@ void validateViewSelectForInsert(const ASTSelectQuery & select, const StorageID 
 
 /// Extracts column mapping from view column names to target table column names.
 /// Returns empty map for asterisk (all columns map 1:1 by name).
+///
+/// Each identifier in the SELECT list must name a real column of the target table.
+/// Otherwise the projection is not a "simple column reference" — for example, the identifier
+/// could resolve to a `WITH` alias or another non-table symbol — and the view is rejected
+/// as not insertable.
 std::unordered_map<String, String> extractColumnMapping(
     const ASTSelectQuery & select,
-    const StorageID & view_id)
+    const StorageID & view_id,
+    const NameSet & target_columns)
 {
     std::unordered_map<String, String> mapping;
 
@@ -246,6 +260,12 @@ std::unordered_map<String, String> extractColumnMapping(
                 view_id.getFullTableName());
 
         String target_col = identifier->shortName();
+        if (!target_columns.contains(target_col))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot INSERT into view {} because identifier '{}' in its SELECT list "
+                "does not refer to a column of the underlying table",
+                view_id.getFullTableName(), target_col);
+
         String view_col = identifier->tryGetAlias();
         if (view_col.empty())
             view_col = target_col;
@@ -315,12 +335,14 @@ public:
         StoragePtr target_table,
         ContextPtr context,
         std::unordered_map<String, String> column_mapping,
+        Names user_specified_columns,
         ASTPtr where_condition,
         const StorageID & view_id,
         bool async_insert)
         : SinkToStorage(view_header)
         , target_table_(std::move(target_table))
         , column_mapping_(std::move(column_mapping))
+        , user_specified_columns_(std::move(user_specified_columns))
         , view_id_(view_id)
     {
         auto insert_context = Context::createCopy(context);
@@ -329,12 +351,29 @@ public:
         auto insert_query = make_intrusive<ASTInsertQuery>();
         insert_query->table_id = target_table_->getStorageID();
 
+        /// Determine which view columns to forward to the underlying table.
+        /// If the user wrote `INSERT INTO view (col1, col2) ...`, only those columns
+        /// are forwarded so that any other column gets the *target table's* default
+        /// rather than the view-schema default that `InsertDependenciesBuilder::createPreSink`
+        /// would otherwise fill in.
+        Names forwarded_view_columns;
+        if (!user_specified_columns_.empty())
+        {
+            forwarded_view_columns = user_specified_columns_;
+        }
+        else
+        {
+            forwarded_view_columns.reserve(getHeader().columns());
+            for (const auto & col : getHeader().getColumnsWithTypeAndName())
+                forwarded_view_columns.push_back(col.name);
+        }
+
         /// Set column list: view columns mapped to target column names.
         auto columns_ast = make_intrusive<ASTExpressionList>();
-        for (const auto & col : getHeader().getColumnsWithTypeAndName())
+        for (const auto & view_name : forwarded_view_columns)
         {
-            auto it = column_mapping_.find(col.name);
-            String target_name = (it != column_mapping_.end()) ? it->second : col.name;
+            auto it = column_mapping_.find(view_name);
+            String target_name = (it != column_mapping_.end()) ? it->second : view_name;
             columns_ast->children.push_back(make_intrusive<ASTIdentifier>(target_name));
         }
         insert_query->columns = columns_ast;
@@ -427,6 +466,17 @@ public:
             }
         }
 
+        /// If the user listed an explicit subset of view columns in the INSERT,
+        /// drop the other columns from the block before forwarding so that the
+        /// target table applies its own defaults to them.
+        if (!user_specified_columns_.empty())
+        {
+            Block forwarded_block;
+            for (const auto & view_name : user_specified_columns_)
+                forwarded_block.insert(block.getByName(view_name));
+            block = std::move(forwarded_block);
+        }
+
         /// Rename view columns to target table columns.
         for (const auto & [view_name, target_name] : column_mapping_)
             if (block.has(view_name))
@@ -444,6 +494,7 @@ public:
 private:
     StoragePtr target_table_;
     std::unordered_map<String, String> column_mapping_;
+    Names user_specified_columns_;
     StorageID view_id_;
 
     QueryPipeline pipeline_;
@@ -723,7 +774,7 @@ void StorageView::readImpl(
 }
 
 SinkToStoragePtr StorageView::write(
-    const ASTPtr & /*query*/,
+    const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr local_context,
     bool async_insert)
@@ -734,11 +785,35 @@ SinkToStoragePtr StorageView::write(
 
     const auto & select = getSingleSelectQuery(metadata_snapshot, getStorageID());
     validateViewSelectForInsert(select, getStorageID());
-    auto column_mapping = extractColumnMapping(select, getStorageID());
 
     /// Use the view's SQL security context for accessing the target table.
     auto context = metadata_snapshot->getSQLSecurityOverriddenContext(local_context);
     auto target_table = getViewTargetTable(select, getStorageID(), context);
+
+    NameSet target_columns;
+    for (const auto & col : target_table->getInMemoryMetadataPtr(context, false)->getColumns().getOrdinary())
+        target_columns.insert(col.name);
+
+    auto column_mapping = extractColumnMapping(select, getStorageID(), target_columns);
+
+    /// Honor an explicit column list in `INSERT INTO view (col1, col2) ...`.
+    /// Without this, omitted view columns would receive the *view-schema* default
+    /// (filled in by `InsertDependenciesBuilder::createPreSink`) instead of the
+    /// target table's own default.
+    Names user_specified_columns;
+    if (const auto * insert_query = query ? query->as<ASTInsertQuery>() : nullptr; insert_query && insert_query->columns)
+    {
+        const auto & view_sample = metadata_snapshot->getSampleBlockNonMaterialized();
+        for (const auto & child : insert_query->columns->children)
+        {
+            if (const auto * id = child->as<ASTIdentifier>())
+            {
+                const String name = id->shortName();
+                if (view_sample.has(name))
+                    user_specified_columns.push_back(name);
+            }
+        }
+    }
 
     /// The view's WHERE clause becomes a constraint for inserts.
     ASTPtr where_condition = select.where() ? select.where()->clone() : nullptr;
@@ -750,6 +825,7 @@ SinkToStoragePtr StorageView::write(
         std::move(target_table),
         context,
         std::move(column_mapping),
+        std::move(user_specified_columns),
         std::move(where_condition),
         getStorageID(),
         async_insert);
