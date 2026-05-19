@@ -54,6 +54,8 @@ protected:
 
     bool loadIfNot(std::lock_guard<std::mutex> & lock) const;
 
+    void reloadImpl(std::lock_guard<std::mutex> & lock);
+
     const LoggerPtr log = getLogger("RewriteRule");
 
     mutable bool loaded = false;

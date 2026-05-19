@@ -259,6 +259,18 @@ void RewriteRules::reload()
         return;
     if (!storage)
         return;
+    /// For replicated storage, updates are picked up by the background watcher
+    /// thread (`updateFunc`). Refreshing here would race with `waitUpdate`,
+    /// which mutates storage state outside of `mutex`.
+    if (storage->isReplicated())
+        return;
+    reloadImpl(lock);
+}
+
+void RewriteRules::reloadImpl(std::lock_guard<std::mutex> & lock)
+{
+    if (!storage)
+        return;
     auto rules = storage->getAll();
     loaded_rewrite_rules.clear();
     add(std::move(rules), lock);
@@ -270,14 +282,21 @@ void RewriteRules::updateFunc()
 
     try
     {
-        std::unique_lock lock(mutex);
-        if (shutdown_called.load() || !storage)
-            return;
-        auto * storage_ptr = storage.get();
-        lock.unlock();
+        RewriteRulesStorage * storage_ptr = nullptr;
+        {
+            std::lock_guard lock(mutex);
+            if (shutdown_called.load() || !storage)
+                return;
+            storage_ptr = storage.get();
+        }
 
         if (storage_ptr->waitUpdate())
-            reload();
+        {
+            std::lock_guard lock(mutex);
+            if (shutdown_called.load() || !storage)
+                return;
+            reloadImpl(lock);
+        }
     }
     catch (const Coordination::Exception & e)
     {
