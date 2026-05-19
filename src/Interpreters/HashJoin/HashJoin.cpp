@@ -2345,9 +2345,11 @@ void HashJoin::publishSharedRuntimeFilters()
     if (!lookup)
         return;
 
-    /// Match the descriptor's build key column name to position 0 of right_table_keys
-    /// (we only have a single-condition join here so it must be the first column).
-    if (right_table_keys.columns() == 0)
+    /// Single key column is required: this code uses right_table_keys.getByPosition(0) to find
+    /// the build column. is_range_type indirectly guarantees this today (FixedHashMap conversion
+    /// only runs from key32/key64, which chooseMethod only returns for single numeric columns),
+    /// but make the precondition explicit so the assumption survives future changes upstream.
+    if (right_table_keys.columns() != 1)
         return;
     const String build_key_name = right_table_keys.getByPosition(0).name;
     const auto & filter_column_type = right_table_keys.getByPosition(0).type;
