@@ -286,7 +286,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
             return static_cast<Float64>(f.safeGet<Int64>());
         if (f.getType() == Field::Types::String)
             return ::DB::parseFromString<Float64>(f.safeGet<String>());
-        return 0.0;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Expected numeric or string value for `limit` / `offset` setting, got {}",
+            f.getTypeName());
     };
 
     /// Remove global settings limit and offset
