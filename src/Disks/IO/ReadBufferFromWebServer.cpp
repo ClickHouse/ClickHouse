@@ -84,26 +84,19 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
     connection_timeouts.withConnectionTimeout(std::max<Poco::Timespan>(settings[Setting::http_connection_timeout], Poco::Timespan(20, 0)));
     connection_timeouts.withReceiveTimeout(std::max<Poco::Timespan>(settings[Setting::http_receive_timeout], Poco::Timespan(20, 0)));
 
+    /// When `use_external_buffer` is false, `nextImpl` calls `BufferBase::set(impl->buffer().begin(), ...)`
+    /// before issuing any read. We must construct `impl` with `delay_initialization = false` so that
+    /// `impl->buffer()` is backed by a real buffer; otherwise we would publish a `nullptr` working buffer.
+    /// `delay_initialization = false` also probes connectivity at creation, which lets us iterate over
+    /// `urls` and skip failing failover options without an extra dry run.
+    const bool delay_initialization = use_external_buffer;
+
     std::exception_ptr last_exception;
     for (const auto & url : urls)
     {
         Poco::URI uri(url);
         try
         {
-            if (urls.size() > 1)
-            {
-                BuilderRWBufferFromHTTP(uri)
-                    .withConnectionGroup(HTTPConnectionGroupType::DISK)
-                    .withSettings(read_settings)
-                    .withTimeouts(connection_timeouts)
-                    .withBufSize(buf_size)
-                    .withHostFilter(&context->getRemoteHostFilter())
-                    .withHeaders(headers)
-                    .withExternalBuf(false)
-                    .withDelayInit(false)
-                    .create(credentials);
-            }
-
             auto res = BuilderRWBufferFromHTTP(uri)
                            .withConnectionGroup(HTTPConnectionGroupType::DISK)
                            .withSettings(read_settings)
@@ -112,6 +105,7 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
                            .withHostFilter(&context->getRemoteHostFilter())
                            .withHeaders(headers)
                            .withExternalBuf(use_external_buffer)
+                           .withDelayInit(delay_initialization)
                            .create(credentials);
 
             if (read_until_position)
