@@ -139,9 +139,6 @@ workflow = Workflow.Config(
             job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.buzz_fuzzer_jobs
         ],
-        JobConfigs.libfuzzer_job.set_run_after(
-            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
-        ).set_allow_failure(),
         *[
             job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
