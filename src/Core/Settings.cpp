@@ -6568,6 +6568,19 @@ If is not zero, limit the number of reading streams for MergeTree table.
 Make GROUPING function to return 1 when argument is not used as an aggregation key
 )", 0) \
     \
+    DECLARE(Bool, allow_rank_dense_rank_arguments, false, R"(
+Allow passing arguments to the `RANK` and `DENSE_RANK` window functions for backward compatibility.
+
+Per SQL standard, `RANK` and `DENSE_RANK` take zero arguments — they rank rows based on the
+`OVER (ORDER BY ...)` window only. In ClickHouse versions before 26.5, queries such as
+`RANK(x) OVER (...)` silently accepted and ignored the argument, which led to user confusion
+(the visible argument suggested it influenced the ranking, but it did not).
+
+When this setting is `false` (the default), `RANK` and `DENSE_RANK` reject any arguments and
+throw `NUMBER_OF_ARGUMENTS_DOESNT_MATCH`. When set to `true`, the legacy lenient behavior is
+restored — arguments are silently ignored, matching the pre-26.5 behavior.
+)", 0) \
+    \
     DECLARE(Bool, schema_inference_use_cache_for_file, true, R"(
 Use cache in schema inference while using file table function
 )", 0) \
