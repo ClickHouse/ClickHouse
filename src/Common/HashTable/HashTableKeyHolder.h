@@ -101,7 +101,6 @@ inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaKeyHolder & holder)
     // The clearable hash table doesn't use zero storage and
     // distinguishes empty keys by using cell version, not the value itself.
     // So, when an empty std::string_view is inserted in ClearableHashSet we'll get here key of zero size.
-    // chassert(holder.key.size > 0);
     holder.key = std::string_view{holder.pool.insert(holder.key.data(), holder.key.size()), holder.key.size()};
 }
 
