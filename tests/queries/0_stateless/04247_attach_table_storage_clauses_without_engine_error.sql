@@ -14,6 +14,11 @@
 -- interpreter runs, so by the time the guard sees the storage, those settings have
 -- already been hoisted out and `storage->settings` is reset. The guard must allow
 -- that case.
+--
+-- The guard also covers top-level `ASTCreateQuery` fields (`COMMENT`, `EMPTY`,
+-- `CLONE`, `REFRESH`, `TO target`, `AS SELECT`, etc.) that the parser may attach to
+-- an `ATTACH` query but that the short `ATTACH` path silently drops by overwriting
+-- the user-provided `create` with stored metadata.
 
 SET default_table_engine = 'MergeTree';
 
@@ -54,4 +59,48 @@ DETACH TABLE t_104791;
 ATTACH TABLE t_104791;
 SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name = 't_104791';
 
+-- 8. Top-level COMMENT on a short ATTACH: silently dropped before this patch,
+--    now rejected. The user-supplied comment would not have replaced the stored
+--    one because the short-ATTACH path overwrites `create.comment` from metadata.
+DETACH TABLE t_104791;
+ATTACH TABLE t_104791 COMMENT 'this comment would be silently dropped'; -- { serverError BAD_ARGUMENTS }
+
+-- 9. EMPTY AS SELECT on a short ATTACH: silently dropped before this patch.
+ATTACH TABLE t_104791 EMPTY AS SELECT 1; -- { serverError BAD_ARGUMENTS }
+
+-- 10. CLONE AS source on a short ATTACH: silently dropped before this patch.
+ATTACH TABLE t_104791 CLONE AS t_104791; -- { serverError BAD_ARGUMENTS }
+
+-- Restore the table so cleanup at the end works.
+ATTACH TABLE t_104791;
 DROP TABLE t_104791;
+
+-- Materialized view cases. The parser accepts `ATTACH MATERIALIZED VIEW t ...`
+-- with REFRESH, TO target, and AS SELECT clauses; before this patch all of
+-- them were silently dropped by the short-ATTACH path. The guard now rejects
+-- them so the user has to use `ATTACH MATERIALIZED VIEW t;` or `ALTER TABLE
+-- t MODIFY REFRESH ...` instead.
+DROP TABLE IF EXISTS t_mv_104791;
+DROP TABLE IF EXISTS t_mv_104791_target;
+DROP TABLE IF EXISTS t_mv_104791_other_target;
+
+CREATE TABLE t_mv_104791_target (id UInt32, x UInt32) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_mv_104791_other_target (id UInt32, x UInt32) ENGINE = MergeTree ORDER BY id;
+CREATE MATERIALIZED VIEW t_mv_104791 REFRESH EVERY 1 HOUR TO t_mv_104791_target AS SELECT 1 AS id, 2 AS x;
+DETACH TABLE t_mv_104791;
+
+-- 11. ATTACH MV with a different REFRESH schedule: silently dropped before this
+--     patch (the stored REFRESH EVERY 1 HOUR replaced the user's EVERY 1 YEAR).
+ATTACH MATERIALIZED VIEW t_mv_104791 REFRESH EVERY 1 YEAR TO t_mv_104791_target AS SELECT 5 AS id, 6 AS x; -- { serverError BAD_ARGUMENTS }
+
+-- 12. ATTACH MV with a different TO target: silently dropped before this patch.
+ATTACH MATERIALIZED VIEW t_mv_104791 TO t_mv_104791_other_target AS SELECT 5 AS id, 6 AS x; -- { serverError BAD_ARGUMENTS }
+
+-- 13. ATTACH MV with a different AS SELECT: silently dropped before this patch.
+ATTACH MATERIALIZED VIEW t_mv_104791 TO t_mv_104791_target AS SELECT 5 AS id, 6 AS x; -- { serverError BAD_ARGUMENTS }
+
+-- Restore the MV so cleanup works.
+ATTACH TABLE t_mv_104791;
+DROP TABLE t_mv_104791;
+DROP TABLE t_mv_104791_target;
+DROP TABLE t_mv_104791_other_target;

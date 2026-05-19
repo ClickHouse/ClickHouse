@@ -1567,9 +1567,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     DDLGuardPtr ddl_guard;
 
-    /// `ATTACH TABLE name <storage clauses>;` without `ENGINE` and without a columns list is ambiguous:
-    /// the parser allows `SETTINGS`, `ORDER BY`, `PARTITION BY`, etc. without an `ENGINE` (to support
-    /// `default_table_engine` on `CREATE`), but the short `ATTACH` path below reads the full table
+    /// `ATTACH TABLE name <something>;` without `ENGINE` and without a columns list is ambiguous:
+    /// the parser allows `SETTINGS`, `ORDER BY`, `PARTITION BY`, `COMMENT`, `REFRESH`, `TO`, etc.
+    /// in this position (to support `default_table_engine` on `CREATE` and to share the parser
+    /// between `CREATE` and `ATTACH`), but the short `ATTACH` path below reads the full table
     /// definition from stored metadata and silently overwrites anything the user typed.
     ///
     /// However `ATTACH TABLE t SETTINGS log_comment = 'foo';` is a legitimate, supported pattern:
@@ -1579,20 +1580,43 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// is left. So the case we must reject is the remaining one: at this point any of the
     /// non-engine storage fields (`ORDER BY`, `PARTITION BY`, `PRIMARY KEY`, `SAMPLE BY`, `TTL`,
     /// `UNIQUE KEY`, or `SETTINGS` containing keys that are not known session settings) are still
-    /// populated, and those would be silently dropped by the short `ATTACH` path below.
-    if (create.attach && create.storage && !create.storage->engine && !create.columns_list)
+    /// populated, OR one of the top-level `ASTCreateQuery` fields (`COMMENT`, `REFRESH`,
+    /// `SQL SECURITY`, `TO target`, `EMPTY`, `CLONE`, `AS SELECT`, etc.) is set. Any of those
+    /// would be silently dropped by the short `ATTACH` path below.
+    if (create.attach && !create.columns_list && (!create.storage || !create.storage->engine))
     {
-        const auto & storage = *create.storage;
-        const bool has_non_engine_storage_clauses
-            = storage.partition_by != nullptr
-            || storage.primary_key != nullptr
-            || storage.order_by != nullptr
-            || storage.sample_by != nullptr
-            || storage.ttl_table != nullptr
-            || storage.unique_key != nullptr
-            || storage.settings != nullptr;
+        bool has_dropped_clauses = false;
 
-        if (has_non_engine_storage_clauses)
+        if (create.storage)
+        {
+            const auto & storage = *create.storage;
+            has_dropped_clauses
+                = storage.partition_by != nullptr
+                || storage.primary_key != nullptr
+                || storage.order_by != nullptr
+                || storage.sample_by != nullptr
+                || storage.ttl_table != nullptr
+                || storage.unique_key != nullptr
+                || storage.settings != nullptr;
+        }
+
+        /// Top-level fields on `ASTCreateQuery` that the parser may populate for an `ATTACH`
+        /// query but that the short `ATTACH` path below silently drops by overwriting `create`
+        /// with the stored table metadata.
+        has_dropped_clauses = has_dropped_clauses
+            || create.comment != nullptr
+            || create.refresh_strategy != nullptr
+            || create.sql_security != nullptr
+            || create.select != nullptr
+            || create.targets != nullptr
+            || create.as_table_function != nullptr
+            || create.aliases_list != nullptr
+            || create.is_create_empty
+            || create.is_clone_as
+            || !create.as_database.empty()
+            || !create.as_table.empty();
+
+        if (has_dropped_clauses)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "ATTACH applies the table definition from stored metadata and can't be changed in the query itself. "
