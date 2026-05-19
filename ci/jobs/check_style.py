@@ -290,7 +290,12 @@ def check_pylint():
 
 def check_ruff():
     # Configuration lives under [tool.ruff] in pyproject.toml.
-    res, out, err = Shell.get_res_stdout_stderr("ruff check --output-format=concise")
+    # --quiet suppresses the "All checks passed!" success message so the result
+    # framework (which treats a truthy return value as failure) sees an empty
+    # string on success.
+    res, out, err = Shell.get_res_stdout_stderr(
+        "ruff check --output-format=concise --quiet"
+    )
     if err:
         out += err
     return out
