@@ -110,8 +110,8 @@
 -- compression=gz on /?query (decompressed):
 1
 ===== Content-Disposition: attachment for binary/compressed =====
--- /hits.Parquet (binary):
-Content-Disposition: attachment; filename="hits.Parquet"
+-- /hits.Native (binary):
+Content-Disposition: attachment; filename="hits.Native"
 -- /hits.CSV.gz (compressed):
 Content-Disposition: attachment; filename="hits.CSV.gz"
 -- /?compression=gz&query=... (compressed, no filename in path):

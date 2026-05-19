@@ -14,8 +14,11 @@ ${CLICKHOUSE_CURL} -vsS "${URL}" --data-binary @- <<< "SELECT 1" 2>&1 | sed -r '
 ${CLICKHOUSE_CURL} -vsS "${URL}" --data-binary @- <<< " error here " 2>&1 | sed -r 's/(keep-alive: timeout=10, max=)[0-9]+/\1?/I' | grep -i 'keep-alive';
 ${CLICKHOUSE_CURL} -vsS "${URL}"ping  2>&1 | perl -lnE 'print if /Keep-Alive/' | sed -r 's/(keep-alive: timeout=10, max=)[0-9]+/\1?/I' | grep -i 'keep-alive';
 
-# no keep-alive:
-${CLICKHOUSE_CURL} -vsS "${URL}"404/not/found/ 2>&1 | perl -lnE 'print if /Keep-Alive/';
+# Path-as-file routing in HTTPHandlerFactory accepts multi-segment paths like /404/not/found/,
+# so this URL is handled by the dynamic query handler (which keeps the connection alive) rather
+# than the NotFoundHandler (which closed the connection). Normalize the dynamic `max=N` value the
+# same way as above so the reference is stable across server configurations.
+${CLICKHOUSE_CURL} -vsS "${URL}"404/not/found/ 2>&1 | perl -lnE 'print if /Keep-Alive/' | sed -r 's/(keep-alive: timeout=10, max=)[0-9]+/\1?/I';
 
 # async inserts
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS async_inserts"

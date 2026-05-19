@@ -4,6 +4,8 @@
 < Keep-Alive: timeout=10, max=?
 < Connection: Keep-Alive
 < Keep-Alive: timeout=10, max=?
+< Connection: Keep-Alive
+< Keep-Alive: timeout=10, max=?
 wait_for_async_insert=0
 good async insert
 < Connection: Keep-Alive

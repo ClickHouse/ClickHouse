@@ -110,8 +110,8 @@ echo "-- compression=gz on /?query (decompressed):"
 http_get -o /tmp/04245_compress.gz "${BASE_URL}/?query=SELECT+1&compression=gz" && zcat /tmp/04245_compress.gz
 
 echo "===== Content-Disposition: attachment for binary/compressed ====="
-echo "-- /hits.Parquet (binary):"
-http_get -D - -o /dev/null "${BASE_URL}/${DB}/hits.Parquet" | grep -i "^Content-Disposition" | tr -d '\r'
+echo "-- /hits.Native (binary):"
+http_get -D - -o /dev/null "${BASE_URL}/${DB}/hits.Native" | grep -i "^Content-Disposition" | tr -d '\r'
 echo "-- /hits.CSV.gz (compressed):"
 http_get -D - -o /dev/null "${BASE_URL}/${DB}/hits.CSV.gz" | grep -i "^Content-Disposition" | tr -d '\r'
 echo "-- /?compression=gz&query=... (compressed, no filename in path):"
