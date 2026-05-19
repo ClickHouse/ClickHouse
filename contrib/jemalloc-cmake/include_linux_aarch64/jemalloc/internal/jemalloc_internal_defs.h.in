@@ -143,7 +143,7 @@
  * JEMALLOC_DEBUG enables assertions and other sanity checks, and disables
  * inline functions.
  */
-#define JEMALLOC_DEBUG
+/* #undef JEMALLOC_DEBUG */
 
 /* JEMALLOC_STATS enables statistics calculation. */
 #define JEMALLOC_STATS
