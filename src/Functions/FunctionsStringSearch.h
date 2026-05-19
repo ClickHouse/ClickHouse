@@ -144,13 +144,13 @@ public:
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
+                haystack_type->getName(), getName());
 
         if (!isString(needle_type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}",
-                arguments[1]->getName(), getName());
+                needle_type->getName(), getName());
 
         if (arguments.size() >= 3)
         {
