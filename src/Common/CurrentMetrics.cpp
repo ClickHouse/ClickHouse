@@ -213,6 +213,10 @@
     M(IcebergCatalogThreadsScheduled, "Number of queued or active jobs in the IcebergCatalog thread pool.") \
     M(IcebergSchedulePoolTask, "Number of tasks in the background schedule pool for Iceberg tables.") \
     M(IcebergSchedulePoolSize, "Limit on number of tasks in the background schedule pool for Iceberg tables.") \
+    M(IcebergCompactionThreads, "Number of threads in the IcebergCompaction thread pool.") \
+    M(IcebergCompactionThreadsActive, "Number of threads in the IcebergCompaction thread pool running a task.") \
+    M(IcebergCompactionThreadsScheduled, "Number of queued or active jobs in the IcebergCompaction thread pool.") \
+    M(IcebergCompactionSnapshots, "Number of iceberg compactions.") \
     M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryActiveThreads, "Number of active threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryScheduledThreads, "Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.") \
