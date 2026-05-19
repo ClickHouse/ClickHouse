@@ -334,8 +334,10 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnConstPtr column, DataTypePt
     if (!column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", name);
 
+    /// ColumnConst stored in ActionsDAG::Node carries the value but not the row count;
+    /// the size is recomputed at execution. Normalize to size 0 here.
     if (column->size() != 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because ColumnConst stored in ActionsDAG::Node must have size 0, got {}", name, column->size());
+        column = ColumnConst::create(column->getDataColumnPtr(), 0);
 
     Node node;
     node.type = ActionType::COLUMN;
