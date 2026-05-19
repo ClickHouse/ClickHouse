@@ -550,7 +550,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
         {
             auto actions_dag = build_context.expression_actions.getActionsDAG();
             auto nothing_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
-            auto null_column = assert_cast<const ColumnConst &>(*nothing_type->createColumnConstWithDefaultValue(1)).getPtr();
+            auto null_column = assert_cast<const ColumnConst &>(*nothing_type->createColumnConstWithDefaultValue(0)).getPtr();
             JoinActionRef null_action(&actions_dag->addColumn(std::move(null_column), nothing_type, "NULL"), build_context.expression_actions);
             null_action.setSourceRelations(BitSet());
             build_context.join_operator.expression.push_back(null_action);

@@ -1012,7 +1012,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
 
     auto name = DB::PlannerContext::createSetKey(in_first_argument->getResultType(), in_second_argument);
     auto type = std::make_shared<DataTypeSet>();
-    ColumnConstPtr column = ColumnConst::create(ColumnSet::create(1, std::move(set)), 1);
+    ColumnConstPtr column = ColumnConst::create(ColumnSet::create(1, std::move(set)), 0);
 
     actions_stack[0].addConstantIfNecessary(name, column, type, name, in_second_is_deterministic);
 

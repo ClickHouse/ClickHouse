@@ -1024,7 +1024,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 if (!data.hasColumn(column.name))
                 {
                     auto column_set = ColumnSet::create(1, prepared_set);
-                    column.column = ColumnConst::create(std::move(column_set), 1);
+                    column.column = ColumnConst::create(std::move(column_set), 0);
                     data.addColumn(column);
                 }
 
