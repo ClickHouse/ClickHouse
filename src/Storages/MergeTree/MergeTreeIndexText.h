@@ -139,6 +139,8 @@ struct TokenPostingsInfo;
 
 struct PostingsSerialization
 {
+    explicit PostingsSerialization(PostingListCodecPtr posting_list_codec_);
+
     enum Flags : UInt64
     {
         /// If set, the posting list is serialized as raw UInt32 values encoded as VarUInt.
@@ -153,10 +155,18 @@ struct PostingsSerialization
         IsCompressed = 1ULL << 3,
     };
 
-    static void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, PostingListCodecPtr posting_list_codec, WriteBuffer & ostr);
-    static void serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, PostingListCodecPtr posting_list_codec, WriteBuffer & ostr);
-    static void serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
-    static PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality, PostingListCodecPtr posting_list_codec);
+    void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
+    void serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
+    void serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
+    PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
+    PostingListCodecPtr getPostingListCodec() const { return posting_list_codec; }
+
+private:
+    PostingListCodecPtr posting_list_codec;
+
+    /// Reusable buffers to avoid repeated heap allocations during deserialization.
+    std::vector<UInt32> raw_postings_buffer;
+    std::vector<char> deserialization_buffer;
 };
 
 /// Closed range of rows.
@@ -176,13 +186,20 @@ struct TokenPostingsInfo
 {
     UInt64 header = 0;
     UInt32 cardinality = 0;
-    std::vector<UInt64> offsets;
-    std::vector<RowsRange> ranges;
+
+    /// The majority of tokens have only one block,
+    /// so use inlined vector to avoid heap allocations.
+    absl::InlinedVector<UInt64, 1> offsets;
+    absl::InlinedVector<RowsRange, 1> ranges;
     PostingListPtr embedded_postings;
 
     /// Returns indexes of posting list blocks to read for the given range of rows.
     std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
+    size_t bytesAllocated() const;
 };
+
+using TokenPostingsInfoPtr = std::shared_ptr<TokenPostingsInfo>;
+using TokenToPostingsInfosMap = absl::flat_hash_map<String, TokenPostingsInfoPtr>;
 
 struct DictionaryBlockBase
 {
@@ -193,7 +210,6 @@ struct DictionaryBlockBase
 
     bool empty() const;
     size_t size() const;
-
     size_t upperBound(std::string_view token) const;
 };
 
@@ -235,15 +251,32 @@ struct TextIndexSerialization
         PostingListBuilder & postings,
         MergeTreeIndexWriterStream & postings_stream,
         const MergeTreeIndexTextParams & params,
-        PostingListCodecPtr posting_list_codec);
+        PostingsSerialization & postings_serialization);
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
     static void serializeSparseIndex(const DictionarySparseIndex & sparse_index, WriteBuffer & ostr);
 
     static DictionarySparseIndex deserializeSparseIndex(ReadBuffer & istr);
-    static TokenPostingsInfo deserializeTokenInfo(ReadBuffer & istr, PostingListCodecPtr posting_list_codec);
-    static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr, PostingListCodecPtr posting_list_codec);
+    /// If postings_serialization is null, embedded postings are skipped.
+    static TokenPostingsInfo deserializeTokenInfo(ReadBuffer & istr, PostingsSerialization * postings_serialization);
+    static void skipTokenInfo(ReadBuffer & istr);
+
+    /// Deserializes `TokenPostingsInfo` only for tokens at the given sorted indices,
+    /// skipping postings for others. Returns a vector parallel to `matched_indices`.
+    static std::vector<TokenPostingsInfo> deserializeTokenInfos(
+        ReadBuffer & istr,
+        size_t num_tokens,
+        const std::vector<size_t> & matched_indices,
+        PostingsSerialization & postings_serialization);
+
+    /// Deserializes tokens from a dictionary block.
+    /// Returns the tokens column and the tokens format.
+    static std::pair<ColumnPtr, UInt64> deserializeTokens(ReadBuffer & istr);
+
+    /// Deserializes a dictionary block into a new DictionaryBlock.
+    /// If postings_serialization is null, embedded postings are skipped.
+    static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr, PostingsSerialization * postings_serialization);
 };
 
 
@@ -251,55 +284,73 @@ struct TextIndexSerialization
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
 public:
-    using TokenToPostingsInfosMap = absl::flat_hash_map<std::string_view, TokenPostingsInfo>;
-    using TokenToPostingsMap = absl::flat_hash_map<std::string_view, PostingListPtr>;
+    using TokenToPostingsMap = absl::flat_hash_map<String, PostingListPtr>;
 
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_, PostingListCodecPtr posting_list_codec_);
     ~MergeTreeIndexGranuleText() override = default;
 
     const MergeTreeIndexTextParams & getParams() const { return params; }
-    PostingListCodecPtr getPostingListCodec() const { return posting_list_codec; }
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
     void deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state) override;
 
-    bool empty() const override { return sparse_index->empty(); }
+    bool empty() const override { return is_empty; }
     size_t memoryUsageBytes() const override;
 
     bool hasAnyQueryTokens(const TextSearchQuery & query) const;
     bool hasAllQueryTokens(const TextSearchQuery & query) const;
     bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
 
+    bool hasAnyQueryPatterns(const TextSearchQuery & query) const;
+
     const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
+    const TokenToPostingsInfosMap & getPatternTokens() const { return pattern_tokens; }
+    const std::vector<String> & getPatternTokensForTextQuery(const TextSearchQuery & query) const;
     PostingListPtr getPostingsForRareToken(std::string_view token) const;
+    bool canUseLikeDictionaryScan() const { return can_use_like_dictionary_scan; }
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
-    void resetAfterAnalysis();
+    const String & getIndexIdForCaches() const { return index_id_for_caches; }
 
     static PostingListPtr readPostingsBlock(
         MergeTreeIndexReaderStream & stream,
         MergeTreeIndexDeserializationState & state,
         const TokenPostingsInfo & token_info,
         size_t block_idx,
-        PostingListCodecPtr posting_list_codec);
+        PostingsSerialization & postings_serialization,
+        const String & index_id_for_caches);
 
 private:
-    void readSparseIndex(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
     /// Reads dictionary blocks and analyzes them for tokens.
-    void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
+    void analyzeDictionaryForTokens(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
+    /// Reads dictionary blocks and analyzes them for patterns.
+    void analyzeDictionaryForPatterns(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
+    /// Fills tokens and their infos from the cache.
+    /// Returns tokens that are not in the cache and need to be read from the dictionary file.
+    std::vector<String> fillTokensFromCache(MergeTreeIndexDeserializationState & state);
+
+    DictionarySparseIndexPtr loadSparseIndex(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state);
     void readPostingsForRareTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
+    bool is_empty = true;
+    /// Indicates if pattern scan successfully finished. The LIKE optimization can be used.
+    bool can_use_like_dictionary_scan = false;
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
-    /// Header of the text index contains the number of tokens and sparse index.
-    DictionarySparseIndexPtr sparse_index;
     /// Tokens that are in the index granule after analysis.
     TokenToPostingsInfosMap remaining_tokens;
+    /// Tokens that are in the index granule after analysis of patterns.
+    TokenToPostingsInfosMap pattern_tokens;
+    /// Tokens per a virtual column that are in the index granule after analysis of pattern.
+    std::unordered_map<UInt128, std::vector<String>> pattern_tokens_per_query;
     /// Tokens with postings lists that have only one block.
     TokenToPostingsMap rare_tokens_postings;
     /// Current range of rows that is being processed. If set, mayBeTrueOnGranule returns more precise result.
     std::optional<RowsRange> current_range;
-    PostingListCodecPtr posting_list_codec;
+    /// Unique identifier for text index in the current data part.
+    String index_id_for_caches;
+    /// Serialization for the posting lists.
+    PostingsSerialization postings_serialization;
 };
 
 /// Text index granule created on writing of the index.
@@ -420,6 +471,7 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     PostingListCodecPtr getPostingListCodec() const { return posting_list_codec.get(); }
+    static DataTypePtr getNestedDataType(const DataTypePtr & data_type);
 
     MergeTreeIndexTextParams params;
     std::unique_ptr<ITokenizer> tokenizer;

@@ -187,7 +187,7 @@ void ITableFunctionXDBC::startBridgeIfNot(ContextPtr context) const
     {
         helper = createBridgeHelper(
             context,
-            context->getSettingsRef()[Setting::http_receive_timeout].value,
+            Poco::Timespan(context->getSettingsRef()[Setting::http_receive_timeout]),
             connection_string,
             context->getSettingsRef()[Setting::odbc_bridge_use_connection_pooling].value);
         helper->startBridgeSync();
@@ -238,11 +238,11 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & /*ast_function*/, Cont
 
 void registerTableFunctionJDBC(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionJDBC>();
+    factory.registerFunction<TableFunctionJDBC>({});
 }
 
 void registerTableFunctionODBC(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionODBC>();
+    factory.registerFunction<TableFunctionODBC>({});
 }
 }

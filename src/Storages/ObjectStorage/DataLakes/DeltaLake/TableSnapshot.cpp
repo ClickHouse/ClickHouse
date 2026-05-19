@@ -1,4 +1,5 @@
 #include "config.h"
+#include <Common/CurrentThread.h>
 
 #if USE_DELTA_KERNEL_RS
 
@@ -53,6 +54,7 @@ namespace DB::Setting
 namespace ProfileEvents
 {
     extern const Event DeltaLakePartitionPrunedFiles;
+    extern const Event DeltaLakeSnapshotInitializations;
     extern const Event DeltaLakeScannedFiles;
 }
 
@@ -65,7 +67,7 @@ Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
     {
         ReadBufferFromString buffer(value);
         auto col = data_type->createColumn();
-        auto serialization = data_type->getSerialization({ISerialization::Kind::DEFAULT}, {});
+        auto serialization = data_type->getDefaultSerialization();
         serialization->deserializeWholeText(*col, buffer, FormatSettings{});
         return (*col)[0];
     }
@@ -284,7 +286,7 @@ public:
                 }
             }
         }
-        catch (...)
+        catch (...) // Ok: exception saved via setScanException for later handling
         {
             setScanException();
             data_files_cv.notify_all();
@@ -727,6 +729,8 @@ void TableSnapshot::initOrUpdateSnapshot() const
 {
     if (kernel_snapshot_state)
         return;
+
+    ProfileEvents::increment(ProfileEvents::DeltaLakeSnapshotInitializations);
 
     LOG_TEST(log, "Initializing snapshot");
 

@@ -20,6 +20,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/IColumnDummy.h>
 #include <Columns/IColumn_fwd.h>
 #include <Core/Field.h>
@@ -61,17 +62,17 @@ bool IColumn::Options::notFull(WriteBufferFromOwnString & buf) const
     return optimize_const_name_size < 0 || static_cast<Int64>(buf.count()) <= optimize_const_name_size;
 }
 
-std::pair<String, DataTypePtr> IColumn::getValueNameAndType(size_t n, const Options & options) const
+String IColumn::getValueName(size_t n, const Options & options) const
 {
     WriteBufferFromOwnString name_buf;
-    const auto & type = getValueNameAndTypeImpl(name_buf, n, options);
+    getValueNameImpl(name_buf, n, options);
     if (options.notFull(name_buf))
-        return {name_buf.str(), type};
+        return name_buf.str();
 
     HashState h;
     updateHashWithValue(n, h);
     auto p = getSipHash128AsPair(h);
-    return {fmt::format("{}_{}", p.high64, p.low64), type};
+    return fmt::format("{}_{}", p.high64, p.low64);
 }
 
 String IColumn::dumpStructure() const
@@ -95,6 +96,12 @@ void IColumn::doInsertFrom(const IColumn & src, size_t n)
 #endif
 {
     insert(src[n]);
+}
+
+void IColumn::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    for (size_t i = begin; i < end; ++i)
+        updateHashWithValue(i, hash);
 }
 
 ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const
@@ -179,7 +186,7 @@ char * IColumn::serializeValueIntoMemory(size_t /* n */, char * /* memory */, co
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemory is not supported for {}", getName());
 }
 
-void IColumn::batchSerializeValueIntoMemory(std::vector<char *> & /* memories */, const IColumn::SerializationSettings * /* settings */) const
+void IColumn::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & /* memories */, const IColumn::SerializationSettings * /* settings */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemory is not supported for {}", getName());
 }
@@ -201,7 +208,7 @@ char * IColumn::serializeValueIntoMemoryWithNull(
 }
 
 void IColumn::batchSerializeValueIntoMemoryWithNull(
-    std::vector<char *> & /* memories */, const UInt8 * /* is_null */, const IColumn::SerializationSettings * /* settings */) const
+    VectorWithMemoryTracking<char *> & /* memories */, const UInt8 * /* is_null */, const IColumn::SerializationSettings * /* settings */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemoryWithNull is not supported for {}", getName());
 }
@@ -229,6 +236,37 @@ void IColumn::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const 
 void IColumn::updateAt(const IColumn &, size_t, size_t)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateAt is not supported for {}", getName());
+}
+
+Int64 IColumn::compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+{
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    #define compareAt doCompareAt
+#endif
+    Int64 res = compareAt(n, m, rhs, nan_direction_hint);
+
+    if (res < 0)
+    {
+        ++n;
+        while (n < size() && (compareAt(n, m, rhs, nan_direction_hint) < 0))
+        {
+            --res;
+            ++n;
+        }
+    }
+    else if (res > 0)
+    {
+        ++m;
+        while (m < rhs.size() && (compareAt(n, m, rhs, nan_direction_hint) > 0))
+        {
+            ++res;
+            ++m;
+        }
+    }
+    return res;
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    #undef compareAt
+#endif
 }
 
 #if USE_EMBEDDED_COMPILER
@@ -312,7 +350,7 @@ bool isColumnConst(const IColumn & column)
 }
 
 template <typename Derived, typename Parent>
-MutableColumns IColumnHelper<Derived, Parent>::scatter(size_t num_columns, const IColumn::Selector & selector) const
+VectorWithMemoryTracking<MutableColumnPtr> IColumnHelper<Derived, Parent>::scatter(size_t num_columns, const IColumn::Selector & selector) const
 {
     const auto & self = static_cast<const Derived &>(*this);
     size_t num_rows = self.size();
@@ -320,16 +358,15 @@ MutableColumns IColumnHelper<Derived, Parent>::scatter(size_t num_columns, const
     if (num_rows != selector.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of selector: {} doesn't match size of column: {}", selector.size(), num_rows);
 
-    MutableColumns columns(num_columns);
+    VectorWithMemoryTracking<MutableColumnPtr> columns(num_columns);
     for (auto & column : columns)
         column = self.cloneEmpty();
 
+    const auto counts = countColumnsSizeInSelector(num_columns, selector);
+    for (size_t i = 0; i < num_columns; ++i)
     {
-        size_t reserve_size = static_cast<size_t>(static_cast<double>(num_rows) * 1.1 / static_cast<double>(num_columns));    /// 1.1 is just a guess. Better to use n-sigma rule.
-
-        if (reserve_size > 1)
-            for (auto & column : columns)
-                column->reserve(reserve_size);
+        if (counts[i] > 1)
+            columns[i]->reserve(counts[i]);
     }
 
     for (size_t i = 0; i < num_rows; ++i)
@@ -583,14 +620,15 @@ void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, s
 /// Fills column values from list of blocks and row numbers
 /// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
 template <typename ColumnType>
-static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers)
+static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers)
 {
-    const auto & columns = columns_with_row_numbers.columns;
-    const auto & row_numbers = columns_with_row_numbers.row_numbers;
-    chassert(columns.size() == row_numbers.size());
+    const auto * columns = columns_with_row_numbers.columns.data();
+    const auto * row_numbers = columns_with_row_numbers.row_numbers.data();
+    const size_t n = columns_with_row_numbers.columns.size();
+    chassert(columns_with_row_numbers.row_numbers.size() == n);
 
-    col->reserve(col->size() + columns.size());
-    for (size_t j = 0; j < columns.size(); ++j)
+    col->reserve(col->size() + n);
+    for (size_t j = 0; j < n; ++j)
     {
         if (columns[j])
         {
@@ -607,14 +645,14 @@ static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePt
 }
 
 /// Fills column values from list of blocks and row numbers
-void IColumn::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers)
+void IColumn::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers)
 {
     fillColumnFromBlocksAndRowNumbers(this, type, source_column_index_in_block, columns_with_row_numbers);
 }
 
 /// Fills column values from list of blocks and row numbers
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers)
+void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers)
 {
     auto & self = static_cast<Derived &>(*this);
     fillColumnFromBlocksAndRowNumbers(&self, type, source_column_index_in_block, columns_with_row_numbers);
@@ -685,7 +723,7 @@ ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemoryWit
 
 template <typename Derived, typename Parent>
 void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemoryWithNull(
-    std::vector<char *> & memories, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
+    VectorWithMemoryTracking<char *> & memories, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
     const auto & self = static_cast<const Derived &>(*this);
     chassert(memories.size() == self.size());
@@ -719,7 +757,7 @@ ALWAYS_INLINE char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(si
 }
 
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemory(std::vector<char *> & memories, const IColumn::SerializationSettings * settings) const
+void IColumnHelper<Derived, Parent>::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const
 {
     const auto & self = static_cast<const Derived &>(*this);
     chassert(memories.size() == self.size());

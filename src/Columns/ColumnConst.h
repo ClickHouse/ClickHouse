@@ -71,9 +71,9 @@ public:
         data->get(0, res);
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t, const Options & options) const override
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t, const Options & options) const override
     {
-        return data->getValueNameAndTypeImpl(name_buf, 0, options);
+        data->getValueNameImpl(name_buf, 0, options);
     }
 
     std::string_view getDataAt(size_t) const override
@@ -249,13 +249,14 @@ public:
 
     bool hasEqualValues() const override { return true; }
 
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
 
     void gather(ColumnGathererStream &) override;
 
-    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override
+    void getExtremes(Field & min, Field & max, size_t /*start*/, size_t /*end*/) const override
     {
-        data->getExtremes(min, max, start, end);
+        data->get(0, min);
+        max = min;
     }
 
     void forEachSubcolumn(ColumnCallback callback) const override

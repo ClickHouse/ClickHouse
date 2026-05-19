@@ -2,7 +2,6 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
 class Collator;
@@ -65,7 +64,7 @@ public:
     bool isNullAt(size_t n) const override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const override;
+    void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const override;
     bool getBool(size_t n) const override;
     Float64 getFloat64(size_t n) const override;
     Float32 getFloat32(size_t n) const override;
@@ -169,9 +168,11 @@ public:
     bool isCollationSupported() const override { return values->isCollationSupported(); }
 
     bool hasDynamicStructure() const override { return values->hasDynamicStructure(); }
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
-    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void takeExactDynamicStructureFrom(const IColumn & source) override;
+    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override { values->fixDynamicStructure(); }
+    bool hasStatistics() const override { return values->hasStatistics(); }
+    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
 
     size_t getNumberOfTrailingDefaults() const
     {

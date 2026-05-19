@@ -14,6 +14,7 @@
 #include <Common/ThreadPool.h>
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Client/ClientBaseHelpers.h>
 #include <base/defines.h>
 #include <boost/program_options.hpp>
 #include <Common/ConcurrentBoundedQueue.h>
@@ -171,6 +172,12 @@ public:
                 connection_arguments.password.emplace(overrides.password.value());
             if (overrides.database.has_value() && !connection_arguments.database.has_value())
                 connection_arguments.database.emplace(overrides.database.value());
+
+            if (connection_arguments.hosts.has_value())
+            {
+                if (isCloudEndpoint(connection_arguments.hosts->front()))
+                    connection_arguments.secure.emplace(true);
+            }
         }
 
         if (connection_arguments.accept_invalid_certificate.value_or(false))
@@ -870,7 +877,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("query_id_prefix", value<std::string>()->default_value(""), "")
             ("max-consecutive-errors", value<size_t>()->default_value(0), "set number of allowed consecutive errors")
             ("ignore-error,continue_on_errors", "continue testing even if a query fails")
-            ("reconnect", value<size_t>()->default_value(0), "control reconnection behaviour: 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries)")
+            ("reconnect", value<size_t>()->default_value(0)->implicit_value(1), "control reconnection behaviour: 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries); when given without a value, behaves as 1")
             ("client-side-time", "display the time including network communication instead of server-side time; note that for server versions before 22.8 we always display client-side time")
             ("proto_caps", value<std::string>(), "Enable/disable chunked protocol (comma-separated): chunked_optional, notchunked, notchunked_optional, send_chunked, send_chunked_optional, send_notchunked, send_notchunked_optional, recv_chunked, recv_chunked_optional, recv_notchunked, recv_notchunked_optional")
         ;
@@ -917,7 +924,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             std::cout << "Usage: clickhouse benchmark [options] < queries.txt\n";
             std::cout << "Usage: clickhouse benchmark [options] --query \"query text\"\n\n";
             std::cout << "clickhouse-benchmark connects to ClickHouse server, repeatedly sends "
-                         "specified queries and produces reports query statistics. "
+                         "specified queries and reports query statistics. "
                          "Multiple queries can be used if passed in TSV format.\n\n";
             if (options.contains("verbose"))
                 std::cout << options_description << "\n";

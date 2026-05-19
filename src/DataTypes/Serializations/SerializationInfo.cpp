@@ -10,7 +10,6 @@
 
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
 #include <Poco/JSON/Parser.h>
 
 
@@ -35,6 +34,32 @@ constexpr auto KEY_NAME = "name";
 constexpr auto KEY_TYPES_SERIALIZATION_VERSIONS = "types_serialization_versions";
 constexpr auto KEY_STRING_SERIALIZATION_VERSION = "string";
 constexpr auto KEY_NULLABLE_SERIALIZATION_VERSION = "nullable";
+constexpr auto KEY_MAP_SERIALIZATION_VERSION = "map";
+constexpr auto KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES = "propagate_types_serialization_versions_to_nested_types";
+
+void writeJSONKey(std::string_view key, WriteBuffer & out)
+{
+    writeJSONString(key, out, {});
+    writeChar(':', out);
+}
+
+void writeJSONKeyValue(std::string_view key, std::string_view value, WriteBuffer & out)
+{
+    writeJSONKey(key, out);
+    writeJSONString(value, out, {});
+}
+
+void writeJSONKeyValue(std::string_view key, size_t value, WriteBuffer & out)
+{
+    writeJSONKey(key, out);
+    writeIntText(value, out);
+}
+
+void writeJSONKeyValue(std::string_view key, bool value, WriteBuffer & out)
+{
+    writeJSONKey(key, out);
+    writeString(value ? "true" : "false", out);
+}
 
 }
 
@@ -247,6 +272,30 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
     }
 }
 
+void SerializationInfo::writeJSONFields(WriteBuffer & out, const String * name) const
+{
+    writeJSONKeyValue(KEY_KIND, ISerialization::kindStackToString(kind_stack), out);
+
+    if (name)
+    {
+        writeChar(',', out);
+        writeJSONKeyValue(KEY_NAME, *name, out);
+    }
+
+    writeChar(',', out);
+    writeJSONKeyValue(KEY_NUM_DEFAULTS, data.num_defaults, out);
+
+    writeChar(',', out);
+    writeJSONKeyValue(KEY_NUM_ROWS, data.num_rows, out);
+}
+
+void SerializationInfo::writeJSON(WriteBuffer & out, const String * name) const
+{
+    writeChar('{', out);
+    writeJSONFields(out, name);
+    writeChar('}', out);
+}
+
 void SerializationInfo::toJSON(Poco::JSON::Object & object) const
 {
     object.set(KEY_KIND, ISerialization::kindStackToString(kind_stack));
@@ -375,35 +424,57 @@ bool SerializationInfoByName::needsPersistence() const
 
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
 {
-    Poco::JSON::Object object;
-    Poco::JSON::Array column_infos;
+    auto version = getVersion();
 
+    writeChar('{', out);
+    writeJSONKey(KEY_COLUMNS, out);
+    writeChar('[', out);
+
+    bool first = true;
     for (const auto & [name, info] : *this)
     {
-        Poco::JSON::Object info_json;
-        info->toJSON(info_json);
-        info_json.set(KEY_NAME, name);
-        column_infos.add(std::move(info_json)); /// NOLINT
-    }
+        if (!first)
+            writeChar(',', out);
+        first = false;
 
-    auto version = getVersion();
-    object.set(KEY_VERSION, static_cast<uint8_t>(version));
-    object.set(KEY_COLUMNS, std::move(column_infos)); /// NOLINT
+        info->writeJSON(out, &name);
+    }
+    writeChar(']', out);
+
+    if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES && settings.propagate_types_serialization_versions_to_nested_types)
+    {
+        writeChar(',', out);
+        writeJSONKeyValue(KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES, settings.propagate_types_serialization_versions_to_nested_types, out);
+    }
 
     if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES)
     {
-        Poco::JSON::Object type_versions_obj;
-        type_versions_obj.set(KEY_STRING_SERIALIZATION_VERSION, static_cast<size_t>(settings.string_serialization_version));
+        writeChar(',', out);
+        writeJSONKey(KEY_TYPES_SERIALIZATION_VERSIONS, out);
+        writeChar('{', out);
+
+        bool first_type_version = true;
+        auto write_type_version = [&](std::string_view key, size_t value)
+        {
+            if (!first_type_version)
+                writeChar(',', out);
+            first_type_version = false;
+
+            writeJSONKeyValue(key, value, out);
+        };
+
+        if (settings.map_serialization_version != MergeTreeMapSerializationVersion::BASIC)
+            write_type_version(KEY_MAP_SERIALIZATION_VERSION, static_cast<size_t>(settings.map_serialization_version));
         if (settings.nullable_serialization_version != MergeTreeNullableSerializationVersion::BASIC)
-            type_versions_obj.set(KEY_NULLABLE_SERIALIZATION_VERSION, static_cast<size_t>(settings.nullable_serialization_version));
-        object.set(KEY_TYPES_SERIALIZATION_VERSIONS, type_versions_obj);
+            write_type_version(KEY_NULLABLE_SERIALIZATION_VERSION, static_cast<size_t>(settings.nullable_serialization_version));
+        write_type_version(KEY_STRING_SERIALIZATION_VERSION, static_cast<size_t>(settings.string_serialization_version));
+
+        writeChar('}', out);
     }
 
-    std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    oss.exceptions(std::ios::failbit);
-    Poco::JSON::Stringifier::stringify(object, oss);
-
-    writeString(oss.str(), out);
+    writeChar(',', out);
+    writeJSONKeyValue(KEY_VERSION, static_cast<size_t>(version), out);
+    writeChar('}', out);
 }
 
 SerializationInfoByName SerializationInfoByName::clone() const
@@ -433,6 +504,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
     Poco::JSON::Array::Ptr columns_array;
     Poco::JSON::Object::Ptr type_versions_obj;
+    bool propagate_types_serialization_versions_to_nested_types = false;
     for (const auto & [key, value] : *object)
     {
         if (key == KEY_VERSION)
@@ -447,6 +519,10 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         {
             type_versions_obj = value.extract<Poco::JSON::Object::Ptr>();
         }
+        else if (key == KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES)
+        {
+            propagate_types_serialization_versions_to_nested_types = value.extract<bool>();
+        }
         else
         {
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected field '{}' in MergeTreeSerializationInfo JSON", key);
@@ -455,6 +531,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
     MergeTreeStringSerializationVersion string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
     MergeTreeNullableSerializationVersion nullable_serialization_version = MergeTreeNullableSerializationVersion::BASIC;
+    MergeTreeMapSerializationVersion map_serialization_version = MergeTreeMapSerializationVersion::BASIC;
     if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES)
     {
         /// types_serialization_versions is mandatory in WITH_TYPES mode
@@ -482,6 +559,13 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
                     throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version {} for type '{}'", version_value, type_name);
                 nullable_serialization_version = *maybe_enum;
             }
+            else if (type_name == KEY_MAP_SERIALIZATION_VERSION)
+            {
+                auto maybe_enum = magic_enum::enum_cast<MergeTreeMapSerializationVersion>(version_value);
+                if (!maybe_enum.has_value())
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid version {} for type '{}'", version_value, type_name);
+                map_serialization_version = *maybe_enum;
+            }
             else
             {
                 throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown field '{}' in types_serialization_versions", type_name);
@@ -494,7 +578,9 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         false /* Cannot choose kind when constructing from JSON */,
         version,
         string_serialization_version,
-        nullable_serialization_version);
+        nullable_serialization_version,
+        map_serialization_version,
+        propagate_types_serialization_versions_to_nested_types);
 
     SerializationInfoByName infos(settings);
     if (columns_array)
