@@ -27,6 +27,12 @@ DATA_PARTS = {
     "/data/query_directory/subdir/part1.tsv": "11\n",
     "/data/source_query/subdir/part1.tsv": "13\n",
     "/data/source_query_duplicate/subdir/part1.tsv": "17\n",
+    "/data/range/subdir/part1.tsv": "10\n",
+    "/data/range/subdir/part2.tsv": "20\n",
+    "/data/recursive_glob/a/parta.tsv": "1\n",
+    "/data/recursive_glob/a/part1.tsv": "10\n",
+    "/data/recursive_glob/b/partb.tsv": "2\n",
+    "/data/recursive_glob/b/part2.tsv": "20\n",
     "/data/headers/2025/part1.tsv": "7\n",
     "/data/headers/2025/part2.tsv": "8\n",
     "/data/mixed_headers/part1.tsv": "1\n",
@@ -121,6 +127,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             "/data/source_query/subdir/",
             "/data/source_query_duplicate/",
             "/data/source_query_duplicate/subdir/",
+            "/data/range/",
+            "/data/range/subdir/",
+            "/data/recursive_glob/",
+            "/data/recursive_glob/a/",
+            "/data/recursive_glob/b/",
             "/data/headers/",
             "/data/headers/2025/",
             "/data/mixed_headers/",
@@ -245,6 +256,26 @@ class RequestHandler(BaseHTTPRequestHandler):
             body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"part1.tsv?token=abc\">part1.tsv?token=abc</a>\n"
             self._send_html(body)
             return
+        if path == "/data/range/":
+            body = "<a href=\"subdir/\">subdir/</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/range/subdir/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"part2.tsv\">part2.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/recursive_glob/":
+            body = "<a href=\"a/\">a/</a>\n<a href=\"b/\">b/</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/recursive_glob/a/":
+            body = "<a href=\"parta.tsv\">parta.tsv</a>\n<a href=\"part1.tsv\">part1.tsv</a>\n"
+            self._send_html(body)
+            return
+        if path == "/data/recursive_glob/b/":
+            body = "<a href=\"partb.tsv\">partb.tsv</a>\n<a href=\"part2.tsv\">part2.tsv</a>\n"
+            self._send_html(body)
+            return
         if path == "/data/glob/":
             body = (
                 "<a href=\"parta.tsv\">parta.tsv</a>\n"
@@ -272,11 +303,12 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_html(body)
             return
         if path == "/data/invalid_href_fallback/":
+            host = self.headers.get("Host", "resolver:8087")
             body = (
                 "<a href=\"#\">top</a>\n"
                 "<a href=\"javascript:void(0)\">noop</a>\n"
-                "http://resolver:8087/data/invalid_href_fallback/part1.tsv\n"
-                "http://resolver:8087/data/invalid_href_fallback/part2.tsv\n"
+                f"http://{host}/data/invalid_href_fallback/part1.tsv\n"
+                f"http://{host}/data/invalid_href_fallback/part2.tsv\n"
             )
             self._send_html(body)
             return

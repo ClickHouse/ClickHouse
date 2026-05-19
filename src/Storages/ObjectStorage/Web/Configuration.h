@@ -100,7 +100,7 @@ private:
     void setNamespaceFromURL(ContextPtr context);
 
     String raw_url;
-    WebObjectStorage::URLOptions url_options;
+    WebObjectStorage::URLShards url_shards;
     String namespace_prefix;
     Path path;
     Paths paths;

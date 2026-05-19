@@ -214,11 +214,62 @@ def test_url_wildcard_with_headers():
     assert result.strip() == "15"
 
 
-def test_url_wildcard_with_raw_query():
+def test_url_wildcard_expands_query_templates():
     result = node1.query(
         with_url_wildcard_setting("SELECT sum(x) FROM url('http://resolver:8087/data/**/part*.tsv?x={1,2}', 'TSV', 'x UInt64')")
     )
-    assert result.strip() == "12"
+    assert result.strip() == "24"
+
+
+def test_url_wildcard_expands_address_templates():
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT sum(x) FROM url('http://{resolver,resolver}:8087/data/source_query/**/part*.tsv?token=abc', 'TSV', 'x UInt64')"
+        )
+    )
+    assert result.strip() == "26"
+
+
+def test_url_wildcard_combines_address_templates_failover_options_and_globs():
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT sum(x) FROM url('http://{resolver,resolver}:8087/data/source_query/**/part*.tsv?token={bad|abc}', 'TSV', 'x UInt64')"
+        )
+    )
+    assert result.strip() == "26"
+
+
+def test_url_wildcard_expands_numeric_ranges_with_index_pages():
+    result = node1.query(
+        with_url_wildcard_setting("SELECT sum(x) FROM url('http://resolver:8087/data/range/**/part{1..2}.tsv', 'TSV', 'x UInt64')")
+    )
+    assert result.strip() == "30"
+
+
+def test_url_wildcard_glob_patterns_with_recursive_index_pages():
+    result = node1.query(
+        with_url_wildcard_setting("SELECT sum(x) FROM url('http://resolver:8087/data/recursive_glob/**/part{a,b}.tsv', 'TSV', 'x UInt64')")
+    )
+    assert result.strip() == "3"
+
+    result = node1.query(
+        with_url_wildcard_setting("SELECT sum(x) FROM url('http://resolver:8087/data/recursive_glob/**/part{1..2}.tsv', 'TSV', 'x UInt64')")
+    )
+    assert result.strip() == "30"
+
+
+def test_url_wildcard_question_mark_is_not_path_glob():
+    error = node1.query_and_get_error(
+        with_url_wildcard_setting("SELECT count() FROM url('http://resolver:8087/data/glob/part?.tsv', 'TSV', 'x UInt64')")
+    )
+    assert "No such file" in error or "HTTP status code: 404" in error
+
+
+def test_url_wildcard_rejects_invalid_url_template_range():
+    error = node1.query_and_get_error(
+        with_url_wildcard_setting("SELECT count() FROM url('http://resolver:8087/data/range/**/part*.tsv?x={a..2}', 'TSV', 'x UInt64')")
+    )
+    assert "Incorrect left number" in error
 
 
 def test_url_wildcard_glob_patterns():

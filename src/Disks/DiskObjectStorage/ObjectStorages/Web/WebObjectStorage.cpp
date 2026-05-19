@@ -10,6 +10,7 @@
 #include <Poco/Timestamp.h>
 
 #include <deque>
+#include <limits>
 #include <unordered_set>
 
 namespace DB
@@ -68,7 +69,7 @@ WebObjectStorage::WebObjectStorage(
     HTTPHeaderEntries headers_,
     size_t max_directories_to_read_)
     : WebObjectStorage(
-        URLOptions{{.base_url = url_, .query_fragment = query_fragment_}},
+        URLShards{{URL{.base_url = url_, .query_fragment = query_fragment_}}},
         context_,
         std::move(headers_),
         max_directories_to_read_)
@@ -76,18 +77,23 @@ WebObjectStorage::WebObjectStorage(
 }
 
 WebObjectStorage::WebObjectStorage(
-    URLOptions url_options_,
+    URLShards url_shards_,
     ContextPtr context_,
     HTTPHeaderEntries headers_,
     size_t max_directories_to_read_)
     : WithContext(context_->getGlobalContext())
-    , url_options(std::move(url_options_))
+    , url_shards(std::move(url_shards_))
     , headers(std::move(headers_))
     , max_directories_to_read(max_directories_to_read_)
     , log(getLogger("WebObjectStorage"))
 {
-    if (url_options.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least one URL option is required");
+    if (url_shards.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least one URL shard is required");
+    for (const auto & url_shard : url_shards)
+    {
+        if (url_shard.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "At least one URL option is required for each URL shard");
+    }
 }
 
 bool WebObjectStorage::exists(const StoredObject & object) const
@@ -111,10 +117,11 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
     if (!normalized_path.empty() && !normalized_path.ends_with('/'))
         normalized_path += '/';
 
-    std::deque<std::string> pending_directories;
-    pending_directories.push_back(normalized_path);
+    std::deque<RelativePathWithMetadata> pending_directories;
+    pending_directories.emplace_back(normalized_path, std::optional<size_t>{});
     std::unordered_set<std::string> known_directories;
-    known_directories.emplace(normalized_path);
+    known_directories.emplace(fmt::format("{}:{}", std::numeric_limits<size_t>::max(), normalized_path));
+    std::unordered_set<std::string> known_files;
 
     while (!pending_directories.empty())
     {
@@ -124,15 +131,16 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
         auto current = std::move(pending_directories.front());
         pending_directories.pop_front();
 
-        auto entries = metadata_storage.listDirectory(current);
+        auto entries = metadata_storage.listDirectoryWithMetadata(current.relative_path, current.read_source_index);
         for (const auto & entry : entries)
         {
             if (max_keys && children.size() >= max_keys)
                 break;
 
-            if (pathPartEndsWithSlash(entry))
+            if (pathPartEndsWithSlash(entry->relative_path))
             {
-                if (!known_directories.emplace(entry).second)
+                const auto directory_key = fmt::format("{}:{}", entry->read_source_index.value_or(std::numeric_limits<size_t>::max()), entry->relative_path);
+                if (!known_directories.emplace(directory_key).second)
                     continue;
 
                 if (max_directories_to_read && known_directories.size() > max_directories_to_read)
@@ -143,11 +151,15 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
                         "setting `url_wildcard_max_directories_to_read`",
                         max_directories_to_read);
                 }
-                pending_directories.push_back(entry);
+                pending_directories.emplace_back(entry->relative_path, entry->read_source_index);
                 continue;
             }
 
-            children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry));
+            const auto file_key = fmt::format("{}:{}", entry->read_source_index.value_or(std::numeric_limits<size_t>::max()), entry->relative_path);
+            if (!known_files.emplace(file_key).second)
+                continue;
+
+            children.emplace_back(entry);
         }
     }
 }
@@ -157,7 +169,7 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     const ReadSettings & read_settings,
     std::optional<size_t>) const
 {
-    auto urls = buildURLs(object.remote_path);
+    auto urls = object.read_source_index ? buildURLs(object.remote_path, *object.read_source_index) : buildURLs(object.remote_path);
     const bool use_external_buffer = read_settings.remote_read_buffer_use_external_buffer && urls.size() == 1;
 
     return std::make_unique<ReadBufferFromWebServer>(
@@ -221,7 +233,20 @@ ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & path, boo
     return *metadata;
 }
 
-std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
+std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const std::string & path, bool with_tags) const
+{
+    return tryGetObjectMetadata(RelativePathWithMetadata(path), with_tags);
+}
+
+ObjectMetadata WebObjectStorage::getObjectMetadata(const RelativePathWithMetadata & path, bool with_tags) const
+{
+    auto metadata = tryGetObjectMetadata(path, with_tags);
+    if (!metadata)
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "No such file: {}", path.getPath());
+    return *metadata;
+}
+
+std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const RelativePathWithMetadata & path, bool) const
 {
     Poco::Net::HTTPBasicCredentials credentials{};
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(
@@ -292,7 +317,8 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const std::
 
     std::exception_ptr last_exception;
     bool has_not_found = false;
-    for (const auto & url : buildURLs(path))
+    auto urls = path.read_source_index ? buildURLs(path.getPath(), *path.read_source_index) : buildURLs(path.getPath());
+    for (const auto & url : urls)
     {
         try
         {
@@ -353,14 +379,34 @@ void WebObjectStorage::setHeadSupportForOrigin(const Poco::URI & uri, HeadSuppor
 
 std::string WebObjectStorage::buildURL(const std::string & path) const
 {
-    return buildURL(url_options.front(), path);
+    return buildURL(url_shards.front().front(), path);
 }
 
 std::vector<String> WebObjectStorage::buildURLs(const std::string & path) const
 {
     std::vector<String> result;
-    result.reserve(url_options.size());
-    for (const auto & url_option : url_options)
+    size_t urls_count = 0;
+    for (const auto & url_shard : url_shards)
+        urls_count += url_shard.size();
+
+    result.reserve(urls_count);
+    for (const auto & url_shard : url_shards)
+    {
+        for (const auto & url_option : url_shard)
+            result.push_back(buildURL(url_option, path));
+    }
+    return result;
+}
+
+std::vector<String> WebObjectStorage::buildURLs(const std::string & path, size_t shard_index) const
+{
+    if (shard_index >= url_shards.size())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid URL shard index: {}", shard_index);
+
+    const auto & url_shard = url_shards[shard_index];
+    std::vector<String> result;
+    result.reserve(url_shard.size());
+    for (const auto & url_option : url_shard)
         result.push_back(buildURL(url_option, path));
     return result;
 }

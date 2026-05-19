@@ -33,6 +33,35 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+using URLFailoverOptions = std::vector<String>;
+using URLShardsWithFailover = std::vector<URLFailoverOptions>;
+
+URLShardsWithFailover parseURLShardsWithFailover(const String & uri, size_t max_addresses, const String & func_name = "url")
+{
+    auto disclosed_urls = parseRemoteDescription(uri, 0, uri.size(), ',', max_addresses, func_name);
+
+    URLShardsWithFailover result;
+    result.reserve(disclosed_urls.size());
+    size_t url_options_count = 0;
+
+    for (const auto & disclosed_url : disclosed_urls)
+    {
+        auto failover_options = parseRemoteDescription(disclosed_url, 0, disclosed_url.size(), '|', max_addresses, func_name);
+        if (url_options_count + failover_options.size() > max_addresses)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}': first argument generates too many result addresses", func_name);
+
+        url_options_count += failover_options.size();
+        result.push_back(std::move(failover_options));
+    }
+
+    return result;
+}
+
+}
+
 void WebStorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
     url = collection.get<String>("url");
@@ -93,8 +122,11 @@ StorageObjectStorageQuerySettings StorageWebConfiguration::getQuerySettings(cons
 void StorageWebConfiguration::check(ContextPtr context)
 {
     StorageObjectStorageConfiguration::check(context);
-    for (const auto & url_option : url_options)
-        context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(url_option.base_url + url_option.query_fragment, false));
+    for (const auto & url_shard : url_shards)
+    {
+        for (const auto & url_option : url_shard)
+            context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(url_option.base_url + url_option.query_fragment, false));
+    }
     context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_from_ast);
 }
 
@@ -102,7 +134,7 @@ ObjectStoragePtr StorageWebConfiguration::createObjectStorage(ContextPtr context
 {
     assertInitialized();
     return std::make_shared<WebObjectStorage>(
-        url_options,
+        url_shards,
         context,
         headers_from_ast,
         context->getSettingsRef()[Setting::url_wildcard_max_directories_to_read]);
@@ -210,45 +242,51 @@ void StorageWebConfiguration::fromDisk(const String & disk_name, ASTs & args, Co
 
 void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
 {
-    const auto url_options_from_remote_description = parseRemoteDescription(
-        raw_url,
-        0,
-        raw_url.size(),
-        '|',
-        context->getSettingsRef()[Setting::glob_expansion_max_elements],
-        "url");
+    const auto max_addresses = context->getSettingsRef()[Setting::glob_expansion_max_elements];
+    const auto scheme_pos = raw_url.find("://");
+    const auto authority_start = scheme_pos == String::npos ? 0 : scheme_pos + 3;
+    const auto path_start = raw_url.find('/', authority_start);
+    const auto query_or_fragment_pos = raw_url.find_first_of("?#", authority_start);
+    const bool has_path = path_start != String::npos && (query_or_fragment_pos == String::npos || path_start < query_or_fragment_pos);
+    const auto path_end = query_or_fragment_pos == String::npos ? raw_url.size() : query_or_fragment_pos;
 
-    url_options.clear();
-    url_options.reserve(url_options_from_remote_description.size());
+    const auto url_root_for_expansion = has_path ? raw_url.substr(0, path_start + 1) : raw_url.substr(0, path_end) + "/";
+    const auto query_fragment_part = query_or_fragment_pos == String::npos ? String{} : raw_url.substr(query_or_fragment_pos);
+    const auto url_shards_with_failover = parseURLShardsWithFailover(url_root_for_expansion + query_fragment_part, max_addresses, "url");
 
-    for (const auto & url_option : url_options_from_remote_description)
+    path.path = has_path ? raw_url.substr(path_start, path_end - path_start) : String{};
+    while (path.path.starts_with('/'))
+        path.path.erase(0, 1);
+
+    url_shards.clear();
+    url_shards.reserve(url_shards_with_failover.size());
+
+    for (const auto & failover_url_options : url_shards_with_failover)
     {
-        Poco::URI uri(url_option, false);
+        WebObjectStorage::URLOptions url_shard;
+        url_shard.reserve(failover_url_options.size());
 
-        if (url_options.empty())
+        for (const auto & url_option : failover_url_options)
         {
-            namespace_prefix = uri.getHost();
-            if (uri.getPort())
-                namespace_prefix += ":" + std::to_string(uri.getPort());
+            Poco::URI uri(url_option, false);
 
-            path.path = uri.getPath();
-            if (!path.path.empty())
+            if (url_shards.empty() && url_shard.empty())
             {
-                const auto first_non_slash = path.path.find_first_not_of('/');
-                if (first_non_slash == String::npos)
-                    path.path.clear();
-                else if (first_non_slash > 0)
-                    path.path.erase(0, first_non_slash);
+                namespace_prefix = uri.getHost();
+                if (uri.getPort())
+                    namespace_prefix += ":" + std::to_string(uri.getPort());
             }
+
+            String query_fragment;
+            if (!uri.getRawQuery().empty())
+                query_fragment = "?" + uri.getRawQuery();
+            if (!uri.getFragment().empty())
+                query_fragment += "#" + uri.getFragment();
+
+            url_shard.push_back({.base_url = uri.getScheme() + "://" + uri.getAuthority() + "/", .query_fragment = std::move(query_fragment)});
         }
 
-        String query_fragment;
-        if (!uri.getRawQuery().empty())
-            query_fragment = "?" + uri.getRawQuery();
-        if (!uri.getFragment().empty())
-            query_fragment += "#" + uri.getFragment();
-
-        url_options.push_back({.base_url = uri.getScheme() + "://" + uri.getAuthority() + "/", .query_fragment = std::move(query_fragment)});
+        url_shards.push_back(std::move(url_shard));
     }
 }
 

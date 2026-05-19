@@ -31,6 +31,7 @@ public:
     };
 
     using URLOptions = std::vector<URL>;
+    using URLShards = std::vector<URLOptions>;
 
     WebObjectStorage(
         const String & url_,
@@ -40,7 +41,7 @@ public:
         size_t max_directories_to_read_ = 0);
 
     WebObjectStorage(
-        URLOptions url_options_,
+        URLShards url_shards_,
         ContextPtr context_,
         HTTPHeaderEntries headers_ = {},
         size_t max_directories_to_read_ = 0);
@@ -53,11 +54,12 @@ public:
 
     std::string getDescription() const override { return getBaseURL(); }
 
-    const String & getBaseURL() const { return url_options.front().base_url; }
-    const String & getQueryFragment() const { return url_options.front().query_fragment; }
-    const URLOptions & getURLOptions() const { return url_options; }
+    const String & getBaseURL() const { return url_shards.front().front().base_url; }
+    const String & getQueryFragment() const { return url_shards.front().front().query_fragment; }
+    const URLShards & getURLShards() const { return url_shards; }
     const HTTPHeaderEntries & getHeaders() const { return headers; }
     std::vector<String> buildURLs(const std::string & path) const;
+    std::vector<String> buildURLs(const std::string & path, size_t shard_index) const;
 
     bool exists(const StoredObject & object) const override;
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
@@ -81,6 +83,8 @@ public:
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
+    ObjectMetadata getObjectMetadata(const RelativePathWithMetadata & path, bool with_tags) const override;
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const RelativePathWithMetadata & path, bool with_tags) const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -120,7 +124,7 @@ private:
 
     static constexpr size_t max_head_support_cache_size = 65536;
 
-    const URLOptions url_options;
+    const URLShards url_shards;
     const HTTPHeaderEntries headers;
     const size_t max_directories_to_read;
     mutable std::mutex head_support_mutex;

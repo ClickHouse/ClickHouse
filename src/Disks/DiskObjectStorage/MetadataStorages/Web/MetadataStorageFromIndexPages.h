@@ -7,6 +7,8 @@
 
 #include <Poco/URI.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -16,7 +18,7 @@ private:
     const WebObjectStorage & object_storage;
     LoggerPtr log;
 
-    std::vector<std::string> makeListingURLs(const std::string & path) const;
+    std::vector<std::string> makeListingURLs(const std::string & path, size_t shard_index) const;
     std::string readIndexPage(const std::string & url) const;
     std::vector<std::string> extractURLs(
         const std::string & page_body,
@@ -25,7 +27,7 @@ private:
         const std::string & source_url,
         const std::string & path) const;
 
-    bool tryListDirectory(const std::string & path, std::vector<std::string> & result) const;
+    bool tryListDirectory(const std::string & path, RelativePathsWithMetadata & result, std::optional<size_t> shard_index) const;
 
 public:
     explicit MetadataStorageFromIndexPages(const WebObjectStorage & object_storage_);
@@ -44,6 +46,7 @@ public:
     std::optional<uint64_t> getFileSizeIfExists(const String & path) const override;
 
     std::vector<std::string> listDirectory(const std::string & path) const override;
+    RelativePathsWithMetadata listDirectoryWithMetadata(const std::string & path, std::optional<size_t> shard_index = std::nullopt) const;
 
     DirectoryIteratorPtr iterateDirectory(const std::string & path) const override;
 

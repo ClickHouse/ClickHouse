@@ -118,6 +118,7 @@ struct DataLakeObjectMetadata;
 struct RelativePathWithMetadata
 {
     String relative_path;
+    std::optional<size_t> read_source_index;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
 
@@ -125,6 +126,12 @@ struct RelativePathWithMetadata
 
     explicit RelativePathWithMetadata(String relative_path_, std::optional<ObjectMetadata> metadata_ = std::nullopt)
         : relative_path(std::move(relative_path_))
+        , metadata(std::move(metadata_))
+    {}
+
+    RelativePathWithMetadata(String relative_path_, std::optional<size_t> read_source_index_, std::optional<ObjectMetadata> metadata_ = std::nullopt)
+        : relative_path(std::move(relative_path_))
+        , read_source_index(read_source_index_)
         , metadata(std::move(metadata_))
     {}
 
@@ -207,9 +214,17 @@ public:
 
     /// Get object metadata if supported. It should be possible to receive at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
+    virtual ObjectMetadata getObjectMetadata(const RelativePathWithMetadata & object, bool with_tags) const
+    {
+        return getObjectMetadata(object.getPath(), with_tags);
+    }
 
     /// Same as getObjectMetadata(), but ignores if object does not exist.
     virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const = 0;
+    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const RelativePathWithMetadata & object, bool with_tags) const
+    {
+        return tryGetObjectMetadata(object.getPath(), with_tags);
+    }
 
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT

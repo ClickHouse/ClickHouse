@@ -127,8 +127,8 @@ bool MetadataStorageFromIndexPages::existsFile(const std::string & path) const
 
 bool MetadataStorageFromIndexPages::existsDirectory(const std::string & path) const
 {
-    std::vector<std::string> files;
-    return tryListDirectory(path, files);
+    RelativePathsWithMetadata files;
+    return tryListDirectory(path, files, std::nullopt);
 }
 
 bool MetadataStorageFromIndexPages::existsFileOrDirectory(const std::string & path) const
@@ -151,22 +151,33 @@ std::optional<uint64_t> MetadataStorageFromIndexPages::getFileSizeIfExists(const
 
 std::vector<std::string> MetadataStorageFromIndexPages::listDirectory(const std::string & path) const
 {
+    auto entries = listDirectoryWithMetadata(path);
+
     std::vector<std::string> result;
-    if (!tryListDirectory(path, result))
+    result.reserve(entries.size());
+    for (const auto & entry : entries)
+        result.push_back(entry->relative_path);
+    return result;
+}
+
+RelativePathsWithMetadata MetadataStorageFromIndexPages::listDirectoryWithMetadata(const std::string & path, std::optional<size_t> shard_index) const
+{
+    RelativePathsWithMetadata result;
+    if (!tryListDirectory(path, result, shard_index))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "There is no path {}", path);
     return result;
 }
 
 DirectoryIteratorPtr MetadataStorageFromIndexPages::iterateDirectory(const std::string & path) const
 {
-    std::vector<std::string> files;
-    if (!tryListDirectory(path, files))
+    RelativePathsWithMetadata files;
+    if (!tryListDirectory(path, files, std::nullopt))
         return std::make_unique<StaticDirectoryIterator>(std::vector<std::filesystem::path>{});
 
     std::vector<std::filesystem::path> entries;
     entries.reserve(files.size());
     for (const auto & file : files)
-        entries.emplace_back(file);
+        entries.emplace_back(file->relative_path);
     return std::make_unique<StaticDirectoryIterator>(std::move(entries));
 }
 
@@ -184,9 +195,9 @@ std::optional<StoredObjects> MetadataStorageFromIndexPages::getStorageObjectsIfE
     return StoredObjects{StoredObject(path, path, metadata->size_bytes)};
 }
 
-std::vector<std::string> MetadataStorageFromIndexPages::makeListingURLs(const std::string & path) const
+std::vector<std::string> MetadataStorageFromIndexPages::makeListingURLs(const std::string & path, size_t shard_index) const
 {
-    return object_storage.buildURLs(ensureTrailingSlashInPath(stripLeadingSlash(path)));
+    return object_storage.buildURLs(ensureTrailingSlashInPath(stripLeadingSlash(path)), shard_index);
 }
 
 std::string MetadataStorageFromIndexPages::readIndexPage(const std::string & url) const
@@ -331,54 +342,83 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
     return result;
 }
 
-bool MetadataStorageFromIndexPages::tryListDirectory(const std::string & path, std::vector<std::string> & result) const
+bool MetadataStorageFromIndexPages::tryListDirectory(
+    const std::string & path,
+    RelativePathsWithMetadata & result,
+    std::optional<size_t> requested_shard_index) const
 {
     const auto normalized_path = ensureTrailingSlashInPath(stripLeadingSlash(path));
     const auto path_prefix = getPathPrefixForMatching(normalized_path);
+    const auto & url_shards = object_storage.getURLShards();
+    if (requested_shard_index && *requested_shard_index >= url_shards.size())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid URL shard index: {}", *requested_shard_index);
 
     std::exception_ptr last_exception;
     bool has_not_found = false;
-    const auto listing_urls = makeListingURLs(normalized_path);
-    const auto & url_options = object_storage.getURLOptions();
-    for (size_t i = 0; i != listing_urls.size(); ++i)
+    bool has_listed_directory = false;
+
+    const auto first_shard_index = requested_shard_index.value_or(0);
+    const auto end_shard_index = requested_shard_index ? *requested_shard_index + 1 : url_shards.size();
+
+    for (size_t shard_index = first_shard_index; shard_index != end_shard_index; ++shard_index)
     {
-        const auto & listing_url = listing_urls[i];
-        try
+        const auto listing_urls = makeListingURLs(normalized_path, shard_index);
+        const auto & url_options = url_shards[shard_index];
+        bool has_listed_shard = false;
+
+        for (size_t i = 0; i != listing_urls.size(); ++i)
         {
-            auto body = readIndexPage(listing_url);
-            result = extractURLs(
-                body,
-                listing_url,
-                url_options[i].base_url,
-                url_options[i].base_url + url_options[i].query_fragment,
-                path_prefix);
-            return true;
-        }
-        catch (const HTTPException & e)
-        {
-            if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+            const auto & listing_url = listing_urls[i];
+            try
             {
-                has_not_found = true;
-                continue;
+                auto body = readIndexPage(listing_url);
+                auto entries = extractURLs(
+                    body,
+                    listing_url,
+                    url_options[i].base_url,
+                    url_options[i].base_url + url_options[i].query_fragment,
+                    path_prefix);
+
+                result.reserve(result.size() + entries.size());
+                for (auto & entry : entries)
+                    result.emplace_back(std::make_shared<RelativePathWithMetadata>(std::move(entry), shard_index));
+
+                has_listed_directory = true;
+                has_listed_shard = true;
+                break;
             }
-            last_exception = std::current_exception();
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
-                last_exception = std::make_exception_ptr(
-                    Exception(ErrorCodes::BAD_ARGUMENTS, "Index page '{}' exceeds max_http_index_page_size", listing_url));
-            else
+            catch (const HTTPException & e)
+            {
+                if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+                {
+                    has_not_found = true;
+                    continue;
+                }
                 last_exception = std::current_exception();
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
+                    last_exception = std::make_exception_ptr(
+                        Exception(ErrorCodes::BAD_ARGUMENTS, "Index page '{}' exceeds max_http_index_page_size", listing_url));
+                else
+                    last_exception = std::current_exception();
+            }
+            catch (...)
+            {
+                last_exception = std::current_exception();
+            }
         }
-        catch (...)
-        {
-            last_exception = std::current_exception();
-        }
+
+        if (!has_listed_shard && last_exception)
+            std::rethrow_exception(last_exception);
     }
 
     if (last_exception)
         std::rethrow_exception(last_exception);
+
+    if (has_listed_directory)
+        return true;
 
     if (has_not_found)
         return false;

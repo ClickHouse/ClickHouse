@@ -711,17 +711,21 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             bool with_tags = read_from_format_info.requested_virtual_columns.contains("_tags");
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
+            auto metadata_object = object_info->relative_path_with_metadata;
+            metadata_object.relative_path = path;
 
             if (query_settings.ignore_non_existent_file)
             {
-                auto metadata = object_storage->tryGetObjectMetadata(path, with_tags);
+                auto metadata = object_storage->tryGetObjectMetadata(metadata_object, with_tags);
                 if (!metadata)
                     return {};
 
                 object_info->setObjectMetadata(metadata.value());
             }
             else
-                object_info->setObjectMetadata(object_storage->getObjectMetadata(path, with_tags));
+            {
+                object_info->setObjectMetadata(object_storage->getObjectMetadata(metadata_object, with_tags));
+            }
         }
 
         if (query_settings.skip_empty_files && object_info->getObjectMetadata()->size_bytes == 0
@@ -1020,7 +1024,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// 2. object etag suggests a cache key in case we use filesystem cache
     /// 3. object etag as a cache key for parquet metadata caching
     if (!object_info.metadata)
-        object_info.metadata = object_storage->getObjectMetadata(object_info.getPath(), /*with_tags=*/ false);
+        object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
 
     if (use_page_cache && object_info.metadata->etag.empty())
     {
@@ -1066,10 +1070,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (use_distributed_cache)
     {
         const std::string path = object_info.getPath();
-        StoredObject object(path, "", object_size);
-        auto read_buffer_creator = [path, object_size, modified_read_settings, object_storage]()
+        StoredObject object(path, "", object_size, object_info.read_source_index);
+        auto read_buffer_creator = [path, object_size, read_source_index = object_info.read_source_index, modified_read_settings, object_storage]()
         {
-            return object_storage->readObject(StoredObject(path, "", object_size), modified_read_settings.withNestedBuffer(/* seekable */false));
+            return object_storage->readObject(StoredObject(path, "", object_size, read_source_index), modified_read_settings.withNestedBuffer(/* seekable */false));
         };
 
         impl = std::make_unique<ReadBufferFromDistributedCache>(
@@ -1104,11 +1108,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
             auto read_buffer_creator = [
                 path = object_info.getPath(),
+                read_source_index = object_info.read_source_index,
                 nested_buffer_read_settings = modified_read_settings.withNestedBuffer(/* seekable */false),
                 object_size,
                 object_storage]()
             {
-                return object_storage->readObject(StoredObject(path, "", object_size), nested_buffer_read_settings);
+                return object_storage->readObject(StoredObject(path, "", object_size, read_source_index), nested_buffer_read_settings);
             };
 
             impl = std::make_unique<CachedOnDiskReadBufferFromFile>(
@@ -1138,7 +1143,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (!impl)
     {
         impl = object_storage->readObject(
-            StoredObject(object_info.getPath(), "", object_size),
+            StoredObject(object_info.getPath(), "", object_size, object_info.read_source_index),
             use_async_buffer ? modified_read_settings.withNestedBuffer(/* seekable */true) : modified_read_settings);
     }
 
@@ -1530,7 +1535,7 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInAr
     const std::string & path_to_archive,
     const std::string & path_in_archive)
 {
-    auto archive_object = std::make_shared<ObjectInfo>(RelativePathWithMetadata{path_to_archive, std::nullopt});
+    auto archive_object = std::make_shared<ObjectInfo>(RelativePathWithMetadata{path_to_archive, std::optional<ObjectMetadata>{}});
     if (!archive_object->getObjectMetadata())
         archive_object->setObjectMetadata(object_storage->getObjectMetadata(archive_object->getPath(), /*with_tags=*/ false));
 
