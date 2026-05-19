@@ -956,8 +956,14 @@ void QueryOracle::dumpOracleIntermediateSteps(
 
 /// Dictionary oracle: dump all columns, compare full content
 void QueryOracle::dumpDictionaryContent(
-    RandomGenerator & rg, StatementGenerator & gen, const SQLDictionary & d, SQLQuery & sq1, SQLQuery & sq2)
+    RandomGenerator & rg, StatementGenerator & gen, const SQLDictionary & d, SQLQuery & reload, SQLQuery & sq1, SQLQuery & sq2)
 {
+    SystemCommand * sc = reload.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_system_cmd();
+    d.setName(sc->mutable_reload_dictionary(), false);
+    const std::optional<String> & cluster = d.getCluster();
+    if (cluster.has_value())
+        sc->mutable_cluster()->set_cluster(cluster.value());
+
     TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
     Select * sel = ts->mutable_sel();

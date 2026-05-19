@@ -903,8 +903,16 @@ bool Client::buzzHouse()
                      {
                          const auto & dict = rg.pickRandomly(
                              gen.filterCollection<BuzzHouse::SQLDictionary>(gen.attached_dictionaries_to_compare_content));
+                         BuzzHouse::SQLQuery reload;
                          runDumpReadOracle(
-                             [&]() { qo.dumpDictionaryContent(rg, gen, dict, sq1, sq2); },
+                             [&]()
+                             {
+                                 qo.dumpDictionaryContent(rg, gen, dict, reload, sq1, sq2);
+                                 full_query.resize(0);
+                                 BuzzHouse::SQLQueryToString(full_query, reload);
+                                 fuzz_config->outf << full_query << std::endl;
+                                 server_up &= processBuzzHouseQuery(full_query);
+                             },
                              [&](auto s) { qo.dumpObjectIntermediateSteps(rg, gen, dict, BuzzHouse::SQLObject::DICTIONARY, s, intermediate_queries); },
                              "Dump and read dictionary");
                      }},
