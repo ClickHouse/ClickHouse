@@ -7,6 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
 
@@ -184,7 +185,7 @@ struct AggregateFunctionSumData
         }
         else if constexpr (is_over_big_int<T>)
         {
-            const uint64_t masks[2] = {0, ~0ULL};
+            alignas(64) const uint64_t masks[2] = {0, ~0ULL};
             AccumulateResult local_sum{};
             for (size_t i = 0; i < count; ++i)
             {
