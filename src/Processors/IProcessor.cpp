@@ -73,7 +73,6 @@ IProcessor::PipelineUpdate IProcessor::updatePipeline()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'updatePipeline' is not implemented for {} processor", getName());
 }
-#endif
 
 void IProcessor::cancel(IProcessor::CancelReason reason) noexcept
 {
