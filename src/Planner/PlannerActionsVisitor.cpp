@@ -1016,8 +1016,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     column.name = DB::PlannerContext::createSetKey(in_first_argument->getResultType(), in_second_argument);
     column.type = std::make_shared<DataTypeSet>();
 
-    auto column_set = ColumnSet::create(1, std::move(set));
-    column.column = ColumnConst::create(std::move(column_set), 1);
+    column.column = ColumnConst::create(ColumnSet::create(1, std::move(set)), 1);
 
     actions_stack[0].addConstantIfNecessary(column.name, column, in_second_is_deterministic);
 

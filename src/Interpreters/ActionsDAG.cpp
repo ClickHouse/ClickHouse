@@ -280,16 +280,15 @@ ActionsDAG::Node ActionsDAG::createAlias(const Node & child, std::string alias)
 
 ActionsDAG::Node & ActionsDAG::addNode(Node node)
 {
-    auto & res = nodes.emplace_back(std::move(node));
-
-    if (res.type != ActionType::PLACEHOLDER)
+    if (node.type != ActionType::PLACEHOLDER)
     {
-        if (res.column && !isColumnConst(*res.column))
+        if (node.column && !isColumnConst(*node.column))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "ActionsDAG node column must be a ColumnConst, got {} for '{}'",
-                res.column->getName(), res.result_name);
+                node.column->getName(), node.result_name);
     }
 
+    auto & res = nodes.emplace_back(std::move(node));
     if (res.type == ActionType::INPUT)
         inputs.emplace_back(&res);
 
