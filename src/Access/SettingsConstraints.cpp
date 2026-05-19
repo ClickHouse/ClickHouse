@@ -543,11 +543,8 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
             return Checker(PreformattedMessage::create("Cannot modify '{}' setting in readonly mode", setting_name),
                            ErrorCodes::READONLY);
     }
-    else // For both readonly=0 and readonly=2
-    {
-        if (it == constraints.end())
-            return Checker(Settings::resolveName); // Allowed
-    }
+    if (it == constraints.end())
+        return Checker(Settings::resolveName); // Allowed — no stored Constraint, do not dereference end().
     return Checker(it->second, Settings::resolveName);
 }
 
