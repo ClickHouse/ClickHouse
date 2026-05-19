@@ -710,7 +710,11 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 if (storage->isView() && storage->as<StorageView>() && storage->as<StorageView>()->isParameterizedView())
                     throw Exception(ErrorCodes::STORAGE_REQUIRES_PARAMETER, "Parameterized view can't be queried through a Merge table.");
                 else if (const auto * alias = storage->as<StorageAlias>(); alias && !alias->tryGetTargetTable())
-                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Target table for Alias table {} does not exist", storage->getStorageID().getNameForLogs());
+                    throw Exception(
+                        ErrorCodes::UNKNOWN_TABLE,
+                        "Table {} matched by the regexp of {} is an `Alias` whose target table is missing",
+                        storage->getStorageID().getNameForLogs(),
+                        storage_merge->getStorageID().getNameForLogs());
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Table has no columns.");
             }
