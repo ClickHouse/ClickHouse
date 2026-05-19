@@ -44,6 +44,7 @@ def started_cluster():
             "test_pool_udf_sleep.py",
             "test_pool_udf_cpu.py",
             "test_pool_udf_mem.py",
+            "test_pool_udf_syscall.py",
         ):
             _copy_into_container(
                 os.path.join(SCRIPT_DIR, "user_scripts", script),
@@ -144,6 +145,17 @@ def test_cpu_user_microseconds(started_cluster):
     )
     cpu = _profile_event_value(qid, "ExecutableUserDefinedFunctionUserTimeMicroseconds")
     assert cpu > 0, f"Expected UserTimeMicroseconds > 0, got {cpu}"
+
+
+def test_system_time_microseconds(started_cluster):
+    _skip_msan()
+    qid = "syscall-1"
+    _run(
+        "SELECT count() FROM (SELECT test_pool_udf_syscall(number) FROM numbers(64))",
+        qid,
+    )
+    sys_time = _profile_event_value(qid, "ExecutableUserDefinedFunctionSystemTimeMicroseconds")
+    assert sys_time > 0, f"Expected SystemTimeMicroseconds > 0, got {sys_time}"
 
 
 def test_memory_usage_byte_seconds(started_cluster):

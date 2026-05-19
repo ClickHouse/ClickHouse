@@ -59,4 +59,19 @@
         <command_read_timeout>30000</command_read_timeout>
         <command_write_timeout>30000</command_write_timeout>
     </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_pool_udf_syscall</name>
+        <return_type>UInt64</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>test_pool_udf_syscall.py</command>
+        <pool_size>2</pool_size>
+        <max_command_execution_time>30</max_command_execution_time>
+        <command_termination_timeout>5</command_termination_timeout>
+        <command_read_timeout>30000</command_read_timeout>
+        <command_write_timeout>30000</command_write_timeout>
+    </function>
 </functions>
