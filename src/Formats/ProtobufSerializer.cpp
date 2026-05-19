@@ -2881,7 +2881,7 @@ namespace
                 writer->endMessage(/*with_length_delimiter = */ true);
         }
 
-        void reset() override
+        void resetState() override
         {
             first_call_of_write_row = true;
             first_call_of_read_row = true;

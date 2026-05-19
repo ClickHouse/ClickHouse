@@ -39,7 +39,7 @@ public:
 
     /// Drop all message-bounds tracking so the next startMessage starts fresh.
     /// Does not touch the underlying ReadBuffer.
-    void reset();
+    void resetState();
 
 private:
     void readBinary(void * data, size_t size);

@@ -39,7 +39,7 @@ ProtobufReader::ProtobufReader(ReadBuffer & in_)
 {
 }
 
-void ProtobufReader::reset()
+void ProtobufReader::resetState()
 {
     root_message_has_length_delimiter = false;
     current_message_level = 0;
