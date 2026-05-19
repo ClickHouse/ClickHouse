@@ -15,6 +15,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -74,6 +75,7 @@ struct DataFilePlan
 
     Iceberg::IcebergPathFromMetadata patched_path;
     UInt64 new_records_count = 0;
+    UInt64 new_bytes_count = 0;
 };
 
 /// Plan of compaction consists of information about all data files and what delete files should be applied for them.
@@ -284,6 +286,21 @@ static void writeDataFiles(
     const String & write_format,
     CompressionMethod write_compression_method)
 {
+    ColumnMapperPtr column_mapper;
+    {
+        auto current_schema_id = initial_plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
+        auto schemas = initial_plan.initial_metadata_object->getArray(Iceberg::f_schemas);
+        for (size_t i = 0; i < schemas->size(); ++i)
+        {
+            auto schema_object = schemas->getObject(static_cast<UInt32>(i));
+            if (schema_object->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+            {
+                column_mapper = createColumnMapper(schema_object);
+                break;
+            }
+        }
+    }
+
     for (auto & [_, data_file] : initial_plan.path_to_data_file)
     {
         auto delete_file_transform = std::make_shared<IcebergBitmapPositionDeleteTransform>(
@@ -323,8 +340,10 @@ static void writeDataFiles(
             DBMS_DEFAULT_BUFFER_SIZE,
             context->getWriteSettings());
 
-        auto output_format
-            = FormatFactory::instance().getOutputFormat(write_format, *write_buffer, *sample_block, context, format_settings);
+        FormatFilterInfoPtr output_format_filter_info
+            = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
+        auto output_format = FormatFactory::instance().getOutputFormat(
+            write_format, *write_buffer, *sample_block, context, format_settings, output_format_filter_info);
 
         while (true)
         {
@@ -347,6 +366,15 @@ static void writeDataFiles(
         output_format->flush();
         output_format->finalize();
         write_buffer->finalize();
+        auto file_bytes = write_buffer->count();
+        if (file_bytes == 0 && !data_file->patched_path.empty())
+        {
+            /// Some storage backends (e.g. Azure) don't track bytes in the write buffer.
+            /// Fall back to querying the actual object size.
+            auto obj_metadata = object_storage->getObjectMetadata(path_resolver.resolve(data_file->patched_path), /*with_tags=*/false);
+            file_bytes = obj_metadata.size_bytes;
+        }
+        data_file->new_bytes_count = file_bytes;
     }
 }
 
@@ -740,6 +768,10 @@ void writeMetadataFiles(
         std::unordered_map<std::shared_ptr<ManifestFilePlan>, size_t> grouped_by_manifest_files_partitions;
         std::unordered_map<std::shared_ptr<ManifestFilePlan>, size_t> partition_values;
 
+        std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> patched_path_to_data_file;
+        for (const auto & [_, data_file] : plan.path_to_data_file)
+            patched_path_to_data_file[data_file->patched_path] = data_file;
+
         for (size_t i = 0; i < plan.partitions.size(); ++i)
         {
             const auto & partition = plan.partitions[i];
@@ -788,12 +820,30 @@ void writeMetadataFiles(
             if (!snapshot)
                 continue;
 
+            std::vector<Iceberg::IcebergPathFromMetadata> data_files_vec(data_filenames.begin(), data_filenames.end());
+            std::vector<UInt64> file_row_counts;
+            std::vector<UInt64> file_byte_counts;
+            for (const auto & path : data_files_vec)
+            {
+                if (auto it = patched_path_to_data_file.find(path); it != patched_path_to_data_file.end())
+                {
+                    file_row_counts.push_back(it->second->new_records_count);
+                    file_byte_counts.push_back(it->second->new_bytes_count);
+                }
+                else
+                {
+                    file_row_counts.push_back(0);
+                    file_byte_counts.push_back(0);
+                }
+            }
             generateManifestFile(
                 metadata_object,
                 partition_columns,
                 plan.partition_encoder.getPartitionValue(grouped_by_manifest_files_partitions[manifest_entry]),
-                ChunkPartitioner(fields_from_partition_spec, current_schema, context, sample_block_).getResultTypes(),
-                std::vector(data_filenames.begin(), data_filenames.end()),
+                ChunkPartitioner(fields_from_partition_spec, current_schema->getArray(Iceberg::f_fields), context, sample_block_).getResultTypes(),
+                data_files_vec,
+                file_row_counts,
+                file_byte_counts,
                 manifest_entry->statistics,
                 sample_block_,
                 snapshot,

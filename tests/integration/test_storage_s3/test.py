@@ -2826,7 +2826,7 @@ def test_key_value_args(started_cluster):
     )
 
     # Check structure
-    assert "Cannot parse DateTime" in node.query_and_get_error(
+    assert "CANNOT_PARSE_DATETIME" in node.query_and_get_error(
         f"select a from s3('{url}', format = TSVRaw, access_key_id = 'minio', secret_access_key = '{minio_secret_key}', structure = 'a Int32, b DateTime') where b = '2'"
     )
 

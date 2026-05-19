@@ -50,6 +50,8 @@ void generateManifestFile(
     const std::vector<Field> & partition_values,
     const std::vector<DataTypePtr> & partition_types,
     const std::vector<Iceberg::IcebergPathFromMetadata> & data_file_names,
+    const std::vector<UInt64> & data_file_row_counts,
+    const std::vector<UInt64> & data_file_byte_counts,
     const std::optional<DataFileStatistics> & data_file_statistics,
     SharedHeader sample_block,
     Poco::JSON::Object::Ptr new_snapshot,
@@ -58,9 +60,7 @@ void generateManifestFile(
     Int64 partition_spec_id,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    /// Per-file {record_count, file_size_in_bytes} overrides. When non-empty, these values
-    /// are used instead of the snapshot summary's added-* counters (which are zero for
-    /// manifest-only rewrite snapshots and would corrupt every rewritten manifest entry).
+    std::optional<Int64> user_defined_sequence_number = std::nullopt,
     const std::vector<std::pair<Int64, Int64>> & per_file_metrics = {});
 
 void generateManifestList(
