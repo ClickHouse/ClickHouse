@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 
 #include <IO/ReadBufferFromS3.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <IO/WriteHelpers.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Requests.h>
@@ -73,7 +74,8 @@ ReadBufferFromS3::ReadBufferFromS3(
     size_t read_until_position_,
     bool restricted_seek_,
     std::optional<size_t> file_size_,
-    const S3CredentialsRefreshCallback & credentials_refresh_callback_)
+    const S3CredentialsRefreshCallback & credentials_refresh_callback_,
+    BlobStorageLogWriterPtr blob_storage_log_)
     : ReadBufferFromFileBase()
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
@@ -86,6 +88,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     , use_external_buffer(use_external_buffer_)
     , restricted_seek(restricted_seek_)
     , credentials_refresh_callback(credentials_refresh_callback_)
+    , blob_storage_log(std::move(blob_storage_log_))
 {
     file_size = file_size_;
 }
@@ -538,12 +541,39 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     // We do not know in advance how many bytes we are going to consume, to avoid blocking estimated it from below
     CurrentThread::IOSchedulingScope io_scope(read_settings.io_scheduling);
     CurrentThread::ReadThrottlingScope read_throttling_scope(read_settings.remote_throttler);
+
+    /// Measures time-to-first-byte: just the GetObject API call, not data transfer.
+    /// Each sendRequest call is logged individually, unlike HDFS/Local which aggregate.
+    Stopwatch blob_log_watch;
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
     if (outcome.IsSuccess())
-        return outcome.GetResultWithOwnership();
+    {
+        auto result = outcome.GetResultWithOwnership();
+        if (blob_storage_log)
+        {
+            size_t data_size = static_cast<size_t>(result.GetContentLength());
+            blob_storage_log->addEvent(
+                BlobStorageLogElement::EventType::Read,
+                bucket, key, /* local_path */ {},
+                data_size,
+                blob_log_watch.elapsedMicroseconds(),
+                /* error_code */ 0, /* error_message */ {});
+        }
+        return result;
+    }
 
     const auto & error = outcome.GetError();
+    if (blob_storage_log)
+    {
+        size_t data_size = range_end_incl ? (*range_end_incl - range_begin + 1) : 0;
+        blob_storage_log->addEvent(
+            BlobStorageLogElement::EventType::Read,
+            bucket, key, /* local_path */ {},
+            data_size,
+            blob_log_watch.elapsedMicroseconds(),
+            static_cast<Int32>(error.GetErrorType()), error.GetMessage());
+    }
     throw S3Exception(error.GetMessage(), error.GetErrorType());
 }
 

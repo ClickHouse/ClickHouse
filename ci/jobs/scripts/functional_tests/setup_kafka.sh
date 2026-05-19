@@ -3,6 +3,7 @@
 set -euxf -o pipefail
 
 KAFKA_BROKER=${KAFKA_BROKER:-127.0.0.1:9092}
+SCHEMA_REGISTRY_ADDR=${SCHEMA_REGISTRY_ADDR:-127.0.0.1:8081}
 
 start_redpanda() {
     rm -rf /tmp/redpanda-data
@@ -18,6 +19,7 @@ start_redpanda() {
         --advertise-kafka-addr "127.0.0.1:9092" \
         --rpc-addr "127.0.0.1:33145" \
         --advertise-rpc-addr "127.0.0.1:33145" \
+        --schema-registry-addr "${SCHEMA_REGISTRY_ADDR}" \
         --set redpanda.auto_create_topics_enabled=false \
         --set redpanda.log_segment_size=16777216 \
         > /tmp/redpanda.log 2>&1 &
@@ -28,8 +30,9 @@ wait_for_redpanda() {
     local max_attempts=60
     local attempt=0
     while [ $attempt -lt $max_attempts ]; do
-        if rpk topic list --brokers "$KAFKA_BROKER" > /dev/null 2>&1; then
-            echo "Redpanda is ready"
+        if rpk topic list --brokers "$KAFKA_BROKER" > /dev/null 2>&1 \
+            && curl -sf "http://${SCHEMA_REGISTRY_ADDR}/subjects" > /dev/null 2>&1; then
+            echo "Redpanda is ready (broker + schema registry)"
             return 0
         fi
         echo "Waiting for Redpanda to be ready (attempt $((attempt + 1))/$max_attempts)..."

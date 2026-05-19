@@ -4,7 +4,7 @@ namespace BuzzHouse
 {
 
 const std::vector<std::vector<OutFormat>> outFormats
-    = {{OutFormat::OUT_Arrow},
+    = {{OutFormat::OUT_Arrow, OutFormat::OUT_ArrowStream},
        {OutFormat::OUT_Avro},
        {OutFormat::OUT_BSONEachRow},
        {OutFormat::OUT_Buffers},
@@ -18,19 +18,20 @@ const std::vector<std::vector<OutFormat>> outFormats
         OutFormat::OUT_JSONCompactEachRow,
         OutFormat::OUT_JSONCompactEachRowWithNames,
         OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes,
+        OutFormat::OUT_JSONCompactEachRowWithProgress,
         OutFormat::OUT_JSONCompactStringsEachRow,
         OutFormat::OUT_JSONCompactStringsEachRowWithNames,
         OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes,
+        OutFormat::OUT_JSONCompactStringsEachRowWithProgress,
         OutFormat::OUT_JSONEachRow,
         OutFormat::OUT_JSONLines,
         OutFormat::OUT_JSONObjectEachRow,
         OutFormat::OUT_JSONStringsEachRow},
-       {OutFormat::OUT_LineAsString},
        {OutFormat::OUT_MsgPack},
        {OutFormat::OUT_Native},
        {OutFormat::OUT_ORC},
        {OutFormat::OUT_Parquet},
-       {OutFormat::OUT_Protobuf, OutFormat::OUT_ProtobufSingle},
+       {OutFormat::OUT_Protobuf, OutFormat::OUT_ProtobufList, OutFormat::OUT_ProtobufSingle},
        {OutFormat::OUT_RawBLOB},
        {OutFormat::OUT_RowBinary, OutFormat::OUT_RowBinaryWithNames, OutFormat::OUT_RowBinaryWithNamesAndTypes},
        {OutFormat::OUT_TabSeparated,
@@ -44,6 +45,7 @@ const std::vector<std::vector<OutFormat>> outFormats
 
 const std::unordered_map<OutFormat, InFormat> outIn
     = {{OutFormat::OUT_Arrow, InFormat::IN_Arrow},
+       {OutFormat::OUT_ArrowStream, InFormat::IN_ArrowStream},
        {OutFormat::OUT_Avro, InFormat::IN_Avro},
        {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
        {OutFormat::OUT_Buffers, InFormat::IN_Buffers},
@@ -61,19 +63,21 @@ const std::unordered_map<OutFormat, InFormat> outIn
        {OutFormat::OUT_JSONCompactEachRow, InFormat::IN_JSONCompactEachRow},
        {OutFormat::OUT_JSONCompactEachRowWithNames, InFormat::IN_JSONCompactEachRowWithNames},
        {OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes, InFormat::IN_JSONCompactEachRowWithNamesAndTypes},
+       {OutFormat::OUT_JSONCompactEachRowWithProgress, InFormat::IN_JSONCompactEachRow},
        {OutFormat::OUT_JSONCompactStringsEachRow, InFormat::IN_JSONCompactStringsEachRow},
        {OutFormat::OUT_JSONCompactStringsEachRowWithNames, InFormat::IN_JSONCompactStringsEachRowWithNames},
        {OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes, InFormat::IN_JSONCompactStringsEachRowWithNamesAndTypes},
+       {OutFormat::OUT_JSONCompactStringsEachRowWithProgress, InFormat::IN_JSONCompactStringsEachRow},
        {OutFormat::OUT_JSONEachRow, InFormat::IN_JSONEachRow},
        {OutFormat::OUT_JSONLines, InFormat::IN_JSONLines},
        {OutFormat::OUT_JSONObjectEachRow, InFormat::IN_JSONObjectEachRow},
        {OutFormat::OUT_JSONStringsEachRow, InFormat::IN_JSONStringsEachRow},
-       {OutFormat::OUT_LineAsString, InFormat::IN_LineAsString},
        {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack},
        {OutFormat::OUT_Native, InFormat::IN_Native},
        {OutFormat::OUT_ORC, InFormat::IN_ORC},
        {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
        {OutFormat::OUT_Protobuf, InFormat::IN_Protobuf},
+       {OutFormat::OUT_ProtobufList, InFormat::IN_ProtobufList},
        {OutFormat::OUT_ProtobufSingle, InFormat::IN_ProtobufSingle},
        {OutFormat::OUT_RawBLOB, InFormat::IN_RawBLOB},
        {OutFormat::OUT_RowBinary, InFormat::IN_RowBinary},
@@ -110,7 +114,7 @@ const std::vector<std::vector<InOutFormat>> inOutFormats = {
      InOutFormat::INOUT_JSONLines,
      InOutFormat::INOUT_JSONObjectEachRow,
      InOutFormat::INOUT_JSONStringsEachRow},
-    {InOutFormat::INOUT_LineAsString},
+    {InOutFormat::INOUT_CapnProto},
     {InOutFormat::INOUT_MsgPack},
     {InOutFormat::INOUT_Native},
     {InOutFormat::INOUT_Npy},
@@ -431,19 +435,44 @@ bool SQLBase::isAnyIcebergEngine() const
     return teng >= TableEngineValues::IcebergS3 && teng <= TableEngineValues::IcebergLocal;
 }
 
+bool SQLBase::isPaimonS3Engine() const
+{
+    return teng == TableEngineValues::PaimonS3;
+}
+
+bool SQLBase::isPaimonAzureEngine() const
+{
+    return teng == TableEngineValues::PaimonAzure;
+}
+
+bool SQLBase::isPaimonLocalEngine() const
+{
+    return teng == TableEngineValues::PaimonLocal;
+}
+
+bool SQLBase::isAnyPaimonEngine() const
+{
+    return teng >= TableEngineValues::PaimonS3 && teng <= TableEngineValues::PaimonLocal;
+}
+
+bool SQLBase::isAnyLakeEngine() const
+{
+    return isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyPaimonEngine();
+}
+
 bool SQLBase::isOnS3() const
 {
-    return isIcebergS3Engine() || isDeltaLakeS3Engine() || isAnyS3Engine();
+    return isIcebergS3Engine() || isDeltaLakeS3Engine() || isPaimonS3Engine() || isAnyS3Engine();
 }
 
 bool SQLBase::isOnAzure() const
 {
-    return isIcebergAzureEngine() || isDeltaLakeAzureEngine() || isAnyAzureEngine();
+    return isIcebergAzureEngine() || isDeltaLakeAzureEngine() || isPaimonAzureEngine() || isAnyAzureEngine();
 }
 
 bool SQLBase::isOnLocal() const
 {
-    return isIcebergLocalEngine() || isDeltaLakeLocalEngine();
+    return isIcebergLocalEngine() || isDeltaLakeLocalEngine() || isPaimonLocalEngine();
 }
 
 bool SQLBase::isMergeEngine() const
@@ -510,9 +539,9 @@ bool SQLBase::isNotTruncableEngine() const
 
 bool SQLBase::isEngineReplaceable() const
 {
-    return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine()
-        || isAnyAzureEngine() || isFileEngine() || isURLEngine() || isRedisEngine() || isMongoDBEngine() || isDictionaryEngine()
-        || isNullEngine() || isGenerateRandomEngine() || isArrowFlightEngine();
+    return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine()
+        || isFileEngine() || isURLEngine() || isRedisEngine() || isMongoDBEngine() || isDictionaryEngine() || isNullEngine()
+        || isGenerateRandomEngine() || isArrowFlightEngine();
 }
 
 bool SQLBase::isAnotherRelationalDatabaseEngine() const
@@ -587,11 +616,11 @@ String SQLBase::getFullName(const bool setdbname) const
 
 String SQLBase::getSparkCatalogName() const
 {
-    chassert(isAnyIcebergEngine() || isAnyDeltaLakeEngine());
+    chassert(isAnyLakeEngine());
     if (getLakeCatalog() == LakeCatalog::None)
     {
         /// DeltaLake tables on Spark must be on the `spark_catalog` :(
-        return isAnyIcebergEngine() ? getBaseName(false) : "spark_catalog";
+        return isAnyDeltaLakeEngine() ? "spark_catalog" : getBaseName(false);
     }
     return db->getSparkCatalogName();
 }
@@ -621,14 +650,14 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                         || isAzureEngine() || isS3Engine())
         && rg.nextSmallNumber() < 3;
     has_order_by = isAnyIcebergEngine() && rg.nextSmallNumber() < 4;
-    if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
+    if (isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
         /// Set bucket path first if possible
         String next_bucket_path;
         const String bname = rg.nextSmallNumber() < 4 ? name : ("t" + std::to_string(counter));
 
         /// Set integration call to use, sometimes create tables in ClickHouse, others also in Spark
-        if (has_dolor && (isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool())
+        if (has_dolor && isAnyLakeEngine() && rg.nextBool())
         {
             integration = IntegrationCall::Dolor;
         }
@@ -641,19 +670,20 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
             integration = IntegrationCall::Azurite;
         }
 
-        if (isAnyIcebergEngine() || isAnyDeltaLakeEngine())
+        if (isAnyLakeEngine())
         {
             const LakeCatalog catalog = getLakeCatalog();
 
             if (catalog == LakeCatalog::None)
             {
                 /// DeltaLake tables on Spark must be on the `spark_catalog` :(
+                /// Paimon uses `.db` suffix for database directories (e.g. test.db/)
                 next_bucket_path = fmt::format(
                     "{}{}{}{}{}{}",
                     isOnLocal() ? fc.lakes_path.generic_string() : "",
                     isOnLocal() ? "/" : "",
                     (integration == IntegrationCall::Dolor) ? getSparkCatalogName() : "",
-                    (integration == IntegrationCall::Dolor) ? "/test/" : "",
+                    (integration == IntegrationCall::Dolor) ? (isAnyPaimonEngine() ? "/test.db/" : "/test/") : "",
                     bname,
                     rg.nextBool() ? "/" : "");
             }
@@ -771,18 +801,19 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         /// What Delta Lake supports
         file_format = rg.nextMediumNumber() < 91 ? INOUT_Parquet : rg.pickRandomly(rg.pickRandomly(inOutFormats));
     }
-    else if (isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine() || isKafkaEngine())
+    else if (isAnyPaimonEngine() && rg.nextMediumNumber() < 91)
     {
-        /// Set other parameters
-        if (isFileEngine() || rg.nextMediumNumber() < 91)
-        {
-            /// At the moment give more preference for Parquet
-            file_format = rg.nextMediumNumber() < 26 ? INOUT_Parquet : rg.pickRandomly(rg.pickRandomly(inOutFormats));
-        }
-        if (!isKafkaEngine() && rg.nextMediumNumber() < 51)
-        {
-            file_comp = rg.pickRandomly(compressionMethods);
-        }
+        static const std::vector<InOutFormat> formats = {InOutFormat::INOUT_ORC, InOutFormat::INOUT_Parquet};
+        file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(rg.pickRandomly(inOutFormats));
+    }
+    else if (isFileEngine() || ((isAnyS3Engine() || isAnyAzureEngine() || isURLEngine() || isKafkaEngine()) && rg.nextMediumNumber() < 91))
+    {
+        /// At the moment give more preference for Parquet
+        file_format = rg.nextMediumNumber() < 26 ? INOUT_Parquet : rg.pickRandomly(rg.pickRandomly(inOutFormats));
+    }
+    if ((isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine()) && rg.nextMediumNumber() < 41)
+    {
+        file_comp = rg.pickRandomly(compressionMethods);
     }
     if ((isS3Engine() || isAzureEngine()) && rg.nextMediumNumber() < 21)
     {
@@ -830,9 +861,11 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
 
 String SQLBase::getTablePath() const
 {
+    /// Only engines that own a `bucket_path` should be calling this. Object-storage queues
+    /// (S3Queue, AzureQueue) are covered by isAnyS3Engine()/isAnyAzureEngine().
     chassert(
-        isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isKeeperMapEngine()
-        || isArrowFlightEngine() || isFileEngine() || isURLEngine());
+        isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isKeeperMapEngine() || isArrowFlightEngine() || isFileEngine()
+        || isURLEngine());
     return bucket_path.has_value() ? bucket_path.value() : "test";
 }
 
@@ -873,7 +906,7 @@ String SQLBase::getTablePath(RandomGenerator & rg, const bool allow_not_determin
         }
         return res;
     }
-    if ((isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 4)
+    if (isAnyLakeEngine() && allow_not_deterministic && rg.nextSmallNumber() < 4)
     {
         /// Add or remove '/'
         String res = bucket_path.has_value() ? bucket_path.value() : "test";
@@ -969,8 +1002,7 @@ bool SQLTable::hasVersionColumn() const
 bool SQLTable::areInsertsAppends() const
 {
     return teng == TableEngineValues::MergeTree || isLogFamily() || isMemoryEngine() || isMySQLEngine() || isPostgreSQLEngine()
-        || isSQLiteEngine() || isMongoDBEngine() || isRedisEngine() || isHudiEngine() || isAnyDeltaLakeEngine() || isAnyIcebergEngine()
-        || isDictionaryEngine();
+        || isSQLiteEngine() || isMongoDBEngine() || isRedisEngine() || isHudiEngine() || isAnyLakeEngine() || isDictionaryEngine();
 }
 
 bool SQLView::supportsFinal() const
