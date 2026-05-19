@@ -429,17 +429,20 @@ if __name__ == "__main__":
             # there is something coverage-related to report:
             #   - the diff HTML report was generated (C/C++ source files changed), OR
             #   - LBC was detected (tests removed -> baseline coverage lost), OR
-            #   - tests were added/modified (changes overall coverage even without C/C++ edits).
-            # Pure non-C++/non-test PRs (scripts, Docker, configs, docs) produce none of
-            # these and should not generate a comment.
+            #   - the production binary is unchanged AND we have both .info files
+            #     (a tests-only or CI-scripts-only PR — the global delta is the
+            #     signal, and if tests changed the newly-covered analysis above
+            #     supplies the actionable detail).
+            # PRs that don't fall in any of those buckets (e.g. contrib-only) get
+            # no comment.
             _has_coverage_data = (
                 _diff_ran
                 or _lbc_lines > 0
                 or _lbc_fns > 0
-                or (_tests_changed and _global_stats_available)
+                or (_binary_unchanged and _global_stats_available)
             )
             if not _has_coverage_data:
-                print("No C/C++ source files changed, no test changes, and no lost baseline coverage — skipping coverage comment.")
+                print("No coverage-relevant changes detected (no C/C++ source, no test changes, no LBC) — skipping coverage comment.")
             else:
                 # When _diff_ran is False (LBC-only or tests-only PR), fetch the global
                 # percentages from the .info files that were downloaded during the diff
