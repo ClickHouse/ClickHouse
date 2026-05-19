@@ -37,7 +37,7 @@ void ASTShowColumnsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettin
         ostr
 
             << (not_like ? " NOT" : "")
-            << (case_insensitive_like ? " ILIKE " : " LIKE")
+            << (case_insensitive_like ? " ILIKE " : " LIKE ")
             << quoteString(like);
     }
 
