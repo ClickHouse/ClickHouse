@@ -195,8 +195,9 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
         {
             case FileLikeEngineDefaultPartitionStrategy::WILDCARD:
             {
-                if (getRawPath().hasPartitionWildcard())
-                    partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+                /// Set the strategy unconditionally; `PartitionStrategyFactory::get` will raise
+                /// `BAD_ARGUMENTS` if the path is missing the `{_partition_id}` placeholder.
+                partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
                 break;
             }
             case FileLikeEngineDefaultPartitionStrategy::HIVE:
@@ -205,6 +206,12 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
                 break;
             }
         }
+
+        /// The default for `partition_columns_in_data_file` was computed at parse time against
+        /// `partition_strategy_type == NONE`. Recompute it now that the effective strategy is known,
+        /// unless the user provided an explicit value.
+        if (!partition_columns_in_data_file_was_set)
+            partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
     }
 
     partition_strategy = PartitionStrategyFactory::get(
@@ -327,6 +334,7 @@ void StorageObjectStorageConfiguration::initializeFromParsedArguments(const Stor
     structure = parsed_arguments.structure;
     partition_strategy_type = parsed_arguments.partition_strategy_type;
     partition_columns_in_data_file = parsed_arguments.partition_columns_in_data_file;
+    partition_columns_in_data_file_was_set = parsed_arguments.partition_columns_in_data_file_was_set;
     partition_strategy = parsed_arguments.partition_strategy;
 }
 }
