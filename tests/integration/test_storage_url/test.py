@@ -325,6 +325,15 @@ def test_url_wildcard_preserves_source_query_for_directory_listing():
     assert result.strip() == "13"
 
 
+def test_url_wildcard_deduplicates_after_source_query_inheritance():
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT sum(x) FROM url('http://resolver:8087/data/source_query_duplicate/**/part*.tsv?token=abc', 'TSV', 'x UInt64')"
+        )
+    )
+    assert result.strip() == "17"
+
+
 def test_url_wildcard_preserves_failover_options():
     result = node1.query(
         with_url_wildcard_setting(

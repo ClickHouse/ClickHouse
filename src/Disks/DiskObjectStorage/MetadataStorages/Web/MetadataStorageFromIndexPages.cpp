@@ -88,6 +88,19 @@ namespace
             R"((https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+|(?:\.\./|\.?/)?[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+))");
         return regex;
     }
+
+    std::string getEffectiveRelativePathForDeduplication(const std::string & relative, const std::string & source_url)
+    {
+        Poco::URI relative_uri(relative, false);
+        const Poco::URI source_uri(source_url, false);
+
+        if (relative_uri.getRawQuery().empty())
+            relative_uri.setQuery(source_uri.getRawQuery());
+        if (relative_uri.getFragment().empty())
+            relative_uri.setFragment(source_uri.getFragment());
+
+        return relative_uri.toString();
+    }
 }
 
 MetadataStorageFromIndexPages::MetadataStorageFromIndexPages(const WebObjectStorage & object_storage_)
@@ -203,10 +216,11 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
     const std::string & page_body,
     const std::string & listing_url,
     const std::string & base_url,
+    const std::string & source_url,
     const std::string & path) const
 {
     std::vector<std::string> result;
-    std::unordered_set<std::string> seen_relative;
+    std::unordered_set<std::string> seen_effective_relative;
     const auto & regex = getURLRegex();
     const Poco::URI listing_uri(listing_url, false);
     const Poco::URI base_uri(base_url, false);
@@ -258,7 +272,7 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
         if (!relative.starts_with(path))
             continue;
 
-        if (!seen_relative.emplace(relative).second)
+        if (!seen_effective_relative.emplace(getEffectiveRelativePathForDeduplication(relative, source_url)).second)
             continue;
 
         found_valid_href_url = true;
@@ -306,7 +320,7 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
             if (!relative.starts_with(path))
                 continue;
 
-            if (!seen_relative.emplace(relative).second)
+            if (!seen_effective_relative.emplace(getEffectiveRelativePathForDeduplication(relative, source_url)).second)
                 continue;
 
             result.push_back(relative);
@@ -332,7 +346,12 @@ bool MetadataStorageFromIndexPages::tryListDirectory(const std::string & path, s
         try
         {
             auto body = readIndexPage(listing_url);
-            result = extractURLs(body, listing_url, url_options[i].base_url, path_prefix);
+            result = extractURLs(
+                body,
+                listing_url,
+                url_options[i].base_url,
+                url_options[i].base_url + url_options[i].query_fragment,
+                path_prefix);
             return true;
         }
         catch (const HTTPException & e)

@@ -22,6 +22,7 @@ private:
         const std::string & page_body,
         const std::string & listing_url,
         const std::string & base_url,
+        const std::string & source_url,
         const std::string & path) const;
 
     bool tryListDirectory(const std::string & path, std::vector<std::string> & result) const;
