@@ -106,7 +106,12 @@ public:
                     "Cannot reinterpret {} as {} because only String or FixedString can be reinterpreted as array",
                     from_type->getName(),
                     to_type->getName());
-            if (!to_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+
+            /// LowCardinality delegates type-level queries to its inner type, so the contiguous-memory
+            /// check above is satisfied for e.g. Array(LowCardinality(Int32)), but the column itself
+            /// is not fixed and contiguous and cannot accept `insertData`. Reject it explicitly.
+            const auto & nested_type = typeid_cast<const DataTypeArray &>(*to_type).getNestedType();
+            if (!to_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion() || nested_type->lowCardinality())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Cannot reinterpret {} as {} because the array element type is not fixed length",
                     from_type->getName(),

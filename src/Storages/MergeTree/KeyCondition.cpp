@@ -1452,6 +1452,11 @@ bool applyFunctionChainToColumn(
     else
     {
         result_column = castColumnAccurateOrNull({result_column, result_type, ""}, in_argument_type);
+        /// `castColumnAccurateOrNull` is implemented on top of `FunctionCast` whose wrappers can
+        /// return `ColumnConst` for a 1-row input — same hazard as the post-`func->execute` case
+        /// below. Unwrap defensively so the `assert_cast<const ColumnNullable &>` always sees a
+        /// plain `ColumnNullable`.
+        result_column = result_column->convertToFullColumnIfConst();
         const auto & result_column_nullable = assert_cast<const ColumnNullable &>(*result_column);
         const auto & null_map_data = result_column_nullable.getNullMapData();
         for (char8_t i : null_map_data)
@@ -1538,6 +1543,14 @@ bool applyFunctionChainToColumn(
         }
         result_column = func->execute({{exec_column, original_argument_type, ""}}, func_result_type, exec_column->size(), /* dry_run = */ false);
         result_column = result_column->convertToFullColumnIfLowCardinality();
+        /// `func->execute` may return `ColumnConst(ColumnNullable(...))` when the function collapses
+        /// a 1-row input to a single constant value — e.g. `floor(NULL, x)` always yields NULL.
+        /// `ColumnConst::isNullable` reports the wrapped column's nullability, so the
+        /// `isNullable()` check below would succeed while `assert_cast<const ColumnNullable &>`
+        /// fails on the outer `ColumnConst`. Strip the outer `Const` here to keep the column
+        /// shape in sync with `result_type` and with the post-strip invariant established at the
+        /// top of this function.
+        result_column = result_column->convertToFullColumnIfConst();
         result_type = removeLowCardinality(func_result_type);
 
         // Transforming nullable columns to the nested ones, in case no nulls found.
@@ -4673,9 +4686,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
             size_t key_column = element.getKeyColumn();
             if (key_column >= hyperrectangle.size())
             {
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                "Hyperrectangle size is {}, but requested element at position {} ({})",
-                                hyperrectangle.size(), key_column, element.toString());
+                rpn_stack.emplace_back(true, true);
+                continue;
             }
 
             /// Avoid copying Range when there is no monotonic function chain (the common case).
@@ -4776,6 +4788,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
               */
 
             size_t key_column = element.getKeyColumn();
+            if (key_column >= hyperrectangle.size())
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
             Range key_range = hyperrectangle[key_column];
 
             /// The only possible result type of a space filling curve is UInt64.
@@ -4878,6 +4896,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 return applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const Field &>(ref));
             };
 
+            if (element.key_columns[0] >= hyperrectangle.size() || element.key_columns[1] >= hyperrectangle.size())
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
             const auto & range_x = hyperrectangle[element.key_columns[0]];
             const auto & range_y = hyperrectangle[element.key_columns[1]];
 
@@ -4922,7 +4946,14 @@ BoolMask KeyCondition::checkInHyperrectangle(
             element.function == RPNElement::FUNCTION_IS_NULL
             || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
         {
-            const Range * key_range = &hyperrectangle[element.getKeyColumn()];
+            size_t key_column = element.getKeyColumn();
+            if (key_column >= hyperrectangle.size())
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            const Range * key_range = &hyperrectangle[key_column];
 
             /// No need to apply monotonic functions as nulls are kept.
             bool intersects = element.range.intersectsRange(*key_range);

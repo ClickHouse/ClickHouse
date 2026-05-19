@@ -238,7 +238,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
             new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
     }
 
-    if (settings[Setting::max_execution_time_leaf].value > 0)
+    if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
     {
         /// Replace 'max_execution_time' of this sub-query with 'max_execution_time_leaf' and 'timeout_overflow_mode'
         /// with 'timeout_overflow_mode_leaf'

@@ -1428,7 +1428,8 @@ void forEachAvroEntry(
     auto manifest_list_buf = createReadBuffer(relative_path_with_metadata, object_storage, context, getLogger(logger_name));
 
     auto input_stream = std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf);
-    avro::DataFileReader<avro::GenericDatum> reader(std::move(input_stream));
+    auto reader_base = std::make_unique<avro::DataFileReaderBase>(std::move(input_stream), MAX_AVRO_SCHEMA_DEPTH);
+    avro::DataFileReader<avro::GenericDatum> reader(std::move(reader_base));
 
     avro::GenericDatum datum(reader.readerSchema());
     while (reader.read(datum))

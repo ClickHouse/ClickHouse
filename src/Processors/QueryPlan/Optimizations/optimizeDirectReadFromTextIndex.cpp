@@ -421,8 +421,16 @@ private:
                 continue;
 
             auto search_query = text_index_condition.createTextSearchQuery(canonical_node);
-            if (!search_query || search_query->direct_read_mode == TextIndexDirectReadMode::None)
+            if (!search_query)
                 continue;
+
+            /// For None mode, the condition is still needed for preprocessing (tokenizer/preprocessor injection).
+            if (search_query->direct_read_mode == TextIndexDirectReadMode::None)
+            {
+                selected_conditions.emplace_back(search_query, index_name, String{}, &info);
+                used_index_columns.insert(index_header.begin()->name);
+                continue;
+            }
 
             auto virtual_column_name = text_index_condition.replaceToVirtualColumn(*search_query, index_name);
             if (!virtual_column_name)
@@ -541,7 +549,8 @@ private:
 
             /// Convert needles to array if they are a string by applying a tokenizer.
             /// For hasPhrase the phrase must stay as a string — tokenization is done inside hasPhrase itself.
-            if (function_name != "hasPhrase" && needles_field.getType() == Field::Types::String)
+            const bool convert_needle_to_array = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
+            if (convert_needle_to_array && needles_field.getType() == Field::Types::String)
             {
                 std::vector<String> needles_array;
                 const auto & needles_string = needles_field.safeGet<String>();
@@ -569,11 +578,21 @@ private:
     /// Optimizes text-search functions by replacing them with virtual columns.
     void replaceFunctionsToVirtualColumns(
         NodeReplacement & replacement,
-        const std::vector<SelectedCondition> & selected_conditions,
+        const std::vector<SelectedCondition> & all_conditions,
         std::unordered_map<String, const ActionsDAG::Node *> & virtual_column_to_node,
         const ContextPtr & context)
     {
         const auto & function_node = *replacement.node;
+
+        std::vector<SelectedCondition> selected_conditions;
+        for (const auto & condition : all_conditions)
+        {
+            if (condition.search_query->direct_read_mode != TextIndexDirectReadMode::None)
+                selected_conditions.push_back(condition);
+        }
+        if (selected_conditions.empty())
+            return;
+
         bool has_exact_search = false;
         bool has_materialized_index = false;
 
