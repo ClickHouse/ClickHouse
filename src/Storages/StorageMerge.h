@@ -58,7 +58,7 @@ public:
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const override;
+    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
 
     void read(
         QueryPlan & query_plan,
@@ -180,7 +180,7 @@ public:
     const StorageListWithLocks & getSelectedTables();
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(InputOrderInfoPtr order_info_);
+    bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
@@ -196,9 +196,6 @@ private:
 
     StorageListWithLocks selected_tables;
     Names all_column_names;
-    Names column_names;
-    bool has_database_virtual_column;
-    bool has_table_virtual_column;
     StoragePtr storage_merge;
     StorageSnapshotPtr merge_storage_snapshot;
 
@@ -284,12 +281,6 @@ private:
         ContextMutablePtr modified_context,
         size_t streams_num) const;
 
-    void addVirtualColumns(
-        ChildPlan & child,
-        SelectQueryInfo & modified_query_info,
-        QueryProcessingStage::Enum processed_stage,
-        const StorageWithLockAndName & storage_with_lock) const;
-
     QueryPipelineBuilderPtr buildPipeline(
         ChildPlan & child,
         QueryProcessingStage::Enum processed_stage) const;
@@ -305,9 +296,7 @@ private:
         bool is_smallest_column_requested);
 
     StorageMerge::StorageListWithLocks getSelectedTables(
-        ContextPtr query_context,
-        bool filter_by_database_virtual_column,
-        bool filter_by_table_virtual_column) const;
+        ContextPtr query_context) const;
 };
 
 }
