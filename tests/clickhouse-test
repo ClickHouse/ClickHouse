@@ -1559,6 +1559,12 @@ class SettingsRandomizer:
             random_settings["parallel_replicas_local_plan"] = 1
             random_settings["parallel_replicas_for_non_replicated_merge_tree"] = 1
 
+        # The distributed-plan + parallel-replicas CI job exercises a path that only
+        # works with `parallel_replicas_local_plan = 1`; pin it so the randomizer
+        # cannot pick 0 and trip the still-not-implemented remote-plan execution.
+        if args.no_parallel_replicas and args.distributed_plan:
+            random_settings["parallel_replicas_local_plan"] = 1
+
     @staticmethod
     def get_random_settings(args, tags):
         random_settings = {}
