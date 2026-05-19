@@ -820,7 +820,12 @@ void MemoryWorker::setDirtyDecayForAllArenas(size_t decay_ms)
 
         /// Now update all EXISTING arenas
         /// Query how many arenas currently exist
-        unsigned narenas = Jemalloc::getValue<unsigned>("arenas.narenas");
+        unsigned narenas = 0;
+        if (!Jemalloc::tryGetValue("arenas.narenas", narenas))
+        {
+            LOG_TRACE(log, "jemalloc mallctl arenas.narenas unavailable; skipping per-arena dirty_decay_ms update");
+            return;
+        }
 
         /// Iterate through each arena and set its dirty_decay_ms
         for (unsigned i = 0; i < narenas; ++i)
