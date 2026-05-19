@@ -17,6 +17,7 @@ struct ProfileEventsSnapshot
     CountersIncrement counters;
     Int64 memory_usage;
     Int64 peak_memory_usage;
+    Int64 temp_data_on_disk_usage;
     time_t current_time;
 };
 

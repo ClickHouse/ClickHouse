@@ -1195,6 +1195,8 @@ void LocalServer::processConfig()
 
     server_display_name = getClientConfiguration().getString("display_name", "");
 
+    rainbow_parentheses = getClientConfiguration().getBool("rainbow_parentheses", true);
+
     if (getClientConfiguration().has("prompt"))
         prompt = getClientConfiguration().getString("prompt");
     else if (getClientConfiguration().has("prompt_by_server_display_name.default"))

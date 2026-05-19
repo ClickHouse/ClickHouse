@@ -89,6 +89,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_column_name_matching_mode", "match_case", "auto", "Match input column names case-sensitively first and fall back to case-insensitive matching, instead of requiring an exact case match."},
             {"optimize_final_limit_pushdown", false, false, "New setting to push LIMIT into FINAL merge algorithms for early termination"},
             {"optimize_final_sequential_partitions", false, false, "New setting to enable sequential partition processing for FINAL queries with LIMIT using minmax index ordering"},
+            {"iceberg_data_file_size_lower_threshold_compaction", 10_MiB, 10_MiB, "New setting"},
+            {"iceberg_data_file_size_upper_threshold_compaction", 10_GiB, 10_GiB, "New setting"},
+            {"iceberg_max_number_datafiles_to_compact", 1000, 1000, "New setting"},
+            {"iceberg_compaction_delay_bias", 60 * 60 * 3, 60 * 60 * 3, "New setting"},
+            {"allow_experimental_cleanup_old_data_files_compaction", false, false, "New setting"},
+            {"iceberg_compaction_data_cleanup", 60 * 60 * 3, 60 * 60 * 3, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
