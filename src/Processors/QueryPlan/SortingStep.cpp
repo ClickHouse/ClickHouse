@@ -335,7 +335,7 @@ void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
             key_columns.push_back(stream_header->getPositionByName(col.column_name));
         }
 
-        pipeline.transform([&](OutputPortRawPtrs ports)
+        pipeline.transform([&](const OutputPortRawPtrs & ports)
         {
             Processors processors;
             for (auto * port : ports)
@@ -349,7 +349,7 @@ void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
 
         if (streams > 1)
         {
-            pipeline.transform([&](OutputPortRawPtrs ports)
+            pipeline.transform([&](const OutputPortRawPtrs & ports)
             {
                 Processors processors;
                 for (size_t i = 0; i < threads; ++i)
