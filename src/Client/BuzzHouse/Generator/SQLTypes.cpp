@@ -1520,7 +1520,7 @@ String AggregateFunctionType::typeName(const bool escape, const bool simplified)
     String buf = simple ? "Simple" : "";
 
     buf += "AggregateFunction(";
-    buf += SQLFunc_Name(aggregate).substr(4);
+    buf += aggregate;
     for (const auto & entry : subtypes)
     {
         buf += ",";
@@ -1559,7 +1559,7 @@ std::unique_ptr<SQLType> AggregateFunctionType::typeDeepCopy() const
 
 String AggregateFunctionType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const
 {
-    String ret = SQLFunc_Name(aggregate).substr(4);
+    String ret = aggregate;
 
     ret += "State(";
     if (!subtypes.empty())
@@ -1573,7 +1573,7 @@ String AggregateFunctionType::appendRandomRawValue(RandomGenerator & rg, Stateme
 String AggregateFunctionType::insertNumberEntry(
     RandomGenerator & rg, StatementGenerator & gen, const uint32_t max_strlen, const uint32_t max_nested_rows) const
 {
-    String ret = SQLFunc_Name(aggregate).substr(4);
+    String ret = aggregate;
 
     ret += "State(";
     if (!subtypes.empty())
@@ -1867,34 +1867,34 @@ std::unique_ptr<SQLType> StatementGenerator::randomAggregateType(RandomGenerator
     uint32_t col_counter2 = 0;
     std::vector<std::unique_ptr<SQLType>> subtypes;
     AggregateFunction * af = tp ? tp->mutable_aggr() : nullptr;
-    static const std::vector<SQLFunc> available_aggrs
-        = {SQLFunc::FUNCany,
-           SQLFunc::FUNCanyLast,
-           SQLFunc::FUNCavg,
-           SQLFunc::FUNCcount,
-           SQLFunc::FUNCgroupArrayArray,
-           SQLFunc::FUNCgroupBitAnd,
-           SQLFunc::FUNCgroupBitOr,
-           SQLFunc::FUNCgroupBitXor,
-           SQLFunc::FUNCgroupUniqArrayArray,
-           SQLFunc::FUNCgroupUniqArrayArrayMap,
-           SQLFunc::FUNCmax,
-           SQLFunc::FUNCmaxMap,
-           SQLFunc::FUNCmaxMappedArrays,
-           SQLFunc::FUNCmin,
-           SQLFunc::FUNCminMap,
-           SQLFunc::FUNCminMappedArrays,
-           SQLFunc::FUNCsum,
-           SQLFunc::FUNCsumMap,
-           SQLFunc::FUNCsumMappedArrays,
-           SQLFunc::FUNCsumWithOverflow};
-    SQLFunc aggr = rg.pickRandomly(available_aggrs);
+    static const std::vector<std::string> available_aggrs
+        = {"any",
+           "anyLast",
+           "avg",
+           "count",
+           "groupArrayArray",
+           "groupBitAnd",
+           "groupBitOr",
+           "groupBitXor",
+           "groupUniqArrayArray",
+           "groupUniqArrayArrayMap",
+           "max",
+           "maxMap",
+           "maxMappedArrays",
+           "min",
+           "minMap",
+           "minMappedArrays",
+           "sum",
+           "sumMap",
+           "sumMappedArrays",
+           "sumWithOverflow"};
+    std::string aggr = rg.pickRandomly(available_aggrs);
 
-    if (aggr == SQLFunc::FUNCcount && (simple || this->depth >= this->fc.max_depth))
+    if (aggr == "count" && (simple || this->depth >= this->fc.max_depth))
     {
-        aggr = SQLFunc::FUNCany;
+        aggr = "any";
     }
-    if (aggr != SQLFunc::FUNCcount)
+    if (aggr != "count")
     {
         this->depth++;
         subtypes.emplace_back(
@@ -1906,7 +1906,7 @@ std::unique_ptr<SQLType> StatementGenerator::randomAggregateType(RandomGenerator
         af->set_simple(simple);
         af->set_aggr(aggr);
     }
-    return std::make_unique<AggregateFunctionType>(simple, aggr, std::move(subtypes));
+    return std::make_unique<AggregateFunctionType>(simple, std::move(aggr), std::move(subtypes));
 }
 
 std::unique_ptr<SQLType>

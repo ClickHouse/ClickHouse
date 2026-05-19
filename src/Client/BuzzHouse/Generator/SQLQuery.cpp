@@ -587,7 +587,7 @@ void StatementGenerator::addRandomRelation(RandomGenerator & rg, const std::opti
     {
         /// Use generateRandomStructure function
         SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-        sfc->mutable_func()->set_catalog_func(FUNCgenerateRandomStructure);
+        sfc->mutable_func()->set_catalog_func("generateRandomStructure");
 
         /// Number of columns parameter
         sfc->add_args()->mutable_expr()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(static_cast<uint64_t>(ncols));
@@ -1367,28 +1367,28 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
     }
 }
 
-static const std::unordered_map<BinaryOperator, SQLFunc> binopToFunc{
-    {BinaryOperator::BINOP_LE, SQLFunc::FUNCless},
-    {BinaryOperator::BINOP_LEQ, SQLFunc::FUNClessOrEquals},
-    {BinaryOperator::BINOP_GR, SQLFunc::FUNCgreater},
-    {BinaryOperator::BINOP_GREQ, SQLFunc::FUNCgreaterOrEquals},
-    {BinaryOperator::BINOP_EQ, SQLFunc::FUNCequals},
-    {BinaryOperator::BINOP_EQEQ, SQLFunc::FUNCequals},
-    {BinaryOperator::BINOP_NOTEQ, SQLFunc::FUNCnotEquals},
-    {BinaryOperator::BINOP_LEGR, SQLFunc::FUNCnotEquals},
-    {BinaryOperator::BINOP_LEEQGR, SQLFunc::FUNCisNotDistinctFrom},
-    {BinaryOperator::BINOP_IS_DISTINCT_FROM, SQLFunc::FUNCisDistinctFrom},
-    {BinaryOperator::BINOP_IS_NOT_DISTINCT_FROM, SQLFunc::FUNCisNotDistinctFrom},
-    {BinaryOperator::BINOP_AND, SQLFunc::FUNCand},
-    {BinaryOperator::BINOP_OR, SQLFunc::FUNCor},
-    {BinaryOperator::BINOP_CONCAT, SQLFunc::FUNCconcat},
-    {BinaryOperator::BINOP_STAR, SQLFunc::FUNCmultiply},
-    {BinaryOperator::BINOP_SLASH, SQLFunc::FUNCdivide},
-    {BinaryOperator::BINOP_PERCENT, SQLFunc::FUNCmodulo},
-    {BinaryOperator::BINOP_PLUS, SQLFunc::FUNCplus},
-    {BinaryOperator::BINOP_MINUS, SQLFunc::FUNCminus},
-    {BinaryOperator::BINOP_DIV, SQLFunc::FUNCdivide},
-    {BinaryOperator::BINOP_MOD, SQLFunc::FUNCmodulo}};
+static const std::unordered_map<BinaryOperator, std::string> binopToFunc{
+    {BinaryOperator::BINOP_LE, "less"},
+    {BinaryOperator::BINOP_LEQ, "lessOrEquals"},
+    {BinaryOperator::BINOP_GR, "greater"},
+    {BinaryOperator::BINOP_GREQ, "greaterOrEquals"},
+    {BinaryOperator::BINOP_EQ, "equals"},
+    {BinaryOperator::BINOP_EQEQ, "equals"},
+    {BinaryOperator::BINOP_NOTEQ, "notEquals"},
+    {BinaryOperator::BINOP_LEGR, "notEquals"},
+    {BinaryOperator::BINOP_LEEQGR, "isNotDistinctFrom"},
+    {BinaryOperator::BINOP_IS_DISTINCT_FROM, "isDistinctFrom"},
+    {BinaryOperator::BINOP_IS_NOT_DISTINCT_FROM, "isNotDistinctFrom"},
+    {BinaryOperator::BINOP_AND, "and"},
+    {BinaryOperator::BINOP_OR, "or"},
+    {BinaryOperator::BINOP_CONCAT, "concat"},
+    {BinaryOperator::BINOP_STAR, "multiply"},
+    {BinaryOperator::BINOP_SLASH, "divide"},
+    {BinaryOperator::BINOP_PERCENT, "modulo"},
+    {BinaryOperator::BINOP_PLUS, "plus"},
+    {BinaryOperator::BINOP_MINUS, "minus"},
+    {BinaryOperator::BINOP_DIV, "divide"},
+    {BinaryOperator::BINOP_MOD, "modulo"}};
 
 void StatementGenerator::addJoinClause(RandomGenerator & rg, Expr * expr)
 {
@@ -1547,7 +1547,7 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, JoinConstr
                     /// Sometimes do the function call instead
                     SQLFuncCall * sfc = clause_target->mutable_comp_expr()->mutable_func_call();
 
-                    sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCnot);
+                    sfc->mutable_func()->set_catalog_func("not");
                     clause_target = sfc->add_args()->mutable_expr();
                 }
             }
@@ -1687,8 +1687,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             {
                 /// Sometimes do the function call instead
                 SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-                static const auto nullFuncs
-                    = {SQLFunc::FUNCisNull, SQLFunc::FUNCisNullable, SQLFunc::FUNCisNotNull, SQLFunc::FUNCisZeroOrNull};
+                static const auto nullFuncs = {"isNull", "isNullable", "isNotNull", "isZeroOrNull"};
 
                 sfc->mutable_func()->set_catalog_func(rg.pickRandomly(nullFuncs));
                 isexpr = sfc->add_args()->mutable_expr();
@@ -1715,8 +1714,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             {
                 /// Sometimes do the function call instead
                 SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-                static const auto likeFuncs
-                    = {SQLFunc::FUNClike, SQLFunc::FUNCnotLike, SQLFunc::FUNCilike, SQLFunc::FUNCnotILike, SQLFunc::FUNCmatch};
+                static const auto likeFuncs = {"like", "notLike", "ilike", "notILike", "match"};
 
                 sfc->mutable_func()->set_catalog_func(rg.pickRandomly(likeFuncs));
                 expr1 = sfc->add_args()->mutable_expr();
@@ -1773,7 +1771,7 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             {
                 /// Sometimes do the function call instead
                 SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-                static const auto inFuncs = {SQLFunc::FUNCin, SQLFunc::FUNCnotIn, SQLFunc::FUNCglobalIn, SQLFunc::FUNCglobalNotIn};
+                static const auto inFuncs = {"in", "notIn", "globalIn", "globalNotIn"};
 
                 sfc->mutable_func()->set_catalog_func(rg.pickRandomly(inFuncs));
                 expr1 = sfc->add_args()->mutable_expr();
@@ -1870,7 +1868,7 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
                     /// Sometimes do the function call instead
                     SQLFuncCall * sfc = clause_target->mutable_comp_expr()->mutable_func_call();
 
-                    sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCnot);
+                    sfc->mutable_func()->set_catalog_func("not");
                     clause_target = sfc->add_args()->mutable_expr();
                 }
             }

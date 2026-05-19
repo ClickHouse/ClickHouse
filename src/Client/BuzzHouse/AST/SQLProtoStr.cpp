@@ -1001,7 +1001,7 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
 
             ret += af.simple() ? "Simple" : "";
             ret += "AggregateFunction(";
-            ret += SQLFunc_Name(af.aggr()).substr(4);
+            ret += af.aggr();
             for (int i = 0; i < af.types_size(); i++)
             {
                 ret += ", ";
@@ -1415,7 +1415,7 @@ CONV_FN(SQLFuncName, sfn)
 {
     if (sfn.has_catalog_func())
     {
-        ret += SQLFunc_Name(sfn.catalog_func()).substr(4);
+        ret += sfn.catalog_func();
     }
     else if (sfn.has_function())
     {
