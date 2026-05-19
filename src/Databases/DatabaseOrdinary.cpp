@@ -502,7 +502,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
             SCOPE_EXIT(TransactionLog::decreaseAsyncTablesLoadingJobNumber(););
             loadTableFromMetadata(local_context, file_path, name, ast, mode);
             /// Add plain view dependencies only after successful attach (failed attach must not leave dependencies in the catalog).
-            auto ref_deps = getDependenciesFromCreateQuery(local_context->getGlobalContext(), name, ast, local_context->getCurrentDatabase(), /* can_throw */ false, /* validate_current_database */ false);
+            auto ref_deps = getDependenciesFromCreateQuery(local_context->getGlobalContext(), name, ast, name.database, /* can_throw */ false, /* validate_current_database */ false);
             if (!ref_deps.plain_view_dependencies.empty())
                 DatabaseCatalog::instance().addPlainViewDependencies(name, ref_deps.plain_view_dependencies);
         });
