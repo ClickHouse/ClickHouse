@@ -13,6 +13,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Common/Logger.h>
 #include <Common/ThreadPool.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
@@ -324,7 +325,7 @@ private:
     AggregateFunctionsPlainPtrs aggregate_functions;
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
-    using NestedColumnsHolder = std::vector<std::vector<const IColumn *>>;
+    using NestedColumnsHolder = VectorWithMemoryTracking<VectorWithMemoryTracking<const IColumn *>>;
 
     Sizes offsets_of_aggregate_states;    /// The offset to the n-th aggregate function in a row of aggregate functions.
     size_t total_size_of_aggregate_states = 0;    /// The total size of the row from the aggregate functions.

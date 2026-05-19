@@ -10,6 +10,7 @@
 
 #include <Common/SharedMutex.h>
 #include <Common/StopToken.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -106,7 +107,7 @@ public:
     bool dropIfExists(const String & function_name);
 
     /// Returns all registered WASM functions with their metadata for introspection (e.g. system.functions).
-    std::vector<RegisteredFunction> getAllFunctions() const;
+    VectorWithMemoryTracking<RegisteredFunction> getAllFunctions() const;
 
     static UserDefinedWebAssemblyFunctionFactory & instance();
 private:

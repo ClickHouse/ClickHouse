@@ -24,7 +24,7 @@ public:
 
     std::vector<String> getAllObjectNames() const override;
 
-    std::vector<std::pair<String, ASTPtr>> getAllObjects() const override;
+    VectorWithMemoryTracking<std::pair<String, ASTPtr>> getAllObjects() const override;
 
     bool empty() const override;
 
@@ -62,7 +62,7 @@ protected:
     using WithContext::getContext;
 
     std::unique_lock<std::recursive_mutex> getLock() const;
-    void setAllObjects(const std::vector<std::pair<String, ASTPtr>> & new_objects);
+    void setAllObjects(const VectorWithMemoryTracking<std::pair<String, ASTPtr>> & new_objects);
     void setObject(const String & object_name, const IAST & create_object_query);
     void removeObject(const String & object_name);
     void removeAllObjectsExcept(const Strings & object_names_to_keep);

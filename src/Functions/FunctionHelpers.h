@@ -188,7 +188,7 @@ void validateNumberOfFunctionArguments(const IFunction & func, const ColumnsWith
                                        size_t expected_max_args);
 
 /// Checks if a list of array columns have equal offsets. Return a pair of nested columns and offsets if true, otherwise throw.
-std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>
+std::pair<VectorWithMemoryTracking<const IColumn *>, const ColumnArray::Offset *>
 checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments);
 
 /// Return ColumnNullable of src, with null map as OR-ed null maps of args columns.
