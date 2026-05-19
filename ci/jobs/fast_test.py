@@ -153,7 +153,6 @@ def parse_args():
         nargs="+",
         action="extend")
     parser.add_argument("--param", help="Optional custom job start stage", default=None)
-    parser.add_argument("--set-status-success", help="Forcefully set a green status", action="store_true")
     return parser.parse_args()
 
 def main():
@@ -259,7 +258,6 @@ def main():
                 -DENABLE_LEXER_TEST=1 \
                 -DBUILD_STRIPPED_BINARY=1 \
                 -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 \
-                -DUSE_SYSTEM_COMPILER_RT=1 \
                 -B {build_dir_normalized}",
                 workdir=repo_path_normalized,
             )
@@ -348,15 +346,10 @@ def main():
 
         res = CH.run_test(fast_test_command)
 
-        test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR).run()
+        test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR).run(
+            runner_exit_code=0 if res else 1,
+        )
         if not res:
-            test_results.results.append(
-                Result.create_from(
-                    name="clickhouse-test",
-                    status=Result.Status.FAIL,
-                    info="clickhouse-test error",
-                )
-            )
             attach_debug = True
 
         results.append(test_results)
@@ -373,9 +366,8 @@ def main():
 
     CH.terminate(force=True)
 
-    status = Result.Status.OK if args.set_status_success else ""
     Result.create_from(
-        results=results, status=status, stopwatch=stop_watch, files=attach_files, info=job_info
+        results=results, stopwatch=stop_watch, files=attach_files, info=job_info
     ).complete_job()
 
 

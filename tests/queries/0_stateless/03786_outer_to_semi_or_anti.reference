@@ -16,15 +16,15 @@ Positions: 0
     Locality: UNSPECIFIED
     Expression: 
     Expression:
-    Actions: INPUT :: 0 -> __table1.1 UInt8 : 0
+    Actions: INPUT :: 0 -> __table1.`1` UInt8 : 0
              INPUT :: 1 -> __table3.c0 UInt8 : 1
     Positions: 1
     Expression Sources:
-    __table1.1: {0}
+    __table1.`1`: {0}
     __table3.c0: {1}
       Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
       Actions: INPUT :: 0 -> dummy UInt8 : 0
-               COLUMN Const(UInt8) -> __table1.1 UInt8 : 1
+               COLUMN Const(UInt8) -> __table1.`1` UInt8 : 1
       Positions: 1
         ReadFromSystemOne
       Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))

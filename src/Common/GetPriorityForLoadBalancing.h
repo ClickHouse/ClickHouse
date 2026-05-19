@@ -3,6 +3,7 @@
 #include <Common/Priority.h>
 #include <Core/LoadBalancing.h>
 
+#include <atomic>
 #include <functional>
 #include <vector>
 
@@ -19,6 +20,50 @@ public:
     {
     }
     GetPriorityForLoadBalancing() = default;
+
+    /// Explicit copy/move because `last_used` is a `std::atomic` and `std::atomic`
+    /// is neither copyable nor movable. We propagate the current counter value
+    /// with relaxed ordering — there is no happens-before relationship to preserve,
+    /// the round-robin counter is only used as a rotation index.
+    GetPriorityForLoadBalancing(const GetPriorityForLoadBalancing & other)
+        : hostname_prefix_distance(other.hostname_prefix_distance)
+        , hostname_levenshtein_distance(other.hostname_levenshtein_distance)
+        , load_balancing(other.load_balancing)
+        , last_used(other.last_used.load(std::memory_order_relaxed))
+    {
+    }
+
+    GetPriorityForLoadBalancing & operator=(const GetPriorityForLoadBalancing & other)
+    {
+        if (this != &other)
+        {
+            hostname_prefix_distance = other.hostname_prefix_distance;
+            hostname_levenshtein_distance = other.hostname_levenshtein_distance;
+            load_balancing = other.load_balancing;
+            last_used.store(other.last_used.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        }
+        return *this;
+    }
+
+    GetPriorityForLoadBalancing(GetPriorityForLoadBalancing && other) noexcept
+        : hostname_prefix_distance(std::move(other.hostname_prefix_distance))
+        , hostname_levenshtein_distance(std::move(other.hostname_levenshtein_distance))
+        , load_balancing(other.load_balancing)
+        , last_used(other.last_used.load(std::memory_order_relaxed))
+    {
+    }
+
+    GetPriorityForLoadBalancing & operator=(GetPriorityForLoadBalancing && other) noexcept
+    {
+        if (this != &other)
+        {
+            hostname_prefix_distance = std::move(other.hostname_prefix_distance);
+            hostname_levenshtein_distance = std::move(other.hostname_levenshtein_distance);
+            load_balancing = other.load_balancing;
+            last_used.store(other.last_used.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        }
+        return *this;
+    }
 
     bool operator == (const GetPriorityForLoadBalancing & other) const
     {
@@ -42,7 +87,13 @@ public:
     LoadBalancing load_balancing = LoadBalancing::RANDOM;
 
 private:
-    mutable size_t last_used = 0; /// Last used for round_robin policy.
+    /// Last used pool for round_robin policy. Atomic because `getPriorityFunc` is
+    /// `const` and is called concurrently from many threads through
+    /// `ConnectionPoolWithFailover::makeGetPriorityFunc` during distributed query
+    /// dispatch (e.g. parallel replicas, distributed inserts). Without atomic
+    /// access, two concurrent dispatches race on `++last_used` (TSan reports
+    /// "data race", STID 4676-580d / 4676-58a7).
+    mutable std::atomic<size_t> last_used = 0;
 };
 
 }

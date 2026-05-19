@@ -777,15 +777,22 @@ class Result(MetaClasses.Serializable):
             # gtest.json is missing — the binary was killed before it could write results
             # (e.g. by a sanitizer or OOM). Note: gdb returns 0 even when the inferior
             # exits with a non-zero code, so we can't rely on binary_failed here.
-            # Extract the sanitizer SUMMARY line from the log file if available.
-            sanitizer_info = ""
+            # Extract the first meaningful error line from the log file if available.
+            # Covers sanitizer reports ("SUMMARY:") and ClickHouse logical errors.
+            _ERROR_PREFIXES = ("SUMMARY:", "Logical error:", "Code: ", "Signal description:")
+            crash_info = ""
             if result.files:
                 log_content = Shell.get_output(f"cat {result.files[0]}", verbose=False)
                 for line in log_content.splitlines():
-                    if line.startswith("SUMMARY:"):
-                        sanitizer_info = line
+                    if any(line.startswith(p) for p in _ERROR_PREFIXES):
+                        crash_info = line
                         break
-            result.info = sanitizer_info or info
+            result.info = crash_info or info
+            # Synthesize a failed sub-result so the job summary is not empty.
+            crashed_test = gtest_filter.rstrip(".*") or "unknown"
+            result.set_results(
+                [Result(name=crashed_test, status=Result.Status.FAIL, info=crash_info or info)]
+            )
             result.set_status(Result.Status.FAIL)
         return result
 
@@ -1621,12 +1628,14 @@ class ResultTranslator:
             List[Result]: A list of Result objects representing individual test cases
         """
         name = "pytest"
+        sw = Utils.Stopwatch()
         if not os.path.isfile(pytest_report_file):
             print(f"ERROR: Pytest report file {pytest_report_file} not found")
             return Result.create_from(
                 name=name,
                 status=Result.Status.ERROR,
                 info=f"Pytest report file {pytest_report_file} not found",
+                stopwatch=sw,
             )
 
         # Track test cases by their node_id, and also track failures by phase
@@ -2006,7 +2015,7 @@ class ResultTranslator:
                     elif "teardown" in failures:
                         test_results[node_id].status = failures["teardown"]
 
-            R = Result.create_from(name=name, results=list(test_results.values()))
+            R = Result.create_from(name=name, results=list(test_results.values()), stopwatch=sw)
 
             if session_exitstatus == 0:
                 # pytest exit code 0 means all tests passed or xfailed (from pytest's perspective).
@@ -2047,4 +2056,5 @@ class ResultTranslator:
                 name=name,
                 status=Result.Status.ERROR,
                 info=f"Failed to parse pytest jsonl: {e}, {traceback.print_exc()}",
+                stopwatch=sw,
             )
