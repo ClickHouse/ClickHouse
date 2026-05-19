@@ -332,7 +332,7 @@ void ApproximateRuntimeFilter::checkBloomFilterWorthiness()
         setFullyDisabled();
 }
 
-SharedPerfectHashRuntimeFilter::SharedPerfectHashRuntimeFilter(
+SharedFixedHashTableRuntimeFilter::SharedFixedHashTableRuntimeFilter(
     const DataTypePtr & filter_column_target_type_,
     Float64 pass_ratio_threshold_for_disabling_,
     UInt64 blocks_to_skip_before_reenabling_,
@@ -350,7 +350,7 @@ SharedPerfectHashRuntimeFilter::SharedPerfectHashRuntimeFilter(
     inserts_are_finished = true;
 }
 
-ColumnPtr SharedPerfectHashRuntimeFilter::findImpl(const ColumnWithTypeAndName & values) const
+ColumnPtr SharedFixedHashTableRuntimeFilter::findImpl(const ColumnWithTypeAndName & values) const
 {
     chassert(inserts_are_finished);
     auto result = probe_fn(values);

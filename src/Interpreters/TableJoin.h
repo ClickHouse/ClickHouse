@@ -168,12 +168,12 @@ private:
     const bool enable_software_prefetch_in_join = false;
     const size_t max_bytes_before_external_join = 0;
     const bool enable_join_fixed_hash_table_conversion = false;
-    const bool enable_join_runtime_filter_shared_perfect_hash = false;
+    const bool enable_join_runtime_filter_shared_fixed_hash_table = false;
 
     /// Runtime filter descriptors that should be published from this join's build side
     /// (filter_name, build-side key column name). Filled in by the joinRuntimeFilter optimizer
-    /// when `enable_join_runtime_filter_shared_perfect_hash` is on. Consumed by HashJoin
-    /// in `runPostBuildPhase` to publish a SharedPerfectHashRuntimeFilter into the lookup
+    /// when `enable_join_runtime_filter_shared_fixed_hash_table` is on. Consumed by HashJoin
+    /// in `runPostBuildPhase` to publish a SharedFixedHashTableRuntimeFilter into the lookup
     /// when conversion to FixedHashMap succeeded.
     /// We use shared_ptr<vector> so the optimizer can fill it after TableJoin is already
     /// owned by a JoinStepLogical, and so that all clones of TableJoin share the same list.
@@ -343,7 +343,7 @@ public:
     bool enableSoftwarePrefetchInJoin() const { return enable_software_prefetch_in_join; }
     size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
-    bool enableJoinRuntimeFilterSharedPerfectHash() const { return enable_join_runtime_filter_shared_perfect_hash; }
+    bool enableJoinRuntimeFilterSharedFixedHashTable() const { return enable_join_runtime_filter_shared_fixed_hash_table; }
 
     void addSharedRuntimeFilterDescriptor(const String & filter_name, const String & build_key_column_name)
     {

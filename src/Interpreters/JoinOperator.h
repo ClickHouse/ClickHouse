@@ -31,7 +31,7 @@ struct JoinOperator
 
     /// Per-key runtime filter descriptors (filter_name, build-side key column name) that
     /// the join should publish from its FixedHashMap when
-    /// `enable_join_runtime_filter_shared_perfect_hash` is on. Set by the joinRuntimeFilter
+    /// `enable_join_runtime_filter_shared_fixed_hash_table` is on. Set by the joinRuntimeFilter
     /// optimizer pass and copied into TableJoin at chooseJoinAlgorithm time.
     std::vector<std::pair<String, String>> shared_runtime_filter_descriptors = {};
 
@@ -116,7 +116,7 @@ struct JoinSettings
     bool use_hash_table_stats_for_join_reordering;
 
     bool enable_join_fixed_hash_table_conversion;
-    bool enable_join_runtime_filter_shared_perfect_hash;
+    bool enable_join_runtime_filter_shared_fixed_hash_table;
 
     explicit JoinSettings(const Settings & query_settings);
     explicit JoinSettings(const QueryPlanSerializationSettings & settings);

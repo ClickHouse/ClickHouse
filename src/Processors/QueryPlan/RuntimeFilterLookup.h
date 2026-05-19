@@ -274,12 +274,12 @@ private:
 /// Used to share an already-built data structure (e.g. HashJoin's FixedHashMap)
 /// as a runtime filter without copying the data. The `data_holder` keeps the
 /// shared structure alive for the lifetime of the filter.
-class SharedPerfectHashRuntimeFilter final : public IRuntimeFilter
+class SharedFixedHashTableRuntimeFilter final : public IRuntimeFilter
 {
 public:
     using ProbeFn = std::function<ColumnPtr(const ColumnWithTypeAndName &)>;
 
-    SharedPerfectHashRuntimeFilter(
+    SharedFixedHashTableRuntimeFilter(
         const DataTypePtr & filter_column_target_type_,
         Float64 pass_ratio_threshold_for_disabling_,
         UInt64 blocks_to_skip_before_reenabling_,
@@ -309,7 +309,7 @@ struct IRuntimeFilterLookup : boost::noncopyable
     virtual void add(const String & name, UniqueRuntimeFilterPtr runtime_filter) = 0;
 
     /// Replace the runtime filter with the specified name (if it exists, it is overwritten).
-    /// Used by HashJoin to install a SharedPerfectHashRuntimeFilter that supersedes the
+    /// Used by HashJoin to install a SharedFixedHashTableRuntimeFilter that supersedes the
     /// Set/BloomFilter built by BuildRuntimeFilterStep.
     virtual void addOrReplace(const String & name, UniqueRuntimeFilterPtr runtime_filter) = 0;
 

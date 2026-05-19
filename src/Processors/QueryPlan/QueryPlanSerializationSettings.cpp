@@ -113,7 +113,7 @@ namespace DB
     DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, "Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.", 0) \
     DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range)", 0) \
-    DECLARE(Bool, enable_join_runtime_filter_shared_perfect_hash, false, R"(Share the hash join's FixedHashMap as the runtime filter for the probe side instead of building a separate Set/BloomFilter)", 0) \
+    DECLARE(Bool, enable_join_runtime_filter_shared_fixed_hash_table, false, R"(Share the hash join's FixedHashMap as the runtime filter for the probe side instead of building a separate Set/BloomFilter)", 0) \
 
 
 // clang-format on

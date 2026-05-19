@@ -2287,11 +2287,11 @@ ColumnPtr probeFixedHashMap(
     return result_col;
 }
 
-/// Build a SharedPerfectHashRuntimeFilter::ProbeFn that captures `shared_ptr<FixedHashMap>` and range.
+/// Build a SharedFixedHashTableRuntimeFilter::ProbeFn that captures `shared_ptr<FixedHashMap>` and range.
 /// The `data_holder` is the outer RightTableData shared_ptr that owns the map, ensuring the map
 /// stays alive as long as the filter is alive.
 template <typename Key, size_t size_bits, typename Mapped>
-SharedPerfectHashRuntimeFilter::ProbeFn
+SharedFixedHashTableRuntimeFilter::ProbeFn
 buildSharedFilterProbeFn(
     std::shared_ptr<FixedHashMapWithSizeBits<Key, Mapped, size_bits>> range_map_arg,
     Key min_key,
@@ -2308,7 +2308,7 @@ buildSharedFilterProbeFn(
 
 void HashJoin::publishSharedRuntimeFilters()
 {
-    if (!table_join->enableJoinRuntimeFilterSharedPerfectHash())
+    if (!table_join->enableJoinRuntimeFilterSharedFixedHashTable())
         return;
 
     const auto & descriptors = table_join->getSharedRuntimeFilterDescriptors();
@@ -2352,9 +2352,9 @@ void HashJoin::publishSharedRuntimeFilters()
     const String build_key_name = right_table_keys.getByPosition(0).name;
     const auto & filter_column_type = right_table_keys.getByPosition(0).type;
 
-    auto build_probe_fn = [&]() -> SharedPerfectHashRuntimeFilter::ProbeFn
+    auto build_probe_fn = [&]() -> SharedFixedHashTableRuntimeFilter::ProbeFn
     {
-        SharedPerfectHashRuntimeFilter::ProbeFn probe_fn;
+        SharedFixedHashTableRuntimeFilter::ProbeFn probe_fn;
         std::visit(
             [&](auto & map)
             {
@@ -2405,7 +2405,7 @@ void HashJoin::publishSharedRuntimeFilters()
         if (descr_build_key != build_key_name)
             continue;
 
-        auto filter = std::make_unique<SharedPerfectHashRuntimeFilter>(
+        auto filter = std::make_unique<SharedFixedHashTableRuntimeFilter>(
             filter_column_type,
             pass_ratio_threshold,
             blocks_to_skip,
@@ -2414,7 +2414,7 @@ void HashJoin::publishSharedRuntimeFilters()
         lookup->addOrReplace(filter_name, std::move(filter));
 
         LOG_DEBUG(log,
-            "{}Published SharedPerfectHashRuntimeFilter '{}' on build key '{}' "
+            "{}Published SharedFixedHashTableRuntimeFilter '{}' on build key '{}' "
             "(min_key={}, range={}, type={})",
             instance_log_id, filter_name, build_key_name,
             data->key_range.min_key, data->key_range.size,
