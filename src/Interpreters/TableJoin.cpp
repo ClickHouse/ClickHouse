@@ -1222,7 +1222,7 @@ void TableJoin::resetToCross()
 
 bool TableJoin::allowParallelHashJoin() const
 {
-    return ::DB::allowParallelHashJoin(join_algorithms, kind(), strictness(), isSpecialStorage(), oneDisjunct());
+    return ::DB::allowParallelHashJoin(join_algorithms, kind(), isSpecialStorage(), oneDisjunct());
 }
 
 ActionsDAG TableJoin::createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const
@@ -1289,7 +1289,6 @@ TemporaryDataOnDiskScopePtr TableJoin::getTempDataOnDisk()
 bool allowParallelHashJoin(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,
-    JoinStrictness strictness,
     bool is_special_storage,
     bool one_disjunct)
 {
@@ -1297,8 +1296,6 @@ bool allowParallelHashJoin(
         return false;
     if (kind != JoinKind::Left && kind != JoinKind::Inner
         && kind != JoinKind::Right && kind != JoinKind::Full)
-        return false;
-    if (strictness == JoinStrictness::Asof)
         return false;
     if (is_special_storage || !one_disjunct)
         return false;
