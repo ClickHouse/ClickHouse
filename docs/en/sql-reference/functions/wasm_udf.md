@@ -134,6 +134,39 @@ SELECT 'my_module', base64Decode('...'), reinterpretAsUInt256(unhex('369f...c57d
 
 If the provided hash does not match the computed SHA256 of the module code, the insertion fails. It may be useful when loading modules from external sources such as S3 or HTTP.
 
+### Distribute a module across a cluster {#distribute-a-module-across-a-cluster}
+
+`system.webassembly_modules` is a per-instance table — an `INSERT` lands only on the replica handling the connection. There is no `ON CLUSTER` form of the `INSERT` statement, so a subsequent `CREATE FUNCTION ... ON CLUSTER` will fail on replicas that do not have the module:
+
+```text
+Code: 674. DB::Exception: WebAssembly module 'collatz' not found:
+while adding user defined function `collatz_steps`. (RESOURCE_NOT_FOUND)
+```
+
+To fan an insert out to every node, write to the `cluster` (or `clusterAllReplicas`) table function instead of the local `system.webassembly_modules` table:
+
+```bash
+cat collatz.wasm | clickhouse client -q "
+  INSERT INTO FUNCTION cluster('default', 'system', 'webassembly_modules') (name, code)
+  SELECT 'collatz', code FROM input('code String') FORMAT RawBlob"
+```
+
+After the fanned-out insert, the module is present on every replica and `CREATE FUNCTION ... ON CLUSTER` succeeds:
+
+```sql
+CREATE FUNCTION collatz_steps ON CLUSTER 'default'
+LANGUAGE WASM FROM 'collatz' :: 'steps'
+ARGUMENTS (n UInt32) RETURNS UInt32;
+```
+
+You can verify the module is loaded everywhere with `clusterAllReplicas`:
+
+```sql
+SELECT hostName(), name FROM clusterAllReplicas('default', system.webassembly_modules) WHERE name = 'collatz';
+```
+
+Inserts into `system.webassembly_modules` are idempotent for the same `(name, hash)` pair, so re-running the fanned-out insert is safe and is a reasonable way to repair state after a replica has been replaced. Note that newly added servers do not retroactively receive existing modules — you must re-run the insert against the updated cluster, or place the binary into the `user_scripts/wasm/` directory on the new host.
+
 ### List modules
 
 ```sql
