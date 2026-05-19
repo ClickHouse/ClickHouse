@@ -1064,7 +1064,7 @@ bool ParserKQLSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr select_node;
 
-    if (!ParserKQLTableFunction().parse(pos, select_node, expected))
+    if (!ParserKQLParenExpression().parse(pos, select_node, expected))
         return false;
 
     ASTPtr node_subquery = make_intrusive<ASTSubquery>(std::move(select_node));

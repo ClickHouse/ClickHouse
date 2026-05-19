@@ -85,8 +85,10 @@ void setMaxBackgroundThreads(size_t max_threads)
 
 void setProfileSamplingRate(size_t lg_prof_sample)
 {
-    size_t current = getValue<size_t>("prof.lg_sample");
-    if (current == lg_prof_sample)
+    /// `prof.lg_sample` / `prof.reset` only exist on jemalloc builds with `JEMALLOC_PROF`.
+    /// When absent, treat the call as a no-op (just like the other `prof.*` setters in `setup`)
+    /// instead of asserting via the strict `getValue`.
+    if (size_t current = 0; !tryGetValue("prof.lg_sample", current) || current == lg_prof_sample)
         return;
 
     je_mallctl("prof.reset", nullptr, nullptr, &lg_prof_sample, sizeof(lg_prof_sample));
@@ -224,13 +226,27 @@ void verifySetup(
             &Poco::Logger::get("Jemalloc"), "Jemalloc settings mismatch: `{}` differs between BaseDaemon and server settings", setting);
     };
 
-    if (getThreadProfileInitMib().getValue() != enable_global_profiler)
+    /// `prof.*` mallctls (including `prof.thread_active_init` / `prof.lg_sample`) only exist when
+    /// jemalloc was built with `JEMALLOC_PROF`. When absent, `setup` could not have applied the
+    /// corresponding settings either (the writes were no-ops), so there is nothing to verify and
+    /// reading a missing MIB must not abort debug builds.
+    if (bool current_thread_active_init = false; getThreadProfileInitMib().tryGetValue(current_thread_active_init)
+        && current_thread_active_init != enable_global_profiler)
         log_warning(config_enable_global_profiler);
-    if (getValue<bool>("background_thread") != enable_background_threads)
+    /// `background_thread` and `max_background_threads` mallctls only exist when jemalloc was built
+    /// with `JEMALLOC_BACKGROUND_THREAD` (e.g. not on macOS). When unavailable, `je_mallctl` returns
+    /// `ENOENT` and any `setBackgroundThreads`/`setMaxBackgroundThreads` calls in `setup` were no-ops,
+    /// so we have nothing to verify and must not compare against an uninitialized read.
+    if (bool current_background_thread = false; tryGetValue("background_thread", current_background_thread)
+        && current_background_thread != enable_background_threads)
         log_warning(config_enable_background_threads);
-    if (max_background_threads_num && getValue<size_t>("max_background_threads") != max_background_threads_num)
+    if (size_t current_max_background_threads = 0; max_background_threads_num
+        && tryGetValue("max_background_threads", current_max_background_threads)
+        && current_max_background_threads != max_background_threads_num)
         log_warning(config_max_background_threads_num);
-    if (profiler_sampling_rate != default_profiler_sampling_rate && getValue<size_t>("prof.lg_sample") != profiler_sampling_rate)
+    if (size_t current_lg_sample = 0; profiler_sampling_rate != default_profiler_sampling_rate
+        && tryGetValue("prof.lg_sample", current_lg_sample)
+        && current_lg_sample != profiler_sampling_rate)
         log_warning(config_profiler_sampling_rate);
     if (collect_global_profiles_in_trace_log != collect_global_profile_samples_in_trace_log)
         log_warning(config_collect_global_profile_samples_in_trace_log);

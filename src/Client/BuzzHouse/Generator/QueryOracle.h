@@ -50,7 +50,7 @@ private:
     bool can_test_oracle_result;
     bool can_test_success;
     bool measure_performance;
-    bool compare_explain{};
+    bool compare_explain = false;
 
     std::unordered_set<String> found_tables;
     DB::Strings nsettings;
@@ -60,6 +60,20 @@ private:
     void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq2);
     void
     generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const;
+
+    static void reattachSteps(
+        RandomGenerator & rg,
+        StatementGenerator & gen,
+        const SQLBase & obj,
+        SQLObject sobject,
+        std::vector<SQLQuery> & intermediate_queries);
+    static void backupRestoreSteps(
+        RandomGenerator & rg,
+        StatementGenerator & gen,
+        FuzzConfig & fc,
+        const SQLBase & obj,
+        SQLObject sobject,
+        std::vector<SQLQuery> & intermediate_queries);
 
 public:
     explicit QueryOracle(FuzzConfig & ffc)
@@ -122,6 +136,17 @@ public:
         SQLTable & t,
         DumpOracleStrategy strategy,
         bool test_content,
+        std::vector<SQLQuery> & intermediate_queries);
+
+    /// Dump and read dictionary/view oracle (REATTACH / BACKUP_RESTORE)
+    void dumpDictionaryContent(RandomGenerator & rg, StatementGenerator & gen, const SQLDictionary & d, SQLQuery & sq1, SQLQuery & sq2);
+    void dumpViewContent(RandomGenerator & rg, const SQLView & v, SQLQuery & sq1, SQLQuery & sq2);
+    void dumpObjectIntermediateSteps(
+        RandomGenerator & rg,
+        StatementGenerator & gen,
+        const SQLBase & obj,
+        SQLObject sobject,
+        DumpOracleStrategy strategy,
         std::vector<SQLQuery> & intermediate_queries);
 
     /// Run query with different settings oracle

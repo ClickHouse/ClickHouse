@@ -253,6 +253,8 @@ private:
     Archive openWithReader(StreamInfo * read_stream_)
     {
         auto * archive = archive_read_new();
+        if (!archive)
+            throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't create archive reader");
         try
         {
             // Support for bzip2, gzip, lzip, xz, zstd and lz4
@@ -290,6 +292,8 @@ private:
     Archive openWithPath(const String & path_to_archive_)
     {
         auto * archive = archive_read_new();
+        if (!archive)
+            throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't create archive reader");
         try
         {
             // Support for bzip2, gzip, lzip, xz, zstd and lz4

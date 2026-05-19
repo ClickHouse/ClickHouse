@@ -18,6 +18,7 @@
 #include <Common/StringUtils.h>
 #include <Common/ShellCommand.h>
 #include <Common/re2.h>
+#include <Common/shellQuote.h>
 #include <base/find_symbols.h>
 
 #include <IO/ReadHelpers.h>
@@ -1125,9 +1126,12 @@ static void processCommit(
   */
 static auto gitShow(const std::string & hash)
 {
+    /// `hash` is parsed from `git log --pretty=%H` output, which is hex-only today,
+    /// but quote it anyway so a future format change or a hand-crafted hash list
+    /// cannot inject shell syntax through `/bin/sh -c`.
     std::string command = fmt::format(
         "git show --raw --pretty='format:%ct%x00%aN%x00%P%x00%s%x00' --patch --unified=0 {}",
-        hash);
+        shellQuote(hash));
 
     return ShellCommand::execute(command);
 }
