@@ -3,15 +3,18 @@
 -- Verify both directions (off->on, on->off) preserve readability of the old part and adopt
 -- the new layout for new parts.
 --
--- We assert via secondary_indices_compressed_bytes (positive when an index is materialized,
--- regardless of layout) and query counts; absolute file counts vary with random
--- merge-tree settings (compress_marks, sparse-serialization ratios, etc.) so we don't rely
--- on them.
+-- For every scenario we check three things:
+--   1. secondary_indices_compressed_bytes > 0  -- the index is materialized,
+--   2. count() matches expectations           -- the data is queryable,
+--   3. EXPLAIN indexes = 1 shows kept < total -- the index actually GATES GRANULES under the
+--                                              new layout. Random merge-tree settings perturb
+--                                              the absolute kept/total numbers, so we only
+--                                              assert "kept < total" qualitatively.
 --
 -- Test both Compact and Wide part layouts.
 
 -- ------------------------------------------------------------------
--- Wide: setting goes from "" to "minmax".
+-- Wide: threshold raised from 0 (packing disabled) to 1 MiB.
 -- ------------------------------------------------------------------
 DROP TABLE IF EXISTS t_wide_off_to_on;
 CREATE TABLE t_wide_off_to_on
@@ -45,12 +48,17 @@ OPTIMIZE TABLE t_wide_off_to_on FINAL;
 SELECT 'wide_off2on_index_materialized_after_merge', secondary_indices_compressed_bytes > 0
 FROM system.parts WHERE database = currentDatabase() AND table = 't_wide_off_to_on' AND active;
 SELECT 'wide_off2on_count_after_merge', count() FROM t_wide_off_to_on WHERE v BETWEEN 70 AND 700;
+SELECT 'wide_off2on_index_filters_after_merge', countIf(
+    splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
+    < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
+FROM (EXPLAIN indexes = 1 SELECT * FROM t_wide_off_to_on WHERE v = 700) AS s
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
 CHECK TABLE t_wide_off_to_on SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_wide_off_to_on;
 
 -- ------------------------------------------------------------------
--- Wide: setting goes from "minmax" to "".
+-- Wide: threshold lowered from 1 MiB to 0 (packing disabled).
 -- ------------------------------------------------------------------
 DROP TABLE IF EXISTS t_wide_on_to_off;
 CREATE TABLE t_wide_on_to_off
@@ -81,12 +89,17 @@ OPTIMIZE TABLE t_wide_on_to_off FINAL;
 SELECT 'wide_on2off_index_materialized_after_merge', secondary_indices_compressed_bytes > 0
 FROM system.parts WHERE database = currentDatabase() AND table = 't_wide_on_to_off' AND active;
 SELECT 'wide_on2off_count_after_merge', count() FROM t_wide_on_to_off WHERE v BETWEEN 70 AND 700;
+SELECT 'wide_on2off_index_filters_after_merge', countIf(
+    splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
+    < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
+FROM (EXPLAIN indexes = 1 SELECT * FROM t_wide_on_to_off WHERE v = 700) AS s
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
 CHECK TABLE t_wide_on_to_off SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_wide_on_to_off;
 
 -- ------------------------------------------------------------------
--- Compact: setting goes from "" to "minmax".
+-- Compact: threshold raised from 0 (packing disabled) to 1 MiB.
 -- ------------------------------------------------------------------
 DROP TABLE IF EXISTS t_compact_off_to_on;
 CREATE TABLE t_compact_off_to_on
@@ -117,12 +130,17 @@ OPTIMIZE TABLE t_compact_off_to_on FINAL;
 SELECT 'compact_off2on_index_materialized_after_merge', secondary_indices_compressed_bytes > 0
 FROM system.parts WHERE database = currentDatabase() AND table = 't_compact_off_to_on' AND active;
 SELECT 'compact_off2on_count_after_merge', count() FROM t_compact_off_to_on WHERE v BETWEEN 70 AND 700;
+SELECT 'compact_off2on_index_filters_after_merge', countIf(
+    splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
+    < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
+FROM (EXPLAIN indexes = 1 SELECT * FROM t_compact_off_to_on WHERE v = 700) AS s
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
 CHECK TABLE t_compact_off_to_on SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_compact_off_to_on;
 
 -- ------------------------------------------------------------------
--- Compact: setting goes from "minmax" to "".
+-- Compact: threshold lowered from 1 MiB to 0 (packing disabled).
 -- ------------------------------------------------------------------
 DROP TABLE IF EXISTS t_compact_on_to_off;
 CREATE TABLE t_compact_on_to_off
@@ -153,6 +171,11 @@ OPTIMIZE TABLE t_compact_on_to_off FINAL;
 SELECT 'compact_on2off_index_materialized_after_merge', secondary_indices_compressed_bytes > 0
 FROM system.parts WHERE database = currentDatabase() AND table = 't_compact_on_to_off' AND active;
 SELECT 'compact_on2off_count_after_merge', count() FROM t_compact_on_to_off WHERE v BETWEEN 70 AND 700;
+SELECT 'compact_on2off_index_filters_after_merge', countIf(
+    splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
+    < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
+FROM (EXPLAIN indexes = 1 SELECT * FROM t_compact_on_to_off WHERE v = 700) AS s
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
 CHECK TABLE t_compact_on_to_off SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_compact_on_to_off;
@@ -176,6 +199,11 @@ INSERT INTO t_wide_flip_mutate_off2on SELECT number, number * 7 FROM numbers(100
 ALTER TABLE t_wide_flip_mutate_off2on MODIFY SETTING packed_skip_index_max_bytes = '1M';
 ALTER TABLE t_wide_flip_mutate_off2on UPDATE v = v + 1 WHERE id < 100 SETTINGS mutations_sync = 2;
 SELECT 'wide_flip_off2on_count', count() FROM t_wide_flip_mutate_off2on WHERE v BETWEEN 70 AND 700;
+SELECT 'wide_flip_off2on_index_filters', countIf(
+    splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
+    < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
+FROM (EXPLAIN indexes = 1 SELECT * FROM t_wide_flip_mutate_off2on WHERE v = 700) AS s
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
 CHECK TABLE t_wide_flip_mutate_off2on SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_wide_flip_mutate_off2on;
 
@@ -191,5 +219,10 @@ INSERT INTO t_wide_flip_mutate_on2off SELECT number, number * 7 FROM numbers(100
 ALTER TABLE t_wide_flip_mutate_on2off MODIFY SETTING packed_skip_index_max_bytes = 0;
 ALTER TABLE t_wide_flip_mutate_on2off UPDATE v = v + 1 WHERE id < 100 SETTINGS mutations_sync = 2;
 SELECT 'wide_flip_on2off_count', count() FROM t_wide_flip_mutate_on2off WHERE v BETWEEN 70 AND 700;
+SELECT 'wide_flip_on2off_index_filters', countIf(
+    splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[1]::UInt64
+    < splitByChar('/', trim(replaceAll(explain, 'Granules:', '')))[2]::UInt64)
+FROM (EXPLAIN indexes = 1 SELECT * FROM t_wide_flip_mutate_on2off WHERE v = 700) AS s
+WHERE explain LIKE '%Granules:%' AND explain NOT LIKE '%PrimaryKey%' SETTINGS allow_experimental_analyzer = 1;
 CHECK TABLE t_wide_flip_mutate_on2off SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_wide_flip_mutate_on2off;
