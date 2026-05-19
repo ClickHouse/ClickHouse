@@ -1352,9 +1352,12 @@ class JobConfigs:
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/docs_job.py",
         digest_config=Job.CacheDigestConfig(
+            # Restrict to the legacy Docusaurus content tree so that PRs which
+            # only touch the new Mintlify site (./docs/docs.json, ./docs/*.mdx,
+            # etc.) do not trigger this job.
             include_paths=[
-                "**/*.md",
-                "./docs",
+                "./docs/en/",
+                "./docs/changelogs/",
                 "./ci/jobs/docs_job.py",
                 "CHANGELOG.md",
                 "./src/Functions",
