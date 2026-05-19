@@ -41,6 +41,30 @@ WHERE (x, y) GLOBAL IN (SELECT number, number FROM numbers(5));
 SELECT sum(y) FROM (SELECT * FROM remote('127.0.0.1', currentDatabase(), t_gin_dup))
 WHERE (x, x, y) GLOBAL IN (SELECT number, number, number FROM numbers(5));
 
+-- Suffix collision: the deduplication step inside `makeUniqueColumnNamesInBlock`
+-- renames the second `a` to `a_1`, but the projection also produces a column
+-- named `a_1`. The helper must keep looping until it finds a truly unused
+-- suffix (`a_2` here) and must register every renamed name, otherwise the
+-- resulting block still has duplicate column names and `ColumnsDescription`
+-- throws `ILLEGAL_COLUMN`.
+SELECT sum(y) FROM (SELECT * FROM remote('127.0.0.1', currentDatabase(), t_gin_dup))
+WHERE (x, x, y) GLOBAL IN (
+    SELECT toUInt32(number) AS a, toUInt32(number) AS a, toUInt32(number) AS a_1 FROM numbers(5)
+);
+
+-- Larger suffix-collision shape: the projection already contains `a_1` and
+-- `a_2`, so collision-safe renaming must skip them and pick `a_3`/`a_4`.
+SELECT sum(y) FROM (SELECT * FROM remote('127.0.0.1', currentDatabase(), t_gin_dup))
+WHERE (x, x, x, y, y) GLOBAL IN (
+    SELECT
+        toUInt32(number) AS a,
+        toUInt32(number) AS a,
+        toUInt32(number) AS a,
+        toUInt32(number) AS a_1,
+        toUInt32(number) AS a_2
+    FROM numbers(5)
+);
+
 -- Correctness: nothing in the set, result must be 0 (not a spurious match
 -- caused by silently dropping the predicate).
 SELECT sum(y) FROM (SELECT * FROM remote('127.0.0.1', currentDatabase(), t_gin_dup))
