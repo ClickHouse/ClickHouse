@@ -46,8 +46,8 @@ FROM table
 INTO OUTFILE 'output.png'
 FORMAT PNG
 SETTINGS 
-    output_format_png_pixel_format='RGBA', 
-    output_format_png_coordinates_format='IMPLICIT'
+    output_format_png_pixel_output_format='RGBA',
+    output_format_png_coordinates_format='IMPLICIT',
     output_format_png_max_width=1512,
     output_format_png_max_height=1512,
     output_format_png_bit_depth=8
@@ -63,8 +63,8 @@ FROM table
 INTO OUTFILE 'output.png'
 FORMAT PNG
 SETTINGS 
-    output_format_png_pixel_format='Grayscale', 
-    output_format_png_coordinates_format='EXPLICIT'
+    output_format_png_pixel_output_format='Grayscale',
+    output_format_png_coordinates_format='EXPLICIT',
     output_format_png_max_width=14014,
     output_format_png_max_height=6659
 ```
@@ -72,15 +72,15 @@ SETTINGS
 ## Format Settings 
 When working with `PNG` format you can control settings:
 
-- `output_format_png_pixel_format`: Color channel: `RGBA`, `RGB` (default), `Grayscale` or `Binary`
+- `output_format_png_pixel_output_format`: Color channel: `RGBA`, `RGB` (default), `Grayscale` or `Binary`
 
 - `output_format_png_max_width`: Maximum image width in pixels (default: `4096`). The resulting image will have a width up to this value
 
-- `output_format_png_max_height`: Maximum image height in pixels (default: `4096`). The resulting image will have a width up to this value
+- `output_format_png_max_height`: Maximum image height in pixels (default: `4096`). The resulting image will have a height up to this value
 
 - `output_format_png_bit_depth`: Bit depth per channel (requires matching input data range) (default: `8`)
 
-- `output_format_png_compression_level`: Image compression level. Possible range: `[-1, 9]`, where `0` is `no compression` and `9` is the `fastest`. Default: `-1` (approximately is at level `6`)
+- `output_format_png_compression_level`: Image compression level. Possible range: `[-1, 9]`, where `0` is `no compression` (fastest) and `9` is the `best compression` (slowest). Default: `-1` (approximately level `6`)
 
 - `output_format_png_coordinates_format`: Coordinates format. Possible values: `IMPLICIT` (default) - Row-per-pixel approach where only columns with pixel data as row-per-pixel order (left to right, top to bottom) and `EXPLICIT` — Each pixel in your query is specified with explicit coordinates (x, y)
 
