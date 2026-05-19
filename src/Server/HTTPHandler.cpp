@@ -791,9 +791,14 @@ void HTTPHandler::processQuery(
         /// `/hits.Parquet` on a build that does not register Parquet). Deferring to the normal
         /// query execution path preserves the existing response headers (Content-Disposition,
         /// X-ClickHouse-Format) that other tests assert on.
+        ///
+        /// Skip the pre-check when the user supplied an explicit `query` parameter: in that case
+        /// the path table is at most a filename hint for `Content-Disposition`, or the source for
+        /// `implicit_table_at_top_level` (only applied to FROM-less queries). Forcing the path
+        /// table to exist would reject valid requests like `/foo.CSV?query=SELECT+1+FROM+other`.
         const String table_db = path_info.database.empty() ? context->getCurrentDatabase() : path_info.database;
         bool table_name_is_simple = path_info.table.find('.') == String::npos;
-        if (table_name_is_simple && !table_db.empty())
+        if (table_name_is_simple && !table_db.empty() && raw_query.empty())
         {
             StorageID table_id(table_db, path_info.table);
             if (!DatabaseCatalog::instance().isTableExist(table_id, context))
