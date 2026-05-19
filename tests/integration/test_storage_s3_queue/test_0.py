@@ -469,8 +469,6 @@ def test_move_after_processing_preserve_path(started_cluster, engine_name, move_
 
     dst_bucket = processed_bucket if move_to == "another_bucket" else src_bucket
 
-    breakpoint()
-
     assert count_objects(started_cluster, dst_bucket, expected_key) == 1
     assert count_objects(started_cluster, dst_bucket, processed_prefix) == 1
     assert count_objects(started_cluster, src_bucket, files_path) == 0
