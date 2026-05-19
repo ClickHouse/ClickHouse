@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/MutationCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/MemorySettings.h>
@@ -247,6 +248,30 @@ void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*
 void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context)
 {
     std::lock_guard lock(mutex);
+
+    /// `Memory` tables do not own patch parts (lightweight update support is provided only by
+    /// engines from the `MergeTree` family) and do not maintain a `_row_exists` deletion mask.
+    /// `APPLY PATCHES` / `APPLY DELETED MASK` are therefore semantic no-ops here: the post-state
+    /// the user is asking for ("all patches applied", "deleted rows physically removed") is
+    /// already satisfied trivially. Filtering them out before constructing the mutation pipeline
+    /// avoids reaching `MutationsInterpreter` with a command set that has no stages to apply to
+    /// the in-memory blocks. The previous code path produced N output blocks with 0 rows each
+    /// (matching the input block count but empty), which then failed the partial-column
+    /// invariant check at the bottom of this function with
+    /// `Mutation of \`Memory\` table produced incomplete output: block 0 has 0 rows, expected N`.
+    MutationCommands commands_to_run;
+    commands_to_run.reserve(commands.size());
+    for (const auto & command : commands)
+    {
+        if (command.type == MutationCommand::APPLY_PATCHES
+         || command.type == MutationCommand::APPLY_DELETED_MASK)
+            continue;
+        commands_to_run.push_back(command);
+    }
+
+    if (commands_to_run.empty())
+        return;
+
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
@@ -258,7 +283,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     new_context->setSetting("max_threads", 1);
 
     MutationsInterpreter::Settings settings(true);
-    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, settings);
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands_to_run, new_context, settings);
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
 
