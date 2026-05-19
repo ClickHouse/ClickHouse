@@ -378,6 +378,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
     element.thread_ids = info.thread_ids;
     element.peak_threads_usage = info.peak_threads_usage;
     element.profile_counters = info.profile_counters;
+    element.function_call_stats = info.function_call_stats;
 
     /// We need to refresh the access info since dependent views might have added extra information, either during
     /// creation of the view (PushingToViews chain) or while executing its internal SELECT

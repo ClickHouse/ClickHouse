@@ -662,7 +662,21 @@ ColumnPtr IFunctionBase::execute(const DB::ColumnsWithTypeAndName& arguments, co
         size_t input_rows_count, bool dry_run) const
 {
     checkFunctionArgumentSizes(arguments, input_rows_count);
-    return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
+    auto result = prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
+
+    /// Accumulate per-function stats on the current thread (no lock, thread-local). The thread
+    /// group merges these at query finalization and they end up in `system.query_log.function_calls`.
+    /// `dry_run` calls are skipped so EXPLAIN / schema-inference don't pollute the counts.
+    if (!dry_run)
+    {
+        if (auto * thread = current_thread)
+        {
+            const UInt64 result_bytes = result ? result->byteSize() : 0;
+            thread->function_call_stats.increment(getName(), input_rows_count, result_bytes);
+        }
+    }
+
+    return result;
 }
 
 const Array & IFunctionBase::getParameters() const

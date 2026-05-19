@@ -831,7 +831,10 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
             res.peak_threads_usage = thread_group->getPeakThreadsUsage();
         }
         if (get_profile_events)
+        {
             res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+            res.function_call_stats = std::make_shared<FunctionCallStats>(thread_group->getFunctionCallStats());
+        }
     }
 
     if (get_settings)

@@ -6,6 +6,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Parsers/IAST.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/FunctionCallStats.h>
 #include <Common/ProfileEvents.h>
 #include <Common/TransactionID.h>
 
@@ -100,6 +101,7 @@ struct QueryLogElement
     std::vector<UInt64> thread_ids;
     UInt64 peak_threads_usage = 0;
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+    std::shared_ptr<FunctionCallStats> function_call_stats;
     std::shared_ptr<AsyncReadCounters> async_read_counters;
     std::shared_ptr<Settings> query_settings;
 

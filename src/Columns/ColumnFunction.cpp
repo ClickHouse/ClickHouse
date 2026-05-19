@@ -5,6 +5,7 @@
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
+#include <Common/CurrentThread.h>
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -410,6 +411,13 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
     res.column = function->execute(columns, res.type, elements_size, /* dry_run = */ false);
+
+    if (auto * thread_status = DB::current_thread)
+    {
+        UInt64 result_bytes = res.column ? res.column->byteSize() : 0;
+        thread_status->function_call_stats.increment(
+            function->getName(), elements_size, result_bytes);
+    }
     if (!columnMatchesType(*res.column, *res.type))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,

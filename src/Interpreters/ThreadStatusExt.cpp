@@ -564,6 +564,11 @@ void ThreadStatus::initPerformanceCounters()
     memory_tracker.resetCounters();
     memory_tracker.setDescription("Thread");
 
+    /// Worker threads are reused across queries; without this clear, the accumulated per-function
+    /// counts from the previous query would be merged into the next query's thread group and
+    /// inflate `system.query_log.function_calls`.
+    function_call_stats.clear();
+
     // query_start_time.nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
     *last_rusage = RUsageCounters::current();
 
@@ -618,6 +623,14 @@ void ThreadStatus::finalizePerformanceCounters()
 
     performance_counters_finalized = true;
     updatePerformanceCounters();
+
+    if (thread_group && !function_call_stats.empty())
+    {
+        thread_group->mergeFunctionCallStats(function_call_stats);
+        /// Drop the per-thread counts now that they've been merged — defensive clear so a thread
+        /// reused without a fresh `initPerformanceCounters` still starts from zero on the next query.
+        function_call_stats.clear();
+    }
 
     // We want to close perf file descriptors if the perf events were enabled for
     // one query.
