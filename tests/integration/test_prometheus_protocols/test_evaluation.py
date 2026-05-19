@@ -2454,6 +2454,241 @@ def test_comparison_operators():
     )
 
 
+def test_set_binary_operators():
+    do_query_test(
+        "(last_over_time(foo[10]) and last_over_time(bar[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[110, "16"], [130, "16"], [150, "16"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[110, "4"]]}]}',
+        [
+            [
+                "[('__name__','foo'),('shape','circle'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',16),('1970-01-01 00:02:10.000',16),('1970-01-01 00:02:30.000',16)]",
+            ],
+            [
+                "[('__name__','foo'),('shape','square'),('size','s')]",
+                "[('1970-01-01 00:01:50.000',4)]",
+            ],
+        ],
+    )
+
+    do_query_test(
+        "(last_over_time(foo[10]) unless last_over_time(bar[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[130, "40"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[110, "8"], [120, "80"]]}]}',
+        [
+            [
+                "[('__name__','foo'),('shape','square'),('size','s')]",
+                "[('1970-01-01 00:02:10.000',40)]",
+            ],
+            [
+                "[('__name__','foo'),('shape','triangle'),('size','m')]",
+                "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:00.000',80)]",
+            ],
+        ],
+    )
+
+    do_query_test(
+        "(last_over_time(foo[10]) or last_over_time(bar[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "values": [[120, "16"]]}, {"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "values": [[110, "9"], [130, "90"]]}, {"metric": {"__name__": "bar", "shape": "square", "size": "s"}, "values": [[120, "40"], [140, "700"]]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "values": [[110, "8"], [150, "30"]]}, {"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[110, "16"], [130, "16"], [150, "16"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[110, "4"], [130, "40"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[110, "8"], [120, "80"]]}]}',
+        [
+            [
+                "[('__name__','bar'),('shape','circle'),('size','l')]",
+                "[('1970-01-01 00:02:00.000',16)]",
+            ],
+            [
+                "[('__name__','bar'),('shape','rectangle'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',9),('1970-01-01 00:02:10.000',90)]",
+            ],
+            [
+                "[('__name__','bar'),('shape','square'),('size','s')]",
+                "[('1970-01-01 00:02:00.000',40),('1970-01-01 00:02:20.000',700)]",
+            ],
+            [
+                "[('__name__','bar'),('shape','triangle'),('size','xl')]",
+                "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:30.000',30)]",
+            ],
+            [
+                "[('__name__','foo'),('shape','circle'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',16),('1970-01-01 00:02:10.000',16),('1970-01-01 00:02:30.000',16)]",
+            ],
+            [
+                "[('__name__','foo'),('shape','square'),('size','s')]",
+                "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:10.000',40)]",
+            ],
+            [
+                "[('__name__','foo'),('shape','triangle'),('size','m')]",
+                "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:00.000',80)]",
+            ],
+        ],
+    )
+
+    do_query_test(
+        "(last_over_time(foo[10]) and on(shape) last_over_time(bar[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[110, "16"], [130, "16"], [150, "16"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[110, "4"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[110, "8"]]}]}',
+        [
+            [
+                "[('__name__','foo'),('shape','circle'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',16),('1970-01-01 00:02:10.000',16),('1970-01-01 00:02:30.000',16)]",
+            ],
+            [
+                "[('__name__','foo'),('shape','square'),('size','s')]",
+                "[('1970-01-01 00:01:50.000',4)]",
+            ],
+            [
+                "[('__name__','foo'),('shape','triangle'),('size','m')]",
+                "[('1970-01-01 00:01:50.000',8)]",
+            ],
+        ],
+    )
+
+    do_query_test(
+        "(last_over_time(foo[10]) unless ignoring(size) last_over_time(bar[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[130, "40"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[120, "80"]]}]}',
+        [
+            [
+                "[('__name__','foo'),('shape','square'),('size','s')]",
+                "[('1970-01-01 00:02:10.000',40)]",
+            ],
+            [
+                "[('__name__','foo'),('shape','triangle'),('size','m')]",
+                "[('1970-01-01 00:02:00.000',80)]",
+            ],
+        ],
+    )
+
+    do_query_test(
+        "(last_over_time(foo[10]) or on(shape) last_over_time(bar[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "bar", "shape": "circle", "size": "l"}, "values": [[120, "16"]]}, {"metric": {"__name__": "bar", "shape": "rectangle", "size": "l"}, "values": [[110, "9"], [130, "90"]]}, {"metric": {"__name__": "bar", "shape": "square", "size": "s"}, "values": [[120, "40"], [140, "700"]]}, {"metric": {"__name__": "bar", "shape": "triangle", "size": "xl"}, "values": [[150, "30"]]}, {"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[110, "16"], [130, "16"], [150, "16"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[110, "4"], [130, "40"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[110, "8"], [120, "80"]]}]}',
+        [
+            [
+                "[('__name__','bar'),('shape','circle'),('size','l')]",
+                "[('1970-01-01 00:02:00.000',16)]",
+            ],
+            [
+                "[('__name__','bar'),('shape','rectangle'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',9),('1970-01-01 00:02:10.000',90)]",
+            ],
+            [
+                "[('__name__','bar'),('shape','square'),('size','s')]",
+                "[('1970-01-01 00:02:00.000',40),('1970-01-01 00:02:20.000',700)]",
+            ],
+            [
+                "[('__name__','bar'),('shape','triangle'),('size','xl')]",
+                "[('1970-01-01 00:02:30.000',30)]",
+            ],
+            [
+                "[('__name__','foo'),('shape','circle'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',16),('1970-01-01 00:02:10.000',16),('1970-01-01 00:02:30.000',16)]",
+            ],
+            [
+                "[('__name__','foo'),('shape','square'),('size','s')]",
+                "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:10.000',40)]",
+            ],
+            [
+                "[('__name__','foo'),('shape','triangle'),('size','m')]",
+                "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:00.000',80)]",
+            ],
+        ],
+    )
+
+    # The result of `(foo > 10) or foo` must be exactly `foo`.
+    do_query_test(
+        "((last_over_time(foo[10]) > 10) or last_over_time(foo[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[110, "16"], [130, "16"], [150, "16"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[110, "4"], [130, "40"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[110, "8"], [120, "80"]]}]}',
+        [
+            [
+                "[('__name__','foo'),('shape','circle'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',16),('1970-01-01 00:02:10.000',16),('1970-01-01 00:02:30.000',16)]",
+            ],
+            [
+                "[('__name__','foo'),('shape','square'),('size','s')]",
+                "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:10.000',40)]",
+            ],
+            [
+                "[('__name__','foo'),('shape','triangle'),('size','m')]",
+                "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:00.000',80)]",
+            ],
+        ],
+    )
+
+    # Here bar(rectangle,l) shares {size=l} with the foo(circle,l) / bar(circle,l) pair and
+    # must still appear at the steps where the original foo(circle,l) was filtered to NULL.
+    # And "+ 0" is used here to drop the metric name.
+    do_query_test(
+        "((last_over_time(foo[10]) > 20) + 0 or on(size) (last_over_time(bar[10]) + 0))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"shape": "circle", "size": "l"}, "values": [[110, "10"], [120, "16"], [130, "50"], [150, "1000"]]}, {"metric": {"shape": "rectangle", "size": "l"}, "values": [[110, "9"], [130, "90"]]}, {"metric": {"shape": "square", "size": "s"}, "values": [[110, "3"], [120, "40"], [130, "40"], [140, "700"]]}, {"metric": {"shape": "triangle", "size": "m"}, "values": [[120, "80"]]}, {"metric": {"shape": "triangle", "size": "xl"}, "values": [[110, "8"], [150, "30"]]}]}',
+        [
+            [
+                "[('shape','circle'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',10),('1970-01-01 00:02:00.000',16),('1970-01-01 00:02:10.000',50),('1970-01-01 00:02:30.000',1000)]",
+            ],
+            [
+                "[('shape','rectangle'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',9),('1970-01-01 00:02:10.000',90)]",
+            ],
+            [
+                "[('shape','square'),('size','s')]",
+                "[('1970-01-01 00:01:50.000',3),('1970-01-01 00:02:00.000',40),('1970-01-01 00:02:10.000',40),('1970-01-01 00:02:20.000',700)]",
+            ],
+            [
+                "[('shape','triangle'),('size','m')]",
+                "[('1970-01-01 00:02:00.000',80)]",
+            ],
+            [
+                "[('shape','triangle'),('size','xl')]",
+                "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:30.000',30)]",
+            ],
+        ],
+    )
+
+    # Here bar(rectangle,l) on the left at t=130 covers {size=l},
+    # so right "(circle,l)=50" at t=130 must be suppressed even though left (circle,l) is NULL there.
+    # And "+ 0" is used here to drop the metric name.
+    do_query_test(
+        "((last_over_time(bar[10]) > 50) + 0 or on(size) (last_over_time(bar[10]) + 0))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"shape": "circle", "size": "l"}, "values": [[110, "10"], [120, "16"], [150, "1000"]]}, {"metric": {"shape": "rectangle", "size": "l"}, "values": [[110, "9"], [130, "90"]]}, {"metric": {"shape": "square", "size": "s"}, "values": [[110, "3"], [120, "40"], [140, "700"]]}, {"metric": {"shape": "triangle", "size": "xl"}, "values": [[110, "8"], [150, "30"]]}]}',
+        [
+            [
+                "[('shape','circle'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',10),('1970-01-01 00:02:00.000',16),('1970-01-01 00:02:30.000',1000)]",
+            ],
+            [
+                "[('shape','rectangle'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',9),('1970-01-01 00:02:10.000',90)]",
+            ],
+            [
+                "[('shape','square'),('size','s')]",
+                "[('1970-01-01 00:01:50.000',3),('1970-01-01 00:02:00.000',40),('1970-01-01 00:02:20.000',700)]",
+            ],
+            [
+                "[('shape','triangle'),('size','xl')]",
+                "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:30.000',30)]",
+            ],
+        ],
+    )
+
+    do_query_test_expect_error(
+        "last_over_time(foo[10]) and on(shape) group_left last_over_time(bar[10])",
+        150,
+        "no grouping allowed",
+        "Binary operator 'and' doesn't allow group_left",
+    )
+
+    do_query_test_expect_error(
+        "last_over_time(foo[10]) or ignoring(size) group_right last_over_time(bar[10])",
+        150,
+        "no grouping allowed",
+        "Binary operator 'or' doesn't allow group_right",
+    )
+
+
 def test_aggregation_operators():
     do_query_test(
         "sum(bar)",
