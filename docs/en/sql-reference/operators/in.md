@@ -3,8 +3,9 @@ description: 'Documentation for the IN operators excluding NOT IN, GLOBAL IN and
   NOT IN operators which are covered separately'
 slug: /sql-reference/operators/in
 title: 'IN Operators'
-doc_type: 'reference'
 ---
+
+# IN Operators
 
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
 
@@ -25,18 +26,22 @@ The right side of the operator can be a set of constant expressions, a set of tu
 
 ClickHouse allows types to differ in the left and the right parts of the `IN` subquery. 
 In this case, it converts the right side value to the type of the left side, as 
-if the [accurateCastOrNull](/sql-reference/functions/type-conversion-functions#accurateCastOrNull) function were applied to the right side. 
+if the [accurateCastOrNull](/sql-reference/functions/type-conversion-functions#accuratecastornullx-t) function were applied to the right side. 
 
 This means that the data type becomes [Nullable](../../sql-reference/data-types/nullable.md), and if the conversion 
 cannot be performed, it returns [NULL](/operations/settings/formats#input_format_null_as_default).
 
 **Example**
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT '1' IN (SELECT 1);
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─in('1', _subquery49)─┐
 │                    1 │
 └──────────────────────┘
@@ -50,7 +55,7 @@ The subquery may specify more than one column for filtering tuples.
 
 Example:
 
-```sql title="Query"
+```sql
 SELECT (CounterID, UserID) IN (SELECT CounterID, UserID FROM ...) FROM ...
 ```
 
@@ -59,7 +64,7 @@ The columns to the left and right of the `IN` operator should have the same type
 The `IN` operator and subquery may occur in any part of the query, including in aggregate functions and lambda functions.
 Example:
 
-```sql title="Query"
+```sql
 SELECT
     EventDate,
     avg(UserID IN
@@ -73,7 +78,7 @@ GROUP BY EventDate
 ORDER BY EventDate ASC
 ```
 
-```text title="Response"
+```text
 ┌──EventDate─┬────ratio─┐
 │ 2014-03-17 │        1 │
 │ 2014-03-18 │ 0.807696 │
@@ -134,8 +139,6 @@ Remember that the algorithms described below may work differently depending on t
 When using the regular `IN`, the query is sent to remote servers, and each of them runs the subqueries in the `IN` or `JOIN` clause.
 
 When using `GLOBAL IN` / `GLOBAL JOIN`, first all the subqueries are run for `GLOBAL IN` / `GLOBAL JOIN`, and the results are collected in temporary tables. Then the temporary tables are sent to each remote server, where the queries are run using this temporary data.
-
-For `GLOBAL ... JOIN`, which side of the join is calculated as the subquery depends on the join kind: for `LEFT` and `INNER` joins, the right table is calculated; for `RIGHT` joins, the left table is calculated instead, since the right table is the preserved side and should be read from shards.
 
 For a non-distributed query, use the regular `IN` / `JOIN`.
 

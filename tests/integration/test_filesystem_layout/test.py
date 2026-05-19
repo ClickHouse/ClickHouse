@@ -26,9 +26,8 @@ def started_cluster():
 
 
 def test_file_path_escaping(started_cluster):
-    node.query("DROP DATABASE IF EXISTS test")
     node.query(
-        "CREATE DATABASE test ENGINE = Ordinary",
+        "CREATE DATABASE IF NOT EXISTS test ENGINE = Ordinary",
         settings={"allow_deprecated_database_ordinary": 1},
     )
     node.query(
@@ -55,8 +54,7 @@ def test_file_path_escaping(started_cluster):
         ]
     )
 
-    node.query("DROP DATABASE IF EXISTS `test 2`")
-    node.query("CREATE DATABASE `test 2` ENGINE = Atomic")
+    node.query("CREATE DATABASE IF NOT EXISTS `test 2` ENGINE = Atomic")
     node.query(
         """
         CREATE TABLE `test 2`.`T.a_b,l-e!` UUID '12345678-1000-4000-8000-000000000001' (`~Id` UInt32)
@@ -99,8 +97,7 @@ def test_file_path_escaping(started_cluster):
 
 
 def test_data_directory_symlinks(started_cluster):
-    node.query("DROP DATABASE IF EXISTS test_symlinks")
-    node.query("CREATE DATABASE test_symlinks ENGINE = Atomic")
+    node.query("CREATE DATABASE IF NOT EXISTS test_symlinks ENGINE = Atomic")
 
     node.query(
         sql="""
