@@ -806,7 +806,7 @@ if (TARGET ch_contrib::arrow_flight)
     target_link_libraries(dbms PUBLIC ch_contrib::arrow_flight)
 endif()
 
-if (ENABLE_JIEBA)
+if (TARGET ch_contrib::jieba)
     target_link_libraries(dbms PUBLIC ch_contrib::jieba)
 endif()
 
