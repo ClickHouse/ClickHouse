@@ -2362,9 +2362,16 @@ Write exception in output format to produce valid output. Works with JSON and XM
     DECLARE(UInt64, http_response_buffer_size, 0, R"(
 The number of bytes to buffer in the server memory before sending a HTTP response to the client or flushing to disk (when http_wait_end_of_query is enabled).
 )", 0) \
-    DECLARE(Bool, allow_experimental_detach_non_readonly_queries, false, R"(
-When enabled, non-readonly queries (e.g. INSERT...SELECT, DELETE, CREATE) submitted are detached: the server returns immediately with a result block containing query_id and runs the query in a background thread.
-Does not apply to INSERT queries that expect data from the client (INSERT INTO t FORMAT ...); only queries that do not need additional input are detached. Distinct from async_insert.
+    DECLARE(Bool, allow_experimental_detach_queries, false, R"(
+When enabled, the server dispatches the query to a background thread and returns immediately with a result containing the `query_id`. Applies to any detachable kind: `SELECT`, `INSERT...SELECT`, `DELETE`, `ALTER`, `CREATE`, `OPTIMIZE`, `SHOW`, `EXPLAIN`, `SYSTEM`, etc.
+
+The detach path is skipped — and the query runs synchronously — when:
+
+- `async_insert=1` — the two settings are mutually exclusive and the async-insert queue owns the wait semantics; a one-line warning is logged. Because `async_insert` defaults to `1`, you must explicitly set `async_insert=0` whenever you use `allow_experimental_detach_queries`.
+- the query is `INSERT ... FORMAT ...` and the data is sent on the same connection (the background thread cannot drain client data after the handler returns);
+- the query is session-mutating (`SET`, `USE`, `BEGIN`, `COMMIT`, `ROLLBACK`, `KILL QUERY`) — these would silently no-op on a detached context.
+
+Detaching a `SELECT` is mainly useful for benchmarks, soak tests and warm-up runs where only "did it complete" matters; the result rows are discarded.
 )", EXPERIMENTAL) \
     \
     DECLARE(Bool, fsync_metadata, true, R"(
@@ -6359,7 +6366,9 @@ If disabled and the INSERT query contains inline data, the server will not send 
 )", 0) \
     \
     DECLARE(Bool, async_insert, true, R"(
-If true, data from INSERT query is stored in queue and later flushed to table in background. If wait_for_async_insert is false, INSERT query is processed almost instantly, otherwise client will wait until data will be flushed to table
+If true, data from INSERT query is stored in queue and later flushed to table in background. If wait_for_async_insert is false, INSERT query is processed almost instantly, otherwise client will wait until data will be flushed to table.
+
+Mutually exclusive with `allow_experimental_detach_queries`: when both are enabled the detach path is not used (a one-line warning is logged) and the query runs through the synchronous async-insert path. Because `async_insert` defaults to `1`, you must set `async_insert=0` whenever you want `allow_experimental_detach_queries` to take effect.
 )", 0) \
     DECLARE(Bool, wait_for_async_insert, true, R"(
 If true wait for processing of asynchronous insertion
