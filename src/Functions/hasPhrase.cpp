@@ -228,7 +228,7 @@ ExecutableFunctionHasPhrase::executeImpl(const ColumnsWithTypeAndName & argument
 REGISTER_FUNCTION(HasPhrase)
 {
     FunctionDocumentation::Description description = R"(
-Checks if the `input` contains all tokens from the `phrase` in consecutive order. If `input` is a column, returns all rows that satisfy this condition.
+Checks if the `input` contains all tokens from the `phrase` in consecutive order.
 
 :::note
 Column `input` should have a [text index](../../engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
