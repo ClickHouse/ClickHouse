@@ -24,6 +24,7 @@ namespace Setting
     extern const SettingsUInt64 http_max_fields;
     extern const SettingsUInt64 http_max_field_name_size;
     extern const SettingsUInt64 http_max_field_value_size;
+    extern const SettingsUInt64 http_max_request_header_size;
 }
 
 namespace ErrorCodes
@@ -51,6 +52,7 @@ HTMLForm::HTMLForm(const Settings & settings)
     : max_fields_number(settings[Setting::http_max_fields])
     , max_field_name_size(settings[Setting::http_max_field_name_size])
     , max_field_value_size(settings[Setting::http_max_field_value_size])
+    , max_request_header_size(settings[Setting::http_max_request_header_size])
     , encoding(ENCODING_URL)
 {
 }
@@ -204,7 +206,7 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
             throw Poco::Net::HTMLFormException("Too many form fields");
 
         Poco::Net::MessageHeader header;
-        readHeaders(header, in, max_fields_number, max_field_name_size, max_field_value_size);
+        readHeaders(header, in, max_fields_number, max_field_name_size, max_field_value_size, max_request_header_size);
         skipToNextLineOrEOF(in);
 
         NameValueCollection params;

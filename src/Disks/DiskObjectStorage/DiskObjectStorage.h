@@ -7,6 +7,7 @@
 #include <Disks/DiskObjectStorage/Replication/BlobKillerThread.h>
 #include <Disks/DiskObjectStorage/Replication/BlobCopierThread.h>
 #include <Disks/IDisk.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <base/scope_guard.h>
 

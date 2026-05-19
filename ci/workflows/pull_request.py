@@ -31,6 +31,7 @@ FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
 STYLE_AND_FAST_TESTS = [
     JobNames.STYLE_CHECK,
     JobNames.FAST_TEST,
+    JobNames.CI_TESTS,
     *[j.name for j in JobConfigs.tidy_build_arm_jobs],
 ]
 
@@ -49,6 +50,7 @@ workflow = Workflow.Config(
         JobConfigs.code_review,
         JobConfigs.docs_job,
         JobConfigs.fast_test,
+        JobConfigs.ci_tests,
         *JobConfigs.darwin_fast_test_jobs,
         *JobConfigs.tidy_build_arm_jobs,
         *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
@@ -61,17 +63,21 @@ workflow = Workflow.Config(
             for job in JobConfigs.release_build_jobs
         ],
         *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            (
+                job.set_provides([ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS])
+                if "fuzzers" in job.name
+                else job
+            ).set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.special_build_jobs
         ],
         *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_llvm_coverage_job],
         JobConfigs.smoke_tests_macos,
-        # TODO: stabilize new jobs and remove set_allow_merge_on_failure
+        # TODO: stabilize new jobs and remove set_allow_failure
         JobConfigs.lightweight_functional_tests_job,
-        *[j.set_allow_merge_on_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
-        JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_merge_on_failure(),
-        JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_merge_on_failure(),
-        JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_merge_on_failure(),
+        *[j.set_allow_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
+        JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_failure(),
+        JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_failure(),
+        JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_failure(),
         *JobConfigs.stateless_tests_flaky_pr_jobs,
         *JobConfigs.integration_test_asan_flaky_pr_jobs,
         JobConfigs.bugfix_validation_ft_pr_job,
@@ -146,12 +152,6 @@ workflow = Workflow.Config(
             .set_name("Keeper Stress Tests (PR)")
             .set_timeout(3 * 3600),
         *JobConfigs.toolchain_build_jobs,
-        # TODO: uncomment when praktika supports depends-on-all-jobs;
-        # currently set_run_after requires an explicit list, but CI Results Review
-        # should only run after every other job has finished.
-        # JobConfigs.ci_results_review.set_run_after(
-        #     FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
-        # ),
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
@@ -161,7 +161,6 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
-        ArtifactConfigs.parser_memory_profiler,
         *ArtifactConfigs.llvm_profdata_file,
         ArtifactConfigs.llvm_coverage_info_file,
         ArtifactConfigs.toolchain_pgo_bolt_amd,
@@ -192,6 +191,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/feature_docs.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/new_tests_check.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/can_be_merged.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/check_report_messages.py",
     ],
     job_aliases={
         "integration": JobConfigs.integration_test_jobs_non_required[

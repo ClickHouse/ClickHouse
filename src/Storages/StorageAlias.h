@@ -136,7 +136,6 @@ public:
     bool isRemote() const override { return getTargetTable()->isRemote(); }
     bool isSharedStorage() const override { return getTargetTable()->isSharedStorage(); }
     bool supportsReplication() const override { return getTargetTable()->supportsReplication(); }
-    bool hasLightweightDeletedMask() const override { return getTargetTable()->hasLightweightDeletedMask(); }
     bool supportsLightweightDelete() const override { return getTargetTable()->supportsLightweightDelete(); }
     std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override { return getTargetTable()->supportsLightweightUpdate(); }
     bool supportsDelete() const override { return getTargetTable()->supportsDelete(); }

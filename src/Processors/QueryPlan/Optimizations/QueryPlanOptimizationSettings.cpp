@@ -46,9 +46,11 @@ namespace Setting
     extern const SettingsBool query_plan_merge_expressions;
     extern const SettingsBool query_plan_merge_filter_into_join_condition;
     extern const SettingsBool query_plan_merge_filters;
+    extern const SettingsBool query_plan_optimize_lazy_final;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool query_plan_optimize_prewhere;
     extern const SettingsBool query_plan_push_down_limit;
+    extern const SettingsBool query_plan_top_k_through_join;
     extern const SettingsBool query_plan_read_in_order_through_join;
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool query_plan_remove_redundant_distinct;
@@ -63,6 +65,7 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_top_k_dynamic_filtering;
+    extern const SettingsBool use_top_k_dynamic_filtering_for_variable_length_types;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsDecorrelationJoinKind correlated_subqueries_default_join_kind;
@@ -92,6 +95,9 @@ namespace Setting
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
+    extern const SettingsUInt64 max_bytes_for_lazy_final;
+    extern const SettingsFloat min_filtered_ratio_for_lazy_final;
+    extern const SettingsUInt64 max_rows_for_lazy_final;
     extern const SettingsUInt64 query_plan_max_limit_for_lazy_materialization;
     extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
@@ -144,6 +150,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     merge_filter_into_join_condition = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filter_into_join_condition];
     convert_any_join_to_semi_or_anti_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_any_join_to_semi_or_anti_join];
     try_use_top_k_optimization = from[Setting::use_skip_indexes_for_top_k] || from[Setting::use_top_k_dynamic_filtering];
+    top_k_through_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_join];
 
     bool use_parallel_replicas = from[Setting::allow_experimental_parallel_reading_from_replicas] && from[Setting::max_parallel_replicas] > 1;
     query_plan_optimize_join_order_limit = use_parallel_replicas ? 0 : from[Setting::query_plan_optimize_join_order_limit];
@@ -205,6 +212,11 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization] && from[Setting::allow_experimental_analyzer];
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
 
+    optimize_lazy_final = from[Setting::query_plan_optimize_lazy_final] && from[Setting::allow_experimental_analyzer];
+    max_rows_for_lazy_final = from[Setting::max_rows_for_lazy_final];
+    max_bytes_for_lazy_final = from[Setting::max_bytes_for_lazy_final];
+    min_filtered_ratio_for_lazy_final = from[Setting::min_filtered_ratio_for_lazy_final];
+
     max_limit_for_vector_search_queries = from[Setting::max_limit_for_vector_search_queries].value;
     vector_search_with_rescoring = from[Setting::vector_search_with_rescoring];
     vector_search_filter_strategy = from[Setting::vector_search_filter_strategy].value;
@@ -215,6 +227,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     use_index_for_in_with_subqueries_max_values = from[Setting::use_index_for_in_with_subqueries_max_values];
     use_skip_indexes_for_top_k = from[Setting::use_skip_indexes_for_top_k];
     use_top_k_dynamic_filtering = from[Setting::use_top_k_dynamic_filtering];
+    use_top_k_dynamic_filtering_for_variable_length_types = from[Setting::use_top_k_dynamic_filtering_for_variable_length_types];
     max_limit_for_top_k_optimization = from[Setting::query_plan_max_limit_for_top_k_optimization];
     use_skip_indexes_on_data_read = from[Setting::use_skip_indexes_on_data_read];
     prepared_sets_cache = std::move(prepared_sets_cache_);

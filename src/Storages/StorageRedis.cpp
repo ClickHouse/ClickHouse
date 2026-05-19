@@ -8,6 +8,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ISource.h>

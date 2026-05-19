@@ -8,6 +8,7 @@
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -575,6 +576,12 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
             return {getIcebergType(type_nullable->getNestedType(), iter).first, false};
         }
+        case TypeIndex::Variant:
+        {
+            if (type->getCustomName() && type->getCustomName()->getName() == "Geometry")
+                return {Iceberg::f_geometry, false};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+        }
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
     }
@@ -584,6 +591,10 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
 {
     switch (type->getTypeId())
     {
+        case TypeIndex::UInt8:
+        case TypeIndex::Int8:
+        case TypeIndex::UInt16:
+        case TypeIndex::Int16:
         case TypeIndex::UInt32:
         case TypeIndex::Int32:
         case TypeIndex::Date:
@@ -1404,6 +1415,24 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
             result_sort_description.push_back(SortColumnDescription(sort_description.column_names[i], -1));
     }
     sortBlock(block, result_sort_description);
+}
+
+void forEachAvroEntry(
+    const String & filename,
+    ObjectStoragePtr object_storage,
+    ContextPtr context,
+    const String & logger_name,
+    std::function<void(const avro::GenericDatum &)> callback)
+{
+    RelativePathWithMetadata relative_path_with_metadata(filename);
+    auto manifest_list_buf = createReadBuffer(relative_path_with_metadata, object_storage, context, getLogger(logger_name));
+
+    auto input_stream = std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf);
+    avro::DataFileReader<avro::GenericDatum> reader(std::move(input_stream));
+
+    avro::GenericDatum datum(reader.readerSchema());
+    while (reader.read(datum))
+        callback(datum);
 }
 
 }
