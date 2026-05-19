@@ -69,7 +69,14 @@ public:
         auto old_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0);
         auto dest_tag = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 1);
         auto replacement = TimeSeriesTagsFunctionHelpers::extractConstStringFromArgument(name, arguments, 2);
-        auto src_tag = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 3);
+
+        /// We need to allow empty src_tag here.
+        /// Empty src_tag is allowed in PromQL label_replace() — Prometheus validates only the
+        /// destination label name, but not the source label name, and reads a missing source label as "".
+        /// Also there is a known trick - label_replace(v, new_tag_name, new_tag_value, "", "")
+        /// adds a new tag with constant value.
+        auto src_tag = TimeSeriesTagsFunctionHelpers::extractConstStringFromArgument(name, arguments, 3);
+
         auto regex = TimeSeriesTagsFunctionHelpers::extractConstStringFromArgument(name, arguments, 4);
 
         auto new_groups = tags_collector->replaceTag(old_groups, dest_tag, replacement, src_tag, regex);
