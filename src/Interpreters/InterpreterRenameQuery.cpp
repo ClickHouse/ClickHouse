@@ -173,19 +173,25 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
                 exchange_tables,
                 rename.dictionary);
 
-            DatabaseCatalog::instance().addDependencies(to_table_id, from_ref_dependencies, from_loading_dependencies, from_mv_dependencies, from_plain_view_dependencies, from_plain_view_dependents);
-            if (!to_ref_dependencies.empty() || !to_loading_dependencies.empty() || !to_mv_dependencies.empty() || !to_plain_view_dependencies.empty() || !to_plain_view_dependents.empty())
-                DatabaseCatalog::instance().addDependencies(from_table_id, to_ref_dependencies, to_loading_dependencies, to_mv_dependencies, to_plain_view_dependencies, to_plain_view_dependents);
+            DatabaseCatalog::instance().addDependencies(to_table_id, from_ref_dependencies, from_loading_dependencies, from_mv_dependencies, from_plain_view_dependencies, {});
+            if (!to_ref_dependencies.empty() || !to_loading_dependencies.empty() || !to_mv_dependencies.empty() || !to_plain_view_dependencies.empty())
+                DatabaseCatalog::instance().addDependencies(from_table_id, to_ref_dependencies, to_loading_dependencies, to_mv_dependencies, to_plain_view_dependencies, {});
 
             if (exchange_tables)
             {
-                /// See #105021: source-view edges must follow the name, not the storage.
+                /// See #105021: source-side edges (MV and plain-view dependents) follow the name, not the storage.
                 DatabaseCatalog::instance().addSourceViewDependencies(from_table_id, from_dependent_views);
                 DatabaseCatalog::instance().addSourceViewDependencies(to_table_id, to_dependent_views);
+                if (!from_plain_view_dependents.empty())
+                    DatabaseCatalog::instance().addDependencies(from_table_id, {}, {}, {}, {}, from_plain_view_dependents);
+                if (!to_plain_view_dependents.empty())
+                    DatabaseCatalog::instance().addDependencies(to_table_id, {}, {}, {}, {}, to_plain_view_dependents);
             }
             else
             {
                 DatabaseCatalog::instance().addSourceViewDependencies(to_table_id, from_dependent_views);
+                if (!from_plain_view_dependents.empty())
+                    DatabaseCatalog::instance().addDependencies(to_table_id, {}, {}, {}, {}, from_plain_view_dependents);
             }
 
             NamedCollectionFactory::instance().renameDependencies(from_table_id, to_table_id);

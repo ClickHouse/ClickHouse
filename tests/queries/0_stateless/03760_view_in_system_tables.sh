@@ -195,4 +195,20 @@ SELECT arraySort(dependencies_table) FROM system.tables WHERE database = current
 
 DROP VIEW 03760_rename_view;
 DROP TABLE 03760_rename_src2;
+
+-- CREATE OR REPLACE TABLE (source): dependent plain views must survive the implicit EXCHANGE.
+DROP TABLE IF EXISTS 03760_cor_src;
+DROP VIEW  IF EXISTS 03760_cor_view;
+
+CREATE TABLE 03760_cor_src (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE VIEW 03760_cor_view AS SELECT * FROM 03760_cor_src;
+
+SELECT arraySort(dependencies_table) FROM system.tables WHERE database = currentDatabase() AND name = '03760_cor_src';
+
+CREATE OR REPLACE TABLE 03760_cor_src (id UInt64, extra String) ENGINE = MergeTree ORDER BY id;
+
+SELECT arraySort(dependencies_table) FROM system.tables WHERE database = currentDatabase() AND name = '03760_cor_src';
+
+DROP VIEW 03760_cor_view;
+DROP TABLE 03760_cor_src;
 EOF
