@@ -39,3 +39,17 @@ FROM (
     )
     GROUP BY ts WITH CLUSTER 1000000
 );
+
+-- 2D `DateTime64`: both axes go through the same exact translation path.
+-- Three points 1 µs / 2 µs apart on (x, y) — Euclidean distance ~sqrt(5) < 3,
+-- chain-merges into a single cluster.
+SELECT count() AS num_clusters, sum(c) AS total_rows
+FROM (
+    SELECT ts1, ts2, count() AS c
+    FROM (
+        SELECT toDateTime64('2024-01-01 00:00:00', 6) + INTERVAL number MICROSECOND AS ts1,
+               toDateTime64('2024-01-01 00:00:00', 6) + INTERVAL (number * 2) MICROSECOND AS ts2
+        FROM numbers(3)
+    )
+    GROUP BY (ts1, ts2) WITH CLUSTER 3
+);
