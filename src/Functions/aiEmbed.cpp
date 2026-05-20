@@ -166,10 +166,23 @@ public:
             live_rows.push_back(i);
         }
 
-        std::vector<std::vector<Float32>> embeddings(input_rows_count);
+        auto data_col = ColumnVector<Float32>::create(); /// float32 is standard embedding API output
+        auto offsets_col = ColumnArray::ColumnOffsets::create();
+        auto & data_vec = data_col->getData();
+        auto & offsets_vec = offsets_col->getData();
+        offsets_vec.reserve(input_rows_count);
+
+        /// If dimensions is set we can reserve, otherwise we don't know what the dimension will be
+        if (dimensions > 0)
+            data_vec.reserve(live_rows.size() * dimensions);
 
         UInt64 total_api_calls = 0;
         UInt64 total_input_tokens = 0;
+        UInt64 rows_processed = 0;
+        UInt64 rows_skipped = 0;
+        UInt64 current_offset = 0;
+
+        size_t cursor = 0;
 
         for (size_t batch_start = 0; batch_start < live_rows.size(); batch_start += max_batch_size)
         {
@@ -186,19 +199,17 @@ public:
             for (size_t k = batch_start; k < batch_end; ++k)
                 ai_embedding_request.inputs.emplace_back(text_data_column.getDataAt(live_rows[k]));
 
+            AIEmbeddingResponse ai_embedding_response;
+            bool batch_ok = false;
             for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
             {
                 try
                 {
-                    auto ai_embedding_response = provider->embed(ai_embedding_request, timeouts);
+                    ai_embedding_response = provider->embed(ai_embedding_request, timeouts);
                     ++total_api_calls;
                     total_input_tokens += ai_embedding_response.input_tokens;
                     quota.recordResponse(ai_embedding_response.input_tokens, 0);
-
-                    chassert(ai_embedding_response.embeddings.size() == ai_embedding_request.inputs.size(),
-                        "Number of inputs does not match number of output embeddings");
-                    for (size_t k = 0; k < ai_embedding_response.embeddings.size(); ++k)
-                        embeddings[live_rows[batch_start + k]] = std::move(ai_embedding_response.embeddings[k]);
+                    batch_ok = true;
                     break;
                 }
                 catch (const Exception & e)
@@ -209,50 +220,50 @@ public:
                         continue;
                     }
 
-                    if (!throw_on_error) /// just skip to next batch, this batch's rows are left with empty embeddings
+                    if (!throw_on_error) /// just skip to next batch, this batch's rows will be filled with empty arrays
                         break;
 
                     throw;
                 }
                 catch (...) /// Handle non-DB exceptions (e.g. Poco network/JSON errors) for throw_on_error semantics
                 {
-                    if (!throw_on_error) /// just skip to next batch, this batch's rows are left with empty embeddings
+                    if (!throw_on_error) /// just skip to next batch, this batch's rows will be filled with empty arrays
                         break;
 
                     throw;
                 }
             }
-        }
 
-        auto data_col = ColumnVector<Float32>::create(); /// float32 is standard embedding API output
-        auto offsets_col = ColumnArray::ColumnOffsets::create();
-        auto & data_vec = data_col->getData();
-        auto & offsets_vec = offsets_col->getData();
-        offsets_vec.reserve(input_rows_count);
+            if (!batch_ok) /// failed batch's rows are filled in by the next batch (or the final tail fill)
+                continue;
 
-        /// If dimensions is set we can reserve, otherwise we don't know what the dimension will be
-        if (dimensions > 0)
-            data_vec.reserve(live_rows.size() * dimensions);
+            chassert(ai_embedding_response.embeddings.size() == ai_embedding_request.inputs.size(),
+                "Number of inputs does not match number of output embeddings");
 
-        UInt64 rows_processed = 0;
-        UInt64 rows_skipped = 0;
-        UInt64 current_offset = 0;
-
-        /// Match embeddings back to input rows
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            const auto & vec = embeddings[i];
-            if (!vec.empty())
+            for (size_t k = 0; k < ai_embedding_response.embeddings.size(); ++k)
             {
-                data_vec.insert(data_vec.end(), vec.begin(), vec.end());
-                current_offset += vec.size();
+                /// fill empties
+                size_t last_row_in_batch = live_rows[batch_start + k];
+                for (; cursor < last_row_in_batch; ++cursor)
+                {
+                    offsets_vec.push_back(current_offset);
+                    ++rows_skipped;
+                }
+
+                const auto & v = ai_embedding_response.embeddings[k];
+                data_vec.insert(data_vec.end(), v.begin(), v.end());
+                current_offset += v.size();
+                offsets_vec.push_back(current_offset);
+                ++cursor;
                 ++rows_processed;
             }
-            else
-            {
-                ++rows_skipped;
-            }
+        }
+
+        /// fill final empties
+        for (; cursor < input_rows_count; ++cursor)
+        {
             offsets_vec.push_back(current_offset);
+            ++rows_skipped;
         }
 
         ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls);
