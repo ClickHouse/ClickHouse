@@ -477,7 +477,7 @@ public:
     // Just occupy a space
     void addDefault(const String & attr_name, UnorderedSetWithMemoryTracking<String> * const defaults)
     {
-        assert (!collect_values_limit);
+        chassert(!collect_values_limit);
         if (!this->contains(attr_name) && !defaults->contains(attr_name))
         {
             defaults->insert(attr_name);

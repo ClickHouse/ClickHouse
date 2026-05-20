@@ -160,7 +160,7 @@ struct RapidJSONParser
         /// Optional: Provides access to an object's element by index.
         ALWAYS_INLINE KeyValuePair operator[](size_t index) const
         {
-            assert (index < size());
+            chassert(index < size());
             auto it = ptr->MemberBegin() + index;
             std::string_view key{it->name.GetString(), it->name.GetStringLength()};
             return {key, it->value};
