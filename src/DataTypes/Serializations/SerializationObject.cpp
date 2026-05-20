@@ -959,9 +959,7 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
         settings.path.pop_back();
 
         if (!data_stream)
-            throw Exception(
-                settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
-                "Missing stream for Object data serialization in SerializationObject::deserializeBinaryBulkWithMultipleStreams");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for Object data serialization in SerializationObject::deserializeBinaryBulkWithMultipleStreams");
 
         String data;
         FormatSettings format_settings = settings.format_settings ? *settings.format_settings : FormatSettings{};

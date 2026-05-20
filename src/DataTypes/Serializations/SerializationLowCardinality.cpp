@@ -572,14 +572,10 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         return;
 
     if (!keys_stream)
-        throw Exception(
-            settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
-            "Got empty stream for SerializationLowCardinality keys.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for SerializationLowCardinality keys.");
 
     if (!indexes_stream)
-        throw Exception(
-            settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
-            "Got empty stream for SerializationLowCardinality indexes.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for SerializationLowCardinality indexes.");
 
     auto * low_cardinality_state = checkAndGetState<DeserializeStateLowCardinality>(state);
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);

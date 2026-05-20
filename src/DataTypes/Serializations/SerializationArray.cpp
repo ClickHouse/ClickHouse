@@ -492,11 +492,7 @@ std::pair<size_t, size_t> SerializationArray::deserializeOffsetsBinaryBulkAndGet
     /// Number of values corresponding with `offset_values` must be read.
     size_t last_offset = offset_values.back();
     if (last_offset < prev_last_offset)
-        throw Exception(
-            settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
-            "Array elements column is longer (>{}) than the last offset ({})",
-            prev_last_offset,
-            last_offset);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Array elements column is longer (>{}) than the last offset ({})", prev_last_offset, last_offset);
     size_t nested_limit = last_offset - prev_last_offset;
     return {skipped_nested_rows, nested_limit};
 }

@@ -21,7 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_DATA;
 }
 
 
@@ -437,7 +436,7 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     if (offsets_column->size() + 1 != values_column->size())
     {
         throw Exception(
-            settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
+            ErrorCodes::LOGICAL_ERROR,
             "Inconsistent sizes of values and offsets in SerializationSparse. Offsets size: {}, values size: {}",
             offsets_column->size(),
             values_column->size());
