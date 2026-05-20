@@ -46,6 +46,24 @@ void skipAsciiSpaces(std::string_view s, size_t & pos)
         ++pos;
 }
 
+bool isPrometheusIdentifierChar(char c, bool first)
+{
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == ':')
+        return true;
+    return !first && c >= '0' && c <= '9';
+}
+
+/// Prometheus / OpenMetrics metric and label names: [a-zA-Z_:][a-zA-Z0-9_:]*
+bool isValidPrometheusIdentifier(std::string_view id)
+{
+    if (id.empty() || !isPrometheusIdentifierChar(id[0], true))
+        return false;
+    for (size_t i = 1; i < id.size(); ++i)
+        if (!isPrometheusIdentifierChar(id[i], false))
+            return false;
+    return true;
+}
+
 bool tryConsume(std::string_view s, size_t & pos, char c)
 {
     skipAsciiSpaces(s, pos);
@@ -100,11 +118,11 @@ bool readQuotedLabelValue(std::string_view s, size_t & pos, String & out)
     return false;
 }
 
+/// `pos` at opening `{` of a label set.
 bool parseLabelSet(std::string_view s, size_t & pos, std::map<String, String> & labels)
 {
-    skipAsciiSpaces(s, pos);
     if (pos >= s.size() || s[pos] != '{')
-        return true;
+        return false;
     ++pos;
     while (true)
     {
@@ -120,6 +138,8 @@ bool parseLabelSet(std::string_view s, size_t & pos, std::map<String, String> & 
         if (pos >= s.size())
             return false;
         String key{s.substr(key_start, pos - key_start)};
+        if (!isValidPrometheusIdentifier(key))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid label name '{}' in OpenMetrics label set", key);
         if (!tryConsume(s, pos, '='))
             return false;
         String value;
@@ -150,7 +170,21 @@ bool parseMetricDescriptor(std::string_view s, size_t & pos, String & stem, std:
     while (pos < s.size() && s[pos] != '{' && s[pos] != ' ' && s[pos] != '\t')
         ++pos;
     stem = String{s.substr(stem_start, pos - stem_start)};
-    return parseLabelSet(s, pos, labels);
+    if (!stem.empty() && !isValidPrometheusIdentifier(stem))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid metric name '{}' in OpenMetrics line", stem);
+
+    if (pos < s.size())
+    {
+        size_t label_set_pos = pos;
+        skipAsciiSpaces(s, label_set_pos);
+        if (label_set_pos < s.size() && s[label_set_pos] == '{')
+        {
+            pos = label_set_pos;
+            if (!parseLabelSet(s, pos, labels))
+                return false;
+        }
+    }
+    return true;
 }
 
 bool parseValueToken(std::string_view s, size_t & pos, String & value_out)
@@ -490,7 +524,12 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
         if (stem.empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Empty metric name in OpenMetrics line: {}", line);
 
-        skipAsciiSpaces(sv, pos);
+        if (pos >= sv.size() || (sv[pos] != ' ' && sv[pos] != '\t'))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Missing whitespace between metric descriptor and value in OpenMetrics line: {}",
+                line);
+
         String value_token;
         if (!parseValueToken(sv, pos, value_token))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse value in OpenMetrics line: {}", line);
