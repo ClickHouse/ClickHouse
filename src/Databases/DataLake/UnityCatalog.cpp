@@ -432,6 +432,12 @@ UnityCatalog::UnityCatalog(
 
 ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCallback(const DB::StorageID & table_id)
 {
+    if (!table_id.hasUUID())
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Cannot build a Unity credentials refresh callback for `{}`: StorageID has no UUID",
+            table_id.getNameForLogs());
+
     const String unity_table_id = toString(table_id.uuid);
 
     return [this, unity_table_id] () -> std::shared_ptr<IStorageCredentials>
