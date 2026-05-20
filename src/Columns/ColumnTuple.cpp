@@ -738,9 +738,12 @@ void ColumnTuple::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> 
 
 void ColumnTuple::shrinkToFit()
 {
+    /// `shrinkToFit` is best-effort. Skip subcolumns that are still shared
+    /// to avoid violating the `assumeMutableRef` deep ownership check.
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
-        getColumn(i).shrinkToFit();
+        if (columns[i]->use_count() == 1)
+            getColumn(i).shrinkToFit();
 }
 
 void ColumnTuple::ensureOwnership()

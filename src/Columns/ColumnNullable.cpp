@@ -782,8 +782,12 @@ void ColumnNullable::prepareForSquashing(const VectorWithMemoryTracking<ColumnPt
 
 void ColumnNullable::shrinkToFit()
 {
-    getNestedColumn().shrinkToFit();
-    getNullMapColumn().shrinkToFit();
+    /// `shrinkToFit` is best-effort. Skip subcolumns that are still shared
+    /// to avoid violating the `assumeMutableRef` deep ownership check.
+    if (nested_column->use_count() == 1)
+        getNestedColumn().shrinkToFit();
+    if (null_map->use_count() == 1)
+        getNullMapColumn().shrinkToFit();
 }
 
 void ColumnNullable::ensureOwnership()
