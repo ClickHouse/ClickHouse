@@ -348,70 +348,157 @@ MergeTreeDataPartWide::~MergeTreeDataPartWide()
 void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
 {
     std::string marks_file_extension = index_granularity_info.mark_type.getFileExtension();
+    const auto & cols_substreams = getColumnsSubstreams();
 
     if (!checksums.empty())
     {
         if (require_part_metadata)
         {
-            for (const auto & name_type : columns)
+            if (!cols_substreams.empty())
             {
-                getSerialization(name_type.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+                /// Use columns_substreams.txt as the source of truth for substream file names.
+                /// This is more reliable than enumerateStreams for types with dynamic structure (JSON, Dynamic)
+                /// because enumerateStreams requires deserialization state to correctly enumerate dynamic substreams.
+                size_t col_idx = 0;
+                for (const auto & name_type : columns)
                 {
-                    /// Skip ephemeral subcolumns that don't store any real data.
-                    if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
-                        return;
+                    const auto & substreams = cols_substreams.getColumnSubstreams(col_idx);
+                    for (const auto & substream : substreams)
+                    {
+                        auto stream_name = getStreamNameOrHash(substream, DATA_FILE_EXTENSION, checksums);
+                        if (!stream_name)
+                            throw Exception(
+                                ErrorCodes::NO_FILE_IN_DATA_PART,
+                                "No stream ({}{}) file checksum for column {} (substream {}) in part {}",
+                                substream,
+                                DATA_FILE_EXTENSION,
+                                name_type.name,
+                                substream,
+                                getDataPartStorage().getFullPath());
 
-                    auto stream_name = getStreamNameForColumn(name_type, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
-                    if (!stream_name)
-                        throw Exception(
-                            ErrorCodes::NO_FILE_IN_DATA_PART,
-                            "No stream ({}{}) file checksum for column {} in part {}",
-                            ISerialization::getFileNameForStream(name_type, substream_path, ISerialization::StreamFileNameSettings(*storage.getSettings())),
-                            DATA_FILE_EXTENSION,
-                            name_type.name,
-                            getDataPartStorage().getFullPath());
+                        auto mrk_file_name = *stream_name + marks_file_extension;
+                        if (!checksums.files.contains(mrk_file_name))
+                            throw Exception(
+                                ErrorCodes::NO_FILE_IN_DATA_PART,
+                                "No {} file checksum for column {} in part {}",
+                                mrk_file_name, name_type.name, getDataPartStorage().getFullPath());
+                    }
+                    ++col_idx;
+                }
+            }
+            else
+            {
+                /// Fallback for old parts without columns_substreams.txt.
+                /// Don't enumerate dynamic streams because we don't have the proper deserialization state,
+                /// so enumerateStreams may produce incorrect stream names for types with dynamic structure.
+                /// Dynamic stream files will still be verified by the subsequent directory-level check
+                /// against checksums.txt.
+                ISerialization::EnumerateStreamsSettings settings;
+                settings.enumerate_dynamic_streams = false;
+                for (const auto & name_type : columns)
+                {
+                    auto serialization = getSerialization(name_type.name);
+                    auto data = ISerialization::SubstreamData(serialization)
+                        .withType(name_type.type)
+                        .withColumn(getColumnSample(name_type));
+                    serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
+                    {
+                        if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                            return;
 
-                    auto mrk_file_name = *stream_name + marks_file_extension;
-                    if (!checksums.files.contains(mrk_file_name))
-                        throw Exception(
-                            ErrorCodes::NO_FILE_IN_DATA_PART,
-                            "No {} file checksum for column {} in part {} ",
-                            mrk_file_name, name_type.name, getDataPartStorage().getFullPath());
-                });
+                        auto stream_name = getStreamNameForColumn(name_type, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+                        if (!stream_name)
+                            throw Exception(
+                                ErrorCodes::NO_FILE_IN_DATA_PART,
+                                "No stream ({}{}) file checksum for column {} in part {}",
+                                ISerialization::getFileNameForStream(name_type, substream_path, ISerialization::StreamFileNameSettings(*storage.getSettings())),
+                                DATA_FILE_EXTENSION,
+                                name_type.name,
+                                getDataPartStorage().getFullPath());
+
+                        auto mrk_file_name = *stream_name + marks_file_extension;
+                        if (!checksums.files.contains(mrk_file_name))
+                            throw Exception(
+                                ErrorCodes::NO_FILE_IN_DATA_PART,
+                                "No {} file checksum for column {} in part {}",
+                                mrk_file_name, name_type.name, getDataPartStorage().getFullPath());
+                    }, data);
+                }
             }
         }
     }
     else
     {
-        /// Check that all marks are nonempty and have the same size.
-        std::optional<UInt64> marks_size;
-        for (const auto & name_type : columns)
+        if (!cols_substreams.empty())
         {
-            getSerialization(name_type.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            /// Use columns_substreams.txt as the source of truth.
+            std::optional<UInt64> marks_size;
+            for (size_t col_idx = 0; col_idx != columns.size(); ++col_idx)
             {
-                auto stream_name = getStreamNameForColumn(name_type, substream_path, marks_file_extension, getDataPartStorage(), storage.getSettings());
+                const auto & substreams = cols_substreams.getColumnSubstreams(col_idx);
+                for (const auto & substream : substreams)
+                {
+                    auto stream_name = getStreamNameOrHash(substream, marks_file_extension, getDataPartStorage());
+                    if (!stream_name)
+                        continue;
 
-                /// Missing file is Ok for case when new column was added.
-                if (!stream_name)
-                    return;
+                    auto file_path = *stream_name + marks_file_extension;
+                    UInt64 file_size = getDataPartStorage().getFileSize(file_path);
 
-                auto file_path = *stream_name + marks_file_extension;
-                UInt64 file_size = getDataPartStorage().getFileSize(file_path);
+                    if (!file_size)
+                        throw Exception(
+                            ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
+                            "Part {} is broken: {} is empty.",
+                            getDataPartStorage().getFullPath(),
+                            std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
 
-                if (!file_size)
-                    throw Exception(
-                        ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
-                        "Part {} is broken: {} is empty.",
-                        getDataPartStorage().getFullPath(),
-                        std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
+                    if (!marks_size)
+                        marks_size = file_size;
+                    else if (file_size != *marks_size)
+                        throw Exception(
+                            ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
+                            "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());
+                }
+            }
+        }
+        else
+        {
+            /// Fallback: check that all marks are nonempty and have the same size.
+            ISerialization::EnumerateStreamsSettings settings;
+            settings.enumerate_dynamic_streams = false;
+            std::optional<UInt64> marks_size;
+            for (const auto & name_type : columns)
+            {
+                auto serialization = getSerialization(name_type.name);
+                auto data = ISerialization::SubstreamData(serialization)
+                    .withType(name_type.type)
+                    .withColumn(getColumnSample(name_type));
+                serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
+                {
+                    auto stream_name = getStreamNameForColumn(name_type, substream_path, marks_file_extension, getDataPartStorage(), storage.getSettings());
 
-                if (!marks_size)
-                    marks_size = file_size;
-                else if (file_size != *marks_size)
-                    throw Exception(
-                        ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
-                        "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());
-            });
+                    /// Missing file is Ok for case when new column was added.
+                    if (!stream_name)
+                        return;
+
+                    auto file_path = *stream_name + marks_file_extension;
+                    UInt64 file_size = getDataPartStorage().getFileSize(file_path);
+
+                    if (!file_size)
+                        throw Exception(
+                            ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
+                            "Part {} is broken: {} is empty.",
+                            getDataPartStorage().getFullPath(),
+                            std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
+
+                    if (!marks_size)
+                        marks_size = file_size;
+                    else if (file_size != *marks_size)
+                        throw Exception(
+                            ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
+                            "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());
+                }, data);
+            }
         }
     }
 }
