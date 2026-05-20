@@ -3516,18 +3516,25 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
                 const auto & cluster_elem = group_by_list[orig_cluster_idx];
 
                 /// Accepted element types for `WITH CLUSTER`:
-                ///   - 2D: tuple of exactly two numeric/temporal scalars.
-                ///   - 1D numeric: any single numeric/temporal scalar.
+                ///   - 2D: tuple of exactly two supported scalars.
+                ///   - 1D numeric: any single supported scalar.
                 ///   - 1D string: `String` or `FixedString` (Levenshtein path).
-                /// Anything else (Array, Map, Tuple of non-numerics, Dynamic, …)
-                /// would reach `ClusterMergingTransform` and fail with an
-                /// internal error from `getFloat64`. Reject it upfront here.
+                /// Supported means: native ints up to 64 bits, floats, `Decimal32`,
+                /// or any temporal type — these have an exact (or trivially-exact)
+                /// path in `ClusterMergingTransform`. Wider numerics
+                /// (`Int128/256`, `UInt128/256`, `Decimal64/128/256`) lose
+                /// precision well before their natural range when forced through
+                /// `getFloat64`, so reject them here to avoid silent
+                /// miscluster ing instead of a clear error.
                 auto is_supported_scalar = [](const DataTypePtr & t)
                 {
                     WhichDataType which(t);
-                    return which.isNumber()
+                    return which.isNativeInteger()
+                        || which.isFloat()
+                        || which.isDecimal32()
                         || which.isDateOrDate32()
-                        || which.isDateTimeOrDateTime64();
+                        || which.isDateTimeOrDateTime64()
+                        || which.isTimeOrTime64();
                 };
 
                 if (auto * fn = cluster_elem->as<FunctionNode>(); fn != nullptr && fn->getFunctionName() == "tuple")
