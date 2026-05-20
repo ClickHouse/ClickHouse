@@ -721,7 +721,10 @@ void TCPHandler::runImpl()
                         sendEndOfStream(*query_state);
                         query_state->finalizeOut(out);
                     }
-                    return;
+                    /// Treat this like a normally completed query: go back to the connection loop
+                    /// so that session state (session_id, temporary tables, per-connection settings,
+                    /// interactive `clickhouse-client` flow) survives a detached response.
+                    continue;
                 }
             }
 
