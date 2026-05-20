@@ -1260,7 +1260,7 @@ def auto_statistics_generator():
         if random.random() < 0.3:
             return ""
 
-        all_statistic_types = ["minmax", "uniq", "tdigest", 'countmin', 'nullcount']
+        all_statistic_types = ["minmax", "uniq", "tdigest", 'countmin']
         return ",".join(random.sample(all_statistic_types, random.randint(0, len(all_statistic_types))))
 
     return gen
@@ -1525,6 +1525,16 @@ class SettingsRandomizer:
         "query_plan_enable_multithreading_after_window_functions": lambda: random.random() > 0.05,
         "query_plan_max_limit_for_lazy_materialization": lambda: random.choice([0, 1, 10, 100, 1000, 10000, 100000]),
         "query_plan_optimize_join_order_limit": lambda: 0 if random.random() < 0.05 else random.choice([1, 5, 10, 20, 64]),
+        "query_plan_direct_read_from_text_index": lambda: random.random() > 0.05,
+        "query_plan_text_index_add_hint": lambda: random.random() > 0.05,
+        "optimize_truncate_order_by_after_group_by_keys": lambda: random.random() > 0.05,
+        "enable_automatic_decision_for_merging_across_partitions_for_final": lambda: random.random() > 0.05,
+        "parallel_non_joined_rows_processing": lambda: random.random() > 0.05,
+        "use_skip_indexes_for_disjunctions": lambda: random.random() > 0.05,
+        "use_hash_table_stats_for_join_reordering": lambda: random.random() > 0.05,
+        "allow_calculating_subcolumns_sizes_for_merge_tree_reading": lambda: random.random() > 0.05,
+        "use_join_disjunctions_push_down": lambda: random.random() > 0.05,
+        "enable_join_transitive_predicates": lambda: random.random() < 0.3,
     }
 
     dependent_settings = {
@@ -1662,6 +1672,8 @@ class MergeTreeSettingsRandomizer:
         "max_buckets_in_map": lambda: random.randint(1, 100),
         "map_buckets_strategy": lambda: random.choice(["constant", "sqrt", "linear"]),
         "map_buckets_min_avg_size": lambda: random.randint(1, 1000),
+        "map_buckets_coefficient": lambda: round(random.uniform(0.5, 2.0), 2),
+        "propagate_types_serialization_versions_to_nested_types": lambda: random.randint(0, 1),
         "compress_per_column_in_compact_parts": lambda: random.randint(0, 1),
     }
 
