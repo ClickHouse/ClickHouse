@@ -1,6 +1,7 @@
 #include <Coordination/Defines.h>
 #include <Coordination/KeeperServer.h>
 #include <Common/ProfiledLocks.h>
+#include <Interpreters/Context.h>
 
 #include "config.h"
 
@@ -28,6 +29,7 @@
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/setThreadName.h>
@@ -63,6 +65,7 @@ namespace CoordinationSetting
 {
     extern const CoordinationSettingsBool async_replication;
     extern const CoordinationSettingsBool auto_forwarding;
+    extern const CoordinationSettingsUInt64 commit_profiler_real_time_period_ns;
     extern const CoordinationSettingsUInt64 configuration_change_tries_count;
     extern const CoordinationSettingsMilliseconds election_timeout_lower_bound_ms;
     extern const CoordinationSettingsMilliseconds election_timeout_upper_bound_ms;
@@ -341,6 +344,35 @@ void KeeperServer::KeeperRaftServer::forceReconfigure(const nuraft::ptr<nuraft::
 void KeeperServer::KeeperRaftServer::commit_in_bg()
 {
     DB::setThreadName(ThreadName::KEEPER_COMMIT);
+
+    /// Set up query profiler for the commit thread if configured.
+    /// We create a new Context, as if this were a clickhouse query, and set setting
+    /// query_profiler_real_time_period_ns so that the profiler samples this thread and results
+    /// appear in system.trace_log with query_id = 'KeeperCommit' for easy filtering.
+    std::optional<ThreadGroupSwitcher> thread_group_switcher;
+    UInt64 profiler_period = keeper_context->getCoordinationSettings()[CoordinationSetting::commit_profiler_real_time_period_ns];
+    if (profiler_period > 0)
+    {
+        try
+        {
+            auto global_context = Context::getGlobalContextInstance();
+            if (global_context && global_context->hasTraceCollector())
+            {
+                auto query_context = Context::createCopy(global_context);
+                query_context->makeQueryContext();
+                query_context->setCurrentQueryId("KeeperCommit");
+                query_context->setSetting("query_profiler_real_time_period_ns", Field(profiler_period));
+
+                auto thread_group = ThreadGroup::createForQuery(query_context);
+                thread_group_switcher.emplace(std::move(thread_group), ThreadName::KEEPER_COMMIT);
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException("KeeperServer", "Failed to set up commit thread profiler");
+        }
+    }
+
     // For NuRaft, if any commit fails (uncaught exception) the whole server aborts as a safety
     // This includes failed allocation which can produce an unknown state for the storage,
     // making it impossible to handle correctly.
@@ -632,6 +664,8 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 
     if (!raft_instance)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
+
+    raft_instance->keeper_context = keeper_context;
 
     state_manager->getLogStore()->setRaftServer(raft_instance);
 
