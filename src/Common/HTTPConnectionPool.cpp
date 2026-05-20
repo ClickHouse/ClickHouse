@@ -1016,6 +1016,21 @@ public:
         http_group->setSocketBufferSizes(std::move(http));
     }
 
+    HTTPConnectionPools::SocketBufferSizes getSocketBufferSizes(HTTPConnectionGroupType type) const
+    {
+        /// ConnectionGroup has its own mutex, no need for Impl::mutex here.
+        /// The groups are created once in the constructor and never replaced.
+        switch (type)
+        {
+            case HTTPConnectionGroupType::DISK:
+                return disk_group->getSocketBufferSizes();
+            case HTTPConnectionGroupType::STORAGE:
+                return storage_group->getSocketBufferSizes();
+            case HTTPConnectionGroupType::HTTP:
+                return http_group->getSocketBufferSizes();
+        }
+    }
+
     void dropCache()
     {
         std::lock_guard lock(mutex);
@@ -1124,6 +1139,11 @@ void HTTPConnectionPools::setLimits(HTTPConnectionPools::Limits disk, HTTPConnec
 void HTTPConnectionPools::setSocketBufferSizes(HTTPConnectionPools::SocketBufferSizes disk, HTTPConnectionPools::SocketBufferSizes storage, HTTPConnectionPools::SocketBufferSizes http)
 {
     impl->setSocketBufferSizes(std::move(disk), std::move(storage), std::move(http));
+}
+
+HTTPConnectionPools::SocketBufferSizes HTTPConnectionPools::getSocketBufferSizes(HTTPConnectionGroupType type) const
+{
+    return impl->getSocketBufferSizes(type);
 }
 
 void HTTPConnectionPools::dropCache()
