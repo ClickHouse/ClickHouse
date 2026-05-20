@@ -81,6 +81,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
     extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
     extern const DatabaseDataLakeSettingsBool force_add_bucket;
+    extern const DatabaseDataLakeSettingsBool skip_non_iceberg_tables;
 }
 
 namespace Setting
@@ -235,7 +236,8 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
                 settings[DatabaseDataLakeSetting::catalog_credential].value,
-                Context::getGlobalContextInstance());
+                Context::getGlobalContextInstance(),
+                settings[DatabaseDataLakeSetting::skip_non_iceberg_tables].value);
             break;
         }
 
@@ -245,7 +247,8 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 url,
                 Context::getGlobalContextInstance(),
                 catalog_parameters,
-                table_engine_definition);
+                table_engine_definition,
+                settings[DatabaseDataLakeSetting::skip_non_iceberg_tables].value);
             break;
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE:

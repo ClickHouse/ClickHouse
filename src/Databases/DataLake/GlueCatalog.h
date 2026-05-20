@@ -33,7 +33,8 @@ public:
         const String & endpoint,
         DB::ContextPtr context_,
         const CatalogSettings & settings_,
-        DB::ASTPtr table_engine_definition_);
+        DB::ASTPtr table_engine_definition_,
+        bool skip_non_iceberg_tables_);
 
     ~GlueCatalog() override;
 
@@ -86,6 +87,7 @@ private:
     std::string region;
     CatalogSettings settings;
     DB::ASTPtr table_engine_definition;
+    bool skip_non_iceberg_tables = false;
 
     DataLake::ICatalog::Namespaces getDatabases(const std::string & prefix, size_t limit = 0) const;
     DB::Names getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;

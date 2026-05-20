@@ -52,6 +52,42 @@ BASE_URL = "http://glue:3000"
 def get_glue_local_url(cluster):
     return f"http://localhost:{cluster.glue_catalog_port}"
 
+
+def get_glue_client(started_cluster):
+    return boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+
+
+def create_hive_text_table(glue_client, database_name, table_name, columns, location):
+    """Register a non-Iceberg Hive external text table in Glue (boto3 API).
+
+    Spark SQL equivalent:
+    CREATE TABLE db.table (id BIGINT, text STRING) USING text ...
+    """
+    glue_client.create_table(
+        DatabaseName=database_name,
+        TableInput={
+            "Name": table_name,
+            "TableType": "EXTERNAL_TABLE",
+            "Parameters": {
+                "EXTERNAL": "TRUE",
+                "spark.sql.sources.provider": "text",
+            },
+            "StorageDescriptor": {
+                "Columns": [{"Name": name, "Type": typ} for name, typ in columns],
+                "Location": location,
+                "InputFormat": "org.apache.hadoop.mapred.TextInputFormat",
+                "OutputFormat": "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat",
+                "SerdeInfo": {
+                    "SerializationLibrary": "org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe",
+                    "Parameters": {"field.delim": "\t"},
+                },
+            },
+        },
+    )
+
+
 def generate_decimal(precision=9, scale=2):
     max_value = 10**(precision - scale) - 1
     value = random.uniform(0, max_value)
@@ -1010,3 +1046,70 @@ def test_sts_smoke(started_cluster):
     # Cleanup
     node.query(f"DROP DATABASE IF EXISTS {db_name_fail} SYNC")
     node.query(f"DROP DATABASE IF EXISTS {db_name_success} SYNC")
+
+
+def test_non_iceberg_hive_text_table(started_cluster):
+    """Hive text table in Glue (no table_type=ICEBERG) is visible but not readable."""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_non_iceberg_{uuid.uuid4().hex}"
+    root_namespace = f"{test_ref}_ns"
+    hive_table_name = f"{test_ref}_hive_text"
+    iceberg_table_name = f"{test_ref}_iceberg"
+    db_name = f"db_{test_ref}"
+
+    glue_client = get_glue_client(started_cluster)
+    glue_client.create_database(DatabaseInput={"Name": root_namespace})
+
+    hive_location = f"s3://warehouse-glue/{root_namespace}/{hive_table_name}/"
+    create_hive_text_table(
+        glue_client,
+        root_namespace,
+        hive_table_name,
+        [("id", "bigint"), ("text", "string")],
+        hive_location,
+    )
+
+    catalog = load_catalog_impl(started_cluster)
+    iceberg_table = create_table(
+        catalog,
+        root_namespace,
+        iceberg_table_name,
+        dir=f"{root_namespace}/{iceberg_table_name}",
+    )
+    iceberg_table.append(generate_arrow_data(1))
+
+    create_clickhouse_glue_database(started_cluster, node, db_name, additional_settings={"skip_non_iceberg_tables": True})
+
+    tables = node.query(f"SHOW TABLES FROM {db_name}").strip().split("\n")
+    assert f"{root_namespace}.{hive_table_name}" not in tables
+    assert f"{root_namespace}.{iceberg_table_name}" in tables
+
+    tables = node.query(f"SELECT name FROM system.tables WHERE database = '{db_name}' SETTINGS show_data_lake_catalogs_in_system_tables=1").strip().split("\n")
+    assert f"{root_namespace}.{hive_table_name}" not in tables
+    assert f"{root_namespace}.{iceberg_table_name}" in tables
+
+    # Direct query to non-iceberg table should work and show it's an Other engine, but select should fail
+    show_create_hive = node.query(
+        f"SHOW CREATE TABLE {db_name}.`{root_namespace}.{hive_table_name}`"
+    )
+    assert "ENGINE = Other" in show_create_hive
+    assert "`id` Int64" in show_create_hive
+    assert "`text` String" in show_create_hive
+
+    show_create_iceberg = node.query(
+        f"SHOW CREATE TABLE {db_name}.`{root_namespace}.{iceberg_table_name}`"
+    )
+    assert "ENGINE = Iceberg" in show_create_iceberg
+
+    select_error = node.query_and_get_error(
+        f"SELECT * FROM {db_name}.`{root_namespace}.{hive_table_name}`"
+    )
+    assert "no table_type" in select_error
+    assert "ICEBERG" in select_error
+
+    assert int(
+        node.query(f"SELECT count() FROM {db_name}.`{root_namespace}.{iceberg_table_name}`")
+    ) == 1
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")

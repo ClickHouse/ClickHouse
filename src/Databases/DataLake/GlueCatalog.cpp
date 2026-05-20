@@ -96,13 +96,15 @@ GlueCatalog::GlueCatalog(
     const String & endpoint,
     DB::ContextPtr context_,
     const CatalogSettings & settings_,
-    DB::ASTPtr table_engine_definition_)
+    DB::ASTPtr table_engine_definition_,
+    bool skip_non_iceberg_tables_)
     : ICatalog("")
     , DB::WithContext(context_)
     , log(getLogger("GlueCatalog(" + settings_.region + ")"))
     , region(settings_.region)
     , settings(settings_)
     , table_engine_definition(table_engine_definition_)
+    , skip_non_iceberg_tables(skip_non_iceberg_tables_)
     , metadata_objects(CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, 1024)
 {
     DB::S3::CredentialsConfiguration creds_config;
@@ -252,6 +254,16 @@ DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t 
                 /// storage, so just ignore them.
                 if (table.GetStorageDescriptor().GetColumns().empty())
                     continue;
+
+                if (skip_non_iceberg_tables)
+                {
+                    std::string table_type;
+                    if (table.GetParameters().contains("table_type"))
+                        table_type = table.GetParameters().at("table_type");
+
+                    if (Poco::toUpper(table_type) != "ICEBERG")
+                        continue;
+                }
 
                 if (limit != 0 && result.size() >= limit)
                     break;

@@ -23,6 +23,7 @@ import uuid
 from helpers.test_tools import TSV
 
 UC_LOG = "/var/lib/clickhouse/user_files/unitycatalog/uc.log"
+UNITY_CATALOG_API = "http://localhost:8080/api/2.1/unity-catalog"
 
 
 def start_unity_catalog(node):
@@ -290,6 +291,51 @@ def execute_spark_query(node, query_text):
 
 def execute_multiple_spark_queries(node, queries_list):
     return execute_spark_query(node, ";".join(queries_list))
+
+
+def create_unity_text_table_via_rest(node, schema_name, table_name, storage_location):
+    """Register a non-Delta TEXT table in Unity Catalog via REST API."""
+    payload = {
+        "name": table_name,
+        "catalog_name": "unity",
+        "schema_name": schema_name,
+        "table_type": "EXTERNAL",
+        "data_source_format": "TEXT",
+        "storage_location": storage_location,
+        "columns": [
+            {
+                "name": "id",
+                "type_text": "bigint",
+                "type_json": '"bigint"',
+                "type_name": "LONG",
+                "position": 0,
+                "nullable": "True",
+            },
+            {
+                "name": "text",
+                "type_text": "string",
+                "type_json": '"string"',
+                "type_name": "STRING",
+                "position": 1,
+                "nullable": "True",
+            },
+        ],
+    }
+    script = f"""
+import json
+import urllib.request
+
+payload = {json.dumps(payload)}
+req = urllib.request.Request(
+    "{UNITY_CATALOG_API}/tables",
+    data=json.dumps(payload).encode(),
+    headers={{"Content-Type": "application/json"}},
+    method="POST",
+)
+with urllib.request.urlopen(req) as resp:
+    resp.read()
+"""
+    node.exec_in_container(["python3", "-c", script])
 
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
@@ -953,3 +999,73 @@ SETTINGS warehouse = 'unity', catalog_type = 'unity', vended_credentials = false
         .strip()
     )
     assert row == "1\thello varchar\thello char"
+
+
+def test_non_delta_text_table(started_cluster):
+    """TEXT table in Unity Catalog (non-Delta) is skipped from SHOW TABLES when setting is enabled."""
+    node1 = started_cluster.instances["node1"]
+
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    schema_name = f"non_delta_{test_uuid}"
+    text_table_name = f"text_{test_uuid}"
+    delta_table_name = f"delta_{test_uuid}"
+    db_name = f"db_{test_uuid}"
+
+    text_location = f"file:///var/lib/clickhouse/user_files/tmp/{schema_name}/{text_table_name}"
+    delta_location = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{delta_table_name}"
+
+    node1.exec_in_container(
+        ["bash", "-c", f"mkdir -p /var/lib/clickhouse/user_files/tmp/{schema_name}/{text_table_name}"],
+        nothrow=True,
+    )
+
+    execute_multiple_spark_queries(
+        node1,
+        [
+            f"CREATE SCHEMA {schema_name}",
+            f"CREATE TABLE {schema_name}.{delta_table_name} (id INT, value DOUBLE) USING DELTA LOCATION '{delta_location}'",
+            f"INSERT INTO {schema_name}.{delta_table_name} VALUES (1, 1.5)",
+        ],
+    )
+    create_unity_text_table_via_rest(node1, schema_name, text_table_name, text_location)
+
+    node1.query(
+        f"""CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{UNITY_CATALOG_API}')
+SETTINGS warehouse = 'unity', catalog_type = 'unity', vended_credentials = false, skip_non_iceberg_tables = true""",
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+
+    tables = node1.query(
+        f"SHOW TABLES FROM {db_name} LIKE '{schema_name}.%'",
+        settings={"use_hive_partitioning": "0"},
+    ).strip().split("\n")
+    assert f"{schema_name}.{text_table_name}" not in tables
+    assert f"{schema_name}.{delta_table_name}" in tables
+
+    tables = node1.query(f"SELECT name FROM system.tables WHERE database = '{db_name}' SETTINGS show_data_lake_catalogs_in_system_tables=1").strip().split("\n")
+    assert f"{schema_name}.{text_table_name}" not in tables
+    assert f"{schema_name}.{delta_table_name}" in tables
+
+    # Even though the TEXT table is hidden from SHOW TABLES, it can still be accessed directly by name, and shows correct schema.
+    show_create_text = node1.query(
+        f"SHOW CREATE TABLE {db_name}.`{schema_name}.{text_table_name}`"
+    )
+    assert "ENGINE = Other" in show_create_text
+
+    show_create_delta = node1.query(
+        f"SHOW CREATE TABLE {db_name}.`{schema_name}.{delta_table_name}`"
+    )
+    assert "ENGINE = DeltaLake" in show_create_delta
+
+    select_error = node1.query_and_get_error(
+        f"SELECT * FROM {db_name}.`{schema_name}.{text_table_name}`"
+    )
+    assert "unsupported data_source_format" in select_error
+    assert "DELTA" in select_error
+
+    assert node1.query(
+        f"SELECT id, value FROM {db_name}.`{schema_name}.{delta_table_name}`",
+        settings={"use_hive_partitioning": "0"},
+    ).strip() == "1\t1.5"
+
+    node1.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")

@@ -21,7 +21,8 @@ public:
         const std::string & catalog_,
         const std::string & base_url_,
         const std::string & catalog_credential_,
-        DB::ContextPtr context_);
+        DB::ContextPtr context_,
+        bool skip_non_iceberg_tables_);
 
     ~UnityCatalog() override = default;
 
@@ -70,6 +71,8 @@ private:
         TableMetadata & result) const;
 
     ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
+
+    bool skip_non_iceberg_tables = false;
 };
 
 }
