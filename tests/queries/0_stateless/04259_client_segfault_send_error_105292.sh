@@ -13,14 +13,14 @@
 #
 # We reproduce the scenario by routing the client through a tiny Python TCP
 # proxy that drops the connection after a small number of bytes. The
-# subsequent `out->next()` inside `sendQuery` raises a `NetException`, the
+# `out->next()` inside `sendQuery` then raises a `NetException`, the
 # `SCOPE_EXIT` disconnects, and the receive-drain path used to crash.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-TMP_DIR=${CLICKHOUSE_TMP:-/tmp}/04258_client_segfault_105292
+TMP_DIR=${CLICKHOUSE_TMP:-/tmp}/04259_client_segfault_105292
 mkdir -p "${TMP_DIR}"
 
 PROXY_SCRIPT="${TMP_DIR}/proxy.py"
@@ -32,6 +32,7 @@ CLIENT_LOG="${TMP_DIR}/client.log"
 cat >"${PROXY_SCRIPT}" <<'PYEOF'
 import os
 import socket
+import struct
 import sys
 import threading
 
@@ -40,25 +41,14 @@ target_port = int(sys.argv[2])
 cutoff = int(sys.argv[3])
 port_file = sys.argv[4]
 
-def relay(src, dst, cutoff_after):
-    sent = 0
+# Force an RST (TCP reset) on close so the client gets ECONNRESET on its
+# next write immediately, instead of having data sit in a large local-loopback
+# send buffer (Linux auto-tuned send buffers on loopback can be many MB).
+def force_rst(sock):
     try:
-        while True:
-            data = src.recv(8192)
-            if not data:
-                break
-            try:
-                dst.sendall(data)
-            except Exception:
-                break
-            sent += len(data)
-            if cutoff_after and sent > cutoff_after:
-                break
-    finally:
-        try: src.shutdown(socket.SHUT_RD)
-        except Exception: pass
-        try: dst.shutdown(socket.SHUT_WR)
-        except Exception: pass
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+    except Exception:
+        pass
 
 def handle(client_sock):
     try:
@@ -68,14 +58,49 @@ def handle(client_sock):
         try: client_sock.close()
         except Exception: pass
         return
-    t1 = threading.Thread(target=relay, args=(client_sock, server_sock, cutoff))
-    t2 = threading.Thread(target=relay, args=(server_sock, client_sock, 0))
-    t1.start(); t2.start()
-    t1.join(); t2.join()
-    try: client_sock.close()
-    except Exception: pass
-    try: server_sock.close()
-    except Exception: pass
+
+    cutoff_event = threading.Event()
+
+    # server -> client: relay until cutoff has been hit on the other direction
+    def s2c():
+        try:
+            while not cutoff_event.is_set():
+                data = server_sock.recv(8192)
+                if not data:
+                    break
+                try:
+                    client_sock.sendall(data)
+                except Exception:
+                    break
+        except Exception:
+            pass
+
+    threading.Thread(target=s2c, daemon=True).start()
+
+    # client -> server: relay with a byte cutoff, then RST both ends
+    sent = 0
+    try:
+        while True:
+            data = client_sock.recv(8192)
+            if not data:
+                break
+            try:
+                server_sock.sendall(data)
+            except Exception:
+                break
+            sent += len(data)
+            if sent > cutoff:
+                break
+    except Exception:
+        pass
+    finally:
+        cutoff_event.set()
+        force_rst(client_sock)
+        force_rst(server_sock)
+        try: client_sock.close()
+        except Exception: pass
+        try: server_sock.close()
+        except Exception: pass
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -90,8 +115,11 @@ while True:
     threading.Thread(target=handle, args=(c,), daemon=True).start()
 PYEOF
 
-# Build a moderately large INSERT VALUES payload — must exceed the proxy cutoff
-# so the second flush hits a broken pipe. ~3 MB is plenty.
+# Build a sufficiently large INSERT VALUES payload. Loopback send buffers on
+# Linux are auto-tuned and can reach several MB, so the payload must be large
+# enough that the client keeps trying to write past the proxy's cutoff and
+# observes the RST. 200k rows x 5 UUIDs ~= 40 MB easily overflows any
+# realistic buffer.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_105292"
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE test_105292
@@ -100,13 +128,13 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO test_105292
     SELECT generateUUIDv4(), generateUUIDv4(), generateUUIDv4(), generateUUIDv4(), generateUUIDv4()
-    FROM numbers(20000)"
+    FROM numbers(200000)"
 
 echo "INSERT INTO test_105292 VALUES" > "${INSERT_SQL}"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_105292 FORMAT Values" >> "${INSERT_SQL}"
 
 rm -f "${PROXY_PORT_FILE}"
-python3 "${PROXY_SCRIPT}" "${CLICKHOUSE_HOST}" "${CLICKHOUSE_PORT_TCP}" 200000 "${PROXY_PORT_FILE}" \
+python3 "${PROXY_SCRIPT}" "${CLICKHOUSE_HOST}" "${CLICKHOUSE_PORT_TCP}" 100000 "${PROXY_PORT_FILE}" \
     >"${PROXY_LOG}" 2>&1 &
 PROXY_PID=$!
 
@@ -137,12 +165,12 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_105292"
 # 139 = SIGSEGV. Anything else is acceptable as long as no crash-signature
 # strings appear in the output.
 if [ "${CLIENT_EXIT}" = "139" ]; then
-    echo "FAIL: client segfaulted (exit ${CLIENT_EXIT})"
+    echo "BAD: client segfaulted (exit ${CLIENT_EXIT})"
     head -50 "${CLIENT_LOG}"
     exit 1
 fi
 if grep -q "Address: 0x108\|Segmentation fault" "${CLIENT_LOG}"; then
-    echo "FAIL: crash signature found in client output (exit ${CLIENT_EXIT})"
+    echo "BAD: crash signature found in client output (exit ${CLIENT_EXIT})"
     head -50 "${CLIENT_LOG}"
     exit 1
 fi
