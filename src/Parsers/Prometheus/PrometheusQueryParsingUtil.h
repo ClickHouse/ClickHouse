@@ -23,6 +23,13 @@ struct PrometheusQueryParsingUtil
                               String * error_message = nullptr,
                               size_t * error_pos = nullptr);
 
+    /// Replaces PromQL @ start() / @ end() timestamp modifiers with concrete
+    /// timestamps from the current query or query_range evaluation bounds.
+    static String replaceStartEndTimestampModifiers(std::string_view input,
+                                                    TimestampType start_time,
+                                                    TimestampType end_time,
+                                                    UInt32 timestamp_scale);
+
     /// Converts a quoted string literal to its unquoted version: "abc" -> abc
     /// Accepts an input string in quotes or double quotes or backticks, and also handles escape sequences
     /// according to the PromQL rules (see https://prometheus.io/docs/prometheus/latest/querying/basics/#string-literals).
