@@ -108,11 +108,6 @@ PrometheusTextOutputFormat::PrometheusTextOutputFormat(
     getColumnPos(header, "labels", isDataTypeMapString, pos.labels);
 }
 
-void PrometheusTextOutputFormat::bindUnitColumnIfPresent(const Block & header)
-{
-    getColumnPos(header, "unit", isStringOrFixedString, pos.unit);
-}
-
 /*
  * https://prometheus.io/docs/instrumenting/exposition_formats/#histograms-and-summaries
  *
@@ -199,8 +194,6 @@ void PrometheusTextOutputFormat::flushCurrentMetric()
 
     write_attribute("# HELP ", current_metric.help);
     write_attribute("# TYPE ", current_metric.type);
-
-    writeAdditionalFamilyMetadata();
 
     bool use_buckets = current_metric.type == "histogram" || current_metric.type == "summary";
     if (use_buckets)
@@ -331,23 +324,12 @@ void PrometheusTextOutputFormat::write(const Columns & columns, size_t row_num)
     if (pos.type.has_value() && !columns[*pos.type]->isNullAt(row_num) && current_metric.type.empty())
         current_metric.type = getString(columns, row_num, *pos.type);
 
-    if (pos.unit.has_value() && !columns[*pos.unit]->isNullAt(row_num) && current_metric.unit.empty())
-    {
-        current_metric.unit = getString(columns, row_num, *pos.unit);
-        std::replace(current_metric.unit.begin(), current_metric.unit.end(), '\n', ' ');
-    }
-
     auto & row = current_metric.values.emplace_back();
 
     row.value = getString(columns, row_num, pos.value);
 
-    if (pos.timestamp.has_value() && !columns[*pos.timestamp]->isNullAt(row_num))
-    {
-        if (useOpenMetricsTimestampRules())
-            row.timestamp = getString(columns, row_num, *pos.timestamp);
-        else if (columns[*pos.timestamp]->get64(row_num) != 0)
-            row.timestamp = getString(columns, row_num, *pos.timestamp);
-    }
+    if (pos.timestamp.has_value() && !columns[*pos.timestamp]->isNullAt(row_num) && columns[*pos.timestamp]->get64(row_num) != 0)
+        row.timestamp = getString(columns, row_num, *pos.timestamp);
 
     if (pos.labels.has_value())
     {
