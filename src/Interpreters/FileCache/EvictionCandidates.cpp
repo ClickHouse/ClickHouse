@@ -329,7 +329,7 @@ void EvictionCandidates::evict()
                 if (iterator)
                     queue_entries_to_invalidate.push_back(iterator);
 
-                if (emit_aggregate_metrics)
+                if (on_evict_callback)
                 {
                     try
                     {
