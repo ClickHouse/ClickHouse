@@ -10,6 +10,8 @@
 #include <Processors/Port.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#include <Core/AccurateComparison.h>
+
 #include <absl/container/inlined_vector.h>
 
 #include <algorithm>
@@ -26,10 +28,30 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
 {
+
+/// Cast `floor(v)` to `Int64`, throwing if the result would be out of `Int64` range
+/// or if the input is non-finite. Uses `accurate::convertNumeric` which avoids the UB
+/// of a direct `static_cast<Int64>` on out-of-range `Float64`. The `isFinite` guard
+/// matches the pre-check pattern used by `FunctionsConversion` for float→int.
+Int64 safeFloorToInt64(Float64 v)
+{
+    if (!std::isfinite(v))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "GROUP BY ... WITH CLUSTER: cluster key is not finite (value = {})", v);
+
+    Int64 result;
+    if (!accurate::convertNumeric<Float64, Int64, /*strict=*/false>(std::floor(v), result))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "GROUP BY ... WITH CLUSTER: cluster key produces an out-of-range bucket id "
+            "(value = {}); use a larger distance or a narrower key type", v);
+    return result;
+}
+
 
 /// State of one bucket during the bucket-reduction phase.
 struct BucketState
@@ -269,7 +291,7 @@ Chunk ClusterMergingTransform::generate1D()
 
         Int64 bucket_id;
         if (cluster_distance > 0)
-            bucket_id = static_cast<Int64>(std::floor(cluster_val / cluster_distance));
+            bucket_id = safeFloorToInt64(cluster_val / cluster_distance);
         else
         {
             /// distance == 0: each distinct value is its own bucket.
@@ -587,8 +609,8 @@ Chunk ClusterMergingTransform::generate2D()
     {
         Float64 xv = x_col.getFloat64(i);
         Float64 yv = y_col.getFloat64(i);
-        Int64 cx = static_cast<Int64>(std::floor(xv / a));
-        Int64 cy = static_cast<Int64>(std::floor(yv / a));
+        Int64 cx = safeFloorToInt64(xv / a);
+        Int64 cy = safeFloorToInt64(yv / a);
 
         UInt64 h = computeCellHash(merged_columns, non_cluster_key_positions, i, cx, cy);
 
