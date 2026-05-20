@@ -136,7 +136,7 @@ void WebObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
         if (max_keys && children.size() >= max_keys)
             break;
 
-        auto current = std::move(pending_directories.front());
+        auto current = pending_directories.front();
         pending_directories.pop_front();
 
         auto entries = metadata_storage.listDirectoryWithMetadata(current.relative_path, current.read_source_index);
