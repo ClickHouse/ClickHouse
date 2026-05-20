@@ -1144,46 +1144,55 @@ def test_shutdown_dedup_off_no_duplicates(started_cluster):
     expected_rows = files_to_generate * rows_per_file
 
     # Enable the failpoint *before* streaming starts so the source parks inside
-    # generateImpl on the first file with at least one row read.
+    # generateImpl on the first file with at least one row read. Wrapped in
+    # try/finally so that if the `parked` wait below times out (failpoint
+    # enabled but never fired), the failpoint is cleared instead of leaking to
+    # later tests in the module. After a successful `restart_clickhouse()` the
+    # failpoint state is wiped with the server process, so the disable is a
+    # safe no-op on the happy path.
     node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_sleep_in_generate")
-
-    mv_table_name = f"{table_name}_mv"
-    create_mv(
-        node,
-        table_name,
-        dst_table_name,
-        mv_name=mv_table_name,
-        format=format,
-    )
-
-    # Wait deterministically for the failpoint to park the source mid-file.
-    # `object_storage_queue_sleep_in_generate` fires after `processed_rows > 0`,
-    # i.e. after the first chunk has been pulled. Polling
-    # `system.s3queue_metadata_cache` for a file in `Processing` state with
-    # rows already counted means the source is currently sleeping at the
-    # failpoint — `restart_clickhouse()` after this point reliably enters the
-    # dedup-off shutdown branch this PR protects. Without the wait, a
-    # fixed-duration sleep can fire restart before streaming has scheduled,
-    # making the test pass trivially.
-    deadline = time.time() + 30
-    parked = False
-    while time.time() < deadline:
-        in_progress = int(
-            node.query(
-                f"SELECT count() FROM system.s3queue_metadata_cache "
-                f"WHERE zookeeper_path ilike '%{table_name}%' "
-                f"AND status = 'Processing' AND rows_processed > 0"
-            )
+    try:
+        mv_table_name = f"{table_name}_mv"
+        create_mv(
+            node,
+            table_name,
+            dst_table_name,
+            mv_name=mv_table_name,
+            format=format,
         )
-        if in_progress >= 1:
-            parked = True
-            break
-        time.sleep(0.1)
-    assert parked, (
-        "object_storage_queue_sleep_in_generate failpoint did not park the "
-        "source within 30s — test cannot exercise the dedup-off shutdown path."
-    )
-    node.restart_clickhouse()
+
+        # Wait deterministically for the failpoint to park the source mid-file.
+        # `object_storage_queue_sleep_in_generate` fires after `processed_rows > 0`,
+        # i.e. after the first chunk has been pulled. Polling
+        # `system.s3queue_metadata_cache` for a file in `Processing` state with
+        # rows already counted means the source is currently sleeping at the
+        # failpoint — `restart_clickhouse()` after this point reliably enters the
+        # dedup-off shutdown branch this PR protects. Without the wait, a
+        # fixed-duration sleep can fire restart before streaming has scheduled,
+        # making the test pass trivially.
+        deadline = time.time() + 30
+        parked = False
+        while time.time() < deadline:
+            in_progress = int(
+                node.query(
+                    f"SELECT count() FROM system.s3queue_metadata_cache "
+                    f"WHERE zookeeper_path ilike '%{table_name}%' "
+                    f"AND status = 'Processing' AND rows_processed > 0"
+                )
+            )
+            if in_progress >= 1:
+                parked = True
+                break
+            time.sleep(0.1)
+        assert parked, (
+            "object_storage_queue_sleep_in_generate failpoint did not park the "
+            "source within 30s — test cannot exercise the dedup-off shutdown path."
+        )
+        node.restart_clickhouse()
+    finally:
+        node.query(
+            "SYSTEM DISABLE FAILPOINT object_storage_queue_sleep_in_generate"
+        )
 
     # Wait for all files to reach Processed state after the restart.
     processed = 0
