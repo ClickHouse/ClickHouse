@@ -412,9 +412,17 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     state.update(is_group_by_with_cube);
     state.update(is_group_by_with_grouping_sets);
     state.update(is_group_by_all);
-    state.update(group_by_cluster_key_index);
-    state.update(group_by_cluster_distance);
-    state.update(group_by_cluster_dimensions);
+    /// Only hash WITH CLUSTER fields when the modifier is actually present.
+    /// This keeps the `QueryNode` hash stable for the overwhelming majority
+    /// of queries (which don't use `WITH CLUSTER`) — important because
+    /// some optimizations (e.g. CNF condition ordering) depend on the hash
+    /// being identical across unrelated query shapes.
+    if (hasGroupByWithCluster())
+    {
+        state.update(group_by_cluster_key_index);
+        state.update(group_by_cluster_distance);
+        state.update(group_by_cluster_dimensions);
+    }
     state.update(is_order_by_all);
     state.update(is_limit_by_all);
 
