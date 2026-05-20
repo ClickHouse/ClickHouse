@@ -52,13 +52,18 @@ public:
     void setPrefetchPool(std::shared_ptr<PrefetchThreadPool> pool);
     void setBufferLimit(std::shared_ptr<SourceBufferLimit> limit);
 
-#if USE_SSL
     using KeyFinderFunc = std::function<String(UInt128 key_fingerprint, const String & path_for_logs)>;
 
     /// Add a decryption layer. Can be called multiple times for layered encryption.
-    /// Headers are read lazily on the first readNextWindow call.
+    /// No-op in builds without SSL. Call initDecryption() once after all layers
+    /// have been added to read and parse the on-disk headers.
     void addDecryptionLayer(String path, size_t buffer_size, KeyFinderFunc key_finder);
-#endif
+
+    /// Read the encryption headers (one per layer) and resolve keys via the
+    /// configured key_finders. Must be called after addDecryptionLayer setup
+    /// and before any read. No-op when no layers are configured or when
+    /// ClickHouse is built without SSL.
+    void initDecryption();
 
     size_t getPosition() const { return position; }
 
@@ -92,13 +97,9 @@ private:
     void maybeTriggerPrefetch();
     void discardPrefetch();
 
-#if USE_SSL
-    /// Read encryption headers from physical offset 0, resolve keys.
-    void initDecryption();
-
-    /// Decrypt rope data in-place. Returns a new rope with decrypted content.
+    /// Decrypt rope data; returns the input unchanged when no decryption layers
+    /// are configured (which is always the case in builds without SSL).
     Rope decryptRope(Rope rope, size_t logical_offset);
-#endif
 
     std::shared_ptr<ISourceReader> source;
     OffsetMap offset_map;

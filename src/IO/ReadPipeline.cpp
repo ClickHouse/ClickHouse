@@ -261,14 +261,18 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 ReaderExecutor::DEFAULT_WINDOW_SIZE,
                 min_bytes_for_seek,
                 std::move(executor_cache_key));
+
             if (prefetch_pool)
                 executor->setPrefetchPool(prefetch_pool);
+
             if (buffer_limit)
                 executor->setBufferLimit(buffer_limit);
-#if USE_SSL
+
             for (const auto & dec : decryption_stages)
                 executor->addDecryptionLayer(dec.path, dec.buffer_size, dec.key_finder);
-#endif
+
+            executor->initDecryption();
+
             return std::make_unique<PipelineReadBuffer>(std::move(executor));
         }
     }

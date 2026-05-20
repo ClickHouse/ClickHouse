@@ -101,12 +101,13 @@ void ReaderExecutor::maybeTriggerPrefetch()
 
     size_t next_size = std::min(window_size, logical_size - position);
     ByteRange next_physical_window{position + data_start_offset, next_size};
+    size_t next_logical_offset = position;
 
     LOG_TRACE(log, "Prefetch: submitting physical [{}, {})", next_physical_window.offset, next_physical_window.end());
 
-    prefetch_future = prefetch_pool->submit([this, next_physical_window]()
+    prefetch_future = prefetch_pool->submit([this, next_physical_window, next_logical_offset]()
     {
-        return readPhysicalWindow(next_physical_window);
+        return decryptRope(readPhysicalWindow(next_physical_window), next_logical_offset);
     });
     prefetch_range = next_physical_window;
     prefetch_valid = true;
@@ -123,9 +124,12 @@ void ReaderExecutor::discardPrefetch()
     }
 }
 
-#if USE_SSL
-void ReaderExecutor::addDecryptionLayer(String path, size_t buffer_size, KeyFinderFunc key_finder)
+void ReaderExecutor::addDecryptionLayer(
+    [[maybe_unused]] String path,
+    [[maybe_unused]] size_t buffer_size,
+    [[maybe_unused]] KeyFinderFunc key_finder)
 {
+#if USE_SSL
     decryption_layers.push_back(DecryptionLayer{
         .path = std::move(path),
         .buffer_size = buffer_size,
@@ -134,10 +138,12 @@ void ReaderExecutor::addDecryptionLayer(String path, size_t buffer_size, KeyFind
     });
     data_start_offset = decryption_layers.size() * FileEncryption::Header::kSize;
     LOG_DEBUG(log, "Added decryption layer, data_start_offset={}", data_start_offset);
+#endif
 }
 
 void ReaderExecutor::initDecryption()
 {
+#if USE_SSL
     if (decryption_initialized || decryption_layers.empty())
         return;
 
@@ -171,10 +177,12 @@ void ReaderExecutor::initDecryption()
     }
 
     decryption_initialized = true;
+#endif
 }
 
-Rope ReaderExecutor::decryptRope(Rope rope, size_t logical_offset)
+Rope ReaderExecutor::decryptRope(Rope rope, [[maybe_unused]] size_t logical_offset)
 {
+#if USE_SSL
     if (decryption_layers.empty())
         return rope;
 
@@ -240,16 +248,13 @@ Rope ReaderExecutor::decryptRope(Rope rope, size_t logical_offset)
         pos += sz;
     }
     return result;
-}
+#else
+    return rope;
 #endif
+}
 
 Rope ReaderExecutor::readNextWindow()
 {
-#if USE_SSL
-    /// Initialize decryption headers on first call.
-    initDecryption();
-#endif
-
     size_t logical_size = totalSize();
     if (position >= logical_size)
     {
@@ -258,7 +263,6 @@ Rope ReaderExecutor::readNextWindow()
     }
 
     Rope rope;
-    [[maybe_unused]] size_t logical_pos = position;
 
     if (prefetch_valid && prefetch_future.valid())
     {
@@ -272,7 +276,7 @@ Rope ReaderExecutor::readNextWindow()
         ByteRange physical_window{position + data_start_offset, win_size};
         LOG_TRACE(log, "readNextWindow: synchronous read physical [{}, {}), logical [{}, {})",
             physical_window.offset, physical_window.end(), position, position + win_size);
-        rope = readPhysicalWindow(physical_window);
+        rope = decryptRope(readPhysicalWindow(physical_window), position);
     }
 
     position += rope.range().size;
@@ -281,12 +285,7 @@ Rope ReaderExecutor::readNextWindow()
 
     maybeTriggerPrefetch();
 
-#if USE_SSL
-    /// Decrypt if needed.
-    return decryptRope(std::move(rope), logical_pos);
-#else
     return rope;
-#endif
 }
 
 void ReaderExecutor::seek(size_t new_position)
