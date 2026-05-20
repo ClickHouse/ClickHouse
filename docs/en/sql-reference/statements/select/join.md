@@ -99,14 +99,14 @@ Consider `table_1` and `table_2`:
 
 Query with one join key condition and an additional condition for `table_2`:
 
-```sql
+```sql title="Query"
 SELECT name, text FROM table_1 LEFT OUTER JOIN table_2
     ON table_1.Id = table_2.Id AND startsWith(table_2.text, 'Text');
 ```
 
 Note that the result contains the row with the name `C` and the empty text column. It is included into the result because an `OUTER` type of a join is used.
 
-```response
+```response title="Response"
 ┌─name─┬─text───┐
 │ A    │ Text A │
 │ B    │ Text B │
@@ -116,21 +116,19 @@ Note that the result contains the row with the name `C` and the empty text colum
 
 Query with `INNER` type of a join and multiple conditions:
 
-```sql
+```sql title="Query"
 SELECT name, text, scores FROM table_1 INNER JOIN table_2
     ON table_1.Id = table_2.Id AND table_2.scores > 10 AND startsWith(table_2.text, 'Text');
 ```
 
-Result:
-
-```sql
+```sql title="Response"
 ┌─name─┬─text───┬─scores─┐
 │ B    │ Text B │     15 │
 └──────┴────────┴────────┘
 ```
 Query with `INNER` type of a join and condition with `OR`:
 
-```sql
+```sql title="Query"
 CREATE TABLE t1 (`a` Int64, `b` Int64) ENGINE = MergeTree() ORDER BY a;
 
 CREATE TABLE t2 (`key` Int32, `val` Int64) ENGINE = MergeTree() ORDER BY key;
@@ -142,9 +140,7 @@ INSERT INTO t2 SELECT if(number % 2 == 0, toInt64(number), -number) as key, numb
 SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key;
 ```
 
-Result:
-
-```response
+```response title="Response"
 ┌─a─┬──b─┬─val─┐
 │ 0 │  0 │   0 │
 │ 1 │ -1 │   1 │
@@ -164,13 +160,11 @@ However, you can try experimental support for conditions like `t1.a = t2.key AND
 
 :::
 
-```sql
+```sql title="Query"
 SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.val > 3;
 ```
 
-Result:
-
-```response
+```response title="Response"
 ┌─a─┬──b─┬─val─┐
 │ 0 │  0 │   0 │
 │ 2 │ -2 │   2 │

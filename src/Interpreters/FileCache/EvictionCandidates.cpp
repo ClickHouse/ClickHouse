@@ -356,7 +356,8 @@ void EvictionCandidates::evict()
             }
             catch (...)
             {
-                failed_candidates.total_cache_size += candidate->file_segment->getDownloadedSize();
+                /// Sum up reserved size, which is the queue entry size.
+                failed_candidates.total_cache_size += candidate->size();
                 failed_candidates.total_cache_elements += 1;
                 failed_key_candidates.candidates.push_back(candidate);
 

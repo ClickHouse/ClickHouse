@@ -292,65 +292,27 @@ struct BinaryOperation
     template <OpCase op_case>
     static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap = nullptr)
     {
-        /// No mainstream ISA has SIMD integer division (see `DivideIntegralImpl`).
-        /// The compiler "vectorizes" by extracting each element, doing scalar div,
-        /// and re-inserting — bloating the loop ~3-5x for no benefit. Operations
-        /// that use div/mod set `no_vectorize` to opt out.
-        static constexpr bool disable_vectorization = requires { requires bool(Op::no_vectorize); };
-
         if constexpr (op_case == OpCase::RightConstant)
         {
             if (right_nullmap && (*right_nullmap)[0])
                 return;
 
-            if constexpr (disable_vectorization)
-            {
-                #pragma clang loop vectorize(disable)
-                for (size_t i = 0; i < size; ++i)
-                    c[i] = Op::template apply<ResultType>(a[i], *b);
-            }
-            else
-            {
-                for (size_t i = 0; i < size; ++i)
-                    c[i] = Op::template apply<ResultType>(a[i], *b);
-            }
+            for (size_t i = 0; i < size; ++i)
+                c[i] = Op::template apply<ResultType>(a[i], *b);
         }
         else
         {
             if (right_nullmap)
             {
-                if constexpr (disable_vectorization)
-                {
-                    #pragma clang loop vectorize(disable)
-                    for (size_t i = 0; i < size; ++i)
-                        if ((*right_nullmap)[i])
-                            c[i] = ResultType();
-                        else
-                            apply<op_case>(a, b, c, i);
-                }
-                else
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        if ((*right_nullmap)[i])
-                            c[i] = ResultType();
-                        else
-                            apply<op_case>(a, b, c, i);
-                }
+                for (size_t i = 0; i < size; ++i)
+                    if ((*right_nullmap)[i])
+                        c[i] = ResultType();
+                    else
+                        apply<op_case>(a, b, c, i);
             }
             else
-            {
-                if constexpr (disable_vectorization)
-                {
-                    #pragma clang loop vectorize(disable)
-                    for (size_t i = 0; i < size; ++i)
-                        apply<op_case>(a, b, c, i);
-                }
-                else
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        apply<op_case>(a, b, c, i);
-                }
-            }
+                for (size_t i = 0; i < size; ++i)
+                    apply<op_case>(a, b, c, i);
         }
     }
 
@@ -3201,7 +3163,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
 
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true, bool division_by_nullable = false>
-class FunctionBinaryArithmeticWithConstants : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>
+class FunctionBinaryArithmeticWithConstants final : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>
 {
 public:
     using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>;
@@ -3513,7 +3475,7 @@ private:
 };
 
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true>
-class BinaryArithmeticOverloadResolver : public IFunctionOverloadResolver
+class BinaryArithmeticOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = Name::name;

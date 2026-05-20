@@ -65,22 +65,8 @@ namespace ErrorCodes
     DECLARE(Bool, filesystem_cache_expose_prometheus_eviction_metrics, false, "Expose Prometheus metrics describing filesystem cache eviction activity for this cache (filesystem_cache_evictions_total, _evicted_bytes_total, _evicted_segment_hits, _evicted_segment_size_bytes). Off by default.", 0) \
     DECLARE(Bool, filesystem_cache_expose_prometheus_eviction_metrics_per_client, false, "Additionally expose `_by_client` variants of the filesystem cache eviction metrics, labelled by user id. Requires filesystem_cache_expose_prometheus_eviction_metrics. Cardinality grows with the number of distinct evicting users - off by default.", 0) \
 
-DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS)
-
-struct FileCacheSettingsImpl : public BaseSettings<FileCacheSettingsTraits>
-{
-};
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    FileCacheSettings##TYPE NAME = &FileCacheSettingsImpl ::NAME;
-
-namespace FileCacheSetting
-{
-LIST_OF_FILE_CACHE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FILE_CACHE_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FileCacheSettings, FileCacheSetting)
 
 FileCacheSettings::FileCacheSettings() : impl(std::make_unique<FileCacheSettingsImpl>())
 {
