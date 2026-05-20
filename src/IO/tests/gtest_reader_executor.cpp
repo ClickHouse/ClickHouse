@@ -313,6 +313,43 @@ TEST(ReaderExecutor, PrefetchTriggersOnReadNextWindow)
     EXPECT_TRUE(rope4.empty());
 }
 
+TEST(ReaderExecutor, SeekInsidePrefetchedWindow)
+{
+    /// After the first window read, a prefetch is in flight for [500, 1000).
+    /// Seeking to 750 (inside the prefetched range) must:
+    ///   - leave executor.getPosition() == 750 (not 500), and
+    ///   - cause the next readNextWindow to return a rope starting at logical 750.
+    /// Pre-fix: position was rewound to prefetch_range.offset and the returned
+    /// rope still started at 500, so direct callers got bytes from the wrong offset.
+
+    String content(2000, 0);
+    for (size_t i = 0; i < content.size(); ++i)
+        content[i] = static_cast<char>('A' + (i % 26));
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 2000);
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/500);
+    executor.setPrefetchPool(pool);
+
+    auto rope1 = executor.readNextWindow();
+    EXPECT_EQ(rope1.range().offset, 0u);
+    EXPECT_EQ(rope1.range().size, 500u);
+
+    executor.seek(750);
+    EXPECT_EQ(executor.getPosition(), 750u);
+
+    auto rope2 = executor.readNextWindow();
+    EXPECT_EQ(rope2.range().offset, 750u);
+    EXPECT_EQ(rope2.range().size, 250u);  /// [750, 1000)
+    ASSERT_FALSE(rope2.getNodes().empty());
+    EXPECT_EQ(rope2.getNodes().front().data()[0], content[750]);
+}
+
 TEST(ReaderExecutor, SeekDiscardsPrefetch)
 {
     String content(2000, 'Q');

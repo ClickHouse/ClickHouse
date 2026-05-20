@@ -111,7 +111,9 @@ void ReaderExecutor::maybeTriggerPrefetch()
     {
         return decryptRope(readPhysicalWindow(next_physical_window), next_logical_offset);
     });
-    prefetch_range = next_physical_window;
+    /// Track prefetch_range in logical coordinates — same space as `position`
+    /// and as the decrypted rope returned by the future.
+    prefetch_range = ByteRange{next_logical_offset, next_size};
     prefetch_valid = true;
 }
 
@@ -271,6 +273,15 @@ Rope ReaderExecutor::readNextWindow()
         LOG_TRACE(log, "readNextWindow: using prefetched [{}, {})", prefetch_range.offset, prefetch_range.end());
         rope = prefetch_future.get();
         prefetch_valid = false;
+
+        /// If seek landed us in the middle of the prefetched window, drop the
+        /// prefix bytes that come before our current logical position so
+        /// rope.range().offset matches `position`.
+        if (!rope.empty() && position > rope.range().offset)
+        {
+            size_t end = rope.range().end();
+            rope = rope.slice(ByteRange{position, end - position});
+        }
     }
     else
     {
@@ -300,7 +311,7 @@ void ReaderExecutor::seek(size_t new_position)
     {
         LOG_TRACE(log, "seek: target within prefetch [{}, {}), keeping prefetch",
             prefetch_range.offset, prefetch_range.end());
-        position = prefetch_range.offset;
+        position = new_position;
         return;
     }
 
