@@ -249,16 +249,28 @@ public:
 
     const String & getName() const { return name; }
 
-    /// True when this FileCache should populate the
-    /// filesystem_cache_* eviction metrics on each eviction. See
-    /// `expose_eviction_metrics` in `FileCacheSettings`.
-    bool areEvictionMetricsEnabled() const { return expose_eviction_metrics; }
-
-    /// True when, in addition, the `_by_client` variants should be populated.
-    /// Cardinality grows with the number of distinct evicting users; opt-in.
-    bool areEvictionMetricsPerClientEnabled() const { return expose_eviction_metrics_per_client; }
+    /// Called by the `on_drained` callback on `CacheUsage` when a user's
+    /// last segment leaves this cache. Walks all `DimensionalMetrics` and
+    /// `HistogramMetrics` families whose label set includes both `cache_name`
+    /// and `client_id` and removes every series matching this cache + user.
+    /// This keeps `_by_client` metric cardinality bounded by currently-active
+    /// users rather than growing monotonically with every distinct evicting user.
+    void pruneByClientMetrics(const String & user_id) const;
 
 private:
+    /// Invoked from `EvictionCandidates::evict` (via the callback installed
+    /// on `main_priority` at construction). Emits the `filesystem_cache_*`
+    /// eviction metrics for one successfully-evicted segment. No-op if the
+    /// per-cache flag is off. `user_id` is passed explicitly because the
+    /// segment is already detached from its key metadata at this point.
+    void onSegmentEvicted(const FileSegment & segment, FileCacheQueueEntryType queue_type, const String & user_id) const;
+
+    /// Invoked from `SLRUFileCachePriority::tryIncreasePriority` (via the
+    /// callback installed on `main_priority`). Emits the
+    /// `filesystem_cache_slru_promotions_*` counters. No-op if the per-cache
+    /// flag is off.
+    void onSegmentPromoted(const String & user_id) const;
+
     using KeyAndOffset = FileCacheKeyAndOffset;
 
     std::atomic<size_t> max_file_segment_size;
@@ -282,11 +294,14 @@ private:
     const bool use_split_cache;
     const double split_cache_ratio;
 
-    /// Eviction-time Prometheus metrics. See filesystem_cache_evictions_total
-    /// and friends in `FileCacheMetrics.cpp`. Off by default; turn on by setting
-    /// `<expose_eviction_metrics>true</expose_eviction_metrics>` on the cache
-    /// configuration. `expose_eviction_metrics_per_client` additionally enables
-    /// per-user-id labelled variants (which have unbounded cardinality).
+    /// Eviction-time Prometheus metrics gating flags. The metric families are
+    /// registered in `FileCache.cpp`; these per-cache flags gate emission via
+    /// `onSegmentEvicted` / `onSegmentPromoted`. Off by default; turn on by
+    /// setting `<filesystem_cache_expose_prometheus_eviction_metrics>true</...>`
+    /// on the cache configuration.
+    /// `filesystem_cache_expose_prometheus_eviction_metrics_per_client`
+    /// additionally enables the per-user-id labelled variants (which have
+    /// unbounded cardinality).
     const bool expose_eviction_metrics;
     const bool expose_eviction_metrics_per_client;
 

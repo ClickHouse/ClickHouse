@@ -62,6 +62,24 @@ namespace HistogramMetrics
             }
         }
 
+        template <typename Predicate>
+        size_t removeWhere(Predicate && pred)
+        {
+            std::lock_guard lock(mutex);
+            size_t removed = 0;
+            for (auto it = metrics.begin(); it != metrics.end(); )
+            {
+                if (pred(it->first))
+                {
+                    it = metrics.erase(it);
+                    ++removed;
+                }
+                else
+                    ++it;
+            }
+            return removed;
+        }
+
         const Buckets & getBuckets() const;
         const Labels & getLabels() const;
         const String & getName() const;

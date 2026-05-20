@@ -117,12 +117,19 @@ public:
 
     void resetEvictionPos() override;
 
-    void setOwningCache(const FileCache * cache) override
+    void setOnEvictCallback(OnEvictCallback callback) override
     {
-        IFileCachePriority::setOwningCache(cache);
         for (auto & p : priorities_holder)
             if (p)
-                p->setOwningCache(cache);
+                p->setOnEvictCallback(callback);
+        IFileCachePriority::setOnEvictCallback(std::move(callback));
+    }
+
+    void setOnPromoteCallback(OnPromoteCallback callback) override
+    {
+        for (auto & p : priorities_holder)
+            if (p)
+                p->setOnPromoteCallback(callback);
     }
 
 protected:

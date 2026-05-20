@@ -17,8 +17,8 @@
                 <cache_policy>SLRU</cache_policy>
                 <slru_size_ratio>0.5</slru_size_ratio>
                 <!-- The feature under test. -->
-                <expose_eviction_metrics>1</expose_eviction_metrics>
-                <expose_eviction_metrics_per_client>1</expose_eviction_metrics_per_client>
+                <filesystem_cache_expose_prometheus_eviction_metrics>1</filesystem_cache_expose_prometheus_eviction_metrics>
+                <filesystem_cache_expose_prometheus_eviction_metrics_per_client>1</filesystem_cache_expose_prometheus_eviction_metrics_per_client>
                 <load_metadata_asynchronously>false</load_metadata_asynchronously>
             </cache_with_eviction_metrics>
         </disks>

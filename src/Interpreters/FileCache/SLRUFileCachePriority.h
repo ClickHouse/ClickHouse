@@ -129,11 +129,18 @@ protected:
         protected_queue.setCacheUsageStatGuard(guard);
     }
 
-    void setOwningCache(const FileCache * cache) override
+    void setOnEvictCallback(OnEvictCallback callback) override
     {
-        IFileCachePriority::setOwningCache(cache);
-        probationary_queue.setOwningCache(cache);
-        protected_queue.setOwningCache(cache);
+        probationary_queue.setOnEvictCallback(callback);
+        protected_queue.setOnEvictCallback(callback);
+        IFileCachePriority::setOnEvictCallback(std::move(callback));
+    }
+
+    void setOnPromoteCallback(OnPromoteCallback callback) override
+    {
+        /// Promotion events fire only from the SLRU wrapper, not its inner
+        /// LRU queues, so we just store the callback here without propagating.
+        on_promote_callback = std::move(callback);
     }
 
 private:
@@ -145,6 +152,9 @@ private:
     LRUFileCachePriority protected_queue;
     LRUFileCachePriority probationary_queue;
     LoggerPtr log;
+
+    /// Promotion-emission callback installed by FileCache. See setOnPromoteCallback.
+    OnPromoteCallback on_promote_callback;
 
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::WriteLock & lock);
 

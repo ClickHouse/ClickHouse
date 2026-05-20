@@ -43,7 +43,8 @@ def test_filesystem_cache_eviction_metrics(start_cluster):
     Verify that the `filesystem_cache_*` eviction metrics surface via
     `system.dimensional_metrics` / `system.histogram_metrics` when a real
     `clickhouse-server` process is configured with
-    `expose_eviction_metrics=true` on a disk-backed cache and a workload
+    `filesystem_cache_expose_prometheus_eviction_metrics=true` on a
+    disk-backed cache and a workload
     drives evictions through it.
     """
     node.query(
@@ -79,11 +80,12 @@ def test_filesystem_cache_eviction_metrics(start_cluster):
 
     # SLRU is configured; repeated SELECTs over the same blob data promote
     # probationary segments to protected, which must show up in the
-    # promotions counter (same `expose_eviction_metrics` flag enables it).
+    # promotions counter (same flag enables it).
     assert sum_dim("filesystem_cache_slru_promotions_total") > 0, (
         "SLRU promotion counter did not advance:\n" + debug
     )
-    # `expose_eviction_metrics_per_client` is also enabled in the test config.
+    # `filesystem_cache_expose_prometheus_eviction_metrics_per_client` is
+    # also enabled in the test config.
     assert sum_dim("filesystem_cache_slru_promotions_by_client_total") > 0, (
         "Per-client SLRU promotion counter did not advance:\n" + debug
     )

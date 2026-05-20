@@ -3,7 +3,6 @@
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/DimensionalMetrics.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/logger_useful.h>
@@ -31,25 +30,6 @@ namespace
             return static_cast<size_t>(std::ceil(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0)));
         return std::lround(static_cast<double>(total) * std::clamp(ratio, 0.0, 1.0));
     }
-
-    /// Counts probationary -> protected promotions per SLRU cache. Gated by
-    /// the same `FileCacheSettings::expose_eviction_metrics` flag as
-    /// `filesystem_cache_*` eviction metrics, since promotion volume is
-    /// part of the same observability story (hot-set residency + churn).
-    DimensionalMetrics::MetricFamily & filesystem_cache_slru_promotions_total = DimensionalMetrics::Factory::instance().registerMetric(
-        "filesystem_cache_slru_promotions_total",
-        "Number of file segments promoted from the probationary to the protected queue in an SLRU filesystem cache. "
-        "Emitted only when `expose_eviction_metrics` is enabled on the cache.",
-        {"cache_name"});
-
-    /// Per-client promotions; mirrors the `_by_client` tier of the eviction
-    /// metrics. Gated by `expose_eviction_metrics_per_client`, which has
-    /// unbounded cardinality in the `client_id` dimension.
-    DimensionalMetrics::MetricFamily & filesystem_cache_slru_promotions_by_client_total = DimensionalMetrics::Factory::instance().registerMetric(
-        "filesystem_cache_slru_promotions_by_client_total",
-        "Number of file segments promoted from probationary to protected in an SLRU filesystem cache, labelled by user id. "
-        "Disabled by default; enable via `expose_eviction_metrics_per_client`.",
-        {"cache_name", "client_id"});
 }
 
 SLRUFileCachePriority::SLRUFileCachePriority(
@@ -680,7 +660,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     /// Pass the owning FileCache so `filesystem_cache_*` metrics count
     /// promotion-induced downgrade evictions, not only the FileCache.cpp
     /// reservation/resize call sites.
-    EvictionCandidates downgrade_candidates(getOwningCache());
+    EvictionCandidates downgrade_candidates(on_evict_callback);
     FileCacheReserveStat downgrade_stat;
     InvalidatedEntriesInfos invalidated_entries;
 
@@ -749,18 +729,14 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         check(lock);
     }
 
-    /// Probationary -> protected promotion succeeded.
-    if (const FileCache * cache = getOwningCache(); cache && cache->areEvictionMetricsEnabled())
+    /// Probationary -> protected promotion succeeded. Notify the cache via
+    /// the (optional) promotion callback so it can emit
+    /// `filesystem_cache_slru_promotions_*`.
+    if (on_promote_callback)
     {
         try
         {
-            filesystem_cache_slru_promotions_total.withLabels({cache->getName()}).increment();
-            if (cache->areEvictionMetricsPerClientEnabled())
-            {
-                filesystem_cache_slru_promotions_by_client_total
-                    .withLabels({cache->getName(), prev_entry->key_metadata->origin.user_id})
-                    .increment();
-            }
+            on_promote_callback(prev_entry->key_metadata->origin.user_id);
         }
         catch (...)
         {

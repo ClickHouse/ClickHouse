@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
 #include <vector>
@@ -56,6 +57,24 @@ namespace DimensionalMetrics
             {
                 func(label_values, *metric);
             }
+        }
+
+        template <typename Predicate>
+        size_t removeWhere(Predicate && pred)
+        {
+            std::lock_guard lock(mutex);
+            size_t removed = 0;
+            for (auto it = metrics.begin(); it != metrics.end(); )
+            {
+                if (pred(it->first))
+                {
+                    it = metrics.erase(it);
+                    ++removed;
+                }
+                else
+                    ++it;
+            }
+            return removed;
         }
 
         const Labels & getLabels() const;

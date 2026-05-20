@@ -7,6 +7,7 @@
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 
 #include <atomic>
+#include <functional>
 #include <memory>
 
 #include <fmt/ranges.h>
@@ -16,6 +17,7 @@ namespace DB
 struct FileCacheReserveStat;
 class EvictionCandidates;
 class FileCache;
+class FileSegment;
 class EvictionInfo;
 using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 struct CacheUsageStatGuard;
@@ -394,14 +396,26 @@ public:
 
     virtual void setCacheUsageStatGuard(std::shared_ptr<CacheUsageStatGuard>) {}
 
-    /// One-shot back-reference set by FileCache at the end of its constructor
-    /// so internally-spawned EvictionCandidates instances (e.g. SLRU's
-    /// promotion-induced downgrade in tryIncreasePriority) can attribute
-    /// evictions to the owning cache for `filesystem_cache_*` metrics.
+    /// Invoked by `EvictionCandidates::evict` for each successfully-evicted
+    /// segment. FileCache installs a callback that emits the
+    /// `filesystem_cache_*` eviction metrics; tests and other non-FileCache
+    /// callers leave it unset and pay no per-segment overhead. Stored on
+    /// `IFileCachePriority` so internally-spawned EvictionCandidates (e.g.
+    /// SLRU's promotion-induced downgrade in `tryIncreasePriority`) can pick
+    /// up the same callback the cache installed.
     /// Wrapping priorities (SLRU, Split) override to propagate to their
     /// nested priorities.
-    virtual void setOwningCache(const FileCache * cache) { owning_cache = cache; }
-    const FileCache * getOwningCache() const { return owning_cache; }
+    /// `user_id` is passed explicitly because `segment` has already been
+    /// detached from its key metadata by the time the callback fires (see
+    /// `FileSegment::setDetachedState`).
+    using OnEvictCallback = std::function<void(const FileSegment & segment, QueueEntryType queue_type, const UserID & user_id)>;
+    virtual void setOnEvictCallback(OnEvictCallback callback) { on_evict_callback = std::move(callback); }
+    const OnEvictCallback & getOnEvictCallback() const { return on_evict_callback; }
+
+    /// Invoked by SLRU's `tryIncreasePriority` on each successful probationary
+    /// -> protected promotion. Default no-op (LRU has no promotion concept).
+    using OnPromoteCallback = std::function<void(const UserID & user_id)>;
+    virtual void setOnPromoteCallback(OnPromoteCallback /*callback*/) {}
 
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);
@@ -414,8 +428,8 @@ protected:
     std::atomic<size_t> max_size = 0;
     std::atomic<size_t> max_elements = 0;
 
-    /// Back-reference to the owning FileCache. See setOwningCache.
-    const FileCache * owning_cache = nullptr;
+    /// Eviction-emission callback installed by FileCache. See setOnEvictCallback.
+    OnEvictCallback on_evict_callback;
 };
 
 using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;

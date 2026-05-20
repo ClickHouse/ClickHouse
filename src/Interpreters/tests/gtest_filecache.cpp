@@ -77,8 +77,8 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
-    extern const FileCacheSettingsBool expose_eviction_metrics;
-    extern const FileCacheSettingsBool expose_eviction_metrics_per_client;
+    extern const FileCacheSettingsBool filesystem_cache_expose_prometheus_eviction_metrics;
+    extern const FileCacheSettingsBool filesystem_cache_expose_prometheus_eviction_metrics_per_client;
 }
 
 void printRanges(const auto & segments)
@@ -1930,7 +1930,8 @@ TEST_F(FileCacheTest, LoadMetadataParallelism)
 TEST_F(FileCacheTest, ExposeEvictionMetrics)
 {
     /// Verify that filesystem_cache_* metric families update iff the
-    /// expose_eviction_metrics / _per_client flags are set on the cache.
+    /// filesystem_cache_expose_prometheus_eviction_metrics / _per_client
+    /// flags are set on the cache.
     ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
 
@@ -1980,8 +1981,8 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics)
         settings[FileCacheSetting::load_metadata_asynchronously] = false;
         settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
         settings[FileCacheSetting::slru_size_ratio] = 0.5;
-        settings[FileCacheSetting::expose_eviction_metrics] = expose;
-        settings[FileCacheSetting::expose_eviction_metrics_per_client] = per_client;
+        settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics] = expose;
+        settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics_per_client] = per_client;
 
         auto cache = DB::FileCache(cache_name, settings);
         cache.initialize();
@@ -2023,9 +2024,9 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics_SLRUPromotionInducedEviction)
 {
     /// Regression: SLRUFileCachePriority::tryIncreasePriority creates its
     /// own EvictionCandidates for promotion-induced downgrade. Without
-    /// IFileCachePriority::setOwningCache plumbing, evictions on that path
-    /// would not appear in filesystem_cache_*. This test forces that path
-    /// and asserts the counter advances.
+    /// IFileCachePriority::on_evict_callback plumbing, evictions on that
+    /// path would not appear in filesystem_cache_*. This test forces that
+    /// path and asserts the counter advances.
     ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
 
@@ -2056,8 +2057,8 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics_SLRUPromotionInducedEviction)
     settings[FileCacheSetting::load_metadata_asynchronously] = false;
     settings[FileCacheSetting::cache_policy] = FileCachePolicy::SLRU;
     settings[FileCacheSetting::slru_size_ratio] = 0.5;
-    settings[FileCacheSetting::expose_eviction_metrics] = true;
-    settings[FileCacheSetting::expose_eviction_metrics_per_client] = true;
+    settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics] = true;
+    settings[FileCacheSetting::filesystem_cache_expose_prometheus_eviction_metrics_per_client] = true;
 
     auto cache = DB::FileCache("eviction_metrics_promo", settings);
     cache.initialize();
@@ -2090,7 +2091,7 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics_SLRUPromotionInducedEviction)
 
     EXPECT_GT(sum_dim("filesystem_cache_evictions_total"), evictions_before)
         << "Promotion-induced SLRU downgrade did not record any eviction. "
-           "Check IFileCachePriority::setOwningCache plumbing.";
+           "Check IFileCachePriority::on_evict_callback plumbing.";
     EXPECT_GT(sum_dim("filesystem_cache_slru_promotions_total"), promotions_before)
         << "SLRU promotion counter did not advance despite forced promotions.";
     EXPECT_GT(sum_dim("filesystem_cache_slru_promotions_by_client_total"), promotions_by_client_before)
