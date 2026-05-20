@@ -83,39 +83,24 @@ def test_aggregate_metrics(start_cluster):
     ]
     in_list = ",".join(f"'{m}'" for m in new_metrics)
 
-    # All 7 new metrics must be present.
-    assert node.query(
-        f"SELECT count() FROM system.asynchronous_metrics WHERE name IN ({in_list})"
-    ).strip() == "7"
+    rows = node.query(
+        "SELECT name, value, length(description) "
+        f"FROM system.asynchronous_metrics WHERE name IN ({in_list}) "
+        "ORDER BY name FORMAT TabSeparated"
+    ).strip().splitlines()
+    values = {n: float(v) for n, v, _ in (r.split("\t") for r in rows)}
+    description_lengths = [int(d) for _, _, d in (r.split("\t") for r in rows)]
 
-    # None of the Dictionary* metrics may report a negative value.
-    assert node.query(
-        "SELECT count() FROM system.asynchronous_metrics "
-        "WHERE name LIKE 'Dictionary%' AND value < 0"
-    ).strip() == "0"
-
-    # Each new metric must have a non-empty documentation string.
-    assert node.query(
-        f"SELECT count() FROM system.asynchronous_metrics "
-        f"WHERE name IN ({in_list}) AND length(description) < 10"
-    ).strip() == "0"
+    assert len(values) == 7
+    assert all(v >= 0 for v in values.values())
+    assert all(d >= 10 for d in description_lengths)
 
     # Functional checks against the live dictionary we just created.
-    assert node.query(
-        "SELECT value >= 1 FROM system.asynchronous_metrics WHERE name = 'DictionaryTotalCount'"
-    ).strip() == "1"
-    assert node.query(
-        "SELECT value >= 1 FROM system.asynchronous_metrics WHERE name = 'DictionaryLoadedCount'"
-    ).strip() == "1"
-    assert node.query(
-        "SELECT value >= 3 FROM system.asynchronous_metrics WHERE name = 'DictionaryTotalElementCount'"
-    ).strip() == "1"
-    assert node.query(
-        "SELECT value > 0 FROM system.asynchronous_metrics WHERE name = 'DictionaryTotalBytesAllocated'"
-    ).strip() == "1"
-    assert node.query(
-        "SELECT value >= 1 FROM system.asynchronous_metrics WHERE name = 'DictionaryMaxQueryCount'"
-    ).strip() == "1"
+    assert values["DictionaryTotalCount"] >= 1
+    assert values["DictionaryLoadedCount"] >= 1
+    assert values["DictionaryTotalElementCount"] >= 3
+    assert values["DictionaryTotalBytesAllocated"] > 0
+    assert values["DictionaryMaxQueryCount"] >= 1
 
     node.query("DROP DICTIONARY d_agg;")
     node.query("DROP TABLE t_agg;")

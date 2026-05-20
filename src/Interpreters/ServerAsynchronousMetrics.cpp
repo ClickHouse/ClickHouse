@@ -642,9 +642,7 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
             }
             failed_counter += load_result.error_count;
 
-            /// Classify by current status. `LOADING` covers first-time loads only;
-            /// in-progress reloads remain classified as `loaded_count` or `failed_count`
-            /// via the `_AND_RELOADING` variants, matching `system.dictionaries` semantics.
+            /// Mirror `system.dictionaries` classification: `*_AND_RELOADING` counts as loaded/failed.
             using Status = ExternalLoader::Status;
             switch (load_result.status)
             {
@@ -659,7 +657,8 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
                 case Status::LOADING:
                     ++loading_count;
                     break;
-                default:
+                case Status::NOT_LOADED:
+                case Status::NOT_EXIST:
                     break;
             }
 
