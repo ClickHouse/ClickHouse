@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 #include <Common/HistogramMetrics.h>
+#include <Common/DimensionalMetrics.h>
+#include <thread>
 
 using namespace HistogramMetrics;
 
@@ -34,4 +36,49 @@ TEST(HistogramMetricsTest, ObserveAboveAllBuckets)
 {
     metric.observe(1000);
     EXPECT_EQ(metric.getCounter(test_buckets.size()), 1);
+}
+
+/// Stress test: concurrent getOrCreate (emit) vs removeWhere (prune).
+/// Under ASan or TSan the old unique_ptr<Metric> storage would produce a
+/// use-after-free here; shared_ptr keeps the Metric alive until the last
+/// observer releases it, so any write that lands on a just-pruned entry is
+/// merely orphaned — no UB.
+TEST(HistogramMetricsTest, ConcurrentEmitAndRemove)
+{
+    static HistogramMetrics::MetricFamily & race_family =
+        HistogramMetrics::Factory::instance().registerMetric(
+            "race_test_histogram",
+            "Stress test for concurrent getOrCreate vs removeWhere",
+            test_buckets,
+            {"key"});
+
+    static DimensionalMetrics::MetricFamily & race_dim_family =
+        DimensionalMetrics::Factory::instance().registerMetric(
+            "race_test_dimensional",
+            "Stress test for concurrent getOrCreate vs removeWhere",
+            {"key"});
+
+    constexpr int kIterations = 50'000;
+
+    auto emitter = std::thread([&]
+    {
+        for (int i = 0; i < kIterations; ++i)
+        {
+            race_family.getOrCreate({"val"})->observe(1.0);
+            race_dim_family.getOrCreate({"val"})->increment();
+        }
+    });
+
+    auto pruner = std::thread([&]
+    {
+        for (int i = 0; i < kIterations / 100; ++i)
+        {
+            race_family.removeWhere([](const auto &) { return true; });
+            race_dim_family.removeWhere([](const auto &) { return true; });
+        }
+    });
+
+    emitter.join();
+    pruner.join();
+    /// Reaching here without a crash or sanitizer report is the assertion.
 }
