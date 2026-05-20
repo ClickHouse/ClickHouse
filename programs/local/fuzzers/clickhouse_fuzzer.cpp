@@ -199,10 +199,11 @@ std::atomic<int64_t> iteration_start_sec{0};
 /// SIGALRM is libfuzzer's actual timeout firing rather than a periodic tick.
 std::atomic<int64_t> unit_timeout_sec{1200};
 
-/// Per-iteration one-shot guard so concurrent SIGALRM deliveries can't run
-/// the slow runner-stack dump in parallel. Reset at the start of every
-/// `LLVMFuzzerTestOneInput` call so that the wrapper still fires on a real
-/// timeout in a later iteration if an earlier periodic alarm consumed it.
+/// Per-iteration one-shot latch so that multiple sequential SIGALRM handler
+/// invocations within the same iteration don't repeat the slow runner-stack
+/// dump. Reset at the start of every `LLVMFuzzerTestOneInput` call so that
+/// the wrapper still fires on a real timeout in a later iteration even if an
+/// earlier periodic alarm consumed it.
 std::atomic<bool> dump_started{false};
 
 /// SIGUSR1 handler installed on the runner thread — prints its own stack trace.
@@ -241,7 +242,7 @@ void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
     int64_t elapsed_sec = ts.tv_sec - iteration_start_sec.load(std::memory_order_acquire);
 
     /// libfuzzer's `AlarmCallback` itself only declares a timeout once
-    /// `elapsed > UnitTimeoutSec`. Use the same condition so the periodic
+    /// `elapsed >= UnitTimeoutSec`. Use the same condition so the periodic
     /// SIGALRMs at `UnitTimeoutSec / 2 + 1` seconds pass through untouched
     /// regardless of the `-timeout=N` value. The next forwarded SIGALRM
     /// after this check is libfuzzer's actual timeout that will `_Exit`.
