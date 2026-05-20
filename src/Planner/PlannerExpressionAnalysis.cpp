@@ -42,6 +42,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -157,6 +158,9 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
 
     GroupingSetsParamsList grouping_sets_parameters_list;
     bool group_by_with_constant_keys = false;
+    /// Resolved cluster key names, populated below for the plain `GROUP BY` branch.
+    /// `WITH CLUSTER` is not supported in `GROUPING SETS` / `ROLLUP` / `CUBE`.
+    std::vector<std::string> cluster_key_names_resolved;
 
     PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
 
@@ -231,22 +235,50 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
         }
         else
         {
+            /// Capture WITH CLUSTER key name(s) here — `aggregation_keys` is built
+            /// after constant elimination below, so the post-analyzer
+            /// `cluster_idx` cannot be used to index it directly. Resolving the
+            /// name(s) in this loop tracks any shift the elision introduces.
+            const int cluster_idx_orig = query_node.hasGroupByWithCluster()
+                ? query_node.getGroupByClusterKeyIndex() : -1;
+            const size_t cluster_dims = query_node.getGroupByClusterDimensions();
+            int orig_pos = 0;
+
             for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
             {
+                const bool is_cluster_key_position =
+                    cluster_idx_orig >= 0
+                    && orig_pos >= cluster_idx_orig
+                    && orig_pos < cluster_idx_orig + static_cast<int>(cluster_dims);
+
                 const auto * constant_key = group_by_key_node->as<ConstantNode>();
                 group_by_with_constant_keys |= (constant_key != nullptr);
 
                 if (constant_key && !aggregates_descriptions.empty() && (!check_constants_for_group_by_key || canRemoveConstantFromGroupByKey(*constant_key)))
+                {
+                    if (is_cluster_key_position)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "GROUP BY ... WITH CLUSTER key cannot be a constant expression");
+                    ++orig_pos;
                     continue;
+                }
 
                 auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(before_aggregation_actions->dag, group_by_key_node);
                 correlated_subtrees.assertEmpty("in aggregation keys");
                 aggregation_keys.reserve(expression_dag_nodes.size());
 
+                bool captured_cluster_name = false;
                 for (auto & expression_dag_node : expression_dag_nodes)
                 {
                     if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
+                    {
+                        if (is_cluster_key_position && !captured_cluster_name)
+                        {
+                            cluster_key_names_resolved.push_back(expression_dag_node->result_name);
+                            captured_cluster_name = true;
+                        }
                         continue;
+                    }
 
                     auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
                     auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableSafe(expression_dag_node->column) : expression_dag_node->column;
@@ -255,7 +287,15 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
                     aggregation_keys.push_back(expression_dag_node->result_name);
                     before_aggregation_actions->dag.getOutputs().push_back(expression_dag_node);
                     before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
+
+                    if (is_cluster_key_position && !captured_cluster_name)
+                    {
+                        cluster_key_names_resolved.push_back(expression_dag_node->result_name);
+                        captured_cluster_name = true;
+                    }
                 }
+
+                ++orig_pos;
             }
         }
     }
@@ -304,18 +344,17 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
 
     if (query_node.hasGroupByWithCluster())
     {
-        int cluster_idx = query_node.getGroupByClusterKeyIndex();
-        size_t cluster_dims = query_node.getGroupByClusterDimensions();
-        const auto & agg_keys = aggregation_analysis_result.aggregation_keys;
-        if (cluster_idx >= 0 && cluster_idx + static_cast<int>(cluster_dims) <= static_cast<int>(agg_keys.size()))
-        {
-            ClusterKeyInfo info;
-            info.distance = query_node.getGroupByClusterDistance();
-            info.dimensions = cluster_dims;
-            for (size_t i = 0; i < cluster_dims; ++i)
-                info.key_names.push_back(agg_keys[cluster_idx + i]);
-            aggregation_analysis_result.cluster_key_info = std::move(info);
-        }
+        const size_t cluster_dims = query_node.getGroupByClusterDimensions();
+        if (cluster_key_names_resolved.size() != cluster_dims)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Failed to resolve GROUP BY ... WITH CLUSTER key names: expected {}, got {}",
+                cluster_dims, cluster_key_names_resolved.size());
+
+        ClusterKeyInfo info;
+        info.distance = query_node.getGroupByClusterDistance();
+        info.dimensions = cluster_dims;
+        info.key_names = std::move(cluster_key_names_resolved);
+        aggregation_analysis_result.cluster_key_info = std::move(info);
     }
 
     return aggregation_analysis_result;
