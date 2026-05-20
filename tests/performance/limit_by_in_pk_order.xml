@@ -113,7 +113,31 @@
         FORMAT NULL
     </query>
 
+    <!-- Multi-stream read in order: 16 parts via partitioning on a column unrelated to the
+         LIMIT BY key. -->
+    <create_query>
+        CREATE TABLE limit_by_in_pk_order_multi_part
+        (a UInt32, b UInt32, z UInt32)
+        ENGINE = MergeTree
+        ORDER BY a
+        PARTITION BY b % 16
+    </create_query>
+
+    <fill_query>
+        INSERT INTO limit_by_in_pk_order_multi_part
+        SELECT number % 100000, number, number
+        FROM numbers(16000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE limit_by_in_pk_order_multi_part FINAL</fill_query>
+
+    <query>
+        SELECT a, b, z FROM limit_by_in_pk_order_multi_part
+        LIMIT 5 BY a
+        FORMAT NULL
+    </query>
+
     <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_int</drop_query>
     <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_dt</drop_query>
     <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_low</drop_query>
+    <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_multi_part</drop_query>
 </test>
