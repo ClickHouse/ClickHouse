@@ -988,7 +988,13 @@ Chunk ClusterMergingTransform::generateString()
         std::unordered_map<UInt32, std::vector<size_t>> index;
         std::vector<size_t> short_rows;
         std::vector<size_t> small_rows;
-        const size_t small_qgrams_bound = Q * max_edits;
+        /// Saturating `Q * max_edits`: for very large `max_edits` the unchecked
+        /// product wraps `size_t` and `small_qgrams_bound` becomes tiny, which
+        /// turns the filter into a false-negative source. The clamped value is
+        /// equivalent for filtering purposes — any `qgrams` is `<= max size_t`
+        /// already.
+        const size_t small_qgrams_bound =
+            std::min(max_edits, std::numeric_limits<size_t>::max() / Q) * Q;
         for (size_t i = 0; i < total_rows; ++i)
         {
             const auto & s = strings[i];
@@ -1046,7 +1052,9 @@ Chunk ClusterMergingTransform::generateString()
                 const auto & sj = strings[j];
                 const size_t qgrams_j = sj.size() - Q + 1;
                 const size_t max_qg = std::max(qgrams_i, qgrams_j);
-                const size_t threshold = (max_qg > Q * max_edits) ? (max_qg - Q * max_edits) : 0;
+                /// Reuses the saturating `small_qgrams_bound` to avoid the same
+                /// `Q * max_edits` overflow as above.
+                const size_t threshold = (max_qg > small_qgrams_bound) ? (max_qg - small_qgrams_bound) : 0;
                 if (counter[j] >= threshold)
                     verify_pair(i, j);
             }
