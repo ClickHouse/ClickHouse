@@ -796,4 +796,27 @@ SELECT count() FROM tab WHERE hasToken(val, 'xyz');    -- 0
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
+SELECT '29. hasAll / hasAny with non-array tokenizer + postprocessor: needle elements go through postprocessor.';
+-- The index stores postprocessed (lower-cased) tokens. Before the fix, hasAll / hasAny built
+-- lookup tokens without the postprocessor, so 'FOO' was looked up instead of 'foo', the granule
+-- was falsely pruned, and matching rows were dropped.
+
+CREATE TABLE tab
+(
+    id  UInt64,
+    val Array(String),
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(val))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, ['FOO', 'BAR']), (2, ['baz']);
+
+-- Index stores 'foo', 'bar' for row 1 and 'baz' for row 2.
+-- Needle elements must be postprocessed: 'FOO' → 'foo', 'BAR' → 'bar'.
+SELECT count() FROM tab WHERE hasAll(val, ['FOO', 'BAR']);  -- 1
+SELECT count() FROM tab WHERE hasAny(val, ['FOO']);          -- 1
+SELECT count() FROM tab WHERE hasAny(val, ['xyz']);          -- 0
+
+DROP TABLE tab;
+
 DROP TABLE IF EXISTS tab;

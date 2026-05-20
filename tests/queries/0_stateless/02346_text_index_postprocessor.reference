@@ -181,3 +181,7 @@ wo	1
 1
 1
 0
+29. hasAll / hasAny with non-array tokenizer + postprocessor: needle elements go through postprocessor.
+1
+1
+0
