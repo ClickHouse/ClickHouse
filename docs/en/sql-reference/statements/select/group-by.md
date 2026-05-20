@@ -342,9 +342,12 @@ Here `key2` is the cluster key. Rows are first aggregated by exact key values us
 
 Only one `GROUP BY` key can have the `WITH CLUSTER` modifier. The supported cluster key kinds are:
 
-- A scalar numeric type (`Int`, `UInt`, `Float`, `DateTime`) — `<distance>` is interpreted as a numeric threshold on the absolute difference of key values.
+- A scalar numeric type (`Int`, `UInt`, `Float`, `Date`, `DateTime`) — `<distance>` is interpreted as a numeric threshold on the absolute difference of key values.
+- `DateTime64(scale)` / `Time64(scale)` — `<distance>` is interpreted in **the type's native tick unit** (microseconds for `scale = 6`, nanoseconds for `scale = 9`, etc.), matching how arithmetic on these types already works in ClickHouse (e.g. `now64(6) + 1` adds one microsecond). Use multiples of the corresponding power of ten to express larger units (e.g. `1000000` for one second on `DateTime64(6)`).
 - A 2-element numeric tuple `(x, y)` — `<distance>` is interpreted as a Euclidean threshold; rows are merged when `sqrt((x1-x2)^2 + (y1-y2)^2) <= <distance>`. Tuples of any other arity are rejected.
 - `String` or `FixedString` — `<distance>` is interpreted as a non-negative integer maximum edit (Levenshtein) distance over raw bytes.
+
+`WITH CLUSTER` cannot be combined with `WITH ROLLUP`, `WITH CUBE`, `GROUPING SETS` or `WITH TOTALS` — these finalize aggregate states before the cluster step can merge them.
 
 **Example**
 

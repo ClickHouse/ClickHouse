@@ -1,6 +1,7 @@
 #include <Processors/Transforms/ClusterMergingTransform.h>
 
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
@@ -185,10 +186,43 @@ void readClusterValues(
         return;
     }
 
-    /// Narrow integer / Float / Date / DateTime / DateTime64 / Decimal —
-    /// `getFloat64` is precise enough for typical clustering ranges, and for
-    /// `DateTime64` it preserves the "distance is in seconds" semantics
-    /// (translation on raw ticks would silently redefine the unit).
+    /// `DateTime64` and `Time64` are `Decimal64`-backed by an `Int64` tick
+    /// count. They inherit the wide-integer precision problem (microsecond /
+    /// nanosecond timestamps quickly exceed 2^53). Translate the raw ticks,
+    /// matching how ClickHouse arithmetic on these types already works in
+    /// native units (e.g. `now64(6) + 1` adds one microsecond).
+    /// `WITH CLUSTER d` is therefore interpreted as `d` ticks for these types.
+    auto translate_decimal64_backed = [&](const auto & data)
+    {
+        Int64 min_val = data[0].value;
+        Int64 max_val = data[0].value;
+        for (size_t i = 1; i < total_rows; ++i)
+        {
+            min_val = std::min(min_val, data[i].value);
+            max_val = std::max(max_val, data[i].value);
+        }
+        UInt64 range = static_cast<UInt64>(max_val) - static_cast<UInt64>(min_val);
+        if (range >= FLOAT64_EXACT_INT_LIMIT)
+            throw_range(range);
+        for (size_t i = 0; i < total_rows; ++i)
+            out[i] = static_cast<Float64>(
+                static_cast<UInt64>(data[i].value) - static_cast<UInt64>(min_val));
+    };
+
+    if (which.isDateTime64())
+    {
+        translate_decimal64_backed(assert_cast<const ColumnDecimal<DateTime64> &>(col).getData());
+        return;
+    }
+
+    if (which.isTime64())
+    {
+        translate_decimal64_backed(assert_cast<const ColumnDecimal<Time64> &>(col).getData());
+        return;
+    }
+
+    /// Narrow integer / Float / Date / DateTime / Decimal32-256 —
+    /// `getFloat64` is precise enough for typical clustering ranges.
     for (size_t i = 0; i < total_rows; ++i)
         out[i] = col.getFloat64(i);
 }
