@@ -578,13 +578,10 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             }
             else
             {
-                ColumnWithTypeAndName unknown_field_column_with_type;
-
-                unknown_field_column_with_type.name = calculateConstantActionNodeName(UNKNOWN_FIELD);
-                unknown_field_column_with_type.type = std::make_shared<DataTypeUInt8>();
-                unknown_field_column_with_type.column = unknown_field_column_with_type.type->createColumnConst(1, UNKNOWN_FIELD);
-
-                result_node = &result_dag.addColumn(unknown_field_column_with_type);
+                auto name = calculateConstantActionNodeName(UNKNOWN_FIELD);
+                auto type = std::make_shared<DataTypeUInt8>();
+                ColumnConstPtr column = type->createColumnConst(1, UNKNOWN_FIELD);
+                result_node = &result_dag.addColumn(std::move(column), std::move(type), std::move(name));
             }
         }
     }
