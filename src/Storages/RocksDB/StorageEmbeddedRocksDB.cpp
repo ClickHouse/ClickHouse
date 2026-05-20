@@ -932,16 +932,16 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
     {
         std::string & serialized_key = raw_keys.emplace_back();
         WriteBufferFromString wb(serialized_key);
-        for (const auto & key : keys)
+        for (size_t pk_idx = 0; pk_idx < keys.size(); ++pk_idx)
         {
             Field field;
-            key.column->get(i, field);
+            keys[pk_idx].column->get(i, field);
             if (field.isNull())
             {
                 null_map[i] = 0;
                 break;
             }
-            key.type->getDefaultSerialization()->serializeBinary(field, wb, {});
+            primary_key_types[pk_idx]->getDefaultSerialization()->serializeBinary(field, wb, {});
         }
         wb.finalize();
     }

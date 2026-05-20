@@ -1,0 +1,21 @@
+plain inner
+a	A
+b	B
+c	C
+plain left
+a	A
+b	B
+c	C
+d	
+nullable left inner
+a	A
+b	B
+c	C
+nullable left left
+a	A
+b	B
+c	C
+d	
+\N	
+explain
+Algorithm: DirectKeyValueJoin

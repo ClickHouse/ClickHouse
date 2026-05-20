@@ -1458,10 +1458,15 @@ Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, const Nam
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageKeeperMap supports only one key, got: {}", keys.size());
 
-    auto raw_keys = serializeKeysToRawString(keys[0]);
+    auto pk_type = getInMemoryMetadataPtr(getContext(), false)->getSampleBlock().getByName(primary_key).type;
+    null_map.resize_fill(keys[0].column->size(), 1);
+    auto raw_keys = serializeKeysToRawString(keys[0], pk_type, &null_map);
 
     if (raw_keys.size() != keys[0].column->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", raw_keys.size(), keys[0].column->size());
+
+    for (auto & raw_key : raw_keys)
+        raw_key = base64Encode(raw_key, /* url_encoding */ true);
 
     return getBySerializedKeys(raw_keys, &null_map, /* version_column */ false, getContext());
 }
@@ -1478,17 +1483,24 @@ Chunk StorageKeeperMap::getBySerializedKeys(
 
     size_t primary_key_pos = getPrimaryKeyPos(sample_block, getPrimaryKey());
 
-    if (null_map)
-    {
-        null_map->clear();
-        null_map->resize_fill(keys.size(), 1);
-    }
+    if (null_map && null_map->size() != keys.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "StorageKeeperMap::getBySerializedKeys: null_map size {} does not match keys size {}",
+            null_map->size(), keys.size());
 
     Strings full_key_paths;
     full_key_paths.reserve(keys.size());
 
-    for (const auto & key : keys)
-        full_key_paths.emplace_back(fullPathForKey(key));
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
+        if (null_map && !(*null_map)[i])
+        {
+            /// Use a placeholder path; the result will be discarded below.
+            full_key_paths.emplace_back(fullPathForKey({}));
+            continue;
+        }
+        full_key_paths.emplace_back(fullPathForKey(keys[i]));
+    }
 
     const auto & settings = local_context->getSettingsRef();
     ZooKeeperRetriesControl zk_retry{
@@ -1508,6 +1520,16 @@ Chunk StorageKeeperMap::getBySerializedKeys(
 
     for (size_t i = 0; i < keys.size(); ++i)
     {
+        if (null_map && !(*null_map)[i])
+        {
+            for (size_t col_idx = 0; col_idx < sample_block.columns(); ++col_idx)
+                columns[col_idx]->insert(sample_block.getByPosition(col_idx).type->getDefault());
+
+            if (version_column)
+                version_column->insert(-1);
+            continue;
+        }
+
         auto response = values[i];
 
         Coordination::Error code = response.error;
