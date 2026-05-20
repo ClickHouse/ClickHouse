@@ -51,7 +51,7 @@ namespace
         {
             const auto & manager = context_->getAccessControl();
 
-            std::vector<UUID> profile_ids; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+            UUIDs profile_ids;
 
             switch (kind)
             {

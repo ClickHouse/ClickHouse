@@ -130,7 +130,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     }
     else
     {
-        std::vector<std::vector<String>> host_names = {{host_name}}; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        HostsByShard host_names = {{host_name}};
 
         bool treat_local_as_remote = false;
         bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
