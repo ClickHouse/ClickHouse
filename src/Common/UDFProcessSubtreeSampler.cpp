@@ -226,10 +226,11 @@ void UDFProcessSubtreeSampler::recordPidAcquired(pid_t root_pid_)
     if (root_pid <= 0)
         return;
 
-    /// Pre-snapshot: walk subtree, reset VmHWM per pid, capture utime/stime
-    /// baselines. clearRefs failure is silent — peak_rss for that pid will be
-    /// reported as the kernel's lifetime peak, which over-counts slightly but
-    /// is correct as an upper bound.
+    /// Pre-snapshot: walk subtree, snap VmHWM down to current RSS per pid
+    /// via /proc/<pid>/clear_refs (mode 5), capture utime/stime baselines.
+    /// clearRefs failure is silent — VmHWM keeps the worker's lifetime peak,
+    /// which may inflate the reported peak_rss by an arbitrary amount but
+    /// remains a correct upper bound on this borrow's peak.
     auto pids = UDFProcfs::walkSubtree(root_pid);
     for (pid_t pid : pids)
     {
