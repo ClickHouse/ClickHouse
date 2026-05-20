@@ -25,6 +25,9 @@ protected:
     bool has_input = false;
     bool finished = false;
     bool got_exception = false;
+    /// Latches the first time `onCancel` runs so escalation from `PartialResult`
+    /// to a hard cancel can still invoke `onCancel` exactly once.
+    std::atomic<bool> on_cancel_called{false};
     Port::Data current_chunk;
 
     std::shared_ptr<const StorageLimitsList> storage_limits;

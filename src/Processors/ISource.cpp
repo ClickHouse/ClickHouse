@@ -21,20 +21,28 @@ ISource::ISource(SharedHeader header, bool enable_auto_progress)
 
 void ISource::cancel(CancelReason reason) noexcept
 {
-    bool already_cancelled = is_cancelled.exchange(true, std::memory_order_acq_rel);
-    if (already_cancelled)
+    /// Always publish `is_cancelled` so `prepare` returns `Finished` and the source
+    /// stops generating new data. This is required for `partial_result_on_first_cancel`,
+    /// where SIGINT triggers `graph->cancel(PartialResult)` and ordinary sources (no
+    /// `cancel` override) must respond by stopping.
+    is_cancelled.store(true, std::memory_order_release);
+
+    /// Skip `onCancel` for `PartialResult`: most sources' `onCancel` is intended for
+    /// hard cancellation (user cancel, timeout, exception) and has unintended side
+    /// effects on the success path — e.g. `SQLiteSource::onCancel` calls
+    /// `sqlite3_interrupt`. Sources that need to react to `PartialResult` (notably
+    /// `RemoteSource`, which drains remaining packets to collect final progress)
+    /// override `cancel` directly.
+    if (reason == CancelReason::PartialResult)
         return;
 
-    /// `PartialResult` means the consumer has enough data and only wants ingress to stop.
-    /// We still set `is_cancelled` above so `prepare` returns `Finished` and the source
-    /// stops generating new data (required for `partial_result_on_first_cancel`, where
-    /// SIGINT triggers `graph->cancel(PartialResult)` and the source must respond).
-    /// We skip `onCancel` for `PartialResult` because most sources' `onCancel` is intended
-    /// for hard cancellation (user cancel, timeout, exception) and has unintended side
-    /// effects — e.g. `SQLiteSource::onCancel` calls `sqlite3_interrupt`. Sources that
-    /// need to react to `PartialResult` (notably `RemoteSource`, which drains remaining
-    /// packets to collect final progress) override `cancel` directly.
-    if (reason == CancelReason::PartialResult)
+    /// Gate `onCancel` on a separate latch so escalation from a prior `PartialResult`
+    /// cancel still invokes `onCancel` exactly once. `ExecutingGraph::cancel` upgrades
+    /// `cancel_reason` from `PartialResult` to a hard reason and re-calls every
+    /// processor's `cancel`; without this latch, the second call would no-op and
+    /// hard-cancel hooks (e.g. `sqlite3_interrupt`) would never run.
+    bool already_called = on_cancel_called.exchange(true, std::memory_order_acq_rel);
+    if (already_called)
         return;
 
     onCancel();

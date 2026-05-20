@@ -318,14 +318,20 @@ private:
     std::atomic<bool> drain_should_stop{false};
 
     /** An exception from replica was received. No need in receiving more packets or
-      * requesting to cancel query execution
+      * requesting to cancel query execution.
+      *
+      * Atomic so the `finish` drain loop — which runs outside `was_cancelled_mutex`
+      * to let a concurrent hard cancel preempt the drain — can write this flag while
+      * `hasThrownException` observers (including the `SCOPE_EXIT` in `finish`) read
+      * it without a data race.
       */
-    bool got_exception_from_replica = false;
+    std::atomic<bool> got_exception_from_replica{false};
 
     /** Unknown packet was received from replica. No need in receiving more packets or
-      * requesting to cancel query execution
+      * requesting to cancel query execution. Atomic for the same reason as
+      * `got_exception_from_replica`.
       */
-    bool got_unknown_packet_from_replica = false;
+    std::atomic<bool> got_unknown_packet_from_replica{false};
 
     /** Got duplicated uuids from replica
       */

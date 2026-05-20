@@ -700,7 +700,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
         case Protocol::Server::Exception:
-            got_exception_from_replica = true;
+            got_exception_from_replica.store(true, std::memory_order_release);
             packet.exception->rethrow();
             break;
 
@@ -759,7 +759,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             break;
 
         default:
-            got_unknown_packet_from_replica = true;
+            got_unknown_packet_from_replica.store(true, std::memory_order_release);
             throw Exception(
                 ErrorCodes::UNKNOWN_PACKET_FROM_SERVER,
                 "Unknown packet {} from one of the following replicas: {}",
@@ -917,7 +917,7 @@ void RemoteQueryExecutor::finish()
                         LOG_TRACE(log, "Replica reported expected cancellation during drain: {}", packet.exception->displayText());
                     break;
                 }
-                got_exception_from_replica = true;
+                got_exception_from_replica.store(true, std::memory_order_release);
                 packet.exception->rethrow();
                 break;
 
@@ -1085,7 +1085,8 @@ bool RemoteQueryExecutor::isQueryPending() const
 
 bool RemoteQueryExecutor::hasThrownException() const
 {
-    return got_exception_from_replica || got_unknown_packet_from_replica;
+    return got_exception_from_replica.load(std::memory_order_acquire)
+        || got_unknown_packet_from_replica.load(std::memory_order_acquire);
 }
 
 void RemoteQueryExecutor::setProgressCallback(ProgressCallback callback)
