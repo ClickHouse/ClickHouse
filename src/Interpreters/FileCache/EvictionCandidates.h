@@ -98,9 +98,7 @@ public:
     using AfterEvictWriteFunc = std::function<void(const CachePriorityGuard::WriteLock & lk)>;
     using AfterEvictStateFunc = std::function<void(const CacheStateGuard::Lock & lk)>;
 
-    /// `on_evict_callback_`, if not empty, is invoked from `evict()` for each
-    /// successfully-evicted segment.
-    explicit EvictionCandidates(IFileCachePriority::OnEvictCallback on_evict_callback_ = {});
+    EvictionCandidates(IFileCachePriority::OnEvictCallback on_evict_callback_ = {});
     ~EvictionCandidates();
 
     /// Total number of eviction candidates.
@@ -182,7 +180,6 @@ private:
 
     IFileCachePriority::HoldSpacePtr hold_space;
 
-    /// Per-segment eviction-emission callback. Empty by default. See ctor.
     IFileCachePriority::OnEvictCallback on_evict_callback;
 
     LoggerPtr log;

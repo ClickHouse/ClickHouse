@@ -397,12 +397,7 @@ public:
     virtual void setCacheUsageStatGuard(std::shared_ptr<CacheUsageStatGuard>) {}
 
     /// Invoked by `EvictionCandidates::evict` for each successfully-evicted
-    /// segment. FileCache installs a callback that emits the
-    /// `filesystem_cache_*` eviction metrics; tests and other non-FileCache
-    /// callers leave it unset and pay no per-segment overhead. Stored on
-    /// `IFileCachePriority` so internally-spawned EvictionCandidates (e.g.
-    /// SLRU's promotion-induced downgrade in `tryIncreasePriority`) can pick
-    /// up the same callback the cache installed.
+    /// segment.
     /// Wrapping priorities (SLRU, Split) override to propagate to their
     /// nested priorities.
     /// `user_id` is passed explicitly because `segment` has already been
@@ -428,7 +423,6 @@ protected:
     std::atomic<size_t> max_size = 0;
     std::atomic<size_t> max_elements = 0;
 
-    /// Eviction-emission callback installed by FileCache. See setOnEvictCallback.
     OnEvictCallback on_evict_callback;
 };
 

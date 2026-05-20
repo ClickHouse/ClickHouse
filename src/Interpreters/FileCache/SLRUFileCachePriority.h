@@ -153,7 +153,7 @@ private:
     LRUFileCachePriority probationary_queue;
     LoggerPtr log;
 
-    /// Promotion-emission callback installed by FileCache. See setOnPromoteCallback.
+    /// Promotion callback; see setOnPromoteCallback.
     OnPromoteCallback on_promote_callback;
 
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::WriteLock & lock);

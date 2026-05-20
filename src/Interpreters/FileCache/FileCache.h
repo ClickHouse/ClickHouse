@@ -258,17 +258,7 @@ public:
     void pruneByClientMetrics(const String & user_id) const;
 
 private:
-    /// Invoked from `EvictionCandidates::evict` (via the callback installed
-    /// on `main_priority` at construction). Emits the `filesystem_cache_*`
-    /// eviction metrics for one successfully-evicted segment. No-op if the
-    /// per-cache flag is off. `user_id` is passed explicitly because the
-    /// segment is already detached from its key metadata at this point.
     void onSegmentEvicted(const FileSegment & segment, FileCacheQueueEntryType queue_type, const String & user_id) const;
-
-    /// Invoked from `SLRUFileCachePriority::tryIncreasePriority` (via the
-    /// callback installed on `main_priority`). Emits the
-    /// `filesystem_cache_slru_promotions_*` counters. No-op if the per-cache
-    /// flag is off.
     void onSegmentPromoted(const String & user_id) const;
 
     using KeyAndOffset = FileCacheKeyAndOffset;
