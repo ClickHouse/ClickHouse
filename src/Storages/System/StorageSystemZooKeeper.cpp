@@ -468,14 +468,11 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
         if (!isPathNode(node.children.at(0)))
             return;
 
-        auto value = node.children.at(1)->column;
+        const auto & value = node.children.at(1)->column;
         if (!value)
             return;
 
-        const IColumn * column = value.get();
-        if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
-            column = &column_const->getDataColumn();
-
+        const IColumn * column = &value->getDataColumn();
         const ColumnSet * column_set = typeid_cast<const ColumnSet *>(column);
         if (!column_set)
             return;
@@ -513,9 +510,6 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
             return;
 
         if (!isString(removeNullable(removeLowCardinality(value->result_type))))
-            return;
-
-        if (value->column->size() != 1)
             return;
 
         /// Only inserted if the key doesn't exists already

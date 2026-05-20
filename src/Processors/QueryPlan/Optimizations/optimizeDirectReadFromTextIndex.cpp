@@ -501,7 +501,7 @@ private:
         if (arg_needles->type != ActionsDAG::ActionType::COLUMN || !arg_needles->column)
             return;
 
-        if (arg_needles->column->empty() || arg_needles->column->isNullAt(0))
+        if (arg_needles->column->onlyNull())
             return;
 
         Field needles_field = (*arg_needles->column)[0];
