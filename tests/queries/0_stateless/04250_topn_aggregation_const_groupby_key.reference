@@ -1,0 +1,26 @@
+-- toLowCardinality(0) as GROUP BY key (Mode 2 - direct hashing)
+k1_49	999
+k1_48	998
+k1_47	997
+k1_46	996
+k1_45	995
+-- numeric literal as GROUP BY key
+k1_49	999
+k1_48	998
+k1_47	997
+k1_46	996
+k1_45	995
+-- string literal as GROUP BY key
+k1_49	999
+k1_48	998
+k1_47	997
+k1_46	996
+k1_45	995
+-- multiple constant keys + composite
+k1_49	k2_9	999
+k1_48	k2_8	998
+k1_47	k2_7	997
+k1_46	k2_6	996
+k1_45	k2_5	995
+-- original AST-fuzzer shape (FULL OUTER JOIN opt vs ref)
+10

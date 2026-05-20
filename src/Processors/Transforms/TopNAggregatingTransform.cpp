@@ -268,11 +268,18 @@ void TopNSortedAggregatingTransform::consume(Chunk chunk)
     const auto & columns = chunk.getColumns();
     size_t num_rows = chunk.getNumRows();
 
-    if (result_columns.empty())
-        result_columns = getOutputPort().getHeader().cloneEmptyColumns();
-
     prepareKeyColumnPtrs(columns);
     prepareArgColumnPtrs(columns);
+
+    if (result_columns.empty())
+    {
+        result_columns = getOutputPort().getHeader().cloneEmptyColumns();
+        /// Replace key columns with `cloneEmpty` of the unwrapped runtime
+        /// columns so `insertFrom` sees matching concrete column types;
+        /// see comment in `TopNDirectAggregatingTransform::consume`.
+        for (size_t k = 0; k < key_names.size(); ++k)
+            result_columns[k] = key_column_ptrs[k]->cloneEmpty();
+    }
 
     for (size_t row = 0; row < num_rows; ++row)
     {
@@ -376,15 +383,20 @@ void TopNDirectAggregatingTransform::consume(Chunk chunk)
     ++chunks_seen;
     ++chunks_since_last_threshold_refresh;
 
+    prepareKeyColumnPtrs(columns);
+    prepareArgColumnPtrs(columns);
+
+    /// Clone `accumulated_keys` from the unwrapped runtime columns rather than
+    /// the input header: the header can carry `ColumnConst` / `ColumnSparse`
+    /// wrappers for constant GROUP BY expressions (e.g. `toLowCardinality(0)`),
+    /// while `prepareKeyColumnPtrs` strips them. Using the header's `cloneEmpty`
+    /// would leave `accumulated_keys[k]` Const-wrapped and trigger the
+    /// `assertTypeEquality` check in `insertFrom` below.
     if (accumulated_keys.empty())
     {
         for (size_t k = 0; k < key_names.size(); ++k)
-            accumulated_keys.push_back(
-                stored_input_header.getByPosition(key_column_indices[k]).column->cloneEmpty());
+            accumulated_keys.push_back(key_column_ptrs[k]->cloneEmpty());
     }
-
-    prepareKeyColumnPtrs(columns);
-    prepareArgColumnPtrs(columns);
 
     ColumnPtr order_arg_col_holder;
     const IColumn * order_arg_col = nullptr;
