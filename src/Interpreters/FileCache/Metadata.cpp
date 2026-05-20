@@ -197,6 +197,8 @@ CacheMetadata::CacheMetadata(
 {
 }
 
+CacheMetadata::~CacheMetadata() = default;
+
 String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind)
 {
     String file_suffix;

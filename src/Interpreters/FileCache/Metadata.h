@@ -180,6 +180,8 @@ public:
         size_t background_download_threads_,
         bool write_cache_per_user_directory_);
 
+    virtual ~CacheMetadata();
+
     void startup();
 
     bool isEmpty() const;
