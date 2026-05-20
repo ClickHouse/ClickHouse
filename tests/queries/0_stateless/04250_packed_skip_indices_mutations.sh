@@ -96,14 +96,46 @@ run_scenario() {
 
     $CLIENT $SYNC_ALTER -q "$mutation"
 
-    local sec_after sec_state count granules check
-    sec_after=$(part_metric "$table" "secondary_indices_compressed_bytes")
+    ## Batch the four post-mutation reads into a single client invocation: secondary-index
+    ## bytes (via system.parts), the data-side count(), the index plan from EXPLAIN, and
+    ## CHECK TABLE. Each result block is delimited by a sentinel so awk can split them.
+    local out
+    out=$($CLIENT --multiquery -q "
+        SELECT secondary_indices_compressed_bytes FROM system.parts
+        WHERE database = currentDatabase() AND table = '$table' AND active ORDER BY name LIMIT 1;
+        SELECT '---';
+        SELECT count() FROM $table WHERE $where;
+        SELECT '---';
+        EXPLAIN indexes = 1 SELECT count() FROM $table WHERE $where;
+        SELECT '---';
+        CHECK TABLE $table SETTINGS check_query_single_value_result = 1;
+    ")
+
+    local sec_after count check granules sec_state
+    sec_after=$(echo "$out" | awk '/^---$/{exit} {print}')
+    count=$(echo "$out"   | awk 'p==1 && /^---$/{exit} /^---$/{p+=1; next} p==1')
+    granules=$(echo "$out" | awk -v want="$idx" '
+        p==2 && /^---$/{exit}
+        /^---$/{p+=1; next}
+        p==2 {
+            if (match($0, /^[[:space:]]*Name:/)) {
+                line = $0; sub(/.*Name: /, "", line); sub(/[[:space:]]+$/, "", line)
+                in_target = (line == want)
+            }
+            if (in_target && match($0, /Granules:/)) {
+                ratio = $NF; split(ratio, parts, "/")
+                if (parts[1] != parts[2]) print "filtered"
+                else print "no_filter"
+                found = 1
+                exit
+            }
+        }
+        END { if (!found) print "missing" }')
+    check=$(echo "$out" | awk 'p==3{print; exit} /^---$/{p+=1; next}')
+
     if (( sec_after > 0 )); then sec_state="materialized"
     else sec_state="cleared"
     fi
-    count=$($CLIENT -q "SELECT count() FROM $table WHERE $where")
-    granules=$(skip_granules "$table" "$idx" "$where")
-    check=$(check_table "$table")
 
     echo "[$label]"
     echo "  secondary_indices: $sec_state"
@@ -113,67 +145,72 @@ run_scenario() {
 # ----- Scenario A: Wide, sole packed minmax, ALTER UPDATE on the indexed column.
 # Expect: archive rebuilt by the writer; secondary_indices_bytes stays > 0 (the minmax got
 # recomputed). bytes_on_disk shouldn't grow.
-$CLIENT -q "DROP TABLE IF EXISTS a_wide_indexed"
-$CLIENT -q "
+$CLIENT --multiquery -q "
+    DROP TABLE IF EXISTS a_wide_indexed;
     CREATE TABLE a_wide_indexed (
         id UInt64, v UInt64, INDEX m_v v TYPE minmax GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024"
-$CLIENT -q "INSERT INTO a_wide_indexed SELECT number, number * 7 FROM numbers(10000)"
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024;
+    INSERT INTO a_wide_indexed SELECT number, number * 7 FROM numbers(2000);
+"
 run_scenario "A_wide_update_indexed" a_wide_indexed \
     "ALTER TABLE a_wide_indexed UPDATE v = v + 1 WHERE id < 100" \
     "v BETWEEN 70 AND 700" 91 m_v
 
 # ----- Scenario B: Wide, sole packed minmax, ALTER UPDATE on a NON-indexed column.
 # Expect: archive hardlinked (same bytes/files), m_v still works.
-$CLIENT -q "DROP TABLE IF EXISTS b_wide_unindexed"
-$CLIENT -q "
+$CLIENT --multiquery -q "
+    DROP TABLE IF EXISTS b_wide_unindexed;
     CREATE TABLE b_wide_unindexed (
         id UInt64, v UInt64, s String, INDEX m_v v TYPE minmax GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024"
-$CLIENT -q "INSERT INTO b_wide_unindexed SELECT number, number * 7, toString(number % 50) FROM numbers(10000)"
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024;
+    INSERT INTO b_wide_unindexed SELECT number, number * 7, toString(number % 50) FROM numbers(2000);
+"
 run_scenario "B_wide_update_unindexed" b_wide_unindexed \
     "ALTER TABLE b_wide_unindexed UPDATE s = concat(s, '_x') WHERE id < 100" \
     "v BETWEEN 70 AND 700" 91 m_v
 
 # ----- Scenario C: Wide, packed minmax, lightweight DELETE. Index data untouched.
-$CLIENT -q "DROP TABLE IF EXISTS c_wide_lwd"
-$CLIENT -q "
+$CLIENT --multiquery -q "
+    DROP TABLE IF EXISTS c_wide_lwd;
     CREATE TABLE c_wide_lwd (
         id UInt64, v UInt64, INDEX m_v v TYPE minmax GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024"
-$CLIENT -q "INSERT INTO c_wide_lwd SELECT number, number * 7 FROM numbers(10000)"
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024;
+    INSERT INTO c_wide_lwd SELECT number, number * 7 FROM numbers(2000);
+"
 run_scenario "C_wide_lightweight_delete" c_wide_lwd \
     "DELETE FROM c_wide_lwd WHERE id < 100" \
     "v BETWEEN 70 AND 700" 1 m_v
 
 # ----- Scenario D: Wide, mixed (packed minmax + per-file set), ALTER UPDATE on SET's column.
 # Expect: per-file set rebuilt, archive untouched, m_v still works.
-$CLIENT -q "DROP TABLE IF EXISTS d_wide_mixed_update_set"
-$CLIENT -q "
+$CLIENT --multiquery -q "
+    DROP TABLE IF EXISTS d_wide_mixed_update_set;
     CREATE TABLE d_wide_mixed_update_set (
         id UInt64, v UInt64, s String,
         INDEX m_v v TYPE minmax GRANULARITY 1,
         INDEX s_s s TYPE set(100) GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024"
-$CLIENT -q "INSERT INTO d_wide_mixed_update_set SELECT number, number * 7, toString(number % 50) FROM numbers(10000)"
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024;
+    INSERT INTO d_wide_mixed_update_set SELECT number, number * 7, toString(number % 50) FROM numbers(2000);
+"
 run_scenario "D_wide_mixed_update_set" d_wide_mixed_update_set \
     "ALTER TABLE d_wide_mixed_update_set UPDATE s = concat(s, '_x') WHERE id < 100" \
     "v BETWEEN 70 AND 700" 91 m_v
 
 # ----- Scenario E: Wide mixed, ALTER UPDATE on minmax's column. Archive recomputed, set kept.
-$CLIENT -q "DROP TABLE IF EXISTS e_wide_mixed_update_minmax"
-$CLIENT -q "
+$CLIENT --multiquery -q "
+    DROP TABLE IF EXISTS e_wide_mixed_update_minmax;
     CREATE TABLE e_wide_mixed_update_minmax (
         id UInt64, v UInt64, s String,
         INDEX m_v v TYPE minmax GRANULARITY 1,
         INDEX s_s s TYPE set(100) GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024"
-$CLIENT -q "INSERT INTO e_wide_mixed_update_minmax SELECT number, number * 7, toString(number % 50) FROM numbers(10000)"
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024;
+    INSERT INTO e_wide_mixed_update_minmax SELECT number, number * 7, toString(number % 50) FROM numbers(2000);
+"
 run_scenario "E_wide_mixed_update_minmax" e_wide_mixed_update_minmax \
     "ALTER TABLE e_wide_mixed_update_minmax UPDATE v = v + 1 WHERE id < 100" \
     "v BETWEEN 70 AND 700" 91 m_v
@@ -181,43 +218,46 @@ run_scenario "E_wide_mixed_update_minmax" e_wide_mixed_update_minmax \
 # ----- Scenario F: Wide, two packed minmax indices, DROP one.
 # Expect: archive rebuilt smaller via the in-place filter; m_w still filters.
 # secondary_indices_bytes should drop (one of two packed indices removed).
-$CLIENT -q "DROP TABLE IF EXISTS f_wide_drop_packed"
-$CLIENT -q "
+$CLIENT --multiquery -q "
+    DROP TABLE IF EXISTS f_wide_drop_packed;
     CREATE TABLE f_wide_drop_packed (
         id UInt64, v UInt64, w UInt64,
         INDEX m_v v TYPE minmax GRANULARITY 1,
         INDEX m_w w TYPE minmax GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024"
-$CLIENT -q "INSERT INTO f_wide_drop_packed SELECT number, number * 7, number * 11 FROM numbers(10000)"
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024;
+    INSERT INTO f_wide_drop_packed SELECT number, number * 7, number * 11 FROM numbers(2000);
+"
 run_scenario "F_wide_drop_one_of_two_packed" f_wide_drop_packed \
     "ALTER TABLE f_wide_drop_packed DROP INDEX m_v" \
     "w BETWEEN 110 AND 1100" 91 m_w
 
 # ----- Scenario G: Wide, packed minmax + per-file set, DROP the per-file set.
 # Expect: per-file set files gone, archive untouched (same size); m_v still works.
-$CLIENT -q "DROP TABLE IF EXISTS g_wide_drop_perfile"
-$CLIENT -q "
+$CLIENT --multiquery -q "
+    DROP TABLE IF EXISTS g_wide_drop_perfile;
     CREATE TABLE g_wide_drop_perfile (
         id UInt64, v UInt64, s String,
         INDEX m_v v TYPE minmax GRANULARITY 1,
         INDEX s_s s TYPE set(100) GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024"
-$CLIENT -q "INSERT INTO g_wide_drop_perfile SELECT number, number * 7, toString(number % 50) FROM numbers(10000)"
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024;
+    INSERT INTO g_wide_drop_perfile SELECT number, number * 7, toString(number % 50) FROM numbers(2000);
+"
 run_scenario "G_wide_drop_perfile_index" g_wide_drop_perfile \
     "ALTER TABLE g_wide_drop_perfile DROP INDEX s_s" \
     "v BETWEEN 70 AND 700" 91 m_v
 
 # ----- Scenario H: Wide, packed minmax, ALTER ADD COLUMN (metadata only, no part rewrite).
 # Expect: same part, archive untouched.
-$CLIENT -q "DROP TABLE IF EXISTS h_wide_add_column"
-$CLIENT -q "
+$CLIENT --multiquery -q "
+    DROP TABLE IF EXISTS h_wide_add_column;
     CREATE TABLE h_wide_add_column (
         id UInt64, v UInt64, INDEX m_v v TYPE minmax GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024"
-$CLIENT -q "INSERT INTO h_wide_add_column SELECT number, number * 7 FROM numbers(10000)"
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024;
+    INSERT INTO h_wide_add_column SELECT number, number * 7 FROM numbers(2000);
+"
 run_scenario "H_wide_add_column" h_wide_add_column \
     "ALTER TABLE h_wide_add_column ADD COLUMN extra String DEFAULT ''" \
     "v BETWEEN 70 AND 700" 91 m_v
@@ -225,13 +265,14 @@ run_scenario "H_wide_add_column" h_wide_add_column \
 # ----- Scenario I: Compact, sole packed minmax, ALTER UPDATE on indexed column.
 # Compact mutations rewrite the whole part via MutateAllPartColumnsTask; verify the archive
 # code path is wired in that branch too.
-$CLIENT -q "DROP TABLE IF EXISTS i_compact_update_indexed"
-$CLIENT -q "
+$CLIENT --multiquery -q "
+    DROP TABLE IF EXISTS i_compact_update_indexed;
     CREATE TABLE i_compact_update_indexed (
         id UInt64, v UInt64, INDEX m_v v TYPE minmax GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS packed_skip_index_max_bytes = '1M', index_granularity = 1024"
-$CLIENT -q "INSERT INTO i_compact_update_indexed SELECT number, number * 7 FROM numbers(10000)"
+    SETTINGS packed_skip_index_max_bytes = '1M', index_granularity = 1024;
+    INSERT INTO i_compact_update_indexed SELECT number, number * 7 FROM numbers(2000);
+"
 run_scenario "I_compact_update_indexed" i_compact_update_indexed \
     "ALTER TABLE i_compact_update_indexed UPDATE v = v + 1 WHERE id < 100" \
     "v BETWEEN 70 AND 700" 91 m_v
@@ -240,13 +281,14 @@ run_scenario "I_compact_update_indexed" i_compact_update_indexed \
 # Expect: archive disappears entirely; secondary_indices_compressed_bytes becomes 0;
 # files count decreases by one. The query falls back to the primary key (m_v shows up as
 # "missing" in EXPLAIN).
-$CLIENT -q "DROP TABLE IF EXISTS j_wide_drop_only"
-$CLIENT -q "
+$CLIENT --multiquery -q "
+    DROP TABLE IF EXISTS j_wide_drop_only;
     CREATE TABLE j_wide_drop_only (
         id UInt64, v UInt64, INDEX m_v v TYPE minmax GRANULARITY 1
     ) ENGINE = MergeTree ORDER BY id
-    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024"
-$CLIENT -q "INSERT INTO j_wide_drop_only SELECT number, number * 7 FROM numbers(10000)"
+    SETTINGS min_bytes_for_wide_part = 0, packed_skip_index_max_bytes = '1M', index_granularity = 1024;
+    INSERT INTO j_wide_drop_only SELECT number, number * 7 FROM numbers(2000);
+"
 sec_before_J=$(part_metric j_wide_drop_only secondary_indices_compressed_bytes)
 $CLIENT $SYNC_ALTER -q "ALTER TABLE j_wide_drop_only DROP INDEX m_v"
 sec_after_J=$(part_metric j_wide_drop_only secondary_indices_compressed_bytes)
@@ -257,8 +299,9 @@ echo "  secondary_indices_bytes_before_positive=$([[ $sec_before_J -gt 0 ]] && e
 echo "  secondary_indices_bytes_after=$sec_after_J"
 echo "  count=$count_J expected=91 granules(m_v)=$granules_J check=$(check_table j_wide_drop_only)"
 
-for t in a_wide_indexed b_wide_unindexed c_wide_lwd d_wide_mixed_update_set \
-         e_wide_mixed_update_minmax f_wide_drop_packed g_wide_drop_perfile \
-         h_wide_add_column i_compact_update_indexed j_wide_drop_only; do
-    $CLIENT -q "DROP TABLE IF EXISTS $t"
-done
+$CLIENT -q "
+    DROP TABLE IF EXISTS
+        a_wide_indexed, b_wide_unindexed, c_wide_lwd, d_wide_mixed_update_set,
+        e_wide_mixed_update_minmax, f_wide_drop_packed, g_wide_drop_perfile,
+        h_wide_add_column, i_compact_update_indexed, j_wide_drop_only
+"
