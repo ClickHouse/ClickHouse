@@ -4,6 +4,7 @@
 -- were later modified, the shared data would change, causing allocated_size
 -- tracking to become inconsistent (exception in debug builds).
 
+SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 SET allow_experimental_variant_type = 1;
 SET allow_experimental_dynamic_type = 1;
