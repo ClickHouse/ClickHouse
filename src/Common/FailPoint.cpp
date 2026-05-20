@@ -44,6 +44,7 @@ static struct InitFiu
     ONCE(smt_commit_merge_mutate_zk_fail_before_op) \
     ONCE(smt_commit_write_zk_fail_after_op) \
     ONCE(smt_commit_write_zk_fail_before_op) \
+    ONCE(smt_restore_attach_retry) \
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_open) \
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_close) \
     ONCE(smt_commit_merge_change_version_before_op) \
