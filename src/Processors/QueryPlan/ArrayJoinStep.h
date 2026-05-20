@@ -21,7 +21,6 @@ public:
 
     const Names & getColumns() const { return array_join.columns; }
     bool isLeft() const { return array_join.is_left; }
-    bool isUnaligned() const { return is_unaligned; }
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;

@@ -136,6 +136,18 @@ static ActionsDAGReverseInfo getActionsDAGReverseInfo(const std::list<ActionsDAG
     return result_info;
 }
 
+static DataTypesWithConstInfo getDataTypesWithConstInfoFromNodes(const ActionsDAG::NodeRawConstPtrs & nodes)
+{
+    DataTypesWithConstInfo types;
+    types.reserve(nodes.size());
+    for (const auto & child : nodes)
+    {
+        bool is_const = child->column && isColumnConst(*child->column);
+        types.push_back({child->result_type, is_const});
+    }
+    return types;
+}
+
 namespace
 {
     /// Information about the node that helps to determine if it can be executed lazily.
@@ -274,7 +286,7 @@ static bool findLazyExecutedNodes(
                 ///  - It's force enabled.
                 ///  - Function is suitable for lazy execution.
                 ///  - Function has lazy executed arguments.
-                if (force_enable_lazy_execution || has_lazy_child || child->function_base->isSuitableForShortCircuitArgumentsExecution(child->getArgumentTypesWithConstInfo()))
+                if (force_enable_lazy_execution || has_lazy_child || child->function_base->isSuitableForShortCircuitArgumentsExecution(getDataTypesWithConstInfoFromNodes(child->children)))
                 {
                     has_lazy_node = true;
                     lazy_executed_nodes_out.insert(child);

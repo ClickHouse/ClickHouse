@@ -191,18 +191,6 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
         child->updateHash(hash_state);
 }
 
-DataTypesWithConstInfo ActionsDAG::Node::getArgumentTypesWithConstInfo() const
-{
-    DataTypesWithConstInfo types;
-    types.reserve(children.size());
-    for (const auto & child : children)
-    {
-        bool is_const = child->column && isColumnConst(*child->column);
-        types.push_back({child->result_type, is_const});
-    }
-    return types;
-}
-
 UInt64 ActionsDAG::getHash() const
 {
     SipHash hash;
@@ -1722,14 +1710,6 @@ bool ActionsDAG::hasNonDeterministic() const
 {
     for (const auto & node : nodes)
         if (!node.isDeterministic())
-            return true;
-    return false;
-}
-
-bool ActionsDAG::hasThrowingFunctions() const
-{
-    for (const auto & node : nodes)
-        if (node.type == ActionType::FUNCTION && node.function_base->canThrow(node.getArgumentTypesWithConstInfo()))
             return true;
     return false;
 }
