@@ -82,7 +82,11 @@ void mergeAggregateStates(
         auto & data = agg_col->getData();
         const auto & func = agg_col->getAggregateFunction();
 
-        func->merge(data[dst], data[src], /*arena=*/nullptr);
+        /// Allocate into the destination column's own arena. Aggregate functions
+        /// that grow their state during `merge` (e.g. the `groupArray`-family)
+        /// require a real arena; passing `nullptr` would dereference null on
+        /// reallocation. The arena is owned by `agg_col` for its lifetime.
+        func->merge(data[dst], data[src], &agg_col->createOrGetArena());
     }
 }
 
