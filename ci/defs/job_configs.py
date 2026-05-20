@@ -1248,9 +1248,12 @@ class JobConfigs:
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="python3 ./ci/jobs/docs_job.py",
         digest_config=Job.CacheDigestConfig(
+            # Restrict to the legacy Docusaurus content tree so that PRs which
+            # only touch the new Mintlify site (./docs/docs.json, ./docs/*.mdx,
+            # etc.) do not trigger this job.
             include_paths=[
-                "**/*.md",
-                "./docs",
+                "./docs/en/",
+                "./docs/changelogs/",
                 "./ci/jobs/docs_job.py",
                 "CHANGELOG.md",
                 "./src/Functions",
@@ -1266,11 +1269,21 @@ class JobConfigs:
         command="python3 ./ci/jobs/docs_job_mintlify.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./docs/docs",
+                "./docs",
+                "./ci/jobs/docs_job_mintlify.py",
             ],
+            # Exclude everything currently in ./docs so that this job runs only
+            # on files that are NOT part of the legacy docs tree (i.e. the new
+            # Mintlify site files such as ./docs/docs.json and any new Mintlify
+            # content). Add new excludes here if more non-Mintlify content is
+            # introduced under ./docs.
             exclude_paths=[
+                "./docs/README.md",
+                "./docs/_description_templates/",
+                "./docs/_includes/",
+                "./docs/changelog_entry_guidelines.md",
+                "./docs/changelogs/",
                 "./docs/en/",
-                "./changelogs/"
             ],
         ),
         run_in_docker="clickhouse/docs-builder"
