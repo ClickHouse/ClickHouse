@@ -13,7 +13,7 @@ namespace DB
 
 class WriteBuffer;
 
-class PrometheusTextOutputFormat : public IRowOutputFormat
+class PrometheusTextOutputFormat final : public IRowOutputFormat
 {
 public:
     PrometheusTextOutputFormat(

@@ -4,6 +4,8 @@
 
 SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET query_plan_merge_expressions = 1;
+SET query_plan_text_index_add_hint = 1;
 
 DROP TABLE IF EXISTS test_fts;
 
@@ -32,28 +34,40 @@ INSERT INTO test_fts VALUES
 
 SET optimize_rewrite_like_perfect_affix = 1;
 
-EXPLAIN indexes = 1
-SELECT id, name
-FROM test_fts
-WHERE name LIKE 'Full%';
+SELECT explain FROM
+(
+    EXPLAIN indexes = 1
+    SELECT id, name
+    FROM test_fts
+    WHERE name LIKE 'Full%'
+)
+WHERE explain NOT LIKE '  Expression%';
 
 SELECT id, name
 FROM test_fts
 WHERE name LIKE 'Full%';
 
-EXPLAIN indexes = 1
-SELECT id, name
-FROM test_fts
-WHERE startsWith(name, 'Full');
+SELECT explain FROM
+(
+    EXPLAIN indexes = 1
+    SELECT id, name
+    FROM test_fts
+    WHERE startsWith(name, 'Full')
+)
+WHERE explain NOT LIKE '  Expression%';
 
 SELECT id, name
 FROM test_fts
 WHERE startsWith(name, 'Full');
 
-EXPLAIN indexes = 1
-SELECT id, name
-FROM test_fts
-WHERE endsWith(name, 'analytical database');
+SELECT explain FROM
+(
+    EXPLAIN indexes = 1
+    SELECT id, name
+    FROM test_fts
+    WHERE endsWith(name, 'analytical database')
+)
+WHERE explain NOT LIKE '  Expression%';
 
 SELECT id, name
 FROM test_fts

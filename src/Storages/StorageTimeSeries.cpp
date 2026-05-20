@@ -1,5 +1,7 @@
 #include <Storages/StorageTimeSeries.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -73,7 +75,7 @@ namespace
                 /// If it's not an ATTACH request then
                 /// check that the specified target table has all the required columns.
                 auto target_table = DatabaseCatalog::instance().getTable(target_table_id, context);
-                auto target_metadata = target_table->getInMemoryMetadataPtr();
+                auto target_metadata = target_table->getInMemoryMetadataPtr(context, false);
                 const auto & target_columns = target_metadata->columns;
                 TimeSeriesColumnsValidator validator{time_series_storage_id, time_series_settings};
                 validator.validateTargetColumns(kind, target_table_id, target_columns);
@@ -128,7 +130,7 @@ StorageTimeSeries::StorageTimeSeries(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns,
     const String & comment)
-    : IStorage(table_id)
+    : StorageWithCommonVirtualColumns(table_id)
     , WithContext(local_context->getGlobalContext())
 {
     if (mode <= LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef()[Setting::allow_experimental_time_series_table])
@@ -150,6 +152,7 @@ StorageTimeSeries::StorageTimeSeries(
     storage_metadata.setColumns(columns);
     if (!comment.empty())
         storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
     has_inner_tables = false;
@@ -162,14 +165,20 @@ StorageTimeSeries::StorageTimeSeries(
         target.table_id = initTarget(target_kind, target_info, local_context, getStorageID(), columns, *storage_settings, mode);
         target.is_inner_table = target_info && target_info->table_id.empty();
 
-        if (target_kind == ViewTarget::Metrics && !target.is_inner_table)
+        /// Validate the external metrics table only at CREATE time, mirroring the
+        /// `validator.validateColumns` gating above. During `ATTACH`/server startup the
+        /// target table may not be loaded yet, and re-validating then would make the
+        /// outcome attach-order dependent. At CREATE time `initTarget` has already
+        /// resolved the same table via `DatabaseCatalog::getTable`, so we use the
+        /// throwing `getTable` here too to keep the validation fail-close.
+        if (target_kind == ViewTarget::Metrics && !target.is_inner_table && mode < LoadingStrictnessLevel::ATTACH)
         {
-            auto table = DatabaseCatalog::instance().tryGetTable(target.table_id, getContext());
-            auto metadata = table->getInMemoryMetadataPtr();
+            auto table = DatabaseCatalog::instance().getTable(target.table_id, getContext());
+            auto metadata = table->getInMemoryMetadataPtr(getContext(), false);
 
             for (const auto & column : metadata->columns)
                 if (column.type->lowCardinality())
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "External metrics table cannot have LowCardnality columns for now.");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "External metrics table cannot have LowCardinality columns for now.");
         }
 
         has_inner_tables |= target.is_inner_table;
@@ -355,7 +364,7 @@ bool StorageTimeSeries::optimize(
         if (target.is_inner_table)
         {
             auto inner_table = DatabaseCatalog::instance().getTable(target.table_id, local_context);
-            optimized |= inner_table->optimize(query, inner_table->getInMemoryMetadataPtr(), partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
+            optimized |= inner_table->optimize(query, inner_table->getInMemoryMetadataPtr(local_context, false), partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
         }
     }
 
@@ -410,8 +419,15 @@ void StorageTimeSeries::restoreDataFromBackup(RestorerFromBackup & restorer, con
     }
 }
 
+VirtualColumnsDescription StorageTimeSeries::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
 
-void StorageTimeSeries::read(
+void StorageTimeSeries::readImpl(
     QueryPlan & /* query_plan */,
     const Names & /* column_names */,
     const StorageSnapshotPtr & /* storage_snapshot */,
