@@ -35,7 +35,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class MergeTreeTextIndexSource : public ISource
+class MergeTreeTextIndexSource final : public ISource
 {
 public:
     MergeTreeTextIndexSource(
@@ -412,8 +412,8 @@ StorageMergeTreeTextIndex::StorageMergeTreeTextIndex(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageMergeTreeTextIndex::createVirtuals()

@@ -49,19 +49,19 @@ ASTPtr processColumnTransformersImpl(
 }
 
 ASTPtr processColumnTransformers(
-        const String & current_database,
-        const StoragePtr & table,
-        const StorageMetadataPtr & metadata_snapshot,
-        ASTPtr query_columns)
+    const String & current_database,
+    const StoragePtr & table,
+    const StorageMetadataPtr & metadata_snapshot,
+    ASTPtr query_columns)
 {
-    return processColumnTransformersImpl(metadata_snapshot->columns, table->getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList(), query_columns, current_database, table->getStorageID());
+    return processColumnTransformersImpl(metadata_snapshot->columns, metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList(), query_columns, current_database, table->getStorageID());
 }
 
 ASTPtr processColumnTransformers(
-        const String & current_database,
-        const StorageID & table_id,
-        const ColumnsDescription & columns,
-        ASTPtr query_columns)
+    const String & current_database,
+    const StorageID & table_id,
+    const ColumnsDescription & columns,
+    ASTPtr query_columns)
 {
     if (table_id.empty())
         return processColumnTransformersImpl(columns, {}, query_columns, current_database, StorageID("", "dummy"));

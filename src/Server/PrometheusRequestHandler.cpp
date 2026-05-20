@@ -16,6 +16,7 @@
 
 #include <Access/Credentials.h>
 #include <Common/CurrentThread.h>
+#include <Common/StringUtils.h>
 #include <Common/QueryScope.h>
 #include <IO/SnappyReadBuffer.h>
 #include <IO/SnappyWriteBuffer.h>
@@ -38,6 +39,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 http_response_buffer_size;
+}
 
 namespace ErrorCodes
 {
@@ -145,6 +151,12 @@ protected:
             return; /// The user is not authenticated yet, and the HTTP_UNAUTHORIZED response is sent with the "WWW-Authenticate" header,
                     /// and `request_credentials` must be preserved until the next request or until any exception.
 
+        /// Apply `http_response_buffer_size` for the output buffer (0 means use the default).
+        auto buffer_size = context->getSettingsRef()[Setting::http_response_buffer_size].value;
+        if (buffer_size == 0)
+            buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+        parent().http_response_buffer_size = buffer_size;
+
         /// Initialize query scope.
         QueryScope query_scope;
         if (context)
@@ -206,7 +218,13 @@ protected:
         context->applySettingsChanges(settings_changes);
 
         /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
-        context->setCurrentQueryId(params->get("query_id", request.get("X-ClickHouse-Query-Id", "")));
+        String query_id = params->get("query_id", request.get("X-ClickHouse-Query-Id", ""));
+
+        /// Sanitize query_id: remove ASCII control characters to prevent CRLF injection
+        /// into HTTP response headers (the query_id is reflected in X-ClickHouse-Query-Id).
+        std::erase_if(query_id, [](unsigned char c) { return isControlASCII(c) || c == 0x7F; });
+
+        context->setCurrentQueryId(query_id);
     }
 
     void onException() override
@@ -364,11 +382,11 @@ public:
         auto table = DatabaseCatalog::instance().getTable(StorageID{config().time_series_table_name}, context);
         PrometheusHTTPProtocolAPI protocol{table, context};
 
-
         const String & uri = request.getURI();
         LOG_DEBUG(log(), "Processing Query API request: method={}, uri={}", request.getMethod(), uri);
 
         response.setContentType("application/json");
+
         try
         {
             if (uri.starts_with("/api/v1/query_range"))
@@ -462,12 +480,22 @@ public:
         }
         catch (const Exception & e)
         {
+            /// Once the response header has been sent we can no longer produce
+            /// a well-formed Prometheus error response. So we let the outer handler
+            /// abort the chunked stream via cancelWithException() instead.
+            if (response.sent())
+                throw;
+
+            /// Drop any partial success body still sitting in the output buffer
+            /// before writing the error response.
+            getOutputStream(response).rejectBufferedDataSave();
+
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
             String error_str;
             WriteBufferFromString error_buf(error_str);
-            writeString(R"({"status":"error","errorType":"bad_data","error":")", error_buf);
-            writeString(e.message(), error_buf);
-            writeString(R"("})", error_buf);
+            writeString(R"({"status":"error","errorType":"bad_data","error":)", error_buf);
+            writeJSONString(e.message(), error_buf, FormatSettings{});
+            writeString("}", error_buf);
             error_buf.finalize();
             writeString(error_str, getOutputStream(response));
 
@@ -562,7 +590,7 @@ WriteBufferFromHTTPServerResponse & PrometheusRequestHandler::getOutputStream(HT
         return *write_buffer_from_response;
 
     write_buffer_from_response = std::make_unique<WriteBufferFromHTTPServerResponse>(
-        response, http_method == HTTPRequest::HTTP_HEAD, write_event);
+        response, http_method == HTTPRequest::HTTP_HEAD, write_event, http_response_buffer_size);
 
     return *write_buffer_from_response;
 }

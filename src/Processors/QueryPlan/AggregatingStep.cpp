@@ -3,7 +3,9 @@
 #include <memory>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -14,6 +16,8 @@
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -102,8 +106,8 @@ static inline void convertToNullable(Block & header, const Names & keys)
     {
         auto & column = header.getByName(key);
 
-        column.type = makeNullableSafe(column.type);
-        column.column = makeNullableSafe(column.column);
+        column.type = makeNullableOrLowCardinalityNullableSafe(column.type);
+        column.column = makeNullableOrLowCardinalityNullableSafe(column.column);
     }
 }
 
@@ -240,7 +244,7 @@ ActionsDAG AggregatingStep::makeCreatingMissingKeysForGroupingSetDAG(
         else
         {
             const auto * column_node = dag.getOutputs()[in_header.getPositionByName(col.name)];
-            if (used_it != used_keys.end() && group_by_use_nulls && column_node->result_type->canBeInsideNullable())
+            if (used_it != used_keys.end() && group_by_use_nulls && removeLowCardinality(column_node->result_type)->canBeInsideNullable())
                 outputs.push_back(&dag.addFunction(to_nullable_function, { column_node }, col.name));
             else
                 outputs.push_back(column_node);
@@ -305,10 +309,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         if (grouping_sets_size > 1)
         {
-            pipeline.transform([&](OutputPortRawPtrs ports)
+            pipeline.transform([&](const OutputPortRawPtrs & ports)
             {
                 Processors copiers;
-                copiers.reserve(ports.size());
 
                 for (auto * port : ports)
                 {
@@ -438,10 +441,16 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 /// not greater than 'aggregation_in_order_max_block_bytes'.
                 /// So, we reduce 'max_bytes' value for aggregation in 'merge_threads' times.
                 return std::make_shared<AggregatingInOrderTransform>(
-                    header, transform_params,
-                    sort_description_for_merging, group_by_sort_description,
-                    max_block_size, aggregation_in_order_max_block_bytes / new_merge_threads,
-                    many_data, counter++);
+                    header,
+                    transform_params,
+                    sort_description_for_merging,
+                    group_by_sort_description,
+                    max_block_size,
+                    aggregation_in_order_max_block_bytes / new_merge_threads,
+                    many_data,
+                    counter++,
+                    nullptr // `dataflow_cache_updater` will be passed to `MergingAggregatedBucketTransform` below
+                );
             });
 
             if (skip_merging)
@@ -471,7 +480,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             const auto & required_sort_description = memoryBoundMergingWillBeUsed() ? group_by_sort_description : SortDescription{};
             pipeline.addSimpleTransform(
                 [&](const SharedHeader &)
-                { return std::make_shared<MergingAggregatedBucketTransform>(transform_params, required_sort_description); });
+                { return std::make_shared<MergingAggregatedBucketTransform>(transform_params, required_sort_description, dataflow_cache_updater); });
 
             if (memoryBoundMergingWillBeUsed())
             {
@@ -488,7 +497,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 return std::make_shared<AggregatingInOrderTransform>(
                     header, transform_params,
                     sort_description_for_merging, group_by_sort_description,
-                    max_block_size, aggregation_in_order_max_block_bytes);
+                    max_block_size, aggregation_in_order_max_block_bytes,
+                    dataflow_cache_updater);
             });
 
             pipeline.addSimpleTransform([&](const SharedHeader & header)
@@ -548,13 +558,15 @@ void AggregatingStep::describeActions(FormatSettings & settings) const
 {
     const String & prefix = settings.detail_prefix;
 
-    params.explain(settings.out, prefix);
+    params.explain(settings);
+
     if (!sort_description_for_merging.empty())
     {
-        settings.out << prefix << "Order: " << dumpSortDescription(sort_description_for_merging) << '\n';
+        settings.out << prefix << "Order: ";
+        dumpSortDescription(sort_description_for_merging, settings);
+        settings.out << '\n';
     }
     settings.out << prefix << "Skip merging: " << skip_merging << '\n';
-    // settings.out << prefix << "Memory bound merging: " << memory_bound_merging_of_aggregation_results_enabled << '\n';
 }
 
 void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const

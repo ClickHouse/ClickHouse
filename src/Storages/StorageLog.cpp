@@ -580,12 +580,12 @@ CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, Compr
             : default_codec;
     };
 
-    const auto & columns = metadata_snapshot->getColumns();
+    const auto & columns = metadata_snapshot->columns;
     if (const auto * column_desc = columns.tryGet(column_name))
         return get_codec_or_default(*column_desc);
 
-    const auto & virtual_columns = storage.getVirtualsPtr();
-    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+    const auto & virtual_columns = metadata_snapshot->virtuals;
+    if (const auto * virtual_desc = virtual_columns.tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
         return get_codec_or_default(*virtual_desc);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
@@ -735,8 +735,8 @@ StorageLog::StorageLog(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 
     if (relative_path_.empty())
         throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Storage {} requires data path", getName());
@@ -1114,7 +1114,7 @@ IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
 
     ColumnSizeByName column_sizes;
 
-    for (const auto & column : getInMemoryMetadata().getColumns().getAllPhysical())
+    for (const auto & column : getInMemoryMetadataPtr(getContext(), false)->getColumns().getAllPhysical())
     {
         ISerialization::StreamCallback stream_callback = [&, this] (const ISerialization::SubstreamPath & substream_path)
         {
@@ -1218,7 +1218,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     /// columns.txt
     backup_entries_collector.addBackupEntry(
         data_path_in_backup_fs / "columns.txt",
-        std::make_unique<BackupEntryFromMemory>(getInMemoryMetadata().getColumns().getAllPhysical().toString()));
+        std::make_unique<BackupEntryFromMemory>(getInMemoryMetadataPtr(getContext(), false)->getColumns().getAllPhysical().toString()));
 
     /// count.txt
     if (use_marks_file)
