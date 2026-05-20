@@ -353,7 +353,6 @@ bool MetadataStorageFromIndexPages::tryListDirectory(
     if (requested_shard_index && *requested_shard_index >= url_shards.size())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid URL shard index: {}", *requested_shard_index);
 
-    bool has_not_found = false;
     bool has_listed_directory = false;
 
     const auto first_shard_index = requested_shard_index.value_or(0);
@@ -364,6 +363,7 @@ bool MetadataStorageFromIndexPages::tryListDirectory(
         const auto listing_urls = makeListingURLs(normalized_path, shard_index);
         const auto & url_options = url_shards[shard_index];
         std::exception_ptr shard_exception;
+        bool has_not_found = false;
         bool has_listed_shard = false;
 
         for (size_t i = 0; i != listing_urls.size(); ++i)
@@ -412,13 +412,13 @@ bool MetadataStorageFromIndexPages::tryListDirectory(
 
         if (!has_listed_shard && shard_exception)
             std::rethrow_exception(shard_exception);
+
+        if (!has_listed_shard && has_not_found)
+            return false;
     }
 
     if (has_listed_directory)
         return true;
-
-    if (has_not_found)
-        return false;
 
     return false;
 }
