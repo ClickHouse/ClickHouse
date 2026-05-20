@@ -246,14 +246,15 @@ namespace
                 value->setAlias(ColumnNames::Value);
 
                 /// WHERE isNotNull(values[1]) AND values[1] is not a Prometheus stale marker.
-                ASTPtr array_element = makeASTFunction(
+                ASTPtr array_element_for_null_check = makeASTFunction(
                     "arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u));
+                ASTPtr array_element_for_stale_check = array_element_for_null_check->clone();
                 where = makeASTFunction(
                     "and",
-                    makeASTFunction("isNotNull", array_element->clone()),
+                    makeASTFunction("isNotNull", std::move(array_element_for_null_check)),
                     makeASTFunction(
                         "notEquals",
-                        makeASTFunction("reinterpretAsUInt64", makeASTFunction("assumeNotNull", std::move(array_element))),
+                        makeASTFunction("reinterpretAsUInt64", makeASTFunction("assumeNotNull", std::move(array_element_for_stale_check))),
                         make_intrusive<ASTLiteral>(0x7ff0000000000002ULL)));
                 break;
             }
