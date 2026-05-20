@@ -35,7 +35,7 @@ namespace ErrorCodes
   * arrayReduce('agg', arr1, ...) - apply the aggregate function `agg` to arrays `arr1...`
   *  If multiple arrays passed, then elements on corresponding positions are passed as multiple arguments to the aggregate function.
   */
-class FunctionArrayReduce : public IFunction
+class FunctionArrayReduce final : public IFunction
 {
 public:
     static constexpr auto name = "arrayReduce";
@@ -171,7 +171,7 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
 namespace
 {
 
-class FunctionArrayReduceOverloadResolver : public IFunctionOverloadResolver, private WithContext
+class FunctionArrayReduceOverloadResolver final : public IFunctionOverloadResolver, private WithContext
 {
 public:
     static constexpr auto name = "arrayReduce";

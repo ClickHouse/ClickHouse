@@ -762,13 +762,16 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     if (src.getType() == Field::Types::String)
     {
         /// Promote data type to avoid overflows. Note that overflows in the largest data type are still possible.
-        /// But don't promote Float32, since we want to keep the exact same value
+        /// But don't promote narrow floats (Float32, BFloat16): parsing the string into Float64 and narrowing back
+        /// would fail the strict equality check inside `accurate::convertNumeric` for any decimal value that is not
+        /// exactly representable in the narrow type, producing a Null Field and silently zero-matching comparisons
+        /// like `WHERE bf16_col = '49.9'`.
         /// Also don't promote domain types (like bool) because we would otherwise use the serializer of the promoted type (e.g. UInt64 for
         /// bool, which does not allow 'true' and 'false' as input values)
         const IDataType * type_to_parse = &type;
         DataTypePtr holder;
 
-        if (type.canBePromoted() && !which_type.isFloat32() && !type.getCustomSerialization())
+        if (type.canBePromoted() && !which_type.isFloat32() && !which_type.isBFloat16() && !type.getCustomSerialization())
         {
             holder = type.promoteNumericType();
             type_to_parse = holder.get();

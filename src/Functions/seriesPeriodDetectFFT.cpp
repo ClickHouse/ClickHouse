@@ -36,7 +36,7 @@ extern const int ILLEGAL_COLUMN;
  * 4. Inverse of the dominant frequency component is the period.
 */
 
-class FunctionSeriesPeriodDetectFFT : public IFunction
+class FunctionSeriesPeriodDetectFFT final : public IFunction
 {
 public:
     static constexpr auto name = "seriesPeriodDetectFFT";

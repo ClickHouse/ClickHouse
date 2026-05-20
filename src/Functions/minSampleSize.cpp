@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 template <typename Impl>
-class FunctionMinSampleSize : public IFunction
+class FunctionMinSampleSize final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;

@@ -171,16 +171,18 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
             path);
     }
     String version_str;
-    /// v<V>.metadata.json
+    /// `vN.metadata.json` or `vN-<uuid>.metadata.json` (the latter is what
+    /// `apache/iceberg-rest-fixture` and other iceberg-java REST catalogs
+    /// write when committing a new metadata file).
     if (file_name.starts_with('v'))
     {
-        auto dot_pos = file_name.find_first_of('.');
-        if (dot_pos == String::npos || dot_pos <= 1)
+        auto end_pos = file_name.find_first_of(".-");
+        if (end_pos == String::npos || end_pos <= 1)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
                 file_name);
-        version_str = String(file_name.begin() + 1, file_name.begin() + dot_pos);
+        version_str = String(file_name.begin() + 1, file_name.begin() + end_pos);
     }
     /// <V>-<random-uuid>.metadata.json
     else

@@ -66,7 +66,18 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
 
     if (extremes_columns.empty())
     {
-        extremes_columns.resize(num_columns);
+        /// Build into a local vector first. If any step below throws (for example,
+        /// `MEMORY_LIMIT_EXCEEDED` raised by `insert` when copying a large value, or any
+        /// other exception while computing extremes for an individual column), the local
+        /// vector is destroyed by stack unwinding and `extremes_columns` stays empty.
+        /// This keeps the invariant that `extremes_columns` is either empty (no chunk
+        /// processed yet) or fully populated with size-2 columns at every index. Without
+        /// it, a partial population would later trip the row-count check in
+        /// `Chunk::setColumns` inside `work()` and the formatted error message would
+        /// dereference one of the still-null entries via `Chunk::dumpStructure`,
+        /// crashing the server with `Assertion 'px != 0' failed` on the
+        /// `boost::intrusive_ptr<IColumn>::operator->` null check.
+        MutableColumns new_extremes_columns(num_columns);
 
         for (size_t i = 0; i < num_columns; ++i)
         {
@@ -75,7 +86,7 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
             if (isColumnConst(*src))
             {
                 /// Equal min and max.
-                extremes_columns[i] = src->cloneResized(2);
+                new_extremes_columns[i] = src->cloneResized(2);
             }
             else
             {
@@ -84,12 +95,14 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
 
                 src->getExtremes(min_value, max_value, 0, src->size());
 
-                extremes_columns[i] = src->cloneEmpty();
+                new_extremes_columns[i] = src->cloneEmpty();
 
-                extremes_columns[i]->insert(min_value);
-                extremes_columns[i]->insert(max_value);
+                new_extremes_columns[i]->insert(min_value);
+                new_extremes_columns[i]->insert(max_value);
             }
         }
+
+        extremes_columns = std::move(new_extremes_columns);
     }
     else
     {

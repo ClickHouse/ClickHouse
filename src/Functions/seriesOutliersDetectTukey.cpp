@@ -19,7 +19,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /// Detects a possible anomaly in series using [Tukey Fences](https://en.wikipedia.org/wiki/Outlier#Tukey%27s_fences)
-class FunctionSeriesOutliersDetectTukey : public IFunction
+class FunctionSeriesOutliersDetectTukey final : public IFunction
 {
 public:
     static constexpr auto name = "seriesOutliersDetectTukey";

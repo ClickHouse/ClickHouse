@@ -154,7 +154,7 @@ uint64_t generateSnowflakeID()
     return fromSnowflakeId(snowflake_id);
 }
 
-class FunctionGenerateSnowflakeID : public IFunction
+class FunctionGenerateSnowflakeID final : public IFunction
 {
 public:
     static constexpr auto name = "generateSnowflakeID";

@@ -27,7 +27,7 @@ extern const int BAD_ARGUMENTS;
 namespace
 {
 
-class FunctionPrintf : public IFunction
+class FunctionPrintf final : public IFunction
 {
 private:
     FunctionOverloadResolverPtr function_concat;
