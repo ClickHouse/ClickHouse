@@ -36,40 +36,37 @@ A Snowflake schema serves multiple roles and has no single equivalent in ClickHo
 
 ## Roles and access control {#roles-access}
 
-ClickHouse Cloud has two access layers: [console roles](/cloud/guides/sql-console/manage-sql-console-role-assignments) at `console.clickhouse.cloud` for organization, billing, and service management; and SQL [roles and grants](/sql-reference/statements/grant) inside each service for database, table, and column access.
+ClickHouse Cloud's access layer splits into [console roles](/cloud/security/console-roles) at `console.clickhouse.cloud` (organization-, service-, and SQL-console-scoped) for org admin, billing, and service management; and SQL [roles and grants](/sql-reference/statements/grant) inside each service for database, table, and column access.
 
 | Snowflake | ClickHouse | Notes |
 |---|---|---|
-| Account-level system roles (`ACCOUNTADMIN`, `SYSADMIN`, `SECURITYADMIN`, `USERADMIN`, `PUBLIC`) | [Console roles](/cloud/guides/sql-console/manage-sql-console-role-assignments) (Admin, Developer, Billing Admin, etc.) for organization-level access; SQL roles inside each service | The console layer covers org-level operations (billing, service creation, user management). SQL roles cover database, table, and column access within a service. |
+| Account-level system roles (`ACCOUNTADMIN`, `SYSADMIN`, `SECURITYADMIN`, `USERADMIN`, `PUBLIC`) | [Organization roles](/cloud/security/console-roles#organization-roles) (Admin, Billing, Org API reader, Member) and [service roles](/cloud/security/console-roles#service-roles) (Service admin, Service reader, Service API admin/reader) in the console; SQL roles inside each service | The console layer is split across organization-scoped roles (billing, org admin, user management) and service-scoped roles (service config, scaling, backups). SQL roles cover database, table, and column access within a service. |
 | Custom account roles | [`CREATE ROLE`](/sql-reference/statements/create/role) in SQL | Same pattern: create a role, grant privileges to it, grant the role to users. |
 | Database roles (a separate role identity scoped to one database) | — | ClickHouse has only one tier of SQL roles, all service-scoped. There's no equivalent to Snowflake's two-tier system of account roles vs database roles. |
 | Role hierarchy (`GRANT ROLE … TO ROLE …`) | [`GRANT role1 TO role2`](/sql-reference/statements/grant) | — |
 | Privilege grants on objects (`GRANT … ON … TO ROLE …`) | [`GRANT … ON db.table TO role`](/sql-reference/statements/grant) | — |
-| Object ownership and ownership transfer | — | ClickHouse has no ownership concept. Access is controlled entirely through explicit grants. Snowflake patterns that rely on owners delegating access need to be rebuilt as explicit role-based grants. |
+| Object ownership and ownership transfer | — | Access in ClickHouse is controlled entirely through explicit grants. Snowflake patterns that rely on owners delegating access need to be rebuilt as explicit role-based grants. |
 | `USE ROLE` to switch active role per session | Active roles are set per session via [`SET ROLE`](/sql-reference/statements/set-role) | — |
 
-## Compute, capacity, pricing {#compute-capacity}
+## Compute and capacity {#compute-capacity}
 
 :::note Warehouse terminology
 "Warehouse" means different things in the two systems. A
 **Snowflake warehouse** is a compute cluster — what runs queries.
 A **ClickHouse warehouse** is a grouping of services that share
-storage and scale compute independently. Where this page says
-"warehouse" unqualified, it refers to the Snowflake concept.
+storage and scale compute independently.
 :::
 
-How processing is allocated to a query, sized, and billed.
+How processing is allocated to a query and sized.
 
 | Snowflake | ClickHouse | Notes |
 |---|---|---|
-| Virtual warehouse | Service compute pool — queries [parallelize](/optimize/query-parallelism) across all replicas | A ClickHouse service has a fixed pool of replicas; queries run across them. See the callout below for the sizing-model difference. |
-| Warehouse size (XS through 6X-Large) | Vertical [autoscaling](/cloud/features/autoscaling/vertical) bounds — replica size in CPU and memory | Sizing is configured as min/max bounds rather than discrete t-shirt sizes. |
-| Multi-cluster warehouse | Horizontal autoscaling — additional replicas added under load | Both add parallel compute to handle concurrency; ClickHouse scales replica count rather than cluster count. Snowflake's `Standard` vs `Economy` scaling policy has no direct equivalent — ClickHouse autoscaling is bounds-based, not policy-driven. |
+| Virtual warehouse | Service compute pool — queries [parallelize](/optimize/query-parallelism) across all replicas | A ClickHouse service runs across one or more replicas (typically 3 by default on Scale/Enterprise); queries parallelize across them. See the callout below for the sizing-model difference. |
+| Warehouse size (XS through 6X-Large) | Vertical [autoscaling](/cloud/features/autoscaling/vertical) bounds — replica memory in GiB (CPU scales with memory at a fixed 1:4 ratio in standard profiles) | Sizing is configured as min/max memory bounds rather than discrete t-shirt sizes; setting min = max effectively fixes the size. |
+| Multi-cluster warehouse | Manual [horizontal scaling](/cloud/features/autoscaling/horizontal) — replica count configured via API or console | Both add parallel compute to handle concurrency; ClickHouse scales replica count rather than cluster count. ClickHouse Cloud doesn't have a direct equivalent to Snowflake's auto-scaling policies (`Standard`/`Economy`) — horizontal scaling is manual today, with autoscaling on the roadmap. |
 | Auto-suspend / auto-resume | Service [idling](/cloud/features/autoscaling/idling) — pause when idle, resume on query | Same model: compute stops when there's no work, restarts on the next query. |
-| Resource monitors (credit quotas) | [Workload classes](/operations/workload-scheduling) plus per-query limits | Covers memory, CPU, concurrency, and I/O scheduling. The two quota models don't map row-by-row, but concept-level coverage is similar. |
+| Resource monitors (credit-quota spend caps) | [Workloads](/operations/workload-scheduling) for runtime scheduling; per-query limits (memory, threads, execution time) | Partial overlap. ClickHouse workloads cover runtime resource scheduling (memory, CPU/thread allocation, IO, concurrency, priority) but not spend caps — there's no ClickHouse primitive that suspends a service on hitting a credit threshold. |
 | Query Acceleration Service | No direct equivalent — service-level [autoscaling](/cloud/features/autoscaling/vertical) covers sustained load, not per-query straggler boosts | QAS adds serverless compute to outlier queries. ClickHouse has no per-query compute booster; scale the service if queries are consistently large. |
-| Credits (compute) | Compute-time (replica-hours) — see [billing overview](/cloud/manage/billing/overview) | Both bill compute by time; ClickHouse meters replica-hours directly. |
-| Storage billing | Compressed storage — see [billing overview](/cloud/manage/billing/overview) | Both bill compressed storage. The total billed volume on each platform depends on the retention model in use — for Snowflake, that includes data held for Time Travel and Fail-safe. |
 
 :::note Warehouse size vs replica
 A Snowflake warehouse size (XS, S, M, …) is a discrete t-shirt
@@ -78,11 +75,34 @@ by autoscaling bounds in CPU and memory. Both are the unit of
 compute allocated to a query — the sizing model differs.
 :::
 
+## Billing and pricing model {#billing}
+
+How each platform meters usage and bills it. See [ClickHouse Cloud pricing](/cloud/manage/billing/overview) for current rates.
+
+| Snowflake | ClickHouse | Notes |
+|---|---|---|
+| Compute pricing unit — credits (warehouse-size multiplier × runtime) | RAM-minutes — metered per minute in 8 GiB increments | Both bill compute by time. ClickHouse compute rates vary by tier, region, and cloud provider. |
+| Storage — compressed bytes, includes Time Travel and Fail-safe overhead | Compressed bytes; no Time Travel or Fail-safe overhead | Storage rates are the same across ClickHouse tiers and vary by region and cloud provider. |
+| Backups — bundled into Time Travel and Fail-safe retention windows | Separate line on the bill; one backup retained one day by default, configurable per service via [backups](/cloud/manage/backups/overview) | ClickHouse backups are explicit and configurable, with their own storage line. |
+| Data transfer — public internet egress and cross-cloud transfer charged | Public internet egress and cross-region [data transfer](/cloud/manage/network-data-transfer) charged; per-tier allowances apply | Both platforms charge for egress and cross-region transfer. Easy to overlook when modeling total cost. |
+| Separately-metered features — Snowpipe, Search Optimization, Auto-clustering, materialized view refresh, replication, Cortex (all metered as "serverless compute" outside warehouse credits) | Mostly bundled into service compute — MV refresh, merges, and indexing run on the service's own replicas | [ClickPipes](/integrations/clickpipes) is the explicit exception and is [metered separately](/cloud/reference/billing/clickpipes). |
+| Editions and commitment — Standard / Enterprise / Business Critical / VPS; capacity contracts | Basic / Scale / Enterprise [tiers](/cloud/manage/cloud-tiers); prepaid ClickHouse Credits (CHC) for committed spend | Snowflake editions and ClickHouse tiers gate different security and DR features. Both platforms offer committed-spend discounts. |
+
 ## Storage and tables {#storage-tables}
 
 How tables are stored: engines, schema, partitioning, snapshots, and access primitives.
 
 In ClickHouse, a table's behavior is set at creation time: the engine (MergeTree family) determines merge and storage semantics, and `ORDER BY` / `PARTITION BY` / `TTL` clauses configure physical layout and retention. Many Snowflake per-feature settings map to a clause in the ClickHouse `CREATE TABLE` statement.
+
+:::note Physical modeling
+The mappings below cover the mechanics. Physical schema design often differs
+between platforms: Snowflake schemas commonly use normalized dimensional
+models with joins resolved at query time; ClickHouse schemas commonly use
+denormalized tables sorted by access pattern via `ORDER BY`, with
+[dictionaries](/dictionary) for lookups and [materialized views](/materialized-views)
+for pre-aggregation. A direct schema port may not perform the same as a
+schema designed for the target engine.
+:::
 
 | Snowflake | ClickHouse | Notes |
 |---|---|---|
@@ -112,11 +132,11 @@ In ClickHouse, a table's behavior is set at creation time: the engine (MergeTree
 Snowflake Time Travel is per-table and queryable inline
 (`SELECT … AT (TIMESTAMP => …)`), with retention configurable
 up to 90 days on Enterprise editions. ClickHouse Cloud backups
-are per-service: restoring creates a new service, you can't
-query historical state inline, and a single table can't be
-restored back into the original service. The functional gap is
-larger than the row above suggests — plan accordingly if your
-workflow relies on per-table point-in-time queries.
+are per-service: restoring creates a new service, historical
+state isn't queryable inline, and a single table can't be
+restored back into the original service. These differences are
+worth noting for workflows that rely on inline per-table
+point-in-time queries.
 :::
 
 :::note Partitioning
@@ -125,6 +145,19 @@ are managed automatically. ClickHouse exposes [`PARTITION BY`](/engines/table-en
 as an explicit clause, useful for retention (drop a partition) and
 pruning. There's nothing on the Snowflake side that maps to this directly;
 clustering keys are the closest user-controlled layout primitive.
+:::
+
+:::note Updates and deletes
+ClickHouse is append-optimized. There's no SQL `MERGE`, and
+[`ALTER TABLE … UPDATE`](/sql-reference/statements/alter/update) /
+[`DELETE`](/sql-reference/statements/alter/delete) run as background mutations
+rather than transactional row writes. Update patterns from Snowflake (`MERGE`,
+[dbt incremental](#transformation) updates) typically port to engine choice in ClickHouse:
+[`ReplacingMergeTree`](/engines/table-engines/mergetree-family/replacingmergetree)
+keeps the latest row by sort key, [`CollapsingMergeTree`](/engines/table-engines/mergetree-family/collapsingmergetree)
+marks deletes inline, and [`AggregatingMergeTree`](/engines/table-engines/mergetree-family/aggregatingmergetree)
+maintains aggregated state. Engine choice is set at table creation and is
+non-trivial to change later.
 :::
 
 ## Query model and performance {#query-model}
@@ -144,7 +177,7 @@ Query acceleration in ClickHouse comes from three layers: primary-key ordering (
 | Dynamic table | [Refreshable MV](/materialized-view/refreshable-materialized-view) — runs the query on a schedule and maintains its result table | Dynamic tables target a lag SLA; refreshable MVs run on a cron-style schedule with the same end-state. |
 | Result cache | [Query cache](/operations/query-cache) | Both transparently reuse results of recently executed queries. Snowflake's result cache is service-wide and persistent; ClickHouse's is per-replica and not transactionally consistent. |
 | Task (scheduled SQL) | [Refreshable MV](/materialized-view/refreshable-materialized-view) for query-driven scheduled work; external orchestrator ([dbt](/integrations/dbt), Airflow) for procedural pipelines | Refreshable MVs replace the typical task-into-target-table pattern. Snowflake task DAGs (task graphs) have no direct equivalent — model dependencies in the orchestrator. |
-| Stream (CDC over a table) | [Materialized view](/materialized-view) over base-table inserts, or [ClickPipes](/integrations/clickpipes) for source-side CDC | Conceptually related but not equivalent: a Snowflake stream tracks change offsets on a table and is consumed by a task or query. A ClickHouse MV reacts on each insert and writes to a destination table. The end-state pattern (react to changes → write) is similar; the offset/consume model isn't. |
+| Stream (CDC over a table) | [Materialized view](/materialized-views) over base-table inserts, or [ClickPipes](/integrations/clickpipes) for source-side CDC | Conceptually related but not equivalent: a Snowflake stream tracks change offsets on a table and is consumed by a task or query. A ClickHouse MV reacts on each insert and writes to a destination table. The end-state pattern (react to changes → write) is similar; the offset/consume model isn't. |
 | `EXPLAIN` / `EXPLAIN_JSON` | [`EXPLAIN`](/sql-reference/statements/explain) variants (`PLAN`, `PIPELINE`, `SYNTAX`, `ESTIMATE`) | `EXPLAIN ESTIMATE` reports rows, parts, and marks the query would read; other variants cover deeper plan inspection. |
 | External functions (HTTPS endpoints via API integrations) | No direct equivalent — closest options are [executable UDFs](/sql-reference/functions/udf) (local script invocation) or a [database engine](/engines/database-engines) attaching a live source | Snowflake external functions invoke remote HTTPS endpoints from inside SQL. ClickHouse has no managed outbound HTTP call from SQL; the surrogates run locally or attach a database, not call an arbitrary service. |
 | Sessions / session variables | Per-statement execution; multi-step state managed in the client or an orchestrator | ClickHouse has no per-session variables or shared state. |
@@ -158,35 +191,29 @@ Indexes on non-primary-key columns, used when queries filter by columns outside 
 - [Minmax](/engines/table-engines/mergetree-family/mergetree#minmax) — range pruning by per-part min/max
 
 :::note Materialized view update model
-ClickHouse has two MV models:
-**incremental** MVs update on every base-table insert (cost
-proportional to the insert) and **refreshable** MVs run on a
-schedule. Snowflake materialized views correspond to the
-incremental model; Snowflake dynamic tables correspond to the
-refreshable model. Use incremental for high-throughput
-aggregations, refreshable for periodic snapshots. The source-shape
-rules differ between platforms — consult Snowflake's MV documentation
-and ClickHouse's [incremental MV guide](/materialized-view/incremental-materialized-view)
-when porting.
+ClickHouse has two MV models: **incremental** MVs update on every
+base-table insert (cost proportional to the insert), and
+**refreshable** MVs run on a schedule. Snowflake materialized views
+correspond to the incremental model; Snowflake dynamic tables
+correspond to the refreshable model. Incremental MVs are typically
+used for high-throughput aggregations; refreshable MVs for periodic
+snapshots. Source-shape rules differ between platforms — see
+Snowflake's MV documentation and ClickHouse's [incremental MV
+guide](/materialized-view/incremental-materialized-view) for the
+per-platform constraints.
 :::
 
-## SQL and functions {#sql-and-functions}
+## Transformation and modeling {#transformation}
 
-The query-language surface: SQL coverage, UDFs, and the built-in function library.
-
-ClickHouse SQL covers the standard `SELECT` / `JOIN` / `GROUP BY` / window-function surface. Function-by-function mapping (date, JSON, string, regex, window) lives in the [Snowflake → ClickHouse SQL translation reference](/migrations/snowflake-translation-reference); the rows below are concept-level only.
+How transformation pipelines port over: dbt adapters and the modeling shifts they expose.
 
 | Snowflake | ClickHouse | Notes |
 |---|---|---|
-| Snowflake SQL | ClickHouse SQL — same `SELECT` / `JOIN` / `GROUP BY`, with [lambdas](/sql-reference/functions/overview#arrow-operator-and-lambda) and aggregate [combinators](/sql-reference/aggregate-functions/combinators) as additional language features | Compatible at the level of basic SQL. Lambdas and combinators are the two extensions worth getting familiar with. |
-| Aggregate functions | [Aggregate functions](/sql-reference/aggregate-functions/reference) composable with [combinators](/sql-reference/aggregate-functions/combinators) (`-Array`, `-Map`, `-ForEach`, `-If`, …) | Combinators compose any aggregate with any input shape. |
-| Array / object functions, `FLATTEN` (`LATERAL`) | [Array functions](/sql-reference/functions/array-functions) and lambdas; [`ARRAY JOIN`](/sql-reference/statements/select/array-join) for flattening | Common patterns: `arrayFilter`, `arrayMap`, `arrayZip`, `arrayReduce`. `ARRAY JOIN` replaces `LATERAL FLATTEN`. |
-| Semi-structured access (`:` notation, `GET_PATH`) | [JSON functions](/sql-reference/functions/json-functions) and dot-notation on the [`JSON`](/sql-reference/data-types/newjson) type | Path access is built into the new `JSON` type; legacy `JSONExtract*` functions cover string-typed JSON. |
-| SQL UDF | [`CREATE FUNCTION`](/sql-reference/statements/create/function) (SQL expression) | Same model — function from a SQL expression. |
-| JavaScript / Python / Java UDF | [Executable UDF](/sql-reference/functions/udf) shelling out to a Python, shell, or other script | Different language and execution model, similar role. |
-| Stored procedures (Snowflake Scripting, JavaScript, Python) | Client-side or orchestrator-side procedural logic ([dbt](/integrations/dbt), Airflow) | ClickHouse has no procedural SQL. |
-| Transactions (multi-statement, `BEGIN` … `COMMIT`) | Per-insert and per-DDL atomic guarantees; application-layer grouping for multi-write batches | Multi-statement transactions are on the [roadmap](https://github.com/ClickHouse/ClickHouse/issues/58392). |
-| Approximate aggregates (`HLL`, `APPROX_PERCENTILE`, `APPROX_TOP_K`) | [`uniqHLL12`](/sql-reference/aggregate-functions/reference/uniqhll12), [`quantileTDigest`](/sql-reference/aggregate-functions/reference/quantiletdigest), [`quantileDDSketch`](/sql-reference/aggregate-functions/reference/quantileddsketch), [`topK`](/sql-reference/aggregate-functions/reference/topk) — composable via `-State`/`-Merge` combinators | Approximate aggregates that serialize as state and merge across queries. |
+| dbt on Snowflake (`dbt-snowflake` adapter) | dbt on ClickHouse via the [`dbt-clickhouse` adapter](/integrations/dbt) | The adapter covers the standard dbt materializations — `view`, `table`, `incremental`, `materialized_view`, `ephemeral` — plus snapshots, seeds, sources, and tests. |
+| dbt `incremental` (MERGE-based update strategy) | dbt `incremental` — supports `append`, `delete+insert`, `insert_overwrite`, and `microbatch` strategies (plus a legacy default) | ClickHouse incremental models don't issue SQL `MERGE`; the adapter rewrites the update pattern around append-optimized engines. See the [dbt materialization reference](/integrations/dbt/materializations) for strategy details. |
+| dbt `materialized_view` (refresh-based) | dbt `materialized_view` — backed by ClickHouse [incremental MVs](/materialized-view/incremental-materialized-view); experimental in the adapter | ClickHouse MVs update on insert into the base table, not by re-running the model. Source-shape rules differ between platforms — see the [materialized_view materialization page](/integrations/dbt/materialization-materialized-view). |
+| dbt Cloud | `dbt-clickhouse` isn't available in dbt Cloud at the moment; dbt Core is the supported path | dbt Cloud availability is on the roadmap. See the [`dbt-clickhouse` adapter page](/integrations/dbt) for current status. |
+| Other transformation frameworks (Coalesce, SQLMesh, etc.) | Use the tool's ClickHouse adapter | Adapter coverage and maturity vary; verify supported features against the tool's own documentation. |
 
 ## Security and governance {#security-governance}
 
