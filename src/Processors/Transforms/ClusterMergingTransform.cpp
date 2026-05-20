@@ -765,8 +765,16 @@ Chunk ClusterMergingTransform::generate2D()
 
         for (auto [dx, dy] : forward_offsets)
         {
-            Int64 ncx = A.cx + dx;
-            Int64 ncy = A.cy + dy;
+            /// `A.cx` / `A.cy` can be near `INT64_MAX` / `INT64_MIN` (the bounds
+            /// of `safeFloorToInt64`), so a raw `A.cx + dx` could overflow signed
+            /// `Int64` (UB). Use checked addition; on overflow, no cell exists at
+            /// the would-be coordinate (Phase A only inserts cells at `Int64`
+            /// coordinates), so skip the neighbor.
+            Int64 ncx;
+            Int64 ncy;
+            if (__builtin_add_overflow(A.cx, static_cast<Int64>(dx), &ncx)
+                || __builtin_add_overflow(A.cy, static_cast<Int64>(dy), &ncy))
+                continue;
 
             UInt64 h = computeCellHash(merged_columns, non_cluster_key_positions, leader_A, ncx, ncy);
             size_t cj = lookup_cell(ncx, ncy, leader_A, h);
