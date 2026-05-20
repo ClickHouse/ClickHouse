@@ -73,12 +73,21 @@ private:
     /// Read a specific physical range through the cache chain and source.
     Rope readPhysicalWindow(ByteRange physical_window);
 
-    /// Read from source into a Rope of 1 MiB blocks. Tries live buffer first, falls back to stateless.
-    Rope readFromSource(const StoredObject & object, size_t offset, size_t size, size_t logical_offset);
+    /// Read from source into the pre-allocated `blocks`. Tries live buffer first, falls back to stateless.
+    /// `blocks` is consumed: blocks that receive data become RopeNodes in the returned Rope;
+    /// blocks that receive no data (e.g., file ended early) are released when this function returns.
+    Rope readFromSource(
+        const StoredObject & object, size_t offset,
+        std::vector<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset);
 
-    /// Read from the live buffer into a Rope of 1 MiB blocks.
+    /// Read from the live buffer into the pre-allocated `blocks`.
     /// Uses set() + next() — data goes directly from network into block memory.
-    Rope readFromLiveBufferIntoRope(size_t size, size_t logical_offset);
+    Rope readFromLiveBufferIntoRope(
+        std::vector<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset);
+
+    /// Allocate enough OwnedRopeBuffers to cover `size` bytes, each ≤ ROPE_BLOCK_SIZE.
+    /// The last block may be smaller than ROPE_BLOCK_SIZE; intermediate blocks are exactly ROPE_BLOCK_SIZE.
+    static std::vector<std::shared_ptr<OwnedRopeBuffer>> allocateBlocks(size_t size);
 
     void maybeTriggerPrefetch();
     void discardPrefetch();
