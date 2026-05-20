@@ -9,6 +9,21 @@
 namespace DB
 {
 
+using Rational = ASTSampleRatio::Rational;
+
+struct WatermarkSettings
+{
+    String column;
+    QueryTreeNodePtr expression;
+};
+using WatermarkSettingsPtr = std::shared_ptr<WatermarkSettings>;
+
+struct StreamSettings
+{
+    CursorTreeNodePtr cursor;
+    WatermarkSettingsPtr watermark;
+};
+
 /** Modifiers that can be used for table, table function and subquery in JOIN TREE.
   *
   * Example: SELECT * FROM test_table SAMPLE 0.1 OFFSET 0.1 FINAL
@@ -16,21 +31,6 @@ namespace DB
 class TableExpressionModifiers
 {
 public:
-    using Rational = ASTSampleRatio::Rational;
-
-    struct WatermarkSettings
-    {
-        String column;
-        QueryTreeNodePtr expression;
-    };
-    using WatermarkSettingsPtr = std::shared_ptr<WatermarkSettings>;
-
-    struct StreamSettings
-    {
-        CursorTreeNodePtr cursor;
-        WatermarkSettingsPtr watermark;
-    };
-
     TableExpressionModifiers() = default;
     TableExpressionModifiers(bool has_final_,
         std::optional<Rational> sample_size_ratio_,
@@ -106,7 +106,7 @@ private:
     std::optional<StreamSettings> stream_settings;
 };
 
-inline bool operator==(const TableExpressionModifiers::WatermarkSettings & lhs, const TableExpressionModifiers::WatermarkSettings & rhs)
+inline bool operator==(const WatermarkSettings & lhs, const WatermarkSettings & rhs)
 {
     if (lhs.column != rhs.column)
         return false;
@@ -117,7 +117,7 @@ inline bool operator==(const TableExpressionModifiers::WatermarkSettings & lhs, 
     return !lhs.expression || lhs.expression->isEqual(*rhs.expression);
 }
 
-inline bool operator==(const TableExpressionModifiers::StreamSettings & lhs, const TableExpressionModifiers::StreamSettings & rhs)
+inline bool operator==(const StreamSettings & lhs, const StreamSettings & rhs)
 {
     return lhs.cursor == rhs.cursor && lhs.watermark == rhs.watermark;
 }

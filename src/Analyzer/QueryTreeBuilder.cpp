@@ -961,9 +961,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             if (table_expression.final || table_expression.sample_size || table_expression.stream_settings)
             {
                 bool has_final = table_expression.final;
-                std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
-                std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
-                std::optional<TableExpressionModifiers::StreamSettings> stream_settings;
+                std::optional<Rational> sample_size_ratio;
+                std::optional<Rational> sample_offset_ratio;
+                std::optional<StreamSettings> stream_settings;
 
                 if (table_expression.sample_size)
                 {
@@ -981,7 +981,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 {
                     const auto & ast_stream_settings = table_expression.stream_settings->as<ASTStreamSettings &>();
 
-                    stream_settings = TableExpressionModifiers::StreamSettings{};
+                    stream_settings = StreamSettings{};
 
                     if (ast_stream_settings.cursor.has_value())
                         stream_settings->cursor = buildCursorTree(ast_stream_settings.cursor.value());
@@ -989,7 +989,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     if (ast_stream_settings.watermark.has_value())
                     {
                         const auto & ast_watermark = ast_stream_settings.watermark.value();
-                        stream_settings->watermark = std::make_shared<TableExpressionModifiers::WatermarkSettings>();
+                        stream_settings->watermark = std::make_shared<WatermarkSettings>();
                         stream_settings->watermark->column = ast_watermark.column;
                         if (ast_watermark.expression)
                             stream_settings->watermark->expression = buildExpression(ast_watermark.expression, context);
