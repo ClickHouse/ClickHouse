@@ -153,7 +153,12 @@ if [ -z "${PROXY_PORT}" ]; then
 fi
 
 # Route the client through the proxy. Expect a clean NetException, NOT a SIGSEGV.
-${CLICKHOUSE_CLIENT} --host=127.0.0.1 --port="${PROXY_PORT}" \
+# `--send_logs_level=none` keeps server-side log packets out of the client's fatal-log
+# file (the connection close races with chunked I/O on the server and would otherwise
+# pollute it with a stack trace that has nothing to do with this test).
+# `--allow_repeated_settings` lets the override win over the runner-injected value.
+${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=none \
+    --host=127.0.0.1 --port="${PROXY_PORT}" \
     < "${INSERT_SQL}" >"${CLIENT_LOG}" 2>&1
 CLIENT_EXIT=$?
 
@@ -162,8 +167,7 @@ wait "${PROXY_PID}" 2>/dev/null
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_105292"
 
-# 139 = SIGSEGV. Anything else is acceptable as long as no crash-signature
-# strings appear in the output.
+# 139 = SIGSEGV: the original bug shape. Refuse it explicitly.
 if [ "${CLIENT_EXIT}" = "139" ]; then
     echo "BAD: client segfaulted (exit ${CLIENT_EXIT})"
     head -50 "${CLIENT_LOG}"
@@ -171,6 +175,21 @@ if [ "${CLIENT_EXIT}" = "139" ]; then
 fi
 if grep -q "Address: 0x108\|Segmentation fault" "${CLIENT_LOG}"; then
     echo "BAD: crash signature found in client output (exit ${CLIENT_EXIT})"
+    head -50 "${CLIENT_LOG}"
+    exit 1
+fi
+
+# Require evidence that the send-error path was actually exercised. Without this,
+# a test that completed the INSERT cleanly (proxy cutoff missed, buffer absorbed it)
+# would silently pass and stop catching the bug. The post-fix shape is a non-zero
+# exit plus a network-error marker in the client output.
+if [ "${CLIENT_EXIT}" = "0" ]; then
+    echo "BAD: proxy did not trigger the send-error path (CLIENT_EXIT=0)"
+    head -50 "${CLIENT_LOG}"
+    exit 1
+fi
+if ! grep -qE "NETWORK_ERROR|Broken pipe|Connection reset by peer" "${CLIENT_LOG}"; then
+    echo "BAD: no network-error marker in client output (CLIENT_EXIT=${CLIENT_EXIT})"
     head -50 "${CLIENT_LOG}"
     exit 1
 fi

@@ -1310,19 +1310,12 @@ std::optional<Poco::Net::SocketAddress> Connection::getResolvedAddress() const
 
 bool Connection::poll(size_t timeout_microseconds)
 {
-    /// `in` can be null when `Connection::disconnect` was called from `sendQuery`'s
-    /// `SCOPE_EXIT` after a send failure. Surface as a network error rather than
-    /// dereferencing a null pointer.
-    if (!in)
-        throw NetException(ErrorCodes::NETWORK_ERROR, "Connection to {} is terminated", getDescription());
     return in->poll(timeout_microseconds);
 }
 
 
 bool Connection::hasReadPendingData() const
 {
-    if (!in)
-        return last_input_packet_type.has_value();
     return last_input_packet_type.has_value() || in->hasBufferedData();
 }
 
@@ -1331,9 +1324,6 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 {
     if (last_input_packet_type.has_value())
         return last_input_packet_type;
-
-    if (!in)
-        return {};
 
     if (hasReadPendingData() || poll(timeout_microseconds))
     {
@@ -1353,9 +1343,6 @@ UInt64 Connection::receivePacketType()
     /// Have we already read packet type?
     if (last_input_packet_type)
         return *last_input_packet_type;
-
-    if (!in)
-        throw NetException(ErrorCodes::NETWORK_ERROR, "Connection to {} is terminated", getDescription());
 
     UInt64 type;
     readVarUInt(type, *in);
