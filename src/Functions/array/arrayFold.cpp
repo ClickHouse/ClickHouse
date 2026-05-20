@@ -1,7 +1,11 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/FunctionFactory.h>
@@ -37,6 +41,7 @@ public:
     /// It's much simpler to avoid the adapters
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
@@ -47,7 +52,7 @@ public:
         accumulator_and_array_types[0] = arguments.back();
         for (size_t i = 1; i < accumulator_and_array_types.size(); ++i)
         {
-            const auto * array_type = checkAndGetDataType<DataTypeArray>(&*arguments[i]);
+            const auto * array_type = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[i]).get());
             if (!array_type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {} of function {} must be of type Array, found {} instead", i + 1, getName(), arguments[i]->getName());
             accumulator_and_array_types[i] = recursiveRemoveLowCardinality(array_type->getNestedType());
@@ -77,10 +82,16 @@ public:
                     "Return type of lambda function must be the same as the accumulator type, inferred return type of lambda: {}, inferred type of accumulator: {}",
                     lambda_type->getName(), accumulator_type->getName());
 
+        for (size_t i = 1; i + 1 < arguments.size(); ++i)
+        {
+            if (arguments[i].type->isNullable())
+                return makeNullable(accumulator_type);
+        }
+
         return accumulator_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto & lambda_function_with_type_and_name = arguments[0];
 
@@ -96,6 +107,7 @@ public:
         ColumnPtr first_array_col;
         const ColumnArray * first_array_col_concrete = nullptr;
         ColumnPtr first_array_col_offsets;
+        ColumnPtr array_null_map;
 
         ColumnsWithTypeAndName arrays_data_with_type_and_name; /// for all arrays, the pointers to the internal data column, type and name
         arrays_data_with_type_and_name.reserve(arguments.size() - 1);
@@ -105,6 +117,32 @@ public:
         {
             const auto & array_with_type_and_name = arguments[i];
             ColumnPtr array_col = array_with_type_and_name.column;
+
+            const ColumnConst * array_col_const = checkAndGetColumnConst<ColumnConst>(array_col.get());
+            const IColumn * array_data_column = array_col_const ? &array_col_const->getDataColumn() : array_col.get();
+
+            if (const auto * nullable_array_column = checkAndGetColumn<ColumnNullable>(array_data_column))
+            {
+                if (!array_null_map)
+                    array_null_map = nullable_array_column->getNullMapColumnPtr();
+
+                if (checkAndGetColumn<ColumnArray>(&nullable_array_column->getNestedColumn()))
+                {
+                    array_col = array_col_const
+                        ? ColumnConst::create(nullable_array_column->getNestedColumnPtr(), array_col_const->size())
+                        : nullable_array_column->getNestedColumnPtr();
+                }
+            }
+            else if (array_with_type_and_name.type->isNullable())
+            {
+                if (!array_null_map)
+                {
+                    auto null_map = ColumnUInt8::create();
+                    null_map->getData().resize_fill(array_col->size(), 0);
+                    array_null_map = std::move(null_map);
+                }
+            }
+
             const auto * array_col_concrete = checkAndGetColumn<ColumnArray>(array_col.get());
             if (!array_col_concrete)
             {
@@ -116,7 +154,7 @@ public:
             }
 
             const DataTypePtr & array_type = array_with_type_and_name.type;
-            const auto * array_type_concrete = checkAndGetDataType<DataTypeArray>(array_type.get());
+            const auto * array_type_concrete = checkAndGetDataType<DataTypeArray>(removeNullable(array_type).get());
             if (!array_type_concrete)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected array type, found {}", array_type->getName());
 
@@ -148,7 +186,15 @@ public:
         const ssize_t num_elements_in_array_col = arrays_data_with_type_and_name[0].column->size(); /// total number of array elements in the 1st array argument (the value is the same for other array arguments)
 
         if (num_rows == 0)
+        {
+            if (result_type->isNullable())
+            {
+                auto empty_result = arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
+                auto null_map = ColumnUInt8::create();
+                return ColumnNullable::create(std::move(empty_result), std::move(null_map));
+            }
             return arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
+        }
 
         const auto & offsets = first_array_col_concrete->getOffsets(); /// the internal offsets column of the first array argument (other array arguments have the same offsets)
 
@@ -277,7 +323,21 @@ public:
         IColumn::Permutation perm(num_rows);
         for (ssize_t row = 0; row < num_rows; ++row)
             perm[inverse_permutation[row]] = row;
-        return result_col->permute(perm, 0);
+
+        auto result = result_col->permute(perm, 0);
+
+        if (result_type->isNullable())
+        {
+            if (!array_null_map)
+            {
+                auto null_map = ColumnUInt8::create();
+                null_map->getData().resize_fill(result->size(), 0);
+                array_null_map = std::move(null_map);
+            }
+            return ColumnNullable::create(result, std::move(array_null_map));
+        }
+
+        return result;
     }
 
 private:

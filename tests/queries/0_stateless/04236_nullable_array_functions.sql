@@ -144,4 +144,63 @@ FROM
 )
 FORMAT Null;
 
+SELECT throwIf(arrayReduce('sum', CAST([1, 2, 3], 'Nullable(Array(UInt8))')) != 6)
+FORMAT Null;
+
+SELECT throwIf(NOT isNull(arrayReduce('sum', CAST(NULL, 'Nullable(Array(UInt8))'))))
+FORMAT Null;
+
+SELECT throwIf(groupArray(isNull(arrayReduce('sum', a))) != [1, 0, 0])
+FROM
+(
+    SELECT arrayJoin([
+        CAST(NULL, 'Nullable(Array(Int32))'),
+        CAST([], 'Nullable(Array(Int32))'),
+        CAST([1, 2, 3], 'Nullable(Array(Int32))')
+    ]) AS a
+)
+FORMAT Null;
+
+SELECT throwIf(groupArray(ifNull(arrayReduce('sum', a), -1)) != [-1, 0, 6])
+FROM
+(
+    SELECT arrayJoin([
+        CAST(NULL, 'Nullable(Array(Int32))'),
+        CAST([], 'Nullable(Array(Int32))'),
+        CAST([1, 2, 3], 'Nullable(Array(Int32))')
+    ]) AS a
+)
+FORMAT Null;
+
+SELECT throwIf(arrayFold(acc, x -> acc + x, CAST([1, 2, 3], 'Nullable(Array(UInt8))'), 0::UInt64) != 6)
+FORMAT Null;
+
+SELECT throwIf(arrayFold(acc, x -> acc + x, CAST([], 'Nullable(Array(UInt8))'), 10::UInt64) != 10)
+FORMAT Null;
+
+SELECT throwIf(NOT isNull(arrayFold(acc, x -> acc + x, CAST(NULL, 'Nullable(Array(UInt8))'), 0::UInt64)))
+FORMAT Null;
+
+SELECT throwIf(groupArray(isNull(arrayFold(acc, x -> acc + x, a, 0::Int64))) != [1, 0, 0])
+FROM
+(
+    SELECT arrayJoin([
+        CAST(NULL, 'Nullable(Array(Int32))'),
+        CAST([], 'Nullable(Array(Int32))'),
+        CAST([1, 2, 3], 'Nullable(Array(Int32))')
+    ]) AS a
+)
+FORMAT Null;
+
+SELECT throwIf(groupArray(ifNull(arrayFold(acc, x -> acc + x, a, 0::Int64), -1)) != [-1, 0, 6])
+FROM
+(
+    SELECT arrayJoin([
+        CAST(NULL, 'Nullable(Array(Int32))'),
+        CAST([], 'Nullable(Array(Int32))'),
+        CAST([1, 2, 3], 'Nullable(Array(Int32))')
+    ]) AS a
+)
+FORMAT Null;
+
 SELECT 'ok';

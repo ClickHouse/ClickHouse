@@ -4,8 +4,12 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -58,9 +62,15 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return aggregate_function->getResultType();
+        auto result = aggregate_function->getResultType();
+        for (size_t i = 1; i < arguments.size(); ++i)
+        {
+            if (arguments[i].type->isNullable())
+                return makeNullable(result);
+        }
+        return result;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
@@ -68,6 +78,53 @@ public:
 private:
     AggregateFunctionPtr aggregate_function;
 };
+
+namespace
+{
+
+ColumnPtr unwrapNullableArrayColumn(
+    const ColumnPtr & column,
+    const DataTypePtr & type,
+    std::vector<ColumnPtr> & materialized_columns,
+    ColumnPtr & out_null_map)
+{
+    ColumnPtr unwrapped_column = column;
+    auto col_no_lowcardinality = recursiveRemoveLowCardinality(unwrapped_column);
+    if (col_no_lowcardinality != unwrapped_column)
+    {
+        materialized_columns.emplace_back(col_no_lowcardinality);
+        unwrapped_column = col_no_lowcardinality;
+    }
+
+    const ColumnConst * col_const = checkAndGetColumnConst<ColumnConst>(unwrapped_column.get());
+    const IColumn * data_column = col_const ? &col_const->getDataColumn() : unwrapped_column.get();
+
+    if (const auto * nullable_array_column = checkAndGetColumn<ColumnNullable>(data_column))
+    {
+        if (!out_null_map)
+            out_null_map = nullable_array_column->getNullMapColumnPtr();
+
+        if (checkAndGetColumn<ColumnArray>(&nullable_array_column->getNestedColumn()))
+        {
+            if (col_const)
+                return ColumnConst::create(nullable_array_column->getNestedColumnPtr(), col_const->size());
+            return nullable_array_column->getNestedColumnPtr();
+        }
+    }
+    else if (type->isNullable())
+    {
+        if (!out_null_map)
+        {
+            auto null_map = ColumnUInt8::create();
+            null_map->getData().resize_fill(unwrapped_column->size(), 0);
+            out_null_map = std::move(null_map);
+        }
+    }
+
+    return unwrapped_column;
+}
+
+}
 
 
 ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
@@ -83,16 +140,13 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
 
     std::vector<const IColumn *> aggregate_arguments_vec(num_arguments_columns);
     const ColumnArray::Offsets * offsets = nullptr;
+    ColumnPtr array_null_map;
 
     for (size_t i = 0; i < num_arguments_columns; ++i)
     {
-        const IColumn * col = arguments[i + 1].column.get();
-        auto col_no_lowcardinality = recursiveRemoveLowCardinality(arguments[i + 1].column);
-        if (col_no_lowcardinality != arguments[i + 1].column)
-        {
-            materialized_columns.emplace_back(col_no_lowcardinality);
-            col = col_no_lowcardinality.get();
-        }
+        ColumnPtr col_holder = unwrapNullableArrayColumn(
+            arguments[i + 1].column, arguments[i + 1].type, materialized_columns, array_null_map);
+        const IColumn * col = col_holder.get();
 
         const ColumnArray::Offsets * offsets_i = nullptr;
         if (const ColumnArray * arr = checkAndGetColumn<ColumnArray>(col))
@@ -118,7 +172,8 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
     }
     const IColumn ** aggregate_arguments = aggregate_arguments_vec.data();
 
-    MutableColumnPtr result_holder = result_type->createColumn();
+    const auto nested_result_type = removeNullable(result_type);
+    MutableColumnPtr result_holder = nested_result_type->createColumn();
     IColumn & res_col = *result_holder;
 
     PODArray<AggregateDataPtr> places(input_rows_count);
@@ -164,6 +219,17 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
             agg_func.insertResultInto(places[i], res_col, arena.get());
     }
 
+    if (result_type->isNullable())
+    {
+        if (!array_null_map)
+        {
+            auto null_map = ColumnUInt8::create();
+            null_map->getData().resize_fill(input_rows_count, 0);
+            array_null_map = std::move(null_map);
+        }
+        return ColumnNullable::create(std::move(result_holder), std::move(array_null_map));
+    }
+
     return result_holder;
 }
 
@@ -187,7 +253,13 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return resolveAggregateFunction(arguments)->getResultType();
+        auto result = resolveAggregateFunction(arguments)->getResultType();
+        for (size_t i = 1; i < arguments.size(); ++i)
+        {
+            if (arguments[i].type->isNullable())
+                return makeNullable(result);
+        }
+        return result;
     }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
@@ -222,7 +294,7 @@ private:
         DataTypes argument_types(arguments.size() - 1);
         for (size_t i = 1, size = arguments.size(); i < size; ++i)
         {
-            const DataTypeArray * arg = checkAndGetDataType<DataTypeArray>(arguments[i].type.get());
+            const DataTypeArray * arg = checkAndGetDataType<DataTypeArray>(removeNullable(arguments[i].type).get());
             if (!arg)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                                 "Argument {} for function {} must be an array but it has type {}.",
