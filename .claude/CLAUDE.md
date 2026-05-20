@@ -1,3 +1,96 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Build
+
+ClickHouse uses CMake + Ninja. C++ standard is C++23. Requires CMake 3.25+.
+
+```bash
+# Configure (RelWithDebInfo is default if CMAKE_BUILD_TYPE is omitted)
+cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -B build
+
+# Build (do not pass -j, ninja auto-detects parallelism)
+ninja -C build clickhouse
+
+# The binary is at build/programs/clickhouse (a multi-call binary: clickhouse-server, clickhouse-client, clickhouse-local, etc.)
+```
+
+Build variants use separate directories:
+```bash
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -B build_debug
+cmake -G Ninja -DSANITIZE=address -B build_asan
+cmake -G Ninja -DSANITIZE=thread -B build_tsan
+cmake -G Ninja -DSANITIZE=memory -B build_msan
+cmake -G Ninja -DSANITIZE=undefined -B build_ubsan
+cmake -G Ninja -DSANITIZE="address;undefined" -B build_asan_ubsan
+```
+
+Key CMake options: `-DENABLE_TESTS=ON` (default, for unit tests), `-DSPLIT_DEBUG_SYMBOLS=ON`, `-DWITH_COVERAGE=ON`.
+
+## Testing
+
+**Stateless functional tests** (primary test suite, in `tests/queries/0_stateless/`):
+- Format: `NNNNN_test_name.sql` (or `.sh`/`.py`) + `NNNNN_test_name.reference` (expected output)
+- Run against a running server:
+  ```bash
+  ./tests/clickhouse-test NNNNN_test_name --binary build/programs/clickhouse
+  ```
+- Create a new test (auto-assigns next number):
+  ```bash
+  tests/queries/0_stateless/add-test test_name        # creates .sql + .reference
+  tests/queries/0_stateless/add-test test_name.sh      # creates .sh + .reference
+  ```
+
+**Integration tests** (Docker-based, in `tests/integration/`):
+```bash
+python -m ci.praktika run "integration" --test <selectors>
+```
+
+**Unit tests** (Google Test):
+```bash
+ninja -C build unit_tests_dbms
+cd build && ./unit_tests_dbms
+```
+
+## Architecture
+
+ClickHouse is a column-oriented OLAP DBMS. The server is a single C++ binary (`programs/server/`) using `programs/main.cpp` as the unified entry point for all tools (server, client, local, keeper, etc.).
+
+**Query execution pipeline** (the path a SELECT query takes):
+
+1. **Parsing** (`src/Parsers/`): SQL text → AST (`IAST` tree). The parser is a hand-written recursive descent parser.
+2. **Analysis** (`src/Analyzer/`): AST → `QueryTree` with resolved identifiers, types, and functions.
+3. **Planning** (`src/Planner/`): `QueryTree` → `QueryPlan` (a DAG of `QueryPlanStep` nodes representing logical operations).
+4. **Pipeline construction** (`src/Processors/`): `QueryPlan` → `QueryPipeline` (a graph of `IProcessor` nodes connected by ports for physical execution).
+5. **Execution** (`src/QueryPipeline/`): The pipeline executes processors in a pull-based model, passing `Block` objects (batches of columns) between processors.
+
+**Key data abstractions** (`src/Core/`, `src/Columns/`, `src/DataTypes/`):
+- `IColumn`: Abstract columnar storage. Concrete types: `ColumnVector`, `ColumnString`, `ColumnArray`, `ColumnNullable`, `ColumnLowCardinality`, etc.
+- `IDataType`: Type metadata and serialization rules.
+- `Block`: A batch of `ColumnWithTypeAndName` tuples — the unit of data flow between processors.
+- `ActionsDAG` (`src/Interpreters/ActionsDAG.h`): DAG for expression evaluation within a pipeline step.
+
+**Storage engines** (`src/Storages/`):
+- `IStorage`: Base class for all table engines.
+- `MergeTree` family (`src/Storages/MergeTree/`): The primary engine family. `MergeTreeData` is the core class managing parts, merges, and mutations. Variants (Replacing, Summing, Aggregating, Collapsing, etc.) differ in merge semantics.
+- `StorageFactory`: Singleton registry — engines register themselves with feature flags (supports_settings, supports_ttl, supports_replication, etc.).
+
+**Functions and aggregates** (`src/Functions/`, `src/AggregateFunctions/`):
+- Factory pattern: `FunctionFactory` / `AggregateFunctionFactory` are singleton registries.
+- Registration: each function calls `registerFunction<T>` in a `registerFunctions*.cpp` file, typically using `REGISTER_FUNCTION(Name)` macros.
+
+**Key source directories**:
+- `src/Interpreters/`: Query orchestration, `executeQuery` is the main entry point.
+- `src/Processors/`: Processor-based execution (Sources, Sinks, Transforms, QueryPlan steps).
+- `src/Access/`: Authentication, authorization, RBAC.
+- `src/Databases/`: Database engine implementations.
+- `src/Formats/`: Input/output format implementations (JSON, Parquet, CSV, etc.).
+- `src/Coordination/`: ClickHouse Keeper (ZooKeeper-compatible coordination).
+- `src/Disks/`: Storage abstraction layer (local, S3, etc.).
+
+## Conventions
+
 When working with a branch, do not use rebase or amend - add new commits instead.
 
 Do not commit to the master branch. Create a new branch for every task.
@@ -7,6 +100,8 @@ When writing text such as documentation, comments, or commit messages, wrap lite
 When writing text such as documentation, comments, or commit messages, write names of functions and methods as `f` instead of `f()` - we prefer it for mathematical purity when it refers a function itself rather than its application.
 
 When mentioning logical errors, say "exception" instead of "crash", because they don't crash the server in the release build.
+
+## CI Tools
 
 Links to ClickHouse CI should be analyzed using the tool at `.claude/tools/fetch_ci_report.js`, which directly fetches the underlying JSON data without requiring a browser. It accepts GitHub PR URLs (fetches all CI reports) or direct S3/CI HTML URLs.
 

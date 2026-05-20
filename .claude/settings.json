@@ -9,6 +9,12 @@
       "Bash(gh pr diff:*)",
       "Bash(gh search:*)",
       "WebFetch(domain:github.com)"
+    ],
+    "deny": [
+      "Read contrib/",
+      "Read build/",
+      "Read cmake/toolchain/",
+      "Write contrib/"
     ]
   }
 }
