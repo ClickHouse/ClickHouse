@@ -53,6 +53,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -120,6 +121,12 @@ public:
             const auto * dim_const = typeid_cast<const ColumnConst *>(arguments[2].column.get());
             chassert(dim_const, "dimensions must be a constant UInt (validated by getReturnTypeImpl)");
             dimensions = dim_const->getUInt(0);
+
+            /// Providers serialize `dimensions` as Int64 (Poco JSON does not support UInt64).
+            /// Reject values that would silently become negative after the cast.
+            if (dimensions > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "aiEmbed: 'dimensions' exceeds maximum ({})",
+                    std::numeric_limits<Int64>::max());
         }
 
         const auto & settings = getContext()->getSettingsRef();

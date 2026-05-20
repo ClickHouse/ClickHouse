@@ -157,10 +157,12 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 {
     auto config = resolveConfig(arguments);
 
+    /// Row-independent validation must run before the zero-row fast path so malformed constant
+    /// arguments fail consistently regardless of source size.
+    checkSanityBeforeExecuteImpl(arguments, result_type, input_rows_count);
+
     if (input_rows_count == 0)
         return result_type->createColumn();
-
-    checkSanityBeforeExecuteImpl(arguments, result_type, input_rows_count);
 
     /// A Nullable prompt can arrive as `ColumnNullable` or as `ColumnConst(ColumnNullable)` (e.g. `NULL::Nullable(String)`).
     /// `convertToFullColumnIfConst` unwraps the latter into the former, so a single null-map path handles both.
