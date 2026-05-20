@@ -65,6 +65,11 @@ FROM test_dict_nullable_default_keys;
 SELECT toTypeName(dictGetOrDefault('test_dict_nullable_default_tuple', ('a', 'b'), toUInt64(0),
     toNullable((toNullable(toString(x)), toNullable(toUInt32(x)))))) FROM test_dict_nullable_default_keys LIMIT 1;
 
+-- Negative: a default that genuinely evaluates to NULL on a not-found row must still fail.
+SELECT dictGetOrDefault('test_dict_nullable_default_single', 'a', x,
+    materialize(NULL::Nullable(String)))
+FROM test_dict_nullable_default_keys; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+
 DROP DICTIONARY IF EXISTS test_dict_nullable_default_single;
 DROP DICTIONARY IF EXISTS test_dict_nullable_default_tuple;
 DROP TABLE IF EXISTS test_dict_nullable_default_keys;
