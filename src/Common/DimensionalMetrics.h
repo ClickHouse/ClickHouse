@@ -73,7 +73,8 @@ namespace DimensionalMetrics
         {
             std::lock_guard lock(mutex);
             size_t removed = 0;
-            for (auto it = metrics.begin(); it != metrics.end(); )
+            auto it = metrics.begin();
+            while (it != metrics.end())
             {
                 if (pred(it->first))
                 {
