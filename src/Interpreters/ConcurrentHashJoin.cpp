@@ -575,14 +575,53 @@ BlockHashes calculateHashes(const HashTable & hash_table, const ColumnRawPtrs & 
     return hash;
 }
 
+/// Shape of the equality-key prefix used when computing the per-partition
+/// scatter selector in `selectDispatchBlock`. For non-ASOF joins this is
+/// identity over the full key list. For ASOF, the trailing key in
+/// `key_columns_names` is the asof inequality column and must NOT participate
+/// in scatter hashing: the per-partition HashJoin's bucket key is the
+/// equality-only prefix (see HashJoin::HashJoin where `key_columns.pop_back()`
+/// is called for ASOF before chooseMethod() picks a hash key getter). If we
+/// hashed by the full key list, rows with the same equality keys but
+/// different asof values would be scattered to different partitions and
+/// never meet.
+///
+/// For multi-column equality keys this slicing is load-bearing (the chosen
+/// key getter is HashMethodKeysFixed / HashMethodHashed, which read
+/// `key_sizes.size()` columns). For single-column equality keys the chosen
+/// getter is HashMethodOneNumber, which only reads column[0] and would
+/// harmlessly ignore the extra column anyway — but slicing the inputs to
+/// match the per-partition bucket-key shape is the correct invariant
+/// regardless.
+struct DispatchKeyShape
+{
+    size_t num_key_columns;
+    Sizes key_sizes;
+};
+
+static DispatchKeyShape getDispatchKeyShape(const HashJoin & join, size_t total_key_columns)
+{
+    DispatchKeyShape shape{total_key_columns, join.getKeySizes().at(0)};
+    if (join.getTableJoin().strictness() == JoinStrictness::Asof)
+    {
+        if (shape.num_key_columns > 0)
+            --shape.num_key_columns;
+        if (!shape.key_sizes.empty())
+            shape.key_sizes.pop_back();
+    }
+    return shape;
+}
+
 IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, const Strings & key_columns_names, const Block & from_block)
 {
+    const auto shape = getDispatchKeyShape(join, key_columns_names.size());
+
     std::vector<ColumnPtr> key_column_holders;
     ColumnRawPtrs key_columns;
-    key_columns.reserve(key_columns_names.size());
-    for (const auto & key_name : key_columns_names)
+    key_columns.reserve(shape.num_key_columns);
+    for (size_t i = 0; i < shape.num_key_columns; ++i)
     {
-        const auto & key_col = from_block.getByName(key_name).column->convertToFullColumnIfConst();
+        const auto & key_col = from_block.getByName(key_columns_names[i]).column->convertToFullColumnIfConst();
         const auto & key_col_no_lc = recursiveRemoveLowCardinality(removeSpecialRepresentations(key_col));
         key_column_holders.push_back(key_col_no_lc);
         key_columns.push_back(key_col_no_lc.get());
@@ -599,7 +638,7 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
         #define M(TYPE)                                                                                                                       \
             case HashJoin::Type::TYPE:                                                                                                        \
         hash = calculateHashes<typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
-                    *maps.TYPE, key_columns, join.getKeySizes().at(0));                                                                       \
+                    *maps.TYPE, key_columns, shape.key_sizes);                                                                                \
         return hashToSelector(*maps.TYPE, hash, num_shards);
 
             APPLY_FOR_JOIN_VARIANTS(M)

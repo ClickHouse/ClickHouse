@@ -92,3 +92,84 @@ SELECT count() FROM (
 
 DROP TABLE asof_left;
 DROP TABLE asof_right;
+
+-- Multi-equality-key ASOF JOIN. Exercises the HashMethodKeysFixed /
+-- HashMethodHashed code paths in ConcurrentHashJoin::selectDispatchBlock,
+-- which hash N columns based on `key_sizes.size()`. Without the trailing-
+-- asof-key slicing in selectDispatchBlock, same-(a,b) rows with different
+-- t values would be scattered to different partitions and probe rows would
+-- miss their asof matches. The single-key tests above pass even without
+-- that slicing because HashMethodOneNumber only reads column[0].
+
+DROP TABLE IF EXISTS asof_left2;
+DROP TABLE IF EXISTS asof_right2;
+
+CREATE TABLE asof_left2  (a UInt32, b UInt32, t UInt32, v Float64) ENGINE = MergeTree ORDER BY (a, b, t);
+CREATE TABLE asof_right2 (a UInt32, b UInt32, t UInt32, v Float64) ENGINE = MergeTree ORDER BY (a, b, t);
+
+INSERT INTO asof_left2
+SELECT toUInt32(number % 100), toUInt32((number / 100) % 50), toUInt32(number), toFloat64(number) / 1000
+FROM numbers(50000);
+
+INSERT INTO asof_right2
+SELECT toUInt32(number % 100), toUInt32((number / 100) % 50), toUInt32(number * 2), -toFloat64(number) / 1000
+FROM numbers(50000);
+
+SELECT count() FROM (
+    SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
+    FROM asof_left2 AS l
+    ASOF INNER JOIN asof_right2 AS r
+        ON l.a = r.a AND l.b = r.b AND l.t >= r.t
+    SETTINGS join_algorithm = 'hash'
+    EXCEPT
+    SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
+    FROM asof_left2 AS l
+    ASOF INNER JOIN asof_right2 AS r
+        ON l.a = r.a AND l.b = r.b AND l.t >= r.t
+    SETTINGS join_algorithm = 'parallel_hash'
+);
+
+SELECT count() FROM (
+    SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
+    FROM asof_left2 AS l
+    ASOF INNER JOIN asof_right2 AS r
+        ON l.a = r.a AND l.b = r.b AND l.t >= r.t
+    SETTINGS join_algorithm = 'parallel_hash'
+    EXCEPT
+    SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
+    FROM asof_left2 AS l
+    ASOF INNER JOIN asof_right2 AS r
+        ON l.a = r.a AND l.b = r.b AND l.t >= r.t
+    SETTINGS join_algorithm = 'hash'
+);
+
+SELECT count() FROM (
+    SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
+    FROM asof_left2 AS l
+    ASOF LEFT JOIN asof_right2 AS r
+        ON l.a = r.a AND l.b = r.b AND l.t >= r.t
+    SETTINGS join_algorithm = 'hash'
+    EXCEPT
+    SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
+    FROM asof_left2 AS l
+    ASOF LEFT JOIN asof_right2 AS r
+        ON l.a = r.a AND l.b = r.b AND l.t >= r.t
+    SETTINGS join_algorithm = 'parallel_hash'
+);
+
+SELECT count() FROM (
+    SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
+    FROM asof_left2 AS l
+    ASOF LEFT JOIN asof_right2 AS r
+        ON l.a = r.a AND l.b = r.b AND l.t >= r.t
+    SETTINGS join_algorithm = 'parallel_hash'
+    EXCEPT
+    SELECT l.a AS a, l.b AS b, l.t AS t, l.v AS lv, r.v AS rv
+    FROM asof_left2 AS l
+    ASOF LEFT JOIN asof_right2 AS r
+        ON l.a = r.a AND l.b = r.b AND l.t >= r.t
+    SETTINGS join_algorithm = 'hash'
+);
+
+DROP TABLE asof_left2;
+DROP TABLE asof_right2;
