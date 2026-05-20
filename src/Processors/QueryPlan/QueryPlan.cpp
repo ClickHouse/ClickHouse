@@ -976,19 +976,7 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
         auto & frame = nodes_to_process.back();
         if (frame.children.size() == frame.node->children.size())
         {
-            auto & clone_depth = IQueryPlanStep::getCloneDepth();
-            ++clone_depth;
-            try
-            {
-                frame.clone->step = frame.node->step->clone();
-            }
-            catch (...)
-            {
-                --clone_depth;
-                throw;
-            }
-            --clone_depth;
-            frame.clone->step->step_index = frame.node->step->step_index;
+            frame.clone->step = frame.node->step->clone();
             frame.clone->children = std::move(frame.children);
             nodes_to_process.pop_back();
         }
