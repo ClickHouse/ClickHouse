@@ -155,8 +155,8 @@ StorageTimeSeriesSelector::StorageTimeSeriesSelector(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageTimeSeriesSelector::createVirtuals()
@@ -322,7 +322,9 @@ namespace
         ASTs conditions;
 
         /// id IN (SELECT id FROM (select_id_query))
-        conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), select_query_from_tags_table));
+        /// Wrap the SELECT in ASTSubquery so it formats with surrounding parentheses.
+        auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
+        conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery)));
 
         /// timestamp >= min_time
         conditions.push_back(makeASTFunction(
@@ -383,16 +385,13 @@ namespace
             select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
         }
 
-        /// PREWHERE (id IN (SELECT id FROM (select_query_from_tags_table))) AND (timestamp >= min_time) AND (timestamp <= max_time)
+        /// WHERE (id IN <select_query_from_tags_table>) AND (timestamp >= min_time) AND (timestamp <= max_time)
         ///
-        /// NOTE: We have to use PREWHERE and not WHERE here to make sure that tags are stored in ContextTimeSeriesTagsCollector before we use them.
-        /// Otherwise in case the result of timeSeriesSelector() is passed to timeSeriesIdToGroup() as following:
-        /// SELECT timeSeriesIdToGroup(id) AS group, timestamp, value FROM timeSeriesSelector(...)
-        /// ClickHouse may decide to parallelize and execute timeSeriesIdToGroup(id) before executing timeSeriesStoreTags()
-        /// which may cause exception "Unknown identifier".
+        /// where <select_query_from_tags_table> is roughly:
+        ///   SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, ...) FROM tags_table WHERE <matchers>
         {
-            auto prewhere_filter = makeWhereFilterForDataTable(select_query_from_tags_table, min_time, max_time, timestamp_data_type);
-            select_query->setExpression(ASTSelectQuery::Expression::PREWHERE, std::move(prewhere_filter));
+            auto where_filter = makeWhereFilterForDataTable(select_query_from_tags_table, min_time, max_time, timestamp_data_type);
+            select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
 
         /// Wrap the select query into ASTSelectWithUnionQuery.

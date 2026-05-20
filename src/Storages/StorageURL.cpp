@@ -11,6 +11,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/WriteBufferFromHTTP.h>
@@ -53,6 +54,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Poco/Timestamp.h>
 
 namespace ProfileEvents
 {
@@ -80,6 +82,7 @@ namespace Setting
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
+    extern const SettingsString url_base;
 }
 
 namespace ErrorCodes
@@ -216,7 +219,7 @@ IStorageURLBase::IStorageURLBase(
             VirtualsMaterializationPlace::Reader);
     }
 
-    setVirtuals(virtual_columns_desc);
+    storage_metadata.setVirtuals(virtual_columns_desc);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -385,7 +388,7 @@ StorageURLSource::StorageURLSource(
         while (getContext()->getSettingsRef()[Setting::engine_url_skip_empty_files] && uri_and_buf.second->eof());
 
         curr_uri = uri_and_buf.first;
-        auto last_mod_time = uri_and_buf.second->tryGetLastModificationTime();
+        current_file_last_modified = uri_and_buf.second->tryGetLastModificationTime();
         read_buf = std::move(uri_and_buf.second);
         current_file_size = tryGetFileSizeFromReadBuffer(*read_buf);
 
@@ -395,7 +398,7 @@ StorageURLSource::StorageURLSource(
         QueryPipelineBuilder builder;
         std::optional<size_t> num_rows_from_cache = std::nullopt;
         if (need_only_count && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
-            num_rows_from_cache = tryGetNumRowsFromCache(curr_uri.toString(), last_mod_time);
+            num_rows_from_cache = tryGetNumRowsFromCache(curr_uri.toString(), current_file_last_modified);
 
         if (num_rows_from_cache)
         {
@@ -499,6 +502,9 @@ Chunk StorageURLSource::generate()
                     .path = curr_uri.getPath(),
                     .storage_id = storage_id,
                     .size = current_file_size,
+                    .last_modified = current_file_last_modified
+                        ? std::optional<Poco::Timestamp>(Poco::Timestamp::fromEpochTime(*current_file_last_modified))
+                        : std::nullopt,
                 },
                 getContext());
 
@@ -1275,7 +1281,7 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
     else if (is_url_with_globs)
     {
         /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, max_addresses, predicate, storage->getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context);
+        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context);
 
         /// check if we filtered out all the paths
         if (glob_iterator->size() == 0)
@@ -1676,9 +1682,259 @@ void StorageURL::processNamedCollectionResult(Configuration & configuration, con
     configuration.structure = collection.getOrDefault<String>("structure", "auto");
 }
 
+/// RFC 3986 Section 5.2.4: Remove dot segments ("." and "..") from an absolute path.
+/// E.g. "/dir/../a.csv" → "/a.csv", "/dir/./a.csv" → "/dir/a.csv".
+static String removeDotSegments(const String & path)
+{
+    /// Fast path: no dot segments present.
+    if (path.find("/.") == String::npos)
+        return path;
+
+    /// Split the path into segments and process each one.
+    std::vector<String> segments;
+    size_t pos = 0;
+
+    while (pos < path.size())
+    {
+        /// Each segment runs from a '/' to the next '/' (exclusive) or end of string.
+        size_t next = path.find('/', pos + 1);
+        if (next == String::npos)
+            next = path.size();
+
+        String segment = path.substr(pos, next - pos);
+        pos = next;
+
+        if (segment == "/.")
+        {
+            /// Current-directory segment: skip, but preserve trailing slash at end of path.
+            if (pos == path.size())
+                segments.emplace_back("/");
+        }
+        else if (segment == "/..")
+        {
+            /// Parent-directory segment: go up one level.
+            if (!segments.empty())
+                segments.pop_back();
+            /// At end of path, preserve trailing slash.
+            if (pos == path.size())
+                segments.emplace_back("/");
+        }
+        else
+        {
+            segments.push_back(std::move(segment));
+        }
+    }
+
+    if (segments.empty())
+        return "/";
+
+    String result;
+    for (const auto & seg : segments)
+        result += seg;
+    return result;
+}
+
+/// Apply dot-segment normalization to the path portion of a full URL.
+/// The authority_start parameter is the position right after "://".
+static String normalizeDotSegmentsInURL(const String & url, size_t authority_start)
+{
+    /// Find where the path starts (first '/' after the authority).
+    auto path_start = url.find('/', authority_start);
+    if (path_start == String::npos)
+        return url;
+
+    /// Find where the path ends (before '?' or '#').
+    size_t path_end = url.size();
+    for (size_t i = path_start; i < url.size(); ++i)
+    {
+        if (url[i] == '?' || url[i] == '#')
+        {
+            path_end = i;
+            break;
+        }
+    }
+
+    String path = url.substr(path_start, path_end - path_start);
+
+    /// Fast check: no dot segments.
+    if (path.find("/.") == String::npos)
+        return url;
+
+    String normalized = removeDotSegments(path);
+    return url.substr(0, path_start) + normalized + url.substr(path_end);
+}
+
+/// Returns true if the URL has a userinfo component (`user[:password]@`) in its authority part.
+/// Used to avoid persisting credentials into the CREATE TABLE AST when materializing a URL
+/// resolved through `url_base`.
+static bool urlHasUserInfo(const String & url)
+{
+    auto scheme_end = url.find("://");
+    if (scheme_end == String::npos)
+        return false;
+    auto authority_start = scheme_end + 3;
+    auto authority_end = url.find_first_of("/?#", authority_start);
+    auto at_pos = url.find('@', authority_start);
+    if (at_pos == String::npos)
+        return false;
+    return authority_end == String::npos || at_pos < authority_end;
+}
+
+String StorageURL::resolveURLBase(const String & url, const String & base)
+{
+    if (base.empty())
+        return url;
+
+    /// Empty relative reference per RFC 3986: return the base URI without the fragment.
+    if (url.empty())
+    {
+        auto fragment_pos = base.find('#');
+        return (fragment_pos == String::npos) ? base : base.substr(0, fragment_pos);
+    }
+
+    /// If the URL already contains a scheme at the beginning, return as-is.
+    /// A scheme is [A-Za-z][A-Za-z0-9+.-]*: per RFC 3986.
+    /// We check that the colon appears before any '/', '?', or '#' to avoid false positives
+    /// from embedded URLs in query parameters (e.g. "data.csv?next=https://other/a").
+    if (!url.empty() && std::isalpha(static_cast<unsigned char>(url[0])))
+    {
+        auto colon_pos = url.find(':');
+        auto first_special = url.find_first_of("/?#");
+        if (colon_pos != String::npos && (first_special == String::npos || colon_pos < first_special))
+        {
+            /// Verify all characters before the colon are valid scheme characters.
+            bool valid_scheme = true;
+            for (size_t i = 1; i < colon_pos; ++i)
+            {
+                char c = url[i];
+                if (!std::isalnum(static_cast<unsigned char>(c)) && c != '+' && c != '-' && c != '.')
+                {
+                    valid_scheme = false;
+                    break;
+                }
+            }
+            if (valid_scheme)
+                return url;
+        }
+    }
+
+    auto scheme_end = base.find("://");
+    if (scheme_end == String::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `url_base` setting must contain a scheme (e.g. https://), got: {}", base);
+
+    /// Find the boundary of the path component in the base URL (before '?' or '#').
+    auto authority_start = scheme_end + 3; /// skip "://"
+    auto query_or_fragment = base.find_first_of("?#", authority_start);
+    /// The part of the base URL up to (but not including) the query/fragment.
+    auto base_before_query = (query_or_fragment == String::npos) ? base : base.substr(0, query_or_fragment);
+
+    /// Scheme-relative URL: //host/path → prepend scheme from base.
+    /// Dot segments in the path are normalized per RFC 3986.
+    if (url.starts_with("//"))
+    {
+        String merged = base.substr(0, scheme_end + 1) + url;
+        return normalizeDotSegmentsInURL(merged, scheme_end + 3);
+    }
+
+    /// Host-relative URL: /path → use scheme and authority from base.
+    /// Dot segments in the path are normalized per RFC 3986.
+    if (url.starts_with("/"))
+    {
+        auto authority_end = base_before_query.find('/', authority_start);
+        String merged = (authority_end == String::npos)
+            ? base_before_query + url
+            : base_before_query.substr(0, authority_end) + url;
+        return normalizeDotSegmentsInURL(merged, authority_start);
+    }
+
+    /// Query-only relative reference: ?query → append to full base path (before any existing query/fragment).
+    if (url.starts_with("?"))
+        return base_before_query + url;
+
+    /// Fragment-only relative reference: #frag → append to base URL preserving the query string.
+    /// Only strip any existing fragment from the base, keep everything else.
+    if (url.starts_with("#"))
+    {
+        auto existing_fragment = base.find('#', authority_start);
+        auto base_without_fragment = (existing_fragment == String::npos) ? base : base.substr(0, existing_fragment);
+        return base_without_fragment + url;
+    }
+
+    /// Path-relative URL: merge with the base path per RFC 3986.
+    /// Replace everything after the last '/' in the path portion of the base URL,
+    /// then normalize dot segments ("." and "..") in the resulting path.
+    auto authority_end = base_before_query.find('/', authority_start);
+    String merged;
+    if (authority_end == String::npos)
+        merged = base_before_query + "/" + url;
+    else
+    {
+        auto last_slash = base_before_query.rfind('/');
+        merged = base_before_query.substr(0, last_slash + 1) + url;
+    }
+    return normalizeDotSegmentsInURL(merged, authority_start);
+}
+
 void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(args, "", format_name, context, /*with_structure=*/false);
+
+    /// Materialize the resolved URL into engine args so that DETACH/ATTACH and server restart
+    /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
+    /// `uri` is the URL after `url_base` resolution (computed by `getConfiguration`).
+    if (args.empty())
+        return;
+
+    /// Skip materialization when the resolved URL contains userinfo (`user:pass@host`).
+    /// Credentials may originate from `url_base` (e.g. `SET url_base = 'http://user:pass@base/dir/'`)
+    /// rather than from the user-written engine arguments, and persisting them into the
+    /// CREATE TABLE AST would expose secrets via `SHOW CREATE TABLE`. Persistence in this case
+    /// relies on `url_base` being set with the same value at attach/restart time.
+    if (urlHasUserInfo(uri))
+        return;
+
+    /// Positional form: `URL('url', ...)` — replace the first literal argument.
+    if (const auto * existing_literal = args[0]->as<ASTLiteral>();
+        existing_literal && existing_literal->value.getType() == Field::Types::String)
+    {
+        const auto & current_url = existing_literal->value.safeGet<String>();
+        if (current_url != uri)
+            args[0] = make_intrusive<ASTLiteral>(uri);
+        return;
+    }
+
+    /// Named-collection or key-value form: `URL(nc)`, `URL(nc, url='...')`, or `URL(url='...', ...)`.
+    /// Only materialize when `url_base` actually changed the URL — otherwise we would copy
+    /// fields from the named collection (e.g. credentials in `user:pass@host`) into the
+    /// stored CREATE TABLE query, which is visible via `SHOW CREATE TABLE`.
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context, /*throw_unknown_collection=*/false))
+    {
+        Configuration unresolved;
+        StorageURL::processNamedCollectionResult(unresolved, *named_collection);
+        if (unresolved.url == uri)
+            return;
+    }
+
+    /// If a `url='...'` key-value override is already present, update its literal in place.
+    /// Otherwise, append a `url='<resolved>'` override so that named-collection resolution
+    /// picks up the resolved URL at restart time.
+    for (auto & arg : args)
+    {
+        auto * func = arg->as<ASTFunction>();
+        if (!func || func->name != "equals" || !func->arguments)
+            continue;
+        auto * func_args = func->arguments->as<ASTExpressionList>();
+        if (!func_args || func_args->children.size() != 2)
+            continue;
+        const auto * key_ast = func_args->children[0]->as<ASTIdentifier>();
+        if (!key_ast || key_ast->name() != "url")
+            continue;
+        func_args->children[1] = make_intrusive<ASTLiteral>(uri);
+        return;
+    }
+
+    ASTs key_value_args = {make_intrusive<ASTIdentifier>("url"), make_intrusive<ASTLiteral>(uri)};
+    args.push_back(makeASTOperator("equals", std::move(key_value_args)));
 }
 
 StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context, const StorageID * table_id)
@@ -1704,8 +1960,25 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const Contex
             configuration.compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
     }
 
+    /// Resolve relative URLs against the url_base setting.
+    /// For the URL engine, the resolved URL is later materialized into the engine args
+    /// AST by `addInferredEngineArgsToCreateQuery`, so DETACH/ATTACH and server restart
+    /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
+    const auto & url_base = local_context->getSettingsRef()[Setting::url_base].value;
+    configuration.url = resolveURLBase(configuration.url, url_base);
+
     if (configuration.format == "auto")
-        configuration.format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(configuration.url).getPath()).value_or("auto");
+    {
+        /// `resolveURLBase` tolerates malformed inputs via string manipulation, so the resolved URL
+        /// may contain characters that `Poco::URI` rejects. Fall back to "auto" instead of throwing.
+        try
+        {
+            configuration.format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(configuration.url).getPath()).value_or("auto");
+        }
+        catch (const Poco::Exception &) // NOLINT(bugprone-empty-catch)
+        {
+        }
+    }
 
     for (const auto & [header, value] : configuration.headers)
     {
