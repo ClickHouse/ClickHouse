@@ -178,33 +178,67 @@ Rope ReaderExecutor::decryptRope(Rope rope, size_t logical_offset)
     if (decryption_layers.empty())
         return rope;
 
-    /// Copy into an owned buffer before decrypting.
-    /// Rope nodes may reference shared memory (e.g. page cache cells),
-    /// so in-place decryption is not safe in general.
-    /// TODO: optimize — decrypt in-place for OwnedRopeBuffer nodes.
     size_t total = rope.totalBytes();
-    auto buf = std::make_shared<OwnedRopeBuffer>(total);
+    if (total == 0)
+        return {};
 
-    size_t pos = 0;
-    for (const auto & node : rope.getNodes())
+    /// Allocate destination blocks (≤ ROPE_BLOCK_SIZE each) and copy the
+    /// (still-encrypted) input rope into them. Input nodes may reference
+    /// shared memory (e.g. page cache cells), so in-place decryption is not
+    /// safe in general — but the destination blocks are private, so decrypting
+    /// them in place is fine.
+    auto blocks = allocateBlocks(total);
+
     {
-        std::memcpy(buf->data() + pos, node.data(), node.size);
-        pos += node.size;
+        size_t out_idx = 0;
+        size_t out_pos = 0;
+        for (const auto & in_node : rope.getNodes())
+        {
+            size_t in_pos = 0;
+            while (in_pos < in_node.size)
+            {
+                auto & out_block = *blocks[out_idx];
+                size_t space = out_block.size() - out_pos;
+                size_t chunk = std::min(in_node.size - in_pos, space);
+                std::memcpy(out_block.data() + out_pos, in_node.data() + in_pos, chunk);
+                in_pos += chunk;
+                out_pos += chunk;
+                if (out_pos == out_block.size())
+                {
+                    ++out_idx;
+                    out_pos = 0;
+                }
+            }
+        }
     }
 
-    /// Apply each decryption layer.
+    /// Apply each decryption layer to each block. CTR mode is fully position-
+    /// addressable, so setOffset(logical_offset + block_start) gives the same
+    /// keystream as decrypting the whole range in one call.
     for (size_t i = 0; i < decryption_layers.size(); ++i)
     {
         FileEncryption::Encryptor encryptor(
             decryption_headers[i].algorithm,
             decryption_layers[i].key,
             decryption_headers[i].init_vector);
-        encryptor.setOffset(logical_offset);
-        encryptor.decrypt(buf->data(), total, buf->data());
+
+        size_t block_start = 0;
+        for (auto & block : blocks)
+        {
+            encryptor.setOffset(logical_offset + block_start);
+            encryptor.decrypt(block->data(), block->size(), block->data());
+            block_start += block->size();
+        }
     }
 
     Rope result;
-    result.append(RopeNode{std::move(buf), 0, total, logical_offset});
+    size_t pos = 0;
+    for (auto & block : blocks)
+    {
+        size_t sz = block->size();
+        result.append(RopeNode{block, 0, sz, logical_offset + pos});
+        pos += sz;
+    }
     return result;
 }
 #endif
