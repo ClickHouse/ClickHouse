@@ -608,15 +608,19 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                     /// A plain CAST(256, 'UInt8') would give 0 (since 256 % 256 == 0), losing truthiness
                     /// for values like 256, 512, 65536, 2147483648, etc.  See #101269.
                     ///
-                    /// Use removeNullable to get the nested type's default (zero, not NULL).
-                    /// DataTypeNullable::getDefault() returns Null(), but notEquals(x, NULL)
-                    /// always returns NULL (SQL three-valued logic), which is treated as false and
-                    /// would incorrectly filter out all rows/parts.  See #101433 and #103049.
+                    /// Use removeLowCardinalityAndNullable to get the nested scalar type's default
+                    /// (zero, not NULL).  DataTypeNullable::getDefault() returns Null(), but
+                    /// notEquals(x, NULL) always returns NULL (SQL three-valued logic), which is
+                    /// treated as false and would incorrectly filter out all rows/parts. See
+                    /// #101433 and #103049.  A LowCardinality wrapper must be stripped as well —
+                    /// removeNullable alone leaves LowCardinality(Nullable(X)) unchanged because
+                    /// the outer type is LowCardinality (not Nullable), so its getDefault falls
+                    /// through to the dictionary type's default which is Null again. See #104393.
                     /// Special case: Nullable(Nothing) — the child is a bare NULL literal.
                     /// Nothing has no getDefault, so fall back to the Nullable default
                     /// (Null field), which makes notEquals(x, NULL) -> NULL -> false.  Correct.
                     ActionsDAG tmp_dag;
-                    auto nested_type = removeNullable(res->result_type);
+                    auto nested_type = removeLowCardinalityAndNullable(res->result_type);
                     auto zero_field = (nested_type->getTypeId() == TypeIndex::Nothing)
                         ? res->result_type->getDefault()
                         : nested_type->getDefault();

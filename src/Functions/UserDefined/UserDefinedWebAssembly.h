@@ -99,6 +99,8 @@ public:
 
     bool has(const String & function_name) const;
     FunctionOverloadResolverPtr get(const String & function_name, ContextPtr context);
+    /// Returns nullptr if the function is not registered. Useful for non-throwing rewrite-candidate checks.
+    FunctionOverloadResolverPtr tryGet(const String & function_name, ContextPtr context);
 
     /// Returns true if function was removed
     bool dropIfExists(const String & function_name);

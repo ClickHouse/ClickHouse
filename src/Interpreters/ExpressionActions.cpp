@@ -913,15 +913,17 @@ void ExpressionActions::assertDeterministic() const
 }
 
 
-NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
+NameAndTypePair ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns, bool skip_subcolumns)
 {
     std::optional<size_t> min_size;
     NameAndTypePair result;
 
     for (const auto & column : columns)
     {
-        /// Skip .sizeX and similar meta information
-        if (column.isSubcolumn())
+        /// Skip .sizeX and similar meta information for storage column lists.
+        /// For subquery projections, all entries are valid query-level outputs,
+        /// so skip_subcolumns should be false.
+        if (skip_subcolumns && column.isSubcolumn())
             continue;
 
         /// @todo resolve evil constant
