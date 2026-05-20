@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -6,6 +7,8 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
+#include <Core/Defines.h>
+#include <limits>
 
 namespace DB
 {
@@ -38,6 +41,49 @@ LimitByStep::LimitByStep(
 
 void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    /// Data is coming in order but in multiple streams. This can happen if the data is partitioned and we request inOrder reading.
+    /// For example, if number of partitions is lower than allowed number of streams, then data is sent in multiple streams for each
+    /// partition where each stream is ordered.
+    if (in_order && pipeline.getNumStreams() > 1)
+    {
+        /// Do not apply OFFSET in pre-filter.
+        const UInt64 prefilter_length = (group_offset > std::numeric_limits<UInt64>::max() - group_length)
+            ? std::numeric_limits<UInt64>::max()
+            : group_length + group_offset;
+
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return nullptr;
+
+                return std::make_shared<LimitByTransform>(header, prefilter_length, 0, true, columns);
+            });
+
+        /// For small `group_length` and `group_offset` values (which is the typical case), we have already filtered most of the data.
+        /// So this step should be quite fast as well.
+        auto merge = std::make_shared<MergingSortedTransform>(
+            pipeline.getSharedHeader(),
+            pipeline.getNumStreams(),
+            sort_description,
+            DEFAULT_BLOCK_SIZE,
+            0,
+            std::nullopt,
+            SortingQueueStrategy::Batch);
+        pipeline.addTransform(std::move(merge));
+
+        /// Now we can apply the OFFSET
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+            {
+                if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                    return nullptr;
+
+                return std::make_shared<LimitByTransform>(header, group_length, group_offset, true, columns);
+            });
+        return;
+    }
+
     pipeline.resize(1);
 
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
@@ -114,9 +160,11 @@ QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
     return std::make_unique<LimitByStep>(ctx.input_headers.front(), group_length, group_offset, std::move(columns));
 }
 
-void LimitByStep::applyOrder(SortDescription sort_description)
+void LimitByStep::applyOrder(SortDescription sort_desc)
 {
-    in_order = sort_description.hasPrefix(columns);
+    in_order = sort_desc.hasPrefix(columns);
+    if (in_order)
+        sort_description = std::move(sort_desc);
 }
 
 void registerLimitByStep(QueryPlanStepRegistry & registry)

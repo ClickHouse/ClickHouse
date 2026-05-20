@@ -1,4 +1,5 @@
 #pragma once
+#include <Core/SortDescription.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 
 namespace DB
@@ -40,6 +41,7 @@ private:
     Names columns;
 
     bool in_order = false;
+    SortDescription sort_description;
 };
 
 }
