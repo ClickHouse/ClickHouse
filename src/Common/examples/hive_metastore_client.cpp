@@ -12,7 +12,7 @@ using namespace apache::thrift::protocol;
 using namespace apache::thrift::transport;
 using namespace Apache::Hadoop::Hive;
 
-int main()
+int mainEntryExampleHiveMetastoreClient(int, char **)
 {
     std::shared_ptr<TTransport> socket(new TSocket("localhost", 9083));
     std::shared_ptr<TTransport> transport(new TBufferedTransport(socket));
@@ -40,4 +40,5 @@ int main()
     {
         cout << "ERROR: " << tx.what() << endl;
     }
+    return 0;
 }

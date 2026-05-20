@@ -7,6 +7,7 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
@@ -77,9 +78,9 @@ ASTPtr convertASTForIndexColumn(const IndexDescription & index, const ASTPtr & e
             : index.expression_list_ast->children.front();
 
         /// Pack preprocessor expression into lambda.
-        auto lambda_arg = makeASTFunction("tuple", make_intrusive<ASTIdentifier>(preprocessor_lambda_arg));
-        auto lambda_ast = makeASTFunction("lambda", lambda_arg, new_expression);
-        return makeASTFunction("arrayMap", lambda_ast, array_map_arg);
+        return makeASTFunction("arrayMap",
+            makeASTLambda({preprocessor_lambda_arg}, std::move(new_expression)),
+            array_map_arg);
     }
 
     if (replace_index_column)
@@ -182,6 +183,21 @@ MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression
         std::make_shared<DataTypeString>(),
         convertASTForConstant(index_description, expression_ast)))
 {
+    if (expression_ast)
+    {
+        /// Detect pure case-folding preprocessors of the exact form lower(col), lowerUTF8(col),
+        /// upper(col), or upperUTF8(col), where col is the index column itself.
+        /// Nested expressions such as lower(trim(col)) are not considered pure case folding
+        /// because the additional transformation would change the dictionary tokens in a way
+        /// that the ILIKE case-insensitive regex can no longer match them correctly.
+        const auto * func = expression_ast->as<ASTFunction>();
+        if (func && (func->name == "lower" || func->name == "lowerUTF8" || func->name == "upper" || func->name == "upperUTF8")
+            && func->arguments && func->arguments->children.size() == 1)
+        {
+            const auto * arg = func->arguments->children.front()->as<ASTIdentifier>();
+            is_lower_or_upper = arg && arg->name() == index_description.column_names.front();
+        }
+    }
 }
 
 std::pair<ColumnPtr, size_t> MergeTreeIndexTextPreprocessor::processColumn(const ColumnWithTypeAndName & column, size_t start_row, size_t n_rows) const
