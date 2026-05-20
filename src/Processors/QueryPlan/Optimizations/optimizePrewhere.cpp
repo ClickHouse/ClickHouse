@@ -243,7 +243,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         std::unordered_set<const ActionsDAG::Node *> existing_outputs(outputs.begin(), outputs.end());
         for (const auto * node : new_outputs_in_combined)
         {
-            if (node == new_filter_node && new_removable
+            if (node == new_filter_node && new_removable)
                 continue;
             if (existing_outputs.insert(node).second)
                 outputs.push_back(node);
