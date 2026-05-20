@@ -1,58 +1,65 @@
 <test>
-    <!-- OpenTelemetry-style traces table: 3 String ORDER BY columns
-         (service, trace_id, span_id) plus a DateTime64 timestamp, with
-         bloom_filter skip indices for point lookups and a minmax index
-         on timestamp for range scans. Without the permuted columns cache,
-         each ORDER BY column with a skip index is permuted twice (primary
-         key + skip index). With the cache, only once. -->
+    <!-- Stresses the permuted columns cache: 5 String ORDER BY columns,
+         each with its own `bloom_filter` skip index, plus a `minmax` index
+         on a DateTime64 column that is also in the primary key.
+
+         Without the cache, every primary-key column is permuted twice
+         (once for the primary index, once for its skip index). With the
+         cache, each column is permuted only once. The more PK/skip-index
+         overlap, the bigger the win. -->
 
     <create_query>
         CREATE TABLE permute_cache_wide
         (
-            service String,
-            trace_id String,
-            span_id String,
-            timestamp DateTime64(6),
-            parent_span_id String,
-            operation String,
-            duration_us UInt64,
-            status_code UInt8,
-            INDEX idx_service (service) TYPE bloom_filter,
-            INDEX idx_trace (trace_id) TYPE bloom_filter,
-            INDEX idx_span (span_id) TYPE bloom_filter,
-            INDEX idx_ts (timestamp) TYPE minmax
+            c1 String,
+            c2 String,
+            c3 String,
+            c4 String,
+            c5 String,
+            ts DateTime64(6),
+            payload String,
+            value UInt64,
+            INDEX idx_c1 (c1) TYPE bloom_filter,
+            INDEX idx_c2 (c2) TYPE bloom_filter,
+            INDEX idx_c3 (c3) TYPE bloom_filter,
+            INDEX idx_c4 (c4) TYPE bloom_filter,
+            INDEX idx_c5 (c5) TYPE bloom_filter,
+            INDEX idx_ts (ts) TYPE minmax
         )
         ENGINE = MergeTree
-        ORDER BY (service, trace_id, span_id, timestamp)
+        ORDER BY (c1, c2, c3, c4, c5, ts)
         SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0
     </create_query>
 
+    <!-- Pre-materialize the source data so the measured query only does
+         the part-writing work (which is what the cache affects). Use cheap
+         string generation (`toString(number)`) to keep the fill fast. -->
     <create_query>
         CREATE TABLE permute_cache_src
         (
-            service String,
-            trace_id String,
-            span_id String,
-            timestamp DateTime64(6),
-            parent_span_id String,
-            operation String,
-            duration_us UInt64,
-            status_code UInt8
+            c1 String,
+            c2 String,
+            c3 String,
+            c4 String,
+            c5 String,
+            ts DateTime64(6),
+            payload String,
+            value UInt64
         )
         ENGINE = Memory
     </create_query>
 
     <fill_query>
         INSERT INTO permute_cache_src SELECT
-            hex(sipHash128(number, 0)),
-            hex(sipHash128(number, 1)),
-            hex(sipHash128(number, 2)),
+            toString(number % 1000),
+            toString((number * 17) % 10000),
+            toString((number * 31) % 100000),
+            toString((number * 53) % 1000000),
+            toString(number),
             toDateTime64('2024-01-01', 6) + number / 1000000,
-            hex(sipHash128(number, 3)),
-            randomPrintableASCII(32),
-            rand64() % 10000000,
-            rand() % 3
-        FROM numbers(5000000)
+            toString(number),
+            number
+        FROM numbers(2000000)
     </fill_query>
 
     <query>INSERT INTO permute_cache_wide SELECT * FROM permute_cache_src</query>
