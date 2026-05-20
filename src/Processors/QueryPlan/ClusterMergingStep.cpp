@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/ClusterMergingStep.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/ClusterMergingTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
