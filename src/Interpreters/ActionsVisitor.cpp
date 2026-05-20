@@ -939,6 +939,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         }
                     }
                 }
+                else if (right_argument_function && right_argument_function->name == "array")
+                {
+                    right_argument_is_array = true;
+                }
                 else if (!right_argument_function || right_argument_function->name != "array")
                 {
                     visit(right_argument, data);

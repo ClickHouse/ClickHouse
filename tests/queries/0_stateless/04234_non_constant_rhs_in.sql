@@ -9,6 +9,7 @@ SELECT number, number % 3 IN (number % 2, 1), number % 3 NOT IN (number % 2, 1) 
 SELECT number, number % 3 IN arrayMap(x -> x + number % 2, [0, 1]), number % 3 NOT IN arrayMap(x -> x + number % 2, [0, 1]) FROM numbers(6) ORDER BY number;
 SELECT number, number % 3 GLOBAL IN (number % 2, 1), number % 3 GLOBAL NOT IN (number % 2, 1) FROM numbers(6) ORDER BY number;
 SELECT number, (number % 2, number % 3) IN ((number % 3, number % 2), (1, 1)), (number % 2, number % 3) NOT IN ((number % 3, number % 2), (1, 1)) FROM numbers(6) ORDER BY number;
+SELECT number, (number, number + 1) IN [tuple(number, number + 1)], (number, number + 2) IN [tuple(number, number + 1)] FROM numbers(3) ORDER BY number;
 SELECT number, if(number >= 0, tuple(number, number + 1), tuple(0, 0)) AS t, number IN (t), (number + 1) IN (t), (number + 2) IN (t), (number, number + 1) IN (t) FROM numbers(3) ORDER BY number;
 SELECT number, tuple(number, number + 1) AS t, number IN (t), (number + 1) IN (t), (number + 2) IN (t), (number, number + 1) IN (t) FROM numbers(3) ORDER BY number;
 SELECT number, (number, number + 1) IN ((number, number + 1)), (number, number + 2) IN ((number, number + 1)) FROM numbers(3) ORDER BY number;
@@ -29,6 +30,7 @@ SELECT number, number % 3 IN (number % 2, 1), number % 3 NOT IN (number % 2, 1) 
 SELECT number, number % 3 IN arrayMap(x -> x + number % 2, [0, 1]), number % 3 NOT IN arrayMap(x -> x + number % 2, [0, 1]) FROM numbers(6) ORDER BY number;
 SELECT number, number % 3 GLOBAL IN (number % 2, 1), number % 3 GLOBAL NOT IN (number % 2, 1) FROM numbers(6) ORDER BY number;
 SELECT number, (number % 2, number % 3) IN ((number % 3, number % 2), (1, 1)), (number % 2, number % 3) NOT IN ((number % 3, number % 2), (1, 1)) FROM numbers(6) ORDER BY number;
+SELECT number, (number, number + 1) IN [tuple(number, number + 1)], (number, number + 2) IN [tuple(number, number + 1)] FROM numbers(3) ORDER BY number;
 SELECT number, if(number >= 0, tuple(number, number + 1), tuple(0, 0)) AS t, number IN (t), (number + 1) IN (t), (number + 2) IN (t), (number, number + 1) IN (t) FROM numbers(3) ORDER BY number;
 SELECT number, tuple(number, number + 1) AS t, number IN (t), (number + 1) IN (t), (number + 2) IN (t), (number, number + 1) IN (t) FROM numbers(3) ORDER BY number;
 SELECT number, (number, number + 1) IN ((number, number + 1)), (number, number + 2) IN ((number, number + 1)) FROM numbers(3) ORDER BY number;
