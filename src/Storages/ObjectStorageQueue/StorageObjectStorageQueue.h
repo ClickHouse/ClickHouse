@@ -1,6 +1,8 @@
 #pragma once
 #include "config.h"
 
+#include <chrono>
+#include <optional>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
@@ -85,7 +87,13 @@ public:
     /// table is dropped or the query is killed, TIMEOUT_EXCEEDED if the query time
     /// limit is reached, and BAD_ARGUMENTS if the background streaming thread is
     /// not running or will never make progress.
-    void waitForPathToBeProcessed(const std::string & path, ContextPtr local_context) const;
+    ///
+    /// If `deadline` is set, throws TIMEOUT_EXCEEDED when the deadline is reached
+    /// (in addition to any process-list time limit on `local_context`).
+    void waitForPathToBeProcessed(
+        const std::string & path,
+        ContextPtr local_context,
+        std::optional<std::chrono::steady_clock::time_point> deadline = std::nullopt) const;
 
     /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
     static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);

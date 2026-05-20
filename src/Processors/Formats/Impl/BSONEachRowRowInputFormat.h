@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/BlockNameMap.h>
+#include <Core/CaseAwareBlockNameMap.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/BSONTypes.h>
 #include <Processors/Formats/IRowInputFormat.h>
@@ -88,10 +88,10 @@ private:
     /// for row like {..., "non-nullable column name" : null, ...}
 
     /// Hash table match `field name -> position in the block`.
-    BlockNameMap name_map;
+    CaseAwareBlockNameMap name_map;
 
     /// Cached search results for previous row (keyed as index in JSON object) - used as a hint.
-    std::vector<BlockNameMap::const_iterator> prev_positions;
+    std::vector<std::pair<std::string_view, size_t>> prev_positions;
 
     DataTypes types;
 
@@ -99,7 +99,7 @@ private:
     BSONSizeT current_document_size;
 };
 
-class BSONEachRowSchemaReader : public IRowWithNamesSchemaReader
+class BSONEachRowSchemaReader final : public IRowWithNamesSchemaReader
 {
 public:
     BSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & settings_);

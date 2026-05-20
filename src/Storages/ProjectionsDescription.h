@@ -60,7 +60,6 @@ struct ProjectionDescription
     Block sample_block_for_keys;
 
     StorageMetadataPtr metadata;
-    VirtualsDescriptionPtr virtuals;
 
     size_t key_size = 0;
 
@@ -79,8 +78,14 @@ struct ProjectionDescription
 
     ProjectionIndexPtr index;
 
-    std::optional<UInt64> index_granularity;
-    std::optional<UInt64> index_granularity_bytes;
+    /// Settings (configurable via WITH SETTINGS clause of the projection declaration)
+    std::optional<UInt64> index_granularity = {};
+    std::optional<UInt64> index_granularity_bytes = {};
+    bool add_minmax_index_for_numeric_columns = false;
+    bool add_minmax_index_for_string_columns = false;
+    bool add_minmax_index_for_temporal_columns = false;
+    bool add_minmax_index_for_block_number_column = false;
+    bool add_minmax_index_for_block_offset_column = false;
 
     /// Parse projection from definition AST
     static ProjectionDescription getProjectionFromAST(

@@ -1,4 +1,5 @@
 #include <Storages/IStorage.h>
+#include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageGenerateRandom.h>
 #include <Storages/StorageFactory.h>
@@ -845,7 +846,7 @@ ColumnPtr fillColumnWithRandomData(
 namespace
 {
 
-class GenerateSource : public ISource
+class GenerateSource final : public ISource
 {
 public:
     GenerateSource(
@@ -924,7 +925,7 @@ StorageGenerateRandom::StorageGenerateRandom(
     UInt64 max_array_length_,
     UInt64 max_string_length_,
     const std::optional<UInt64> & random_seed_)
-    : IStorage(table_id_), max_array_length(max_array_length_), max_string_length(max_string_length_)
+    : StorageWithCommonVirtualColumns(table_id_), max_array_length(max_array_length_), max_string_length(max_string_length_)
 {
     static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
     static constexpr size_t MAX_STRING_SIZE = 1 << 30;
@@ -940,7 +941,16 @@ StorageGenerateRandom::StorageGenerateRandom(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageGenerateRandom::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 
@@ -968,7 +978,7 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         if (engine_args.size() >= 2)
         {
             engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
-            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[0], "max_string_length");
+            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[1], "max_string_length");
         }
 
         if (engine_args.size() == 3)
