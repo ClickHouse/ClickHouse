@@ -152,23 +152,51 @@ inline bool nullMapHasAnyNull(const PaddedPODArray<UInt8> & data)
     return std::find(data.begin(), data.end(), static_cast<UInt8>(1)) != data.end();
 }
 
-inline ColumnPtr wrapNullableArrayResultIfNeeded(
-    ColumnPtr result, const ColumnPtr & array_null_map, size_t /*input_rows_count*/)
+inline DataTypePtr applyNullableArrayReturnType(
+    const DataTypePtr & return_type, const ColumnsWithTypeAndName & arguments, size_t first_array_argument_index)
 {
-    if (!array_null_map)
-        return result;
+    for (size_t i = first_array_argument_index; i < arguments.size(); ++i)
+    {
+        if (arguments[i].type->isNullable())
+            return makeNullable(return_type);
+    }
+    return return_type;
+}
+
+inline ColumnPtr wrapNullableArrayResultIfNeeded(
+    ColumnPtr result, const ColumnPtr & array_null_map, size_t input_rows_count, const DataTypePtr & result_type)
+{
+    if (!result_type->isNullable())
+    {
+        if (!array_null_map)
+            return result;
+
+        const auto & source_null_map = assert_cast<const ColumnUInt8 &>(
+            *materializeNullMapToRowCount(array_null_map, input_rows_count));
+        if (!nullMapHasAnyNull(source_null_map.getData()))
+            return result;
+
+        auto mutable_result = IColumn::mutate(result->convertToFullColumnIfConst());
+        MutableColumnPtr null_map_col = ColumnUInt8::create();
+        assert_cast<ColumnUInt8 &>(*null_map_col).getData().assign(
+            source_null_map.getData().begin(), source_null_map.getData().end());
+        return ColumnNullable::create(std::move(mutable_result), std::move(null_map_col));
+    }
 
     auto mutable_result = IColumn::mutate(result->convertToFullColumnIfConst());
     const size_t num_rows = mutable_result->size();
 
-    const auto & source_null_map = assert_cast<const ColumnUInt8 &>(
-        *materializeNullMapToRowCount(array_null_map, num_rows));
-    if (!nullMapHasAnyNull(source_null_map.getData()))
-        return result;
-
     MutableColumnPtr null_map_col = ColumnUInt8::create();
-    assert_cast<ColumnUInt8 &>(*null_map_col).getData().assign(
-        source_null_map.getData().begin(), source_null_map.getData().end());
+    auto & null_map_data = assert_cast<ColumnUInt8 &>(*null_map_col).getData();
+
+    if (array_null_map)
+    {
+        const auto & source_null_map = assert_cast<const ColumnUInt8 &>(
+            *materializeNullMapToRowCount(array_null_map, num_rows));
+        null_map_data.assign(source_null_map.getData().begin(), source_null_map.getData().end());
+    }
+    else
+        null_map_data.resize_fill(num_rows, 0);
 
     return ColumnNullable::create(std::move(mutable_result), std::move(null_map_col));
 }
@@ -208,6 +236,7 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool isDeterministic() const override { return IsDeterministic; }
     bool isDeterministicInScopeOfQuery() const override { return IsDeterministic; }
+    bool isHigherOrderFunction() const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     /// Nullable(Array) null maps are merged and applied in executeImpl.
@@ -341,7 +370,8 @@ public:
                     getName(),
                     arguments[num_fixed_params].type->getName());
 
-            return Impl::getReturnType(nested_type, nested_type);
+            return detail::applyNullableArrayReturnType(
+                Impl::getReturnType(nested_type, nested_type), arguments, num_fixed_params);
         }
 
         if (arguments.size() > 2 + num_fixed_params && Impl::needOneArray())
@@ -383,7 +413,8 @@ public:
             throw DB::Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}", arguments[1 + num_fixed_params].type->getName());
 
-        return Impl::getReturnType(return_type, first_array_type->getNestedType());
+        return detail::applyNullableArrayReturnType(
+            Impl::getReturnType(return_type, first_array_type->getNestedType()), arguments, 1 + num_fixed_params);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -423,7 +454,7 @@ public:
             else
                 result = Impl::execute(*column_array, column_array->getDataPtr());
 
-            return detail::wrapNullableArrayResultIfNeeded(std::move(result), array_null_map, input_rows_count);
+            return detail::wrapNullableArrayResultIfNeeded(std::move(result), array_null_map, input_rows_count, result_type);
         }
         else
         {
@@ -588,7 +619,7 @@ public:
             else
                 result = Impl::execute(*column_first_array, lambda_result.column);
 
-            return detail::wrapNullableArrayResultIfNeeded(std::move(result), array_null_map, input_rows_count);
+            return detail::wrapNullableArrayResultIfNeeded(std::move(result), array_null_map, input_rows_count, result_type);
         }
     }
 };

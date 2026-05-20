@@ -17,12 +17,19 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool allow_nullable_tuple_in_extracted_subcolumns;
+extern const SettingsBool allow_experimental_nullable_array_type;
 }
 
 static bool isNullableTupleInExtractedSubcolumnsEnabledByGlobalSetting()
 {
     auto context = Context::getGlobalContextInstance();
     return context && context->getSettingsRef()[Setting::allow_nullable_tuple_in_extracted_subcolumns];
+}
+
+bool isExperimentalNullableArrayTypeEnabled()
+{
+    auto context = Context::getGlobalContextInstance();
+    return context && context->getSettingsRef()[Setting::allow_experimental_nullable_array_type];
 }
 
 static bool canExtractedSubcolumnsBeInsideNullable(const ColumnPtr & column)

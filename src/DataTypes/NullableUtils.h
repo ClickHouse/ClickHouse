@@ -19,6 +19,9 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
   * Config changes for global context settings are applied after server restart.
   * For non-tuple types this matches `IDataType::canBeInsideNullable()`.
   */
+/** Whether `Nullable(Array(...))` is allowed (``allow_experimental_nullable_array_type``). */
+bool isExperimentalNullableArrayTypeEnabled();
+
 bool canExtractedSubcolumnsBeInsideNullable(const DataTypePtr & type);
 
 /** Same check as `canExtractedSubcolumnsBeInsideNullable()`, but for

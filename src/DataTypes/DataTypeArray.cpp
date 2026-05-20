@@ -3,6 +3,7 @@
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
@@ -32,6 +33,11 @@ using FieldType = Array;
 DataTypeArray::DataTypeArray(const DataTypePtr & nested_)
     : nested{nested_}
 {
+}
+
+bool DataTypeArray::canBeInsideNullable() const
+{
+    return isExperimentalNullableArrayTypeEnabled();
 }
 
 

@@ -535,6 +535,25 @@ ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & 
     return res;
 }
 
+namespace
+{
+
+DataTypePtr normalizeInferredColumnTypeForStorage(const DataTypePtr & type, const Settings & settings)
+{
+    if (settings[Setting::allow_experimental_nullable_array_type])
+        return type;
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        if (isArray(nullable_type->getNestedType()))
+            return nullable_type->getNestedType();
+    }
+
+    return type;
+}
+
+}
+
 DataTypePtr InterpreterCreateQuery::getColumnType(
     const ASTColumnDeclaration & col_decl, const LoadingStrictnessLevel mode, const bool make_columns_nullable, const Settings & settings)
 {
@@ -546,6 +565,19 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
     }
 
     DataTypePtr column_type = DataTypeFactory::instance().get(col_type);
+
+    if (!settings[Setting::allow_experimental_nullable_array_type])
+    {
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(column_type.get()))
+        {
+            if (isArray(nullable_type->getNestedType()))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Cannot create column with type '{}' because Nullable Array type is not allowed. "
+                    "Set setting allow_experimental_nullable_array_type = 1 in order to allow it",
+                    column_type->getName());
+        }
+    }
 
     if (LoadingStrictnessLevel::ATTACH <= mode)
         setVersionToAggregateFunctions(column_type, true);
@@ -987,7 +1019,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 is_refreshable_mv /* is_create_parameterized_view */);
         }
 
-        properties.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
+        const auto & settings = getContext()->getSettingsRef();
+        NamesAndTypesList inferred_columns;
+        for (const auto & column : as_select_sample->getNamesAndTypesList())
+            inferred_columns.emplace_back(column.name, normalizeInferredColumnTypeForStorage(column.type, settings));
+
+        properties.columns = ColumnsDescription(std::move(inferred_columns));
         properties.columns_inferred_from_select_query = true;
     }
     else if (create.as_table_function)
