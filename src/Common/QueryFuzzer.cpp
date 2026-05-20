@@ -129,6 +129,7 @@ static const Strings data_formats = {
     "ArrowStream",
     "ORC",
     "Avro",
+    "AvroConfluent",
     "CustomSeparated",
     "Markdown",
     "Pretty",
