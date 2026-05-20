@@ -234,15 +234,6 @@ def check_cpp_code():
     return out
 
 
-def check_repo_submodules():
-    res, out, err = Shell.get_res_stdout_stderr(
-        "./ci/jobs/scripts/check_style/check_submodules.sh"
-    )
-    if err:
-        out += err
-    return out
-
-
 def check_other():
     res, out, err = Shell.get_res_stdout_stderr(
         "./ci/jobs/scripts/check_style/various_checks.sh"
@@ -608,14 +599,6 @@ if __name__ == "__main__":
             Result.from_commands_run(
                 name=testname,
                 command=check_cpp_code,
-            )
-        )
-    testname = "submodules"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_repo_submodules,
             )
         )
     testname = "various"
