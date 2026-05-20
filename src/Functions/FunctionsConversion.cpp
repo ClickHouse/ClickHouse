@@ -2580,10 +2580,20 @@ bool convertIsCompilableImpl(const DataTypes & types, const DataTypePtr & result
 
             if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType>)
             {
+                using LeftFieldType = typename LeftDataType::FieldType;
                 if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeNumber<RightDataType>)
                     return true;
                 else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                {
+                    /// `Float` → `Decimal` JIT path lowers `nativeCast` to `FPToSI`/`FPToUI`, which
+                    /// is poison/undefined when the float is out of integer range. The scalar and
+                    /// batch implementations in `DataTypesDecimal.cpp` enforce explicit bounds and
+                    /// throw `DECIMAL_OVERFLOW`; until the JIT emits the equivalent checks, fall
+                    /// back to the interpreted path for floats.
+                    if constexpr (std::is_floating_point_v<LeftFieldType>)
+                        return false;
                     return true;
+                }
                 else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
                     return true;
             }

@@ -33,3 +33,6 @@ Column path matches scalar:
 2.7	3
 -2.7	-3
 Float32 -> Decimal256 high-scale non-finite multiplier:
+Zero is representable for every Decimal scale:
+0	0
+0	0

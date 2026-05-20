@@ -63,3 +63,9 @@ SELECT CAST(toFloat32(1), 'Decimal256(76)'); -- { serverError DECIMAL_OVERFLOW }
 SELECT CAST(toFloat32(-1), 'Decimal256(76)'); -- { serverError DECIMAL_OVERFLOW }
 -- Same in the column (batch) path.
 SELECT CAST(materialize(toFloat32(1)), 'Decimal256(76)'); -- { serverError DECIMAL_OVERFLOW }
+
+-- Zero must always succeed even when the multiplier itself overflows the source float.
+-- (Without the early-exit, `0 * +inf = NaN` would be misreported as `DECIMAL_OVERFLOW`.)
+SELECT 'Zero is representable for every Decimal scale:';
+SELECT CAST(toFloat32(0), 'Decimal256(76)') AS d_scalar, CAST(materialize(toFloat32(0)), 'Decimal256(76)') AS d_batch;
+SELECT CAST(toFloat32(-0.0), 'Decimal256(76)') AS d_scalar, CAST(materialize(toFloat32(-0.0)), 'Decimal256(76)') AS d_batch;

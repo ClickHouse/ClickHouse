@@ -416,6 +416,15 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
                 return ReturnType(false);
         }
 
+        /// Short-circuit zero so we don't compute `0 * multiplier`: when the multiplier overflows
+        /// the source float (e.g. `Float32` × `10^76` for `Decimal256(76)`), the product becomes
+        /// `NaN` and the bounds check below would incorrectly flag a valid zero input as overflow.
+        if (value == FromFieldType{})
+        {
+            result = ToNativeType{};
+            return ReturnType(true);
+        }
+
         /// Round first, then check bounds against the rounded value: a value just past the
         /// `ToNativeType` limit (e.g. `2147483647.4` for `Decimal(9,0)`) rounds to a
         /// representable integer and must not be rejected as overflow.
@@ -482,9 +491,12 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
         for (size_t i = 0; i < size; ++i)
         {
             bool overflow = !isFinite(from[i]);
+            /// Short-circuit zero so a `0 * inf` product doesn't trigger the `!isFinite(out)`
+            /// branch as a false-positive overflow (mirrors the scalar path).
+            bool is_zero = from[i] == FromFieldType{};
             /// Round first so the bounds check accepts values that would round to a representable
             /// integer (matches the scalar path in `convertToDecimalImpl`).
-            FromFieldType out = std::round(from[i] * multiplier);
+            FromFieldType out = is_zero ? FromFieldType{} : std::round(from[i] * multiplier);
 
             /// `!isFinite(out)` catches `inf` products from finite inputs (e.g. `Float32` ×
             /// scale-76 multiplier for `Decimal256`), where the bound itself may also be `inf`.
