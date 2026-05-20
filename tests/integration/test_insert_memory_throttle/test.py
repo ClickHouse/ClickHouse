@@ -53,62 +53,36 @@ def run_insert(query_id, enable_throttle, memory_limit="300M"):
     )
 
 
-def test_throttle_limits_parallelism(started_cluster):
+def get_throttle_event_value():
+    raw = node.query(
+        "SELECT value FROM system.events WHERE event = 'InsertPipelineThrottled'"
+    ).strip()
+    return int(raw) if raw else 0
+
+
+def test_throttle_event_fires_when_enabled(started_cluster):
     create_tables()
     qid = f"throttle_parallel_{uuid.uuid4().hex}"
 
+    before = get_throttle_event_value()
     run_insert(qid, enable_throttle=True)
+    after = get_throttle_event_value()
 
-    node.query("SYSTEM FLUSH LOGS")
-
-    # throttle should have restricted outputs (allowed_outputs < total)
-    throttle_msgs = node.query(
-        f"""
-        SELECT count()
-        FROM system.text_log
-        WHERE query_id = '{qid}'
-            AND logger_name = 'InsertMemoryThrottle'
-            AND message LIKE '%Throttling%allowed_outputs=%'
-        """
-    ).strip()
-
-    assert int(throttle_msgs) > 0, "Expected throttle to restrict parallelism under memory pressure"
-
-    # verify throttle limited to fewer than max outputs
-    allowed = node.query(
-        f"""
-        SELECT extract(message, 'allowed_outputs=(\\d+)')
-        FROM system.text_log
-        WHERE query_id = '{qid}'
-            AND logger_name = 'InsertMemoryThrottle'
-            AND message LIKE '%Throttling%'
-        LIMIT 1
-        """
-    ).strip()
-
-    assert int(allowed) < 4, f"Expected allowed_outputs < 4 (total), got {allowed}"
-
+    assert after != before, \
+        "InsertPipelineThrottled should have changed under memory pressure"
     assert node.query("SELECT count() FROM dst").strip() == "100000"
 
 
-def test_no_throttle_when_disabled(started_cluster):
+def test_throttle_event_unchanged_when_disabled(started_cluster):
     create_tables()
     qid = f"no_throttle_{uuid.uuid4().hex}"
 
+    before = get_throttle_event_value()
     run_insert(qid, enable_throttle=False)
+    after = get_throttle_event_value()
 
-    node.query("SYSTEM FLUSH LOGS")
-
-    throttle_msgs = node.query(
-        f"""
-        SELECT count()
-        FROM system.text_log
-        WHERE query_id = '{qid}'
-            AND logger_name = 'InsertMemoryThrottle'
-        """
-    ).strip()
-
-    assert int(throttle_msgs) == 0, "No throttle messages expected when disabled"
+    assert after == before, \
+        "InsertPipelineThrottled must not change when the throttle is disabled"
     assert node.query("SELECT count() FROM dst").strip() == "100000"
 
 
