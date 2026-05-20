@@ -579,6 +579,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildGroupByList(const ASTPtr & group_by_expr
 
             if (group_by_element->with_cluster)
             {
+                if (query_node.hasGroupByWithCluster())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "GROUP BY supports only a single key with WITH CLUSTER modifier");
+
                 Float64 distance = 0;
                 if (auto distance_ast = group_by_element->getClusterDistance())
                 {
