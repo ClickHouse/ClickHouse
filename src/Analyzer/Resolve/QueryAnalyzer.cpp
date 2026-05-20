@@ -3497,6 +3497,22 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
             if (orig_cluster_idx >= 0 && orig_cluster_idx < static_cast<int>(group_by_list.size()))
             {
                 const auto & cluster_elem = group_by_list[orig_cluster_idx];
+
+                /// Accepted element types for `WITH CLUSTER`:
+                ///   - 2D: tuple of exactly two numeric/temporal scalars.
+                ///   - 1D numeric: any single numeric/temporal scalar.
+                ///   - 1D string: `String` or `FixedString` (Levenshtein path).
+                /// Anything else (Array, Map, Tuple of non-numerics, Dynamic, …)
+                /// would reach `ClusterMergingTransform` and fail with an
+                /// internal error from `getFloat64`. Reject it upfront here.
+                auto is_supported_scalar = [](const DataTypePtr & t)
+                {
+                    WhichDataType which(t);
+                    return which.isNumber()
+                        || which.isDateOrDate32()
+                        || which.isDateTimeOrDateTime64();
+                };
+
                 if (auto * fn = cluster_elem->as<FunctionNode>(); fn != nullptr && fn->getFunctionName() == "tuple")
                 {
                     const auto & args = fn->getArguments().getNodes();
@@ -3504,7 +3520,25 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "GROUP BY ... WITH CLUSTER on a tuple expects exactly 2 elements, got {}",
                             args.size());
+                    for (size_t i = 0; i < args.size(); ++i)
+                    {
+                        const auto & arg_type = args[i]->getResultType();
+                        if (!is_supported_scalar(arg_type))
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "GROUP BY ... WITH CLUSTER on a tuple requires numeric / temporal elements; "
+                                "element {} has type {}",
+                                i, arg_type->getName());
+                    }
                     cluster_dims = 2;
+                }
+                else
+                {
+                    const auto & key_type = cluster_elem->getResultType();
+                    WhichDataType which(key_type);
+                    if (!is_supported_scalar(key_type) && !which.isStringOrFixedString())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "GROUP BY ... WITH CLUSTER key must be a numeric / temporal / String / FixedString scalar, got {}",
+                            key_type->getName());
                 }
             }
             query_node_typed.setGroupByClusterKeyIndex(new_cluster_idx);
