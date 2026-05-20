@@ -178,8 +178,8 @@ public:
 
         UInt64 total_api_calls = 0;
         UInt64 total_input_tokens = 0;
-        UInt64 rows_processed = 0;
-        UInt64 rows_skipped = 0;
+        UInt64 rows_processed = 0; /// rows that received an AI result
+        UInt64 rows_skipped = 0; /// rows that received a default value due to quota or error
         UInt64 current_offset = 0;
 
         size_t cursor = 0;
@@ -187,7 +187,10 @@ public:
         for (size_t batch_start = 0; batch_start < live_rows.size(); batch_start += max_batch_size)
         {
             if (quota.checkQuotas())
+            {
+                rows_skipped += live_rows.size() - batch_start;
                 break;
+            }
 
             size_t batch_end = std::min(batch_start + max_batch_size, live_rows.size());
 
@@ -235,20 +238,20 @@ public:
             }
 
             if (!batch_ok) /// failed batch's rows are filled in by the next batch (or the final tail fill)
+            {
+                rows_skipped += batch_end - batch_start;
                 continue;
+            }
 
             chassert(ai_embedding_response.embeddings.size() == ai_embedding_request.inputs.size(),
                 "Number of inputs does not match number of output embeddings");
 
             for (size_t k = 0; k < ai_embedding_response.embeddings.size(); ++k)
             {
-                /// fill empties
+                /// fill pre-filtered (NULL/empty) input rows that sit between consecutive live rows
                 size_t last_row_in_batch = live_rows[batch_start + k];
                 for (; cursor < last_row_in_batch; ++cursor)
-                {
                     offsets_vec.push_back(current_offset);
-                    ++rows_skipped;
-                }
 
                 const auto & v = ai_embedding_response.embeddings[k];
                 data_vec.insert(data_vec.end(), v.begin(), v.end());
@@ -259,12 +262,9 @@ public:
             }
         }
 
-        /// fill final empties
+        /// fill final empties (pre-filtered tail rows, plus any live rows already counted into rows_skipped)
         for (; cursor < input_rows_count; ++cursor)
-        {
             offsets_vec.push_back(current_offset);
-            ++rows_skipped;
-        }
 
         ProfileEvents::increment(ProfileEvents::AIAPICalls, total_api_calls);
         ProfileEvents::increment(ProfileEvents::AIInputTokens, total_input_tokens);
