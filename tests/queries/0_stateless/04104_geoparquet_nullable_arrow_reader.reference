@@ -1,10 +1,10 @@
-=== Native reader v3: schema inference ===
+=== Arrow: schema inference with geoparquet parser disabled ===
 Nullable(String)
-=== Arrow reader: schema inference ===
-Nullable(String)
-=== Native reader v3: NULL check ===
+=== Arrow: NULL check with geoparquet parser disabled ===
 0	Point1
 1	Point2
-=== Arrow reader: NULL check ===
+=== Arrow: schema inference with geoparquet parser enabled ===
+Point
+=== Arrow: NULL check with geoparquet parser enabled ===
 0	Point1
-1	Point2
+0	Point2

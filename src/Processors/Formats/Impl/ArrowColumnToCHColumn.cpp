@@ -748,12 +748,12 @@ static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::
 
         for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
         {
-            auto * raw_data = buffer->mutable_data() + chunk.value_offset(offset_i);
             if (chunk.IsNull(offset_i))
             {
                 column->insertDefault();
                 continue;
             }
+            auto * raw_data = const_cast<uint8_t *>(buffer->data()) + chunk.value_offset(offset_i);
             ReadBuffer in_buffer(reinterpret_cast<char*>(raw_data), chunk.value_length(offset_i), 0);
             GeometricObject result_object;
             switch (geo_metadata.encoding)
