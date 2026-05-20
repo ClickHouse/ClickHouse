@@ -6,11 +6,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Validate the `additional_memory_tracking_per_thread` speculative reservation
 # directly, i.e. without relying on `max_untracked_memory = 0` to force the
-# same exception path. The stateless-test config disables the setting globally
-# so unrelated tests with tight `max_memory_usage` are not affected
-# (see `tests/config/config.d/additional_memory_tracking_per_thread.xml`); to
-# observe the speculative behaviour we run `clickhouse-local` with a private
-# config that re-enables it.
+# same exception path. We run `clickhouse-local` with a private config so we
+# can dial `max_server_memory_usage` and `additional_memory_tracking_per_thread`
+# to values that make the speculative reservation alone exceed the limit,
+# without affecting the shared stateless-test server.
 #
 # Setup:
 #   * `max_server_memory_usage = 1G` -- a hard cap small enough that the

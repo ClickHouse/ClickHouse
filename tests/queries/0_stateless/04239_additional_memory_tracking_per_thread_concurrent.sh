@@ -12,12 +12,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # pipeline lambda's own try/catch after `ThreadGroupSwitcher`, so the failure
 # propagates as a normal query error regardless of where the limit is hit.
 #
-# The stateless-test config sets `additional_memory_tracking_per_thread = 0`,
-# so we cannot rely on the speculative reservation to trip the limit. Instead
-# we force the same exception path with `max_untracked_memory = 0`: the very
-# first in-query allocation is reported and exceeds `max_memory_usage = 1`.
-# Each launched query must finish (with or without a memory-limit error)
-# within `timeout` -- a hang would manifest as the timeout firing.
+# Stateless tests run with the production default (4 MiB) for the setting.
+# To make the failure path independent of that reservation we force the
+# same exception with `max_untracked_memory = 0`: the very first in-query
+# allocation is reported and exceeds `max_memory_usage = 1`. Each launched
+# query must finish (with or without a memory-limit error) within `timeout`
+# -- a hang would manifest as the timeout firing.
 
 # `N` background clients race to exercise the throw-before-thread-group-attach
 # path. Each client itself spawns `max_threads = 4` workers, so `N * 4 = 128`

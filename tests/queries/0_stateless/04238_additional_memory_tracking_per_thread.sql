@@ -6,12 +6,11 @@
 --     output queue);
 --   * the server setting is exposed in `system.server_settings`.
 --
--- The stateless-test config sets `additional_memory_tracking_per_thread = 0`
--- (so unrelated tests with tight `max_memory_usage` are not affected), so the
--- speculative reservation itself does not trip the limit in this test. We
--- force the same exception path via `max_untracked_memory = 0`: every
--- allocation is reported immediately, so the 1-byte query limit fails the
--- first in-query allocation inside the pipeline.
+-- Stateless tests run with the production default (4 MiB) for the setting.
+-- To make the failure path independent of that reservation, we force the
+-- same exception via `max_untracked_memory = 0`: every allocation is
+-- reported immediately, so the 1-byte query limit fails the first
+-- in-query allocation inside the pipeline.
 
 -- The server setting must be visible.
 SELECT count() FROM system.server_settings WHERE name = 'additional_memory_tracking_per_thread';
