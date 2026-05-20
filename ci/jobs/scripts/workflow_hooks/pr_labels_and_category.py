@@ -74,6 +74,7 @@ class Labels:
     SUBMODULE_CHANGED = "submodule changed"
 
     CI_BUILD = "ci-build"
+    CI_FORCE_ALL = "ci-force-all"
 
     CI_PERFORMANCE = "ci-performance"
 
@@ -83,6 +84,9 @@ class Labels:
     CI_FUNCTIONAL_FLAKY = "ci-functional-test-flaky"
     CI_FUNCTIONAL = "ci-functional-test"
     CI_TOOLCHAIN = "ci-toolchain"
+
+    # Gates the PromQL compliance PR comment from integration-test post-hooks (see promql_compliance_hook.py).
+    COMP_PROMQL = "comp-promql"
 
     # automatic backport for critical bug fixes
     AUTO_BACKPORT = {"pr-critical-bugfix"}

@@ -3,10 +3,12 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <type_traits>
 #include <base/types.h>
+#include <Common/AllocationTrace.h>
+#include <Common/CacheLine.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
-#include <Common/AllocationTrace.h>
 
 #if !defined(NDEBUG)
 #define MEMORY_TRACKER_DEBUG_CHECKS
@@ -53,53 +55,78 @@ namespace DB
   *
   * @see LockMemoryExceptionInThread
   * @see MemoryTrackerBlockerInThread
+  * @see MemoryTrackerUntrackedAllocationsBlockerInThread
   */
 class MemoryTracker
 {
 private:
-    std::atomic<Int64> amount {0};
-    std::atomic<Int64> peak {0};
-    std::atomic<Int64> soft_limit {0};
-    std::atomic<Int64> hard_limit {0};
-    std::atomic<Int64> profiler_limit {0};
+    /// Group fields by access pattern onto separate cache lines to avoid false sharing.
+    /// Anonymous nested structs are a GNU/Clang extension; suppress the pedantic warning.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
+#pragma clang diagnostic ignored "-Wnested-anon-types"
 
-    std::atomic<Int64> rss{0};
+    /// Hot: every field touched on the alloc/free path. Packed into a single cache line
+    /// (24B writes + 40B reads = 64B exactly) so each allocation needs at most one line
+    /// in flight. The line bounces among writer cores either way; co-locating the
+    /// read-mostly limits/parent/metric here means writers get them for free with the
+    /// same fetch. The only cost is reader-only cores re-fetching when allocator writes
+    /// invalidate, but allocations dominate over pure reads in practice.
+    struct
+    {
+        /// Hot writes: updated on every alloc/free flush.
+        alignas(DB::CH_CACHE_LINE_SIZE) std::atomic<Int64> amount {0};
+        std::atomic<Int64> peak {0};
+        std::atomic<Int64> rss {0};
 
-    Int64 profiler_step = 0;
+        /// Hot reads: checked on every alloc but written only at construction or via
+        /// rare configuration changes.
+        std::atomic<Int64> soft_limit {0};
+        std::atomic<Int64> hard_limit {0};
+        std::atomic<Int64> profiler_limit {0};
 
-    /// To test exception safety of calling code, memory tracker throws an exception on each memory allocation with specified probability.
-    std::atomic<double> fault_probability = 0;
+        /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
+        /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
+        std::atomic<MemoryTracker *> parent {};
 
-    /// To randomly sample allocations and deallocations in trace_log.
-    double sample_probability = -1;
+        /// You could specify custom metric to track memory usage.
+        std::atomic<CurrentMetrics::Metric> metric = CurrentMetrics::end();
+    };
 
-    /// Randomly sample allocations only larger or equal to this size
-    UInt64 min_allocation_size_bytes = 0;
+    /// Cold: rarely-touched configuration, sampling, and log-only fields.
+    struct
+    {
+        /// This description will be used as prefix into log messages (if isn't nullptr).
+        /// Only read on logging paths, not per allocation.
+        alignas(DB::CH_CACHE_LINE_SIZE) std::atomic<const char *> description_ptr = nullptr;
 
-    /// Randomly sample allocations only smaller or equal to this size
-    UInt64 max_allocation_size_bytes = 0;
+        Int64 profiler_step = 0;
 
-    UInt64 jemalloc_flush_profile_interval_bytes = 0;
-    bool jemalloc_flush_profile_on_memory_exceeded = false;
-    UInt64 jemalloc_flush_profile_on_memory_exceeded_interval_s = 0;
+        /// To test exception safety of calling code, memory tracker throws an exception on each memory allocation with specified probability.
+        std::atomic<double> fault_probability = 0;
 
-    /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
-    /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
-    std::atomic<MemoryTracker *> parent {};
+        /// To randomly sample allocations and deallocations in trace_log.
+        double sample_probability = -1;
 
-    /// You could specify custom metric to track memory usage.
-    std::atomic<CurrentMetrics::Metric> metric = CurrentMetrics::end();
+        /// Randomly sample allocations only larger or equal to this size
+        UInt64 min_allocation_size_bytes = 0;
 
-    /// This description will be used as prefix into log messages (if isn't nullptr)
-    std::atomic<const char *> description_ptr = nullptr;
+        /// Randomly sample allocations only smaller or equal to this size
+        UInt64 max_allocation_size_bytes = 0;
 
-    std::atomic<std::chrono::microseconds> max_wait_time;
+        UInt64 jemalloc_flush_profile_interval_bytes = 0;
+        bool jemalloc_flush_profile_on_memory_exceeded = false;
+        UInt64 jemalloc_flush_profile_on_memory_exceeded_interval_s = 0;
 
-    std::atomic<OvercommitTracker *> overcommit_tracker = nullptr;
+        std::atomic<std::chrono::microseconds> max_wait_time;
 
-    std::atomic<DB::PageCache *> page_cache = nullptr;
+        std::atomic<OvercommitTracker *> overcommit_tracker = nullptr;
 
-    bool log_peak_memory_usage_in_destructor = true;
+        std::atomic<DB::PageCache *> page_cache = nullptr;
+
+        bool log_peak_memory_usage_in_destructor = true;
+    };
+#pragma clang diagnostic pop
 
     bool updatePeak(Int64 will_be, bool log_memory_usage);
     void logMemoryUsage(Int64 current) const;
@@ -186,7 +213,26 @@ public:
         sample_probability = value;
     }
 
-    double getSampleProbability(UInt64 size);
+    struct SampleConfig
+    {
+        double probability = 0;
+        UInt64 min_allocation_size = 0;
+        UInt64 max_allocation_size = 0;
+    };
+
+    /// Resolve sample config by traversing the parent chain.
+    /// `sample_probability == -1` means "inherit from parent"; any non-negative value (including 0)
+    /// is an explicit override that stops the walk. Callers are expected to push the query-level
+    /// value only when the user actually changed it from the default, so that the default path
+    /// leaves the group tracker at -1 and falls through to `total_memory_tracker_sample_probability`.
+    SampleConfig getResolvedSampleConfig() const
+    {
+        if (sample_probability >= 0)
+            return {sample_probability, min_allocation_size_bytes, max_allocation_size_bytes};
+        if (auto * loaded_next = parent.load(std::memory_order_relaxed))
+            return loaded_next->getResolvedSampleConfig();
+        return {};
+    }
 
     void setSampleMinAllocationSize(UInt64 value)
     {
@@ -287,6 +333,7 @@ public:
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();
 };
+static_assert(std::alignment_of_v<MemoryTracker> == DB::CH_CACHE_LINE_SIZE);
 
 extern MemoryTracker total_memory_tracker;
 extern MemoryTracker background_memory_tracker;

@@ -466,7 +466,7 @@ bool StorageWindowView::optimize(
 {
     throwIfWindowViewIsDisabled(local_context);
     auto storage_ptr = getInnerTable();
-    auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
+    auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(local_context, false);
     return getInnerTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
 }
 
@@ -477,8 +477,8 @@ void StorageWindowView::alter(
 {
     throwIfWindowViewIsDisabled(local_context);
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
-    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(local_context, false);
     params.apply(new_metadata, local_context);
 
     const auto & new_select = new_metadata.select;
@@ -520,7 +520,7 @@ void StorageWindowView::alter(
     {
         /// If this window view has an inner target table it should always have the same columns as this window view.
         /// Try to find mistakes in the select query (it shouldn't have columns which are not in the inner target table).
-        auto target_table_metadata = getTargetTable()->getInMemoryMetadataPtr();
+        auto target_table_metadata = getTargetTable()->getInMemoryMetadataPtr(local_context, false);
         const auto & select_query_output_columns = new_metadata.columns; /// AlterCommands::alter() analyzed the query and assigned `new_metadata.columns` before.
         checkTargetTableHasQueryOutputColumns(target_table_metadata->columns, select_query_output_columns);
         /// We need to copy the target table's columns (after checkTargetTableHasQueryOutputColumns() they can be still different - e.g. in data types).
@@ -553,7 +553,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
         inner_fetch_query,
         getContext(),
         inner_table,
-        inner_table->getInMemoryMetadataPtr(),
+        inner_table->getInMemoryMetadataPtr(getContext(), false),
         SelectQueryOptions(QueryProcessingStage::FetchColumns));
 
     auto builder = fetch.buildQueryPipeline();
@@ -635,7 +635,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 
     auto creator = [&](const StorageID & blocks_id_global)
     {
-        auto source_table_metadata = getSourceTable()->getInMemoryMetadataPtr();
+        auto source_table_metadata = getSourceTable()->getInMemoryMetadataPtr(getContext(), false);
         auto required_columns = source_table_metadata->getColumns();
         required_columns.add(ColumnDescription("____timestamp", std::make_shared<DataTypeDateTime>()));
         return StorageBlocks::createStorage(blocks_id_global, required_columns, std::move(pipes), QueryProcessingStage::WithMergeableState);
@@ -647,7 +647,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
         getFinalQuery(),
         getContext(),
         blocks_storage.getTable(),
-        blocks_storage.getTable()->getInMemoryMetadataPtr(),
+        blocks_storage.getTable()->getInMemoryMetadataPtr(getContext(), false),
         SelectQueryOptions(QueryProcessingStage::Complete));
 
     builder = select.buildQueryPipeline();
@@ -727,7 +727,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
         auto adding_missing_defaults_dag = addMissingDefaults(
             pipe.getHeader(),
             block_io.pipeline.getHeader().getNamesAndTypesList(),
-            getTargetTable()->getInMemoryMetadataPtr()->getColumns(),
+            getTargetTable()->getInMemoryMetadataPtr(context, false)->getColumns(),
             context,
             context->getSettingsRef()[Setting::insert_null_as_default]);
         auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(std::move(adding_missing_defaults_dag));
@@ -1181,7 +1181,7 @@ void StorageWindowView::read(
 
     auto storage = getTargetTable();
     auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
+    auto target_metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, false);
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, local_context);
 
     if (query_info.order_optimizer)
@@ -1598,7 +1598,7 @@ void StorageWindowView::writeIntoWindowView(
 
     auto creator = [&](const StorageID & blocks_id_global)
     {
-        auto source_metadata = window_view.getSourceTable()->getInMemoryMetadataPtr();
+        auto source_metadata = window_view.getSourceTable()->getInMemoryMetadataPtr(local_context, false);
         auto required_columns = source_metadata->getColumns();
         required_columns.add(ColumnDescription("____timestamp", std::make_shared<DataTypeDateTime>()));
         return StorageBlocks::createStorage(blocks_id_global, required_columns, std::move(pipes), QueryProcessingStage::FetchColumns);
@@ -1609,7 +1609,7 @@ void StorageWindowView::writeIntoWindowView(
         window_view.getMergeableQuery(),
         local_context,
         blocks_storage.getTable(),
-        blocks_storage.getTable()->getInMemoryMetadataPtr(),
+        blocks_storage.getTable()->getInMemoryMetadataPtr(local_context, false),
         QueryProcessingStage::WithMergeableState);
 
     builder = select_block.buildQueryPipeline();
@@ -1667,7 +1667,7 @@ void StorageWindowView::writeIntoWindowView(
 
     auto inner_table = window_view.getInnerTable();
     auto lock = inner_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    auto metadata_snapshot = inner_table->getInMemoryMetadataPtr();
+    auto metadata_snapshot = inner_table->getInMemoryMetadataPtr(local_context, false);
     auto output = inner_table->write(window_view.getMergeableQuery(), metadata_snapshot, local_context, /*async_insert=*/false);
     output->addTableLock(lock);
 
@@ -1763,7 +1763,7 @@ void StorageWindowView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 
 Block StorageWindowView::getInputHeader() const
 {
-    auto metadata = getSourceTable()->getInMemoryMetadataPtr();
+    auto metadata = getSourceTable()->getInMemoryMetadataPtr(getContext(), false);
     return metadata->getSampleBlockNonMaterialized();
 }
 

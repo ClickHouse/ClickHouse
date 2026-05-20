@@ -291,6 +291,7 @@ struct QueryPipelineSettings
             {"header", query_pipeline_options.header},
             {"graph", graph},
             {"compact", compact},
+            {"distributed", query_pipeline_options.distributed},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -645,6 +646,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
                 if (settings.graph)
                 {
+                    if (settings.query_pipeline_options.distributed)
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'distributed' is not supported with option 'graph'");
+
                     /// Pipe holds QueryPlan, should not go out-of-scope
                     QueryPlanResourceHolder resources;
                     auto pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline), resources);
@@ -717,7 +721,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "EXPLAIN TABLE OVERRIDE is not supported for the {}() table function", table_function->name);
             }
             auto storage = query_context->getQueryContext()->executeTableFunction(ast.getTableFunction());
-            auto metadata_snapshot = storage->getInMemoryMetadata();
+            StorageInMemoryMetadata metadata_snapshot = *storage->getInMemoryMetadataPtr(query_context, false);
             TableOverrideAnalyzer::Result override_info;
             TableOverrideAnalyzer override_analyzer(ast.getTableOverride());
             override_analyzer.analyze(metadata_snapshot, override_info);

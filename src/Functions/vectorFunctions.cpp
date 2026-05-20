@@ -28,26 +28,29 @@ namespace
 
 /// Checks that passed data types are tuples and have the same size.
 /// Returns size of tuples.
-size_t checkAndGetTuplesSize(const DataTypePtr & lhs_type, const DataTypePtr & rhs_type, const String & function_name = {})
+size_t checkAndGetTuplesSize(const DataTypePtr & lhs_type, const DataTypePtr & rhs_type, const String & function_name = {},
+                             size_t lhs_index = 0, size_t rhs_index = 1)
 {
     const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(lhs_type.get());
     const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(rhs_type.get());
 
     if (!left_tuple)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 0{} should be tuple, got {}",
-                        function_name.empty() ? "" : fmt::format(" of function {}", function_name), lhs_type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {}{} should be tuple, got {}",
+                        lhs_index, function_name.empty() ? "" : fmt::format(" of function {}", function_name), lhs_type->getName());
 
     if (!right_tuple)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument 1{}should be tuple, got {}",
-                        function_name.empty() ? "" : fmt::format(" of function {}", function_name), rhs_type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument {}{} should be tuple, got {}",
+                        rhs_index, function_name.empty() ? "" : fmt::format(" of function {}", function_name), rhs_type->getName());
 
     const auto & left_types = left_tuple->getElements();
     const auto & right_types = right_tuple->getElements();
 
     if (left_types.size() != right_types.size())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Expected tuples of the same size as arguments{}, got {} and {}",
-                        function_name.empty() ? "" : fmt::format(" of function {}", function_name), lhs_type->getName(), rhs_type->getName());
+                        "Expected tuples of the same size as arguments {} and {}{}, got {} and {}",
+                        lhs_index, rhs_index,
+                        function_name.empty() ? "" : fmt::format(" of function {}", function_name),
+                        lhs_type->getName(), rhs_type->getName());
     return left_types.size();
 }
 
@@ -58,6 +61,7 @@ struct MinusName { static constexpr auto name = "minus"; };
 struct MultiplyName { static constexpr auto name = "multiply"; };
 struct DivideName { static constexpr auto name = "divide"; };
 struct ModuloName { static constexpr auto name = "modulo"; };
+struct PositiveModuloName { static constexpr auto name = "positiveModulo"; };
 struct IntDivName { static constexpr auto name = "intDiv"; };
 struct IntDivOrZeroName { static constexpr auto name = "intDivOrZero"; };
 
@@ -86,71 +90,79 @@ public:
 
     String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"left_tuple", &isTuple, nullptr, "Tuple"},
-            {"right_tuple", &isTuple, nullptr, "Tuple"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
-        size_t tuple_size = checkAndGetTuplesSize(arguments[0].type, arguments[1].type, getName());
-
-        const auto & left_types = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get())->getElements();
-        const auto & right_types = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get())->getElements();
-
-        Columns left_elements = arguments[0].column ? getTupleElements(*arguments[0].column) : Columns();
-        Columns right_elements = arguments[1].column ? getTupleElements(*arguments[1].column) : Columns();
+        if (arguments.size() < 2)
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                "Function {} requires at least 2 arguments", getName());
+        for (size_t i = 1; i < arguments.size(); ++i)
+            checkAndGetTuplesSize(arguments[0].type, arguments[i].type, getName(), 0, i);
 
         auto func = FunctionFactory::instance().get(FuncName::name, context);
-        DataTypes types(tuple_size);
-        for (size_t i = 0; i < tuple_size; ++i)
+
+        const auto * first_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+        Columns current_elements = arguments[0].column ? getTupleElements(*arguments[0].column) : Columns();
+        DataTypes current_types = first_tuple->getElements();
+        size_t tuple_size = current_types.size();
+
+        for (size_t i = 1; i < arguments.size(); ++i)
         {
-            try
+            const auto & right_types = checkAndGetDataType<DataTypeTuple>(arguments[i].type.get())->getElements();
+            Columns right_elements = arguments[i].column ? getTupleElements(*arguments[i].column) : Columns();
+
+            for (size_t j = 0; j < tuple_size; ++j)
             {
-                ColumnWithTypeAndName left{left_elements.empty() ? nullptr : left_elements[i], left_types[i], {}};
-                ColumnWithTypeAndName right{right_elements.empty() ? nullptr : right_elements[i], right_types[i], {}};
-                auto elem_func = func->build(ColumnsWithTypeAndName{left, right});
-                types[i] = elem_func->getResultType();
+                try
+                {
+                    ColumnWithTypeAndName left{current_elements.empty() ? nullptr : current_elements[j], current_types[j], {}};
+                    ColumnWithTypeAndName right{right_elements.empty() ? nullptr : right_elements[j], right_types[j], {}};
+                    auto elem_func = func->build(ColumnsWithTypeAndName{left, right});
+                    current_types[j] = elem_func->getResultType();
+                }
+                catch (Exception & e)
+                {
+                    e.addMessage("While executing function {} for argument {} of tuple element {}", getName(), i, j);
+                    throw;
+                }
             }
-            catch (Exception & e)
-            {
-                e.addMessage("While executing function {} for tuple element {}", getName(), i);
-                throw;
-            }
+            current_elements = {};
         }
 
-        return std::make_shared<DataTypeTuple>(types);
+        return std::make_shared<DataTypeTuple>(std::move(current_types));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
-        const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].type.get());
-        const auto & left_types = left_tuple->getElements();
-        const auto & right_types = right_tuple->getElements();
-        auto left_elements = getTupleElements(*arguments[0].column);
-        auto right_elements = getTupleElements(*arguments[1].column);
+        const auto * first_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].type.get());
+        Columns current_elements = getTupleElements(*arguments[0].column);
+        DataTypes current_types = first_tuple->getElements();
 
-        size_t tuple_size = left_elements.size();
+        size_t tuple_size = current_elements.size();
         if (tuple_size == 0)
             return ColumnTuple::create(input_rows_count);
 
         auto func = FunctionFactory::instance().get(FuncName::name, context);
-        Columns columns(tuple_size);
-        for (size_t i = 0; i < tuple_size; ++i)
+
+        for (size_t i = 1; i < arguments.size(); ++i)
         {
-            ColumnWithTypeAndName left{left_elements[i], left_types[i], {}};
-            ColumnWithTypeAndName right{right_elements[i], right_types[i], {}};
-            auto elem_func = func->build(ColumnsWithTypeAndName{left, right});
-            columns[i] = elem_func->execute({left, right}, elem_func->getResultType(), input_rows_count, /* dry_run = */ false)
-                                  ->convertToFullColumnIfConst();
+            const auto & right_types = checkAndGetDataType<DataTypeTuple>(arguments[i].type.get())->getElements();
+            Columns right_elements = getTupleElements(*arguments[i].column);
+
+            for (size_t j = 0; j < tuple_size; ++j)
+            {
+                ColumnWithTypeAndName left{current_elements[j], current_types[j], {}};
+                ColumnWithTypeAndName right{right_elements[j], right_types[j], {}};
+                auto elem_func = func->build(ColumnsWithTypeAndName{left, right});
+                current_types[j] = elem_func->getResultType();
+                current_elements[j] = elem_func->execute({left, right}, current_types[j], input_rows_count, /* dry_run = */ false)
+                                                ->convertToFullColumnIfConst();
+            }
         }
 
-        return ColumnTuple::create(columns);
+        return ColumnTuple::create(current_elements);
     }
 };
 
@@ -313,6 +325,7 @@ public:
 using FunctionTupleMultiplyByNumber = FunctionTupleOperatorByNumber<MultiplyName>;
 using FunctionTupleDivideByNumber = FunctionTupleOperatorByNumber<DivideName>;
 using FunctionTupleModuloByNumber = FunctionTupleOperatorByNumber<ModuloName>;
+using FunctionTuplePositiveModuloByNumber = FunctionTupleOperatorByNumber<PositiveModuloName>;
 using FunctionTupleIntDivByNumber = FunctionTupleOperatorByNumber<IntDivName>;
 using FunctionTupleIntDivOrZeroByNumber = FunctionTupleOperatorByNumber<IntDivOrZeroName>;
 
@@ -1634,16 +1647,17 @@ REGISTER_FUNCTION(VectorFunctions)
 {
     /// tuplePlus documentation
     FunctionDocumentation::Description description_tuplePlus = R"(
-Calculates the sum of corresponding elements of two tuples of the same size.
+Calculates the element-wise sum of two or more tuples of the same size.
 )";
-    FunctionDocumentation::Syntax syntax_tuplePlus = "tuplePlus(t1, t2)";
+    FunctionDocumentation::Syntax syntax_tuplePlus = "tuplePlus(t1, t2[, tN, ...])";
     FunctionDocumentation::Arguments arguments_tuplePlus = {
-        {"t1", "First tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
-        {"t2", "Second tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
+        {"t1", "First input tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
+        {"t2, ..., tN", "One or more further input tuples. All tuples must have the same size.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_tuplePlus = {"Returns a tuple containing the sums of corresponding input tuple arguments.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
+    FunctionDocumentation::ReturnedValue returned_value_tuplePlus = {"Returns a tuple containing the element-wise sums.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tuplePlus = {
-        {"Basic usage", "SELECT tuplePlus((1, 2), (2, 3))", "(3, 5)"}
+        {"Two tuples", "SELECT tuplePlus((1, 2), (2, 3))", "(3, 5)"},
+        {"Three tuples", "SELECT tuplePlus((1, 2), (2, 3), (3, 4))", "(6, 9)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tuplePlus = {21, 11};
     FunctionDocumentation::Category category_tuplePlus = FunctionDocumentation::Category::Tuple;
@@ -1653,16 +1667,17 @@ Calculates the sum of corresponding elements of two tuples of the same size.
 
     /// tupleMinus documentation
     FunctionDocumentation::Description description_tupleMinus = R"(
-Calculates the difference between corresponding elements of two tuples of the same size.
+Calculates the element-wise difference of two or more tuples of the same size, applied left-to-right.
 )";
-    FunctionDocumentation::Syntax syntax_tupleMinus = "tupleMinus(t1, t2)";
+    FunctionDocumentation::Syntax syntax_tupleMinus = "tupleMinus(t1, t2[, tN, ...])";
     FunctionDocumentation::Arguments arguments_tupleMinus = {
-        {"t1", "First tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
-        {"t2", "Second tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
+        {"t1", "First input tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
+        {"t2, ..., tN", "One or more further input tuples. All tuples must have the same size.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_tupleMinus = {"Returns a tuple containing the results  of the subtractions.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
+    FunctionDocumentation::ReturnedValue returned_value_tupleMinus = {"Returns a tuple containing the element-wise differences.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleMinus = {
-        {"Basic usage", "SELECT tupleMinus((1, 2), (2, 3))", "(-1, -1)"}
+        {"Two tuples", "SELECT tupleMinus((1, 2), (2, 3))", "(-1, -1)"},
+        {"Three tuples", "SELECT tupleMinus((10, 10), (3, 4), (2, 1))", "(5, 5)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleMinus = {21, 11};
     FunctionDocumentation::Category category_tupleMinus = FunctionDocumentation::Category::Tuple;
@@ -1672,16 +1687,17 @@ Calculates the difference between corresponding elements of two tuples of the sa
 
     /// tupleMultiply documentation
     FunctionDocumentation::Description description_tupleMultiply = R"(
-Calculates the multiplication of corresponding elements of two tuples of the same size.
+Calculates the element-wise product of two or more tuples of the same size.
 )";
-    FunctionDocumentation::Syntax syntax_tupleMultiply = "tupleMultiply(t1, t2)";
+    FunctionDocumentation::Syntax syntax_tupleMultiply = "tupleMultiply(t1, t2[, tN, ...])";
     FunctionDocumentation::Arguments arguments_tupleMultiply = {
-        {"t1", "First tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
-        {"t2", "Second tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
+        {"t1", "First input tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
+        {"t2, ..., tN", "One or more further input tuples. All tuples must have the same size.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_tupleMultiply = {"Returns a tuple with the results of the multiplications.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
+    FunctionDocumentation::ReturnedValue returned_value_tupleMultiply = {"Returns a tuple containing the element-wise products.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleMultiply = {
-        {"Basic usage", "SELECT tupleMultiply((1, 2), (2, 3))", "(2, 6)"}
+        {"Two tuples", "SELECT tupleMultiply((1, 2), (2, 3))", "(2, 6)"},
+        {"Three tuples", "SELECT tupleMultiply((1, 2), (2, 3), (1, 2))", "(2, 12)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleMultiply = {21, 11};
     FunctionDocumentation::Category category_tupleMultiply = FunctionDocumentation::Category::Tuple;
@@ -1690,20 +1706,21 @@ Calculates the multiplication of corresponding elements of two tuples of the sam
 
     /// tupleDivide documentation
     FunctionDocumentation::Description description_tupleDivide = R"(
-Calculates the division of corresponding elements of two tuples of the same size.
+Calculates the element-wise division of two or more tuples of the same size, applied left-to-right.
 
 :::note
 Division by zero will return `inf`.
 :::
 )";
-    FunctionDocumentation::Syntax syntax_tupleDivide = "tupleDivide(t1, t2)";
+    FunctionDocumentation::Syntax syntax_tupleDivide = "tupleDivide(t1, t2[, tN, ...])";
     FunctionDocumentation::Arguments arguments_tupleDivide = {
-        {"t1", "First tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
-        {"t2", "Second tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
+        {"t1", "First input tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
+        {"t2, ..., tN", "One or more further input tuples. All tuples must have the same size.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_tupleDivide = {"Returns tuple with the result of division.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
+    FunctionDocumentation::ReturnedValue returned_value_tupleDivide = {"Returns a tuple containing the element-wise quotients.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleDivide = {
-        {"Basic usage", "SELECT tupleDivide((1, 2), (2, 3))", "(0.5, 0.6666666666666666)"}
+        {"Two tuples", "SELECT tupleDivide((1, 2), (2, 3))", "(0.5, 0.6666666666666666)"},
+        {"Three tuples", "SELECT tupleDivide((100.0, 60.0), (5.0, 3.0), (2.0, 4.0))", "(10, 5)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleDivide = {21, 11};
     FunctionDocumentation::Category category_tupleDivide = FunctionDocumentation::Category::Tuple;
@@ -1712,16 +1729,17 @@ Division by zero will return `inf`.
 
     /// tupleModulo documentation
     FunctionDocumentation::Description description_tupleModulo = R"(
-Returns a tuple of the remainders (moduli) of division operations of two tuples.
+Returns a tuple of element-wise remainders from dividing two or more tuples of the same size, applied left-to-right.
 )";
-    FunctionDocumentation::Syntax syntax_tupleModulo = "tupleModulo(tuple_num, tuple_mod)";
+    FunctionDocumentation::Syntax syntax_tupleModulo = "tupleModulo(t1, t2[, tN, ...])";
     FunctionDocumentation::Arguments arguments_tupleModulo = {
-        {"tuple_num", "Tuple of numerator values.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
-        {"tuple_mod", "Tuple of modulus values.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
+        {"t1", "First input tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
+        {"t2, ..., tN", "One or more further input tuples. All tuples must have the same size.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_tupleModulo = {"Returns tuple of the remainders of division. An error is thrown for division by zero.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
+    FunctionDocumentation::ReturnedValue returned_value_tupleModulo = {"Returns a tuple of element-wise remainders. An exception is thrown for division by zero.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleModulo = {
-        {"Basic usage", "SELECT tupleModulo((15, 10, 5), (5, 3, 2))", "(0, 1, 1)"}
+        {"Two tuples", "SELECT tupleModulo((15, 10, 5), (5, 3, 2))", "(0, 1, 1)"},
+        {"Three tuples", "SELECT tupleModulo((10, 20), (7, 9), (3, 5))", "(0, 2)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleModulo = {23, 8};
     FunctionDocumentation::Category category_tupleModulo = FunctionDocumentation::Category::Tuple;
@@ -1730,19 +1748,20 @@ Returns a tuple of the remainders (moduli) of division operations of two tuples.
 
     /// tupleIntDiv documentation
     FunctionDocumentation::Description description_tupleIntDiv = R"(
-Performs an integer division with a tuple of numerators and a tuple of denominators. Returns a tuple of quotients.
-If either tuple contains non-integer elements then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
-Division by 0 causes an error to be thrown.
+Performs element-wise integer division of two or more tuples of the same size, applied left-to-right. Returns a tuple of quotients.
+If any tuple contains non-integer elements, the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
+Division by 0 causes an exception to be thrown.
 )";
-    FunctionDocumentation::Syntax syntax_tupleIntDiv = "tupleIntDiv(tuple_num, tuple_div)";
+    FunctionDocumentation::Syntax syntax_tupleIntDiv = "tupleIntDiv(t1, t2[, tN, ...])";
     FunctionDocumentation::Arguments arguments_tupleIntDiv = {
-        {"tuple_num", "Tuple of numerator values.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
-        {"tuple_div", "Tuple of divisor values.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
+        {"t1", "First input tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
+        {"t2, ..., tN", "One or more further input tuples. All tuples must have the same size.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_tupleIntDiv = {"Returns a tuple of the quotients.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
+    FunctionDocumentation::ReturnedValue returned_value_tupleIntDiv = {"Returns a tuple of integer quotients.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleIntDiv = {
-        {"Basic usage", "SELECT tupleIntDiv((15, 10, 5), (5, 5, 5))", "(3, 2, 1)"},
-        {"With decimals", "SELECT tupleIntDiv((15, 10, 5), (5.5, 5.5, 5.5))", "(2, 1, 0)"}
+        {"Two tuples", "SELECT tupleIntDiv((15, 10, 5), (5, 5, 5))", "(3, 2, 1)"},
+        {"With decimals", "SELECT tupleIntDiv((15, 10, 5), (5.5, 5.5, 5.5))", "(2, 1, 0)"},
+        {"Three tuples", "SELECT tupleIntDiv((120, 60), (4, 3), (2, 4))", "(15, 5)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleIntDiv = {23, 8};
     FunctionDocumentation::Category category_tupleIntDiv = FunctionDocumentation::Category::Tuple;
@@ -1751,18 +1770,19 @@ Division by 0 causes an error to be thrown.
 
     /// tupleIntDivOrZero documentation
     FunctionDocumentation::Description description_tupleIntDivOrZero = R"(
-Like [`tupleIntDiv`](#tupleIntDiv) performs integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients.
-In case of division by 0, returns the quotient as 0 instead of throwing an exception.
-If either tuple contains non-integer elements then the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
+Like [`tupleIntDiv`](#tupleIntDiv), performs element-wise integer division of two or more tuples of the same size, applied left-to-right.
+In case of division by 0, returns 0 for that element instead of throwing an exception.
+If any tuple contains non-integer elements, the result is calculated by rounding to the nearest integer for each non-integer numerator or divisor.
 )";
-    FunctionDocumentation::Syntax syntax_tupleIntDivOrZero = "tupleIntDivOrZero(tuple_num, tuple_div)";
+    FunctionDocumentation::Syntax syntax_tupleIntDivOrZero = "tupleIntDivOrZero(t1, t2[, tN, ...])";
     FunctionDocumentation::Arguments arguments_tupleIntDivOrZero = {
-        {"tuple_num", "Tuple of numerator values.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
-        {"tuple_div", "Tuple of divisor values.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
+        {"t1", "First input tuple.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
+        {"t2, ..., tN", "One or more further input tuples. All tuples must have the same size.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_tupleIntDivOrZero = {"Returns tuple of the quotients. Returns 0 for quotients where the divisor is 0.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
+    FunctionDocumentation::ReturnedValue returned_value_tupleIntDivOrZero = {"Returns a tuple of integer quotients, with 0 for any element where the divisor is 0.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
     FunctionDocumentation::Examples examples_tupleIntDivOrZero = {
-        {"With zero divisors", "SELECT tupleIntDivOrZero((5, 10, 15), (0, 0, 0))", "(0, 0, 0)"}
+        {"With zero divisors", "SELECT tupleIntDivOrZero((5, 10, 15), (0, 0, 0))", "(0, 0, 0)"},
+        {"Three tuples", "SELECT tupleIntDivOrZero((120, 60), (4, 3), (2, 4))", "(15, 5)"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_tupleIntDivOrZero = {23, 8};
     FunctionDocumentation::Category category_tupleIntDivOrZero = FunctionDocumentation::Category::Tuple;
@@ -1982,6 +2002,25 @@ Returns a tuple of the moduli (remainders) of division operations of a tuple and
     FunctionDocumentation::Category category_tupleModuloByNumber = FunctionDocumentation::Category::Tuple;
     FunctionDocumentation documentation_tupleModuloByNumber = {description_tupleModuloByNumber, syntax_tupleModuloByNumber, arguments_tupleModuloByNumber, {}, returned_value_tupleModuloByNumber, examples_tupleModuloByNumber, introduced_in_tupleModuloByNumber, category_tupleModuloByNumber};
     factory.registerFunction<FunctionTupleModuloByNumber>(documentation_tupleModuloByNumber);
+
+    /// tuplePositiveModuloByNumber documentation
+    FunctionDocumentation::Description description_tuplePositiveModuloByNumber = R"(
+Returns a tuple of the positive moduli (remainders) of division operations of a tuple and a given divisor.
+Unlike tupleModuloByNumber, the result is always non-negative.
+)";
+    FunctionDocumentation::Syntax syntax_tuplePositiveModuloByNumber = "tuplePositiveModuloByNumber(tuple_num, div)";
+    FunctionDocumentation::Arguments arguments_tuplePositiveModuloByNumber = {
+        {"tuple_num", "Tuple of numerator values.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}},
+        {"div", "The divisor value.", {"(U)Int*", "Float*", "Decimal"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_tuplePositiveModuloByNumber = {"Returns a tuple of the non-negative remainders.", {"Tuple((U)Int*)", "Tuple(Float*)", "Tuple(Decimal)"}};
+    FunctionDocumentation::Examples examples_tuplePositiveModuloByNumber = {
+        {"Basic usage", "SELECT tuplePositiveModuloByNumber((15, 10, 5), 2)", "(1, 0, 1)"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_tuplePositiveModuloByNumber = {26, 4};
+    FunctionDocumentation::Category category_tuplePositiveModuloByNumber = FunctionDocumentation::Category::Tuple;
+    FunctionDocumentation documentation_tuplePositiveModuloByNumber = {description_tuplePositiveModuloByNumber, syntax_tuplePositiveModuloByNumber, arguments_tuplePositiveModuloByNumber, {}, returned_value_tuplePositiveModuloByNumber, examples_tuplePositiveModuloByNumber, introduced_in_tuplePositiveModuloByNumber, category_tuplePositiveModuloByNumber};
+    factory.registerFunction<FunctionTuplePositiveModuloByNumber>(documentation_tuplePositiveModuloByNumber);
 
     /// tupleIntDivByNumber documentation
     FunctionDocumentation::Description description_tupleIntDivByNumber = R"(
