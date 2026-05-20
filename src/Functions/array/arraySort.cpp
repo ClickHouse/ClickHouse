@@ -232,7 +232,7 @@ If the array to sort contains `-Inf`, `NULL`, `NaN`, or `Inf` they will be sorte
     FunctionDocumentation::Arguments arguments = {
         {"f(y1[, y2 ... yN])", "The lambda function to apply to elements of array `x`."},
         {"arr", "An array to be sorted. [`Array(T)`](/sql-reference/data-types/array)"},
-        {"arr1, ..., yN", "Optional. N additional arrays, in the case when `f` accepts multiple arguments."}
+        {"arr1, ..., arrN", "Optional. N additional arrays, in the case when `f` accepts multiple arguments."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {R"(
 Returns the array `arr` sorted in ascending order if no lambda function is provided, otherwise
@@ -265,7 +265,7 @@ If the array to sort contains `-Inf`, `NULL`, `NaN`, or `Inf` they will be sorte
 
 `arrayReverseSort` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
     )";
-    syntax = "arrayReverseSort([f,] arr [, arr1, ... ,arrN)";
+    syntax = "arrayReverseSort([f,] arr [, arr1, ... ,arrN])";
     returned_value = {R"(
 Returns the array `x` sorted in descending order if no lambda function is provided, otherwise
 it returns an array sorted according to the logic of the provided lambda function, and then reversed. [`Array(T)`](/sql-reference/data-types/array).
