@@ -23,11 +23,10 @@ def started_cluster():
 
 @pytest.fixture(autouse=True)
 def cleanup(started_cluster):
+    node.restart_clickhouse(kill=True)
     node.query("DROP TABLE IF EXISTS src")
     node.query("DROP TABLE IF EXISTS dst")
     yield
-    node.query("DROP TABLE IF EXISTS src")
-    node.query("DROP TABLE IF EXISTS dst")
 
 
 def create_tables():
