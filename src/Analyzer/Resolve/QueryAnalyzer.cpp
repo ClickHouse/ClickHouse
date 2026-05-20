@@ -3444,6 +3444,20 @@ void expandTuplesInList(QueryTreeNodes & key_list)
   */
 void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope)
 {
+    /// `WITH CLUSTER` runs after `Aggregating` and needs mergeable aggregate
+    /// states (`ColumnAggregateFunction`); `WITH ROLLUP` / `WITH CUBE` /
+    /// `GROUPING SETS` finalize the aggregates before that point, so the
+    /// combination would either hit a `LOGICAL_ERROR` in `mergeAggregateStates`
+    /// or operate on the wrong representation. Reject the combination upfront.
+    if (query_node_typed.hasGroupByWithCluster() &&
+        (query_node_typed.isGroupByWithRollup()
+         || query_node_typed.isGroupByWithCube()
+         || query_node_typed.isGroupByWithGroupingSets()))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "GROUP BY ... WITH CLUSTER cannot be combined with WITH ROLLUP, WITH CUBE or GROUPING SETS");
+    }
+
     if (query_node_typed.isGroupByWithGroupingSets())
     {
         for (auto & grouping_sets_keys_list_node : query_node_typed.getGroupBy().getNodes())
