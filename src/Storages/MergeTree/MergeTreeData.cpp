@@ -1852,6 +1852,40 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
     };
 
     auto * current = current_ptr.get();
+
+    /// Evict a rolled-back node from `current->children` and re-insert its orphaned descendants
+    /// together with the incoming `(info, name, disk)`, sorted by (level, mutation) descending so
+    /// that a covering node is always added before any node it may contain. This handles both the
+    /// intersection case (rolled-back tree-resident intersects with incoming committed peer) and
+    /// the containment case (incoming committed peer descends through a rolled-back ancestor whose
+    /// committed descendants would otherwise be silently treated as outdated).
+    auto evict_rolled_back_and_reinsert = [&](auto victim_iter)
+    {
+        LOG_WARNING(
+            getLogger("MergeTreeData"),
+            "Removing rolled-back part {} from loading tree; committed part {} will be used instead",
+            victim_iter->second->name,
+            name);
+        std::vector<std::tuple<MergeTreePartInfo, String, DiskPtr>> to_reinsert;
+        std::function<void(const NodePtr &)> collect = [&](const NodePtr & node)
+        {
+            to_reinsert.emplace_back(node->info, node->name, node->disk);
+            for (const auto & [_, cn] : node->children)
+                collect(cn);
+        };
+        for (const auto & [_, cn] : victim_iter->second->children)
+            collect(cn);
+        to_reinsert.emplace_back(info, name, disk);
+        std::sort(to_reinsert.begin(), to_reinsert.end(), [](const auto & a, const auto & b)
+        {
+            return std::tie(std::get<0>(a).level, std::get<0>(a).mutation)
+                 > std::tie(std::get<0>(b).level, std::get<0>(b).mutation);
+        });
+        current->children.erase(victim_iter);
+        for (auto & [oi, on, od] : to_reinsert)
+            add(oi, on, od);
+    };
+
     while (true)
     {
         auto it = current->children.lower_bound(info);
@@ -1862,6 +1896,14 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
 
             if (prev_info.contains(info))
             {
+                /// Descending into a rolled-back ancestor would silently bury committed descendants
+                /// (they would be loaded as Outdated instead of active). Evict the ancestor and let
+                /// its committed children be re-parented.
+                if (read_txn_status(prev->second->name, prev->second->disk) == RollbackStatus::RolledBack)
+                {
+                    evict_rolled_back_and_reinsert(prev);
+                    return;
+                }
                 current = prev->second.get();
                 continue;
             }
@@ -1889,36 +1931,8 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
                 }
                 if (existing_status == RollbackStatus::RolledBack)
                 {
-                    /// The part already in the loading tree is from a rolled-back transaction; the incoming
-                    /// part is committed. Collect all orphaned children of the rolled-back node and add them
-                    /// together with the incoming part, sorted by (level, mutation) descending so that
-                    /// higher-level parts are always inserted before any part they may contain. Without this
-                    /// ordering an orphan that belongs inside the incoming part would already be at sibling
-                    /// level when incoming is re-processed, causing a spurious intersection LOGICAL_ERROR.
-                    LOG_WARNING(
-                        getLogger("MergeTreeData"),
-                        "Removing rolled-back part {} from loading tree; committed part {} will be used instead",
-                        prev->second->name,
-                        name);
-                    std::vector<std::tuple<MergeTreePartInfo, String, DiskPtr>> to_reinsert;
-                    std::function<void(const NodePtr &)> collect = [&](const NodePtr & node)
-                    {
-                        to_reinsert.emplace_back(node->info, node->name, node->disk);
-                        for (const auto & [ci, cn] : node->children)
-                            collect(cn);
-                    };
-                    for (const auto & [ci, cn] : prev->second->children)
-                        collect(cn);
-                    to_reinsert.emplace_back(info, name, disk);
-                    std::sort(to_reinsert.begin(), to_reinsert.end(), [](const auto & a, const auto & b)
-                    {
-                        return std::tie(std::get<0>(a).level, std::get<0>(a).mutation)
-                             > std::tie(std::get<0>(b).level, std::get<0>(b).mutation);
-                    });
-                    current->children.erase(prev);
-                    for (auto & [oi, on, od] : to_reinsert)
-                        add(oi, on, od);
-                    return; /// incoming is handled by the loop above
+                    evict_rolled_back_and_reinsert(prev);
+                    return;
                 }
                 if (incoming_status == RollbackStatus::UnknownCSN || existing_status == RollbackStatus::UnknownCSN)
                 {
@@ -1946,6 +1960,12 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
 
             if (next_info.contains(info))
             {
+                /// See the equivalent branch in the `prev` arm above.
+                if (read_txn_status(it->second->name, it->second->disk) == RollbackStatus::RolledBack)
+                {
+                    evict_rolled_back_and_reinsert(it);
+                    return;
+                }
                 current = it->second.get();
                 continue;
             }
@@ -1971,29 +1991,7 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
                 }
                 if (existing_status == RollbackStatus::RolledBack)
                 {
-                    LOG_WARNING(
-                        getLogger("MergeTreeData"),
-                        "Removing rolled-back part {} from loading tree; committed part {} will be used instead",
-                        it->second->name,
-                        name);
-                    std::vector<std::tuple<MergeTreePartInfo, String, DiskPtr>> to_reinsert;
-                    std::function<void(const NodePtr &)> collect = [&](const NodePtr & node)
-                    {
-                        to_reinsert.emplace_back(node->info, node->name, node->disk);
-                        for (const auto & [ci, cn] : node->children)
-                            collect(cn);
-                    };
-                    for (const auto & [ci, cn] : it->second->children)
-                        collect(cn);
-                    to_reinsert.emplace_back(info, name, disk);
-                    std::sort(to_reinsert.begin(), to_reinsert.end(), [](const auto & a, const auto & b)
-                    {
-                        return std::tie(std::get<0>(a).level, std::get<0>(a).mutation)
-                             > std::tie(std::get<0>(b).level, std::get<0>(b).mutation);
-                    });
-                    current->children.erase(it);
-                    for (auto & [oi, on, od] : to_reinsert)
-                        add(oi, on, od);
+                    evict_rolled_back_and_reinsert(it);
                     return;
                 }
                 if (incoming_status == RollbackStatus::UnknownCSN || existing_status == RollbackStatus::UnknownCSN)
