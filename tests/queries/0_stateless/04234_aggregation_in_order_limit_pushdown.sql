@@ -66,16 +66,20 @@ SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit 
 -- LIMIT push-down must actually reach the aggregator and short-circuit the read.
 -- The small-block settings expose the effect on this 1000-row table — without
 -- push-down all rows are read, with push-down only a few granules.
+-- `enable_parallel_replicas = 0` is pinned because with parallel replicas the
+-- reads happen on remote replicas and `read_rows` accounting differs.
 SELECT key, count() FROM t_agg_in_order_limit GROUP BY key ORDER BY key ASC LIMIT 5
 SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1,
          max_threads = 1, max_block_size = 16,
          merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_rows_for_seek = 0,
+         enable_parallel_replicas = 0,
          log_comment = '04234_positive_on';
 
 SELECT key, count() FROM t_agg_in_order_limit GROUP BY key ORDER BY key ASC LIMIT 5
 SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 0,
          max_threads = 1, max_block_size = 16,
          merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_rows_for_seek = 0,
+         enable_parallel_replicas = 0,
          log_comment = '04234_positive_off';
 
 SYSTEM FLUSH LOGS query_log;
