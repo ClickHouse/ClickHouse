@@ -177,6 +177,7 @@ void FileSegment::setQueueIterator(Priority::IteratorPtr iterator)
     auto lk = lock();
     if (queue_iterator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Queue iterator cannot be set twice");
+    chassert(!on_delayed_removal);
     queue_iterator = iterator;
 }
 
@@ -185,6 +186,17 @@ void FileSegment::markDelayedRemovalAndResetQueueIterator()
     auto lk = lock();
     on_delayed_removal = true;
     queue_iterator = {};
+}
+
+void FileSegment::restoreQueueIteratorAfterDelayedRemoval(
+    Priority::IteratorPtr iterator)
+{
+    auto lk = lock();
+    chassert(iterator);
+    chassert(on_delayed_removal);
+    chassert(!queue_iterator);
+    queue_iterator = std::move(iterator);
+    on_delayed_removal = false;
 }
 
 size_t FileSegment::getCurrentWriteOffset() const
@@ -1082,6 +1094,10 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
         }
     }
 
+    /// A restored queue iterator must clear the delayed-removal state.
+    if (queue_iterator)
+        chassert(!on_delayed_removal);
+
     switch (download_state.load())
     {
         case State::EMPTY:
@@ -1136,7 +1152,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             chassert(file_size <= range().size());
             chassert(downloaded_size <= range().size());
 
-            chassert(queue_iterator);
+            chassert(queue_iterator || on_delayed_removal);
             check_iterator(queue_iterator);
             break;
         }

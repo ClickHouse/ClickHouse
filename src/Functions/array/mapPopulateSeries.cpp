@@ -259,8 +259,13 @@ private:
 
             for (KeyType current_key = min_key; current_key <= max_key; ++current_key)
             {
-                size_t key_offset_index = static_cast<size_t>(current_key - min_key);
-                size_t insert_index = result_value_data_size + key_offset_index;
+                /// Compute via unsigned arithmetic to avoid signed overflow when
+                /// max_key - min_key does not fit into KeyType (e.g. Int8 with min=-94, max=34).
+                /// The outer cast back to KeyTypeUnsigned discards the int-promotion bits for
+                /// types narrower than int, so the result is the wrap-around difference.
+                KeyTypeUnsigned key_offset_unsigned = static_cast<KeyTypeUnsigned>(
+                    static_cast<KeyTypeUnsigned>(current_key) - static_cast<KeyTypeUnsigned>(min_key));
+                size_t insert_index = result_value_data_size + static_cast<size_t>(key_offset_unsigned);
 
                 result_key_data[insert_index] = current_key;
 
