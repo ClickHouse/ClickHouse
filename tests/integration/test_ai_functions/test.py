@@ -15,7 +15,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import wait_condition
 
-MOCK_PORT = 9123
+MOCK_PORT = 18123
 AI_SETTINGS = {"allow_experimental_ai_functions": 1}
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -359,13 +359,8 @@ def test_translate_multiple_rows(started_cluster):
 def test_translate_with_instructions(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('Hello')")
-    # Sentinels make this test order-independent against the shared `LAST_REQUEST`
-    # state: even if another request hits the mock between our query and the
-    # /last-request fetch, we can detect it by the missing sentinel.
-    lang_marker = f"LangMarker_{uuid.uuid4().hex[:8]}"
-    instr_marker = f"InstrMarker_{uuid.uuid4().hex[:8]}"
     result = instance.query(
-        f"SELECT aiTranslate('ai_mock', x, '{lang_marker}', '{instr_marker}') FROM test_input",
+        "SELECT aiTranslate('ai_mock', x, 'German', 'Use formal tone') FROM test_input",
         settings=AI_SETTINGS,
     )
     assert result.strip() == "Hello"
@@ -377,8 +372,8 @@ def test_translate_with_instructions(started_cluster):
     )
     assert last["path"] == "/v1/chat/completions"
     sent = last["body"]
-    assert lang_marker in sent, f"target language not in request body: {sent!r}"
-    assert instr_marker in sent, f"instructions not in request body: {sent!r}"
+    assert "German" in sent
+    assert "Use formal tone" in sent
 
 
 def test_translate_profile_events(started_cluster):

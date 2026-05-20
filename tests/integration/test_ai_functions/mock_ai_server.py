@@ -26,7 +26,7 @@ import http.server
 import json
 from urllib.parse import urlparse
 
-MOCK_PORT = 9123
+MOCK_PORT = 18123
 DEFAULT_EMBED_DIM = 4
 
 # Single-threaded `HTTPServer` handles one request at a time, so a plain dict is safe.
