@@ -35,19 +35,14 @@ private:
 };
 
 
-/// Memory-based throttle for INSERT pipelines
-/// Estimates per-chunk cost from observed `Chunk::bytes()` (EWMA) and throttles
-/// parallelism so that `safety_factor * avg_chunk_bytes * allowed_outputs` stays
-/// below the free memory budget
+/// Estimates per-chunk cost from chunk size and throttles parallelism so that
+/// `safety_factor * avg_chunk_bytes * allowed_outputs` stays below the free memory
 class InsertMemoryThrottle
 {
 public:
-    /// Multiplier applied to the average chunk size to account for downstream
-    /// amplification not seen at the resize point
     static constexpr double DEFAULT_SAFETY_FACTOR = 4.0;
 
-    /// Smoothing factor of the chunk-bytes EWMA: higher = react faster to new chunks,
-    /// lower = smoother estimate
+    /// Smoothing factor of the chunk-bytes EWMA, adapt to change in size
     static constexpr double EWMA_ALPHA = 0.25;
 
     explicit InsertMemoryThrottle(
