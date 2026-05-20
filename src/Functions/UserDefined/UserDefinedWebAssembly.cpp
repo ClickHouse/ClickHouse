@@ -520,7 +520,7 @@ WebAssembly::WasmModule::Config getWasmModuleConfig(ContextPtr context)
     return cfg;
 }
 
-class FunctionUserDefinedWasm : public IFunction
+class FunctionUserDefinedWasm final : public IFunction
 {
 public:
     FunctionUserDefinedWasm(String function_name_, std::shared_ptr<UserDefinedWebAssemblyFunction> udf_, ContextPtr context_)
@@ -732,6 +732,21 @@ FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::get(const Str
                 function_name,
                 fmt::join(registry | std::views::transform([](const auto & pair) { return pair.first; }), ", "));
         }
+        wasm_func = it->second.function;
+    }
+
+    auto executable_function = std::make_shared<FunctionUserDefinedWasm>(function_name, std::move(wasm_func), std::move(context));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(executable_function));
+}
+
+FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::tryGet(const String & function_name, ContextPtr context)
+{
+    std::shared_ptr<UserDefinedWebAssemblyFunction> wasm_func = nullptr;
+    {
+        std::shared_lock lock(registry_mutex);
+        auto it = registry.find(function_name);
+        if (it == registry.end())
+            return nullptr;
         wasm_func = it->second.function;
     }
 
