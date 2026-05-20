@@ -55,6 +55,7 @@ ArrayJoin
 ArrowCompression
 ArrowFlight
 ArrowStream
+AssemblyScript
 Assignees
 AsyncInsertCacheSize
 AsyncLogging
@@ -2803,6 +2804,7 @@ intExp
 intHash
 integrational
 integrations
+interop
 interserver
 intervalLengthSum
 invalidCertificateHandler
