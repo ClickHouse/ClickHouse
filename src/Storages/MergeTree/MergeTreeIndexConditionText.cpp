@@ -817,13 +817,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             std::vector<String> tokens;
             tokens.reserve(elements.size());
 
-            for (const auto & element : elements)
+            for (const Field & element : elements)
             {
                 if (element.getType() != Field::Types::String)
                     return false;
 
-                /// Preprocessor matches index build; postprocessor is bypassed (literal element semantics).
-                auto element_tokens = stringToTokens(element, true, false);
+                std::vector<String> element_tokens = stringToTokens(element, true, has_postprocessor && !is_array_tokenizer);
                 if (element_tokens.empty())
                     return false;
 
@@ -844,7 +843,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         else
         {
             /// Produce one TextSearchQuery per needle element.
-            for (const auto & element : elements)
+            for (const Field & element : elements)
             {
                 if (element.getType() != Field::Types::String)
                 {
@@ -852,7 +851,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                     return false;
                 }
 
-                auto element_tokens = stringToTokens(element, true, false);
+                std::vector<String> element_tokens = stringToTokens(element, true, has_postprocessor && !is_array_tokenizer);
 
                 /// An element that tokenizes to nothing cannot be proven present by the index.
                 /// Bail out to keep the original predicate, same as tryPrepareSetForTextSearch does for IN.
