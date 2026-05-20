@@ -10,9 +10,12 @@
 #include <Processors/Port.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#include <absl/container/inlined_vector.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <numeric>
 #include <span>
 #include <unordered_map>
@@ -255,7 +258,10 @@ Chunk ClusterMergingTransform::generate1D()
     /// so they unconditionally belong to the same cluster.
 
     std::vector<BucketState> buckets;
-    std::unordered_map<UInt64, size_t> bucket_map; /// hash → index in buckets vector
+    /// hash → list of bucket indices sharing that hash. Collision-safe: on a hash hit
+    /// we still verify `bucket_id` and the non-cluster key values match before merging.
+    /// `InlinedVector<_, 1>` keeps the typical single-candidate case heap-free.
+    std::unordered_map<UInt64, absl::InlinedVector<size_t, 1>> bucket_map;
 
     for (size_t i = 0; i < total_rows; ++i)
     {
@@ -275,11 +281,33 @@ Chunk ClusterMergingTransform::generate1D()
 
         UInt64 hash = computeBucketHash(merged_columns, non_cluster_key_positions, i, bucket_id);
 
-        auto it = bucket_map.find(hash);
-        if (it != bucket_map.end())
+        auto & candidates = bucket_map[hash];
+        size_t found = std::numeric_limits<size_t>::max();
+        for (size_t cand : candidates)
+        {
+            const auto & cand_bucket = buckets[cand];
+            if (cand_bucket.bucket_id != bucket_id)
+                continue;
+            bool same = true;
+            for (size_t pos : non_cluster_key_positions)
+            {
+                if (merged_columns[pos]->compareAt(cand_bucket.leader_row_index, i, *merged_columns[pos], 1) != 0)
+                {
+                    same = false;
+                    break;
+                }
+            }
+            if (same)
+            {
+                found = cand;
+                break;
+            }
+        }
+
+        if (found != std::numeric_limits<size_t>::max())
         {
             /// Existing bucket: merge aggregate states, update min/max
-            auto & bucket = buckets[it->second];
+            auto & bucket = buckets[found];
             mergeAggregateStates(merged_columns, aggregates_mask, bucket.leader_row_index, i);
             bucket.min_cluster_key = std::min(bucket.min_cluster_key, cluster_val);
             bucket.max_cluster_key = std::max(bucket.max_cluster_key, cluster_val);
@@ -289,7 +317,7 @@ Chunk ClusterMergingTransform::generate1D()
             /// New bucket
             size_t idx = buckets.size();
             buckets.push_back({i, bucket_id, cluster_val, cluster_val, true});
-            bucket_map[hash] = idx;
+            candidates.push_back(idx);
         }
     }
 
@@ -523,7 +551,37 @@ Chunk ClusterMergingTransform::generate2D()
     /// unconditionally within d of each other (diagonal == d), merge them.
 
     std::vector<CellState> cells;
-    std::unordered_map<UInt64, size_t> cell_map;  /// hash -> index in cells
+    /// hash → list of cell indices sharing that hash. Collision-safe: on a hash hit
+    /// we still verify `(cx, cy)` and the non-cluster key values match before merging.
+    /// `InlinedVector<_, 1>` keeps the typical single-candidate case heap-free.
+    std::unordered_map<UInt64, absl::InlinedVector<size_t, 1>> cell_map;
+
+    /// Find a cell with the requested `(cx, cy)` whose non-cluster keys equal those
+    /// of `probe_row`. Returns size_t(-1) if no such cell exists.
+    auto lookup_cell = [&](Int64 cx, Int64 cy, size_t probe_row, UInt64 h) -> size_t
+    {
+        auto it = cell_map.find(h);
+        if (it == cell_map.end())
+            return std::numeric_limits<size_t>::max();
+        for (size_t cand : it->second)
+        {
+            const auto & cell = cells[cand];
+            if (cell.cx != cx || cell.cy != cy)
+                continue;
+            bool same = true;
+            for (size_t pos : non_cluster_key_positions)
+            {
+                if (merged_columns[pos]->compareAt(cell.leader_row_index, probe_row, *merged_columns[pos], 1) != 0)
+                {
+                    same = false;
+                    break;
+                }
+            }
+            if (same)
+                return cand;
+        }
+        return std::numeric_limits<size_t>::max();
+    };
 
     for (size_t i = 0; i < total_rows; ++i)
     {
@@ -534,10 +592,10 @@ Chunk ClusterMergingTransform::generate2D()
 
         UInt64 h = computeCellHash(merged_columns, non_cluster_key_positions, i, cx, cy);
 
-        auto it = cell_map.find(h);
-        if (it != cell_map.end())
+        size_t found = lookup_cell(cx, cy, i, h);
+        if (found != std::numeric_limits<size_t>::max())
         {
-            auto & cell = cells[it->second];
+            auto & cell = cells[found];
             mergeAggregateStates(merged_columns, aggregates_mask, cell.leader_row_index, i);
             cell.row_indices.push_back(i);
             cell.min_x = std::min(cell.min_x, xv);
@@ -549,7 +607,7 @@ Chunk ClusterMergingTransform::generate2D()
         {
             size_t idx = cells.size();
             cells.push_back({i, cx, cy, {i}, xv, xv, yv, yv});
-            cell_map[h] = idx;
+            cell_map[h].push_back(idx);
         }
     }
 
@@ -578,27 +636,12 @@ Chunk ClusterMergingTransform::generate2D()
             Int64 ncy = A.cy + dy;
 
             UInt64 h = computeCellHash(merged_columns, non_cluster_key_positions, leader_A, ncx, ncy);
-            auto it = cell_map.find(h);
-            if (it == cell_map.end())
+            size_t cj = lookup_cell(ncx, ncy, leader_A, h);
+            if (cj == std::numeric_limits<size_t>::max())
                 continue;
-
-            size_t cj = it->second;
             if (cj == ci)
-                continue;   /// Degenerate: hash collision with self; skip.
+                continue;   /// Should not happen — forward_offsets exclude (0,0) — defensive.
             const auto & B = cells[cj];
-
-            /// Verify non-cluster keys actually match (guard against hash collisions).
-            bool same_non_cluster = true;
-            for (size_t pos : non_cluster_key_positions)
-            {
-                if (merged_columns[pos]->compareAt(leader_A, B.leader_row_index, *merged_columns[pos], 1) != 0)
-                {
-                    same_non_cluster = false;
-                    break;
-                }
-            }
-            if (!same_non_cluster)
-                continue;
 
             /// Axis-aligned early reject: if the bounding boxes are already > d apart
             /// on either axis, no pair can satisfy the distance constraint.
