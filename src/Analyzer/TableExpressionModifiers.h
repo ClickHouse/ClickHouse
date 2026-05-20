@@ -2,6 +2,8 @@
 
 #include <Parsers/ASTSampleRatio.h>
 
+#include <Analyzer/IQueryTreeNode.h>
+
 #include <Core/Streaming/CursorTree_fwd.h>
 
 namespace DB
@@ -16,10 +18,17 @@ class TableExpressionModifiers
 public:
     using Rational = ASTSampleRatio::Rational;
 
+    struct WatermarkSettings
+    {
+        String column;
+        QueryTreeNodePtr expression;
+    };
+    using WatermarkSettingsPtr = std::shared_ptr<WatermarkSettings>;
+
     struct StreamSettings
     {
-        /// Null means "no cursor" (read from the beginning of the table).
-        CursorTreeNodePtr cursor_tree;
+        CursorTreeNodePtr cursor;
+        WatermarkSettingsPtr watermark;
     };
 
     TableExpressionModifiers() = default;
@@ -97,9 +106,20 @@ private:
     std::optional<StreamSettings> stream_settings;
 };
 
+inline bool operator==(const TableExpressionModifiers::WatermarkSettings & lhs, const TableExpressionModifiers::WatermarkSettings & rhs)
+{
+    if (lhs.column != rhs.column)
+        return false;
+
+    if ((lhs.expression == nullptr) != (rhs.expression == nullptr))
+        return false;
+
+    return !lhs.expression || lhs.expression->isEqual(*rhs.expression);
+}
+
 inline bool operator==(const TableExpressionModifiers::StreamSettings & lhs, const TableExpressionModifiers::StreamSettings & rhs)
 {
-    return lhs.cursor_tree == rhs.cursor_tree;
+    return lhs.cursor == rhs.cursor && lhs.watermark == rhs.watermark;
 }
 
 inline bool operator==(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)

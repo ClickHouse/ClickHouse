@@ -979,10 +979,21 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
 
                 if (table_expression.stream_settings)
                 {
-                    stream_settings = TableExpressionModifiers::StreamSettings{};
                     const auto & ast_stream_settings = table_expression.stream_settings->as<ASTStreamSettings &>();
-                    if (ast_stream_settings.settings.cursor_tree.has_value())
-                        stream_settings->cursor_tree = buildCursorTree(ast_stream_settings.settings.cursor_tree.value());
+
+                    stream_settings = TableExpressionModifiers::StreamSettings{};
+
+                    if (ast_stream_settings.cursor.has_value())
+                        stream_settings->cursor = buildCursorTree(ast_stream_settings.cursor.value());
+
+                    if (ast_stream_settings.watermark.has_value())
+                    {
+                        const auto & ast_watermark = ast_stream_settings.watermark.value();
+                        stream_settings->watermark = std::make_shared<TableExpressionModifiers::WatermarkSettings>();
+                        stream_settings->watermark->column = ast_watermark.column;
+                        if (ast_watermark.expression)
+                            stream_settings->watermark->expression = buildExpression(ast_watermark.expression, context);
+                    }
                 }
 
                 table_expression_modifiers = TableExpressionModifiers(has_final, sample_size_ratio, sample_offset_ratio, std::move(stream_settings));
