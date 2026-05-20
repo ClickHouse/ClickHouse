@@ -7,7 +7,6 @@
 03143_cte_scope
 02995_bad_formatting_union_intersect
 03045_unknown_identifier_alias_substitution
-02561_temporary_table_sessions
 
     https://github.com/ClickHouse/ClickHouse/issues/74324
     MULTIPLE_EXPRESSIONS_FOR_ALIAS
@@ -49,14 +48,12 @@
     https://github.com/ClickHouse/clickhouse-private/issues/15758
     dictGet by dict name
 01904_dictionary_default_nullable_type.cloud
-01904_ssd_cache_dictionary_default_nullable_type
 03062_analyzer_join_engine_missing_column
 
     https://github.com/ClickHouse/clickhouse-private/issues/11670
     Actual WithMergeableState
 01147_partial_merge_full_join
 01010_partial_merge_join
-02789_filesystem_cache_alignment
 
     https://github.com/ClickHouse/clickhouse-private/issues/17173
 03174_exact_rows_before_aggregation
@@ -121,14 +118,10 @@
 03355_join_to_in_optimization
 03152_join_filter_push_down_equivalent_columns
 03176_check_timeout_in_index_analysis
-03254_prewarm_mark_cache_rmt
 03273_group_by_in_order_still_used_when_group_by_key_doesnt_match_order_by_key
-03273_primary_index_cache
 03276_subcolumns_in_skipping_indexes.gen
-03277_prewarm_cache_2
 03278_json_subcolumns_in_skipping_indexes.gen
 00443_preferred_block_size_bytes
-00933_test_fix_extra_seek_on_compressed_cache
 01508_partition_pruning_long_1
 01508_partition_pruning_long_2
 02149_read_in_order_fixed_prefix
@@ -156,7 +149,6 @@
 03275_subcolumns_in_primary_key.gen
 03277_json_subcolumns_in_primary_key.gen
 02944_variant_as_common_type
-02417_load_marks_async
 03274_prewarm_primary_index_cache
 03262_filter_push_down_view
 01283_max_threads_simple_query_optimization
