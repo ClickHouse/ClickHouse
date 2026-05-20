@@ -26,7 +26,7 @@ namespace DB
 
 class IDataType;
 struct DataTypeWithConstInfo;
-using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>;
+using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 class Field;
 struct FieldInterval;

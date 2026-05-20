@@ -91,9 +91,9 @@ FunctionOverloadResolverPtr FunctionFactory::getImpl(
     return res;
 }
 
-std::vector<std::string> FunctionFactory::getAllNames() const
+Strings FunctionFactory::getAllNames() const
 {
-    std::vector<std::string> res;
+    Strings res;
     res.reserve(functions.size());
     for (const auto & func : functions)
         res.emplace_back(func.first);

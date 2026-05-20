@@ -817,9 +817,9 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
         {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary"}}.withDefault("MsgPack")},
     };
 
-    std::vector<String> getAllRegisteredNames() const override
+    Strings getAllRegisteredNames() const override
     {
-        std::vector<String> result;
+        Strings result;
         result.reserve(settings_def.size());
         for (const auto & [name, _] : settings_def)
             result.push_back(name);

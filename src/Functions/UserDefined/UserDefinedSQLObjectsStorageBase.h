@@ -5,12 +5,12 @@
 
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Interpreters/Context_fwd.h>
+#include <Core/Types.h>
 
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
-using Strings = std::vector<String>;
 
 class UserDefinedSQLObjectsStorageBase : public IUserDefinedSQLObjectsStorage, private WithContext
 {
@@ -22,7 +22,7 @@ public:
 
     bool has(const String & object_name) const override;
 
-    std::vector<String> getAllObjectNames() const override;
+    Strings getAllObjectNames() const override;
 
     VectorWithMemoryTracking<std::pair<String, ASTPtr>> getAllObjects() const override;
 

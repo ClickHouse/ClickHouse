@@ -256,7 +256,7 @@ bool UserDefinedSQLFunctionFactory::has(const String & function_name) const
     return getContext()->getUserDefinedSQLObjectsStorage().has(function_name);
 }
 
-std::vector<std::string> UserDefinedSQLFunctionFactory::getAllRegisteredNames() const
+Strings UserDefinedSQLFunctionFactory::getAllRegisteredNames() const
 {
     return getContext()->getUserDefinedSQLObjectsStorage().getAllObjectNames();
 }

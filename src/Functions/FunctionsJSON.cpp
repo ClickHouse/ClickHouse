@@ -844,7 +844,7 @@ public:
 
     static DataTypePtr getReturnType(const char *, const ColumnsWithTypeAndName &)
     {
-        static const std::vector<std::pair<String, Int8>> values = {
+        static const DataTypeEnum<Int8>::Values values = {
             {"Array", '['},
             {"Object", '{'},
             {"String", '"'},
