@@ -63,7 +63,7 @@ std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(
     const KeyCondition & key_condition, const Block & header, const orc::Type & schema, const FormatSettings & format_settings);
 
 class ORCColumnToCHColumn;
-class NativeORCBlockInputFormat : public IInputFormat
+class NativeORCBlockInputFormat final : public IInputFormat
 {
 public:
     NativeORCBlockInputFormat(
@@ -121,7 +121,7 @@ private:
     std::atomic<int> is_stopped{0};
 };
 
-class NativeORCSchemaReader : public ISchemaReader
+class NativeORCSchemaReader final : public ISchemaReader
 {
 public:
     NativeORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
