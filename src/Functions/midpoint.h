@@ -35,7 +35,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-class FunctionMidpoint final : public IFunction
+class FunctionMidpoint : public IFunction
 {
 public:
     static constexpr auto name = "midpoint";

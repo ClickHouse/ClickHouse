@@ -462,7 +462,7 @@ public:
 };
 
 template <typename Name, template <typename, typename> typename Impl>
-class FunctionSQLJSON final : public IFunction
+class FunctionSQLJSON : public IFunction
 {
 public:
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionSQLJSON>(context_); }

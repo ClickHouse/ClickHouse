@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesIdToTags(id) returns Array(Tuple(String, String)) containing the names and values of tags associated with
 /// a specified identifier `id`.
-class FunctionTimeSeriesIdToTags final : public IFunction
+class FunctionTimeSeriesIdToTags : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesIdToTags";
