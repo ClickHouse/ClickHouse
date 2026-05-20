@@ -2190,26 +2190,26 @@ void FileCache::onSegmentEvicted(const FileSegment & segment, FileCacheQueueEntr
     const size_t bytes = segment.range().size();
     const size_t hits = segment.getHitsCount();
     const char * queue = queueLabel(queue_type);
-    filesystem_cache_evictions_total.withLabels({name, queue}).increment();
-    filesystem_cache_evicted_bytes_total.withLabels({name, queue}).increment(static_cast<DimensionalMetrics::Value>(bytes));
-    filesystem_cache_evicted_segment_hits.withLabels({name, queue}).observe(static_cast<HistogramMetrics::Value>(hits));
-    filesystem_cache_evicted_segment_size_bytes.withLabels({name, queue}).observe(static_cast<HistogramMetrics::Value>(bytes));
+    filesystem_cache_evictions_total.getOrCreate({name, queue})->increment();
+    filesystem_cache_evicted_bytes_total.getOrCreate({name, queue})->increment(static_cast<DimensionalMetrics::Value>(bytes));
+    filesystem_cache_evicted_segment_hits.getOrCreate({name, queue})->observe(static_cast<HistogramMetrics::Value>(hits));
+    filesystem_cache_evicted_segment_size_bytes.getOrCreate({name, queue})->observe(static_cast<HistogramMetrics::Value>(bytes));
 
     if (!expose_eviction_metrics_per_client)
         return;
-    filesystem_cache_evictions_by_client_total.withLabels({name, queue, user_id}).increment();
-    filesystem_cache_evicted_bytes_by_client_total.withLabels({name, queue, user_id}).increment(static_cast<DimensionalMetrics::Value>(bytes));
-    filesystem_cache_evicted_segment_hits_by_client.withLabels({name, queue, user_id}).observe(static_cast<HistogramMetrics::Value>(hits));
-    filesystem_cache_evicted_segment_size_bytes_by_client.withLabels({name, queue, user_id}).observe(static_cast<HistogramMetrics::Value>(bytes));
+    filesystem_cache_evictions_by_client_total.getOrCreate({name, queue, user_id})->increment();
+    filesystem_cache_evicted_bytes_by_client_total.getOrCreate({name, queue, user_id})->increment(static_cast<DimensionalMetrics::Value>(bytes));
+    filesystem_cache_evicted_segment_hits_by_client.getOrCreate({name, queue, user_id})->observe(static_cast<HistogramMetrics::Value>(hits));
+    filesystem_cache_evicted_segment_size_bytes_by_client.getOrCreate({name, queue, user_id})->observe(static_cast<HistogramMetrics::Value>(bytes));
 }
 
 void FileCache::onSegmentPromoted(const String & user_id) const
 {
     if (!expose_eviction_metrics)
         return;
-    filesystem_cache_slru_promotions_total.withLabels({name}).increment();
+    filesystem_cache_slru_promotions_total.getOrCreate({name})->increment();
     if (expose_eviction_metrics_per_client)
-        filesystem_cache_slru_promotions_by_client_total.withLabels({name, user_id}).increment();
+        filesystem_cache_slru_promotions_by_client_total.getOrCreate({name, user_id})->increment();
 }
 
 void FileCache::deactivateBackgroundOperations()

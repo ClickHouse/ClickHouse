@@ -43,11 +43,18 @@ namespace DimensionalMetrics
             size_t operator()(const LabelValues & label_values) const;
         };
 
-        using MetricsMap = std::unordered_map<LabelValues, std::unique_ptr<Metric>, LabelValuesHash>;
+        using MetricsMap = std::unordered_map<LabelValues, std::shared_ptr<Metric>, LabelValuesHash>;
 
     public:
         MetricFamily(String name_, String documentation_, Labels labels_, std::vector<LabelValues> initial_label_values = {});
         Metric & withLabels(LabelValues label_values);
+
+        /// Returns a shared_ptr to the metric for the given labels, creating it
+        /// if absent. Callers that need to operate on the metric after releasing
+        /// the family lock should use this instead of withLabels — the
+        /// shared_ptr keeps the Metric alive even if removeWhere concurrently
+        /// erases the map entry (orphaned write, no UB).
+        std::shared_ptr<Metric> getOrCreate(LabelValues label_values);
 
         template <typename Func>
         void forEachMetric(Func && func) const
