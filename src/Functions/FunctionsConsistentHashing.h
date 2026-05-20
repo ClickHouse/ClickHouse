@@ -103,11 +103,17 @@ private:
 
     ColumnPtr executeConstBuckets(const ColumnsWithTypeAndName & arguments) const
     {
-        /// `getReturnTypeImpl` already verified `arguments[1]` is an integer; read it directly to avoid an intermediate `Field`.
-        const IColumn & buckets_col = *arguments[1].column;
-        BucketsType num_buckets = WhichDataType(arguments[1].type).isUInt()
-            ? checkBucketsRange(buckets_col.getUInt(0))
-            : checkBucketsRange(buckets_col.getInt(0));
+        Field buckets_field = (*arguments[1].column)[0];
+        BucketsType num_buckets;
+
+        if (buckets_field.getType() == Field::Types::Int64)
+            num_buckets = checkBucketsRange(buckets_field.safeGet<Int64>());
+        else if (buckets_field.getType() == Field::Types::UInt64)
+            num_buckets = checkBucketsRange(buckets_field.safeGet<UInt64>());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of the second argument of function {}",
+                buckets_field.getTypeName(), getName());
 
         const auto & hash_col = arguments[0].column;
         const IDataType * hash_type = arguments[0].type.get();

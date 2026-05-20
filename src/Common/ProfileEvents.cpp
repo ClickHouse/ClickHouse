@@ -984,6 +984,7 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperReadSnapshot, "Number of completed snapshot reads", ValueType::Number) \
     M(KeeperReadSnapshotObject, "Number of snapshot objects sent to followers", ValueType::Number) \
     M(KeeperReadSnapshotFailed, "Number of failed snapshot reads", ValueType::Number) \
+    M(KeeperReadSnapshotDeferred, "Number of snapshot reads deferred because the requested snapshot is no longer available locally; NuRaft will retry the latest snapshot.", ValueType::Number) \
     M(KeeperSnapshotRemoteLoaderErrors, "Number of remote read errors in RemoteSnapshotLoader while serving a snapshot to a follower", ValueType::Number) \
     M(KeeperSaveSnapshotObject, "Number of snapshot objects received from leader", ValueType::Number) \
     M(KeeperSaveSnapshotFailed, "Number of failed snapshot saves", ValueType::Number) \
@@ -1481,6 +1482,8 @@ Counters::Counters(Counters && src) noexcept
     : counters(std::exchange(src.counters, nullptr))
     , counters_holder(std::move(src.counters_holder))
     , parent(src.parent.exchange(nullptr))
+    , should_trace_array(src.should_trace_array.exchange(nullptr, std::memory_order_relaxed))
+    , should_trace_holder(std::move(src.should_trace_holder))
     , trace_all_profile_events(src.trace_all_profile_events.load(std::memory_order_relaxed))
     , level(src.level)
 {
@@ -1548,6 +1551,26 @@ Event getByName(std::string_view name)
     };
 
     return map.at(name);
+}
+
+void Counters::setTraceProfileEvent(Event event)
+{
+    auto * trace_array = should_trace_array.load(std::memory_order_relaxed);
+    if (!trace_array)
+    {
+        /// It is very unlikely that it will be allocated twice, since we set it at the beginning of the query
+        auto fresh = std::make_unique<std::atomic_bool[]>(num_counters);
+        auto * fresh_raw = fresh.get();
+        std::atomic_bool * expected = nullptr;
+        if (should_trace_array.compare_exchange_strong(expected, fresh_raw, std::memory_order_release, std::memory_order_relaxed))
+        {
+            should_trace_holder = std::move(fresh);
+            trace_array = fresh_raw;
+        }
+        else
+            trace_array = expected;
+    }
+    trace_array[event].store(true, std::memory_order_relaxed);
 }
 
 void Counters::setTraceProfileEvents(const String & events_list)
@@ -1655,7 +1678,8 @@ void Counters::increment(Event event, Count amount)
     do
     {
         current->counters[event].fetch_add(amount, std::memory_order_relaxed);
-        send_to_trace_log |= current->counters[event].should_trace;
+        if (auto * trace_arr = current->should_trace_array.load(std::memory_order_relaxed))
+            send_to_trace_log |= trace_arr[event].load(std::memory_order_relaxed);
         send_to_trace_log |= current->trace_all_profile_events.load(std::memory_order_relaxed);
 
         current = current->parent;
