@@ -15,6 +15,7 @@ OpenMetricsTextOutputFormat::OpenMetricsTextOutputFormat(
     WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
     : PrometheusTextOutputFormat(out_, std::move(header_), format_settings_)
 {
+    bindUnitColumnIfPresent(getPort(PortKind::Main).getHeader());
 }
 
 void OpenMetricsTextOutputFormat::writeAdditionalFamilyMetadata()

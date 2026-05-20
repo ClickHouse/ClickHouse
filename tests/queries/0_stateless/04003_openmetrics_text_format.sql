@@ -97,9 +97,17 @@ SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m{a="1",
 -- Descriptor and value must be separated by ASCII whitespace (no `m{job="x"}1`).
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m{job="x"}1', char(10))); -- { serverError INCORRECT_DATA }
 
--- Reject malformed label names (empty key, whitespace in key).
+-- Reject malformed label names (empty key, whitespace in key, `:` in key).
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m{="v"} 1', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m{a ="v"} 1', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m{trace:id="x"} 1', char(10))); -- { serverError INCORRECT_DATA }
+
+-- Reject non-finite timestamp tokens even when the schema has no timestamp column.
+SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 NaN', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 +Inf', char(10))); -- { serverError INCORRECT_DATA }
+
+-- `unit` must be String for OpenMetrics output schema validation.
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, unit UInt8', concat('x 1', char(10))); -- { serverError BAD_ARGUMENTS }
 
 -- Reject malformed float sample tokens (no partial parse, e.g. 1abc must not become 1).
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1abc', char(10))); -- { serverError INCORRECT_DATA }

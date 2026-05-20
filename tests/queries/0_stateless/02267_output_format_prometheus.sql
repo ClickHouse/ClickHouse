@@ -163,3 +163,6 @@ SELECT
     if(number == 2, 1395066363000, NULL) AS timestamp
 FROM numbers(5)
 FORMAT Prometheus;
+
+-- `unit` is not reserved for FORMAT Prometheus (OpenMetrics uses it for `# UNIT` only).
+SELECT name, value, toUInt8(5) AS unit FROM (SELECT 'demo_metric' AS name, 1. AS value) FORMAT Prometheus;

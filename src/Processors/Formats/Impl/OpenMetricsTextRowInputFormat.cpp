@@ -54,13 +54,31 @@ bool isPrometheusIdentifierChar(char c, bool first)
     return !first && c >= '0' && c <= '9';
 }
 
-/// Prometheus / OpenMetrics metric and label names: [a-zA-Z_:][a-zA-Z0-9_:]*
+bool isPrometheusLabelNameChar(char c, bool first)
+{
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_')
+        return true;
+    return !first && c >= '0' && c <= '9';
+}
+
+/// Metric names: [a-zA-Z_:][a-zA-Z0-9_:]*
 bool isValidPrometheusIdentifier(std::string_view id)
 {
     if (id.empty() || !isPrometheusIdentifierChar(id[0], true))
         return false;
     for (size_t i = 1; i < id.size(); ++i)
         if (!isPrometheusIdentifierChar(id[i], false))
+            return false;
+    return true;
+}
+
+/// Label names: [a-zA-Z_][a-zA-Z0-9_]*
+bool isValidPrometheusLabelName(std::string_view id)
+{
+    if (id.empty() || !isPrometheusLabelNameChar(id[0], true))
+        return false;
+    for (size_t i = 1; i < id.size(); ++i)
+        if (!isPrometheusLabelNameChar(id[i], false))
             return false;
     return true;
 }
@@ -139,7 +157,7 @@ bool parseLabelSet(std::string_view s, size_t & pos, std::map<String, String> & 
         if (pos >= s.size())
             return false;
         String key{s.substr(key_start, pos - key_start)};
-        if (!isValidPrometheusIdentifier(key))
+        if (!isValidPrometheusLabelName(key))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid label name '{}' in OpenMetrics label set", key);
         if (!tryConsume(s, pos, '='))
             return false;
@@ -204,6 +222,20 @@ bool parseValueToken(std::string_view s, size_t & pos, String & value_out)
     return !value_out.empty();
 }
 
+/// OpenMetrics `realnumber` timestamp (finite; not NaN/Inf).
+void validateOpenMetricsTimestampToken(const String & token, const String & line)
+{
+    if (token == "NaN" || token == "+Inf" || token == "Inf" || token == "-Inf")
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid timestamp token '{}' in OpenMetrics line: {}", token, line);
+
+    Float64 v = 0;
+    ReadBufferFromString buf(token);
+    if (!tryReadFloatText(v, buf) || !buf.eof())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid timestamp token '{}' in OpenMetrics line: {}", token, line);
+    if (!std::isfinite(v))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid timestamp token '{}' in OpenMetrics line: {}", token, line);
+}
+
 /// Optional sample or exemplar timestamp (`realnumber` in OpenMetrics text grammar).
 bool parseOptionalTimestampToken(std::string_view s, size_t & pos, String & out, const String & line)
 {
@@ -216,20 +248,18 @@ bool parseOptionalTimestampToken(std::string_view s, size_t & pos, String & out,
         ++pos;
     out = String{s.substr(start, pos - start)};
 
-    Float64 v = 0;
-    ReadBufferFromString buf(out);
-    if (!tryReadFloatText(v, buf) || !buf.eof())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid timestamp token '{}' in OpenMetrics line: {}", out, line);
+    validateOpenMetricsTimestampToken(out, line);
     return true;
 }
 
 Int64 timestampTokenToInt64(const String & token, const String & line)
 {
+    validateOpenMetricsTimestampToken(token, line);
+
     Float64 v = 0;
     ReadBufferFromString buf(token);
-    if (!tryReadFloatText(v, buf) || !buf.eof())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid timestamp token '{}' in OpenMetrics line: {}", token, line);
-    if (!std::isfinite(v) || v < static_cast<Float64>(std::numeric_limits<Int64>::min())
+    tryReadFloatText(v, buf);
+    if (v < static_cast<Float64>(std::numeric_limits<Int64>::min())
         || v > static_cast<Float64>(std::numeric_limits<Int64>::max()))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Timestamp value out of Int64 range in OpenMetrics line: {}", line);
     return static_cast<Int64>(v);

@@ -73,6 +73,9 @@ protected:
 
     static void fixupBucketLabels(CurrentMetric & metric);
 
+    /// Binds optional `unit` column for OpenMetrics output only (`FORMAT Prometheus` ignores it).
+    void bindUnitColumnIfPresent(const Block & header);
+
     ColumnPositions pos;
     CurrentMetric current_metric;
     SerializationPtr string_serialization;

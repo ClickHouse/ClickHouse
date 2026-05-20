@@ -106,6 +106,10 @@ PrometheusTextOutputFormat::PrometheusTextOutputFormat(
     getColumnPos(header, "type", isStringOrFixedString, pos.type);
     getColumnPos(header, "timestamp", isNumber, pos.timestamp);
     getColumnPos(header, "labels", isDataTypeMapString, pos.labels);
+}
+
+void PrometheusTextOutputFormat::bindUnitColumnIfPresent(const Block & header)
+{
     getColumnPos(header, "unit", isStringOrFixedString, pos.unit);
 }
 
