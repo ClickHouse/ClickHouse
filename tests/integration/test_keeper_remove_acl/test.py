@@ -64,8 +64,10 @@ def test_server_restart(started_cluster):
 
     def delete_node():
         node_zk = get_fake_zk("node")
-        node_zk.delete("/test_acl_node")
-        stop_zk_connection(node_zk)
+        try:
+            node_zk.delete("/test_acl_node")
+        finally:
+            stop_zk_connection(node_zk)
 
     create_node_with_acl()
     delete_node()
