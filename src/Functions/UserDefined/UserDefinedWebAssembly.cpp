@@ -809,7 +809,7 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
                 },
                 Field(default_value));
         }
-        std::unordered_set<String> values;
+        UnorderedSetWithMemoryTracking<String> values;
     };
 
     const UnorderedMapWithMemoryTracking<String, SettingDefinition> settings_def = {

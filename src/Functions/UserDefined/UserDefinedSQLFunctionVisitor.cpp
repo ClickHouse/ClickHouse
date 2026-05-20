@@ -56,7 +56,7 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
 
     if (const auto * function = ast->template as<ASTFunction>())
     {
-        std::unordered_set<std::string> udf_in_replace_process;
+        UnorderedSetWithMemoryTracking<std::string> udf_in_replace_process;
         auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process, context_);
         if (replace_result)
             ast = replace_result;
@@ -72,7 +72,7 @@ bool isVariadic(const ASTPtr & arg)
 }
 }
 
-ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process, ContextPtr context_)
+ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process, ContextPtr context_)
 {
     if (udf_in_replace_process.contains(function.name))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,

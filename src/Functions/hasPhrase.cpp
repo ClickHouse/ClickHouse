@@ -11,6 +11,7 @@
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <ranges>
 
@@ -184,7 +185,7 @@ FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & argu
     const auto tokenizer_name = arguments.size() < 3 || !arguments[arg_tokenizer].column ? SplitByNonAlphaTokenizer::getExternalName()
                                                                                          : arguments[arg_tokenizer].column->getDataAt(0);
     auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
-    static const std::unordered_set<ITokenizer::Type> supported_types = {
+    static const UnorderedSetWithMemoryTracking<ITokenizer::Type> supported_types = {
         ITokenizer::Type::SplitByNonAlpha,
         ITokenizer::Type::SplitByString,
         ITokenizer::Type::AsciiCJK,

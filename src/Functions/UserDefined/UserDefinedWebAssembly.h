@@ -11,6 +11,7 @@
 #include <Common/SharedMutex.h>
 #include <Common/StopToken.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB

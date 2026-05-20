@@ -1,5 +1,6 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Common/CurrentThread.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Backups/RestorerFromBackup.h>
@@ -71,7 +72,7 @@ namespace
         if (!tuple_function_arguments || !tuple_function_arguments->arguments || tuple_function_arguments->name != "tuple")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lambda must have valid arguments");
 
-        std::unordered_set<String> arguments;
+        UnorderedSetWithMemoryTracking<String> arguments;
 
         for (const auto & argument : tuple_function_arguments->arguments->children)
         {

@@ -1,5 +1,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -523,7 +524,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// 3. None of the result types should be Nullable or LowCardinality(Nullable)
     ///    (casting handles NULL extraction automatically)
     bool can_use_direct_construction = true;
-    std::unordered_set<String> result_type_names;
+    UnorderedSetWithMemoryTracking<String> result_type_names;
 
     for (size_t i = 0; i < num_variants; ++i)
     {

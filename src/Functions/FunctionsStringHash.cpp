@@ -3,6 +3,7 @@
 #include <Functions/ExtractString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsHashing.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Common/PODArray.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -395,7 +396,7 @@ struct MinHashImpl
             }
         }
 
-        std::map<UInt64, BytesRef, Comp> values;
+        MapWithMemoryTracking<UInt64, BytesRef, Comp> values;
     };
 
     using MaxHeap = Heap<std::less<>>;

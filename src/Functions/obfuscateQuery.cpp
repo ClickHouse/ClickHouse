@@ -22,6 +22,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Poco/String.h>
 #include <boost/algorithm/string/split.hpp>
@@ -52,7 +53,7 @@ const KnownIdentifierFunc & getKnownIdentifierFunc()
     /// as-is instead of being replaced by random words.
     static const KnownIdentifierFunc func = []() -> KnownIdentifierFunc
     {
-        auto names = std::make_shared<std::unordered_set<std::string>>();
+        auto names = std::make_shared<UnorderedSetWithMemoryTracking<std::string>>();
 
         auto insert = [&](const auto & range) { names->insert(range.begin(), range.end()); };
         insert(StorageFactory::instance().getAllRegisteredNames());
@@ -74,7 +75,7 @@ const KnownIdentifierFunc & getKnownIdentifierFunc()
                     names->insert(word);
         }
 
-        auto names_lowercase = std::make_shared<std::unordered_set<std::string>>();
+        auto names_lowercase = std::make_shared<UnorderedSetWithMemoryTracking<std::string>>();
         for (const auto & name : *names)
             names_lowercase->insert(Poco::toLower(name));
 

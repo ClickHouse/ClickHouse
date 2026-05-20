@@ -5,6 +5,7 @@
 #include <Core/IResolvedFunction.h>
 #include <Core/Names.h>
 #include <Core/ValuesWithType.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <DataTypes/IDataType_fwd.h>
 
 #include "config.h"
@@ -282,7 +283,7 @@ public:
         /// Should we enable lazy execution for the nth argument of short-circuit function?
         /// Example 1st argument: if(cond, then, else), we don't need to execute cond lazily.
         /// Example other arguments: 1st, 2nd, 3rd argument of dictGetOrDefault should always be calculated.
-        std::unordered_set<size_t> arguments_with_disabled_lazy_execution;
+        UnorderedSetWithMemoryTracking<size_t> arguments_with_disabled_lazy_execution;
 
         /// Should we enable lazy execution for functions, that are common descendants of
         /// different short-circuit function arguments?
