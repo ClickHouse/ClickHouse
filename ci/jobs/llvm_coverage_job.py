@@ -360,68 +360,79 @@ if __name__ == "__main__":
                     print(f"Warning: could not parse changes.diff for path detection: {_e}")
 
             def _is_test_path(p: str) -> bool:
-                # Functional + integration tests live under tests/...
-                # Unit tests are C++ files under src/**/tests/...
-                if p.startswith("tests/"):
+                # Strict allowlist of paths containing runnable test
+                # definitions. `tests/ci/**`, `tests/integration/helpers/**`,
+                # `tests/clickhouse-test`, `tests/runner` and other
+                # `tests/`-prefixed *infrastructure* are deliberately NOT
+                # tests — counting them as test changes would mis-attribute
+                # coverage-build noise to PRs that only touched helpers.
+                if p.startswith("tests/queries/"):
                     return True
+                if p.startswith("tests/performance/"):
+                    return True
+                if p.startswith("tests/stress/"):
+                    return True
+                # Integration tests live in tests/integration/test_*/.
+                # tests/integration/helpers/, tests/integration/runner, the
+                # top-level conftest.py, ... are infrastructure.
+                if p.startswith("tests/integration/test_"):
+                    return True
+                # Unit tests: C++ files under src/**/tests/.
                 if p.startswith("src/") and "/tests/" in p:
                     return True
                 return False
 
-            _CPP_EXTS = (".cpp", ".cc", ".cxx", ".c", ".h", ".hpp", ".hxx", ".hh")
-            # Templated sources that get expanded into the above extensions at
-            # configure time (e.g. `Config.h.in` -> `Config.h`).
-            _CPP_TEMPLATE_EXTS = tuple(ext + ".in" for ext in _CPP_EXTS)
-            # Assembly and Rust sources also link into the production binary.
-            _OTHER_LINKED_EXTS = (".s", ".S", ".asm", ".rs")
+            # Conservative allowlist of paths that *definitely* cannot affect
+            # the compiled ClickHouse binary. Anything not in this set is
+            # assumed to potentially affect the binary, which suppresses the
+            # newly-covered analysis below — exhaustively enumerating
+            # build-affecting inputs (CMakeLists at any depth, *.cmake,
+            # *.h.in, parser/grammar files, codegen drivers, Rust sources,
+            # assembly, contrib/**, ...) is impractical, and missing one
+            # over-attributes coverage transitions to "tests catching up"
+            # when in fact the binary itself changed. Notably, `contrib/**`
+            # is absent from this list, so any contrib change correctly
+            # suppresses the newly-covered claim.
+            _NON_BINARY_TOP_LEVEL_FILES = frozenset({
+                "README.md", "LICENSE", "CHANGELOG.md", "CONTRIBUTING.md",
+                "NOTICE", "AUTHORS", "CODE_OF_CONDUCT.md", "SECURITY.md",
+                ".gitignore", ".gitattributes", ".editorconfig",
+                ".dockerignore", ".clang-format", ".clang-tidy",
+            })
 
-            def _affects_binary(p: str) -> bool:
-                # Files whose change can alter the compiled production
-                # ClickHouse binary. When any of these change, the per-changed-
-                # file differential coverage report is the right signal;
-                # newly-covered transitions on a changed binary mix "tests
-                # caught up to old code" with "new code exercised by old
-                # tests" and are not attributable to test additions.
-                #
-                # Includes:
-                #   - C/C++ source and headers
-                #   - templated sources (`.cpp.in`, `.h.in`, ...)
-                #   - assembly (`.s`, `.S`, `.asm`) and Rust (`.rs`)
-                #   - build files: `CMakeLists.txt`, `*.cmake`
-                #   - codegen drivers: any `.py` under `src/`, `programs/`, `base/`
-                # Excludes:
-                #   - `contrib/` (third-party; coverage instrumentation is off)
-                #   - test code (tests/... and src/**/tests/...)
-                if p.startswith("contrib/"):
-                    return False
-                if _is_test_path(p):
-                    return False
-                if p.endswith(_CPP_EXTS):
+            def _is_non_binary_path(p: str) -> bool:
+                # Everything under tests/ — runnable tests AND infrastructure
+                # (helpers, runners, tests/ci, conftests, jepsen.clickhouse,
+                # ...) — does not link into the production ClickHouse binary.
+                # The test-infrastructure case is intentionally broader than
+                # _is_test_path so changes to helpers don't flip
+                # _binary_unchanged to False, but they also don't flip
+                # _tests_changed to True (so no spurious comment is posted).
+                if p.startswith("tests/"):
                     return True
-                if p.endswith(_CPP_TEMPLATE_EXTS):
+                # Unit tests under src/**/tests/.
+                if p.startswith("src/") and "/tests/" in p:
                     return True
-                if p.endswith(_OTHER_LINKED_EXTS):
+                # CI infrastructure and dev tooling.
+                if p.startswith("ci/") or p.startswith(".github/"):
                     return True
-                if os.path.basename(p) == "CMakeLists.txt":
+                # Documentation.
+                if p.startswith("docs/"):
                     return True
-                if p.endswith(".cmake"):
-                    return True
-                if p.endswith(".py") and (
-                    p.startswith("src/")
-                    or p.startswith("programs/")
-                    or p.startswith("base/")
-                ):
+                # Top-level repo metadata files.
+                if "/" not in p and p in _NON_BINARY_TOP_LEVEL_FILES:
                     return True
                 return False
 
             _tests_changed = any(_is_test_path(p) for p in _changed_paths)
-            # The binary is identical to baseline iff no binary-affecting file
-            # changed. Test files, CI helpers in ci/, tests/ci/, .py / .sh
-            # outside src|programs|base, configs, and docs all leave the
-            # binary unchanged, so any coverage delta is purely attributable
-            # to the test set running against it.
-            _binary_unchanged = bool(_changed_paths) and not any(
-                _affects_binary(p) for p in _changed_paths
+            # The production binary is identical to baseline iff *every*
+            # changed path is on the conservative allowlist above. Anything
+            # outside the allowlist — a `.cmake` file, a CMakeLists.txt, an
+            # unusual codegen input, a Rust source, a `utils/` change that
+            # also rebuilds a tool, a `contrib/` bump, etc. — flips this to
+            # False and suppresses the newly-covered analysis.
+            _binary_unchanged = bool(_changed_paths) and all(
+                _is_non_binary_path(p) for p in _changed_paths
             )
 
             _base_info = f"{TEMP_DIR}/base_llvm_coverage.info"
@@ -462,20 +473,22 @@ if __name__ == "__main__":
             # there is something coverage-related to report:
             #   - the diff HTML report was generated (C/C++ source files changed), OR
             #   - LBC was detected (tests removed -> baseline coverage lost), OR
-            #   - the production binary is unchanged AND we have both .info files
-            #     (a tests-only or CI-scripts-only PR — the global delta is the
-            #     signal, and if tests changed the newly-covered analysis above
-            #     supplies the actionable detail).
-            # PRs that don't fall in any of those buckets (e.g. contrib-only) get
-            # no comment.
+            #   - an actual runnable test changed AND the production binary is
+            #     unchanged AND we have both .info files. The global delta on its
+            #     own is mostly run-to-run noise (~1000 lines flicker between two
+            #     master runs); we only post the comment when there's an
+            #     attributable test change to anchor it to.
+            # PRs that don't fall in any of those buckets — contrib-only,
+            # docs-only, helper-only changes that don't alter a runnable test —
+            # get no comment.
             _has_coverage_data = (
                 _diff_ran
                 or _lbc_lines > 0
                 or _lbc_fns > 0
-                or (_binary_unchanged and _global_stats_available)
+                or (_tests_changed and _binary_unchanged and _global_stats_available)
             )
             if not _has_coverage_data:
-                print("No coverage-relevant changes detected (no C/C++ source, no test changes, no LBC) — skipping coverage comment.")
+                print("No coverage-relevant changes detected (no C/C++ source, no runnable-test changes, no LBC) — skipping coverage comment.")
             else:
                 # When _diff_ran is False (LBC-only or tests-only PR), fetch the global
                 # percentages from the .info files that were downloaded during the diff
