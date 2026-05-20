@@ -3,12 +3,15 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
+#include <base/arithmeticOverflow.h>
+
 #include <dirent.h>
 #include <fcntl.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <fstream>
+#include <limits>
 #include <string>
 
 
@@ -317,12 +320,17 @@ void UDFProcessSubtreeSampler::recordReleased()
     if (post_stime_sum_in_baseline >= pre_stime_sum)
         system_time_us = post_stime_sum_in_baseline - pre_stime_sum;
 
-    /// PeakMemoryByteSeconds = peak_rss × borrow_wall_seconds.
-    /// Stored as integer byte-seconds. 64-bit multiplication is fine for any
-    /// realistic UDF (1 GiB × 100 s ≈ 10^14, well below 2^64); pathological
-    /// inputs above ~1.8e19 byte-microseconds would overflow before the
-    /// divide.
-    peak_memory_byte_seconds = peak_rss * elapsed_us / 1000000ULL;
+    /// PeakMemoryByteSeconds = peak_rss × borrow_wall_seconds. Stored as
+    /// integer byte-seconds. 64-bit multiplication is fine for any realistic
+    /// UDF (1 GiB × 100 s ≈ 10^14, well below 2^64); pathological inputs
+    /// above ~1.8e19 byte-microseconds would overflow before the divide.
+    /// Use `common::mulOverflow` so UBSan does not flag the expected
+    /// wrap-around, and clamp to UInt64::max byte-seconds on overflow.
+    UInt64 product = 0;
+    if (common::mulOverflow(peak_rss, elapsed_us, product))
+        peak_memory_byte_seconds = std::numeric_limits<UInt64>::max();
+    else
+        peak_memory_byte_seconds = product / 1000000ULL;
 }
 
 }
