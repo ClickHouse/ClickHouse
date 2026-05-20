@@ -1,4 +1,6 @@
 import json
+import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -20,28 +22,30 @@ ASSET_TARGETS = [
     "x86_64-apple-darwin",
     "x86_64-unknown-linux-musl",
 ]
-
-
-def asset_matches(name):
-    if not name.startswith("clickhousectl-") or not name.endswith(".tar.gz"):
-        return False
-    middle = name[len("clickhousectl-") : -len(".tar.gz")]
-    for target in ASSET_TARGETS:
-        if middle.startswith(target + "-v"):
-            return True
-    return False
+# Strict tag format keeps release metadata out of shell command construction.
+TAG_RE = re.compile(r"^v\d+\.\d+\.\d+(?:[A-Za-z0-9.\-]*)$")
 
 
 def fetch_release():
     output = Shell.get_output(
-        f"gh release view --repo {REPO} --json tagName,assets", verbose=True
+        f"gh release view --repo {shlex.quote(REPO)} --json tagName,assets",
+        verbose=True,
     )
     if not output:
         raise RuntimeError(f"Failed to fetch latest release for {REPO}")
     data = json.loads(output)
     tag = data["tagName"]
-    assets = [a["name"] for a in data.get("assets", []) if asset_matches(a["name"])]
-    return tag, assets
+    if not TAG_RE.match(tag):
+        raise RuntimeError(f"Release tag [{tag}] does not match expected format")
+
+    asset_names = {a["name"] for a in data.get("assets", [])}
+    expected = {target: f"clickhousectl-{target}-{tag}.tar.gz" for target in ASSET_TARGETS}
+    missing = [name for name in expected.values() if name not in asset_names]
+    if missing:
+        raise RuntimeError(
+            f"Release {tag} is missing required assets: {missing}"
+        )
+    return tag, list(expected.values())
 
 
 def process_asset(tag, asset_name, uploaded_links):
@@ -56,11 +60,13 @@ def process_asset(tag, asset_name, uploaded_links):
     if local_path.exists():
         local_path.unlink()
 
-    if not Shell.check(
-        f"gh release download {tag} --repo {REPO} --pattern {asset_name} "
-        f"--dir {download_dir}",
-        verbose=True,
-    ):
+    cmd = (
+        f"gh release download {shlex.quote(tag)} "
+        f"--repo {shlex.quote(REPO)} "
+        f"--pattern {shlex.quote(asset_name)} "
+        f"--dir {shlex.quote(str(download_dir))}"
+    )
+    if not Shell.check(cmd, verbose=True):
         raise RuntimeError(f"Failed to download asset [{asset_name}]")
 
     assert local_path.exists(), f"Downloaded file [{local_path}] not found"
@@ -81,11 +87,7 @@ def main():
         state["tag"] = tag
         state["assets"] = assets
         print(f"Latest release tag: {tag}")
-        print(f"Matching assets: {assets}")
-        if not assets:
-            raise RuntimeError(
-                f"No assets matched the expected patterns for release {tag}"
-            )
+        print(f"Expected assets: {assets}")
 
     results.append(
         Result.from_commands_run(name="Discover release assets", command=discover)
