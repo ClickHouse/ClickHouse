@@ -198,6 +198,18 @@ def main():
         )
         res = results[-1].is_ok()
 
+        # Validate `.gitmodules` (no recursive submodules, valid URLs, name == path).
+        # Run it only in the arm_tidy build to avoid adding overhead to every build
+        # and to the style check (which does not have submodules available).
+        if res and build_type == BuildTypes.ARM_TIDY:
+            results.append(
+                Result.from_commands_run(
+                    name="Check Submodules",
+                    command="./ci/jobs/scripts/check_style/check_submodules.sh",
+                )
+            )
+            res = results[-1].is_ok()
+
     version_dict = None
     if not info.is_local_run:
         version_dict = info.get_kv_data("version")
