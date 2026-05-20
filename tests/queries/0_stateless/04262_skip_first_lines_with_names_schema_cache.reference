@@ -1,5 +1,5 @@
-a	Nullable(String)					
-b	Nullable(String)					
+a	Nullable(Int64)					
+b	Nullable(Int64)					
 header1	Nullable(String)					
 header2	Nullable(String)					
 a	Nullable(Int64)					
