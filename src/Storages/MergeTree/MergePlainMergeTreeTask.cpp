@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>

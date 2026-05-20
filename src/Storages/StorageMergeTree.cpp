@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <ranges>
+#include <thread>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Core/BackgroundSchedulePool.h>

@@ -6,6 +6,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ErrnoException.h>
+#include <Common/ThreadPool.h>
 #include <filesystem>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 

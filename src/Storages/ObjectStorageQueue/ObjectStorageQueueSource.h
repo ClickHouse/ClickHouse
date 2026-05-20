@@ -192,7 +192,7 @@ public:
 
     Chunk generate() override;
 
-    void onFinish() override { parser_shared_resources->finishStream(); }
+    void onFinish() override;
 
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.

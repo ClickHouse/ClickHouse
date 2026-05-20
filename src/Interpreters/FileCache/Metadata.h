@@ -9,7 +9,7 @@
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 #include <Common/SharedMutex.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 
 #include <memory>
 

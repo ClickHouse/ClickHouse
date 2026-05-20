@@ -12,6 +12,7 @@
 #include <Common/setThreadName.h>
 #include <Common/quoteString.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SettingSource.h>
 #include <Interpreters/Context.h>

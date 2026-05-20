@@ -11,6 +11,7 @@
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InsertDeduplication.h>
@@ -1017,6 +1018,8 @@ Chunk ObjectStorageQueueSource::generate()
 
     return chunk;
 }
+
+void ObjectStorageQueueSource::onFinish() { parser_shared_resources->finishStream(); }
 
 Chunk ObjectStorageQueueSource::generateImpl()
 {
