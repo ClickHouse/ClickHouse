@@ -58,3 +58,19 @@ DROP TABLE t_codec_real;
 -- is the canonical form in expression context and must round-trip to itself.
 SELECT formatQuerySingleLine('SELECT tuple(1, 2), (1, 2), (tuple(1, 2))');
 SELECT formatQuerySingleLine('SELECT 1 WHERE (1, 2) NOT IN ((3, 4))');
+
+-- Same shape under `BACKUP_NAME` (the third kind that sets `allow_operators` =
+-- false at `ASTFunction.cpp:298`). Issue #105396 reported the same STID
+-- 1941-1bfa firing on `RESTORE TABLE ... FROM Memory(...)` where the
+-- `Memory(...)` engine name is parsed via `parseBackupName` and tagged as
+-- `Kind::BACKUP_NAME`, so descendants inherit `allow_operators = false` and
+-- hit the same `Function_tuple` round-trip path as `CODEC` / `STATISTICS`.
+SELECT formatQuerySingleLine('RESTORE TABLE src AS dst FROM Memory(not((not(materialize(1), materialize(2)))))');
+SELECT formatQuerySingleLine('BACKUP TABLE src TO Memory(not(tuple(1, 2, 3)))');
+SELECT formatQuerySingleLine('BACKUP TABLE src TO Memory(not((tuple(materialize(1), materialize(2)))))');
+
+-- And the original `RESTORE TABLE` query path must also pass the internal
+-- round-trip check (this is the exact failure shape from issue #105396).
+-- We do not care which error fires, only that the server does not abort
+-- with LOGICAL_ERROR.
+RESTORE TABLE src_1941_1bfa AS dst_1941_1bfa FROM Memory(not(materialize(1), materialize(2))); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
