@@ -42,7 +42,7 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
     {
         while (true)
         {
-            if (stage == Stage::ReadFirstInput)
+            if (stage == Stage::ReadLeftInput)
             {
                 auto & input = inputs.front();
 
@@ -62,20 +62,20 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
                 break;
             }
 
-            if (stage == Stage::ReadSecondInput)
+            if (stage == Stage::ReadRightInput)
             {
                 auto & input = inputs.back();
 
                 if (input.isFinished())
                 {
-                    if (isIntersectOperator() && !has_second_input_rows)
+                    if (isIntersectOperator() && !has_right_input_rows)
                     {
                         inputs.front().close();
                         output.finish();
                         return Status::Finished;
                     }
 
-                    stage = Stage::ReadRemainingFirstInput;
+                    stage = Stage::ReadRemainingLeftInput;
                     continue;
                 }
 
@@ -88,10 +88,10 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
                 break;
             }
 
-            if (has_first_input_chunk)
+            if (has_left_input_chunk)
             {
-                current_input_chunk = std::move(first_input_chunk);
-                has_first_input_chunk = false;
+                current_input_chunk = std::move(left_input_chunk);
+                has_left_input_chunk = false;
                 has_input = true;
                 break;
             }
@@ -120,18 +120,18 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
 
 void IntersectOrExceptTransform::work()
 {
-    if (stage == Stage::ReadFirstInput)
+    if (stage == Stage::ReadLeftInput)
     {
         if (current_input_chunk.hasRows())
         {
-            first_input_chunk = std::move(current_input_chunk);
-            has_first_input_chunk = true;
-            stage = Stage::ReadSecondInput;
+            left_input_chunk = std::move(current_input_chunk);
+            has_left_input_chunk = true;
+            stage = Stage::ReadRightInput;
         }
     }
-    else if (stage == Stage::ReadSecondInput)
+    else if (stage == Stage::ReadRightInput)
     {
-        has_second_input_rows |= current_input_chunk.hasRows();
+        has_right_input_rows |= current_input_chunk.hasRows();
         accumulate(std::move(current_input_chunk));
     }
     else

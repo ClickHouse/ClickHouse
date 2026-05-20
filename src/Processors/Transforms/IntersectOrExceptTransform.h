@@ -29,9 +29,9 @@ protected:
 private:
     enum class Stage
     {
-        ReadFirstInput,
-        ReadSecondInput,
-        ReadRemainingFirstInput,
+        ReadLeftInput,
+        ReadRightInput,
+        ReadRemainingLeftInput,
     };
 
     Operator current_operator;
@@ -44,11 +44,11 @@ private:
 
     Chunk current_input_chunk;
     Chunk current_output_chunk;
-    Chunk first_input_chunk;
+    Chunk left_input_chunk;
 
-    Stage stage = Stage::ReadFirstInput;
-    bool has_first_input_chunk = false;
-    bool has_second_input_rows = false;
+    Stage stage = Stage::ReadLeftInput;
+    bool has_left_input_chunk = false;
+    bool has_right_input_rows = false;
     bool has_input = false;
 
     bool isAllOperator() const
