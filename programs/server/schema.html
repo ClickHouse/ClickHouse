@@ -255,12 +255,6 @@
             width: 1.6rem;
             height: 2px;
         }
-        .load-legend-bar {
-            height: 6px;
-            width: 4rem;
-            background: linear-gradient(90deg, #2a4d8a 0%, #6aa84f 33%, #f1c232 66%, #cc0000 100%);
-            border-radius: 1px;
-        }
         .load-badge {
             display: inline-block;
             margin-left: 0.5rem;
@@ -601,7 +595,6 @@
             <input id="search" type="text" placeholder="🔍 Search table or column…" spellcheck="false">
             <select id="db-filter"><option value="">All databases</option></select>
             <button id="toggle-columns" class="btn-toggle active">Columns</button>
-            <button id="toggle-system" class="btn-toggle">System tables</button>
             <select id="load-period" title="Highlight INSERT pipeline load from system.query_views_log">
                 <option value="0">Load: off</option>
                 <option value="1">Last 1 day</option>
@@ -630,10 +623,6 @@
             <span class="legend-item"><span class="legend-line" style="background:var(--link-mv)"></span>MV flow</span>
             <span class="legend-item"><span class="legend-line" style="background:var(--link-dict)"></span>Dictionary source</span>
             <span class="legend-item"><span class="legend-line" style="background:var(--link-distributed)"></span>Distributed shard</span>
-            <span class="legend-item" id="load-legend" style="display:none">
-                <span class="legend-line load-legend-bar"></span>
-                <span id="load-legend-label">INSERT pipeline load (cool → hot)</span>
-            </span>
         </div>
     </div>
 
@@ -694,7 +683,6 @@ const state = {
     nodesByDb: new Map(),
     edges: [],
     showColumns: true,
-    showSystem: false,
     dbFilter: '',
     selectedKey: null,
     zoom: 1.0,
@@ -778,9 +766,8 @@ function engineLabel(n) {
 
 async function loadAll() {
     setStatus('Loading tables...');
-    const sysFilter = state.showSystem
-        ? ''
-        : "WHERE database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')";
+    /// Skip server-internal databases; they pollute the graph and aren't user-facing.
+    const sysFilter = "WHERE database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')";
 
     const tablesQ = `
         SELECT
@@ -1170,54 +1157,162 @@ function estimateNodeSize(node) {
     return { w, h };
 }
 
+/// Find connected components in `nodeSet`, treating `state.edges` as undirected
+/// for grouping. Each returned component is the list of node keys.
+function connectedComponentsIn(nodeSet) {
+    const adj = new Map();
+    for (const k of nodeSet) adj.set(k, []);
+    for (const e of state.edges) {
+        if (nodeSet.has(e.from) && nodeSet.has(e.to)) {
+            adj.get(e.from).push(e.to);
+            adj.get(e.to).push(e.from);
+        }
+    }
+    const seen = new Set();
+    const comps = [];
+    for (const start of nodeSet) {
+        if (seen.has(start)) continue;
+        const stack = [start], comp = [];
+        seen.add(start);
+        while (stack.length) {
+            const v = stack.pop();
+            comp.push(v);
+            for (const u of adj.get(v)) {
+                if (!seen.has(u)) { seen.add(u); stack.push(u); }
+            }
+        }
+        comps.push(comp);
+    }
+    return comps;
+}
+
+/// Layout strategy:
+///   1. Each database section contains only its multi-node chains. Within a section
+///      we stack chains top-to-bottom, ordered by depth desc then load desc — the
+///      longest / beefiest MV graph rises to the top.
+///   2. Database sections themselves are then ordered the same way: the database
+///      with the longest top chain (and highest load) goes first.
+///   3. Singleton (lonely) nodes from every database are pulled out into one wide
+///      "Independent tables" section at the bottom, packed into a grid grouped by
+///      engine kind and sorted by `db.name` within each group.
 function layoutAll() {
-    /// For each visible db, compute layered layout; place dbs in a wrapping grid.
     const visibleDbs = Array.from(state.nodesByDb.keys())
         .filter(db => !state.dbFilter || state.dbFilter === db)
         .sort();
 
     const LAYER_W = 260;
-    const NODE_GAP_X = 30;
-    const NODE_GAP_Y = 16;
-    const DB_PADDING = 24;
-    const DB_PADDING_TOP = 40;  /// extra space for the .db-label inside the section
-    const DB_GAP = 40;
+    const NODE_GAP_X = 60;     /// horizontal gap between layers (= length of inter-layer arrow)
+    const NODE_GAP_Y = 36;     /// vertical gap between nodes inside a column / grid row
+    const CHAIN_GAP_Y = 60;    /// vertical gap between stacked chains in the same DB section
+    const DB_PADDING = 16;
+    const DB_PADDING_TOP = 32; /// space for the section label
+    const DB_GAP = 28;
 
-    /// Pre-size nodes.
+    /// Pre-size nodes (estimate; the real height is measured after the first render).
     for (const n of state.nodes.values()) {
         const s = estimateNodeSize(n);
         n.w = s.w;
         n.h = s.h;
+        n._lonely = false;
     }
 
-    const sections = [];
+    const metric = state.loadMetric;
+    function chainLoad(keys) {
+        let s = 0;
+        for (const k of keys) {
+            const ld = state.loadByMv.get(k);
+            if (ld) s += ld[metric] || 0;
+        }
+        return s;
+    }
+
+    const dbSections = [];
+    const lonelyNodes = [];
+
     for (const db of visibleDbs) {
         const dbNodes = state.nodesByDb.get(db);
-        const { layers, maxDepth } = layoutDatabase(dbNodes, state.edges);
+        const dbKeys = new Set(dbNodes.map(n => n.key));
+        const comps = connectedComponentsIn(dbKeys);
 
-        /// Position nodes within section, with (0,0) at section origin.
-        const layerHeights = new Map();
-        for (let d = 0; d <= maxDepth; d++) {
-            const layer = layers.get(d) || [];
-            let y = 0;
-            for (const n of layer) {
-                n._rx = d * (LAYER_W + NODE_GAP_X);
-                n._ry = y;
-                y += n.h + NODE_GAP_Y;
+        const chains = [];
+        for (const comp of comps) {
+            if (comp.length === 1) {
+                lonelyNodes.push(state.nodes.get(comp[0]));
+            } else {
+                chains.push(comp);
             }
-            layerHeights.set(d, y);
         }
-        const sectionW = Math.max(0, (maxDepth + 1) * LAYER_W + maxDepth * NODE_GAP_X);
-        const sectionH = Math.max(...Array.from(layerHeights.values()), 0);
+        if (!chains.length) continue;
 
-        sections.push({ db, nodes: dbNodes, w: sectionW + DB_PADDING * 2, h: sectionH + DB_PADDING_TOP + DB_PADDING });
+        /// Layered layout per chain.
+        const chainLayouts = [];
+        for (const comp of chains) {
+            const compNodes = comp.map(k => state.nodes.get(k));
+            const { layers, maxDepth } = layoutDatabase(compNodes, state.edges);
+            const layerHeights = new Map();
+            for (let d = 0; d <= maxDepth; d++) {
+                const layer = layers.get(d) || [];
+                let y = 0;
+                for (const n of layer) {
+                    n._cx = d * (LAYER_W + NODE_GAP_X);
+                    n._cy = y;
+                    y += n.h + NODE_GAP_Y;
+                }
+                layerHeights.set(d, y);
+            }
+            const chainW = Math.max(0, (maxDepth + 1) * LAYER_W + maxDepth * NODE_GAP_X);
+            const chainH = Math.max(...Array.from(layerHeights.values()), 0);
+            chainLayouts.push({
+                comp,
+                maxDepth,
+                loadSum: chainLoad(comp),
+                chainW,
+                chainH,
+            });
+        }
+
+        chainLayouts.sort((a, b) =>
+            (b.maxDepth - a.maxDepth) ||
+            (b.loadSum - a.loadSum) ||
+            ((a.comp[0] || '').localeCompare(b.comp[0] || '')));
+
+        /// Stack chains vertically inside the section.
+        let curY = 0;
+        let sectionW = 0;
+        for (const cl of chainLayouts) {
+            for (const k of cl.comp) {
+                const n = state.nodes.get(k);
+                n._rx = n._cx || 0;
+                n._ry = curY + (n._cy || 0);
+            }
+            curY += cl.chainH + CHAIN_GAP_Y;
+            sectionW = Math.max(sectionW, cl.chainW);
+        }
+        const sectionH = Math.max(0, curY - CHAIN_GAP_Y);
+
+        dbSections.push({
+            kind: 'db',
+            db,
+            nodes: chains.flat().map(k => state.nodes.get(k)),
+            w: sectionW + DB_PADDING * 2,
+            h: sectionH + DB_PADDING_TOP + DB_PADDING,
+            sortDepth: chainLayouts[0].maxDepth,
+            sortLoad: chainLayouts.reduce((s, c) => s + c.loadSum, 0),
+        });
     }
 
-    /// Pack sections in a wrapping grid that fills viewport width.
-    const MARGIN = 24;
-    const viewportW = $('viewport').clientWidth - MARGIN * 2;
+    /// Order DB sections: longest top chain first, then by total load, then alpha.
+    dbSections.sort((a, b) =>
+        (b.sortDepth - a.sortDepth) ||
+        (b.sortLoad - a.sortLoad) ||
+        a.db.localeCompare(b.db));
+
+    /// Pack DB sections in a wrapping grid that fills viewport width.
+    const MARGIN = 8;
+    const viewportW = Math.max(LAYER_W, $('viewport').clientWidth - MARGIN * 2);
     let cursorX = MARGIN, cursorY = MARGIN, rowH = 0;
-    for (const s of sections) {
+    const placed = [];
+    for (const s of dbSections) {
         if (cursorX > MARGIN && cursorX + s.w > viewportW + MARGIN) {
             cursorX = MARGIN;
             cursorY += rowH + DB_GAP;
@@ -1231,9 +1326,68 @@ function layoutAll() {
         }
         cursorX += s.w + DB_GAP;
         rowH = Math.max(rowH, s.h);
+        placed.push(s);
     }
 
-    state.sections = sections;
+    /// Spread lonely tables across the full viewport width.
+    if (lonelyNodes.length) {
+        for (const n of lonelyNodes) n._lonely = true;
+
+        /// Group by engine kind, sort alphabetically by `db.name` within each group.
+        const kindOrder = ['mt', 'view', 'mv', 'rmv', 'dict', 'distributed', 'other'];
+        lonelyNodes.sort((a, b) => {
+            const ka = kindOrder.indexOf(a.kind);
+            const kb = kindOrder.indexOf(b.kind);
+            const ra = ka < 0 ? 99 : ka;
+            const rb = kb < 0 ? 99 : kb;
+            if (ra !== rb) return ra - rb;
+            return a.key.localeCompare(b.key);
+        });
+
+        /// Drop down to a new row so the grid stretches across the full width.
+        if (cursorX > MARGIN) {
+            cursorX = MARGIN;
+            cursorY += rowH + DB_GAP;
+            rowH = 0;
+        }
+
+        const innerW = viewportW - DB_PADDING * 2;
+        const cols = Math.max(1, Math.floor((innerW + NODE_GAP_X) / (LAYER_W + NODE_GAP_X)));
+        const usedW = cols * LAYER_W + (cols - 1) * NODE_GAP_X;
+
+        /// Row-major grid: when we wrap to a new row use the *prior* row's max height.
+        let col = 0;
+        let gx = 0, gy = 0, rowMaxH = 0;
+        for (const n of lonelyNodes) {
+            n._rx = col * (LAYER_W + NODE_GAP_X);
+            n._ry = gy;
+            rowMaxH = Math.max(rowMaxH, n.h);
+            col++;
+            if (col >= cols) {
+                gy += rowMaxH + NODE_GAP_Y;
+                rowMaxH = 0;
+                col = 0;
+            }
+        }
+        const lonelyInnerH = gy + (col > 0 ? rowMaxH : 0);
+
+        const lonelySection = {
+            kind: 'lonely',
+            db: `Independent tables (${lonelyNodes.length})`,
+            nodes: lonelyNodes.slice(),
+            w: usedW + DB_PADDING * 2,
+            h: lonelyInnerH + DB_PADDING_TOP + DB_PADDING,
+            x: cursorX,
+            y: cursorY,
+        };
+        for (const n of lonelyNodes) {
+            n.x = cursorX + DB_PADDING + (n._rx || 0);
+            n.y = cursorY + DB_PADDING_TOP + (n._ry || 0);
+        }
+        placed.push(lonelySection);
+    }
+
+    state.sections = placed;
 }
 
 function fmtBytes(n) {
@@ -1334,7 +1488,9 @@ function render() {
         const nameEl = document.createElement('span');
         nameEl.className = 'node-name';
         nameEl.title = n.key;
-        nameEl.textContent = n.name;
+        /// Lonely nodes live in the shared "Independent tables" section that doesn't
+        /// have a per-database label, so show the qualified name there.
+        nameEl.textContent = n._lonely ? n.key : n.name;
         const kindEl = document.createElement('span');
         kindEl.className = 'node-kind';
         kindEl.textContent = engineLabel(n);
@@ -1744,14 +1900,8 @@ $('toggle-columns').onclick = (e) => {
     e.target.classList.toggle('active', state.showColumns);
     render();
 };
-$('toggle-system').onclick = (e) => {
-    state.showSystem = !state.showSystem;
-    e.target.classList.toggle('active', state.showSystem);
-    loadAll();
-};
 $('load-period').onchange = async (e) => {
     state.loadPeriodDays = Number(e.target.value) || 0;
-    updateLoadLegendVisibility();
     if (state.nodes.size) {
         await loadViewsLoad();
         render();
@@ -1759,16 +1909,8 @@ $('load-period').onchange = async (e) => {
 };
 $('load-metric').onchange = (e) => {
     state.loadMetric = e.target.value;
-    updateLoadLegendVisibility();
     render();
 };
-function updateLoadLegendVisibility() {
-    $('load-legend').style.display = state.loadPeriodDays ? '' : 'none';
-    if (state.loadPeriodDays) {
-        $('load-legend-label').textContent =
-            `INSERT pipeline load — ${state.loadMetric} (cool → hot, last ${state.loadPeriodDays}d)`;
-    }
-}
 let searchTimer;
 $('search').addEventListener('input', () => {
     clearTimeout(searchTimer);
@@ -1778,10 +1920,8 @@ $('sidebar-close').onclick = clearHighlight;
 $('viewport').addEventListener('click', clearHighlight);
 
 state.showColumns = $('toggle-columns').classList.contains('active');
-state.showSystem = $('toggle-system').classList.contains('active');
 state.loadPeriodDays = Number($('load-period').value) || 0;
 state.loadMetric = $('load-metric').value;
-updateLoadLegendVisibility();
 
 window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') clearHighlight();
