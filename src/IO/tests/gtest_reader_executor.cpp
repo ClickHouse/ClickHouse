@@ -378,6 +378,52 @@ TEST(ReaderExecutor, MergeRangesZeroMinGap)
     ASSERT_EQ(merged.size(), 2);
 }
 
+TEST(ReaderExecutor, MergeAcrossCacheHitDropsCachedNode)
+{
+    /// When mergeRanges combines two miss ranges across a cached hit, the
+    /// source fetches the merged range — which now covers the cached block.
+    /// The cache hit must be dropped from the result, otherwise it appears
+    /// alongside source data for the same logical offsets (duplicate coverage).
+    ///
+    /// Layout: cache block [100, 200), miss ranges [0, 100) and [200, 300)
+    /// merged into [0, 300) with a large min_bytes_for_seek.
+
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 300);
+
+    auto cache = std::make_shared<MockCacheProvider>(100);
+
+    /// Warm cache block 1 (offsets [100, 200)). Content is irrelevant —
+    /// the bug is about node count, not content.
+    {
+        String warm_content(300, 'W');
+        auto warm_source = std::make_shared<MemorySourceReader>(
+            std::unordered_map<String, String>{{"obj", warm_content}});
+        ReaderExecutor warmup(warm_source, objects, {cache}, /*window_size=*/100);
+        warmup.seek(100);
+        warmup.readNextWindow();
+        ASSERT_TRUE(cache->hasBlock(1));
+    }
+
+    /// Real read: window covers [0, 300); min_bytes_for_seek=8 MiB so the
+    /// two miss ranges around the cached block get merged into [0, 300).
+    String real_content(300, 'S');
+    auto real_source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", real_content}});
+
+    ReaderExecutor executor(
+        real_source, objects, {cache},
+        /*window_size=*/300,
+        /*min_bytes_for_seek=*/8 * 1024 * 1024);
+    auto rope = executor.readNextWindow();
+
+    EXPECT_EQ(rope.range().offset, 0u);
+    EXPECT_EQ(rope.range().size, 300u);
+    /// Without the fix, the surviving cache hit at [100, 200) adds 100 bytes
+    /// of duplicate coverage, so totalBytes() reports 400 instead of 300.
+    EXPECT_EQ(rope.totalBytes(), 300u);
+}
+
 namespace ProfileEvents
 {
     extern const Event LiveSourceBufferCreated;

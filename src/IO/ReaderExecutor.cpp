@@ -446,6 +446,24 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
         LOG_TRACE(log, "readPhysicalWindow: merged {} miss ranges into {} fetch ranges (min_gap={})",
             remaining.size(), fetch_ranges.size(), min_bytes_for_seek);
 
+    /// If merging extended a miss range across a cached hit, the source will
+    /// fetch the whole merged range — including the bytes already in `result`
+    /// from the cache hit. Drop those cached nodes so we don't end up with
+    /// duplicate coverage for the same logical offsets.
+    if (fetch_ranges.size() < remaining.size())
+    {
+        auto & nodes = result.getNodes();
+        auto inside_fetch_range = [&fetch_ranges](const RopeNode & node)
+        {
+            for (const auto & fr : fetch_ranges)
+                if (node.logical_offset >= fr.offset
+                    && node.logical_offset + node.size <= fr.end())
+                    return true;
+            return false;
+        };
+        nodes.erase(std::remove_if(nodes.begin(), nodes.end(), inside_fetch_range), nodes.end());
+    }
+
     /// Fetch from source — try live buffer for sequential reads, fall back to stateless.
     for (const auto & miss_range : fetch_ranges)
     {
