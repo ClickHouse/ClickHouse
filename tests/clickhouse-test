@@ -5634,19 +5634,25 @@ ORDER BY (test_name, callee_offset)
         print("All tests have finished.")
 
     if args.collect_per_test_coverage and BuildFlags.WITH_COVERAGE_DEPTH in args.build_flags:
+        # Bound post-test bookkeeping so it cannot eat the wall-clock budget.
+        post_settings = {"max_execution_time": 30}
         try:
             # Flush the last test's coverage into system.coverage_log.
-            clickhouse_execute(args, "SYSTEM SET COVERAGE TEST ''")
+            clickhouse_execute(args, "SYSTEM SET COVERAGE TEST ''",
+                               timeout=40, settings=post_settings)
         except Exception as e:
             print("Cannot flush final coverage: ", str(e))
-        cov_rows = int(clickhouse_execute(args, "SELECT count() FROM system.coverage_log FINAL") or 0)
-        cov_tests = int(clickhouse_execute(args, "SELECT uniq(test_name) FROM system.coverage_log FINAL") or 0)
+        cov_rows = int(clickhouse_execute(args, "SELECT count() FROM system.coverage_log FINAL",
+                                          timeout=40, settings=post_settings) or 0)
+        cov_tests = int(clickhouse_execute(args, "SELECT uniq(test_name) FROM system.coverage_log FINAL",
+                                           timeout=40, settings=post_settings) or 0)
         print(f"system.coverage_log: {cov_rows} rows, {cov_tests} distinct tests")
         try:
             ic_rows = int(
                 clickhouse_execute(
                     args,
                     "SELECT count() FROM system.coverage_indirect_calls FINAL",
+                    timeout=40, settings=post_settings,
                 )
                 or 0
             )
@@ -5654,6 +5660,7 @@ ORDER BY (test_name, callee_offset)
                 clickhouse_execute(
                     args,
                     "SELECT uniq(test_name) FROM system.coverage_indirect_calls FINAL",
+                    timeout=40, settings=post_settings,
                 )
                 or 0
             )
@@ -5661,6 +5668,7 @@ ORDER BY (test_name, callee_offset)
                 clickhouse_execute(
                     args,
                     "SELECT uniqExact(callee_offset) FROM system.coverage_indirect_calls FINAL",
+                    timeout=40, settings=post_settings,
                 )
                 or 0
             )
@@ -5680,7 +5688,15 @@ ORDER BY (test_name, callee_offset)
 
     if has_trace_log:
         try:
-            clickhouse_execute(args, "SYSTEM FLUSH LOGS system.trace_log")
+            # Bound these post-test diagnostics: on debug/coverage builds with a
+            # large accumulated trace_log they can otherwise eat tens of seconds
+            # of the wall-clock budget and trip the outer SIGTERM during shutdown.
+            clickhouse_execute(
+                args,
+                "SYSTEM FLUSH LOGS system.trace_log",
+                timeout=30,
+                settings={"max_execution_time": 20},
+            )
 
             unchecked_memory = int(clickhouse_execute(args, f"""
             SELECT sum(size) FROM system.trace_log
@@ -5688,7 +5704,8 @@ ORDER BY (test_name, callee_offset)
                 trace_type = 'MemoryAllocatedWithoutCheck'
                 AND event_date >= toDate(fromUnixTimestamp({int(tests_start_time)}))
                 AND event_time >= fromUnixTimestamp({int(tests_start_time)})
-            """))
+            SETTINGS max_execution_time = 30
+            """, timeout=40))
             if unchecked_memory > 1e9:
                 print(f"""
                 Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB.

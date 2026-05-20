@@ -94,12 +94,22 @@ def run_tests(
         extra_args += " --zookeeper"
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
     memory_limit = 10 * 2**30 if "asan_ubsan" in Info().job_name else 5 * 2**30
+    # Tell clickhouse-test about the budget so it stops scheduling new tests
+    # gracefully and has time to run the hung-check + post-test diagnostics
+    # before the outer Shell.run wall-clock SIGTERM fires.  Without this the
+    # outer timeout can SIGTERM clickhouse-test in the middle of a query
+    # (e.g. the trace_log post-mortem on debug builds), failing a run where
+    # every test actually passed.
+    SHUTDOWN_HEADROOM = 180  # seconds reserved for hung-check + diagnostics + flush
+    inner_args = extra_args
+    if global_time_limit and global_time_limit > SHUTDOWN_HEADROOM and "--global_time_limit" not in extra_args:
+        inner_args += f" --global_time_limit {global_time_limit - SHUTDOWN_HEADROOM}"
     # `set -o pipefail` is required so that the pipeline's exit code reflects
     # `clickhouse-test`'s exit code rather than `tee`'s. Without it, a non-zero
     # exit from `clickhouse-test` is silently swallowed by `tee` returning 0.
     command = f"set -o pipefail; clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count} \
-                {extra_args} \
+                {inner_args} \
                 --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
