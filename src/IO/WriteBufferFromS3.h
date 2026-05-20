@@ -11,6 +11,7 @@
 #include <IO/WriteSettings.h>
 #include <IO/StdIStreamFromMemory.h>
 #include <IO/S3Settings.h>
+#include <IO/S3/ProviderType.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/BufferAllocationPolicy.h>
@@ -43,7 +44,8 @@ public:
         BlobStorageLogWriterPtr blob_log_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
-        const WriteSettings & write_settings_ = {});
+        const WriteSettings & write_settings_ = {},
+        S3::ProfileEventsNamespace profile_events_namespace_ = S3::ProfileEventsNamespace::S3);
 
     ~WriteBufferFromS3() override;
     void nextImpl() override;
@@ -87,8 +89,11 @@ private:
     const WriteSettings write_settings;
     const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<std::map<String, String>> object_metadata;
-    LoggerPtr log = getLogger("WriteBufferFromS3");
-    LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
+    const S3::ProfileEventsNamespace profile_events_namespace;
+    const String log_name;
+    const String object_storage_name;
+    LoggerPtr log;
+    LogSeriesLimiterPtr limited_log;
 
     BufferAllocationPolicyPtr buffer_allocation_policy;
 

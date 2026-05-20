@@ -10,13 +10,17 @@ namespace ProfileEvents
 namespace DB
 {
 
-TaskTracker::TaskTracker(ThreadPoolCallbackRunnerUnsafe<void> scheduler_, size_t max_tasks_inflight_, LogSeriesLimiterPtr limited_log_)
+TaskTracker::TaskTracker(
+    ThreadPoolCallbackRunnerUnsafe<void> scheduler_,
+    size_t max_tasks_inflight_,
+    LogSeriesLimiterPtr limited_log_,
+    ProfileEvents::Event wait_event_)
     : is_async(bool(scheduler_))
     , scheduler(scheduler_ ? std::move(scheduler_) : syncRunner())
     , max_tasks_inflight(max_tasks_inflight_)
     , limited_log(limited_log_)
+    , wait_event(wait_event_)
 {}
-
 TaskTracker::~TaskTracker()
 {
     /// Tasks should be waited outside of dtor.
@@ -98,7 +102,7 @@ void TaskTracker::waitIfAny()
     }
 
     watch.stop();
-    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3WaitInflightLimitMicroseconds, watch.elapsedMicroseconds());
+    ProfileEvents::increment(wait_event, watch.elapsedMicroseconds());
 }
 
 void TaskTracker::add(Callback && func)
@@ -165,7 +169,7 @@ void TaskTracker::waitTilInflightShrink()
     }
 
     watch.stop();
-    ProfileEvents::increment(ProfileEvents::WriteBufferFromS3WaitInflightLimitMicroseconds, watch.elapsedMicroseconds());
+    ProfileEvents::increment(wait_event, watch.elapsedMicroseconds());
 }
 
 bool TaskTracker::isAsync() const

@@ -23,6 +23,7 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueMovedObjects;
     extern const Event ObjectStorageQueueRemovedObjects;
     extern const Event ObjectStorageQueueTaggedObjects;
+    extern const Event WriteBufferFromS3WaitInflightLimitMicroseconds;
 }
 
 namespace DB
@@ -217,7 +218,11 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
         ThreadName::REMOTE_FS_WRITE_THREAD_POOL);
 
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
-    TaskTracker task_tracker(schedule, post_process_max_inflight_object_moves, limited_log);
+    TaskTracker task_tracker(
+        schedule,
+        post_process_max_inflight_object_moves,
+        limited_log,
+        ProfileEvents::WriteBufferFromS3WaitInflightLimitMicroseconds);
 
     std::atomic<size_t> moved_objects = 0;
 

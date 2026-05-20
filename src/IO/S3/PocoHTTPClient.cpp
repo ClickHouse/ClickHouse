@@ -57,6 +57,15 @@ namespace ProfileEvents
     extern const Event S3WriteRequestsThrottling;
     extern const Event S3WriteRequestsRedirects;
 
+    extern const Event GCSReadMicroseconds;
+    extern const Event GCSReadRequestsCount;
+    extern const Event GCSReadRequestsErrors;
+    extern const Event GCSReadRequestsThrottling;
+    extern const Event GCSWriteMicroseconds;
+    extern const Event GCSWriteRequestsCount;
+    extern const Event GCSWriteRequestsErrors;
+    extern const Event GCSWriteRequestsThrottling;
+
     extern const Event DiskS3ReadMicroseconds;
     extern const Event DiskS3ReadRequestsCount;
     extern const Event DiskS3ReadRequestsErrors;
@@ -69,12 +78,27 @@ namespace ProfileEvents
     extern const Event DiskS3WriteRequestsThrottling;
     extern const Event DiskS3WriteRequestsRedirects;
 
+    extern const Event DiskGCSReadMicroseconds;
+    extern const Event DiskGCSReadRequestsCount;
+    extern const Event DiskGCSReadRequestsErrors;
+    extern const Event DiskGCSReadRequestsThrottling;
+    extern const Event DiskGCSWriteMicroseconds;
+    extern const Event DiskGCSWriteRequestsCount;
+    extern const Event DiskGCSWriteRequestsErrors;
+    extern const Event DiskGCSWriteRequestsThrottling;
+
     extern const Event DiskS3GetRequestThrottlerCount;
     extern const Event DiskS3GetRequestThrottlerBlocked;
     extern const Event DiskS3GetRequestThrottlerSleepMicroseconds;
     extern const Event DiskS3PutRequestThrottlerCount;
     extern const Event DiskS3PutRequestThrottlerBlocked;
     extern const Event DiskS3PutRequestThrottlerSleepMicroseconds;
+    extern const Event DiskGCSGetRequestThrottlerCount;
+    extern const Event DiskGCSGetRequestThrottlerBlocked;
+    extern const Event DiskGCSGetRequestThrottlerSleepMicroseconds;
+    extern const Event DiskGCSPutRequestThrottlerCount;
+    extern const Event DiskGCSPutRequestThrottlerBlocked;
+    extern const Event DiskGCSPutRequestThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -127,6 +151,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     , for_disk_s3(for_disk_s3_)
     , opt_disk_name(opt_disk_name_)
     , request_throttler(request_throttler_)
+    , profile_events_namespace(ProfileEventsNamespace::S3)
     , s3_use_adaptive_timeouts(s3_use_adaptive_timeouts_)
     , error_report(error_report_)
 {
@@ -148,15 +173,26 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     checksumConfig.requestChecksumCalculation = Aws::Client::RequestChecksumCalculation::WHEN_REQUIRED;
     checksumConfig.responseChecksumValidation = Aws::Client::ResponseChecksumValidation::WHEN_REQUIRED;
 
-    // Make sure throttlers update DiskS3* profile events if necessary
     if (for_disk_s3)
     {
-        request_throttler.disk_get_amount = ProfileEvents::DiskS3GetRequestThrottlerCount;
-        request_throttler.disk_get_blocked = ProfileEvents::DiskS3GetRequestThrottlerBlocked;
-        request_throttler.disk_get_sleep_us = ProfileEvents::DiskS3GetRequestThrottlerSleepMicroseconds;
-        request_throttler.disk_put_amount = ProfileEvents::DiskS3PutRequestThrottlerCount;
-        request_throttler.disk_put_blocked = ProfileEvents::DiskS3PutRequestThrottlerBlocked;
-        request_throttler.disk_put_sleep_us = ProfileEvents::DiskS3PutRequestThrottlerSleepMicroseconds;
+        if (profile_events_namespace == ProfileEventsNamespace::GCS)
+        {
+            request_throttler.disk_get_amount = ProfileEvents::DiskGCSGetRequestThrottlerCount;
+            request_throttler.disk_get_blocked = ProfileEvents::DiskGCSGetRequestThrottlerBlocked;
+            request_throttler.disk_get_sleep_us = ProfileEvents::DiskGCSGetRequestThrottlerSleepMicroseconds;
+            request_throttler.disk_put_amount = ProfileEvents::DiskGCSPutRequestThrottlerCount;
+            request_throttler.disk_put_blocked = ProfileEvents::DiskGCSPutRequestThrottlerBlocked;
+            request_throttler.disk_put_sleep_us = ProfileEvents::DiskGCSPutRequestThrottlerSleepMicroseconds;
+        }
+        else
+        {
+            request_throttler.disk_get_amount = ProfileEvents::DiskS3GetRequestThrottlerCount;
+            request_throttler.disk_get_blocked = ProfileEvents::DiskS3GetRequestThrottlerBlocked;
+            request_throttler.disk_get_sleep_us = ProfileEvents::DiskS3GetRequestThrottlerSleepMicroseconds;
+            request_throttler.disk_put_amount = ProfileEvents::DiskS3PutRequestThrottlerCount;
+            request_throttler.disk_put_blocked = ProfileEvents::DiskS3PutRequestThrottlerBlocked;
+            request_throttler.disk_put_sleep_us = ProfileEvents::DiskS3PutRequestThrottlerSleepMicroseconds;
+        }
     }
 }
 
@@ -217,9 +253,19 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , http_max_field_value_size(client_configuration.http_max_field_value_size)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
     , for_disk_s3(client_configuration.for_disk_s3)
+    , profile_events_namespace(client_configuration.profile_events_namespace)
     , request_throttler(client_configuration.request_throttler)
     , extra_headers(client_configuration.extra_headers)
 {
+    if (for_disk_s3 && profile_events_namespace == ProfileEventsNamespace::GCS)
+    {
+        request_throttler.disk_get_amount = ProfileEvents::DiskGCSGetRequestThrottlerCount;
+        request_throttler.disk_get_blocked = ProfileEvents::DiskGCSGetRequestThrottlerBlocked;
+        request_throttler.disk_get_sleep_us = ProfileEvents::DiskGCSGetRequestThrottlerSleepMicroseconds;
+        request_throttler.disk_put_amount = ProfileEvents::DiskGCSPutRequestThrottlerCount;
+        request_throttler.disk_put_blocked = ProfileEvents::DiskGCSPutRequestThrottlerBlocked;
+        request_throttler.disk_put_sleep_us = ProfileEvents::DiskGCSPutRequestThrottlerSleepMicroseconds;
+    }
 }
 
 PocoHTTPClient::PocoHTTPClient(const Aws::Client::ClientConfiguration & client_configuration)
@@ -314,7 +360,7 @@ PocoHTTPClient::S3MetricKind PocoHTTPClient::getMetricKind(const Aws::Http::Http
 
 void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount) const
 {
-    static const ProfileEvents::Event events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] =
+    static const ProfileEvents::Event s3_events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] =
     {
         {ProfileEvents::S3ReadMicroseconds, ProfileEvents::S3WriteMicroseconds},
         {ProfileEvents::S3ReadRequestsCount, ProfileEvents::S3WriteRequestsCount},
@@ -332,11 +378,39 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
         {ProfileEvents::DiskS3ReadRequestsRedirects, ProfileEvents::DiskS3WriteRequestsRedirects},
     };
 
-    S3MetricKind kind = getMetricKind(request);
+    static const ProfileEvents::Event gcs_events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] =
+    {
+        {ProfileEvents::GCSReadMicroseconds, ProfileEvents::GCSWriteMicroseconds},
+        {ProfileEvents::GCSReadRequestsCount, ProfileEvents::GCSWriteRequestsCount},
+        {ProfileEvents::GCSReadRequestsErrors, ProfileEvents::GCSWriteRequestsErrors},
+        {ProfileEvents::GCSReadRequestsThrottling, ProfileEvents::GCSWriteRequestsThrottling},
+        {ProfileEvents::end(), ProfileEvents::end()},
+    };
 
-    ProfileEvents::increment(events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
+    static const ProfileEvents::Event disk_gcs_events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] =
+    {
+        {ProfileEvents::DiskGCSReadMicroseconds, ProfileEvents::DiskGCSWriteMicroseconds},
+        {ProfileEvents::DiskGCSReadRequestsCount, ProfileEvents::DiskGCSWriteRequestsCount},
+        {ProfileEvents::DiskGCSReadRequestsErrors, ProfileEvents::DiskGCSWriteRequestsErrors},
+        {ProfileEvents::DiskGCSReadRequestsThrottling, ProfileEvents::DiskGCSWriteRequestsThrottling},
+        {ProfileEvents::end(), ProfileEvents::end()},
+    };
+
+    S3MetricKind kind = getMetricKind(request);
+    const auto type_index = static_cast<unsigned int>(type);
+    const auto kind_index = static_cast<unsigned int>(kind);
+    const auto & events_map = profile_events_namespace == ProfileEventsNamespace::GCS ? gcs_events_map : s3_events_map;
+    const auto event = events_map[type_index][kind_index];
+    if (event != ProfileEvents::end())
+        ProfileEvents::increment(event, amount);
+
     if (for_disk_s3)
-        ProfileEvents::increment(disk_s3_events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
+    {
+        const auto & disk_events_map = profile_events_namespace == ProfileEventsNamespace::GCS ? disk_gcs_events_map : disk_s3_events_map;
+        const auto disk_event = disk_events_map[type_index][kind_index];
+        if (disk_event != ProfileEvents::end())
+            ProfileEvents::increment(disk_event, amount);
+    }
 }
 
 void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, HistogramMetrics::Value latency) const

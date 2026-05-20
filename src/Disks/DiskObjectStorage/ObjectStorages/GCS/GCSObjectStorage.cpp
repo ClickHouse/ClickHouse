@@ -1171,7 +1171,8 @@ std::unique_ptr<WriteBufferFromFileBase> GCSObjectStorage::writeObject(
             std::move(blob_storage_log),
             std::move(attributes),
             std::move(scheduler),
-            disk_write_settings);
+            disk_write_settings,
+            S3::ProfileEventsNamespace::GCS);
 #else
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,

@@ -39,6 +39,12 @@ enum class ApiMode : uint8_t
 
 std::string_view toString(ApiMode api_mode);
 
+enum class ProfileEventsNamespace : uint8_t
+{
+    S3,
+    GCS
+};
+
 }
 
 #endif
