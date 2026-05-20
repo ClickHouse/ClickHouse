@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <numbers>
 #include <numeric>
 #include <span>
 #include <unordered_map>
@@ -107,7 +108,7 @@ UInt64 computeBucketHash(
 }
 
 /// Compile-time switch: true = bucket optimization, false = old sort-based algorithm.
-static constexpr bool USE_BUCKET_OPTIMIZATION = true;
+constexpr bool USE_BUCKET_OPTIMIZATION = true;
 
 /// Read cluster-key values into a Float64 vector. For wide 64-bit integer column
 /// types (`UInt64`, `Int64`) `getFloat64` would silently lose precision past 2^53
@@ -704,7 +705,7 @@ Chunk ClusterMergingTransform::generate2D()
 
     const Float64 d = cluster_distance;
     const Float64 d_sq = d * d;
-    const Float64 a = d / std::sqrt(2.0);   /// Cell side: diagonal == d.
+    const Float64 a = d / std::numbers::sqrt2;   /// Cell side: diagonal == d.
 
     /// --- Phase A: Cell reduction (O(n)) ---
     /// Hash each row by (non_cluster_keys..., cx, cy). Same-bucket rows are
