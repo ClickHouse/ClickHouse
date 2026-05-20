@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Tags: no-fasttest
 
 SET send_logs_level = 'fatal'; -- failed connection tries are ok, if it succeeded after retry.

@@ -15,6 +15,7 @@
 #include <Core/SettingsTierType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/S3Defines.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <base/types.h>
 #include <Common/NamePrompter.h>
@@ -2449,12 +2450,15 @@ Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both ta
 Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specified in the original query.
 )", 0) \
     \
-    DECLARE(Bool, query_plan_pretty_default, true, R"(
-When enabled, `EXPLAIN PLAN` defaults `actions`, `compact`, and `pretty` to `true`, producing a compact, pretty, action-annotated plan.
+    DECLARE(ExplainQueryPlanDefault, explain_query_plan_default, ExplainQueryPlanDefault::PRETTY, R"(
+Default format used by `EXPLAIN PLAN`.
+
+Possible values:
+- `pretty` (default since 26.5) — `actions`, `compact`, and `pretty` default to `true`, producing a compact, pretty, action-annotated plan.
+- `legacy` — pre-26.5 verbose output.
 
 Per-query `SETTINGS actions = ..., compact = ..., pretty = ...` always override this setting.
-
-Set this to `false` (or set `compatibility` to any version older than `26.5`) to restore the pre-26.5 verbose output.
+Set setting to `legacy` (or set `compatibility` to any version older than `26.5`) to restore the pre-26.5 verbose output.
 )", 0) \
     \
     DECLARE(UInt64, query_plan_max_step_description_length, 500, R"(

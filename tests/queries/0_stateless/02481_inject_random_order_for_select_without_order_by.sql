@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- A test for setting `inject_random_order_for_select_without_order_by`
 
 -- The setting is disabled by default, enable it for the test.

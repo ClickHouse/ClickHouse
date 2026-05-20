@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 create table test (json JSON) engine=MergeTree order by tuple();
 insert into test select '{"a" : "str"}';
 

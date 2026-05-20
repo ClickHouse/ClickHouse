@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 set enable_parallel_replicas = 0;
 
 drop table if exists test;

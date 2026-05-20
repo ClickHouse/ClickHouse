@@ -6,7 +6,7 @@
 -- This is the same test as 03322_unused_interpolate_expressions but without toFloat64 wrapping.
 -- We verify using EXPLAIN PLAN that unused columns are actually pruned from the Filling step header.
 
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 SET enable_analyzer = 1;
 
 CREATE TABLE foo (

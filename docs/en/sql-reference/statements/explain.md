@@ -194,13 +194,13 @@ Settings:
 - `column_structure` — Prints also the structure of columns in headers on top of their name and type. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
 - `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Default: 0.
 - `compact` — When enabled, hides expression steps and detailed action info (inputs, functions, aliases, and output positions) from the plan. Only has an effect when `actions = 1`. Default: 1 (see `query_plan_pretty_default` below).
-- `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 1 (see `query_plan_pretty_default` below).
+- `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 1.
 
 :::note
 Starting from ClickHouse 26.5, the server setting `query_plan_pretty_default` is `true` by default. When it is `true`, `EXPLAIN PLAN` initializes `actions`, `compact`, and `pretty` to `1` so the plan is rendered in the compact, pretty, action-annotated form. Per-query `SETTINGS actions = ..., compact = ..., pretty = ...` always override this.
-:::
 
 To restore the pre-26.5 verbose output, either run `SET query_plan_pretty_default = 0` (or pass it in per-query `SETTINGS`), or set the `compatibility` setting to any version older than `26.5`.
+:::
 
 When `json=1` step names will contain an additional suffix with unique step identifier.
 

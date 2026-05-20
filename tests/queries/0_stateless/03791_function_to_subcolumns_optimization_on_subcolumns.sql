@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 SET enable_analyzer=1;
 SET optimize_functions_to_subcolumns=1;
 DROP TABLE IF EXISTS test;

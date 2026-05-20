@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 SET enable_analyzer = 1;
 SET optimize_read_in_order = 1;
 SET optimize_use_projections = 1;

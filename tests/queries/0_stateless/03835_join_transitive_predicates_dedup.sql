@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Tests for predicate deduplication and multiple independent equivalence classes.
 
 SET allow_experimental_analyzer = 1;

@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --query_plan_pretty_default=0"
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default="legacy""
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS keeper_map_with_filter;"
 $CLICKHOUSE_CLIENT --query="CREATE TABLE keeper_map_with_filter (key String, value String) ENGINE=KeeperMap(concat(currentDatabase(), '_simple')) PRIMARY KEY key;"
 $CLICKHOUSE_CLIENT --query="INSERT INTO keeper_map_with_filter (*) SELECT n.number, n.number*10 FROM numbers(10) n;"

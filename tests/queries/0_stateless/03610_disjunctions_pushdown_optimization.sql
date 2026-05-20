@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Test: Disjunctions pushdown into JOIN branches
 -- This test exercises the optimizer controlled by the setting `use_join_disjunctions_push_down`.
 -- It checks that disjunctions (OR) over conjunctions can be split and pushed as per-side

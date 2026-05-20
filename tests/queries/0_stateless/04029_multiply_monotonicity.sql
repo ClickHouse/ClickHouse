@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Test that `multiply` by a constant is recognized as monotonic for primary-key
 -- condition analysis (`KeyCondition`), enabling index pruning for WHERE clauses
 -- involving expressions like `key * C`.

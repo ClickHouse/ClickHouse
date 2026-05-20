@@ -1,3 +1,4 @@
+#include <Core/SettingsEnums.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 
@@ -46,7 +47,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsUInt64 query_plan_max_step_description_length;
-    extern const SettingsBool query_plan_pretty_default;
+    extern const SettingFieldExplainQueryPlanDefault explain_query_plan_default;
 }
 
 namespace ErrorCodes
@@ -578,7 +579,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN query");
 
-            auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings(), !query_context->getSettingsRef()[Setting::query_plan_pretty_default]);
+            bool legacy = query_context->getSettingsRef()[Setting::explain_query_plan_default] == ExplainQueryPlanDefault::LEGACY;
+            auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings(), legacy);
 
             QueryPlan plan;
 

@@ -1,6 +1,6 @@
 -- Test that parallel replicas work with a simple view over a MergeTree table.
 
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 
 DROP TABLE IF EXISTS t_rtb_hourly;
 DROP VIEW IF EXISTS v_rtb_hourly;

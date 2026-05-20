@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Tags: no-parallel-replicas
 -- ^ at this moment, EXPLAIN with parallel replicas may run the subqueries,
 -- while this behavior is incorrect, the test focuses on a different thing,

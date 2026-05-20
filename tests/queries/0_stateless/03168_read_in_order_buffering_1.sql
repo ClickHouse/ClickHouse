@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 DROP TABLE IF EXISTS t_read_in_order_1;
 
 CREATE TABLE t_read_in_order_1 (id UInt64, v UInt64)

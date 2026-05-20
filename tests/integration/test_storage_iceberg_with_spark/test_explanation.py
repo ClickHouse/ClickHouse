@@ -42,7 +42,7 @@ def test_explanation(started_cluster_iceberg_with_spark, format_version, storage
         )
 
         res = instance.query(
-            f"EXPLAIN SELECT * FROM {TABLE_NAME} SETTINGS query_plan_pretty_default = 0"
+            f"EXPLAIN SELECT * FROM {TABLE_NAME} SETTINGS explain_query_plan_default = "legacy""
         )
         res = list(
             map(

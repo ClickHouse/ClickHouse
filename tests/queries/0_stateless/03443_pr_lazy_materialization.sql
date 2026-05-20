@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 DROP TABLE IF EXISTS pr_tt;
 CREATE TABLE pr_tt (k UInt64, v String, blob String) ENGINE=MergeTree() ORDER BY tuple() settings index_granularity=100;
 INSERT INTO pr_tt SELECT number, toString(number), repeat('blob_', number % 10) FROM numbers(1_000_000);

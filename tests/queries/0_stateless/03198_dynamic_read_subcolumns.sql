@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Tags: no-random-settings, no-object-storage, no-parallel
 -- no-parallel: Running `DROP MARK CACHE` can have a big impact on other concurrent tests
 -- Tag no-object-storage: this test relies on the number of opened files in MergeTree that can differ in object storages

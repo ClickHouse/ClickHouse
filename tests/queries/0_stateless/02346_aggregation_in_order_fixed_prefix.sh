@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --query_plan_pretty_default=0"
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default="legacy""
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_agg"
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_agg ( A Int64, B Int64 ) Engine=MergeTree() ORDER BY (A, B)"

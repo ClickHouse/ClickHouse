@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Tags: no-parallel-replicas, no-random-merge-tree-settings
 -- followup to 02882_primary_key_index_in_function_different_types
 -- add_minmax_index_for_numeric_columns=0: Different plan

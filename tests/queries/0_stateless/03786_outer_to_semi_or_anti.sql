@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 SET enable_analyzer = 1;
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
 SET query_plan_join_swap_table = 0;

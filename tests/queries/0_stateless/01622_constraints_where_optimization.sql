@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 SET convert_query_to_cnf = 1;
 SET optimize_using_constraints = 1;
 SET optimize_append_index = 0;

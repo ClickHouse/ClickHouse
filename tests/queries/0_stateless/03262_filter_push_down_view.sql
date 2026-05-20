@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- add_minmax_index_for_numeric_columns=0: Different plan
 DROP TABLE IF EXISTS alpha;
 DROP TABLE IF EXISTS alpha__day;

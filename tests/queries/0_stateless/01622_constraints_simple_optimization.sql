@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 DROP TABLE IF EXISTS constraint_test_assumption;
 DROP TABLE IF EXISTS constraint_test_transitivity;
 DROP TABLE IF EXISTS constraint_test_transitivity2;

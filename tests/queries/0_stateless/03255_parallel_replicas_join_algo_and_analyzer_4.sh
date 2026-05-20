@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 
-CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --query_plan_pretty_default=0"
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default="legacy""
 ${CLICKHOUSE_CLIENT} --query="
 DROP TABLE IF EXISTS t;
 CREATE TABLE t

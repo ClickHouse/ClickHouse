@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Tags: no-fasttest, no-parallel-replicas
 -- Test: tokenbf_v1 and ngrambf_v1 skip index support for JSONAllPaths on JSON data type
 --

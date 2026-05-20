@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Tags: no-random-merge-tree-settings
 
 SET convert_query_to_cnf = 1;

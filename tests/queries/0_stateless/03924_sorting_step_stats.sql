@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 CREATE TABLE t (c UInt64) ENGINE=MergeTree;
 
 INSERT INTO t SELECT * FROM numbers(999);

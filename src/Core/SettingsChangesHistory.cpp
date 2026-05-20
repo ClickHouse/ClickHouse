@@ -42,7 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.5",
         {
             {"defer_partition_pruning_after_final", true, true, "Setting newly added in 26.5 to gate the FINAL partition-pruning behavior that shipped silently in 26.3 (https://github.com/ClickHouse/ClickHouse/pull/98242). The meaningful semantic change is registered under the 26.3 block so `compatibility = '26.2'` reverts it; this entry exists so the upgrade-from-26.4 check accepts the newly-introduced name."},
-            {"query_plan_pretty_default", false, true, "From 26.5, `EXPLAIN PLAN` defaults to `actions=1, compact=1, pretty=1`. Set this to `false` (or `compatibility` to a version older than 26.5) to restore the legacy verbose output."},
+            {"explain_query_plan_default", "legacy", "pretty", "From 26.5, `EXPLAIN PLAN` defaults to `actions=1, compact=1, pretty=1`. Set this to `legacy` to set pre-26.5 version by default."},
             {"optimize_trivial_group_by_limit_query", false, true, "New setting that limits aggregation to at most LIMIT distinct keys for `SELECT key_expr FROM t GROUP BY key_expr LIMIT n` queries."},
             {"date_time_input_format", "basic", "best_effort", "Better usability"},
             {"cast_string_to_date_time_mode", "basic", "best_effort", "Better usability"},

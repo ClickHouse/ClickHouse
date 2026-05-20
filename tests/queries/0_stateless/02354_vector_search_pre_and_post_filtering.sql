@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Tags: no-fasttest, no-ordinary-database
 
 -- Tests pre vs. post-filtering for vector search.

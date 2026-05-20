@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 CREATE TABLE nation(n_nationkey Int32, n_name String) ENGINE MergeTree ORDER BY n_nationkey SETTINGS auto_statistics_types='uniq,tdigest';
 CREATE TABLE customer(c_custkey Int32, c_nationkey Int32) ENGINE MergeTree ORDER BY c_custkey SETTINGS auto_statistics_types='uniq,tdigest';
 SET materialize_statistics_on_insert = 1;

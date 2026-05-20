@@ -2,7 +2,7 @@ EXPLAIN AST CREATE VIEW test_view_1_03280 (a, b] AS SELECT 1, 2; -- { clientErro
 
 EXPLAIN AST CREATE VIEW test_view_1_03280 ((a, b)) AS SELECT 1, 2; -- { clientError SYNTAX_ERROR }
 
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 SET enable_analyzer = 1;
 
 SELECT b FROM

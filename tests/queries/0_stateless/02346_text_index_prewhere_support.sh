@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 
-CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --query_plan_pretty_default=0"
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default="legacy""
 set -e
 
 MY_CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_analyzer 1 --use_skip_indexes_on_data_read 1 --query_plan_remove_unused_columns 1"

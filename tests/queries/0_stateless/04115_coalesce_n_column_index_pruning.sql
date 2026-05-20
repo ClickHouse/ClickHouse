@@ -4,7 +4,7 @@
 -- `coalesce(a_1, ..., a_N) <op> const` with N > 2.
 -- See `src/Storages/MergeTree/KeyCondition.cpp::tryRewriteCoalesceComparison`.
 
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 SET parallel_replicas_local_plan = 1;
 SET use_query_condition_cache = 0;
 SET use_skip_indexes_on_data_read = 0;

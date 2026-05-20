@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 SET enable_analyzer = 1;
 SET parallel_hash_join_threshold = 0;
 SET enable_join_runtime_filters = 0;

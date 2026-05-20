@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- This test validates that Field-based MinMax statistics can precisely prune parts
 -- for large integers (beyond 2^53), high-precision Decimals, and Float64 values.
 

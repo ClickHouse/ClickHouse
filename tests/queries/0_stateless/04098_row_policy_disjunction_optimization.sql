@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Tags: no-parallel, no-parallel-replicas
 
 DROP TABLE IF EXISTS t_row_policy_or;

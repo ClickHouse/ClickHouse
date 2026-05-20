@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Tags: no-parallel-replicas, no-azure-blob-storage
 
 -- Tests that text indexes can be build on and used with Array columns.

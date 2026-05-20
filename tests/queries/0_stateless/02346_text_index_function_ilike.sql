@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Tags: no-parallel-replicas
 
 -- Tests if a text index ILIKE evaluation by scanning the inverted index dictionary is properly applied.

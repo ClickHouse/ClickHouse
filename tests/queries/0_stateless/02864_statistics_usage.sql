@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Test that the optimizer picks up column statistics
 -- (The concrete statistics type, column data type and predicate type don't matter)
 

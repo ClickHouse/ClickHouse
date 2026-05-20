@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Tags: no-fasttest, no-ordinary-database, no-parallel, no-parallel-replicas
 -- no-parallel: Vector index cache should not be touched by another test
 -- no-parallel-replicas: EXPLAIN plan stability

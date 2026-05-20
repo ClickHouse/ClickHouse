@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Test that lazy materialization works together with read-in-order optimization
 -- Tags: no-random-settings
 

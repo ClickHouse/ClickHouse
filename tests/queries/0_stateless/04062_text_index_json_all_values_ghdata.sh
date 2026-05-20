@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 
-CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --query_plan_pretty_default=0"
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default="legacy""
 set -e
 
 # Pin date_time_input_format to 'basic' so JSON path inference matches the

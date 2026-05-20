@@ -2,7 +2,7 @@
 -- All checks rely on `extractAll(explain, 'Prewhere filter column: ...')`,
 -- so the test stays robust to EXPLAIN formatting and indentation changes.
 
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 SET allow_statistics = 1;
 SET use_statistics = 1;
 SET mutations_sync = 1;

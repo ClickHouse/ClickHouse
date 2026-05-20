@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 SET allow_statistics=1;
 SET enable_analyzer=1;
 SET enable_parallel_replicas=0;

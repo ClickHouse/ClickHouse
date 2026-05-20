@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 CREATE TABLE t0 (c0 Int, c1 Int) ENGINE = Memory;
 
 INSERT INTO t0 VALUES (1, 2);

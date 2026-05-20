@@ -2,6 +2,8 @@
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: Dictionary is not available on parallel-replica workers.
 
+SET explain_query_plan_default = "legacy";
+
 -- { echo }
 
 SET enable_analyzer = 1;

@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- EXPLAIN output may differ
 -- BAD_GET exception triggered by various randomized optimize_* settings in canSetValuesBeWrappedByDeterministicFunctions

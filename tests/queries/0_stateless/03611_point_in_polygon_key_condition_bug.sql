@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 create table p3 (x Int64, y Int64) engine MergeTree order by (x, y);
 insert into p3 values (100, 100);
 set ignore_format_null_for_explain = 0;

@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Tests for transitive predicate inference in the join order optimizer.
 --
 -- When `enable_join_transitive_predicates` is enabled, the optimizer infers

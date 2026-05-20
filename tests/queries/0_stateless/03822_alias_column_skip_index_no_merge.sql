@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Tags: no-parallel-replicas
 -- Test that skip indexes on ALIAS columns work even when query plan
 -- expression merging is disabled, which prevents tryMergeExpressions

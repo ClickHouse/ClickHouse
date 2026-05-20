@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Tags: no-parallel
 -- test that EXPLAIN shows deferred filter information for apply_prewhere_after_final / apply_row_policy_after_final
 

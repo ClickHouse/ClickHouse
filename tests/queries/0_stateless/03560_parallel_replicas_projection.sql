@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 -- Tags: long
 
 -- Statistics-based part pruning can skip parts before they appear in EXPLAIN output

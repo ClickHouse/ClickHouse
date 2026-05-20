@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 SET insert_keeper_fault_injection_probability = 0;
 SET max_threads = 4;
 SET optimize_on_insert = 1;

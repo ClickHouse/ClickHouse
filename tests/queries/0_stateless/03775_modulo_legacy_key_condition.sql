@@ -1,7 +1,8 @@
-SET query_plan_pretty_default = 0;
 -- Tags: no-replicated-database, no-parallel-replicas
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
+
+SET explain_query_plan_default = "legacy";
 
 -- { echo }
 

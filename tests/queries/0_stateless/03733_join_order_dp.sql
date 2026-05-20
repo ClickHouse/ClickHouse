@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 SET allow_experimental_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 10;
 SET materialize_statistics_on_insert = 1;

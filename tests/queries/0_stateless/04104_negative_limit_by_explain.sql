@@ -1,5 +1,6 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-settings
 -- EXPLAIN output may differ
+SET explain_query_plan_default = "legacy";
 
 -- { echo }
 

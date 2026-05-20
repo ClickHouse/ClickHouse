@@ -1,4 +1,4 @@
-SET query_plan_pretty_default = 0;
+SET explain_query_plan_default = "legacy";
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab ( `k` Nullable(UInt32), `k1` Nullable(UInt32), `k2` Nullable(UInt32), `v` String ) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO tab VALUES (1, 1, 1, 'a'), (2, 2, 2, 'b');
