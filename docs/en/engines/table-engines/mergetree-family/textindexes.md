@@ -214,7 +214,8 @@ Examples:
 
 Usage of non-deterministic functions is disallowed.
 
-Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) and [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) use the preprocessor to first transform the search term before tokenizing it.
+Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens), [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), and [hasPhrase](/sql-reference/functions/string-search-functions.md/#hasPhrase) use the preprocessor to first transform the search term before tokenizing it.
+Note that because the preprocessor is only applied on the text index path, results from these functions may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
 
 For example,
 
