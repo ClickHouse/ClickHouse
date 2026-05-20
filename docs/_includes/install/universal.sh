@@ -136,7 +136,7 @@ then
         then
             chctl_install_dir="${HOME}/.local/bin"
             chctl_archive="clickhousectl-${chctl_target}-${chctl_tag}.tar.gz"
-            chctl_url="https://github.com/ClickHouse/clickhousectl/releases/download/${chctl_tag}/${chctl_archive}"
+            chctl_url="https://builds.clickhouse.com/clickhousectl/${chctl_archive}"
             echo "Will download ${chctl_url} into ${chctl_install_dir}/clickhousectl"
             chctl_tmp=$(mktemp -d)
             if mkdir -p "${chctl_install_dir}" \
