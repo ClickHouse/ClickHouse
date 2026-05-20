@@ -64,6 +64,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int SYNTAX_ERROR;
     extern const int OPENSSL_ERROR;
+    extern const int UNEXPECTED_PACKET_FROM_CLIENT;
 }
 
 PostgreSQLHandler::PostgreSQLHandler(
@@ -910,6 +911,16 @@ void PostgreSQLHandler::processCloseQuery()
                     "Close on a named portal is not supported in the PostgreSQL wire protocol, "
                     "got portal name '{}'", query->function_name);
             prepared_statements_manager.resetBindQuery();
+        }
+        else
+        {
+            /// Per the PostgreSQL protocol only 'S' (prepared statement) and 'P'
+            /// (portal) are valid `Close` targets; any other byte indicates a
+            /// malformed packet and must not be silently acknowledged.
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                "Unexpected `Close` target byte 0x{:02X} in the PostgreSQL wire protocol, "
+                "expected 'S' (prepared statement) or 'P' (portal)",
+                static_cast<UInt8>(query->close_target));
         }
 
         /// Acknowledge the `Close` request. Clients that strictly track the
