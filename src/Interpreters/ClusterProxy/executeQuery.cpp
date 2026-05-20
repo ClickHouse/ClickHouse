@@ -709,11 +709,12 @@ void executeQueryWithParallelReplicas(
     auto scalars = new_context->hasQueryContext() ? new_context->getQueryContext()->getScalars() : Scalars{};
     const auto & shard = cluster->getShardsInfo().at(0);
 
-    const auto & settings = new_context->getSettingsRef();
-    /// do not build local plan for distributed queries for now (address it later)
-    /// when parallel_replicas_prefer_local_replica is false, skip local plan to allow the load balancer to pick any replica
-    if (settings[Setting::allow_experimental_analyzer] && settings[Setting::parallel_replicas_local_plan]
-        && settings[Setting::parallel_replicas_prefer_local_replica] && !shard_num)
+    /// `canUseLocalPlanForParallelReplicas` covers the same conditions:
+    /// do not build local plan for distributed queries for now (address it later);
+    /// when `parallel_replicas_prefer_local_replica` is false, skip local plan to allow the
+    /// load balancer to pick any replica. The predicate is also used in `ReadFromMergeTree`
+    /// so followers stay in lock-step with the initiator's topology decision.
+    if (canUseLocalPlanForParallelReplicas(new_context))
     {
         auto local_replica_index = findLocalReplicaIndexAndUpdatePools(connection_pools, max_replicas_to_use, cluster);
 
@@ -974,6 +975,27 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
             cluster->getShardCount());
 
     return false;
+}
+
+bool canUseLocalPlanForParallelReplicas(const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::allow_experimental_analyzer]
+        || !settings[Setting::parallel_replicas_local_plan]
+        || !settings[Setting::parallel_replicas_prefer_local_replica])
+        return false;
+
+    /// Inside a Distributed sub-query the initiator can't use local plan (see comment in
+    /// `executeQueryWithParallelReplicas`).
+    auto scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
+    if (auto it = scalars.find("_shard_num"); it != scalars.end())
+    {
+        const auto & column = it->second.safeGetByPosition(0).column;
+        if (column->getUInt(0) > 0)
+            return false;
+    }
+
+    return true;
 }
 
 bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)

@@ -70,6 +70,13 @@ getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context,
 
 bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context);
 bool canUseParallelReplicasOnInitiator(const ContextPtr & context);
+
+/// Predicate gating the local-plan branch of `executeQueryWithParallelReplicas`. Also evaluated
+/// on followers in `ReadFromMergeTree` so they take the same topology decision as the initiator
+/// — without this, a follower may try to split into multiple per-stream pools while the
+/// initiator skipped local plan (e.g. inside a Distributed sub-query where `_shard_num != 0`),
+/// leaving the coordinator unpinned and the slice plan absent.
+bool canUseLocalPlanForParallelReplicas(const ContextPtr & context);
 ParallelReplicasReadingCoordinatorPtr dropReadFromRemoteInPlan(QueryPlan & query_plan);
 
 /// Execute a distributed query, creating a query plan, from which the query pipeline can be built.

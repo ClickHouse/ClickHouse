@@ -14,6 +14,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -2989,17 +2990,17 @@ void ReadFromMergeTree::updateSortDescription()
 
 bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
 {
-    /// `createLocalPlanForParallelReplicas` only runs with the analyzer,
-    /// so the split-stream topology only exists when the analyzer is enabled.
-    return is_parallel_reading_from_replicas && context->getSettingsRef()[Setting::parallel_replicas_local_plan]
-        && context->getSettingsRef()[Setting::allow_experimental_analyzer]
+    /// The split-stream topology only exists when the initiator-side gate in
+    /// `executeQueryWithParallelReplicas` actually took the local-plan branch.
+    return is_parallel_reading_from_replicas
+        && ClusterProxy::canUseLocalPlanForParallelReplicas(context)
         && context->canUseParallelReplicasOnInitiator();
 }
 
 bool ReadFromMergeTree::isParallelReplicasLocalPlanForFollower() const
 {
-    return is_parallel_reading_from_replicas && context->getSettingsRef()[Setting::parallel_replicas_local_plan]
-        && context->getSettingsRef()[Setting::allow_experimental_analyzer]
+    return is_parallel_reading_from_replicas
+        && ClusterProxy::canUseLocalPlanForParallelReplicas(context)
         && context->canUseParallelReplicasOnFollower();
 }
 
