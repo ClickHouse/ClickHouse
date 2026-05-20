@@ -165,7 +165,10 @@ public:
     size_t estimatedKeysCount() override { return buffer.size(); }
 
 private:
-    ObjectInfoPtr createObjectInfoInArchive(const std::string & path_to_archive, const std::string & path_in_archive);
+    ObjectInfoPtr createObjectInfoInArchive(
+        const std::string & path_to_archive,
+        const std::string & path_in_archive,
+        std::optional<size_t> read_source_index);
 
     ClusterFunctionReadTaskCallback callback;
     ObjectInfos buffer;

@@ -184,7 +184,14 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
 
 String ObjectInfo::getIdentifier() const
 {
-    String result = getPath();
+    return getIdentifierForPath(getPath());
+}
+
+String ObjectInfo::getIdentifierForPath(const String & path) const
+{
+    String result = path;
+    if (relative_path_with_metadata.read_source_index)
+        result = std::to_string(*relative_path_with_metadata.read_source_index) + ":" + result;
     if (file_bucket_info)
         result += file_bucket_info->getIdentifier();
     return result;

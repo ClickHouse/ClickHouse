@@ -43,6 +43,7 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
 
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
+    read_source_index = object->relative_path_with_metadata.read_source_index;
     file_bucket_info = object->file_bucket_info;
 }
 
@@ -72,6 +73,7 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
     {
         object = std::make_shared<ObjectInfo>(path);
     }
+    object->relative_path_with_metadata.read_source_index = read_source_index;
     object->data_lake_metadata = data_lake_metadata;
     object->file_bucket_info = file_bucket_info;
 
@@ -129,6 +131,13 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
             writeVarUInt(0, out);
         }
     }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX)
+    {
+        writeVarUInt(read_source_index.has_value(), out);
+        if (read_source_index)
+            writeVarUInt(*read_source_index, out);
+    }
 }
 
 void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
@@ -180,6 +189,17 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
         {
             iceberg_info = Iceberg::IcebergObjectSerializableInfo{};
             iceberg_info->deserializeForClusterFunctionProtocol(in, protocol_version);
+        }
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX)
+    {
+        bool has_read_source_index = false;
+        readVarUInt(has_read_source_index, in);
+        if (has_read_source_index)
+        {
+            UInt64 value = 0;
+            readVarUInt(value, in);
+            read_source_index = value;
         }
     }
 }

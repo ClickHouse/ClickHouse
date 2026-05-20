@@ -1528,21 +1528,24 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
     if (!path_in_archive.has_value())
         return object_info;
 
-    return createObjectInfoInArchive(path_to_archive, path_in_archive.value());
+    return createObjectInfoInArchive(path_to_archive, path_in_archive.value(), object_info->relative_path_with_metadata.read_source_index);
 }
 
 ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInArchive(
     const std::string & path_to_archive,
-    const std::string & path_in_archive)
+    const std::string & path_in_archive,
+    std::optional<size_t> read_source_index)
 {
     auto archive_object = std::make_shared<ObjectInfo>(RelativePathWithMetadata{path_to_archive, std::optional<ObjectMetadata>{}});
+    archive_object->relative_path_with_metadata.read_source_index = read_source_index;
     if (!archive_object->getObjectMetadata())
         archive_object->setObjectMetadata(object_storage->getObjectMetadata(archive_object->getPath(), /*with_tags=*/ false));
 
     std::shared_ptr<IArchiveReader> archive_reader;
     {
+        const auto archive_reader_key = archive_object->getIdentifier();
         std::lock_guard lock(archive_readers_mutex);
-        if (auto it = archive_readers.find(path_to_archive); it != archive_readers.end())
+        if (auto it = archive_readers.find(archive_reader_key); it != archive_readers.end())
         {
             archive_reader = it->second;
         }
@@ -1553,7 +1556,7 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInAr
                 [=, this]() { return createReadBuffer(archive_object->relative_path_with_metadata, object_storage, getContext(), log); },
                 archive_object->getObjectMetadata()->size_bytes);
 
-            archive_readers.emplace(path_to_archive, archive_reader);
+            archive_readers.emplace(archive_reader_key, archive_reader);
         }
     }
 
@@ -1580,6 +1583,7 @@ StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive::ObjectInfoInAr
     IArchiveReader::FileInfo && file_info_)
     : archive_object(archive_object_), path_in_archive(path_in_archive_), archive_reader(archive_reader_), file_info(file_info_)
 {
+    relative_path_with_metadata.read_source_index = archive_object->relative_path_with_metadata.read_source_index;
 }
 
 StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
