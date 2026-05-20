@@ -2398,10 +2398,6 @@ try
 
             if (config().has("keeper_server"))
             {
-#if USE_NURAFT
-                if (config().getBool("keeper_server.standalone_keeper", false))
-                    KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
-#endif
                 global_context->updateKeeperConfiguration(config());
             }
 

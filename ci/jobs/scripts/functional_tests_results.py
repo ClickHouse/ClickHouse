@@ -1,6 +1,8 @@
 import dataclasses
 import re
+import runpy
 import traceback
+from pathlib import Path
 from typing import List, Optional
 
 from praktika.result import Result
@@ -11,9 +13,12 @@ UNKNOWN_SIGN = "[ UNKNOWN "
 SKIPPED_SIGN = "[ SKIPPED "
 NOT_FAILED_SIGN = "[ NOT_FAILED "
 HUNG_SIGN = "Found hung queries in processlist"
-SERVER_DIED_SIGN = "Server died, terminating all processes"
-SERVER_DIED_SIGN2 = "Server does not respond to health check"
 DATABASE_SIGN = "Database: "
+
+# Pick up `STOP_TESTING_EXIT_CODE` straight from `tests/clickhouse-test` so
+# the contract has a single source of truth.
+_clickhouse_test = Path(__file__).resolve().parents[3] / "tests" / "clickhouse-test"
+STOP_TESTING_EXIT_CODE = runpy.run_path(str(_clickhouse_test))["STOP_TESTING_EXIT_CODE"]
 
 SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
 
@@ -41,7 +46,6 @@ class FTResultsProcessor:
         success: int
         test_results: List[Result]
         hung: bool = False
-        server_died: bool = False
         retries: bool = False
         success_finish: bool = False
         test_end: bool = True
@@ -57,7 +61,6 @@ class FTResultsProcessor:
         failed = 0
         success = 0
         hung = False
-        server_died = False
         retries = False
         success_finish = False
         test_results = []
@@ -75,8 +78,6 @@ class FTResultsProcessor:
                 if HUNG_SIGN in line:
                     hung = True
                     break
-                if SERVER_DIED_SIGN in line or SERVER_DIED_SIGN2 in line:
-                    server_died = True
                 if RETRIES_SIGN in line:
                     retries = True
 
@@ -167,7 +168,6 @@ class FTResultsProcessor:
             success=success,
             test_results=test_results,
             hung=hung,
-            server_died=server_died,
             success_finish=success_finish,
             retries=retries,
         )
@@ -188,7 +188,7 @@ class FTResultsProcessor:
             test_results.append(
                 Result("Some queries hung", Result.Status.FAIL, info="Some queries hung")
             )
-        elif s.server_died:
+        elif runner_exit_code == STOP_TESTING_EXIT_CODE:
             state = Result.Status.FAIL
             failed_results = [r for r in test_results if r.is_failure()]
             if len(failed_results) > 1:
