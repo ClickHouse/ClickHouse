@@ -79,6 +79,21 @@ FORMAT Null;
 SELECT throwIf(arrayMap(x -> x + 1, CAST([1, NULL, 3], 'Nullable(Array(Nullable(UInt8)))')) != [2, NULL, 4])
 FORMAT Null;
 
+SELECT throwIf(isNull(arrayMap(x -> x + 1, CAST(NULL, 'Nullable(Array(UInt8))'))) != 1)
+FORMAT Null;
+
+SELECT throwIf(groupArray(isNull(arrayPushBack(CAST(NULL, 'Nullable(Array(UInt8))'), number))) != [1, 1, 1])
+FROM numbers(3)
+FORMAT Null;
+
+SELECT throwIf(groupArray(isNull(arrayResize(CAST(NULL, 'Nullable(Array(UInt8))'), number))) != [1, 1, 1])
+FROM numbers(3)
+FORMAT Null;
+
+SELECT throwIf(groupArray(isNull(arrayElement(CAST(NULL, 'Nullable(Array(UInt8))'), number))) != [1, 1, 1])
+FROM numbers(3)
+FORMAT Null;
+
 SELECT throwIf(has(CAST([1, NULL, 3], 'Nullable(Array(Nullable(UInt8)))'), NULL) != 1)
 FORMAT Null;
 

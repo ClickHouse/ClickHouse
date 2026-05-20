@@ -1,4 +1,5 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
@@ -2160,12 +2161,18 @@ template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    if (const auto * nullable_array = checkAndGetColumn<ColumnNullable>(arguments[0].column.get()))
+    const ColumnConst * col_const = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
+    const IColumn * data_column = col_const ? &col_const->getDataColumn() : arguments[0].column.get();
+
+    if (const auto * nullable_array = checkAndGetColumn<ColumnNullable>(data_column))
     {
-        if (checkAndGetColumn<ColumnArray>(&nullable_array->getNestedColumn()))
+        if (checkAndGetColumn<ColumnArray>(&nullable_array->getNestedColumn())
+            || checkAndGetColumnConst<ColumnArray>(&nullable_array->getNestedColumn()))
         {
             ColumnsWithTypeAndName nested_arguments = arguments;
-            nested_arguments[0].column = nullable_array->getNestedColumnPtr();
+            nested_arguments[0].column = col_const
+                ? ColumnConst::create(nullable_array->getNestedColumnPtr(), col_const->size())
+                : nullable_array->getNestedColumnPtr();
             nested_arguments[0].type = removeNullable(arguments[0].type);
 
             auto nested_result_type = removeNullable(result_type);
@@ -2174,11 +2181,13 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
             auto null_map = ColumnUInt8::create();
             auto & null_map_data = null_map->getData();
             null_map_data.assign(nullable_array->getNullMapData().begin(), nullable_array->getNullMapData().end());
+            if (null_map_data.size() == 1)
+                null_map_data.resize_fill(nested_result->size(), nullable_array->getNullMapData()[0]);
 
             if (const auto * nullable_result = checkAndGetColumn<ColumnNullable>(nested_result.get()))
             {
                 const auto & result_null_map = nullable_result->getNullMapData();
-                for (size_t i = 0, size = null_map_data.size(); i < size; ++i)
+                for (size_t i = 0, size = std::min(null_map_data.size(), result_null_map.size()); i < size; ++i)
                     null_map_data[i] |= result_null_map[i];
                 nested_result = nullable_result->getNestedColumnPtr();
             }

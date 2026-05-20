@@ -132,6 +132,7 @@ namespace Setting
     extern const SettingsBool database_replicated_allow_heavy_create;
     extern const SettingsBool database_replicated_allow_only_replicated_engine;
     extern const SettingsBool data_type_default_nullable;
+    extern const SettingsBool allow_experimental_nullable_array_type;
     extern const SettingsSQLSecurityType default_materialized_view_sql_security;
     extern const SettingsSQLSecurityType default_normal_view_sql_security;
     extern const SettingsDefaultTableEngine default_table_engine;
@@ -171,6 +172,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_INDEX;
     extern const int LOGICAL_ERROR;
@@ -534,7 +536,7 @@ ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & 
 }
 
 DataTypePtr InterpreterCreateQuery::getColumnType(
-    const ASTColumnDeclaration & col_decl, const LoadingStrictnessLevel mode, const bool make_columns_nullable)
+    const ASTColumnDeclaration & col_decl, const LoadingStrictnessLevel mode, const bool make_columns_nullable, const Settings & settings)
 {
     auto col_type = col_decl.getType();
     if (!col_type)
@@ -557,6 +559,11 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
     }
     else if (make_columns_nullable)
     {
+        if (isArray(column_type) && !settings[Setting::allow_experimental_nullable_array_type])
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Nested type {} cannot be inside Nullable type",
+                column_type->getName());
         column_type = makeNullable(column_type);
     }
     else if (auto default_expr = col_decl.getDefaultExpression();
@@ -599,7 +606,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         }
 
 
-        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, mode, make_columns_nullable));
+        column_names_and_types.emplace_back(
+            col_decl.name, getColumnType(col_decl, mode, make_columns_nullable, context_->getSettingsRef()));
 
         /// add column to postprocessing if there is a default_expression specified
         getDefaultExpressionInfoInto(col_decl, column_names_and_types.back().type, default_expr_info);

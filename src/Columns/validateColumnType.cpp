@@ -27,6 +27,12 @@ bool columnMatchesType(const IColumn & column, const IDataType & type)
     if (const auto * col_sparse = typeid_cast<const ColumnSparse *>(col))
         col = &col_sparse->getValuesColumn();
 
+    if (const auto * col_nullable = typeid_cast<const ColumnNullable *>(col))
+    {
+        if (typeid_cast<const DataTypeArray *>(&type))
+            return columnMatchesType(col_nullable->getNestedColumn(), type);
+    }
+
     if (col->getDataType() != type.getColumnType())
         return false;
 

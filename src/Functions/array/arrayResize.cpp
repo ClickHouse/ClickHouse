@@ -88,10 +88,21 @@ ColumnPtr FunctionArrayResize::executeImpl(const ColumnsWithTypeAndName & argume
 
             if (return_type->isNullable())
             {
+                auto mutable_nested_result = IColumn::mutate(nested_result->convertToFullColumnIfConst());
+                const size_t num_rows = col_const ? col_const->size() : mutable_nested_result->size();
+                if (mutable_nested_result->size() == 1 && num_rows != 1)
+                    mutable_nested_result = mutable_nested_result->cloneResized(num_rows);
+
                 auto null_map = ColumnUInt8::create();
-                null_map->getData().assign(
+                auto & null_map_data = null_map->getData();
+                null_map_data.assign(
                     nullable_array_column->getNullMapData().begin(), nullable_array_column->getNullMapData().end());
-                return ColumnNullable::create(nested_result, std::move(null_map));
+                if (null_map_data.size() == 1)
+                    null_map_data.resize_fill(num_rows, nullable_array_column->getNullMapData()[0]);
+                else if (null_map_data.size() != num_rows)
+                    null_map_data.resize_fill(num_rows, 0);
+
+                return ColumnNullable::create(std::move(mutable_nested_result), std::move(null_map));
             }
 
             return nested_result;

@@ -174,9 +174,17 @@ public:
                 auto null_map = ColumnUInt8::create();
                 null_map->getData().assign(
                     nullable_array_column->getNullMapData().begin(), nullable_array_column->getNullMapData().end());
-                if (col_const && null_map->size() == 1)
-                    null_map->getData().resize_fill(col_const->size(), nullable_array_column->getNullMapData()[0]);
-                return ColumnNullable::create(nested_result, std::move(null_map));
+                auto mutable_nested_result = IColumn::mutate(nested_result->convertToFullColumnIfConst());
+                const size_t num_rows = col_const ? col_const->size() : mutable_nested_result->size();
+                if (mutable_nested_result->size() == 1 && num_rows != 1)
+                    mutable_nested_result = mutable_nested_result->cloneResized(num_rows);
+
+                if (null_map->size() == 1)
+                    null_map->getData().resize_fill(num_rows, nullable_array_column->getNullMapData()[0]);
+                else if (null_map->size() != num_rows)
+                    null_map->getData().resize_fill(num_rows, 0);
+
+                return ColumnNullable::create(std::move(mutable_nested_result), std::move(null_map));
             }
         }
         else if (argument_type_is_nullable)

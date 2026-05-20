@@ -1,8 +1,10 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/ColumnNumbers.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnVariant.h>
@@ -37,6 +39,20 @@ ColumnPtr FunctionIsNull::getConstantResultForNonConstArguments(const ColumnsWit
     const ColumnWithTypeAndName & elem = arguments[0];
     if (elem.type->onlyNull())
         return result_type->createColumnConst(1, UInt8(1));
+
+    if (elem.column)
+    {
+        const IColumn * column = elem.column.get();
+        if (const auto * column_const = checkAndGetColumn<ColumnConst>(column))
+            column = &column_const->getDataColumn();
+        if (checkAndGetColumn<ColumnNullable>(column))
+            return nullptr;
+    }
+
+    /// `Nullable(Array)` may be represented as `Array` in the type while the column carries a null map
+    /// (e.g. `arrayMap` over a NULL array). Do not constant-fold `isNull` in this case.
+    if (checkAndGetDataType<DataTypeArray>(elem.type.get()))
+        return nullptr;
 
     if (canContainNull(*elem.type))
         return nullptr;
@@ -73,7 +89,11 @@ ColumnPtr FunctionIsNull::executeImpl(const ColumnsWithTypeAndName & arguments, 
         return res;
     }
 
-    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*elem.column))
+    const IColumn * column = elem.column.get();
+    if (const auto * column_const = checkAndGetColumn<ColumnConst>(column))
+        column = &column_const->getDataColumn();
+
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(column))
     {
         /// Merely return the embedded null map.
         return nullable->getNullMapColumnPtr();

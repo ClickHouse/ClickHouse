@@ -34,6 +34,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
 extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 
 }
 
@@ -163,7 +164,7 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                 if (isArray(nullable_type->getNestedType()))
                 {
                     throw Exception(
-                        ErrorCodes::ILLEGAL_COLUMN,
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Cannot create column with type '{}' because Nullable Array type is not allowed. "
                         "Set setting allow_experimental_nullable_array_type = 1 in order to allow it",
                         data_type.getName());
