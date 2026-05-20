@@ -138,8 +138,8 @@ public:
 /// Message schedule expansion for rounds >= 16.
 #define SHA1_EXPAND(w, i) \
     { \
-        w[(i) & 15] = Ops::template rotl<1>( \
-            Ops::xor_(w[((i) - 3) & 15], Ops::xor_(w[((i) - 8) & 15], Ops::xor_(w[((i) - 14) & 15], w[(i) & 15])))); \
+        (w)[(i) & 15] = Ops::template rotl<1>( \
+            Ops::xor_((w)[((i) - 3) & 15], Ops::xor_((w)[((i) - 8) & 15], Ops::xor_((w)[((i) - 14) & 15], (w)[(i) & 15])))); \
     }
 
 /// Combined expand + step for rounds >= 16.
@@ -162,7 +162,11 @@ DECLARE_MULTITARGET_CODE(
         const typename Ops::Vec msg[16])
     {
         using Vec = typename Ops::Vec;
-        Vec aa = a, bb = b, cc = c, dd = d, ee = e;
+        Vec aa = a;
+        Vec bb = b;
+        Vec cc = c;
+        Vec dd = d;
+        Vec ee = e;
 
         /// Copy message words into circular buffer for schedule expansion.
         Vec w[16];
