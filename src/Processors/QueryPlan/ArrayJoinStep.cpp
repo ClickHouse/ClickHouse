@@ -108,6 +108,11 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
         writeStringBinary(column, ctx.out);
 }
 
+QueryPlanStepPtr ArrayJoinStep::clone() const
+{
+    return std::make_unique<ArrayJoinStep>(*this);
+}
+
 QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
 {
     UInt8 flags;
