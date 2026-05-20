@@ -2797,7 +2797,32 @@ void QueryFuzzer::fuzzJoinType(ASTTableJoin * table_join)
         }
     }
 
-    if (table_join->kind < JoinKind::Cross)
+    if (fuzz_rand() % 50 == 0)
+    {
+        table_join->kind = JoinKind::Paste;
+        table_join->strictness = JoinStrictness::Unspecified;
+        table_join->locality = JoinLocality::Unspecified;
+        table_join->is_natural = false;
+        auto & ch = table_join->children;
+        ch.erase(
+            std::remove_if(
+                ch.begin(),
+                ch.end(),
+                [&](const ASTPtr & c)
+                { return c.get() == table_join->using_expression_list.get() || c.get() == table_join->on_expression.get(); }),
+            ch.end());
+        table_join->using_expression_list.reset();
+        table_join->on_expression.reset();
+    }
+    else if (table_join->kind >= JoinKind::Cross)
+    {
+        if (fuzz_rand() % 20 == 0 && (table_join->on_expression || table_join->using_expression_list))
+        {
+            static const std::vector<JoinKind> regular_kinds = {JoinKind::Inner, JoinKind::Left, JoinKind::Right, JoinKind::Full};
+            table_join->kind = regular_kinds[fuzz_rand() % regular_kinds.size()];
+        }
+    }
+    else
     {
         static const std::vector<JoinLocality> locality_values = {JoinLocality::Unspecified, JoinLocality::Local, JoinLocality::Global};
         static const std::vector<JoinStrictness> all_strictness_values
@@ -2809,8 +2834,7 @@ void QueryFuzzer::fuzzJoinType(ASTTableJoin * table_join)
                JoinStrictness::Semi};
         static const std::vector<JoinStrictness> right_strictness_values
             = {JoinStrictness::Unspecified, JoinStrictness::RightAny, JoinStrictness::All, JoinStrictness::Semi, JoinStrictness::Anti};
-        static const std::vector<JoinKind> kind_values
-            = {JoinKind::Inner, JoinKind::Left, JoinKind::Right, JoinKind::Full /*,JoinKind::Cross,JoinKind::Comma,JoinKind::Paste*/};
+        static const std::vector<JoinKind> kind_values = {JoinKind::Inner, JoinKind::Left, JoinKind::Right, JoinKind::Full};
 
         table_join->locality = locality_values[fuzz_rand() % locality_values.size()];
         table_join->kind = kind_values[fuzz_rand() % kind_values.size()];
@@ -2823,7 +2847,6 @@ void QueryFuzzer::fuzzJoinType(ASTTableJoin * table_join)
             switch (table_join->kind)
             {
                 case JoinKind::Inner:
-                    /// Semi inner join not possible
                     table_join->strictness = all_strictness_values[fuzz_rand() % (all_strictness_values.size() - 2)];
                     break;
                 case JoinKind::Left:
@@ -2935,8 +2958,8 @@ ASTPtr QueryFuzzer::addJoinClause()
             ntexp->database_and_table_name = ntexp->children.back();
         }
 
-        /// NATURAL JOIN does not take ON/USING — only attach a condition for non-natural joins.
-        if (!table_join->is_natural)
+        /// NATURAL JOIN and PASTE JOIN do not take ON/USING — only attach a condition for other joins.
+        if (!table_join->is_natural && table_join->kind != JoinKind::Paste)
         {
             const int nconditions = (fuzz_rand() % 10) < 8 ? 1 : ((fuzz_rand() % 5) + 1);
             for (int i = 0; i < nconditions; i++)
