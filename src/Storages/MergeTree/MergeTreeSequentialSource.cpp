@@ -49,7 +49,7 @@ namespace MergeTreeSetting
 /// NOTE:
 ///  It doesn't filter out rows that are deleted with lightweight deletes.
 ///  Use createMergeTreeSequentialSource filter out those rows.
-class MergeTreeSequentialSource : public ISource
+class MergeTreeSequentialSource final : public ISource
 {
 public:
     MergeTreeSequentialSource(
