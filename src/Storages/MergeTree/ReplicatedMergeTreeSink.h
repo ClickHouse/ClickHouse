@@ -1,6 +1,8 @@
 #pragma once
 
+#include <optional>
 #include <Processors/Sinks/SinkToStorage.h>
+
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <base/types.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
@@ -84,7 +86,8 @@ public:
         // special flag to determine the ALTER TABLE ATTACH PART without the query context,
         // needed to set the special LogEntryType::ATTACH_PART
         bool is_attach_ = false,
-        bool allow_attach_while_readonly_ = false);
+        bool allow_attach_while_readonly_ = false,
+        std::optional<ZooKeeperRetriesInfo> keeper_retries_info_ = std::nullopt);
 
     ~ReplicatedMergeTreeSinkImpl() override;
 
@@ -167,6 +170,7 @@ protected:
 
     ContextPtr context;
     StorageSnapshotPtr storage_snapshot;
+    std::optional<ZooKeeperRetriesInfo> keeper_retries_info;
 
     UInt64 chunk_dedup_seqnum = 0; /// input chunk ordinal number in case of dedup token
 };
