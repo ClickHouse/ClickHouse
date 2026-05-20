@@ -11,6 +11,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ThreadStatus.h>
 #include <Interpreters/Context.h>
 
 

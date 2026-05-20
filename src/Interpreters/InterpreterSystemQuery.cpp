@@ -82,6 +82,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/ThreadPool.h>
+#include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getNumberOfCPUCoresToUse.h>

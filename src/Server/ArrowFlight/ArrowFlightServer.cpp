@@ -15,6 +15,7 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SettingSource.h>
+#include <Common/ThreadStatus.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
