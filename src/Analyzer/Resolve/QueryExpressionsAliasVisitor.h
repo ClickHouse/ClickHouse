@@ -105,7 +105,9 @@ private:
                 auto [_, inserted] = aliases.alias_name_to_lambda_node.emplace(alias, cloned_alias_node);
                 if (!inserted || aliases.alias_name_to_expression_node.contains(alias))
                     addDuplicatingAlias(cloned_alias_node);
-                if (standard_mode)
+                /// Only register in the lowercase index when the primary insert succeeded,
+                /// otherwise duplicate aliases would produce spurious "ambiguous" hits.
+                if (standard_mode && inserted)
                     aliases.registerAliasCaseInsensitive(alias, IdentifierLookupContext::FUNCTION);
                 break;
             }
@@ -124,14 +126,16 @@ private:
                     inserted_table_expression = aliases.alias_name_to_table_expression_node.emplace(alias, cloned_alias_node).second;
                     if (standard_mode)
                     {
-                        aliases.registerAliasCaseInsensitive(alias, IdentifierLookupContext::FUNCTION);
-                        aliases.registerAliasCaseInsensitive(alias, IdentifierLookupContext::TABLE_EXPRESSION);
+                        if (inserted_lambda)
+                            aliases.registerAliasCaseInsensitive(alias, IdentifierLookupContext::FUNCTION);
+                        if (inserted_table_expression)
+                            aliases.registerAliasCaseInsensitive(alias, IdentifierLookupContext::TABLE_EXPRESSION);
                     }
                 }
 
                 if (!inserted_expression || !inserted_lambda || !inserted_table_expression)
                     addDuplicatingAlias(cloned_alias_node);
-                if (standard_mode)
+                if (standard_mode && inserted_expression)
                     aliases.registerAliasCaseInsensitive(alias, IdentifierLookupContext::EXPRESSION);
                 break;
             }
@@ -140,7 +144,7 @@ private:
                 auto [_, inserted] = aliases.alias_name_to_expression_node.emplace(alias, cloned_alias_node);
                 if (!inserted || aliases.alias_name_to_lambda_node.contains(alias))
                     addDuplicatingAlias(cloned_alias_node);
-                if (standard_mode)
+                if (standard_mode && inserted)
                     aliases.registerAliasCaseInsensitive(alias, IdentifierLookupContext::EXPRESSION);
                 break;
             }

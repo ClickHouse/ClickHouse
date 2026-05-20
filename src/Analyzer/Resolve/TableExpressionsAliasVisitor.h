@@ -16,8 +16,8 @@ namespace ErrorCodes
 class TableExpressionsAliasVisitor : public InDepthQueryTreeVisitor<TableExpressionsAliasVisitor>
 {
 public:
-    explicit TableExpressionsAliasVisitor(IdentifierResolveScope & scope_)
-        : scope(scope_)
+    TableExpressionsAliasVisitor(IdentifierResolveScope & scope_, bool standard_mode_)
+        : scope(scope_), standard_mode(standard_mode_)
     {}
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -68,9 +68,13 @@ private:
                 "Multiple table expressions with same alias {}. In scope {}",
                 node_alias,
                 scope.scope_node->formatASTForErrorMessage());
+        /// Keep the lowercase alias index in sync so case-insensitive table-alias resolution finds it.
+        if (standard_mode)
+            scope.aliases.registerAliasCaseInsensitive(node_alias, IdentifierLookupContext::TABLE_EXPRESSION);
     }
 
     IdentifierResolveScope & scope;
+    bool standard_mode;
 };
 
 }

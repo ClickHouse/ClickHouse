@@ -5518,6 +5518,9 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                 alias_name,
                 table_expression_node->formatASTForErrorMessage(),
                 it->second->formatASTForErrorMessage());
+        /// Keep the lowercase alias index in sync so case-insensitive table-alias resolution finds it.
+        if (scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard)
+            scope.aliases.registerAliasCaseInsensitive(alias_name, IdentifierLookupContext::TABLE_EXPRESSION);
     };
 
     add_table_expression_alias_into_scope(join_tree_node);
@@ -5710,8 +5713,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     auto transitive_aliases = std::move(scope.aliases.alias_name_to_table_expression_node);
+    /// Save the lowercase index alongside so the visitor sees an empty primary + lowercase pair,
+    /// and the original parent-scope entries are restored after the join tree visit.
+    auto transitive_lowercase_table_aliases = std::move(scope.aliases.lowercase_table_alias_to_originals);
 
-    TableExpressionsAliasVisitor table_expressions_visitor(scope);
+    const bool standard_mode_for_table_aliases = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    TableExpressionsAliasVisitor table_expressions_visitor(scope, standard_mode_for_table_aliases);
     table_expressions_visitor.visit(query_node_typed.getJoinTree());
 
     TableFunctionsWithClusterAlternativesVisitor table_function_visitor;
@@ -5721,6 +5728,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);
     scope.aliases.alias_name_to_table_expression_node = std::move(transitive_aliases);
+    scope.aliases.lowercase_table_alias_to_originals = std::move(transitive_lowercase_table_aliases);
 
     resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor);
 

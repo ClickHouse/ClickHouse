@@ -750,6 +750,17 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
         databases_without_datalake_catalogs.emplace(new_name, db);
     }
 
+    /// Keep the case-insensitive lookup map in sync so resolution after `RENAME DATABASE`
+    /// no longer points to the old name and finds the new one.
+    String old_lowercase_name = Poco::toLower(old_name);
+    if (auto lower_it = lowercase_db_to_original_names.find(old_lowercase_name); lower_it != lowercase_db_to_original_names.end())
+    {
+        lower_it->second.erase(old_name);
+        if (lower_it->second.empty())
+            lowercase_db_to_original_names.erase(lower_it);
+    }
+    lowercase_db_to_original_names[Poco::toLower(new_name)].insert(new_name);
+
     for (const auto & table_name : tables_in_database)
     {
         auto removed_ref_deps = referential_dependencies.removeDependencies(StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
