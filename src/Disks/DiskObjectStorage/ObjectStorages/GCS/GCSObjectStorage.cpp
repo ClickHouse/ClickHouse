@@ -62,6 +62,7 @@ namespace S3RequestSetting
 {
 #if USE_AWS_S3
 extern const S3RequestSettingsUInt64 strict_upload_part_size;
+extern const S3RequestSettingsUInt64 min_upload_part_size;
 extern const S3RequestSettingsUInt64 max_single_part_upload_size;
 #endif
 }
