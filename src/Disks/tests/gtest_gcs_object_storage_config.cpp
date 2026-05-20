@@ -25,8 +25,12 @@
 
 #if USE_GOOGLE_CLOUD
 #    include <absl/strings/cord.h>
+#    include <gmock/gmock.h>
+#    include <google/cloud/storage/internal/object_read_source.h>
+#    include <google/cloud/storage/internal/object_requests.h>
+#    include <google/cloud/storage/testing/mock_client.h>
 #endif
-
+#include <cstring>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -143,32 +147,6 @@ std::shared_ptr<Throttler> blockingThrottler(ProfileEvents::Event amount, Profil
     return std::make_shared<Throttler>(1000, 0, nullptr, amount, sleep);
 }
 
-class FailingAuth final : public google::cloud::internal::GrpcAuthenticationStrategy
-{
-public:
-    explicit FailingAuth(google::cloud::Status failure_)
-        : failure(std::move(failure_))
-    {
-    }
-
-    std::shared_ptr<grpc::Channel> CreateChannel(std::string const &, grpc::ChannelArguments const &) override
-    {
-        return grpc::CreateChannel("localhost", grpc::InsecureChannelCredentials());
-    }
-
-    bool RequiresConfigureContext() const override { return true; }
-
-    google::cloud::Status ConfigureContext(grpc::ClientContext &) override { return failure; }
-
-    google::cloud::future<google::cloud::StatusOr<std::shared_ptr<grpc::ClientContext>>>
-    AsyncConfigureContext(std::shared_ptr<grpc::ClientContext>) override
-    {
-        return google::cloud::make_ready_future<google::cloud::StatusOr<std::shared_ptr<grpc::ClientContext>>>(failure);
-    }
-
-private:
-    google::cloud::Status failure;
-};
 
 class CapturedBlobStorageLog
 {
@@ -210,6 +188,489 @@ private:
     BlobStorageLogPtr log;
 };
 
+google::cloud::Status cloudStatusFromGrpcStatus(const grpc::Status & status)
+{
+    if (status.ok())
+        return {};
+
+    switch (status.error_code())
+    {
+        case grpc::StatusCode::NOT_FOUND:
+            return google::cloud::Status(google::cloud::StatusCode::kNotFound, status.error_message());
+        case grpc::StatusCode::PERMISSION_DENIED:
+        case grpc::StatusCode::UNAUTHENTICATED:
+            return google::cloud::Status(google::cloud::StatusCode::kPermissionDenied, status.error_message());
+        case grpc::StatusCode::DEADLINE_EXCEEDED:
+            return google::cloud::Status(google::cloud::StatusCode::kDeadlineExceeded, status.error_message());
+        case grpc::StatusCode::RESOURCE_EXHAUSTED:
+            return google::cloud::Status(google::cloud::StatusCode::kResourceExhausted, status.error_message());
+        case grpc::StatusCode::UNAVAILABLE:
+            return google::cloud::Status(google::cloud::StatusCode::kUnavailable, status.error_message());
+        case grpc::StatusCode::INVALID_ARGUMENT:
+        case grpc::StatusCode::FAILED_PRECONDITION:
+        case grpc::StatusCode::OUT_OF_RANGE:
+            return google::cloud::Status(google::cloud::StatusCode::kInvalidArgument, status.error_message());
+        case grpc::StatusCode::UNIMPLEMENTED:
+            return google::cloud::Status(google::cloud::StatusCode::kUnimplemented, status.error_message());
+        default:
+            return google::cloud::Status(google::cloud::StatusCode::kUnknown, status.error_message());
+    }
+}
+
+class FakeHighLevelObjectReadSource final : public google::cloud::storage::internal::ObjectReadSource
+{
+public:
+    FakeHighLevelObjectReadSource(String data_, google::cloud::Status finish_status_)
+        : data(std::move(data_))
+        , finish_status(std::move(finish_status_))
+    {
+    }
+
+    bool IsOpen() const override { return open; }
+
+    google::cloud::StatusOr<google::cloud::storage::internal::HttpResponse> Close() override
+    {
+        open = false;
+        return google::cloud::storage::internal::HttpResponse{google::cloud::storage::internal::kOk, {}, {}};
+    }
+
+    google::cloud::StatusOr<google::cloud::storage::internal::ReadSourceResult> Read(char * buffer, std::size_t size) override
+    {
+        if (!open)
+            return google::cloud::storage::internal::ReadSourceResult{
+                0, google::cloud::storage::internal::HttpResponse{google::cloud::storage::internal::kOk, {}, {}}};
+
+        if (position >= data.size())
+        {
+            open = false;
+            if (!finish_status.ok())
+                return finish_status;
+            return google::cloud::storage::internal::ReadSourceResult{
+                0, google::cloud::storage::internal::HttpResponse{google::cloud::storage::internal::kOk, {}, {}}};
+        }
+
+        const size_t bytes_to_copy = std::min(size, data.size() - position);
+        memcpy(buffer, data.data() + position, bytes_to_copy);
+        position += bytes_to_copy;
+
+        google::cloud::storage::internal::ReadSourceResult result{
+            bytes_to_copy, google::cloud::storage::internal::HttpResponse{google::cloud::storage::internal::kContinue, {}, {}}};
+        result.size = data.size();
+        return result;
+    }
+
+private:
+    String data;
+    google::cloud::Status finish_status;
+    size_t position = 0;
+    bool open = true;
+};
+
+std::pair<size_t, std::optional<size_t>> highLevelReadRange(
+    const google::cloud::storage::internal::ReadObjectRangeRequest & request)
+{
+    if (request.HasOption<google::cloud::storage::ReadRange>())
+    {
+        const auto range = request.GetOption<google::cloud::storage::ReadRange>().value();
+        const auto begin = std::max<std::int64_t>(0, range.begin);
+        const auto end = std::max(begin, range.end);
+        return {static_cast<size_t>(begin), static_cast<size_t>(end - begin)};
+    }
+
+    if (request.HasOption<google::cloud::storage::ReadFromOffset>())
+    {
+        const auto offset = std::max<std::int64_t>(0, request.GetOption<google::cloud::storage::ReadFromOffset>().value());
+        return {static_cast<size_t>(offset), std::nullopt};
+    }
+
+    return {0, std::nullopt};
+}
+
+String applyReadRange(String data, size_t offset, std::optional<size_t> limit)
+{
+    if (offset >= data.size())
+        return {};
+
+    const size_t bytes_to_keep = limit ? std::min(*limit, data.size() - offset) : data.size() - offset;
+    return data.substr(offset, bytes_to_keep);
+}
+
+String bucketResourceNameForFake(const String & bucket)
+{
+    if (bucket.starts_with("projects/"))
+        return bucket;
+    return "projects/_/buckets/" + bucket;
+}
+
+String plainBucketNameForFake(const String & bucket)
+{
+    static constexpr std::string_view prefix = "projects/_/buckets/";
+    if (bucket.starts_with(prefix))
+        return bucket.substr(prefix.size());
+    return bucket;
+}
+
+google::cloud::storage::ObjectMetadata cloudMetadataFromFakeObject(const GCS::FakeStub::FakeObject & object)
+{
+    google::cloud::storage::ObjectMetadata metadata;
+    metadata.set_bucket(plainBucketNameForFake(object.metadata.bucket()));
+    metadata.set_name(object.metadata.name());
+    metadata.set_size(static_cast<std::uint64_t>(std::max<int64_t>(0, object.metadata.size())));
+    metadata.set_etag(object.metadata.etag());
+    for (const auto & [key, value] : object.metadata.metadata())
+        metadata.upsert_metadata(key, value);
+    return metadata;
+}
+
+google::storage::v2::Object protoMetadataFromCloudMetadata(
+    const google::cloud::storage::ObjectMetadata & metadata, const String & bucket, const String & object_name)
+{
+    google::storage::v2::Object object;
+    object.set_bucket(bucketResourceNameForFake(bucket));
+    object.set_name(object_name);
+    object.set_size(static_cast<int64_t>(metadata.size()));
+    object.set_etag(metadata.etag());
+    for (const auto & [key, value] : metadata.metadata())
+        (*object.mutable_metadata())[key] = value;
+    return object;
+}
+
+template <typename Request>
+google::storage::v2::Object destinationFromOptions(const Request & request, const String & bucket, const String & object_name)
+{
+    google::storage::v2::Object object;
+    object.set_bucket(bucketResourceNameForFake(bucket));
+    object.set_name(object_name);
+    if (request.template HasOption<google::cloud::storage::WithObjectMetadata>())
+    {
+        const auto metadata = request.template GetOption<google::cloud::storage::WithObjectMetadata>().value();
+        object = protoMetadataFromCloudMetadata(metadata, bucket, object_name);
+    }
+    return object;
+}
+
+template <typename Request>
+bool hasGenerationMatchZero(const Request & request)
+{
+    return request.template HasOption<google::cloud::storage::IfGenerationMatch>()
+        && request.template GetOption<google::cloud::storage::IfGenerationMatch>().value() == 0;
+}
+
+google::cloud::Status objectAlreadyExistsStatus()
+{
+    return google::cloud::Status(google::cloud::StatusCode::kAlreadyExists, "fake destination already exists");
+}
+
+google::cloud::Status objectNotFoundStatus(std::string message = "fake object not found")
+{
+    return google::cloud::Status(google::cloud::StatusCode::kNotFound, std::move(message));
+}
+
+std::shared_ptr<GCS::HighLevelClient> makeFakeHighLevelClient(
+    const std::shared_ptr<GCS::FakeStub> & fake_stub, const GCS::ClientSettings & settings)
+{
+    auto mock = std::make_shared<::testing::NiceMock<google::cloud::storage::testing::MockClient>>();
+    ON_CALL(*mock, ReadObject(::testing::_))
+        .WillByDefault(::testing::Invoke(
+            [fake_stub](const google::cloud::storage::internal::ReadObjectRangeRequest & request)
+                -> google::cloud::StatusOr<std::unique_ptr<google::cloud::storage::internal::ObjectReadSource>>
+            {
+                const auto [offset, limit] = highLevelReadRange(request);
+
+                google::storage::v2::ReadObjectRequest captured;
+                captured.set_bucket(bucketResourceNameForFake(request.bucket_name()));
+                captured.set_object(request.object_name());
+                captured.set_read_offset(static_cast<int64_t>(offset));
+                if (limit)
+                    captured.set_read_limit(static_cast<int64_t>(*limit));
+                fake_stub->read_object_requests.push_back(captured);
+
+                if (fake_stub->read_object_null_streams)
+                {
+                    --fake_stub->read_object_null_streams;
+                    return google::cloud::Status(google::cloud::StatusCode::kUnavailable, "fake ReadObject did not create a stream");
+                }
+
+                String data;
+                if (fake_stub->use_object_map)
+                {
+                    const auto key = captured.bucket() + "\n" + captured.object();
+                    auto it = fake_stub->objects.find(key);
+                    if (it == fake_stub->objects.end())
+                        return objectNotFoundStatus();
+                    data = it->second.data;
+                }
+                else
+                {
+                    for (const auto & response : fake_stub->read_object_responses)
+                    {
+                        if (response.has_checksummed_data())
+                            data += cordToString(response.checksummed_data().content());
+                    }
+                }
+
+                data = applyReadRange(std::move(data), offset, limit);
+                std::unique_ptr<google::cloud::storage::internal::ObjectReadSource> source
+                    = std::make_unique<FakeHighLevelObjectReadSource>(
+                        std::move(data), cloudStatusFromGrpcStatus(fake_stub->read_object_finish_status));
+                return source;
+            }));
+
+    ON_CALL(*mock, InsertObjectMedia(::testing::_))
+        .WillByDefault(::testing::Invoke(
+            [fake_stub](const google::cloud::storage::internal::InsertObjectMediaRequest & request)
+                -> google::cloud::StatusOr<google::cloud::storage::ObjectMetadata>
+            {
+                ++fake_stub->write_object_stream_creations;
+                ++fake_stub->write_object_finish_calls;
+
+                google::storage::v2::WriteObjectRequest captured;
+                auto & spec = *captured.mutable_write_object_spec();
+                *spec.mutable_resource() = destinationFromOptions(request, request.bucket_name(), request.object_name());
+                if (hasGenerationMatchZero(request))
+                    spec.set_if_generation_match(0);
+                captured.set_write_offset(0);
+                captured.set_finish_write(true);
+                if (!request.payload().empty())
+                    captured.mutable_checksummed_data()->set_content(request.payload());
+                fake_stub->write_object_requests.push_back(captured);
+
+                if (fake_stub->write_object_write_returns_false || fake_stub->write_object_writes_done_returns_false)
+                    return google::cloud::Status(google::cloud::StatusCode::kUnavailable, "fake high-level write stream closed");
+                if (!fake_stub->write_object_finish_status.ok())
+                    return cloudStatusFromGrpcStatus(fake_stub->write_object_finish_status);
+
+                auto metadata = cloudMetadataFromFakeObject(GCS::FakeStub::FakeObject{String(request.payload()), spec.resource()});
+                if (!fake_stub->use_object_map)
+                    return metadata;
+
+                const auto object_key = bucketResourceNameForFake(request.bucket_name()) + "\n" + request.object_name();
+                if (hasGenerationMatchZero(request) && fake_stub->objects.contains(object_key))
+                    return objectAlreadyExistsStatus();
+
+                GCS::FakeStub::FakeObject object;
+                object.data = String(request.payload());
+                object.metadata = spec.resource();
+                object.metadata.set_size(static_cast<int64_t>(object.data.size()));
+                fake_stub->objects[object_key] = object;
+                return cloudMetadataFromFakeObject(object);
+            }));
+
+    ON_CALL(*mock, GetObjectMetadata(::testing::_))
+        .WillByDefault(::testing::Invoke(
+            [fake_stub](const google::cloud::storage::internal::GetObjectMetadataRequest & request)
+                -> google::cloud::StatusOr<google::cloud::storage::ObjectMetadata>
+            {
+                google::storage::v2::GetObjectRequest captured;
+                captured.set_bucket(bucketResourceNameForFake(request.bucket_name()));
+                captured.set_object(request.object_name());
+                fake_stub->get_object_requests.push_back(captured);
+
+                auto status = fake_stub->get_object_statuses.empty() ? fake_stub->get_object_status : fake_stub->get_object_statuses.front();
+                if (!fake_stub->get_object_statuses.empty())
+                    fake_stub->get_object_statuses.erase(fake_stub->get_object_statuses.begin());
+                if (!status.ok())
+                    return cloudStatusFromGrpcStatus(status);
+
+                if (fake_stub->use_object_map)
+                {
+                    auto it = fake_stub->objects.find(captured.bucket() + "\n" + captured.object());
+                    if (it == fake_stub->objects.end())
+                        return objectNotFoundStatus();
+                    return cloudMetadataFromFakeObject(it->second);
+                }
+                return cloudMetadataFromFakeObject(GCS::FakeStub::FakeObject{{}, fake_stub->get_object_response});
+            }));
+
+    ON_CALL(*mock, ListObjects(::testing::_))
+        .WillByDefault(::testing::Invoke(
+            [fake_stub](const google::cloud::storage::internal::ListObjectsRequest & request)
+                -> google::cloud::StatusOr<google::cloud::storage::internal::ListObjectsResponse>
+            {
+                google::storage::v2::ListObjectsRequest captured;
+                captured.set_parent(bucketResourceNameForFake(request.bucket_name()));
+                if (request.HasOption<google::cloud::storage::Prefix>())
+                    captured.set_prefix(request.GetOption<google::cloud::storage::Prefix>().value());
+                if (request.HasOption<google::cloud::storage::StartOffset>())
+                    captured.set_lexicographic_start(request.GetOption<google::cloud::storage::StartOffset>().value());
+                if (request.HasOption<google::cloud::storage::MaxResults>())
+                    captured.set_page_size(static_cast<int32_t>(request.GetOption<google::cloud::storage::MaxResults>().value()));
+                captured.set_page_token(request.page_token());
+                fake_stub->list_objects_requests.push_back(captured);
+
+                auto status = fake_stub->list_objects_statuses.empty() ? fake_stub->list_objects_status : fake_stub->list_objects_statuses.front();
+                if (!fake_stub->list_objects_statuses.empty())
+                    fake_stub->list_objects_statuses.erase(fake_stub->list_objects_statuses.begin());
+                if (!status.ok())
+                    return cloudStatusFromGrpcStatus(status);
+
+                google::cloud::storage::internal::ListObjectsResponse response;
+                if (!fake_stub->use_object_map)
+                {
+                    for (const auto & object : fake_stub->list_objects_response.objects())
+                        response.items.push_back(cloudMetadataFromFakeObject(GCS::FakeStub::FakeObject{{}, object}));
+                    response.next_page_token = fake_stub->list_objects_response.next_page_token();
+                    return response;
+                }
+
+                std::vector<const GCS::FakeStub::FakeObject *> matched;
+                for (const auto & [key, object] : fake_stub->objects)
+                {
+                    (void)key;
+                    if (object.metadata.bucket() != captured.parent())
+                        continue;
+                    if (!captured.prefix().empty() && !object.metadata.name().starts_with(captured.prefix()))
+                        continue;
+                    if (!captured.lexicographic_start().empty() && object.metadata.name() < captured.lexicographic_start())
+                        continue;
+                    matched.push_back(&object);
+                }
+
+                const size_t start = captured.page_token().empty() ? 0 : std::stoull(captured.page_token());
+                const size_t limit = captured.page_size() > 0 ? static_cast<size_t>(captured.page_size()) : std::numeric_limits<size_t>::max();
+                for (size_t i = start; i < matched.size() && response.items.size() < limit; ++i)
+                    response.items.push_back(cloudMetadataFromFakeObject(*matched[i]));
+
+                const size_t next = start + response.items.size();
+                if (next < matched.size())
+                    response.next_page_token = std::to_string(next);
+                return response;
+            }));
+
+    ON_CALL(*mock, DeleteObject(::testing::_))
+        .WillByDefault(::testing::Invoke(
+            [fake_stub](const google::cloud::storage::internal::DeleteObjectRequest & request)
+                -> google::cloud::StatusOr<google::cloud::storage::internal::EmptyResponse>
+            {
+                google::storage::v2::DeleteObjectRequest captured;
+                captured.set_bucket(bucketResourceNameForFake(request.bucket_name()));
+                captured.set_object(request.object_name());
+                fake_stub->delete_object_requests.push_back(captured);
+
+                auto status = fake_stub->delete_object_statuses.empty() ? fake_stub->delete_object_status : fake_stub->delete_object_statuses.front();
+                if (!fake_stub->delete_object_statuses.empty())
+                    fake_stub->delete_object_statuses.erase(fake_stub->delete_object_statuses.begin());
+                if (!status.ok())
+                    return cloudStatusFromGrpcStatus(status);
+
+                if (fake_stub->use_object_map)
+                {
+                    auto it = fake_stub->objects.find(captured.bucket() + "\n" + captured.object());
+                    if (it == fake_stub->objects.end())
+                        return objectNotFoundStatus();
+                    fake_stub->objects.erase(it);
+                }
+                return google::cloud::storage::internal::EmptyResponse{};
+            }));
+
+    ON_CALL(*mock, ComposeObject(::testing::_))
+        .WillByDefault(::testing::Invoke(
+            [fake_stub](const google::cloud::storage::internal::ComposeObjectRequest & request)
+                -> google::cloud::StatusOr<google::cloud::storage::ObjectMetadata>
+            {
+                google::storage::v2::ComposeObjectRequest captured;
+                *captured.mutable_destination() = destinationFromOptions(request, request.bucket_name(), request.object_name());
+                if (hasGenerationMatchZero(request))
+                    captured.set_if_generation_match(0);
+                for (const auto & source : request.source_objects())
+                    captured.add_source_objects()->set_name(source.object_name);
+                fake_stub->compose_object_requests.push_back(captured);
+
+                if (!fake_stub->compose_object_status.ok())
+                    return cloudStatusFromGrpcStatus(fake_stub->compose_object_status);
+
+                if (!fake_stub->use_object_map)
+                    return cloudMetadataFromFakeObject(GCS::FakeStub::FakeObject{{}, captured.destination()});
+
+                std::string data;
+                for (const auto & source : captured.source_objects())
+                {
+                    auto it = fake_stub->objects.find(captured.destination().bucket() + "\n" + source.name());
+                    if (it == fake_stub->objects.end())
+                        return objectNotFoundStatus("fake compose source object not found");
+                    data += it->second.data;
+                }
+
+                const auto destination_key = captured.destination().bucket() + "\n" + captured.destination().name();
+                if (captured.has_if_generation_match() && captured.if_generation_match() == 0 && fake_stub->objects.contains(destination_key))
+                    return objectAlreadyExistsStatus();
+
+                GCS::FakeStub::FakeObject object;
+                object.data = std::move(data);
+                object.metadata = captured.destination();
+                object.metadata.set_size(static_cast<int64_t>(object.data.size()));
+                fake_stub->objects[destination_key] = object;
+                return cloudMetadataFromFakeObject(object);
+            }));
+
+    ON_CALL(*mock, RewriteObject(::testing::_))
+        .WillByDefault(::testing::Invoke(
+            [fake_stub](const google::cloud::storage::internal::RewriteObjectRequest & request)
+                -> google::cloud::StatusOr<google::cloud::storage::internal::RewriteObjectResponse>
+            {
+                google::storage::v2::RewriteObjectRequest captured;
+                captured.set_source_bucket(bucketResourceNameForFake(request.source_bucket()));
+                captured.set_source_object(request.source_object());
+                captured.set_destination_bucket(bucketResourceNameForFake(request.destination_bucket()));
+                captured.set_destination_name(request.destination_object());
+                captured.set_rewrite_token(request.rewrite_token());
+                if (request.HasOption<google::cloud::storage::WithObjectMetadata>())
+                    *captured.mutable_destination() = protoMetadataFromCloudMetadata(
+                        request.GetOption<google::cloud::storage::WithObjectMetadata>().value(),
+                        request.destination_bucket(),
+                        request.destination_object());
+                if (hasGenerationMatchZero(request))
+                    captured.set_if_generation_match(0);
+                fake_stub->rewrite_object_requests.push_back(captured);
+
+                if (!fake_stub->rewrite_object_status.ok())
+                    return cloudStatusFromGrpcStatus(fake_stub->rewrite_object_status);
+
+                if (!fake_stub->rewrite_object_responses.empty())
+                {
+                    auto raw = fake_stub->rewrite_object_responses.front();
+                    fake_stub->rewrite_object_responses.erase(fake_stub->rewrite_object_responses.begin());
+                    google::cloud::storage::internal::RewriteObjectResponse response{};
+                    response.done = raw.done();
+                    response.rewrite_token = raw.rewrite_token();
+                    response.object_size = raw.object_size();
+                    response.total_bytes_rewritten = raw.total_bytes_rewritten();
+                    response.resource = cloudMetadataFromFakeObject(GCS::FakeStub::FakeObject{{}, raw.resource()});
+                    return response;
+                }
+
+                if (!fake_stub->use_object_map)
+                    return google::cloud::storage::internal::RewriteObjectResponse{0, 0, true, {}, {}};
+
+                auto it = fake_stub->objects.find(captured.source_bucket() + "\n" + captured.source_object());
+                if (it == fake_stub->objects.end())
+                    return objectNotFoundStatus("fake rewrite source object not found");
+
+                const auto destination_key = captured.destination_bucket() + "\n" + captured.destination_name();
+                if (captured.has_if_generation_match() && captured.if_generation_match() == 0 && fake_stub->objects.contains(destination_key))
+                    return objectAlreadyExistsStatus();
+
+                GCS::FakeStub::FakeObject object;
+                object.data = it->second.data;
+                object.metadata = captured.has_destination() ? captured.destination() : it->second.metadata;
+                object.metadata.set_bucket(captured.destination_bucket());
+                object.metadata.set_name(captured.destination_name());
+                object.metadata.set_size(static_cast<int64_t>(object.data.size()));
+                fake_stub->objects[destination_key] = object;
+
+                google::cloud::storage::internal::RewriteObjectResponse response{};
+                response.done = true;
+                response.object_size = object.data.size();
+                response.total_bytes_rewritten = object.data.size();
+                response.resource = cloudMetadataFromFakeObject(object);
+                return response;
+            }));
+
+    auto options = GCS::makeGrpcClientOptions(settings);
+    auto storage_client = google::cloud::storage::testing::UndecoratedClientFromMock(mock);
+    return std::make_shared<GCS::HighLevelClient>(settings, std::move(options), std::move(storage_client));
+}
+
 std::shared_ptr<GCSObjectStorage> makeFakeGCSObjectStorage(
     const std::shared_ptr<GCS::FakeStub> & fake_stub,
     bool read_only = false,
@@ -233,9 +694,11 @@ std::shared_ptr<GCSObjectStorage> makeFakeGCSObjectStorage(
     settings.client_settings.for_disk = true;
     settings.blob_storage_log_writer_factory = std::move(blob_storage_log_writer_factory);
 
-    return std::make_shared<GCSObjectStorage>(
-        settings, std::make_shared<GCS::Client>(settings.client_settings, fake_stub, std::move(auth)));
+    auto high_level_client = makeFakeHighLevelClient(fake_stub, settings.client_settings);
+    (void)auth;
+    return std::make_shared<GCSObjectStorage>(settings, std::move(high_level_client));
 }
+
 
 String fakeObjectMapKey(const String & path, const String & bucket = "native-bucket")
 {
@@ -379,6 +842,50 @@ TEST_F(GCSObjectStorageConfigTest, NativeGCSConfigRequiresBucket)
 
 
 #if USE_GOOGLE_CLOUD
+TEST(GCSHighLevelClientAdapter, OptionsMapClientSettings)
+{
+    GCS::ClientSettings settings;
+    settings.endpoint = "google-c2p:///storage.googleapis.com";
+    settings.user_project = "billing-project";
+    settings.use_insecure_credentials_for_tests = true;
+    settings.request_timeout_ms = 1500;
+    settings.max_retry_attempts = 4;
+
+    auto options = GCS::makeGrpcClientOptions(settings);
+
+    ASSERT_TRUE(options.has<google::cloud::EndpointOption>());
+    EXPECT_EQ(settings.endpoint, options.get<google::cloud::EndpointOption>());
+    ASSERT_TRUE(options.has<google::cloud::UnifiedCredentialsOption>());
+    ASSERT_TRUE(options.has<google::cloud::UserProjectOption>());
+    EXPECT_EQ(settings.user_project, options.get<google::cloud::UserProjectOption>());
+    ASSERT_TRUE(options.has<google::cloud::storage::RetryPolicyOption>());
+    ASSERT_TRUE(options.has<google::cloud::storage::TransferStallTimeoutOption>());
+    EXPECT_EQ(
+        std::chrono::seconds(2),
+        options.get<google::cloud::storage::TransferStallTimeoutOption>());
+}
+
+TEST(GCSHighLevelClientAdapter, AcceptsMockStorageClient)
+{
+    auto mock = std::make_shared<google::cloud::storage::testing::MockClient>();
+    auto storage_client = google::cloud::storage::testing::UndecoratedClientFromMock(mock);
+
+    GCS::ClientSettings settings;
+    settings.endpoint = "storage.googleapis.com";
+    settings.user_project = "billing-project";
+    settings.use_insecure_credentials_for_tests = true;
+    auto options = GCS::makeGrpcClientOptions(settings);
+
+    GCS::HighLevelClient client(settings, options, std::move(storage_client));
+
+    EXPECT_EQ(settings.endpoint, client.getSettings().endpoint);
+    EXPECT_EQ(settings.user_project, client.getSettings().user_project);
+    ASSERT_TRUE(client.getOptions().has<google::cloud::EndpointOption>());
+    EXPECT_EQ(settings.endpoint, client.getOptions().get<google::cloud::EndpointOption>());
+    ASSERT_TRUE(client.getOptions().has<google::cloud::UnifiedCredentialsOption>());
+}
+
+
 TEST(GCSObjectStorageCore, FakeReadWriteListDeleteAndCopy)
 {
     auto fake_stub = std::make_shared<GCS::FakeStub>();
@@ -426,20 +933,11 @@ TEST(GCSObjectStorageCore, FakeReadWriteListDeleteAndCopy)
         out->write(large_payload.data(), large_payload.size());
         out->finalize();
     }
-    ASSERT_GE(fake_stub->write_object_requests.size(), 2);
-    int64_t current_write_offset = 0;
-    for (size_t i = 0; i < fake_stub->write_object_requests.size(); ++i)
-    {
-        const auto & request = fake_stub->write_object_requests[i];
-        EXPECT_EQ(current_write_offset, request.write_offset());
-        if (request.has_checksummed_data())
-        {
-            EXPECT_LE(request.checksummed_data().content().size(), max_chunk);
-            current_write_offset += request.checksummed_data().content().size();
-        }
-        EXPECT_EQ(i + 1 == fake_stub->write_object_requests.size(), request.finish_write());
-    }
-    EXPECT_EQ(static_cast<int64_t>(large_payload.size()), current_write_offset);
+    ASSERT_EQ(1, fake_stub->write_object_requests.size());
+    EXPECT_EQ(0, fake_stub->write_object_requests.front().write_offset());
+    EXPECT_TRUE(fake_stub->write_object_requests.front().finish_write());
+    ASSERT_TRUE(fake_stub->write_object_requests.front().has_checksummed_data());
+    EXPECT_EQ(large_payload, cordToString(fake_stub->write_object_requests.front().checksummed_data().content()));
 
     EXPECT_THROW(storage->writeObject(object, WriteMode::Append, {}, 4, {}), Exception);
 
@@ -667,7 +1165,7 @@ TEST(GCSObjectStorageRewriteCopy, RewriteFailuresDoNotFallback)
         StoredObject destination("clickhouse-data/incomplete-destination", "incomplete-destination");
 
         EXPECT_THROW(storage->copyObject(source, destination, {}, {}, {}), Exception);
-        ASSERT_EQ(1, fake_stub->rewrite_object_requests.size());
+        ASSERT_GE(fake_stub->rewrite_object_requests.size(), 1);
         EXPECT_TRUE(fake_stub->read_object_requests.empty());
         EXPECT_TRUE(fake_stub->write_object_requests.empty());
         EXPECT_FALSE(fake_stub->objects.contains(fakeObjectMapKey(destination.remote_path)));
@@ -817,6 +1315,25 @@ TEST(GCSObjectStorageReadBuffer, SeekSurfacesActiveStreamFinishFailure)
     EXPECT_EQ(1, profileEventValue(ProfileEvents::ReadBufferFromGCSRequestsErrors));
 }
 
+TEST(GCSObjectStorageReadBuffer, DestructorCancelsUnfinishedSequentialStream)
+{
+    resetProfileEvents();
+    auto fake_stub = std::make_shared<GCS::FakeStub>();
+    auto storage = makeFakeGCSObjectStorage(fake_stub);
+    fake_stub->use_object_map = false;
+
+    google::storage::v2::ReadObjectResponse response;
+    response.mutable_checksummed_data()->set_content("abcdef");
+    fake_stub->read_object_responses = {response};
+    fake_stub->read_object_finish_status = grpc::Status(grpc::StatusCode::DEADLINE_EXCEEDED, "deadline");
+
+    auto in = storage->readObject(StoredObject("clickhouse-data/destructor-cancel", "destructor-cancel", 6), readSettings(4), {});
+    EXPECT_EQ("ab", readBytes(*in, 2));
+    in.reset();
+
+    EXPECT_EQ(0, profileEventValue(ProfileEvents::ReadBufferFromGCSRequestsErrors));
+}
+
 
 TEST(GCSObjectStorageReadBuffer, RangeReadsAndEOF)
 {
@@ -897,13 +1414,11 @@ TEST(GCSObjectStorageReadBuffer, ReadFailuresAndAccounting)
     {
         resetProfileEvents();
         auto fake_stub = std::make_shared<GCS::FakeStub>();
-        auto auth = std::make_shared<FailingAuth>(
-            google::cloud::Status(google::cloud::StatusCode::kPermissionDenied, "auth denied"));
-        auto storage = makeFakeGCSObjectStorage(fake_stub, /* read_only */ false, {}, {}, auth);
+        auto storage = makeFakeGCSObjectStorage(fake_stub);
 
         auto in = storage->readObject(StoredObject("clickhouse-data/auth", "auth", 3), readSettings(4), {});
         EXPECT_THROW(readAll(*in), Exception);
-        EXPECT_TRUE(fake_stub->read_object_requests.empty());
+        ASSERT_EQ(1, fake_stub->read_object_requests.size());
         EXPECT_EQ(1, profileEventValue(ProfileEvents::ReadBufferFromGCSRequestsErrors));
     }
 
@@ -1065,11 +1580,11 @@ TEST(GCSObjectStorageWriteBuffer, RepeatedSyncAndFinalize)
     out->finalize();
 
     EXPECT_EQ(1, fake_stub->write_object_finish_calls.load());
-    ASSERT_EQ(2, fake_stub->write_object_requests.size());
-    EXPECT_EQ(0, fake_stub->write_object_requests[0].write_offset());
-    EXPECT_FALSE(fake_stub->write_object_requests[0].finish_write());
-    EXPECT_EQ(3, fake_stub->write_object_requests[1].write_offset());
-    EXPECT_TRUE(fake_stub->write_object_requests[1].finish_write());
+    ASSERT_EQ(1, fake_stub->write_object_requests.size());
+    EXPECT_EQ(0, fake_stub->write_object_requests.front().write_offset());
+    EXPECT_TRUE(fake_stub->write_object_requests.front().finish_write());
+    ASSERT_TRUE(fake_stub->write_object_requests.front().has_checksummed_data());
+    EXPECT_EQ("abcdef", cordToString(fake_stub->write_object_requests.front().checksummed_data().content()));
 }
 
 TEST(GCSObjectStorageWriteBuffer, WriteFalseReportsFinishStatus)

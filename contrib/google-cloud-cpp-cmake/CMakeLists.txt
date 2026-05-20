@@ -86,6 +86,40 @@ add_library(nlohmann_json::nlohmann_json ALIAS _nlohmann_json)
 include(google_cloud_cpp_rest_internal)
 include(google_cloud_cpp_storage)
 
+set(GOOGLE_CLOUD_CPP_STORAGE_GRPC_DIR "${GOOGLE_CLOUD_CPP_DIR}/google/cloud/storage")
+file(GLOB GOOGLE_CLOUD_CPP_STORAGE_GRPC_SRC CONFIGURE_DEPENDS
+    "${GOOGLE_CLOUD_CPP_STORAGE_GRPC_DIR}/grpc_plugin.cc"
+    "${GOOGLE_CLOUD_CPP_STORAGE_GRPC_DIR}/async/*.cc"
+    "${GOOGLE_CLOUD_CPP_STORAGE_GRPC_DIR}/internal/async/*.cc"
+    "${GOOGLE_CLOUD_CPP_STORAGE_GRPC_DIR}/internal/grpc/*.cc"
+    "${GOOGLE_CLOUD_CPP_STORAGE_GRPC_DIR}/internal/storage_*.cc"
+)
+list(FILTER GOOGLE_CLOUD_CPP_STORAGE_GRPC_SRC EXCLUDE REGEX "_test\\.cc$")
+list(FILTER GOOGLE_CLOUD_CPP_STORAGE_GRPC_SRC EXCLUDE REGEX "/storage_connection\\.cc$")
+add_library(google_cloud_cpp_storage_grpc ${GOOGLE_CLOUD_CPP_STORAGE_GRPC_SRC})
+target_link_libraries(
+    google_cloud_cpp_storage_grpc
+    PUBLIC google-cloud-cpp::storage
+           google-cloud-cpp::storage_protos
+           google-cloud-cpp::grpc_utils
+           google-cloud-cpp::common
+           nlohmann_json::nlohmann_json
+           gRPC::grpc++
+           absl::optional
+           absl::strings
+           absl::time
+           Threads::Threads)
+
+target_include_directories(google_cloud_cpp_storage_grpc PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}> $<INSTALL_INTERFACE:include>)
+target_compile_options(google_cloud_cpp_storage_grpc PUBLIC ${GOOGLE_CLOUD_CPP_EXCEPTIONS_FLAG})
+target_compile_definitions(google_cloud_cpp_storage_grpc PUBLIC GOOGLE_CLOUD_CPP_STORAGE_HAVE_GRPC)
+set_target_properties(
+    google_cloud_cpp_storage_grpc
+    PROPERTIES EXPORT_NAME "google-cloud-cpp::storage_grpc"
+               VERSION ${PROJECT_VERSION}
+               SOVERSION ${PROJECT_VERSION_MAJOR})
+add_library(google-cloud-cpp::storage_grpc ALIAS google_cloud_cpp_storage_grpc)
+
 # Common
 list(APPEND GOOGLE_CLOUD_CPP_PUBLIC_INCLUDES "${GOOGLE_CLOUD_CPP_DIR}" "${CMAKE_CURRENT_BINARY_DIR}")
 
@@ -101,6 +135,7 @@ list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS
     google_cloud_cpp_grpc_utils
     google_cloud_cpp_rest_internal
     google_cloud_cpp_storage
+    google_cloud_cpp_storage_grpc
     google_cloud_cpp_storage_protos
 )
 

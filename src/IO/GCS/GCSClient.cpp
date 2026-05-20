@@ -15,6 +15,10 @@
 #    include <google/cloud/credentials.h>
 #    include <google/cloud/internal/unified_grpc_credentials.h>
 #    include <google/cloud/internal/url_encode.h>
+#    include <google/cloud/storage/grpc_plugin.h>
+#    include <google/cloud/storage/download_options.h>
+#    include <google/cloud/storage/object_metadata.h>
+#    include <google/cloud/storage/retry_policy.h>
 #    include <grpcpp/test/client_context_test_peer.h>
 #endif
 
@@ -222,7 +226,7 @@ const OperationEvents write_object_events{
     false,
     true};
 
-Status fromCloudStatus(const google::cloud::Status & status)
+Status statusFromCloud(const google::cloud::Status & status)
 {
     if (status.ok())
         return {};
@@ -327,6 +331,66 @@ void recordFailure(const OperationEvents & events, bool for_disk, StatusCode cod
 bool shouldRetry(const Status & status, UInt64 attempt, UInt64 max_attempts)
 {
     return !status.ok() && attempt < max_attempts && isRetryableStatus(status.code);
+}
+
+google::cloud::storage::ObjectMetadata makeCloudObjectMetadata(const std::map<std::string, std::string> & metadata)
+{
+    google::cloud::storage::ObjectMetadata object_metadata;
+    for (const auto & [key, value] : metadata)
+        object_metadata.upsert_metadata(key, value);
+    return object_metadata;
+}
+
+template <typename Response, typename Call>
+Result<Response> executeHighLevelStatusOrRequest(const ClientSettings & settings, const OperationEvents & events, Call && call)
+{
+    Result<Response> result;
+    const UInt64 attempts = maxAttempts(settings);
+    for (UInt64 attempt = 1; attempt <= attempts; ++attempt)
+    {
+        throttleRequest(settings, events);
+        recordAttemptStart(events, settings.for_disk);
+
+        Stopwatch watch;
+        auto response = call();
+        recordAttemptTime(events, settings.for_disk, watch.elapsedMicroseconds());
+
+        if (response)
+        {
+            result.response = *std::move(response);
+            result.status = {};
+            return result;
+        }
+
+        result.status = fromCloudStatus(response.status());
+        recordFailure(events, settings.for_disk, result.status.code);
+        if (!shouldRetry(result.status, attempt, attempts))
+            return result;
+    }
+    return result;
+}
+
+template <typename Call>
+Status executeHighLevelStatusRequest(const ClientSettings & settings, const OperationEvents & events, Call && call)
+{
+    Status status;
+    const UInt64 attempts = maxAttempts(settings);
+    for (UInt64 attempt = 1; attempt <= attempts; ++attempt)
+    {
+        throttleRequest(settings, events);
+        recordAttemptStart(events, settings.for_disk);
+
+        Stopwatch watch;
+        status = fromCloudStatus(call());
+        recordAttemptTime(events, settings.for_disk, watch.elapsedMicroseconds());
+        if (status.ok())
+            return status;
+
+        recordFailure(events, settings.for_disk, status.code);
+        if (!shouldRetry(status, attempt, attempts))
+            return status;
+    }
+    return status;
 }
 
 template <typename Response, typename Request, typename Call>
@@ -524,6 +588,74 @@ private:
     std::unique_ptr<google::storage::v2::Storage::StubInterface> stub;
 };
 
+class RoundRobinStub final : public IStub
+{
+public:
+    explicit RoundRobinStub(std::vector<std::shared_ptr<IStub>> children_)
+        : children(std::move(children_))
+    {
+    }
+
+    grpc::Status getObject(
+        grpc::ClientContext & context,
+        const google::storage::v2::GetObjectRequest & request,
+        google::storage::v2::Object & response) override
+    {
+        return child().getObject(context, request, response);
+    }
+
+    grpc::Status listObjects(
+        grpc::ClientContext & context,
+        const google::storage::v2::ListObjectsRequest & request,
+        google::storage::v2::ListObjectsResponse & response) override
+    {
+        return child().listObjects(context, request, response);
+    }
+
+    grpc::Status composeObject(
+        grpc::ClientContext & context,
+        const google::storage::v2::ComposeObjectRequest & request,
+        google::storage::v2::Object & response) override
+    {
+        return child().composeObject(context, request, response);
+    }
+
+    grpc::Status rewriteObject(
+        grpc::ClientContext & context,
+        const google::storage::v2::RewriteObjectRequest & request,
+        google::storage::v2::RewriteResponse & response) override
+    {
+        return child().rewriteObject(context, request, response);
+    }
+
+    grpc::Status deleteObject(
+        grpc::ClientContext & context, const google::storage::v2::DeleteObjectRequest & request, google::protobuf::Empty & response) override
+    {
+        return child().deleteObject(context, request, response);
+    }
+
+    std::unique_ptr<grpc::ClientReaderInterface<google::storage::v2::ReadObjectResponse>>
+    readObject(grpc::ClientContext & context, const google::storage::v2::ReadObjectRequest & request) override
+    {
+        return child().readObject(context, request);
+    }
+
+    std::unique_ptr<grpc::ClientWriterInterface<google::storage::v2::WriteObjectRequest>>
+    writeObject(grpc::ClientContext & context, google::storage::v2::WriteObjectResponse & response) override
+    {
+        return child().writeObject(context, response);
+    }
+
+private:
+    IStub & child() const
+    {
+        return *children[next.fetch_add(1, std::memory_order_relaxed) % children.size()];
+    }
+
+    std::vector<std::shared_ptr<IStub>> children;
+    mutable std::atomic_size_t next{0};
+};
+
 std::shared_ptr<google::cloud::Credentials> makeCredentials(const ClientSettings & settings)
 {
     switch (credentialMode(settings))
@@ -570,6 +702,11 @@ grpc::Status nextStatus(std::vector<grpc::Status> & statuses, const grpc::Status
     return status;
 }
 
+
+}
+Status fromCloudStatus(const google::cloud::Status & status)
+{
+    return statusFromCloud(status);
 }
 
 Client::Client(
@@ -594,7 +731,7 @@ std::unique_ptr<grpc::ClientContext> Client::makeContext(Status & status, const 
 
     status = {};
     if (auth && auth->RequiresConfigureContext())
-        status = fromCloudStatus(auth->ConfigureContext(*context));
+        status = statusFromCloud(auth->ConfigureContext(*context));
 
     return context;
 }
@@ -734,12 +871,276 @@ std::shared_ptr<Client> createClient(const ClientSettings & settings)
 {
     assertGrpcAvailable();
 
-    grpc::ChannelArguments channel_arguments;
     google::cloud::CompletionQueue completion_queue;
     auto auth = google::cloud::internal::CreateAuthenticationStrategy(*makeCredentials(settings), completion_queue);
-    auto channel = auth->CreateChannel(settings.endpoint, channel_arguments);
-    auto stub = std::make_shared<GeneratedStub>(google::storage::v2::Storage::NewStub(channel));
+
+    constexpr UInt64 channel_count = 16;
+    std::vector<std::shared_ptr<IStub>> stubs;
+    stubs.reserve(channel_count);
+    for (UInt64 i = 0; i != channel_count; ++i)
+    {
+        grpc::ChannelArguments channel_arguments;
+        channel_arguments.SetInt(GRPC_ARG_USE_LOCAL_SUBCHANNEL_POOL, 1);
+        channel_arguments.SetInt(GRPC_ARG_CHANNEL_ID, static_cast<int>(i));
+        auto channel = auth->CreateChannel(settings.endpoint, channel_arguments);
+        stubs.push_back(std::make_shared<GeneratedStub>(google::storage::v2::Storage::NewStub(channel)));
+    }
+    std::shared_ptr<IStub> stub = std::make_shared<RoundRobinStub>(std::move(stubs));
     return std::make_shared<Client>(settings, std::move(stub), std::move(auth));
+}
+
+google::cloud::Options makeGrpcClientOptions(const ClientSettings & settings)
+{
+    assertGrpcAvailable();
+
+    google::cloud::Options options;
+    if (!settings.endpoint.empty())
+        options.set<google::cloud::EndpointOption>(settings.endpoint);
+
+    options.set<google::cloud::UnifiedCredentialsOption>(makeCredentials(settings));
+
+    if (!settings.user_project.empty())
+        options.set<google::cloud::UserProjectOption>(settings.user_project);
+
+    options.set<google::cloud::storage::RetryPolicyOption>(
+        google::cloud::storage::LimitedErrorCountRetryPolicy(0).clone());
+
+    const auto request_timeout = std::chrono::milliseconds(settings.request_timeout_ms);
+    if (request_timeout > std::chrono::milliseconds::zero())
+        options.set<google::cloud::storage::TransferStallTimeoutOption>(
+            std::chrono::ceil<std::chrono::seconds>(request_timeout));
+
+    return options;
+}
+
+HighLevelClient::HighLevelClient(ClientSettings settings_, google::cloud::Options options_, google::cloud::storage::Client client_)
+    : settings(std::move(settings_))
+    , options(std::move(options_))
+    , client(std::move(client_))
+{
+    configureRequestThrottlerEvents(settings);
+}
+
+HighLevelReadResult HighLevelClient::readObject(
+    const std::string & bucket, const std::string & object, size_t offset, std::optional<size_t> limit)
+{
+    HighLevelReadResult result;
+    const UInt64 attempts = maxAttempts(settings);
+    for (UInt64 attempt = 1; attempt <= attempts; ++attempt)
+    {
+        throttleRequest(settings, read_object_events);
+        recordAttemptStart(read_object_events, settings.for_disk);
+
+        Stopwatch watch;
+        if (limit)
+        {
+            result.stream = client.ReadObject(
+                bucket,
+                object,
+                google::cloud::storage::ReadRange(
+                    static_cast<std::int64_t>(offset), static_cast<std::int64_t>(offset + *limit)));
+        }
+        else
+        {
+            result.stream = client.ReadObject(bucket, object, google::cloud::storage::ReadFromOffset(static_cast<std::int64_t>(offset)));
+        }
+        recordAttemptTime(read_object_events, settings.for_disk, watch.elapsedMicroseconds());
+
+        result.status = fromCloudStatus(result.stream.status());
+        if (result.status.ok())
+            return result;
+
+        recordFailure(read_object_events, settings.for_disk, result.status.code);
+        if (!shouldRetry(result.status, attempt, attempts))
+            return result;
+    }
+
+    return result;
+}
+
+void HighLevelClient::recordReadObjectFailure(const Status & status) const
+{
+    if (!status.ok())
+        recordFailure(read_object_events, settings.for_disk, status.code);
+}
+
+Result<google::cloud::storage::ObjectMetadata> HighLevelClient::insertObject(
+    const std::string & bucket,
+    const std::string & object,
+    std::string_view payload,
+    const std::map<std::string, std::string> & metadata,
+    bool if_generation_match_zero)
+{
+    auto payload_view = absl::string_view(payload.data(), payload.size());
+    return executeHighLevelStatusOrRequest<google::cloud::storage::ObjectMetadata>(
+        settings,
+        write_object_events,
+        [&]
+        {
+            auto object_metadata = makeCloudObjectMetadata(metadata);
+            if (if_generation_match_zero && !metadata.empty())
+                return client.InsertObject(
+                    bucket,
+                    object,
+                    payload_view,
+                    google::cloud::storage::IfGenerationMatch(0),
+                    google::cloud::storage::WithObjectMetadata(std::move(object_metadata)));
+            if (if_generation_match_zero)
+                return client.InsertObject(bucket, object, payload_view, google::cloud::storage::IfGenerationMatch(0));
+            if (!metadata.empty())
+                return client.InsertObject(bucket, object, payload_view, google::cloud::storage::WithObjectMetadata(std::move(object_metadata)));
+            return client.InsertObject(bucket, object, payload_view);
+        });
+}
+
+Result<google::cloud::storage::ObjectMetadata> HighLevelClient::composeObject(
+    const std::string & bucket,
+    const std::vector<std::string> & sources,
+    const std::string & destination,
+    const std::map<std::string, std::string> & metadata,
+    bool if_generation_match_zero)
+{
+    std::vector<google::cloud::storage::ComposeSourceObject> source_objects;
+    source_objects.reserve(sources.size());
+    for (const auto & source : sources)
+        source_objects.push_back(google::cloud::storage::ComposeSourceObject{source, {}, {}});
+
+    return executeHighLevelStatusOrRequest<google::cloud::storage::ObjectMetadata>(
+        settings,
+        write_object_events,
+        [&]
+        {
+            auto object_metadata = makeCloudObjectMetadata(metadata);
+            if (if_generation_match_zero && !metadata.empty())
+                return client.ComposeObject(
+                    bucket,
+                    source_objects,
+                    destination,
+                    google::cloud::storage::IfGenerationMatch(0),
+                    google::cloud::storage::WithObjectMetadata(std::move(object_metadata)));
+            if (if_generation_match_zero)
+                return client.ComposeObject(bucket, source_objects, destination, google::cloud::storage::IfGenerationMatch(0));
+            if (!metadata.empty())
+                return client.ComposeObject(bucket, source_objects, destination, google::cloud::storage::WithObjectMetadata(std::move(object_metadata)));
+            return client.ComposeObject(bucket, source_objects, destination);
+        });
+}
+
+Result<google::cloud::storage::ObjectMetadata> HighLevelClient::rewriteObject(
+    const std::string & source_bucket,
+    const std::string & source_object,
+    const std::string & destination_bucket,
+    const std::string & destination_object,
+    const std::map<std::string, std::string> & metadata,
+    bool if_generation_match_zero)
+{
+    return executeHighLevelStatusOrRequest<google::cloud::storage::ObjectMetadata>(
+        settings,
+        write_object_events,
+        [&]
+        {
+            auto object_metadata = makeCloudObjectMetadata(metadata);
+            if (if_generation_match_zero && !metadata.empty())
+                return client.RewriteObjectBlocking(
+                    source_bucket,
+                    source_object,
+                    destination_bucket,
+                    destination_object,
+                    google::cloud::storage::IfGenerationMatch(0),
+                    google::cloud::storage::WithObjectMetadata(std::move(object_metadata)));
+            if (if_generation_match_zero)
+                return client.RewriteObjectBlocking(
+                    source_bucket, source_object, destination_bucket, destination_object, google::cloud::storage::IfGenerationMatch(0));
+            if (!metadata.empty())
+                return client.RewriteObjectBlocking(
+                    source_bucket,
+                    source_object,
+                    destination_bucket,
+                    destination_object,
+                    google::cloud::storage::WithObjectMetadata(std::move(object_metadata)));
+            return client.RewriteObjectBlocking(source_bucket, source_object, destination_bucket, destination_object);
+        });
+}
+
+Result<google::cloud::storage::ObjectMetadata> HighLevelClient::getObjectMetadata(
+    const std::string & bucket, const std::string & object)
+{
+    return executeHighLevelStatusOrRequest<google::cloud::storage::ObjectMetadata>(
+        settings, get_object_events, [&] { return client.GetObjectMetadata(bucket, object); });
+}
+
+Result<std::vector<google::cloud::storage::ObjectMetadata>> HighLevelClient::listObjects(
+    const std::string & bucket, const std::string & prefix, size_t max_keys, const std::optional<std::string> & start_after)
+{
+    Result<std::vector<google::cloud::storage::ObjectMetadata>> result;
+    const UInt64 attempts = maxAttempts(settings);
+    const auto page_size = max_keys ? max_keys : 1000;
+
+    for (UInt64 attempt = 1; attempt <= attempts; ++attempt)
+    {
+        result.response.clear();
+        result.status = {};
+        bool retry = false;
+        throttleRequest(settings, list_objects_events);
+        recordAttemptStart(list_objects_events, settings.for_disk);
+
+        Stopwatch watch;
+        auto reader = [&]
+        {
+            if (start_after && !start_after->empty())
+                return client.ListObjects(
+                    bucket,
+                    google::cloud::storage::Prefix(prefix),
+                    google::cloud::storage::MaxResults(static_cast<std::int64_t>(page_size)),
+                    google::cloud::storage::StartOffset(*start_after));
+            return client.ListObjects(
+                bucket, google::cloud::storage::Prefix(prefix), google::cloud::storage::MaxResults(static_cast<std::int64_t>(page_size)));
+        }();
+
+        for (auto && object : reader)
+        {
+            if (!object)
+            {
+                result.status = fromCloudStatus(object.status());
+                recordAttemptTime(list_objects_events, settings.for_disk, watch.elapsedMicroseconds());
+                recordFailure(list_objects_events, settings.for_disk, result.status.code);
+                retry = shouldRetry(result.status, attempt, attempts);
+                break;
+            }
+            result.response.push_back(*std::move(object));
+            if (max_keys && result.response.size() >= max_keys)
+                break;
+        }
+
+        if (retry)
+            continue;
+        if (!result.status.ok())
+            return result;
+
+        recordAttemptTime(list_objects_events, settings.for_disk, watch.elapsedMicroseconds());
+        result.status = {};
+        return result;
+    }
+
+    return result;
+}
+
+Status HighLevelClient::deleteObject(const std::string & bucket, const std::string & object)
+{
+    return executeHighLevelStatusRequest(settings, delete_object_events, [&] { return client.DeleteObject(bucket, object); });
+}
+
+void HighLevelClient::recordWriteObjectFailure(const Status & status) const
+{
+    if (!status.ok())
+        recordFailure(write_object_events, settings.for_disk, status.code);
+}
+
+std::shared_ptr<HighLevelClient> createHighLevelClient(const ClientSettings & settings)
+{
+    auto options = makeGrpcClientOptions(settings);
+    auto client = google::cloud::storage::MakeGrpcClient(options);
+    return std::make_shared<HighLevelClient>(settings, std::move(options), std::move(client));
 }
 
 FakeReadStream::FakeReadStream(std::vector<google::storage::v2::ReadObjectResponse> responses_, grpc::Status finish_status_)

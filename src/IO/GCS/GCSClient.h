@@ -11,11 +11,13 @@
 #include <functional>
 #include <map>
 #include <memory>
-#include <mutex>
+#include <optional>
+#include <string_view>
 #include <vector>
 
 #if USE_GOOGLE_CLOUD
 #    include <google/cloud/internal/unified_grpc_credentials.h>
+#    include <google/cloud/storage/client.h>
 #    include <google/protobuf/empty.pb.h>
 #    include <google/storage/v2/storage.grpc.pb.h>
 #    include <grpcpp/grpcpp.h>
@@ -138,6 +140,63 @@ private:
 };
 
 std::shared_ptr<Client> createClient(const ClientSettings & settings);
+
+Status fromCloudStatus(const google::cloud::Status & status);
+google::cloud::Options makeGrpcClientOptions(const ClientSettings & settings);
+
+struct HighLevelReadResult
+{
+    Status status;
+    google::cloud::storage::ObjectReadStream stream;
+
+    bool ok() const { return status.ok(); }
+};
+
+class HighLevelClient
+{
+public:
+    HighLevelClient(ClientSettings settings_, google::cloud::Options options_, google::cloud::storage::Client client_);
+
+    const ClientSettings & getSettings() const { return settings; }
+    const google::cloud::Options & getOptions() const { return options; }
+    google::cloud::storage::Client & getStorageClient() { return client; }
+    const google::cloud::storage::Client & getStorageClient() const { return client; }
+
+    HighLevelReadResult readObject(
+        const std::string & bucket, const std::string & object, size_t offset, std::optional<size_t> limit);
+    Result<google::cloud::storage::ObjectMetadata> insertObject(
+        const std::string & bucket,
+        const std::string & object,
+        std::string_view payload,
+        const std::map<std::string, std::string> & metadata,
+        bool if_generation_match_zero);
+    Result<google::cloud::storage::ObjectMetadata> composeObject(
+        const std::string & bucket,
+        const std::vector<std::string> & sources,
+        const std::string & destination,
+        const std::map<std::string, std::string> & metadata,
+        bool if_generation_match_zero);
+    Result<google::cloud::storage::ObjectMetadata> rewriteObject(
+        const std::string & source_bucket,
+        const std::string & source_object,
+        const std::string & destination_bucket,
+        const std::string & destination_object,
+        const std::map<std::string, std::string> & metadata,
+        bool if_generation_match_zero);
+    Result<google::cloud::storage::ObjectMetadata> getObjectMetadata(const std::string & bucket, const std::string & object);
+    Result<std::vector<google::cloud::storage::ObjectMetadata>> listObjects(
+        const std::string & bucket, const std::string & prefix, size_t max_keys, const std::optional<std::string> & start_after);
+    Status deleteObject(const std::string & bucket, const std::string & object);
+    void recordReadObjectFailure(const Status & status) const;
+    void recordWriteObjectFailure(const Status & status) const;
+
+private:
+    ClientSettings settings;
+    google::cloud::Options options;
+    google::cloud::storage::Client client;
+};
+
+std::shared_ptr<HighLevelClient> createHighLevelClient(const ClientSettings & settings);
 
 class FakeReadStream final : public grpc::ClientReaderInterface<google::storage::v2::ReadObjectResponse>
 {
