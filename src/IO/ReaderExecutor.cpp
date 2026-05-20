@@ -560,7 +560,7 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
     }
 
     /// Sort nodes by logical offset
-    auto & nodes = const_cast<std::vector<RopeNode> &>(result.getNodes());
+    auto & nodes = result.getNodes();
     std::sort(nodes.begin(), nodes.end(),
         [](const RopeNode & a, const RopeNode & b)
         { return a.logical_offset < b.logical_offset; });

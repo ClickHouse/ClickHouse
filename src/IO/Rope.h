@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <deque>
 #include <memory>
 #include <vector>
 
@@ -73,13 +74,13 @@ public:
     /// Remove and return the first node.
     RopeNode popFront();
 
-    std::vector<RopeNode> & getNodes() { return nodes; }
-    const std::vector<RopeNode> & getNodes() const { return nodes; }
+    std::deque<RopeNode> & getNodes() { return nodes; }
+    const std::deque<RopeNode> & getNodes() const { return nodes; }
     bool empty() const { return nodes.empty(); }
     size_t totalBytes() const;
 
 private:
-    std::vector<RopeNode> nodes;
+    std::deque<RopeNode> nodes;
 };
 
 }

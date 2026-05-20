@@ -55,7 +55,7 @@ void Rope::append(Rope && other)
 RopeNode Rope::popFront()
 {
     RopeNode node = std::move(nodes.front());
-    nodes.erase(nodes.begin());
+    nodes.pop_front();
     return node;
 }
 
