@@ -3632,6 +3632,10 @@ TEST(PostingListCursorTest, TextIndexHeaderInitialVersionDefaultsToNoneCodec)
 // `out[values[i] - row_offset]` writers in `padColumn` and the leapfrog helpers
 // would underflow `size_t` and write OOB; silently swallowing the call would also
 // drop legitimate filter matches. The contract is to fail loudly.
+//
+// Skipped in debug and sanitizer builds: `DB::Exception` aborts on `LOGICAL_ERROR`
+// there (see `handle_error_code` in `Exception.cpp`), so `EXPECT_THROW` can't catch it.
+#ifndef DEBUG_OR_SANITIZER_BUILD
 
 TEST(PostingListCursorTest, LinearOrRowOffsetAboveUInt32MaxThrows)
 {
@@ -3694,6 +3698,8 @@ TEST(PostingListCursorTest, LazyIntersectRowOffsetAboveUInt32MaxThrows)
             Exception);
     }
 }
+
+#endif
 
 // Section: row range ending at UInt32::max — the matching last row must not be dropped.
 // `clampRowEnd` used to saturate the exclusive end to UInt32::max, which collided with a
