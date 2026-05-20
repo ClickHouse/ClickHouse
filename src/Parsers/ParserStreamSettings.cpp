@@ -1,9 +1,11 @@
 #include <Core/Field.h>
 
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTStreamSettings.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserStreamSettings.h>
 
 namespace DB
@@ -64,24 +66,68 @@ bool parseCursorObject(IParser::Pos & pos, Expected & expected, Map & flat, cons
     return true;
 }
 
+std::optional<Map> parseCursorClause(IParser::Pos & pos, Expected & expected)
+{
+    Map flat;
+    if (!parseCursorObject(pos, expected, flat, ""))
+        return std::nullopt;
+    return flat;
+}
+
+std::optional<ASTStreamSettings::WatermarkSettings> parseWatermarkClause(IParser::Pos & pos, Expected & expected)
+{
+    ParserKeyword s_for{Keyword::FOR};
+    if (!s_for.ignore(pos, expected))
+        return std::nullopt;
+
+    ASTPtr column_ast;
+    ParserIdentifier identifier_p;
+    if (!identifier_p.parse(pos, column_ast, expected))
+        return std::nullopt;
+
+    ParserKeyword s_as{Keyword::AS};
+    if (!s_as.ignore(pos, expected))
+        return std::nullopt;
+
+    ASTPtr expression_ast;
+    ParserExpression expression_p;
+    if (!expression_p.parse(pos, expression_ast, expected))
+        return std::nullopt;
+
+    ASTStreamSettings::WatermarkSettings watermark;
+    watermark.column = getIdentifierName(column_ast);
+    watermark.expression = std::move(expression_ast);
+    return watermark;
+}
+
 }
 
 bool ParserStreamSettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_cursor{Keyword::CURSOR};
+    ParserKeyword s_watermark{Keyword::WATERMARK};
 
-    ASTStreamSettings::StreamSettings settings;
+    auto stream_settings = make_intrusive<ASTStreamSettings>();
 
     if (s_cursor.ignore(pos, expected))
     {
-        Map flat;
-        if (!parseCursorObject(pos, expected, flat, ""))
+        auto cursor = parseCursorClause(pos, expected);
+        if (!cursor.has_value())
             return false;
 
-        settings.cursor_tree = std::move(flat);
+        stream_settings->cursor = std::move(cursor);
     }
 
-    node = make_intrusive<ASTStreamSettings>(std::move(settings));
+    if (s_watermark.ignore(pos, expected))
+    {
+        auto watermark = parseWatermarkClause(pos, expected);
+        if (!watermark.has_value())
+            return false;
+
+        stream_settings->watermark = std::move(watermark);
+    }
+
+    node = std::move(stream_settings);
 
     return true;
 }

@@ -39,18 +39,42 @@ void formatNested(WriteBuffer & wb, CursorTreeNode * node)
 
 }
 
-ASTStreamSettings::ASTStreamSettings(StreamSettings settings_)
-    : settings{std::move(settings_)}
+ASTPtr ASTStreamSettings::clone() const
 {
+    auto cloned_stream_settings = make_intrusive<ASTStreamSettings>();
+
+    /// Copy cursor information
+    cloned_stream_settings->cursor = cursor;
+
+    /// Copy watermark information
+    cloned_stream_settings->watermark = watermark;
+    if (watermark && watermark->expression)
+        cloned_stream_settings->watermark->expression = watermark->expression->clone();
+
+    return cloned_stream_settings;
 }
 
-void ASTStreamSettings::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
+bool ASTStreamSettings::hasTweaks() const
 {
-    if (settings.cursor_tree.has_value())
+    return cursor.has_value() || watermark.has_value();
+}
+
+void ASTStreamSettings::formatImpl(WriteBuffer & ostr, const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const
+{
+    if (cursor)
     {
-        auto tree = buildCursorTree(settings.cursor_tree.value());
+        auto tree = buildCursorTree(cursor.value());
         ostr << "CURSOR ";
         formatNested(ostr, tree.get());
+    }
+
+    if (watermark)
+    {
+        if (cursor.has_value())
+            ostr << ' ';
+
+        ostr << "WATERMARK FOR " << backQuoteIfNeed(watermark->column) << " AS ";
+        watermark->expression->format(ostr, format_settings, state, frame);
     }
 }
 

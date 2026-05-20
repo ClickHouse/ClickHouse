@@ -11,22 +11,23 @@ namespace DB
 
 /// Streaming query settings attached to a table expression:
 ///   FROM t STREAM [CURSOR '{...}']
+///                 [WATERMARK FOR <col> AS <expr>]
 ///
-class ASTStreamSettings : public IAST
+struct ASTStreamSettings : public IAST
 {
 public:
-    struct StreamSettings
+    struct WatermarkSettings
     {
-        std::optional<Map> cursor_tree;
+        String column;
+        ASTPtr expression;
     };
 
-    StreamSettings settings;
-
-    explicit ASTStreamSettings(StreamSettings settings_);
+    std::optional<Map> cursor;
+    std::optional<WatermarkSettings> watermark;
 
     String getID(char) const override { return "ASTStreamSettings"; }
-
-    ASTPtr clone() const override { return make_intrusive<ASTStreamSettings>(*this); }
+    ASTPtr clone() const override;
+    bool hasTweaks() const;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
