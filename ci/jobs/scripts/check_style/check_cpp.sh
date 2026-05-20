@@ -249,6 +249,7 @@ directories_to_lint_std_containers_usages=(
     src/AggregateFunctions
     src/Columns
     src/Compression
+    src/Daemon
     src/Dictionaries
     src/Functions
 )
