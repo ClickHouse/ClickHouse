@@ -297,7 +297,7 @@ std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadB
     size_t num_arguments;
     readVarUInt(num_arguments, buf);
     if (num_arguments > MAX_ARRAY_SIZE)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many function arguments during AggregateFunction type decoding: {}. Maximum: {}", num_parameters, MAX_ARRAY_SIZE);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many function arguments during AggregateFunction type decoding: {}. Maximum: {}", num_arguments, MAX_ARRAY_SIZE);
 
     DataTypes arguments_types;
     arguments_types.reserve(num_arguments);
@@ -820,7 +820,7 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             size_t path_regexps_to_skip_size;
             readVarUInt(path_regexps_to_skip_size, buf);
             if (path_regexps_to_skip_size > MAX_ARRAY_SIZE)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many path regexps to skip during JSON type decoding: {}. Maximum: {}", paths_to_skip_size, MAX_ARRAY_SIZE);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many path regexps to skip during JSON type decoding: {}. Maximum: {}", path_regexps_to_skip_size, MAX_ARRAY_SIZE);
 
             std::vector<String> path_regexps_to_skip;
             path_regexps_to_skip.reserve(path_regexps_to_skip_size);
