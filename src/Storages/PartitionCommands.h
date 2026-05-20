@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Field.h>
 #include <base/types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
@@ -54,7 +55,7 @@ struct PartitionCommand
     String to_table;
 
     /// For FETCH PARTITION - path in ZK to the shard, from which to download the partition.
-    String from_path;
+    String from_zookeeper_path;
 
     /// For FREEZE PARTITION and UNFREEZE
     String with_name;

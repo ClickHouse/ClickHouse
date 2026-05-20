@@ -26,7 +26,6 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IInputFormat;
 struct ConnectionTimeouts;
 class NamedCollection;
-struct StorageID;
 class PullingPipelineExecutor;
 
 /**
@@ -158,7 +157,7 @@ bool urlWithGlobs(const String & uri);
 
 String getSampleURI(String uri, ContextPtr context);
 
-class StorageURLSource final : public ISource, WithContext
+class StorageURLSource : public ISource, WithContext
 {
     using URIParams = std::vector<std::pair<String, String>>;
 
@@ -196,8 +195,7 @@ public:
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
         bool glob_url = false,
-        bool need_only_count_ = false,
-        StorageID storage_id_ = StorageID::createEmpty());
+        bool need_only_count_ = false);
 
     ~StorageURLSource() override;
 
@@ -238,14 +236,12 @@ private:
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
     std::optional<size_t> current_file_size;
-    std::optional<time_t> current_file_last_modified;
     String format;
     const std::optional<FormatSettings> & format_settings;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     HTTPHeaderEntries headers;
     bool need_only_count;
-    StorageID storage_id;
     size_t total_rows_in_file = 0;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
@@ -260,7 +256,7 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
 };
 
-class StorageURLSink final : public SinkToStorage
+class StorageURLSink : public SinkToStorage
 {
 public:
     StorageURLSink(
@@ -330,7 +326,7 @@ public:
     bool supportsSubcolumns() const override { return true; }
     bool supportsOptimizationToSubcolumns() const override { return false; }
 
-    bool supportsColumnsWithDynamicStructure() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
@@ -344,7 +340,7 @@ public:
         std::string addresses_expr;
     };
 
-    static Configuration getConfiguration(ASTs & args, const ContextPtr & context, const StorageID * table_id = nullptr);
+    static Configuration getConfiguration(ASTs & args, const ContextPtr & context);
 
     /// Does evaluateConstantExpressionOrIdentifierAsLiteral() on all arguments.
     /// If `headers(...)` argument is present, parses it and moves it to the end of the array.
@@ -352,18 +348,6 @@ public:
     static size_t evalArgsAndCollectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments = true);
 
     static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
-
-    /// Resolve a possibly relative URL against a base URL per RFC 3986.
-    /// If the URL already contains a scheme, it is returned as-is.
-    /// Otherwise, it is resolved relative to the base:
-    /// - `//host/path` → scheme-relative (uses scheme from base)
-    /// - `/path` → host-relative (uses scheme and host from base)
-    /// - `path` → path-relative (merged with base URL path: replaces everything
-    ///   after the last `/` in the base path, then normalizes dot segments)
-    /// - `?query` → replaces base query/fragment, preserves base path
-    /// - `#frag` → replaces base fragment, preserves base path and query
-    /// The resolution is done by string manipulation to allow malformed URLs.
-    static String resolveURLBase(const String & url, const String & base);
 };
 
 
