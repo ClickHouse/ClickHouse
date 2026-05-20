@@ -3,7 +3,6 @@
 #include <base/types.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Functions/checkHyperscanRegexp.h>
 #include <Functions/Regexps.h>
 

@@ -156,6 +156,44 @@ ColumnPtr IPolygonDictionary::getColumn(
                         default_value_provider.value());
                 }
             }
+            else if constexpr (std::is_same_v<ValueType, Map>)
+            {
+                if (is_short_circuit)
+                {
+                    getItemsShortCircuitImpl<ValueType>(
+                        requested_key_points,
+                        [&](size_t row) { return (*attribute_values_column)[row].safeGet<Map>(); },
+                        [&](Map & value) { result_column_typed.insert(value); },
+                        default_mask.value());
+                }
+                else
+                {
+                    getItemsImpl<ValueType>(
+                        requested_key_points,
+                        [&](size_t row) { return (*attribute_values_column)[row].safeGet<Map>(); },
+                        [&](Map & value) { result_column_typed.insert(value); },
+                        default_value_provider.value());
+                }
+            }
+            else if constexpr (std::is_same_v<ValueType, Object>)
+            {
+                if (is_short_circuit)
+                {
+                    getItemsShortCircuitImpl<ValueType>(
+                        requested_key_points,
+                        [&](size_t row) { return (*attribute_values_column)[row].safeGet<Object>(); },
+                        [&](Object & value) { result_column_typed.insert(value); },
+                        default_mask.value());
+                }
+                else
+                {
+                    getItemsImpl<ValueType>(
+                        requested_key_points,
+                        [&](size_t row) { return (*attribute_values_column)[row].safeGet<Object>(); },
+                        [&](Object & value) { result_column_typed.insert(value); },
+                        default_value_provider.value());
+                }
+            }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
                 if (is_short_circuit)

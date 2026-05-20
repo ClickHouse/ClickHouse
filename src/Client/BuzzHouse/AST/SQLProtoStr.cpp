@@ -209,6 +209,10 @@ CONV_FN(JSONColumn, jcol)
     {
         ret += "^";
     }
+    else if (jcol.has_jcombined())
+    {
+        ret += "@";
+    }
     ret += "`";
     ColumnToString(ret, 1, jcol.col());
     ret += "`";
@@ -2072,6 +2076,22 @@ static void FlatExprSchemaTableToString(String & ret, const ExprSchemaTable & es
 
 CONV_FN(TableFunction, tf);
 
+static void ValuesStatementToString(String & ret, const bool tudf, const ValuesStatement & values)
+{
+    ret += "VALUES ";
+    ret += tudf ? "(" : "";
+    ret += "(";
+    ExprListToString(ret, values.expr_list());
+    ret += ")";
+    for (int i = 0; i < values.extra_expr_lists_size(); i++)
+    {
+        ret += ", (";
+        ExprListToString(ret, values.extra_expr_lists(i));
+        ret += ")";
+    }
+    ret += tudf ? ")" : "";
+}
+
 static void TableOrFunctionToString(String & ret, const bool tudf, const TableOrFunction & tof)
 {
     using TableOrFunctionType = TableOrFunction::JtfOneofCase;
@@ -2096,6 +2116,11 @@ static void TableOrFunctionToString(String & ret, const bool tudf, const TableOr
             ExplainQueryToString(ret, tof.select());
             ret += ")";
             break;
+        case TableOrFunctionType::kValuesStandard:
+            ret += "(";
+            ValuesStatementToString(ret, false, tof.values_standard());
+            ret += ")";
+            break;
         default:
             ret += "numbers(10)";
     }
@@ -2104,25 +2129,55 @@ static void TableOrFunctionToString(String & ret, const bool tudf, const TableOr
 CONV_FN(RemoteFunc, rfunc)
 {
     const TableOrFunction & tof = rfunc.tof();
+    bool has_arg = false;
+    auto sep = [&]() -> String { return std::exchange(has_arg, true) ? ", " : ""; };
 
     ret += RemoteFunc_RName_Name(rfunc.rname());
     ret += "(";
-    appendSQLStringLiteral(ret, rfunc.address());
-    ret += ", ";
-    TableOrFunctionToString(ret, true, tof);
+    if (rfunc.has_named_collection())
+    {
+        ret += sep();
+        ret += rfunc.named_collection();
+    }
+    if (rfunc.has_address())
+    {
+        ret += sep();
+        appendSQLStringLiteral(ret, rfunc.address());
+    }
+    ret += sep();
+    if (rfunc.has_named_collection() && tof.has_est())
+    {
+        const ExprSchemaTable & est = tof.est();
+        if (est.has_database())
+        {
+            ret += "database=";
+            appendSQLStringLiteral(ret, est.database().value());
+            ret += ", ";
+        }
+        ret += "table=";
+        appendSQLStringLiteral(ret, est.table().value());
+    }
+    else
+    {
+        TableOrFunctionToString(ret, true, tof);
+    }
     if (rfunc.has_user())
     {
-        ret += ", ";
+        ret += sep();
         appendSQLStringLiteral(ret, rfunc.user());
     }
     if (rfunc.has_password())
     {
-        ret += ", ";
+        ret += sep();
         appendSQLStringLiteral(ret, rfunc.password());
     }
     if (rfunc.has_sharding_key())
     {
-        ret += ", ";
+        ret += sep();
+        if (rfunc.has_named_collection())
+        {
+            ret += "sharding_key=";
+        }
         ExprToString(ret, rfunc.sharding_key());
     }
     ret += ")";
@@ -2130,34 +2185,106 @@ CONV_FN(RemoteFunc, rfunc)
 
 CONV_FN(MySQLFunc, mfunc)
 {
+    bool has_arg = false;
+    auto sep = [&]() -> String { return std::exchange(has_arg, true) ? ", " : ""; };
+    const bool kv = mfunc.has_named_collection();
+
     ret += "mysql(";
-    appendSQLStringLiteral(ret, mfunc.address());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.rdatabase());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.rtable());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.user());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.password());
+    if (kv)
+    {
+        ret += mfunc.named_collection();
+        has_arg = true;
+    }
+    if (mfunc.has_address())
+    {
+        ret += sep();
+        if (kv)
+            ret += "host=";
+        appendSQLStringLiteral(ret, mfunc.address());
+    }
+    if (mfunc.has_rdatabase())
+    {
+        ret += sep();
+        if (kv)
+            ret += "database=";
+        appendSQLStringLiteral(ret, mfunc.rdatabase());
+    }
+    if (mfunc.has_rtable())
+    {
+        ret += sep();
+        if (kv)
+            ret += "table=";
+        appendSQLStringLiteral(ret, mfunc.rtable());
+    }
+    if (mfunc.has_user())
+    {
+        ret += sep();
+        if (kv)
+            ret += "user=";
+        appendSQLStringLiteral(ret, mfunc.user());
+    }
+    if (mfunc.has_password())
+    {
+        ret += sep();
+        if (kv)
+            ret += "password=";
+        appendSQLStringLiteral(ret, mfunc.password());
+    }
     ret += ")";
 }
 
 CONV_FN(PostgreSQLFunc, pfunc)
 {
+    bool has_arg = false;
+    auto sep = [&]() -> String { return std::exchange(has_arg, true) ? ", " : ""; };
+    const bool kv = pfunc.has_named_collection();
+
     ret += "postgresql(";
-    appendSQLStringLiteral(ret, pfunc.address());
-    ret += ", ";
-    appendSQLStringLiteral(ret, pfunc.rdatabase());
-    ret += ", ";
-    appendSQLStringLiteral(ret, pfunc.rtable());
-    ret += ", ";
-    appendSQLStringLiteral(ret, pfunc.user());
-    ret += ", ";
-    appendSQLStringLiteral(ret, pfunc.password());
+    if (kv)
+    {
+        ret += pfunc.named_collection();
+        has_arg = true;
+    }
+    if (pfunc.has_address())
+    {
+        ret += sep();
+        if (kv)
+            ret += "host=";
+        appendSQLStringLiteral(ret, pfunc.address());
+    }
+    if (pfunc.has_rdatabase())
+    {
+        ret += sep();
+        if (kv)
+            ret += "database=";
+        appendSQLStringLiteral(ret, pfunc.rdatabase());
+    }
+    if (pfunc.has_rtable())
+    {
+        ret += sep();
+        if (kv)
+            ret += "table=";
+        appendSQLStringLiteral(ret, pfunc.rtable());
+    }
+    if (pfunc.has_user())
+    {
+        ret += sep();
+        if (kv)
+            ret += "user=";
+        appendSQLStringLiteral(ret, pfunc.user());
+    }
+    if (pfunc.has_password())
+    {
+        ret += sep();
+        if (kv)
+            ret += "password=";
+        appendSQLStringLiteral(ret, pfunc.password());
+    }
     if (pfunc.has_rschema())
     {
-        ret += ", ";
+        ret += sep();
+        if (kv)
+            ret += "schema=";
         appendSQLStringLiteral(ret, pfunc.rschema());
     }
     ret += ")";
@@ -2203,19 +2330,55 @@ CONV_FN(RedisFunc, rfunc)
 
 CONV_FN(MongoDBFunc, mfunc)
 {
+    bool has_arg = false;
+    auto sep = [&]() -> String { return std::exchange(has_arg, true) ? ", " : ""; };
+    const bool kv = mfunc.has_named_collection();
+
     ret += "mongodb(";
-    appendSQLStringLiteral(ret, mfunc.address());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.database());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.collection());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.user());
-    ret += ", ";
-    appendSQLStringLiteral(ret, mfunc.password());
+    if (kv)
+    {
+        ret += mfunc.named_collection();
+        has_arg = true;
+    }
+    if (mfunc.has_address())
+    {
+        ret += sep();
+        if (kv)
+            ret += "host=";
+        appendSQLStringLiteral(ret, mfunc.address());
+    }
+    if (mfunc.has_database())
+    {
+        ret += sep();
+        if (kv)
+            ret += "database=";
+        appendSQLStringLiteral(ret, mfunc.database());
+    }
+    if (mfunc.has_collection())
+    {
+        ret += sep();
+        if (kv)
+            ret += "collection=";
+        appendSQLStringLiteral(ret, mfunc.collection());
+    }
+    if (mfunc.has_user())
+    {
+        ret += sep();
+        if (kv)
+            ret += "user=";
+        appendSQLStringLiteral(ret, mfunc.user());
+    }
+    if (mfunc.has_password())
+    {
+        ret += sep();
+        if (kv)
+            ret += "password=";
+        appendSQLStringLiteral(ret, mfunc.password());
+    }
     if (mfunc.has_structure())
     {
-        ret += ", ";
+        ret += sep();
+        ret += "structure=";
         ExprToString(ret, mfunc.structure());
     }
     ret += ")";
@@ -2422,22 +2585,6 @@ CONV_FN(GenerateRandomFunc, grfunc)
         ret += std::to_string(grfunc.max_array_length());
     }
     ret += ")";
-}
-
-static void ValuesStatementToString(String & ret, const bool tudf, const ValuesStatement & values)
-{
-    ret += "VALUES ";
-    ret += tudf ? "(" : "";
-    ret += "(";
-    ExprListToString(ret, values.expr_list());
-    ret += ")";
-    for (int i = 0; i < values.extra_expr_lists_size(); i++)
-    {
-        ret += ", (";
-        ExprListToString(ret, values.extra_expr_lists(i));
-        ret += ")";
-    }
-    ret += tudf ? ")" : "";
 }
 
 CONV_FN(ArrowFlightFunc, afunc)
@@ -3550,6 +3697,11 @@ CONV_FN(TableEngine, te)
         ret += " PRIMARY KEY ";
         TableKeyToString(ret, te.primary_key());
     }
+    if (te.has_unique_key())
+    {
+        ret += " UNIQUE KEY ";
+        TableKeyToString(ret, te.unique_key());
+    }
     if (te.has_sample_by())
     {
         ret += " SAMPLE BY ";
@@ -3958,6 +4110,9 @@ CONV_FN(DescribeStatement, ds)
 {
     ret += "DESCRIBE ";
     using DescType = DescribeStatement::DescOneofCase;
+    /// `TEMPORARY TABLE` qualifier is only meaningful when the target is a bare table name.
+    if (ds.temporary() && ds.desc_oneof_case() == DescType::kTof)
+        ret += "TEMPORARY TABLE ";
     switch (ds.desc_oneof_case())
     {
         case DescType::kTof:
@@ -4264,10 +4419,20 @@ CONV_FN(DictionarySourceDetails, dsd)
 
     ret += DictionarySourceDetails_DictionarySourceType_Name(dsd.source());
     ret += "(";
+    if (dsd.has_named_collection())
+    {
+        ret += "NAME ";
+        appendSQLStringLiteral(ret, dsd.named_collection());
+        has_something = true;
+    }
     if (dsd.has_est())
     {
         const String & separator = dsd.source() == DictionarySourceDetails::MONGODB ? "' COLLECTION '" : "' TABLE '";
 
+        if (has_something)
+        {
+            ret += " ";
+        }
         ret += "DB ";
         FlatExprSchemaTableToString(ret, dsd.est(), separator);
         has_something = true;
@@ -4320,6 +4485,69 @@ CONV_FN(DictionarySourceDetails, dsd)
         }
         ret += "STORAGE_TYPE ";
         appendSQLStringLiteral(ret, DictionarySourceDetails_RedisStorageType_Name(dsd.redis_storage()));
+        has_something = true;
+    }
+    if (dsd.has_url())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "URL ";
+        appendSQLStringLiteral(ret, dsd.url());
+        has_something = true;
+    }
+    if (dsd.has_path())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "PATH ";
+        appendSQLStringLiteral(ret, dsd.path());
+        has_something = true;
+    }
+    if (dsd.has_format())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "FORMAT ";
+        appendSQLStringLiteral(ret, dsd.format());
+        has_something = true;
+    }
+    if (dsd.has_invalidate_query())
+    {
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "INVALIDATE_QUERY ";
+        appendSQLStringLiteral(ret, dsd.invalidate_query());
+        has_something = true;
+    }
+    if (dsd.has_update_field())
+    {
+        const auto & cp = dsd.update_field();
+
+        if (has_something)
+        {
+            ret += " ";
+        }
+        ret += "UPDATE_FIELD '";
+        ConvertToSQLString(ret, cp.col().column());
+        for (int i = 0; i < cp.sub_cols_size(); i++)
+        {
+            ret += ".";
+            ConvertToSQLString(ret, cp.sub_cols(i).column());
+        }
+        ret += "'";
+        if (dsd.has_update_lag())
+        {
+            ret += " UPDATE_LAG ";
+            ret += std::to_string(dsd.update_lag());
+        }
     }
     ret += ")";
 }
@@ -4579,11 +4807,20 @@ CONV_FN(ExpireSnapshots, es)
 
     ret += "expire_snapshots(";
     if (es.has_positional_timestamp())
-        ret += sep() + "'" + es.positional_timestamp() + "'";
+    {
+        ret += sep();
+        appendSQLStringLiteral(ret, es.positional_timestamp());
+    }
     if (es.has_expire_before())
-        ret += sep() + "expire_before = '" + es.expire_before() + "'";
+    {
+        ret += sep() + "expire_before = ";
+        appendSQLStringLiteral(ret, es.expire_before());
+    }
     if (es.has_retention_period())
-        ret += sep() + "retention_period = '" + es.retention_period() + "'";
+    {
+        ret += sep() + "retention_period = ";
+        appendSQLStringLiteral(ret, es.retention_period());
+    }
     if (es.has_retain_last())
         ret += sep() + "retain_last = " + std::to_string(es.retain_last());
     if (es.snapshot_ids_size() > 0)
@@ -4602,6 +4839,27 @@ CONV_FN(ExpireSnapshots, es)
     ret += ")";
 }
 
+CONV_FN(RemoveOrphanFiles, ro)
+{
+    bool has_arg = false;
+    auto sep = [&]() -> String { return std::exchange(has_arg, true) ? ", " : ""; };
+
+    ret += "remove_orphan_files(";
+    if (ro.has_older_than())
+    {
+        ret += sep();
+        appendSQLStringLiteral(ret, ro.older_than());
+    }
+    if (ro.has_location())
+    {
+        ret += sep() + "location = ";
+        appendSQLStringLiteral(ret, ro.location());
+    }
+    if (ro.dry_run())
+        ret += sep() + "dry_run = 1";
+    ret += ")";
+}
+
 CONV_FN(ExecuteCommand, ec)
 {
     ret += "EXECUTE ";
@@ -4610,6 +4868,9 @@ CONV_FN(ExecuteCommand, ec)
     {
         case CommandType::kExpireSnapshots:
             ExpireSnapshotsToString(ret, ec.expire_snapshots());
+            break;
+        case CommandType::kRemoveOrphanFiles:
+            RemoveOrphanFilesToString(ret, ec.remove_orphan_files());
             break;
         default:
             break;
@@ -5270,6 +5531,13 @@ CONV_FN(SystemCommand, cmd)
             ret += "START VIEW ";
             ExprSchemaTableToString(ret, cmd.start_view());
             break;
+        case CmdType::kPauseViews:
+            ret += "PAUSE VIEWS";
+            break;
+        case CmdType::kPauseView:
+            ret += "PAUSE VIEW ";
+            ExprSchemaTableToString(ret, cmd.pause_view());
+            break;
         case CmdType::kCancelView:
             ret += "CANCEL VIEW ";
             ExprSchemaTableToString(ret, cmd.cancel_view());
@@ -5489,9 +5757,42 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kDropDistributedCache:
             ret += "DROP DISTRIBUTED CACHE";
             break;
+        case CmdType::kFlushObjectStorageQueue: {
+            const auto & foq = cmd.flush_object_storage_queue();
+            SystemCommandOnCluster(ret, "FLUSH OBJECT STORAGE QUEUE", cmd, foq.table());
+            ret += " PATH ";
+            appendSQLStringLiteral(ret, foq.path());
+            break;
+        }
+        case CmdType::kStopVirtualPartsUpdate:
+            SystemCommandOnCluster(ret, "STOP VIRTUAL PARTS UPDATE", cmd, cmd.stop_virtual_parts_update());
+            break;
+        case CmdType::kStartVirtualPartsUpdate:
+            SystemCommandOnCluster(ret, "START VIRTUAL PARTS UPDATE", cmd, cmd.start_virtual_parts_update());
+            break;
+        case CmdType::kStopReduceBlockingParts:
+            SystemCommandOnCluster(ret, "STOP REDUCE BLOCKING PARTS", cmd, cmd.stop_reduce_blocking_parts());
+            break;
+        case CmdType::kStartReduceBlockingParts:
+            SystemCommandOnCluster(ret, "START REDUCE BLOCKING PARTS", cmd, cmd.start_reduce_blocking_parts());
+            break;
+        case CmdType::kWaitBlobsCleanup:
+            ret += "WAIT BLOBS CLEANUP";
+            if (cmd.has_cluster())
+            {
+                ClusterToString(ret, true, cmd.cluster());
+            }
+            ret += " ";
+            appendSQLStringLiteral(ret, cmd.wait_blobs_cleanup());
+            break;
         case CmdType::kUnlockSnapshot:
             ret += "UNLOCK SNAPSHOT ";
-            appendSQLStringLiteral(ret, cmd.unlock_snapshot());
+            appendSQLStringLiteral(ret, cmd.unlock_snapshot().name());
+            if (cmd.unlock_snapshot().has_from())
+            {
+                ret += " FROM ";
+                BackupOutToString(ret, cmd.unlock_snapshot().from());
+            }
             break;
         default:
             ret += "FLUSH LOGS";
@@ -5563,21 +5864,30 @@ CONV_FN(BackupRestoreElement, backup)
 CONV_FN(BackupRestore, backup)
 {
     const BackupRestore_BackupCommand & command = backup.command();
+    const bool backup_cmd = command == BackupRestore_BackupCommand_BACKUP;
 
     ret += BackupRestore_BackupCommand_Name(command);
     ret += " ";
-    BackupRestoreElementToString(ret, backup.backup_element());
-    for (int i = 0; i < backup.other_elements_size(); i++)
+    if (backup_cmd && backup.has_from_snapshot())
     {
-        ret += ", ";
-        BackupRestoreElementToString(ret, backup.other_elements(i));
+        ret += "FROM SNAPSHOT ";
+        BackupOutToString(ret, backup.from_snapshot());
+    }
+    else
+    {
+        BackupRestoreElementToString(ret, backup.backup_element());
+        for (int i = 0; i < backup.other_elements_size(); i++)
+        {
+            ret += ", ";
+            BackupRestoreElementToString(ret, backup.other_elements(i));
+        }
     }
     if (backup.has_cluster())
     {
         ClusterToString(ret, true, backup.cluster());
     }
     ret += " ";
-    ret += command == BackupRestore_BackupCommand_BACKUP ? "TO" : "FROM";
+    ret += backup_cmd ? "TO" : "FROM";
     ret += " ";
     BackupOutToString(ret, backup.out());
     if (backup.has_setting_values())
@@ -5600,6 +5910,14 @@ CONV_FN(BackupRestore, backup)
         ret += " FORMAT ";
         ret += OutFormat_Name(backup.outformat()).substr(4);
     }
+}
+
+CONV_FN(SnapshotQuery, sq)
+{
+    ret += "SNAPSHOT ";
+    BackupRestoreElementToString(ret, sq.element());
+    ret += " TO ";
+    BackupOutToString(ret, sq.out());
 }
 
 CONV_FN(Rename, ren)
@@ -5941,6 +6259,9 @@ CONV_FN(SQLQueryInner, query)
             break;
         case QueryType::kCreatePolicy:
             CreatePolicyToString(ret, query.create_policy());
+            break;
+        case QueryType::kSnapshotQuery:
+            SnapshotQueryToString(ret, query.snapshot_query());
             break;
         default:
             ret += "SELECT 1";

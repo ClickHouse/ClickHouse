@@ -43,7 +43,7 @@ def run_check_concurrent(check_name, check_function, files, nproc=NPROC):
 
     result = Result(
         name=check_name,
-        status=Result.Status.SUCCESS if not results else Result.Status.FAILED,
+        status=Result.Status.OK if not results else Result.Status.FAIL,
         start_time=stop_watch.start_time,
         duration=stop_watch.duration,
         info="\n".join(results) if results else "",
@@ -228,15 +228,6 @@ def check_broken_links(path, exclude_paths):
 def check_cpp_code():
     res, out, err = Shell.get_res_stdout_stderr(
         "./ci/jobs/scripts/check_style/check_cpp.sh"
-    )
-    if err:
-        out += err
-    return out
-
-
-def check_repo_submodules():
-    res, out, err = Shell.get_res_stdout_stderr(
-        "./ci/jobs/scripts/check_style/check_submodules.sh"
     )
     if err:
         out += err
@@ -608,14 +599,6 @@ if __name__ == "__main__":
             Result.from_commands_run(
                 name=testname,
                 command=check_cpp_code,
-            )
-        )
-    testname = "submodules"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_repo_submodules,
             )
         )
     testname = "various"

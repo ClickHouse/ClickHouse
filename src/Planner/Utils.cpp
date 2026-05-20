@@ -23,6 +23,8 @@
 #include <Storages/StorageDummy.h>
 
 #include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 
 #include <AggregateFunctions/WindowFunction.h>
 
@@ -38,6 +40,7 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 #include <Analyzer/WindowNode.h>
 
 #include <Core/Settings.h>
@@ -493,10 +496,35 @@ FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
         NameSet table_expression_required_names_without_filter)
 {
     const auto & query_context = planner_context->getQueryContext();
+
+    /// If the filter expression is a standalone subquery (e.g. ROW POLICY
+    /// USING (SELECT 1)), wrap it with notEquals(<subquery>, 0) so that
+    /// buildQueryTree produces a FunctionNode at the top level instead of
+    /// a bare QueryNode/UnionNode.  QueryAnalyzer::resolve() requires
+    /// table_expression to be empty for top-level QUERY/UNION nodes;
+    /// wrapping turns the subquery into a function argument that is
+    /// resolved through the normal scalar-subquery evaluation path.
+    /// We use notEquals(x, 0) rather than equals(1, x) to preserve
+    /// boolean semantics: any non-zero value is truthy (e.g. USING (SELECT 2)
+    /// should allow rows, not deny them).
+    if (filter_expression->as<ASTSubquery>()
+        || filter_expression->as<ASTSelectWithUnionQuery>())
+    {
+        filter_expression = makeASTFunction("notEquals",
+            filter_expression,
+            make_intrusive<ASTLiteral>(Field(UInt8(0))));
+    }
+
     auto filter_query_tree = buildQueryTree(filter_expression, query_context);
 
     QueryAnalysisPass query_analysis_pass(table_expression);
     query_analysis_pass.run(filter_query_tree, query_context);
+
+    /// Optimize logical expressions in the filter, e.g. convert OR-chains of
+    /// equalities into IN (important for row policies that produce many
+    /// permissive conditions like `x = 1 OR x = 2 OR ... OR x = N`).
+    LogicalExpressionOptimizerPass logical_expression_optimizer_pass;
+    logical_expression_optimizer_pass.run(filter_query_tree, query_context);
 
     return buildFilterInfo(std::move(filter_query_tree), table_expression, planner_context, std::move(table_expression_required_names_without_filter));
 }

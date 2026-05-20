@@ -277,6 +277,19 @@ def first_keyword(sql):
     return ""
 
 
+def execute_query_group(connection, q_list, query_id, settings):
+    """
+    Execute a group of SQL statements sequentially and return the total server-side elapsed time.
+    Some benchmark queries (e.g. TPC-DS Q14) consist of multiple SELECT statements in one file.
+    We run them together and sum the elapsed time so that they appear as a single entry in the performance report.
+    """
+    total = 0
+    for q in q_list:
+        connection.execute(q, query_id=query_id, settings=settings)
+        total += connection.last_query.elapsed
+    return total
+
+
 def load_settings_file(xml_root, base_dir):
     """Load settings from a JSON file referenced by <settings file="..."/> attribute."""
     elem = xml_root.find("settings")
@@ -296,13 +309,14 @@ def load_settings_file(xml_root, base_dir):
 # Not worth fixing properly unless we have such scenario, the whole perf test suite needs a rewrite.
 extra_create_queries = []
 extra_drop_queries = []
-test_queries = []
+test_queries = []  # list[list[str]]: each entry is a group of SQL statements to execute and time together
 for e in root.findall("query"):
     if "file" in e.attrib:
         query_path = os.path.join(xml_dir, e.attrib["file"])
         with open(query_path, "r", encoding="utf-8") as f:
             full_text = f.read().strip()
         statements = split_sql_statements(full_text)
+        select_stmts = []
         for stmt in statements:
             keyword = first_keyword(stmt)
             if keyword in ("CREATE", "ALTER"):
@@ -310,9 +324,19 @@ for e in root.findall("query"):
             elif keyword in ("DROP", "TRUNCATE"):
                 extra_drop_queries.append(stmt)
             else:
-                test_queries += substitute_parameters([stmt])
+                select_stmts.append(stmt)
+        # Some benchmark queries (e.g. TPC-DS Q14) have multiple SELECTs in one file.
+        # They are executed together and timed as a single entry in the report.
+        # Substitution parameters are expanded per-statement and then zipped, so that each group contains statements with same parameters.
+        # Example:
+        #   select_stmts = ["SELECT FROM {t}.x", "SELECT FROM {t}.y"], {t} = [a, b]
+        #   expanded = [["SELECT FROM a.x", "SELECT FROM b.x"], ["SELECT FROM a.y", "SELECT FROM b.y"]]
+        #   zip(*expanded) -> ("SELECT FROM a.x", "SELECT FROM a.y"), ("SELECT FROM b.x", "SELECT FROM b.y")
+        expanded = [substitute_parameters([s]) for s in select_stmts]
+        for group in zip(*expanded):
+            test_queries.append(list(group))
     else:
-        test_queries += substitute_parameters([e.text])
+        test_queries += [[s] for s in substitute_parameters([e.text])]
 
 # If we're given a list of queries to run, check that it makes sense.
 for i in args.queries_to_run or []:
@@ -325,7 +349,7 @@ for i in args.queries_to_run or []:
 # If we're only asked to print the queries, do that and exit.
 if args.print_queries:
     for i in args.queries_to_run or range(0, len(test_queries)):
-        print(test_queries[i])
+        print(";\n".join(test_queries[i]))
     exit(0)
 
 # If we're only asked to print the settings, do that and exit. These are settings
@@ -465,13 +489,13 @@ if args.queries_to_run:
 # Run test queries.
 profile_total_seconds = 0
 for query_index in queries_to_run:
-    q = test_queries[query_index]
+    q_list = test_queries[query_index]
     query_prefix = f"{test_name}.query{query_index}"
 
     # We have some crazy long queries (about 100kB), so trim them to a sane
     # length. This means we can't use query text as an identifier and have to
     # use the test name + the test-wide query index.
-    query_display_name = q
+    query_display_name = ";\n".join(q_list)
     if len(query_display_name) > 1000:
         query_display_name = f"{query_display_name[:1000]}...({query_index})"
 
@@ -504,10 +528,11 @@ for query_index in queries_to_run:
                 # * collect profiler traces, which might be helpful for analyzing
                 #   test coverage. We disable profiler for normal runs because
                 #   it makes the results unstable.
-                res = c.execute(
-                    q,
-                    query_id=prewarm_id,
-                    settings={
+                prewarm_elapsed = execute_query_group(
+                    c,
+                    q_list,
+                    prewarm_id,
+                    {
                         "max_execution_time": args.prewarm_max_query_seconds,
                         "query_profiler_real_time_period_ns": 10000000,
                         "query_profiler_cpu_time_period_ns": 10000000,
@@ -522,7 +547,7 @@ for query_index in queries_to_run:
                 raise
 
             print(
-                f"prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{c.last_query.elapsed}"
+                f"prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{prewarm_elapsed}"
             )
         except KeyboardInterrupt:
             raise
@@ -569,10 +594,8 @@ for query_index in queries_to_run:
 
         for conn_index, c in enumerate(this_query_connections):
             try:
-                res = c.execute(
-                    q,
-                    query_id=run_id,
-                    settings={"max_execution_time": args.max_query_seconds},
+                elapsed = execute_query_group(
+                    c, q_list, run_id, {"max_execution_time": args.max_query_seconds}
                 )
             except clickhouse_driver.errors.Error as e:
                 # Add query id to the exception to make debugging easier.
@@ -580,7 +603,6 @@ for query_index in queries_to_run:
                 e.message = run_id + ": " + e.message
                 raise
 
-            elapsed = c.last_query.elapsed
             all_server_times[conn_index].append(elapsed)
 
             server_seconds += elapsed
@@ -641,17 +663,18 @@ for query_index in queries_to_run:
 
         for conn_index, c in enumerate(this_query_connections):
             try:
-                res = c.execute(
-                    q,
-                    query_id=run_id,
-                    settings={
+                profile_elapsed = execute_query_group(
+                    c,
+                    q_list,
+                    run_id,
+                    {
                         "query_profiler_real_time_period_ns": 10000000,
                         "query_profiler_cpu_time_period_ns": 10000000,
                         "metrics_perf_events_enabled": 1,
                     },
                 )
                 print(
-                    f"profile\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}"
+                    f"profile\t{query_index}\t{run_id}\t{conn_index}\t{profile_elapsed}"
                 )
             except clickhouse_driver.errors.Error as e:
                 # Add query id to the exception to make debugging easier.
