@@ -734,15 +734,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
         std::unordered_set<std::string> expr_columns;
         for (auto & expr : exprs)
         {
-            /// `ParserGroupByElement` always wraps `GROUP BY` keys in
-            /// `ASTGroupByElement` (even without `WITH CLUSTER`). Unwrap
-            /// before the identifier check so the sharding-key optimization
-            /// still triggers on plain `GROUP BY` queries.
-            const IAST * actual = expr.get();
-            if (const auto * gbe = actual->template as<ASTGroupByElement>(); gbe && !gbe->children.empty())
-                actual = gbe->children[0].get();
-
-            auto id = actual->template as<ASTIdentifier>();
+            auto id = expr->template as<ASTIdentifier>();
             if (!id)
                 continue;
             expr_columns.emplace(id->name());

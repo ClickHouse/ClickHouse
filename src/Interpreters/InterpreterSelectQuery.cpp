@@ -9,6 +9,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTGroupByElement.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
@@ -721,6 +722,25 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     max_streams = getMaxThreadsForAvailableMemory(
         settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
     ASTSelectQuery & query = getSelectQuery();
+
+    /// `GROUP BY ... WITH CLUSTER` is only implemented for the new analyzer.
+    /// Reject it on the legacy path early with a clear message instead of
+    /// letting it slip into `ExpressionAnalyzer`, where the per-element
+    /// modifier would either be silently dropped or fail later with an
+    /// opaque `UNKNOWN_IDENTIFIER` (the modifier is part of the AST node's
+    /// printed name, which the legacy resolver does not understand).
+    if (auto group_by = query.groupBy())
+    {
+        for (const auto & elem : group_by->children)
+        {
+            const auto * gbe = elem->as<ASTGroupByElement>();
+            if (gbe && gbe->with_cluster)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "GROUP BY ... WITH CLUSTER requires the new analyzer "
+                    "(`SET enable_analyzer = 1`)");
+        }
+    }
+
     std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
     if (storage)

@@ -2411,20 +2411,17 @@ bool ParserGroupByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     if (!expr_parser.parse(pos, expr_elem, expected))
         return false;
 
-    auto elem = make_intrusive<ASTGroupByElement>();
-    elem->children.push_back(expr_elem);
+    bool with_cluster = false;
+    ASTPtr distance;
 
     Pos saved_pos = pos;
     if (s_with.ignore(pos, expected))
     {
         if (s_cluster.ignore(pos, expected))
         {
-            ASTPtr distance;
             if (!number_parser.parse(pos, distance, expected))
                 return false;
-
-            elem->with_cluster = true;
-            elem->setClusterDistance(distance);
+            with_cluster = true;
         }
         else
         {
@@ -2434,6 +2431,21 @@ bool ParserGroupByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         }
     }
 
+    /// Only wrap in `ASTGroupByElement` when the per-element `WITH CLUSTER`
+    /// modifier is actually present. Otherwise leave the plain expression as
+    /// the `GROUP BY` child so legacy passes (positional-argument rewrite in
+    /// `TreeRewriter`/`ExpressionAnalyzer`, sharding-key matching, etc.) keep
+    /// seeing the same shape they always saw.
+    if (!with_cluster)
+    {
+        node = expr_elem;
+        return true;
+    }
+
+    auto elem = make_intrusive<ASTGroupByElement>();
+    elem->children.push_back(expr_elem);
+    elem->with_cluster = true;
+    elem->setClusterDistance(distance);
     node = elem;
     return true;
 }

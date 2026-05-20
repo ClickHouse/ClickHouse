@@ -557,35 +557,42 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
             int i = 0;
             while (i < n)
             {
-                auto elem = make_intrusive<ASTGroupByElement>();
-
-                if (i == group_by_cluster_key_index && dims == 2 && i + 1 < n)
+                if (i == group_by_cluster_key_index)
                 {
-                    auto tuple_function = make_intrusive<ASTFunction>();
-                    tuple_function->name = "tuple";
-                    auto tuple_args = make_intrusive<ASTExpressionList>(',');
-                    tuple_args->children.push_back(group_by_nodes[i]->toAST(options));
-                    tuple_args->children.push_back(group_by_nodes[i + 1]->toAST(options));
-                    tuple_function->arguments = tuple_args;
-                    tuple_function->children.push_back(std::move(tuple_args));
+                    /// Cluster key — emit an `ASTGroupByElement` wrapper carrying
+                    /// the `WITH CLUSTER <distance>` modifier. For 2D rebuild the
+                    /// original tuple from the two adjacent scalar keys.
+                    auto elem = make_intrusive<ASTGroupByElement>();
+                    if (dims == 2 && i + 1 < n)
+                    {
+                        auto tuple_function = make_intrusive<ASTFunction>();
+                        tuple_function->name = "tuple";
+                        auto tuple_args = make_intrusive<ASTExpressionList>(',');
+                        tuple_args->children.push_back(group_by_nodes[i]->toAST(options));
+                        tuple_args->children.push_back(group_by_nodes[i + 1]->toAST(options));
+                        tuple_function->arguments = tuple_args;
+                        tuple_function->children.push_back(std::move(tuple_args));
 
-                    elem->children.push_back(std::move(tuple_function));
+                        elem->children.push_back(std::move(tuple_function));
+                        i += 2;
+                    }
+                    else
+                    {
+                        elem->children.push_back(group_by_nodes[i]->toAST(options));
+                        i += 1;
+                    }
                     elem->with_cluster = true;
                     elem->setClusterDistance(make_intrusive<ASTLiteral>(Field(group_by_cluster_distance)));
-                    i += 2;
+                    group_by_ast->children.push_back(std::move(elem));
                 }
                 else
                 {
-                    elem->children.push_back(group_by_nodes[i]->toAST(options));
-                    if (i == group_by_cluster_key_index)
-                    {
-                        elem->with_cluster = true;
-                        elem->setClusterDistance(make_intrusive<ASTLiteral>(Field(group_by_cluster_distance)));
-                    }
+                    /// Non-cluster keys are emitted bare (no wrapper) — matches
+                    /// what the parser produces for `WITH CLUSTER`-less items
+                    /// so the AST round-trip stays shape-stable.
+                    group_by_ast->children.push_back(group_by_nodes[i]->toAST(options));
                     i += 1;
                 }
-
-                group_by_ast->children.push_back(std::move(elem));
             }
             select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_by_ast));
         }
