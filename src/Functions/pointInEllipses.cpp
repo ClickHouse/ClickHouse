@@ -35,7 +35,7 @@ namespace
  * so the last success ellipse index is remembered to check this ellipse first for next point.
  *
  */
-class FunctionPointInEllipses : public IFunction
+class FunctionPointInEllipses final : public IFunction
 {
 public:
     static constexpr auto name = "pointInEllipses";
