@@ -3500,8 +3500,11 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
                 if (auto * fn = cluster_elem->as<FunctionNode>(); fn != nullptr && fn->getFunctionName() == "tuple")
                 {
                     const auto & args = fn->getArguments().getNodes();
-                    if (args.size() == 2)
-                        cluster_dims = 2;
+                    if (args.size() != 2)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "GROUP BY ... WITH CLUSTER on a tuple expects exactly 2 elements, got {}",
+                            args.size());
+                    cluster_dims = 2;
                 }
             }
             query_node_typed.setGroupByClusterKeyIndex(new_cluster_idx);
