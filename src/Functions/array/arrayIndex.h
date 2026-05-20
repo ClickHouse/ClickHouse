@@ -588,9 +588,19 @@ public:
                 if (auto * result_col = typeid_cast<ColumnVector<ResultType> *>(mutable_result.get()))
                 {
                     auto & data = result_col->getData();
-                    const auto & null_map_data = nullable_array->getNullMapData();
+                    const PaddedPODArray<UInt8> * null_map_data = nullptr;
+                    ColumnUInt8::MutablePtr null_map_holder;
+                    if (col_const)
+                    {
+                        null_map_holder = ColumnUInt8::create();
+                        null_map_holder->getData().resize_fill(col_const->size(), nullable_array->getNullMapData()[0]);
+                        null_map_data = &null_map_holder->getData();
+                    }
+                    else
+                        null_map_data = &nullable_array->getNullMapData();
+
                     for (size_t i = 0, size = data.size(); i < size; ++i)
-                        if (null_map_data[i])
+                        if ((*null_map_data)[i])
                             data[i] = 0;
                 }
 

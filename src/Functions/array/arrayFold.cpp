@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -21,6 +22,49 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int TYPE_MISMATCH;
+    extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+ColumnPtr materializeNullMapToRowCount(const ColumnPtr & null_map_column, size_t num_rows)
+{
+    const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column);
+    if (null_map.size() == num_rows)
+        return null_map_column;
+
+    if (null_map.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Null map size {} does not match row count {} and is not a single constant value",
+            null_map.size(), num_rows);
+
+    auto result = ColumnUInt8::create();
+    result->getData().resize_fill(num_rows, null_map.getData()[0]);
+    return result;
+}
+
+void mergeRowNullMap(ColumnPtr & accumulated, const ColumnPtr & new_null_map, size_t num_rows)
+{
+    ColumnPtr materialized_new = materializeNullMapToRowCount(new_null_map, num_rows);
+
+    if (!accumulated)
+    {
+        accumulated = std::move(materialized_new);
+        return;
+    }
+
+    accumulated = materializeNullMapToRowCount(accumulated, num_rows);
+    auto mutable_accumulated = IColumn::mutate(accumulated);
+    auto & acc_data = assert_cast<ColumnUInt8 &>(*mutable_accumulated).getData();
+    const auto & new_data = assert_cast<const ColumnUInt8 &>(*materialized_new).getData();
+
+    for (size_t i = 0; i < num_rows; ++i)
+        acc_data[i] |= new_data[i];
+
+    accumulated = std::move(mutable_accumulated);
+}
+
 }
 
 /**
@@ -123,8 +167,7 @@ public:
 
             if (const auto * nullable_array_column = checkAndGetColumn<ColumnNullable>(array_data_column))
             {
-                if (!array_null_map)
-                    array_null_map = nullable_array_column->getNullMapColumnPtr();
+                mergeRowNullMap(array_null_map, nullable_array_column->getNullMapColumnPtr(), input_rows_count);
 
                 if (checkAndGetColumn<ColumnArray>(&nullable_array_column->getNestedColumn()))
                 {

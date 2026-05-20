@@ -16,6 +16,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Common/Arena.h>
+#include <Common/assert_cast.h>
 
 #include <Common/scope_guard_safe.h>
 
@@ -30,6 +31,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -82,11 +84,49 @@ private:
 namespace
 {
 
+ColumnPtr materializeNullMapToRowCount(const ColumnPtr & null_map_column, size_t num_rows)
+{
+    const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column);
+    if (null_map.size() == num_rows)
+        return null_map_column;
+
+    if (null_map.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Null map size {} does not match row count {} and is not a single constant value",
+            null_map.size(), num_rows);
+
+    auto result = ColumnUInt8::create();
+    result->getData().resize_fill(num_rows, null_map.getData()[0]);
+    return result;
+}
+
+void mergeRowNullMap(ColumnPtr & accumulated, const ColumnPtr & new_null_map, size_t num_rows)
+{
+    ColumnPtr materialized_new = materializeNullMapToRowCount(new_null_map, num_rows);
+
+    if (!accumulated)
+    {
+        accumulated = std::move(materialized_new);
+        return;
+    }
+
+    accumulated = materializeNullMapToRowCount(accumulated, num_rows);
+    auto mutable_accumulated = IColumn::mutate(accumulated);
+    auto & acc_data = assert_cast<ColumnUInt8 &>(*mutable_accumulated).getData();
+    const auto & new_data = assert_cast<const ColumnUInt8 &>(*materialized_new).getData();
+
+    for (size_t i = 0; i < num_rows; ++i)
+        acc_data[i] |= new_data[i];
+
+    accumulated = std::move(mutable_accumulated);
+}
+
 ColumnPtr unwrapNullableArrayColumn(
     const ColumnPtr & column,
     const DataTypePtr & type,
     std::vector<ColumnPtr> & materialized_columns,
-    ColumnPtr & out_null_map)
+    ColumnPtr & out_null_map,
+    size_t num_rows)
 {
     ColumnPtr unwrapped_column = column;
     auto col_no_lowcardinality = recursiveRemoveLowCardinality(unwrapped_column);
@@ -101,8 +141,7 @@ ColumnPtr unwrapNullableArrayColumn(
 
     if (const auto * nullable_array_column = checkAndGetColumn<ColumnNullable>(data_column))
     {
-        if (!out_null_map)
-            out_null_map = nullable_array_column->getNullMapColumnPtr();
+        mergeRowNullMap(out_null_map, nullable_array_column->getNullMapColumnPtr(), num_rows);
 
         if (checkAndGetColumn<ColumnArray>(&nullable_array_column->getNestedColumn()))
         {
@@ -145,7 +184,7 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
     for (size_t i = 0; i < num_arguments_columns; ++i)
     {
         ColumnPtr col_holder = unwrapNullableArrayColumn(
-            arguments[i + 1].column, arguments[i + 1].type, materialized_columns, array_null_map);
+            arguments[i + 1].column, arguments[i + 1].type, materialized_columns, array_null_map, input_rows_count);
         const IColumn * col = col_holder.get();
 
         const ColumnArray::Offsets * offsets_i = nullptr;
