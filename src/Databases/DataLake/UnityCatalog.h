@@ -64,6 +64,13 @@ private:
     DB::Names getTablesForSchema(const std::string & schema, size_t limit = 0) const;
     void getCredentials(const std::string & table_id, TableMetadata & metadata) const;
 
+    /// POSTs a READ-credentials request to TEMPORARY_CREDENTIALS_ENDPOINT and returns the parsed body.
+    Poco::JSON::Object::Ptr requestReadCredentials(const Poco::JSON::Object & request_body) const;
+
+    /// Extract S3/Azure credentials from a TEMPORARY_CREDENTIALS_ENDPOINT response; nullptr if absent.
+    std::shared_ptr<IStorageCredentials> parseS3Credentials(const Poco::JSON::Object::Ptr & response) const;
+    std::shared_ptr<IStorageCredentials> parseAzureCredentials(const Poco::JSON::Object::Ptr & response) const;
+
     bool getTableMetadataImpl(
         const std::string & namespace_name,
         const std::string & table_name,

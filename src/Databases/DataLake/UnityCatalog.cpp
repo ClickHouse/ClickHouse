@@ -97,63 +97,50 @@ void UnityCatalog::getTableMetadata(
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No response from unity catalog");
 }
 
+Poco::JSON::Object::Ptr UnityCatalog::requestReadCredentials(const Poco::JSON::Object & request_body) const
+{
+    auto callback = [&request_body] (std::ostream & os) { request_body.stringify(os); };
+    auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
+    return json.extract<Poco::JSON::Object::Ptr>();
+}
+
+std::shared_ptr<IStorageCredentials> UnityCatalog::parseS3Credentials(const Poco::JSON::Object::Ptr & response) const
+{
+    if (!hasValueAndItsNotNone("aws_temp_credentials", response))
+        return nullptr;
+
+    const Poco::JSON::Object::Ptr & creds_object = response->getObject("aws_temp_credentials");
+    return std::make_shared<S3Credentials>(
+        creds_object->get("access_key_id").extract<String>(),
+        creds_object->get("secret_access_key").extract<String>(),
+        creds_object->get("session_token").extract<String>());
+}
+
+std::shared_ptr<IStorageCredentials> UnityCatalog::parseAzureCredentials(const Poco::JSON::Object::Ptr & response) const
+{
+    if (!hasValueAndItsNotNone("azure_user_delegation_sas", response))
+        return nullptr;
+
+    const Poco::JSON::Object::Ptr & creds_object = response->getObject("azure_user_delegation_sas");
+    return std::make_shared<AzureCredentials>(
+        creds_object->get("sas_token").extract<String>());
+}
+
 void UnityCatalog::getCredentials(const std::string & table_id, TableMetadata & metadata) const
 {
     LOG_DEBUG(log, "Getting credentials for table {}", table_id);
     auto storage_type = parseStorageTypeFromLocation(metadata.getLocation());
-    switch (storage_type)
-    {
-        case StorageType::S3:
-        {
-            auto callback = [table_id] (std::ostream & os)
-            {
-                Poco::JSON::Object obj;
-                obj.set("table_id", table_id);
-                obj.set("operation", "READ");
-                obj.stringify(os);
-            };
+    if (storage_type != StorageType::S3 && storage_type != StorageType::Azure)
+        return;
 
-            auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
-            const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+    Poco::JSON::Object request_body;
+    request_body.set("table_id", table_id);
+    request_body.set("operation", "READ");
+    auto response = requestReadCredentials(request_body);
 
-            if (hasValueAndItsNotNone("aws_temp_credentials", object))
-            {
-                const Poco::JSON::Object::Ptr & creds_object = object->getObject("aws_temp_credentials");
-                std::string access_key_id = creds_object->get("access_key_id").extract<String>();
-                std::string secret_access_key = creds_object->get("secret_access_key").extract<String>();
-                std::string session_token = creds_object->get("session_token").extract<String>();
-
-                auto creds = std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token);
-                metadata.setStorageCredentials(creds);
-            }
-            break;
-        }
-        case StorageType::Azure:
-        {
-            auto callback = [table_id] (std::ostream & os)
-            {
-                Poco::JSON::Object obj;
-                obj.set("table_id", table_id);
-                obj.set("operation", "READ");
-                obj.stringify(os);
-            };
-
-            auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
-            const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
-
-            if (hasValueAndItsNotNone("azure_user_delegation_sas", object))
-            {
-                const Poco::JSON::Object::Ptr & creds_object = object->getObject("azure_user_delegation_sas");
-                std::string sas_token = creds_object->get("sas_token").extract<String>();
-
-                auto creds = std::make_shared<AzureCredentials>(sas_token);
-                metadata.setStorageCredentials(creds);
-            }
-            break;
-        }
-        default:
-            break;
-    }
+    auto creds = storage_type == StorageType::S3 ? parseS3Credentials(response) : parseAzureCredentials(response);
+    if (creds)
+        metadata.setStorageCredentials(creds);
 }
 
 bool UnityCatalog::tryGetTableMetadata(
@@ -449,28 +436,10 @@ ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCa
     {
         LOG_DEBUG(log, "Update credentials in the catalog");
 
-        auto callback = [table_id] (std::ostream & os)
-        {
-            Poco::JSON::Object obj;
-            obj.set("table_id", table_id);
-            obj.set("operation", "READ");
-            obj.stringify(os);
-        };
-
-        auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
-        const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
-
-        if (hasValueAndItsNotNone("aws_temp_credentials", object))
-        {
-            const Poco::JSON::Object::Ptr & creds_object = object->getObject("aws_temp_credentials");
-            std::string access_key_id = creds_object->get("access_key_id").extract<String>();
-            std::string secret_access_key = creds_object->get("secret_access_key").extract<String>();
-            std::string session_token = creds_object->get("session_token").extract<String>();
-
-            auto creds = std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token);
-            return creds;
-        }
-        return nullptr;
+        Poco::JSON::Object request_body;
+        request_body.set("table_id", table_id);
+        request_body.set("operation", "READ");
+        return parseS3Credentials(requestReadCredentials(request_body));
     };
 }
 
