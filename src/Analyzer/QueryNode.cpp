@@ -17,6 +17,7 @@
 #include <IO/Operators.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTSubquery.h>
@@ -543,17 +544,47 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     {
         if (hasGroupByWithCluster())
         {
+            /// Reconstruct the per-element `GROUP BY` AST and re-attach `WITH CLUSTER`
+            /// to the right element. For 2D, the analyzer has expanded the tuple key
+            /// `(x, y)` into two separate `GROUP BY` keys; we must rebuild the tuple
+            /// here so the AST round-trips back to the original semantics. Otherwise
+            /// a 2D query would serialize as `GROUP BY x WITH CLUSTER d, y` (1D on x).
             auto group_by_ast = make_intrusive<ASTExpressionList>(',');
-            auto & group_by_nodes = getGroupBy().getNodes();
-            for (int i = 0; i < static_cast<int>(group_by_nodes.size()); ++i)
+            const auto & group_by_nodes = getGroupBy().getNodes();
+            const int n = static_cast<int>(group_by_nodes.size());
+            const int dims = static_cast<int>(group_by_cluster_dimensions);
+
+            int i = 0;
+            while (i < n)
             {
                 auto elem = make_intrusive<ASTGroupByElement>();
-                elem->children.push_back(group_by_nodes[i]->toAST(options));
-                if (i == group_by_cluster_key_index)
+
+                if (i == group_by_cluster_key_index && dims == 2 && i + 1 < n)
                 {
+                    auto tuple_function = make_intrusive<ASTFunction>();
+                    tuple_function->name = "tuple";
+                    auto tuple_args = make_intrusive<ASTExpressionList>(',');
+                    tuple_args->children.push_back(group_by_nodes[i]->toAST(options));
+                    tuple_args->children.push_back(group_by_nodes[i + 1]->toAST(options));
+                    tuple_function->arguments = tuple_args;
+                    tuple_function->children.push_back(std::move(tuple_args));
+
+                    elem->children.push_back(std::move(tuple_function));
                     elem->with_cluster = true;
                     elem->setClusterDistance(make_intrusive<ASTLiteral>(Field(group_by_cluster_distance)));
+                    i += 2;
                 }
+                else
+                {
+                    elem->children.push_back(group_by_nodes[i]->toAST(options));
+                    if (i == group_by_cluster_key_index)
+                    {
+                        elem->with_cluster = true;
+                        elem->setClusterDistance(make_intrusive<ASTLiteral>(Field(group_by_cluster_distance)));
+                    }
+                    i += 1;
+                }
+
                 group_by_ast->children.push_back(std::move(elem));
             }
             select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_by_ast));
