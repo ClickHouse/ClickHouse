@@ -61,6 +61,35 @@ FROM format(
 )
 FORMAT TSV;
 
+-- Exemplar may include an optional timestamp after exemplar value.
+SELECT *
+FROM format(
+    OpenMetrics,
+    'name String, value Float64',
+    concat('foo_bucket{le="10"} 17 # {trace_id="x"} 9.8 1520879607.789', char(10), '# EOF', char(10))
+)
+FORMAT TSV;
+
+-- Reject whitespace between metric name and `{labels}`.
+SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('metric {job="x"} 1', char(10))); -- { serverError INCORRECT_DATA }
+
+-- OpenMetrics timestamps are real numbers (`+2`, fractional milliseconds).
+SELECT *
+FROM format(
+    OpenMetrics,
+    'name String, value Float64, timestamp Nullable(Int64)',
+    concat('m 1 +2', char(10), '# EOF', char(10))
+)
+FORMAT TSV;
+
+SELECT *
+FROM format(
+    OpenMetrics,
+    'name String, value Float64, timestamp Nullable(Int64)',
+    concat('m 1 1520879607.789', char(10), '# EOF', char(10))
+)
+FORMAT TSV;
+
 -- Reject empty metric name and duplicate label keys (invalid exposition text).
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('{k="v"} 1', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m{a="1",a="2"} 1', char(10))); -- { serverError INCORRECT_DATA }

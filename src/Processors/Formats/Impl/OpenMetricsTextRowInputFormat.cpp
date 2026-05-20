@@ -22,6 +22,7 @@
 #include <IO/readIntText.h>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <map>
 
@@ -175,13 +176,19 @@ bool parseMetricDescriptor(std::string_view s, size_t & pos, String & stem, std:
 
     if (pos < s.size())
     {
-        size_t label_set_pos = pos;
-        skipAsciiSpaces(s, label_set_pos);
-        if (label_set_pos < s.size() && s[label_set_pos] == '{')
+        if (s[pos] == '{')
         {
-            pos = label_set_pos;
             if (!parseLabelSet(s, pos, labels))
                 return false;
+        }
+        else if (s[pos] == ' ' || s[pos] == '\t')
+        {
+            size_t peek = pos;
+            skipAsciiSpaces(s, peek);
+            if (peek < s.size() && s[peek] == '{')
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Whitespace between metric name and label set is not allowed in OpenMetrics line");
         }
     }
     return true;
@@ -197,27 +204,35 @@ bool parseValueToken(std::string_view s, size_t & pos, String & value_out)
     return !value_out.empty();
 }
 
-bool parseOptionalIntToken(std::string_view s, size_t & pos, String & out)
+/// Optional sample or exemplar timestamp (`realnumber` in OpenMetrics text grammar).
+bool parseOptionalTimestampToken(std::string_view s, size_t & pos, String & out, const String & line)
 {
     skipAsciiSpaces(s, pos);
-    if (pos >= s.size())
+    if (pos >= s.size() || s[pos] == '#')
         return false;
+
     const size_t start = pos;
-    if (s[pos] == '-')
+    while (pos < s.size() && s[pos] != ' ' && s[pos] != '\t')
         ++pos;
-    const size_t digits_start = pos;
-    while (pos < s.size() && isNumericASCII(s[pos]))
-        ++pos;
-    if (pos == digits_start)
-    {
-        /// A lone `-` is not a valid integer timestamp (must have at least one digit). Reject even when
-        /// the result row schema omits `timestamp`, otherwise the stray token would be skipped silently.
-        if (s[start] == '-')
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid timestamp token in OpenMetrics line");
-        return false;
-    }
     out = String{s.substr(start, pos - start)};
+
+    Float64 v = 0;
+    ReadBufferFromString buf(out);
+    if (!tryReadFloatText(v, buf) || !buf.eof())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid timestamp token '{}' in OpenMetrics line: {}", out, line);
     return true;
+}
+
+Int64 timestampTokenToInt64(const String & token, const String & line)
+{
+    Float64 v = 0;
+    ReadBufferFromString buf(token);
+    if (!tryReadFloatText(v, buf) || !buf.eof())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid timestamp token '{}' in OpenMetrics line: {}", token, line);
+    if (!std::isfinite(v) || v < static_cast<Float64>(std::numeric_limits<Int64>::min())
+        || v > static_cast<Float64>(std::numeric_limits<Int64>::max()))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Timestamp value out of Int64 range in OpenMetrics line: {}", line);
+    return static_cast<Int64>(v);
 }
 
 /// Optional exemplar after sample value / timestamp: `# {labels} <value>` (OpenMetrics text).
@@ -244,6 +259,9 @@ void consumeOptionalExemplarSuffix(std::string_view s, size_t & pos, const Strin
     ReadBufferFromString buf(exemplar_value_token);
     if (!tryReadFloatText(exemplar_value, buf) || !buf.eof())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse exemplar value '{}' in OpenMetrics line: {}", exemplar_value_token, line);
+
+    String exemplar_ts_token;
+    parseOptionalTimestampToken(s, pos, exemplar_ts_token, line);
 }
 
 void checkMetricLineFullyConsumed(std::string_view s, size_t & pos, const String & line)
@@ -535,7 +553,7 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse value in OpenMetrics line: {}", line);
 
         String ts_token;
-        bool has_ts = parseOptionalIntToken(sv, pos, ts_token);
+        bool has_ts = parseOptionalTimestampToken(sv, pos, ts_token, line);
         consumeOptionalExemplarSuffix(sv, pos, line);
         checkMetricLineFullyConsumed(sv, pos, line);
 
@@ -615,9 +633,7 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
                 auto & nullable_col = assert_cast<ColumnNullable &>(col);
                 if (has_ts)
                 {
-                    Int64 t = 0;
-                    ReadBufferFromString buf(ts_token);
-                    readIntText(t, buf);
+                    const Int64 t = timestampTokenToInt64(ts_token, line);
                     nullable_col.getNestedColumn().insert(t);
                     nullable_col.getNullMapColumn().insertValue(0);
                 }
@@ -628,10 +644,7 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
             {
                 if (!has_ts)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Timestamp column is not Nullable but line has no timestamp: {}", line);
-                Int64 t = 0;
-                ReadBufferFromString buf(ts_token);
-                readIntText(t, buf);
-                assert_cast<ColumnInt64 &>(col).insert(t);
+                assert_cast<ColumnInt64 &>(col).insert(timestampTokenToInt64(ts_token, line));
             }
             ext.read_columns[*loc.timestamp] = 1;
         }

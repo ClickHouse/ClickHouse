@@ -11,6 +11,9 @@ ingress_http_requests_total	7			{}	\N
 demo_log_lines_total	1			{'k':'a\nb'}	\N	
 demo_error_messages_total	1			{'k':'a"b'}	\N	
 demo_http_requests_total	1
+foo_bucket	17
+m	1	2
+m	1	1520879607
 http_requests_total_sum	1			{}	\N	
 http_request_duration_seconds	5	help	histogram	{'sum':''}	\N	
 rpc_duration_seconds	3	help	histogram	{'le':'0.5'}	\N	
