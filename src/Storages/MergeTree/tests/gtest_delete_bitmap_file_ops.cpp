@@ -83,20 +83,20 @@ TEST(DeleteBitmapFileOpsTest, EnumerateFilesIgnoresUnrelatedFiles)
 
     auto entries = DeleteBitmapFileOps::enumerateFiles(*fx.storage);
     ASSERT_EQ(entries.size(), 1u);
-    EXPECT_EQ(entries[0].first, 3u);
-    EXPECT_EQ(entries[0].second, "delete_bitmap_3.rbm");
+    EXPECT_EQ(entries[0].version, 3u);
+    EXPECT_EQ(entries[0].name, "delete_bitmap_3.rbm");
 }
 
-TEST(DeleteBitmapFileOpsTest, PickHighestSelectsLargestBlockNumber)
+TEST(DeleteBitmapFileOpsTest, PickHighestSelectsLargestCsn)
 {
-    std::vector<std::pair<UInt64, std::string>> files{
+    std::vector<DeleteBitmapFileOps::BitmapFile> files{
         {3, "delete_bitmap_3.rbm"},
         {7, "delete_bitmap_7.rbm"},
         {5, "delete_bitmap_5.rbm"},
     };
     auto chosen = DeleteBitmapFileOps::pickHighest(files);
     ASSERT_TRUE(chosen.has_value());
-    EXPECT_EQ(chosen->first, 7u);
+    EXPECT_EQ(chosen->version, 7u);
 }
 
 TEST(DeleteBitmapFileOpsTest, PickHighestEmptyReturnsNullopt)
@@ -132,20 +132,20 @@ TEST(DeleteBitmapFileOpsTest, WriteAndReadRoundtrip)
 TEST(DeleteBitmapFileOpsTest, GetCurrentVersionHighestWins)
 {
     PartStorageFixture fx;
-    EXPECT_EQ(DeleteBitmapFileOps::getCurrentVersionFromStorage(*fx.storage), 0u);
+    EXPECT_EQ(DeleteBitmapFileOps::getLastVersionFromStorage(*fx.storage), 0u);
 
     DeleteBitmap bm;
     bm.add(1);
 
     DeleteBitmapFileOps::writeBitmapToStorage(*fx.storage, 3, bm);
-    EXPECT_EQ(DeleteBitmapFileOps::getCurrentVersionFromStorage(*fx.storage), 3u);
+    EXPECT_EQ(DeleteBitmapFileOps::getLastVersionFromStorage(*fx.storage), 3u);
 
     DeleteBitmapFileOps::writeBitmapToStorage(*fx.storage, 7, bm);
-    EXPECT_EQ(DeleteBitmapFileOps::getCurrentVersionFromStorage(*fx.storage), 7u);
+    EXPECT_EQ(DeleteBitmapFileOps::getLastVersionFromStorage(*fx.storage), 7u);
 
     /// Out-of-order write does not change "highest".
     DeleteBitmapFileOps::writeBitmapToStorage(*fx.storage, 5, bm);
-    EXPECT_EQ(DeleteBitmapFileOps::getCurrentVersionFromStorage(*fx.storage), 7u);
+    EXPECT_EQ(DeleteBitmapFileOps::getLastVersionFromStorage(*fx.storage), 7u);
 }
 
 TEST(DeleteBitmapFileOpsTest, GetCurrentVersionEmptyStorageReturnsZero)
@@ -153,7 +153,7 @@ TEST(DeleteBitmapFileOpsTest, GetCurrentVersionEmptyStorageReturnsZero)
     /// Zero-state invariant: a part with no `.rbm` files must report
     /// version 0.
     PartStorageFixture fx;
-    EXPECT_EQ(DeleteBitmapFileOps::getCurrentVersionFromStorage(*fx.storage), 0u);
+    EXPECT_EQ(DeleteBitmapFileOps::getLastVersionFromStorage(*fx.storage), 0u);
 }
 
 TEST(DeleteBitmapFileOpsTest, ReadMissingVersionThrows)

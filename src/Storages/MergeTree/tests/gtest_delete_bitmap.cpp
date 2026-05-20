@@ -3,11 +3,19 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 
 #include <random>
 #include <string>
 #include <vector>
+
+namespace CurrentMetrics
+{
+    extern const Metric DeleteBitmapCacheBytes;
+    extern const Metric DeleteBitmapCacheEntries;
+}
 
 using namespace DB;
 
@@ -445,8 +453,8 @@ TEST(DeleteBitmapTest, TrailingBytesAfterCRCRejected)
 
 TEST(DeleteBitmapTest, FileNameRoundtrip)
 {
-    EXPECT_EQ(DeleteBitmap::fileNameForBlockNumber(0), "delete_bitmap_0.rbm");
-    EXPECT_EQ(DeleteBitmap::fileNameForBlockNumber(12345), "delete_bitmap_12345.rbm");
+    EXPECT_EQ(DeleteBitmap::fileNameForCsn(0), "delete_bitmap_0.rbm");
+    EXPECT_EQ(DeleteBitmap::fileNameForCsn(12345), "delete_bitmap_12345.rbm");
 
     EXPECT_TRUE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_0.rbm"));
     EXPECT_TRUE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_999.rbm"));
@@ -457,13 +465,53 @@ TEST(DeleteBitmapTest, FileNameRoundtrip)
     EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_1.rbm.tmp"));
     EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile(""));
     /// Noncanonical numeric forms must be rejected so two filenames cannot
-    /// resolve to the same block number (would confuse `readBitmapFromStorage`).
+    /// resolve to the same csn (would confuse `readBitmapFromStorage`).
     EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_+7.rbm"));
     EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_-7.rbm"));
     EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_007.rbm"));
     EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_ 7.rbm"));
 
-    EXPECT_EQ(DeleteBitmap::parseBlockNumberFromFileName("delete_bitmap_0.rbm"), 0U);
-    EXPECT_EQ(DeleteBitmap::parseBlockNumberFromFileName("delete_bitmap_999.rbm"), 999U);
-    EXPECT_THROW(DeleteBitmap::parseBlockNumberFromFileName("foo.rbm"), Exception);
+    EXPECT_EQ(DeleteBitmap::parseCsnFromFileName("delete_bitmap_0.rbm"), 0U);
+    EXPECT_EQ(DeleteBitmap::parseCsnFromFileName("delete_bitmap_999.rbm"), 999U);
+    EXPECT_THROW(DeleteBitmap::parseCsnFromFileName("foo.rbm"), Exception);
+}
+
+/// ---------- cache ----------
+///
+/// `DeleteBitmapCache` is a `CacheBase` wrapper plus our own `makeKey`.
+/// Wrapper-only tests (raw `set` / `get` / capacity eviction) live in
+/// `CacheBase`'s own gtest; here we exercise the parts that are ours.
+
+TEST(DeleteBitmapCacheTest, GetOrSetLoadsOnceAndIsKeyDeterministic)
+{
+    DeleteBitmapCache cache(
+        "LRU",
+        CurrentMetrics::DeleteBitmapCacheBytes,
+        CurrentMetrics::DeleteBitmapCacheEntries,
+        /*max_size_in_bytes=*/8 * 1024 * 1024,
+        /*size_ratio=*/0.5);
+
+    size_t load_calls = 0;
+    auto key = DeleteBitmapCache::makeKey("part-b", 7);
+    auto load = [&]() -> std::shared_ptr<DeleteBitmap>
+    {
+        ++load_calls;
+        auto bm = std::make_shared<DeleteBitmap>();
+        bm->add(42);
+        return bm;
+    };
+
+    auto [p1, inserted1] = cache.getOrSet(key, load);
+    auto [p2, inserted2] = cache.getOrSet(key, load);
+
+    EXPECT_EQ(load_calls, 1u);
+    EXPECT_TRUE(inserted1);
+    EXPECT_FALSE(inserted2);
+    EXPECT_EQ(p1.get(), p2.get());
+    EXPECT_TRUE(p1->contains(42));
+
+    /// Same input -> same key. Different part_id or version -> different key.
+    EXPECT_EQ(key, DeleteBitmapCache::makeKey("part-b", 7));
+    EXPECT_NE(key, DeleteBitmapCache::makeKey("part-b", 8));
+    EXPECT_NE(key, DeleteBitmapCache::makeKey("part-c", 7));
 }

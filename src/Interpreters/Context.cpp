@@ -50,6 +50,7 @@
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
@@ -263,6 +264,8 @@ namespace CurrentMetrics
     extern const Metric MarkCacheFiles;
     extern const Metric UniqueKeyIndexCacheBytes;
     extern const Metric UniqueKeyIndexCacheEntries;
+    extern const Metric DeleteBitmapCacheBytes;
+    extern const Metric DeleteBitmapCacheEntries;
     extern const Metric UncompressedCacheBytes;
     extern const Metric UncompressedCacheCells;
     extern const Metric IndexUncompressedCacheBytes;
@@ -554,6 +557,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable UncompressedCachePtr uncompressed_cache TSA_GUARDED_BY(mutex);            /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache TSA_GUARDED_BY(mutex);                            /// Cache of marks in compressed files.
     mutable UniqueKeyIndexCachePtr unique_key_index_cache TSA_GUARDED_BY(mutex);               /// RocksDB-compatible block cache over CacheBase for the UNIQUE KEY index (nullptr when RocksDB unavailable or disabled).
+    mutable DeleteBitmapCachePtr delete_bitmap_cache TSA_GUARDED_BY(mutex);           /// UNIQUE KEY per-part delete-bitmap cache.
     mutable PrimaryIndexCachePtr primary_index_cache TSA_GUARDED_BY(mutex);
     mutable SystemAllocatedMemoryHolderPtr untracked_memory_holder TSA_GUARDED_BY(mutex);
     mutable OnceFlag load_marks_threadpool_initialized;
@@ -4136,6 +4140,54 @@ void Context::clearUniqueKeyIndexCache() const
     if (cache)
         cache->clear();
 #endif
+}
+
+void Context::setDeleteBitmapCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->delete_bitmap_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Delete bitmap cache has been already created.");
+
+    if (max_cache_size_in_bytes == 0)
+        return; /// Explicit opt-out — leave unregistered; getDeleteBitmapCache returns nullptr.
+
+    shared->delete_bitmap_cache = std::make_shared<DeleteBitmapCache>(
+        cache_policy,
+        CurrentMetrics::DeleteBitmapCacheBytes,
+        CurrentMetrics::DeleteBitmapCacheEntries,
+        max_cache_size_in_bytes,
+        size_ratio);
+}
+
+void Context::updateDeleteBitmapCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->delete_bitmap_cache)
+        return; /// Cache disabled at startup — nothing to update.
+
+    size_t size = config.getUInt64("unique_key_bitmap_cache_size_bytes", 1ULL << 30);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered UNIQUE KEY delete-bitmap cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->delete_bitmap_cache->setMaxSizeInBytes(size);
+    LOG_DEBUG(shared->log, "UNIQUE KEY delete-bitmap cache size set to {}", formatReadableSizeWithBinarySuffix(size));
+}
+
+DeleteBitmapCachePtr Context::getDeleteBitmapCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->delete_bitmap_cache;
+}
+
+void Context::clearDeleteBitmapCache() const
+{
+    DeleteBitmapCachePtr cache = getDeleteBitmapCache();
+    if (cache)
+        cache->clear();
 }
 
 ThreadPool & Context::getLoadMarksThreadpool() const

@@ -540,6 +540,9 @@ namespace
     DECLARE(String, unique_key_index_cache_policy, "SLRU", R"(UNIQUE KEY index cache policy name (SLRU or LRU).)", 0) \
     DECLARE(UInt64, unique_key_index_cache_size_bytes, 1_GiB, R"(Maximum size (bytes) of the in-process cache for UNIQUE KEY index (SST) blocks. Set to 0 to disable the cache.)", 0) \
     DECLARE(Double, unique_key_index_cache_size_ratio, 0.5, R"(The size of the protected queue (in case of SLRU policy) in the UNIQUE KEY index cache relative to the cache's total size.)", 0) \
+    DECLARE(String, unique_key_bitmap_cache_policy, "SLRU", R"(UNIQUE KEY delete-bitmap cache policy name (SLRU or LRU).)", 0) \
+    DECLARE(UInt64, unique_key_bitmap_cache_size_bytes, 1_GiB, R"(Maximum size in bytes of the in-process cache for UNIQUE KEY per-part delete bitmaps. Set to 0 to disable the cache.)", 0) \
+    DECLARE(Double, unique_key_bitmap_cache_size_ratio, 0.5, R"(The size of the protected queue (in case of SLRU policy) in the UNIQUE KEY delete-bitmap cache relative to the cache's total size.)", 0) \
     DECLARE(String, primary_index_cache_policy, DEFAULT_PRIMARY_INDEX_CACHE_POLICY, R"(Primary index cache policy name.)", 0) \
     DECLARE(UInt64, primary_index_cache_size, DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE, R"(Maximum size of cache for primary index (index of MergeTree family of tables).)", 0) \
     DECLARE(Double, primary_index_cache_size_ratio, DEFAULT_PRIMARY_INDEX_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the primary index cache relative to the cache's total size.)", 0) \
