@@ -112,7 +112,7 @@ def test_writes_statistics_float32_roundtrip(started_cluster_iceberg_no_spark, f
         check_pruned(
             f"SELECT * FROM {TABLE_NAME} WHERE value > 5.0 AND value < 25.0 ORDER BY ALL"
         )
-        == 0
+        == 1
     )
 
     # Verify correctness: all rows returned
