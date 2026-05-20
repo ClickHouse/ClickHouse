@@ -102,6 +102,11 @@ ProjectionDescription ProjectionDescription::clone() const
     other.index = index;
     other.index_granularity = index_granularity;
     other.index_granularity_bytes = index_granularity_bytes;
+    other.add_minmax_index_for_numeric_columns = add_minmax_index_for_numeric_columns;
+    other.add_minmax_index_for_string_columns = add_minmax_index_for_string_columns;
+    other.add_minmax_index_for_temporal_columns = add_minmax_index_for_temporal_columns;
+    other.add_minmax_index_for_block_number_column = add_minmax_index_for_block_number_column;
+    other.add_minmax_index_for_block_offset_column = add_minmax_index_for_block_offset_column;
 
     return other;
 }
@@ -156,7 +161,7 @@ public:
 };
 
 /// Provides source data for the projection pipeline
-class ProjectionDataSource : public ISource
+class ProjectionDataSource final : public ISource
 {
 public:
     explicit ProjectionDataSource(SharedHeader block)
@@ -179,7 +184,7 @@ private:
 
 /// Collects processed data from the projection pipeline into a single chunk,
 /// Enforces that projections cannot increase the number of rows beyond the original input.
-class ProjectionDataSink : public ISink
+class ProjectionDataSink final : public ISink
 {
 public:
     ProjectionDataSink(SharedHeader header, size_t max_rows_allowed_)
@@ -234,6 +239,16 @@ void ProjectionDescription::loadSettings(const SettingsChanges & changes)
             index_granularity = value.safeGet<UInt64>();
         else if (setting == "index_granularity_bytes")
             index_granularity_bytes = value.safeGet<UInt64>();
+        else if (setting == "add_minmax_index_for_numeric_columns")
+            add_minmax_index_for_numeric_columns = value.safeGet<UInt64>() != 0;
+        else if (setting == "add_minmax_index_for_string_columns")
+            add_minmax_index_for_string_columns = value.safeGet<UInt64>() != 0;
+        else if (setting == "add_minmax_index_for_temporal_columns")
+            add_minmax_index_for_temporal_columns = value.safeGet<UInt64>() != 0;
+        else if (setting == "add_minmax_index_for_block_number_column")
+            add_minmax_index_for_block_number_column = value.safeGet<UInt64>() != 0;
+        else if (setting == "add_minmax_index_for_block_offset_column")
+            add_minmax_index_for_block_offset_column = value.safeGet<UInt64>() != 0;
         else
             throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}' for projections", setting);
     }
@@ -272,10 +287,13 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     if (projection_definition->index)
     {
         chassert(projection_definition->type);
-        result.index = ProjectionIndexFactory::instance().get(*projection_definition);
-        result.index->fillProjectionDescription(result, projection_definition->index, columns, partition_key, query_context);
+
         if (projection_definition->with_settings)
             result.loadSettings(projection_definition->with_settings->changes);
+
+        result.index = ProjectionIndexFactory::instance().get(*projection_definition);
+        result.index->fillProjectionDescription(result, projection_definition->index, columns, partition_key, query_context);
+
         return result;
     }
 
@@ -451,6 +469,17 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
     metadata.setColumns(ColumnsDescription(metadata_columns));
     metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));
+
+    /// Initialize implicit-minmax skip indices from projection-level settings.
+    metadata.add_minmax_index_for_numeric_columns = result.add_minmax_index_for_numeric_columns;
+    metadata.add_minmax_index_for_string_columns = result.add_minmax_index_for_string_columns;
+    metadata.add_minmax_index_for_temporal_columns = result.add_minmax_index_for_temporal_columns;
+    metadata.add_minmax_index_for_block_number_column = result.add_minmax_index_for_block_number_column;
+    metadata.add_minmax_index_for_block_offset_column = result.add_minmax_index_for_block_offset_column;
+    metadata.addImplicitIndicesForVirtualColumns(query_context);
+    for (const auto & column : metadata.columns)
+        metadata.addImplicitIndicesForColumn(column, query_context);
+
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
 }
 
