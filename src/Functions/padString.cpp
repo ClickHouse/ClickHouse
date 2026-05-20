@@ -141,7 +141,7 @@ namespace
 
     /// If `is_right_pad` - it's the rightPad() function instead of leftPad().
     /// If `is_utf8` - lengths are measured in code points instead of bytes.
-    class FunctionPadString : public IFunction
+    class FunctionPadString final : public IFunction
     {
     public:
         FunctionPadString(const char * name_, bool is_right_pad_, bool is_utf8_)

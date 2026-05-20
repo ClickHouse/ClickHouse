@@ -26,6 +26,12 @@ namespace ErrorCodes
 
 class Block;
 
+/// Maximum nesting depth for Avro schemas. Passed to the Avro library to
+/// prevent stack overflow on deeply nested schemas (e.g. crafted inputs with
+/// thousands of nested arrays/records). Real-world schemas rarely exceed 10-20
+/// levels, so 256 is more than enough.
+static constexpr size_t MAX_AVRO_SCHEMA_DEPTH = 256;
+
 class ConfluentSchemaRegistry;
 class AvroInputStreamReadBufferAdapter : public avro::InputStream
 {
@@ -210,7 +216,7 @@ private:
     FormatSettings format_settings;
 };
 
-class AvroSchemaReader : public ISchemaReader
+class AvroSchemaReader final : public ISchemaReader
 {
 public:
     AvroSchemaReader(ReadBuffer & in_, bool confluent_, const FormatSettings & format_settings_);

@@ -28,7 +28,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3KRing : public IFunction
+class FunctionH3KRing final : public IFunction
 {
 public:
     static constexpr auto name = "h3kRing";
