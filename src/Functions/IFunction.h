@@ -5,6 +5,7 @@
 #include <Core/IResolvedFunction.h>
 #include <Core/Names.h>
 #include <Core/ValuesWithType.h>
+#include <DataTypes/IDataType_fwd.h>
 
 #include "config.h"
 
@@ -23,10 +24,6 @@ struct FunctionsStressTestThread;
 
 namespace DB
 {
-
-class IDataType;
-struct DataTypeWithConstInfo;
-using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 class Field;
 struct FieldInterval;
