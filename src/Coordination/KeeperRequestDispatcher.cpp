@@ -373,7 +373,8 @@ void KeeperRequestDispatcher::onResponse(KeeperResponseForSession response) noex
         /// This covers e.g. the case where many requests have huge responses
         /// (e.g. get on huge znodes or list on fertile znodes).
         /// Here we wait for the queue to get smaller.
-        /// I.e. block (probably) commit thread while (probably) KeeperTCPHandler-s send responses.
+        /// I.e. block the thread (usually it's the commit thread) while waiting for
+        /// queued responses to drain (usually by KeeperTCPHandler-s sending them out).
         /// This seems like an ok way to do flow control for this, but we would still get in trouble
         /// if there are enough big requests that processing the request queue takes longer than session timeout.
 
@@ -393,6 +394,12 @@ void KeeperRequestDispatcher::onResponse(KeeperResponseForSession response) noex
                 /// arise in practice and what would be a good way to handle or avoid it.
                 LOG_ERROR(log, "Response queue is too big for too long. Dropping responses.");
                 ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
+                /// Also prevent sending any future responses for this session to avoid breaking
+                /// ordering. The client will disconnect after session timeout.
+                {
+                    std::shared_lock sessions_lock(sessions_mutex);
+                    sessions.erase(response.session_id);
+                }
                 return;
             }
         }
