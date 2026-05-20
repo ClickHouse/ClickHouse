@@ -15,7 +15,7 @@ namespace DB
 
 class SchemaCache;
 
-class StorageObjectStorageSource : public ISource
+class StorageObjectStorageSource final : public ISource
 {
     friend class ObjectStorageQueueSource;
 
