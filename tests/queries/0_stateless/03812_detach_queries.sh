@@ -161,7 +161,8 @@ ERR_HTTP=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&allow_experimental_detach_q
 if echo "$ERR_HTTP" | grep -qi "UNKNOWN_TABLE\|Code:"; then
     echo "Error returned to client: yes"
 else
-    echo "Error returned to client: no (response: $ERR_HTTP)"
+    echo "FAIL: ExceptionBeforeStart over HTTP did not return error to client (response: $ERR_HTTP)"
+    exit 1
 fi
 
 # 12. Native: INSERT into nonexistent table — error is returned to client, not query_id.
@@ -171,7 +172,8 @@ ERR_NATIVE=$(${CLICKHOUSE_CLIENT} --query_id "${QUERY_ID_PREFIX}noexist_native" 
 if echo "$ERR_NATIVE" | grep -qi "UNKNOWN_TABLE\|doesn.*exist"; then
     echo "Error returned to client: yes"
 else
-    echo "Error returned to client: no (response: $ERR_NATIVE)"
+    echo "FAIL: ExceptionBeforeStart over native protocol did not return error to client (response: $ERR_NATIVE)"
+    exit 1
 fi
 
 # --- system.processes: detached query is visible immediately after query_id is returned ---
@@ -185,7 +187,12 @@ QID_PROC_HTTP="${QUERY_ID_PREFIX}proc_http"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&allow_experimental_detach_queries=1&async_insert=0&query_id=${QID_PROC_HTTP}" \
     -X POST --data-binary "INSERT INTO ${TABLE} SELECT toUInt64(sleep(3))" > /dev/null
 IN_PROC_HTTP=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '${QID_PROC_HTTP}'" 2>/dev/null)
-echo "Query visible in system.processes: $([ "${IN_PROC_HTTP}" -gt 0 ] && echo yes || echo no )"
+if [ "${IN_PROC_HTTP:-0}" -gt 0 ]; then
+    echo "Query visible in system.processes: yes"
+else
+    echo "FAIL: detached HTTP query ${QID_PROC_HTTP} not visible in system.processes immediately after query_id returned"
+    exit 1
+fi
 
 # 14. Native: detached query appears in system.processes immediately.
 echo "=== Native: Detached query visible in system.processes immediately after query_id returned ==="
@@ -193,7 +200,12 @@ QID_PROC_NATIVE="${QUERY_ID_PREFIX}proc_native"
 ${CLICKHOUSE_CLIENT} --query_id "${QID_PROC_NATIVE}" --allow_experimental_detach_queries 1 --async_insert 0 \
     -q "INSERT INTO ${TABLE} SELECT toUInt64(sleep(3))" > /dev/null
 IN_PROC_NATIVE=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '${QID_PROC_NATIVE}'" 2>/dev/null)
-echo "Query visible in system.processes: $([ "${IN_PROC_NATIVE}" -gt 0 ] && echo yes || echo no )"
+if [ "${IN_PROC_NATIVE:-0}" -gt 0 ]; then
+    echo "Query visible in system.processes: yes"
+else
+    echo "FAIL: detached native query ${QID_PROC_NATIVE} not visible in system.processes immediately after query_id returned"
+    exit 1
+fi
 
 # 14b. HTTP: detached SELECT is also visible in system.processes (proves it uses the same path).
 echo "=== HTTP: Detached SELECT visible in system.processes ==="
@@ -201,7 +213,12 @@ QID_SELECT_HTTP="${QUERY_ID_PREFIX}select_proc_http"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&allow_experimental_detach_queries=1&async_insert=0&query_id=${QID_SELECT_HTTP}" \
     -X POST --data-binary "SELECT sleep(3), count() FROM ${TABLE}" > /dev/null
 IN_PROC_SELECT=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '${QID_SELECT_HTTP}'" 2>/dev/null)
-echo "Detached SELECT visible in system.processes: $([ "${IN_PROC_SELECT}" -gt 0 ] && echo yes || echo no )"
+if [ "${IN_PROC_SELECT:-0}" -gt 0 ]; then
+    echo "Detached SELECT visible in system.processes: yes"
+else
+    echo "FAIL: detached HTTP SELECT ${QID_SELECT_HTTP} not visible in system.processes immediately after query_id returned"
+    exit 1
+fi
 
 sleep 6  # Wait for the three sleep(3) queries above to finish before proceeding.
 
@@ -220,7 +237,8 @@ RESP_DUP2_HTTP=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&allow_experimental_de
 if echo "$RESP_DUP2_HTTP" | grep -qi "QUERY_WITH_SAME_ID\|already running\|Code:"; then
     echo "Duplicate query_id error returned: yes"
 else
-    echo "Duplicate query_id error returned: no (response: $RESP_DUP2_HTTP)"
+    echo "FAIL: duplicate HTTP query_id ${QID_DUP_HTTP} did not return an error (response: $RESP_DUP2_HTTP)"
+    exit 1
 fi
 
 # 16. Native: duplicate query_id while first is still running — error returned, not query_id.
@@ -234,7 +252,8 @@ RESP_DUP2_NATIVE=$(${CLICKHOUSE_CLIENT} --query_id "${QID_DUP_NATIVE}" --allow_e
 if echo "$RESP_DUP2_NATIVE" | grep -qi "QUERY_WITH_SAME_ID\|already running"; then
     echo "Duplicate query_id error returned: yes"
 else
-    echo "Duplicate query_id error returned: no (response: $RESP_DUP2_NATIVE)"
+    echo "FAIL: duplicate native query_id ${QID_DUP_NATIVE} did not return an error (response: $RESP_DUP2_NATIVE)"
+    exit 1
 fi
 
 sleep 6  # Wait for both sleep(3) dup queries above to finish.

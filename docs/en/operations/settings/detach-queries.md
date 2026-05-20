@@ -13,9 +13,7 @@ When enabled, any detachable query is dispatched to a background thread and the 
 
 Detaching a `SELECT` is mainly useful for benchmarks, soak tests and warm-up runs where only "did it finish" matters; the result rows are discarded.
 
-When using a **server** (queries sent to a running ClickHouse server), behavior depends on the interface:
-- **HTTP:** response is `HTTP 200` with `query_id` in the `X-ClickHouse-Query-Id` header and in the response body.
-- **Native protocol (clickhouse-client):** the client receives a result block containing the `query_id` and then end-of-stream.
+See [Response](#response) below for the exact shape of the response over HTTP and the native protocol.
 
 For [clickhouse-local](/operations/utilities/clickhouse-local), this setting is supported **only in interactive mode** (when running without `-q` and reading queries from the terminal). In non-interactive mode (e.g. `clickhouse-local -q "INSERT INTO ..."`), queries always run synchronously.
 
@@ -84,11 +82,9 @@ The connection can be closed immediately; the query continues on the server. You
 ### `INSERT ... SELECT` with query in URL {#query-in-url}
 
 ```bash
-# Detached INSERT ... SELECT; server returns immediately with query_id
+# Detached INSERT ... SELECT; server returns immediately
 curl -sS "http://localhost:8123/?allow_experimental_detach_queries=1&async_insert=0&query=INSERT+INTO+my_table+SELECT+number+FROM+numbers(1000)" -X POST -d ""
 ```
-
-Example response body: `a1b2c3d4-e5f6-7890-abcd-ef1234567890`
 
 ### Query in POST body only (no `?query=` in URL) {#query-in-post}
 
@@ -113,21 +109,17 @@ curl -sS "http://localhost:8123/?allow_experimental_detach_queries=1&async_inser
 When the setting is on, even read-only queries are detached — useful when you only care that the query completed (e.g. warming caches or measuring server-side cost without paying for result transfer):
 
 ```bash
-# Detached SELECT — response is just the query_id, the result rows are discarded
+# Detached SELECT — the result rows are discarded
 curl -sS "http://localhost:8123/?allow_experimental_detach_queries=1&async_insert=0&query=SELECT+count()+FROM+huge_table" -X POST -d ""
-# Output: <query_id>
 ```
 
 For the rows themselves, run the same `SELECT` without the setting (the default).
 
 ### Native client (clickhouse-client) {#native-client}
 
-With the setting enabled, the client receives one row containing the `query_id`:
-
 ```bash
 # Enable via command line
 clickhouse-client --allow_experimental_detach_queries 1 --async_insert 0 -q "INSERT INTO my_table SELECT number FROM numbers(10)"
-# Output (example):  a1b2c3d4-e5f6-7890-abcd-ef1234567890
 
 # Or enable in the query
 clickhouse-client -q "INSERT INTO my_table SELECT 1 SETTINGS allow_experimental_detach_queries=1, async_insert=0"
