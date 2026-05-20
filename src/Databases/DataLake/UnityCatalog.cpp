@@ -138,7 +138,18 @@ void UnityCatalog::getCredentials(const std::string & table_id, TableMetadata & 
     request_body.set("operation", "READ");
     auto response = requestReadCredentials(request_body);
 
-    auto creds = storage_type == StorageType::S3 ? parseS3Credentials(response) : parseAzureCredentials(response);
+    std::shared_ptr<IStorageCredentials> creds;
+    switch (storage_type)
+    {
+    case StorageType::S3:
+        creds = parseS3Credentials(response);
+        break;
+    case StorageType::Azure:
+        creds = parseAzureCredentials(response);
+        break;
+    default:
+        break;
+    }
     if (creds)
         metadata.setStorageCredentials(creds);
 }
