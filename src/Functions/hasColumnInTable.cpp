@@ -27,7 +27,7 @@ namespace
 /** Usage:
  *  hasColumnInTable(['hostname'[, 'username'[, 'password']],] 'database', 'table', 'column')
  */
-class FunctionHasColumnInTable : public IFunction, WithContext
+class FunctionHasColumnInTable final : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "hasColumnInTable";

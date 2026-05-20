@@ -8,7 +8,7 @@ namespace DB
 
 struct ITokenizer;
 
-class ExecutableFunctionHasPhrase : public IExecutableFunction
+class ExecutableFunctionHasPhrase final : public IExecutableFunction
 {
 public:
     static constexpr auto name = "hasPhrase";
@@ -31,7 +31,7 @@ private:
     std::vector<size_t> failure_table;
 };
 
-class FunctionBaseHasPhrase : public IFunctionBase
+class FunctionBaseHasPhrase final : public IFunctionBase
 {
 public:
     static constexpr auto name = "hasPhrase";
@@ -62,7 +62,7 @@ private:
     DataTypePtr result_type;
 };
 
-class FunctionHasPhraseOverloadResolver : public IFunctionOverloadResolver
+class FunctionHasPhraseOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "hasPhrase";

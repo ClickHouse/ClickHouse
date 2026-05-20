@@ -1229,6 +1229,10 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, load_marks_threadpool_queue_size, 10000, R"(Number of tasks which is possible to push into prefetches pool)", 0) \
     DECLARE(NonZeroUInt64, threadpool_writer_pool_size, 100, R"(Size of background pool for write requests to object storages)", 0) \
     DECLARE(UInt64, threadpool_writer_queue_size, 10000, R"(Number of tasks which is possible to push into background pool for write requests to object storages)", 0) \
+    DECLARE(UInt64, iceberg_compaction_threadpool_pool_size, 50, R"(Size of background pool for iceberg compaction)", 0) \
+    DECLARE(UInt64, iceberg_compaction_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into iceberg compaction pool)", 0) \
+    DECLARE(UInt64, iceberg_scheduler_compaction_threadpool_pool_size, 50, R"(Size of background pool for iceberg compaction scheduler)", 0) \
+    DECLARE(UInt64, iceberg_scheduler_compaction_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into iceberg compaction scheduler pool)", 0) \
     DECLARE(UInt64, iceberg_catalog_threadpool_pool_size, 50, R"(Size of background pool for iceberg catalog)", 0) \
     DECLARE(UInt64, iceberg_catalog_threadpool_queue_size, 10000, R"(Number of tasks which is possible to push into iceberg catalog pool)", 0) \
     DECLARE(UInt64, iceberg_background_schedule_pool_size, 10, "Size of thread pool to asynchronously fetch the latest metadata from a remote iceberg catalog; the pool is shared by all the active tables.", 0) \
