@@ -491,10 +491,19 @@ MarkRanges MergeTreeRangeReader::ReadResult::computeUnmatchedMarkRanges() const
     if (rows_per_granule.empty() || started_ranges.empty())
         return {};
 
+    /// started_ranges does not include the range that was already in progress when
+    /// startReadingChain began (see field comment). The first
+    /// started_ranges[0].num_granules_read_before_start entries in rows_per_granule
+    /// are the continued-read prefix from that in-progress range; their absolute mark
+    /// numbers cannot be derived from started_ranges alone.
+    /// Skipping them is safe: we lose a few potential cache writes for those granules,
+    /// but we never produce an underflowing (invalid) mark number.
+    const size_t i_start = started_ranges[0].num_granules_read_before_start;
+
     MarkRanges result;
     size_t range_idx = 0;
 
-    for (size_t i = 0; i < rows_per_granule.size(); ++i)
+    for (size_t i = i_start; i < rows_per_granule.size(); ++i)
     {
         /// Advance to the started_range that contains granule i.
         /// started_ranges[j].num_granules_read_before_start is the rows_per_granule index
