@@ -3,6 +3,7 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
 #include <Interpreters/ExpressionActions.h>
@@ -307,13 +308,19 @@ bool MergeTreeIndexAggregatorSet::buildFilter(
     for (size_t i = 0; i < limit; ++i)
     {
         auto emplace_result = state.emplaceKey(method.data, pos + i, variants.string_pool);
+        const bool inserted = emplace_result.isInserted();
 
-        if (emplace_result.isInserted())
+        if (inserted)
             has_new_data = true;
 
         /// Emit the record if there is no such key in the current set yet.
         /// Skip it otherwise.
-        filter[pos + i] = emplace_result.isInserted();
+        filter[pos + i] = inserted;
+
+        /// `set(N)` granules with more than `N` values are serialized as empty.
+        /// Keeping more rows only wastes CPU and memory.
+        if (inserted && max_rows && variants.getTotalRowCount() > max_rows)
+            break;
     }
     return has_new_data;
 }
@@ -558,8 +565,26 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             atom_node_ptr->type == ActionsDAG::ActionType::FUNCTION ||
             (atom_node_ptr->type == ActionsDAG::ActionType::COLUMN && !WhichDataType(atom_node_ptr->result_type).isSet()))
         {
-            auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
-            result_node = &result_dag.addFunction(bit_wrapper_function, {atom_node_ptr}, {});
+            /// `__bitWrapperFunc` is defined only for integer arguments. If the atom result type
+            /// is not integer (e.g. `Float`, `BFloat16`), wrapping it would throw the internal
+            /// "It's a bug!" exception from `__bitWrapperFunc` at execution time. Fall back to
+            /// `UNKNOWN_FIELD` so that the index does not prune granules and the query goes
+            /// through the regular filter path.
+            if (WhichDataType(removeNullable(atom_node_ptr->result_type)).isInteger())
+            {
+                auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
+                result_node = &result_dag.addFunction(bit_wrapper_function, {atom_node_ptr}, {});
+            }
+            else
+            {
+                ColumnWithTypeAndName unknown_field_column_with_type;
+
+                unknown_field_column_with_type.name = calculateConstantActionNodeName(UNKNOWN_FIELD);
+                unknown_field_column_with_type.type = std::make_shared<DataTypeUInt8>();
+                unknown_field_column_with_type.column = unknown_field_column_with_type.type->createColumnConst(1, UNKNOWN_FIELD);
+
+                result_node = &result_dag.addColumn(unknown_field_column_with_type);
+            }
         }
     }
     else
