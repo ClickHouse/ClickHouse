@@ -216,6 +216,9 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
 
     if (existing_prewhere_info)
     {
+        const bool existing_removable = existing_prewhere_info->remove_prewhere_column;
+        const bool new_removable = prewhere_info->remove_prewhere_column;
+
         ActionsDAG combined = std::move(existing_prewhere_info->prewhere_actions);
         const auto * existing_filter_node = &combined.findInOutputs(existing_prewhere_info->prewhere_column_name);
 
@@ -240,13 +243,14 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         std::unordered_set<const ActionsDAG::Node *> existing_outputs(outputs.begin(), outputs.end());
         for (const auto * node : new_outputs_in_combined)
         {
-            if (node == new_filter_node)
+            if (node == new_filter_node && new_removable
                 continue;
             if (existing_outputs.insert(node).second)
                 outputs.push_back(node);
         }
 
-        std::erase(outputs, existing_filter_node);
+        if (existing_removable)
+            std::erase(outputs, existing_filter_node);
         outputs.push_back(and_node);
 
         prewhere_info->prewhere_actions = std::move(combined);
