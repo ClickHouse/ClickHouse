@@ -369,8 +369,19 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
         future = it->second.get_future();
     }
 
-    /// Push new session request to queue
-    putRequest(request, /*session_id=*/ -1, /*use_xid_64=*/ false);
+    try
+    {
+        /// Push new session request to queue
+        putRequest(request, /*session_id=*/ -1, /*use_xid_64=*/ false);
+    }
+    catch (...)
+    {
+        {
+            std::lock_guard lock(new_session_id_mutex);
+            new_session_id_requests.erase(request->internal_id);
+        }
+        throw;
+    }
 
     if (future.wait_for(std::chrono::milliseconds(session_timeout_ms)) != std::future_status::ready)
     {
