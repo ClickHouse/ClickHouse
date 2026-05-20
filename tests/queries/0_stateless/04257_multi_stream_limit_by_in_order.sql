@@ -1,0 +1,81 @@
+-- Tags: long, no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: Explain output may differ
+
+SET max_threads = 16;
+
+-- { echo }
+
+-- Multi-part with overlapping keys: every part has the same key set.
+DROP TABLE IF EXISTS test_multi_part_overlap;
+CREATE TABLE test_multi_part_overlap (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY k;
+SYSTEM STOP MERGES test_multi_part_overlap;
+INSERT INTO test_multi_part_overlap SELECT number, number      FROM numbers(1000);
+INSERT INTO test_multi_part_overlap SELECT number, number+1000 FROM numbers(1000);
+INSERT INTO test_multi_part_overlap SELECT number, number+2000 FROM numbers(1000);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT k FROM test_multi_part_overlap LIMIT 1 BY k SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitByTransform%' OR explain LIKE '%MergingSortedTransform%';
+SELECT (SELECT count() FROM (SELECT k FROM test_multi_part_overlap LIMIT 1 BY k SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT k FROM test_multi_part_overlap LIMIT 1 BY k SETTINGS optimize_limit_by_in_order = 1));
+SELECT (SELECT groupArray(k) FROM (SELECT k FROM (SELECT k FROM test_multi_part_overlap LIMIT 1 BY k SETTINGS optimize_limit_by_in_order = 0) ORDER BY k)) = (SELECT groupArray(k) FROM (SELECT k FROM (SELECT k FROM test_multi_part_overlap LIMIT 1 BY k SETTINGS optimize_limit_by_in_order = 1) ORDER BY k));
+DROP TABLE test_multi_part_overlap;
+
+-- Partitioned by a column unrelated to the LIMIT BY key: the same `user_id` appears in
+-- every partition, so each partition becomes a separate in-order stream feeding the merge.
+DROP TABLE IF EXISTS test_part_unrelated;
+CREATE TABLE test_part_unrelated (user_id UInt32, ts Date, v UInt32) ENGINE = MergeTree ORDER BY user_id PARTITION BY toYYYYMM(ts);
+INSERT INTO test_part_unrelated SELECT number, '2024-01-01', number      FROM numbers(1000);
+INSERT INTO test_part_unrelated SELECT number, '2024-02-01', number+1000 FROM numbers(1000);
+INSERT INTO test_part_unrelated SELECT number, '2024-03-01', number+2000 FROM numbers(1000);
+OPTIMIZE TABLE test_part_unrelated FINAL;
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT user_id FROM test_part_unrelated LIMIT 2 BY user_id SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitByTransform%' OR explain LIKE '%MergingSortedTransform%';
+SELECT (SELECT count() FROM (SELECT user_id FROM test_part_unrelated LIMIT 2 BY user_id SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT user_id FROM test_part_unrelated LIMIT 2 BY user_id SETTINGS optimize_limit_by_in_order = 1));
+SELECT (SELECT groupArray(user_id) FROM (SELECT user_id FROM (SELECT user_id FROM test_part_unrelated LIMIT 2 BY user_id SETTINGS optimize_limit_by_in_order = 0) ORDER BY user_id)) = (SELECT groupArray(user_id) FROM (SELECT user_id FROM (SELECT user_id FROM test_part_unrelated LIMIT 2 BY user_id SETTINGS optimize_limit_by_in_order = 1) ORDER BY user_id));
+DROP TABLE test_part_unrelated;
+
+-- OFFSET across streams: per-stream pre-filter must emit `length + offset` rows per key
+-- so the final transform can apply the global offset correctly.
+DROP TABLE IF EXISTS test_offset_streams;
+CREATE TABLE test_offset_streams (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY k;
+SYSTEM STOP MERGES test_offset_streams;
+INSERT INTO test_offset_streams SELECT number, number      FROM numbers(500);
+INSERT INTO test_offset_streams SELECT number, number+500  FROM numbers(500);
+INSERT INTO test_offset_streams SELECT number, number+1000 FROM numbers(500);
+INSERT INTO test_offset_streams SELECT number, number+1500 FROM numbers(500);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT k FROM test_offset_streams LIMIT 2 OFFSET 1 BY k SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitByTransform%' OR explain LIKE '%MergingSortedTransform%';
+SELECT (SELECT count() FROM (SELECT k FROM test_offset_streams LIMIT 2 OFFSET 1 BY k SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT k FROM test_offset_streams LIMIT 2 OFFSET 1 BY k SETTINGS optimize_limit_by_in_order = 1));
+DROP TABLE test_offset_streams;
+
+-- Multi-column LIMIT BY where both columns are PK prefix and shared across streams.
+DROP TABLE IF EXISTS test_multi_col_streams;
+CREATE TABLE test_multi_col_streams (a UInt32, b UInt32, v UInt32) ENGINE = MergeTree ORDER BY (a, b);
+SYSTEM STOP MERGES test_multi_col_streams;
+INSERT INTO test_multi_col_streams SELECT number % 50, number % 7, number      FROM numbers(1000);
+INSERT INTO test_multi_col_streams SELECT number % 50, number % 7, number+1000 FROM numbers(1000);
+INSERT INTO test_multi_col_streams SELECT number % 50, number % 7, number+2000 FROM numbers(1000);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a, b FROM test_multi_col_streams LIMIT 1 BY a, b SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitByTransform%' OR explain LIKE '%MergingSortedTransform%';
+SELECT (SELECT count() FROM (SELECT a, b FROM test_multi_col_streams LIMIT 1 BY a, b SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT a, b FROM test_multi_col_streams LIMIT 1 BY a, b SETTINGS optimize_limit_by_in_order = 1));
+DROP TABLE test_multi_col_streams;
+
+-- Merge engine over MergeTree children with **overlapping** keys.
+DROP TABLE IF EXISTS test_merge_overlap_part_1;
+DROP TABLE IF EXISTS test_merge_overlap_part_2;
+DROP TABLE IF EXISTS test_merge_overlap_wrap;
+CREATE TABLE test_merge_overlap_part_1 (a UInt32, v UInt32) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE test_merge_overlap_part_2 (a UInt32, v UInt32) ENGINE = MergeTree ORDER BY a;
+INSERT INTO test_merge_overlap_part_1 SELECT number % 500, number       FROM numbers(50000);
+INSERT INTO test_merge_overlap_part_2 SELECT number % 500, number+50000 FROM numbers(50000);
+CREATE TABLE test_merge_overlap_wrap AS test_merge_overlap_part_1 ENGINE = Merge(currentDatabase(), '^test_merge_overlap_part_[12]$');
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT a FROM test_merge_overlap_wrap LIMIT 3 BY a SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitByTransform%' OR explain LIKE '%MergingSortedTransform%';
+SELECT (SELECT count() FROM (SELECT a FROM test_merge_overlap_wrap LIMIT 3 BY a SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT a FROM test_merge_overlap_wrap LIMIT 3 BY a SETTINGS optimize_limit_by_in_order = 1));
+DROP TABLE test_merge_overlap_wrap;
+DROP TABLE test_merge_overlap_part_1;
+DROP TABLE test_merge_overlap_part_2;
+
+-- `LIMIT length` exceeds total per-key rows across streams.
+DROP TABLE IF EXISTS test_pre_filter_saturate;
+CREATE TABLE test_pre_filter_saturate (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY k;
+SYSTEM STOP MERGES test_pre_filter_saturate;
+INSERT INTO test_pre_filter_saturate SELECT number, number      FROM numbers(100);
+INSERT INTO test_pre_filter_saturate SELECT number, number+100  FROM numbers(100);
+INSERT INTO test_pre_filter_saturate SELECT number, number+200  FROM numbers(100);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN PIPELINE SELECT k FROM test_pre_filter_saturate LIMIT 100 BY k SETTINGS optimize_limit_by_in_order = 1) WHERE explain LIKE '%LimitByTransform%' OR explain LIKE '%MergingSortedTransform%';
+SELECT (SELECT count() FROM (SELECT k FROM test_pre_filter_saturate LIMIT 100 BY k SETTINGS optimize_limit_by_in_order = 0)) = (SELECT count() FROM (SELECT k FROM test_pre_filter_saturate LIMIT 100 BY k SETTINGS optimize_limit_by_in_order = 1));
+DROP TABLE test_pre_filter_saturate;
