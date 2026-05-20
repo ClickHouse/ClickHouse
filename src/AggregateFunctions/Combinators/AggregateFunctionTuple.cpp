@@ -177,7 +177,7 @@ void AggregateFunctionTuple::addManyDefaults(AggregateDataPtr __restrict place, 
     IAggregateFunctionHelper<AggregateFunctionTuple>::addManyDefaults(place, full_columns, length, arena);
 }
 
-void AggregateFunctionTuple::addBatch(
+void AggregateFunctionTuple::addBatch( /// NOLINT
     size_t row_begin,
     size_t row_end,
     AggregateDataPtr * places,
@@ -197,7 +197,7 @@ void AggregateFunctionTuple::addBatch(
         row_begin, row_end, places, place_offset, full_columns, arena, mapped_if_pos);
 }
 
-void AggregateFunctionTuple::addBatchSinglePlace(
+void AggregateFunctionTuple::addBatchSinglePlace( /// NOLINT
     size_t row_begin,
     size_t row_end,
     AggregateDataPtr __restrict place,

@@ -68,7 +68,7 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override;
     void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const override;
-    void addBatch(
+    void addBatch( /// NOLINT
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr * places,
@@ -76,7 +76,7 @@ public:
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const override;
-    void addBatchSinglePlace(
+    void addBatchSinglePlace( /// NOLINT
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr __restrict place,
