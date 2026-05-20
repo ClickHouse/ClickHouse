@@ -80,12 +80,9 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.network_transfer_limits,
         optimization_settings.use_skip_indexes_for_top_k,
         optimization_settings.use_top_k_dynamic_filtering,
-        optimization_settings.use_top_k_dynamic_filtering_for_variable_length_types,
         optimization_settings.max_limit_for_top_k_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
-        optimization_settings.read_in_order_through_join,
-        optimization_settings.join_swap_table,
         optimization_settings.parallel_replicas_filter_pushdown,
     };
 
@@ -193,12 +190,9 @@ void optimizeTreeSecondPass(
         optimization_settings.network_transfer_limits,
         optimization_settings.use_skip_indexes_for_top_k,
         optimization_settings.use_top_k_dynamic_filtering,
-        optimization_settings.use_top_k_dynamic_filtering_for_variable_length_types,
         optimization_settings.max_limit_for_top_k_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
-        optimization_settings.read_in_order_through_join,
-        optimization_settings.join_swap_table,
         optimization_settings.parallel_replicas_filter_pushdown,
     };
 
@@ -291,7 +285,14 @@ void optimizeTreeSecondPass(
     }
 
     traverseQueryPlan(stack, root,
-        [&](auto &) {},
+        [&](auto & frame_node)
+        {
+            if (optimization_settings.read_in_order)
+                optimizeReadInOrder(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.distinct_in_order)
+                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
+        },
         [&](auto & frame_node)
         {
             /// After all children were processed, try to apply distributed read, join and aggregation optimizations.
@@ -318,8 +319,16 @@ void optimizeTreeSecondPass(
 
                 /// Projection optimization relies on PK optimization
                 if (optimization_settings.optimize_projection)
-                    if (auto applied_projection = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings))
+                {
+                    auto applied_projection = optimizeUseAggregateProjections(
+                        *frame.node,
+                        nodes,
+                        optimization_settings.optimize_use_implicit_projections,
+                        optimization_settings.is_parallel_replicas_initiator_with_projection_support,
+                        optimization_settings.max_step_description_length);
+                    if (applied_projection)
                         applied_projection_names.insert(*applied_projection);
+                }
 
                 if (optimization_settings.aggregation_in_order)
                     optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
@@ -338,7 +347,12 @@ void optimizeTreeSecondPass(
         if (optimization_settings.optimize_projection)
         {
             /// Projection optimization relies on PK optimization
-            if (auto applied_projection = optimizeUseNormalProjections(stack, nodes, optimization_settings))
+            if (auto applied_projection = optimizeUseNormalProjections(
+                stack,
+                nodes,
+                optimization_settings,
+                optimization_settings.is_parallel_replicas_initiator_with_projection_support,
+                optimization_settings.max_step_description_length))
             {
                 applied_projection_names.insert(*applied_projection);
 
@@ -361,16 +375,6 @@ void optimizeTreeSecondPass(
 
         stack.pop_back();
     }
-
-    traverseQueryPlan(stack, root,
-        [&](auto & frame_node)
-        {
-            if (optimization_settings.read_in_order)
-                optimizeReadInOrder(frame_node, nodes, optimization_settings);
-
-            if (optimization_settings.distinct_in_order)
-                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
-        });
 
     /// Find ReadFromLocalParallelReplicaStep and replace with optimized local plan.
     /// Place it after projection optimization to avoid executing projection optimization twice in the local plan,

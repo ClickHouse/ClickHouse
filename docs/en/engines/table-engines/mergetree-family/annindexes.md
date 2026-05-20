@@ -7,6 +7,8 @@ title: 'Exact and Approximate Vector Search'
 doc_type: 'guide'
 ---
 
+# Exact and approximate vector search
+
 The problem of finding the N closest points in a multi-dimensional (vector) space for a given point is known as [nearest neighbor search](https://en.wikipedia.org/wiki/Nearest_neighbor_search) or, in short: vector search.
 Two general approaches exist for solving vector search:
 - Exact vector search calculates the distance between the given point and all points in the vector space. This ensures the best possible accuracy, i.e. the returned points are guaranteed to be the actual nearest neighbors. Since the vector space is explored exhaustively, exact vector search can be too slow for real-world use.
@@ -587,7 +589,7 @@ If no `GRANULARITY` was specified for vector similarity indexes, the default val
 
 Queries:
 
-```sql title="Query"
+```sql
 CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
@@ -599,7 +601,9 @@ ORDER BY L2Distance(vec, reference_vec) ASC
 LIMIT 3;
 ```
 
-```result title="Response"
+Result:
+
+```result
    ┌─id─┬─vec─────┐
 1. │  6 │ [0,2]   │
 2. │  7 │ [0,2.1] │

@@ -541,7 +541,7 @@
         }
 
         let host = location.protocol != 'file:' ? location.origin : 'http://localhost:8123/';
-        let user = '';
+        let user = 'default';
         let password = '';
         let add_http_cors_header = (location.protocol != 'file:');
 
@@ -558,8 +558,8 @@
 
         function readConnectionParams() {
             host = document.getElementById('url').value || host;
-            user = document.getElementById('user').value;
-            password = document.getElementById('password').value;
+            user = document.getElementById('user').value || user;
+            password = document.getElementById('password').value || password;
         }
 
         /// Build a query URL with authentication and CORS parameters
