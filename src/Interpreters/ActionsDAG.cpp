@@ -118,7 +118,7 @@ bool isConstantFromScalarSubquery(const ActionsDAG::Node * node)
         const auto * arg = stack.top();
         stack.pop();
 
-        if (arg->column && isColumnConst(*arg->column))
+        if (arg->column)
             continue;
 
         while (arg->type == ActionsDAG::ActionType::ALIAS)
@@ -203,8 +203,7 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
         /// Otherwise, two different constants with the same type and the same expression-based
         /// result_name (e.g. from CTE constant folding) would produce identical hashes,
         /// leading to query condition cache collisions and incorrect results.
-        if (isColumnConst(*column))
-            column->updateHashWithValue(0, hash_state);
+        column->updateHashWithValue(0, hash_state);
     }
 
     for (const auto & child : children)
@@ -290,13 +289,10 @@ ActionsDAG::Node & ActionsDAG::addNode(Node node)
 {
     auto & res = nodes.emplace_back(std::move(node));
 
-    if (res.type != ActionType::PLACEHOLDER)
-    {
-        if (res.column && !isColumnConst(*res.column))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "ActionsDAG node column must be a ColumnConst, got {} for '{}'",
-                res.column->getName(), res.result_name);
-    }
+    if (res.column && !isColumnConst(*res.column))
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "ActionsDAG node column must be a ColumnConst, got {} for '{}'",
+            res.column->getName(), res.result_name);
 
     if (res.type == ActionType::INPUT)
         inputs.emplace_back(&res);
@@ -821,8 +817,7 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
                 }
 
                 /// Constant folding.
-                if (allow_constant_folding && !node->children.empty()
-                    && node->column && isColumnConst(*node->column))
+                if (allow_constant_folding && !node->children.empty() && node->column)
                 {
                     node->type = ActionsDAG::ActionType::COLUMN;
                     node->children.clear();
@@ -1913,7 +1908,7 @@ ActionsDAG ActionsDAG::makeConvertingActions(
             dst_node = &actions_dag.addFunction(func_base_cast, std::move(children), {});
         }
 
-        if (dst_node->column && isColumnConst(*dst_node->column) && !(res_elem.column && isColumnConst(*res_elem.column)))
+        if (dst_node->column && !(res_elem.column && isColumnConst(*res_elem.column)))
         {
             NodeRawConstPtrs children = {dst_node};
             dst_node = &actions_dag.addFunction(func_builder_materialize, std::move(children), {});
@@ -2504,7 +2499,7 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBySortingDescription(const NameS
             /// Sorting can materialize const columns, so if we have const expression used in sorting,
             /// we should also add all it's parents, otherwise, we can break the header
             /// (function can expect const column, but will get materialized).
-            if (node->column && isColumnConst(*node->column))
+            if (node->column)
             {
                 auto parents = getParents(node);
                 split_nodes.insert(parents.begin(), parents.end());
@@ -2562,7 +2557,7 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
         return false;
 
     const auto * filter_with_default_value_inputs_filter_node = filter_with_default_value_inputs->getOutputs()[0];
-    if (!filter_with_default_value_inputs_filter_node->column || !isColumnConst(*filter_with_default_value_inputs_filter_node->column))
+    if (!filter_with_default_value_inputs_filter_node->column)
         return false;
 
     const auto & constant_type = filter_with_default_value_inputs_filter_node->result_type;

@@ -122,7 +122,7 @@ MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag,
                 {
                     if (frame.mapped_children[i])
                         any_child = frame.mapped_children[i];
-                    else if (!frame.node->children[i]->column || !isColumnConst(*frame.node->children[i]->column))
+                    else if (!frame.node->children[i]->column)
                         found_all_children = false;
                 }
 

@@ -433,9 +433,6 @@ static void extractNameImpl(const ActionsDAG::Node & node, String & res, Context
         if (!isString(removeNullable(removeLowCardinality(value->result_type))))
             return;
 
-        if (value->column->size() != 1)
-            return;
-
         /// Only inserted if the key doesn't exists already
         auto candidate = value->column->getDataAt(0);
         /// Only one name is allowed

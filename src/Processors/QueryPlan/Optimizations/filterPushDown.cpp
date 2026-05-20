@@ -135,7 +135,7 @@ bool constifyFilterColumnAfterPushDown(ActionsDAG & expression, const String & f
     const_node.type = ActionsDAG::ActionType::COLUMN;
     const_node.result_name = filter_node->result_name;
     const_node.result_type = filter_node->result_type;
-    const_node.column = assert_cast<const ColumnConst &>(*filter_node->result_type->createColumnConst(0, (*original_const_column)[0])).getPtr();
+    const_node.column = filter_node->result_type->createColumnConst(0, (*original_const_column)[0]);
 
     *filter_node = std::move(const_node);
     return true;

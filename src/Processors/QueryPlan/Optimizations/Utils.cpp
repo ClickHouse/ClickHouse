@@ -75,10 +75,7 @@ bool dagContainsNonReadySet(const ActionsDAG & dag)
     {
         if (node.type == ActionsDAG::ActionType::COLUMN && node.column)
         {
-            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
-            if (!column_set)
-                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
-
+            const ColumnSet * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
             if (column_set)
             {
                 auto future_set = column_set->getData();

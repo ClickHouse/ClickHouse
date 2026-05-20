@@ -245,7 +245,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     /// JoinStepLogical materializes the `__join_result_dummy` constant column in its output header,
     /// but the replacement ExpressionStep does not, causing a block structure mismatch.
     for (auto & output_node : join_output_actions_dag.getOutputs())
-        if (output_node->column && isColumnConst(*output_node->column))
+        if (output_node->column)
             output_node = &join_output_actions_dag.materializeNode(*output_node, /*materialize_sparse=*/ false);
 
     creating_sets_step->setStepDescription("Create sets after JOIN -> IN optimization");

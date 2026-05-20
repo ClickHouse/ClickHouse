@@ -434,9 +434,7 @@ static CompileDAG getCompilableDAG(
             }
 
             bool skip_compile = std::find(skip_arguments.begin(), skip_arguments.end(), frame.next_child_to_visit) != skip_arguments.end();
-            if (skip_compile
-                && (!child->column || !isColumnConst(*child->column)
-                    || dynamic_cast<const ColumnConst *>(child->column.get())->getField().isNull()))
+            if (skip_compile && (!child->column || child->column->onlyNull()))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Only constant nodes with non-null value could skip compilation");
 
             stack.emplace(Frame{.node = child, .skip_compile = skip_compile});
