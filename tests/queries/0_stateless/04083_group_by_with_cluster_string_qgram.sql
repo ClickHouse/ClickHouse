@@ -34,12 +34,16 @@ SELECT '--- Naive vs q-gram path: identical input via modulo, identical answer -
 --   N = 9000  → naive O(N^2) path
 --   N = 11000 → q-gram inverted-index path
 -- The cluster count must be identical.
+-- Nested `SELECT s FROM (SELECT hex(...) AS s ...)` keeps the cluster key
+-- a String — without the extra level the planner notices that `count()`
+-- doesn't use `s`, strips `hex()`, and the cluster step would receive the
+-- UInt64 `cityHash64` result instead.
 SELECT
-    (SELECT count() FROM (SELECT hex(cityHash64(number % 200)) AS s
-                          FROM numbers(9000)
+    (SELECT count() FROM (SELECT s FROM (SELECT hex(cityHash64(number % 200)) AS s
+                                         FROM numbers(9000))
                           GROUP BY s WITH CLUSTER 2)) AS naive_clusters,
-    (SELECT count() FROM (SELECT hex(cityHash64(number % 200)) AS s
-                          FROM numbers(11000)
+    (SELECT count() FROM (SELECT s FROM (SELECT hex(cityHash64(number % 200)) AS s
+                                         FROM numbers(11000))
                           GROUP BY s WITH CLUSTER 2)) AS qgram_clusters;
 
 SELECT '--- 20k strings, half cluster A, half cluster B, gap > d ---';

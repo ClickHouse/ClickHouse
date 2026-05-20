@@ -274,18 +274,10 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
                 correlated_subtrees.assertEmpty("in aggregation keys");
                 aggregation_keys.reserve(expression_dag_nodes.size());
 
-                bool captured_cluster_name = false;
                 for (auto & expression_dag_node : expression_dag_nodes)
                 {
                     if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
-                    {
-                        if (is_cluster_key_position && !captured_cluster_name)
-                        {
-                            cluster_key_names_resolved.push_back(expression_dag_node->result_name);
-                            captured_cluster_name = true;
-                        }
                         continue;
-                    }
 
                     auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
                     auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->column) : expression_dag_node->column;
@@ -294,13 +286,17 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
                     aggregation_keys.push_back(expression_dag_node->result_name);
                     before_aggregation_actions->dag.getOutputs().push_back(expression_dag_node);
                     before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
-
-                    if (is_cluster_key_position && !captured_cluster_name)
-                    {
-                        cluster_key_names_resolved.push_back(expression_dag_node->result_name);
-                        captured_cluster_name = true;
-                    }
                 }
+
+                /// Capture the cluster key name AFTER the visit. `actions_visitor.visit`
+                /// can return multiple DAG nodes for a single `GROUP BY` element
+                /// (input, intermediate function applications, final result). The
+                /// LAST one is the top-level expression that becomes the cluster
+                /// key. Picking the first or an intermediate (e.g. `cityHash64(x)`
+                /// instead of the outer `hex(cityHash64(x))`) would aim the cluster
+                /// step at a different column with a different type.
+                if (is_cluster_key_position && !expression_dag_nodes.empty())
+                    cluster_key_names_resolved.push_back(expression_dag_nodes.back()->result_name);
 
                 ++orig_pos;
             }
