@@ -853,10 +853,38 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
                 /// Outer scopes (below i) haven't been visited yet.
                 /// Add the column under its original name and register an alias.
+                ///
+                /// However, if an outer scope is also a lambda whose argument has
+                /// the same name, addInputColumnIfNecessary would return the lambda
+                /// argument node (already registered) instead of a new table-column
+                /// INPUT. Aliasing disambiguated to the lambda argument would be
+                /// incorrect: the inner lambda would capture the outer lambda's
+                /// argument instead of the table column. In that case, add
+                /// disambiguated as a direct INPUT so the capture mechanism provides
+                /// its value from the parent scope.
                 for (Int64 j = i - 1; j >= 0; --j)
                 {
-                    const auto * input_node = actions_stack[j].addInputColumnIfNecessary(column_node_name, column_node.getColumnType());
-                    actions_stack[j].addAliasIfNecessary(disambiguated, input_node);
+                    bool outer_lambda_shadows = false;
+                    const auto & outer_scope = actions_stack[j].getScopeNode();
+                    if (outer_scope && outer_scope->getNodeType() == QueryTreeNodeType::LAMBDA)
+                    {
+                        const auto & outer_lambda = outer_scope->as<LambdaNode &>();
+                        const auto & outer_arg_names = outer_lambda.getArgumentNames();
+                        outer_lambda_shadows = std::find(outer_arg_names.begin(), outer_arg_names.end(), column_node_name) != outer_arg_names.end();
+                    }
+
+                    if (outer_lambda_shadows)
+                    {
+                        /// This scope has a lambda argument with the same name.
+                        /// Add disambiguated as a direct INPUT; it will be captured
+                        /// from the parent scope where the table column is available.
+                        actions_stack[j].addInputColumnIfNecessary(disambiguated, column_node.getColumnType());
+                    }
+                    else
+                    {
+                        const auto * input_node = actions_stack[j].addInputColumnIfNecessary(column_node_name, column_node.getColumnType());
+                        actions_stack[j].addAliasIfNecessary(disambiguated, input_node);
+                    }
                 }
 
                 return {disambiguated, Levels(0)};

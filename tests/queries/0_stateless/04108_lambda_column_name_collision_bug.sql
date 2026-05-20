@@ -44,6 +44,17 @@ SELECT * FROM t PREWHERE arrayMap(x -> arrayMap(y -> t.x, [1])[1], [1])[1] > 50;
 SELECT 'nested lambdas: WHERE';
 SELECT * FROM t WHERE arrayMap(x -> arrayMap(y -> t.x, [1])[1], [1])[1] > 50;
 
+-- Nested lambdas where BOTH have an argument named x and the outer lambda also
+-- references its own x.  This forces the inner lambda capture to happen at the
+-- outer lambda scope (level 1) instead of the root scope (level 0).  The
+-- disambiguated name __table1.x at the outer scope must NOT alias to the outer
+-- lambda's argument; it must be a direct INPUT captured from the root scope.
+SELECT 'nested lambdas shadowed: PREWHERE';
+SELECT * FROM t PREWHERE arrayMap((x, z) -> x + arrayMap(x -> z + t.x, [1])[1], [10], [2])[1] > 100;
+
+SELECT 'nested lambdas shadowed: WHERE';
+SELECT * FROM t WHERE arrayMap((x, z) -> x + arrayMap(x -> z + t.x, [1])[1], [10], [2])[1] > 100;
+
 DROP TABLE t;
 
 -- Multi-column table where the lambda body references both columns

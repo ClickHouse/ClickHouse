@@ -25,6 +25,12 @@ nested lambdas: PREWHERE
 nested lambdas: WHERE
 100
 200
+nested lambdas shadowed: PREWHERE
+100
+200
+nested lambdas shadowed: WHERE
+100
+200
 multi-column: PREWHERE
 100	1
 200	2
