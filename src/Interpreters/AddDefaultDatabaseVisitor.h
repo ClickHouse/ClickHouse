@@ -125,12 +125,15 @@ private:
 
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
+        /// `recursive_with` does not by itself guarantee a non-null `WITH` expression: AST mutation
+        /// (e.g. server-side fuzzers) can leave the flag set without the corresponding clause.
         if (select.recursive_with)
-            for (const auto & child : select.with()->children)
-            {
-                if (typeid_cast<ASTWithElement *>(child.get()))
-                    with_aliases.insert(child->as<ASTWithElement>()->name);
-            }
+            if (auto with = select.with())
+                for (const auto & child : with->children)
+                {
+                    if (typeid_cast<ASTWithElement *>(child.get()))
+                        with_aliases.insert(child->as<ASTWithElement>()->name);
+                }
 
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
