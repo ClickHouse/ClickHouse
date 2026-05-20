@@ -1,0 +1,20 @@
+-- CAST on Dynamic with NULL:
+1	Nullable(Float64)
+3	Nullable(Float64)
+\N	Nullable(Float64)
+-- toFloat64 on Dynamic with NULL:
+1	Nullable(Float64)
+3	Nullable(Float64)
+\N	Nullable(Float64)
+-- toUInt32 on Dynamic with NULL:
+1	Nullable(UInt32)
+3	Nullable(UInt32)
+\N	Nullable(UInt32)
+-- toInt8 on Dynamic with NULL:
+1	Nullable(Int8)
+3	Nullable(Int8)
+\N	Nullable(Int8)
+-- toString on Dynamic with NULL:
+1	Nullable(String)
+3	Nullable(String)
+\N	Nullable(String)

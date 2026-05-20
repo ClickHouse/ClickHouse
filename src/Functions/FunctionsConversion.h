@@ -11,6 +11,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnQBit.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Columns/ColumnVariant.h>
@@ -2970,7 +2971,15 @@ public:
             return makeNullable(return_type);
         }
 
-        return getReturnTypeImplRemovedNullable(arguments);
+        auto return_type = getReturnTypeImplRemovedNullable(arguments);
+
+        if (settings.cast_keep_nullable
+            && !arguments.empty()
+            && canContainNull(*arguments.front().type)
+            && return_type->canBeInsideNullable())
+            return makeNullable(return_type);
+
+        return return_type;
     }
 
     DataTypePtr getReturnTypeImplRemovedNullable(const ColumnsWithTypeAndName & arguments) const
@@ -3102,7 +3111,7 @@ public:
             /// Do something like IExecutableFunction::defaultImplementationForNulls.
             /// We can't just enable default implementation for nulls because we need to know
             /// whether the result is nullable (`to_nullable`).
-            if (result_type->isNullable() && !std::is_same_v<ToDataType, DataTypeString>)
+            if (result_type->isNullable())
             {
                 if (result_type->onlyNull())
                     return result_type->createColumnConstWithDefaultValue(input_rows_count);
@@ -3110,27 +3119,46 @@ public:
                 ColumnPtr result_null_map;
                 for (const auto & arg : arguments)
                 {
-                    if (!arg.type->isNullable())
-                        continue;
-                    if (isColumnConst(*arg.column))
+                    if (arg.type->isNullable())
                     {
-                        if (arg.column->onlyNull())
-                            return result_type->createColumnConstWithDefaultValue(input_rows_count);
-                        else
+                        if (isColumnConst(*arg.column))
+                        {
+                            if (arg.column->onlyNull())
+                                return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
                             continue;
+                        }
+                        if (result_null_map)
+                        {
+                            MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
+                            auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
+                            const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
+                            for (size_t i = 0; i < input_rows_count; ++i)
+                                result_null_map_data[i] |= null_map[i];
+                            result_null_map = std::move(mut);
+                        }
+                        else
+                        {
+                            result_null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
+                        }
                     }
-                    if (result_null_map)
+                    else if (isDynamic(*arg.type))
                     {
-                        MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
-                        auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
-                        const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
-                        for (size_t i = 0; i < input_rows_count; ++i)
-                            result_null_map_data[i] |= null_map[i];
-                        result_null_map = std::move(mut);
-                    }
-                    else
-                    {
-                        result_null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
+                        const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arg.column);
+                        auto dynamic_null_map = column_dynamic.getVariantColumn().createNullMap();
+                        if (result_null_map)
+                        {
+                            MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
+                            auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
+                            const auto & null_map_data = assert_cast<const ColumnUInt8 &>(*dynamic_null_map).getData();
+                            for (size_t i = 0; i < input_rows_count; ++i)
+                                result_null_map_data[i] |= null_map_data[i];
+                            result_null_map = std::move(mut);
+                        }
+                        else
+                        {
+                            result_null_map = std::move(dynamic_null_map);
+                        }
                     }
                 }
 
