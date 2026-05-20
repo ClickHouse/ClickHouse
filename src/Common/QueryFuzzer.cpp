@@ -2797,6 +2797,7 @@ void QueryFuzzer::fuzzJoinType(ASTTableJoin * table_join)
         }
     }
 
+    /// Convert any join to PASTE JOIN: no ON/USING, no strictness/locality/NATURAL.
     if (fuzz_rand() % 50 == 0)
     {
         table_join->kind = JoinKind::Paste;
@@ -2814,6 +2815,7 @@ void QueryFuzzer::fuzzJoinType(ASTTableJoin * table_join)
         table_join->using_expression_list.reset();
         table_join->on_expression.reset();
     }
+    /// Cross/Comma/Paste → regular join (only safe when a condition already exists).
     else if (table_join->kind >= JoinKind::Cross)
     {
         if (fuzz_rand() % 20 == 0 && (table_join->on_expression || table_join->using_expression_list))
@@ -3116,6 +3118,8 @@ static const std::map<size_t, Strings> swapAggrs
          "analysisOfVariance",
          "intervalLengthSum"}}};
 
+/// Higher-order array functions that accept a lambda or function name as first argument.
+/// Shared between swapFuncs and the HOF fuzzing logic below.
 static const std::unordered_set<String> higher_order_array_funcs = {
     "arraySort",        "arrayReverseSort", "arrayPartialSort",  "arrayPartialReverseSort",
     "arrayFilter",      "arrayMap",         "arrayCount",        "arrayExists",
@@ -3124,6 +3128,7 @@ static const std::unordered_set<String> higher_order_array_funcs = {
     "arrayReverseFill", "arraySplit",       "arrayReverseSplit", "arrayFold",
 };
 
+/// Higher-order map functions (same idea, for Map-typed arguments).
 static const std::unordered_set<String> higher_order_map_funcs = {
     "mapFilter",
     "mapApply",
@@ -3806,6 +3811,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
         }
 
+        /// ClickHouse HOFs accept a bare function name instead of a lambda, e.g. arrayMap(toUInt64, arr).
+        /// Two mutations: (1) replace an existing lambda with a function name,
+        /// (2) prepend a function name to a HOF that currently has no lambda/identifier first arg.
         if (fn->arguments && !fn->arguments->children.empty() && fuzz_rand() % 30 == 0)
         {
             auto * first_arg = fn->arguments->children[0]->as<ASTFunction>();
@@ -3851,7 +3859,39 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         {
             fuzzJoinType(tj);
         }
-        if (fuzz_rand() % 20 == 0)
+        /// ON → USING: replace the ON predicate with a USING column list.
+        if (fuzz_rand() % 50 == 0 && tj->on_expression && tj->kind != JoinKind::Paste)
+        {
+            colids.clear();
+            std::copy_if(column_like.begin(), column_like.end(), std::back_inserter(colids), identifier_lambda);
+            if (!colids.empty())
+            {
+                auto using_list = make_intrusive<ASTExpressionList>();
+                const size_t ncols = 1 + fuzz_rand() % std::min<size_t>(3, colids.size());
+                for (size_t i = 0; i < ncols; i++)
+                {
+                    auto it = colids.begin();
+                    std::advance(it, fuzz_rand() % colids.size());
+                    using_list->children.push_back(it->second->clone());
+                }
+                tj->children.erase(std::remove(tj->children.begin(), tj->children.end(), tj->on_expression), tj->children.end());
+                tj->on_expression.reset();
+                tj->children.push_back(using_list);
+                tj->using_expression_list = tj->children.back();
+            }
+        }
+        /// USING → ON: replace the USING column list with a generated predicate.
+        else if (fuzz_rand() % 50 == 0 && tj->using_expression_list && tj->kind != JoinKind::Paste)
+        {
+            if (ASTPtr pred = generatePredicate())
+            {
+                tj->children.erase(std::remove(tj->children.begin(), tj->children.end(), tj->using_expression_list), tj->children.end());
+                tj->using_expression_list.reset();
+                tj->children.push_back(pred);
+                tj->on_expression = tj->children.back();
+            }
+        }
+        else if (fuzz_rand() % 20 == 0)
         {
             if (tj->using_expression_list)
             {
@@ -4141,6 +4181,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 }
                 else if (fuzz_rand() % 50 == 0)
                 {
+                    /// Negative offsets exercise error-handling paths in the server.
                     auto val = fuzz_rand() % 2 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
                                                     : Field(static_cast<UInt64>(fuzz_rand() % 1001));
                     select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, make_intrusive<ASTLiteral>(val));
@@ -4149,7 +4190,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         else if (fuzz_rand() % 50 == 0)
         {
-            /// Add a LIMIT clause
+            /// Add a LIMIT clause (negative values half the time).
             auto val
                 = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001))) : Field(static_cast<UInt64>(fuzz_rand() % 1001));
             select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(val));
