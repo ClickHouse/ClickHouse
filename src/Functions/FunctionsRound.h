@@ -681,7 +681,7 @@ public:
 /// Functions that round the value of an input parameter of type (U)Int8/16/32/64, Float32/64 or Decimal32/64/128.
 /// Accept an additional optional parameter of type (U)Int8/16/32/64 (0 by default).
 template <typename Name, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
-class FunctionRounding : public IFunction
+class FunctionRounding final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -770,7 +770,7 @@ public:
 
 /// Rounds down to a number within explicitly specified array.
 /// If the value is less than the minimal bound - returns the minimal bound.
-class FunctionRoundDown : public IFunction
+class FunctionRoundDown final : public IFunction
 {
 public:
     static constexpr auto name = "roundDown";
