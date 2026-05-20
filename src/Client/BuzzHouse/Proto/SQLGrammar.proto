@@ -436,6 +436,7 @@ message SQLFuncArg {
     oneof func_arg_oneof {
         LambdaExpr lambda = 1;
         Expr expr = 2;
+        string func_name = 3;
     }
 }
 

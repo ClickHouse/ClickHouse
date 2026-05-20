@@ -1464,6 +1464,10 @@ CONV_FN(SQLFuncCall, sfc)
         {
             LambdaExprToString(ret, sfa.lambda());
         }
+        else if (sfa.has_func_name())
+        {
+            ret += sfa.func_name();
+        }
         else if (sfa.has_expr())
         {
             ExprToString(ret, sfa.expr());
@@ -2459,6 +2463,10 @@ CONV_FN(SQLTableFuncCall, sfc)
         if (sfa.has_lambda())
         {
             LambdaExprToString(ret, sfa.lambda());
+        }
+        else if (sfa.has_func_name())
+        {
+            ret += sfa.func_name();
         }
         else if (sfa.has_expr())
         {

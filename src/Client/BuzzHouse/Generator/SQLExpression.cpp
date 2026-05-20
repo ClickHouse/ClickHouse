@@ -940,7 +940,19 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
 
         if (has_lambda > 0)
         {
-            generateLambdaCall(rg, 1, func_call->add_args()->mutable_lambda());
+            if (rg.nextBool())
+            {
+                const CHFunction & func = rg.pickRandomly(
+                    this->allow_not_deterministic && !nondet_funcs.empty() && rg.nextSmallNumber() < 4
+                        ? this->nondet_funcs
+                        : (rg.nextMediumNumber() < 10 && !common_funcs.empty() ? this->common_funcs : this->det_funcs));
+
+                func_call->add_args()->set_func_name(func.fname);
+            }
+            else
+            {
+                generateLambdaCall(rg, 1, func_call->add_args()->mutable_lambda());
+            }
             this->width++;
             generated_params++;
         }
