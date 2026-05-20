@@ -1,0 +1,102 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE rdf_triples
+        (
+            subject String,
+            predicate LowCardinality(String),
+            object String,
+            INDEX idx_subject subject TYPE bloom_filter GRANULARITY 4,
+            INDEX idx_object object TYPE bloom_filter GRANULARITY 4
+        )
+        ENGINE = MergeTree
+        ORDER BY (predicate, subject, object)
+    </create_query>
+
+    <!-- Materialized view for rdf:type pattern acceleration (diploma Section 5.4) -->
+    <create_query>
+        CREATE MATERIALIZED VIEW mv_types
+        ENGINE = MergeTree ORDER BY (object, subject) AS
+        SELECT subject, object
+        FROM rdf_triples
+        WHERE predicate = 'rdf:type'
+    </create_query>
+
+    <!-- Generate LUBM-like university ontology data: 100K persons with properties -->
+    <fill_query>
+        INSERT INTO rdf_triples
+        SELECT
+            concat(':person', toString(number)) AS subject,
+            'rdf:type' AS predicate,
+            ':Person' AS object
+        FROM numbers(100000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO rdf_triples
+        SELECT
+            concat(':person', toString(number)) AS subject,
+            ':name' AS predicate,
+            concat('Person_', toString(number)) AS object
+        FROM numbers(100000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO rdf_triples
+        SELECT
+            concat(':person', toString(number)) AS subject,
+            ':age' AS predicate,
+            toString(18 + number % 60) AS object
+        FROM numbers(100000)
+    </fill_query>
+
+    <!-- 50% of persons have email -->
+    <fill_query>
+        INSERT INTO rdf_triples
+        SELECT
+            concat(':person', toString(number)) AS subject,
+            ':email' AS predicate,
+            concat('person', toString(number), '@example.com') AS object
+        FROM numbers(50000)
+    </fill_query>
+
+    <!-- 30% of persons belong to a department -->
+    <fill_query>
+        INSERT INTO rdf_triples
+        SELECT
+            concat(':person', toString(number)) AS subject,
+            ':department' AS predicate,
+            concat(':dept', toString(number % 100)) AS object
+        FROM numbers(30000)
+    </fill_query>
+
+    <!-- Basic two-way join: name lookup for all persons -->
+    <query>SELECT * FROM sparql('SELECT ?name WHERE { ?p &lt;rdf:type&gt; &lt;:Person&gt; . ?p &lt;:name&gt; ?name }') FORMAT Null</query>
+
+    <!-- Three-way join: name + age for persons -->
+    <query>SELECT * FROM sparql('SELECT ?name ?age WHERE { ?p &lt;rdf:type&gt; &lt;:Person&gt; . ?p &lt;:name&gt; ?name . ?p &lt;:age&gt; ?age }') FORMAT Null</query>
+
+    <!-- OPTIONAL: name + email (LEFT JOIN) -->
+    <query>SELECT * FROM sparql('SELECT ?name ?email WHERE { ?p &lt;rdf:type&gt; &lt;:Person&gt; . ?p &lt;:name&gt; ?name . OPTIONAL { ?p &lt;:email&gt; ?email } }') FORMAT Null</query>
+
+    <!-- FILTER: persons older than 50 -->
+    <query>SELECT * FROM sparql('SELECT ?name ?age WHERE { ?p &lt;:name&gt; ?name . ?p &lt;:age&gt; ?age . FILTER (?age &gt; 50) }') FORMAT Null</query>
+
+    <!-- UNION: email or department as contact -->
+    <query>SELECT * FROM sparql('SELECT ?info WHERE { { ?p &lt;:email&gt; ?info } UNION { ?p &lt;:department&gt; ?info } }') FORMAT Null</query>
+
+    <!-- Hand-written SQL equivalent of the basic two-way join (baseline comparison) -->
+    <query>
+        SELECT t2.object AS name
+        FROM rdf_triples AS t1
+        JOIN rdf_triples AS t2 ON t2.subject = t1.subject
+        WHERE t1.predicate = 'rdf:type' AND t1.object = ':Person' AND t2.predicate = ':name'
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP VIEW IF EXISTS mv_types</drop_query>
+    <drop_query>DROP TABLE IF EXISTS rdf_triples</drop_query>
+</test>
