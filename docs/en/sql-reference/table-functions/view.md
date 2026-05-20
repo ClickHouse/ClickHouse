@@ -36,15 +36,11 @@ Input table:
 └────┴──────────┴──────┘
 ```
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT * FROM view(SELECT name FROM months);
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─name─────┐
 │ January  │
 │ February │
@@ -55,11 +51,11 @@ Result:
 
 You can use the `view` function as a parameter of the [remote](/sql-reference/table-functions/remote) and [cluster](/sql-reference/table-functions/cluster) table functions:
 
-```sql
+```sql title="Query"
 SELECT * FROM remote(`127.0.0.1`, view(SELECT a, b, c FROM table_name));
 ```
 
-```sql
+```sql title="Query"
 SELECT * FROM cluster(`cluster_name`, view(SELECT a, b, c FROM table_name));
 ```
 

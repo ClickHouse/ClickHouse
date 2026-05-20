@@ -80,7 +80,7 @@ namespace
     /// Forward declaration; defined after FunctionTransform.
     TransformCachePtr initializeTransformCache(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type);
 
-    class FunctionTransform : public IFunction
+    class FunctionTransform final : public IFunction
     {
     public:
         static constexpr auto name = "transform";
@@ -762,15 +762,26 @@ namespace
             const IColumn * default_col = arguments[3].column.get();
             if (default_col && isColumnConst(*default_col))
             {
-                auto default_column = result_type->createColumn();
-                if (!default_col->onlyNull())
+                if (default_col->onlyNull())
                 {
-                    Field f = convertFieldToType((*default_col)[0], *result_type);
-                    default_column->insert(f);
+                    auto default_column = result_type->createColumn();
+                    default_column->insertDefault();
+                    cache->default_column = std::move(default_column);
                 }
                 else
-                    default_column->insertDefault();
-                cache->default_column = std::move(default_column);
+                {
+                    /// Cast through the proper cast pipeline (like `from_column` and `to_column`
+                    /// above) so source-type-aware conversions kick in: `Date`/`Date32` to
+                    /// `DateTime`/`DateTime64` multiplies days by seconds-per-day, `Enum` to
+                    /// `String` resolves the value name, `FixedString` trims trailing NULs.
+                    /// Going through `convertFieldToType` here loses the source type and
+                    /// silently falls back to raw numeric conversions, producing wrong values.
+                    ColumnPtr cast_column = castColumn(arguments[3], result_type);
+                    if (const auto * cast_const = checkAndGetColumn<ColumnConst>(cast_column.get()))
+                        cache->default_column = cast_const->getDataColumnPtr();
+                    else
+                        cache->default_column = cast_column->cut(0, 1);
+                }
             }
         }
 
@@ -833,7 +844,7 @@ namespace
     }
 
 
-    class FunctionTransformOverloadResolver : public IFunctionOverloadResolver
+    class FunctionTransformOverloadResolver final : public IFunctionOverloadResolver
     {
     public:
         static constexpr auto name = "transform";

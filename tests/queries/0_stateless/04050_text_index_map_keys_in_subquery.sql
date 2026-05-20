@@ -10,6 +10,8 @@ SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 SET optimize_functions_to_subcolumns = 1;
 SET optimize_use_projections = 1;
+SET query_plan_direct_read_from_text_index = 1;
+SET query_plan_text_index_add_hint = 1;
 
 DROP TABLE IF EXISTS tab;
 

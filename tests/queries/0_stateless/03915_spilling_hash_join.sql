@@ -135,7 +135,7 @@ SELECT count()
 FROM (SELECT number + 50 AS k FROM numbers(100)) AS t1
 RIGHT JOIN (SELECT number AS k FROM numbers(100)) AS t2
 ON t1.k = t2.k
-SETTINGS log_comment = 'query_03915_13';
+SETTINGS log_comment = 'query_03915_13', parallel_non_joined_rows_processing = 1;
 
 -- Test 14: Small FULL JOIN that fits in memory (concurrent, no spill).
 SELECT 'concurrent full join small';
@@ -143,7 +143,7 @@ SELECT count()
 FROM (SELECT number AS k FROM numbers(100)) AS t1
 FULL JOIN (SELECT number + 50 AS k FROM numbers(100)) AS t2
 ON t1.k = t2.k
-SETTINGS log_comment = 'query_03915_14';
+SETTINGS log_comment = 'query_03915_14', parallel_non_joined_rows_processing = 1;
 
 -- Test 15: Concurrent RIGHT JOIN (in-memory) — verify non-joined rows from right table.
 -- t1.k = [5000..14999], t2.k = [0..9999]
@@ -153,7 +153,7 @@ SELECT count(), countIf(t1.k != 0) AS matched, countIf(t1.k = 0) AS right_only
 FROM (SELECT number + 5000 AS k FROM numbers(10000)) AS t1
 RIGHT JOIN (SELECT number AS k FROM numbers(10000)) AS t2
 ON t1.k = t2.k
-SETTINGS log_comment = 'query_03915_15';
+SETTINGS log_comment = 'query_03915_15', parallel_non_joined_rows_processing = 1;
 
 -- Test 16: Concurrent FULL JOIN (in-memory) — verify non-joined rows from both sides.
 -- t1.k = [1..10000], t2.k = [5001..15000]
@@ -164,7 +164,7 @@ SELECT count(), countIf(t1.k != 0 AND t2.k != 0 ) AS matched,
 FROM (SELECT number + 1 AS k FROM numbers(10000)) AS t1
 FULL JOIN (SELECT number + 5001 AS k FROM numbers(10000)) AS t2
 ON t1.k = t2.k
-SETTINGS log_comment = 'query_03915_16';
+SETTINGS log_comment = 'query_03915_16', parallel_non_joined_rows_processing = 1;
 
 SET max_bytes_before_external_join = 100000;
 -- Increase initial bucket size to ensure delayed blocks are handled
