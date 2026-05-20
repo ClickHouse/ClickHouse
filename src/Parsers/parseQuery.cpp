@@ -287,6 +287,24 @@ ASTPtr tryParseQuery(
         return nullptr;
     }
 
+    /// Find the end of the current statement (just past the next `;`, or end of input).
+    /// Used to scope error messages to the offending statement instead of dumping every
+    /// subsequent statement of a multi-statement input. See issue #101509.
+    ///
+    /// Note: we walk a fresh iterator from the start of the token stream, not from the
+    /// parser's `token_iterator`. The parser may have backtracked, leaving its current
+    /// position behind the maximum visited position; walking forward from `token_iterator`
+    /// would yield a boundary smaller than `last_token.end` and underflow `size_t` in
+    /// `writeQueryAroundTheError`. The `min_end` clamp is a second safety net for the
+    /// same class of bug (PR #101708 tripped on it in `Fast test` as "Server died").
+    auto current_statement_end = [&](const char * min_end) -> const char *
+    {
+        IParser::Pos iter(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
+        while (!iter->isEnd() && iter->type != TokenType::Semicolon)
+            ++iter;
+        return std::max(iter->end, min_end);
+    };
+
     Expected expected;
 
     /** A shortcut - if Lexer found invalid tokens, fail early without full parsing.
@@ -304,9 +322,12 @@ ASTPtr tryParseQuery(
         {
             if (lookahead->isError())
             {
-                out_error_message = getLexicalErrorMessage(query_begin, all_queries_end, *lookahead, hilite, query_description);
                 // Advance the position for further processing of possible test hint.
+                // Capture max() BEFORE current_statement_end, which walks fresh tokens
+                // and would otherwise inflate the max-visited position.
                 _out_query_end = token_iterator.max().end;
+                out_error_message = getLexicalErrorMessage(
+                    query_begin, current_statement_end(lookahead->end), *lookahead, hilite, query_description);
                 return nullptr;
             }
 
@@ -336,8 +357,8 @@ ASTPtr tryParseQuery(
     /// Lexical error
     if (last_token.isError())
     {
-        out_error_message = getLexicalErrorMessage(query_begin, all_queries_end,
-            last_token, hilite, query_description);
+        out_error_message = getLexicalErrorMessage(
+            query_begin, current_statement_end(last_token.end), last_token, hilite, query_description);
         return nullptr;
     }
 
@@ -345,9 +366,30 @@ ASTPtr tryParseQuery(
     UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens));
     if (!unmatched_parens.empty())
     {
-        out_error_message = getUnmatchedParenthesesErrorMessage(query_begin,
-            all_queries_end, unmatched_parens, hilite, query_description);
-        return nullptr;
+        /// `checkUnmatchedParentheses` walks the entire remaining input, so it can
+        /// report parens that live in later statements. Restrict to parens inside
+        /// the current statement; otherwise the highlight loop in
+        /// `writeQueryWithHighlightedErrorPositions` asserts on positions past `end`.
+        const char * statement_end = current_statement_end(last_token.end);
+        UnmatchedParentheses scoped_parens;
+        for (const auto & paren : unmatched_parens)
+        {
+            if (paren.begin >= query_begin && paren.begin < statement_end)
+            {
+                scoped_parens.push_back(paren);
+                /// Extend `statement_end` to cover the paren itself: a multi-byte token
+                /// at the very boundary must not underflow `size_t` in the formatter.
+                if (paren.end > statement_end)
+                    statement_end = paren.end;
+            }
+        }
+
+        if (!scoped_parens.empty())
+        {
+            out_error_message = getUnmatchedParenthesesErrorMessage(
+                query_begin, statement_end, scoped_parens, hilite, query_description);
+            return nullptr;
+        }
     }
 
     IParser::Pos this_query_end_pos = token_iterator;
