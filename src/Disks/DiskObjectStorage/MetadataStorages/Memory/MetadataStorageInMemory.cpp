@@ -878,20 +878,21 @@ void MetadataStorageInMemoryTransaction::truncateFile(const std::string & path, 
 
         recordBlobGroupBefore(entry->blob_group);
 
-        size_t accumulated_size = 0;
-        StoredObjects new_objects;
-        for (const auto & obj : entry->blob_group->objects)
-        {
-            if (accumulated_size >= target_size)
-            {
-                objects_to_remove.push_back(obj);
-                continue;
-            }
+        auto & objects = entry->blob_group->objects;
+        size_t current_size = 0;
+        for (const auto & obj : objects)
+            current_size += obj.bytes_size;
 
-            new_objects.push_back(obj);
-            accumulated_size += obj.bytes_size;
+        while (current_size > target_size && !objects.empty())
+        {
+            current_size -= objects.back().bytes_size;
+            objects_to_remove.push_back(objects.back());
+            objects.pop_back();
         }
-        entry->blob_group->objects = std::move(new_objects);
+
+        if (current_size != target_size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} can't be truncated to size {}", path, target_size);
+
         entry->blob_group->last_modified = Poco::Timestamp();
     });
 }
