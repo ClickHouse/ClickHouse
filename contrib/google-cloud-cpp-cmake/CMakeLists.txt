@@ -86,6 +86,19 @@ add_library(nlohmann_json::nlohmann_json ALIAS _nlohmann_json)
 include(google_cloud_cpp_rest_internal)
 include(google_cloud_cpp_storage)
 
+add_library(
+    google_cloud_cpp_oauth2
+    ${GOOGLE_CLOUD_CPP_DIR}/google/cloud/oauth2/access_token_generator.cc
+    ${GOOGLE_CLOUD_CPP_DIR}/google/cloud/oauth2/access_token_generator.h)
+target_link_libraries(google_cloud_cpp_oauth2 PUBLIC google-cloud-cpp::rest_internal google-cloud-cpp::common)
+target_include_directories(google_cloud_cpp_oauth2 PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}> $<INSTALL_INTERFACE:include>)
+target_compile_options(google_cloud_cpp_oauth2 PUBLIC ${GOOGLE_CLOUD_CPP_EXCEPTIONS_FLAG})
+set_target_properties(
+    google_cloud_cpp_oauth2
+    PROPERTIES EXPORT_NAME "google-cloud-cpp::oauth2"
+               VERSION ${PROJECT_VERSION}
+               SOVERSION ${PROJECT_VERSION_MAJOR})
+add_library(google-cloud-cpp::oauth2 ALIAS google_cloud_cpp_oauth2)
 set(GOOGLE_CLOUD_CPP_STORAGE_GRPC_DIR "${GOOGLE_CLOUD_CPP_DIR}/google/cloud/storage")
 file(GLOB GOOGLE_CLOUD_CPP_STORAGE_GRPC_SRC CONFIGURE_DEPENDS
     "${GOOGLE_CLOUD_CPP_STORAGE_GRPC_DIR}/grpc_plugin.cc"
@@ -133,6 +146,7 @@ set(PROJECT_SOURCE_DIR ${PROJECT_SOURCE_DIR_BAK})
 list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS
     google_cloud_cpp_common
     google_cloud_cpp_grpc_utils
+    google_cloud_cpp_oauth2
     google_cloud_cpp_rest_internal
     google_cloud_cpp_storage
     google_cloud_cpp_storage_grpc

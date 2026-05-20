@@ -2,7 +2,12 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/GCS/GCSClient.h>
+#include <IO/GCS/GCSXMLClient.h>
 #include <Common/BlobStorageLogWriter.h>
+
+#if USE_AWS_S3
+#    include <IO/S3RequestSettings.h>
+#endif
 
 #include <functional>
 #include <memory>
@@ -20,13 +25,24 @@ struct GCSObjectStorageSettings
     String description;
     bool read_only = false;
     GCS::ClientSettings client_settings;
+    GCS::WriteTransport write_transport = GCS::WriteTransport::Grpc;
+    String xml_endpoint;
+    GCS::XMLMultipartClientSettings xml_client_settings;
+#if USE_AWS_S3
+    S3::S3RequestSettings xml_request_settings;
+#endif
     BlobStorageLogWriterFactory blob_storage_log_writer_factory;
 };
 
 class GCSObjectStorage final : public IObjectStorage
 {
 public:
-#if USE_GOOGLE_CLOUD
+#if USE_GOOGLE_CLOUD && USE_AWS_S3
+    GCSObjectStorage(
+        GCSObjectStorageSettings settings_,
+        std::shared_ptr<GCS::HighLevelClient> high_level_client_,
+        std::shared_ptr<const S3::Client> xml_multipart_client_ = nullptr);
+#elif USE_GOOGLE_CLOUD
     GCSObjectStorage(GCSObjectStorageSettings settings_, std::shared_ptr<GCS::HighLevelClient> high_level_client_);
 #else
     explicit GCSObjectStorage(GCSObjectStorageSettings settings_);
@@ -97,6 +113,9 @@ private:
     GCSObjectStorageSettings settings;
 #if USE_GOOGLE_CLOUD
     std::shared_ptr<GCS::HighLevelClient> high_level_client;
+#endif
+#if USE_AWS_S3
+    std::shared_ptr<const S3::Client> xml_multipart_client;
 #endif
 };
 

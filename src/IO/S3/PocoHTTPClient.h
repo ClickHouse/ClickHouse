@@ -2,6 +2,7 @@
 
 #include "config.h"
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -72,6 +73,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     String google_adc_client_id;
     String google_adc_client_secret;
     String google_adc_refresh_token;
+    std::function<String()> gcs_oauth_token_provider;
 
     /// See PoolBase::BehaviourOnLimit
     bool s3_use_adaptive_timeouts = true;
@@ -253,6 +255,7 @@ private:
     const String google_adc_client_id;
     const String google_adc_client_secret;
     const String google_adc_refresh_token;
+    const std::function<String()> gcs_oauth_token_provider;
 
     mutable std::mutex mutex;
     mutable std::optional<BearerToken> bearer_token TSA_GUARDED_BY(mutex);

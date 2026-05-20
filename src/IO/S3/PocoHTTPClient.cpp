@@ -796,6 +796,7 @@ PocoHTTPClientGCPOAuth::PocoHTTPClientGCPOAuth(const PocoHTTPClientConfiguration
     , google_adc_client_id(client_configuration.google_adc_client_id)
     , google_adc_client_secret(client_configuration.google_adc_client_secret)
     , google_adc_refresh_token(client_configuration.google_adc_refresh_token)
+    , gcs_oauth_token_provider(client_configuration.gcs_oauth_token_provider)
 {
     const bool has_client_id = !google_adc_client_id.empty();
     const bool has_client_secret = !google_adc_client_secret.empty();
@@ -817,19 +818,37 @@ void PocoHTTPClientGCPOAuth::makeRequestInternal(
     Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
     Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
 {
+    String token;
+    if (gcs_oauth_token_provider)
+    {
+        token = gcs_oauth_token_provider();
+        if (token.empty())
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "GCP OAuth token provider returned an empty token");
+    }
+    else
     {
         std::lock_guard lock(mutex);
         if (!bearer_token || std::chrono::system_clock::now() > bearer_token->is_valid_to)
             bearer_token = requestBearerToken();
 
-        request.SetHeaderValue("Authorization", fmt::format("Bearer {}", bearer_token->token));
+        token = bearer_token->token;
     }
+
+    request.SetHeaderValue("Authorization", fmt::format("Bearer {}", token));
 
     PocoHTTPClient::makeRequestInternal(request, response, readLimiter, writeLimiter);
 }
 
 std::string PocoHTTPClientGCPOAuth::getBearerToken() const
 {
+    if (gcs_oauth_token_provider)
+    {
+        auto token = gcs_oauth_token_provider();
+        if (token.empty())
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "GCP OAuth token provider returned an empty token");
+        return token;
+    }
+
     std::lock_guard lock(mutex);
     if (!bearer_token || std::chrono::system_clock::now() > bearer_token->is_valid_to)
         bearer_token = requestBearerToken();
