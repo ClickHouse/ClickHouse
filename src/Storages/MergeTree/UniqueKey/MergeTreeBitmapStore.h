@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
+#include <Common/SharedMutex.h>
 
 #include <memory>
-#include <shared_mutex>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -77,7 +77,7 @@ private:
     /// have left the active set without an explicit `dropPart` call)
     /// evict on size pressure instead of accumulating indefinitely. A
     /// missed-eviction is currently bounded but not auto-recovered.
-    mutable std::shared_mutex csns_mutex;
+    mutable SharedMutex csns_mutex;
     mutable std::unordered_map<std::string, std::vector<BitmapVersion>> csns_per_part;
 
     std::vector<BitmapVersion> snapshotCsns(

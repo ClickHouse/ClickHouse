@@ -127,7 +127,8 @@ std::pair<std::shared_ptr<const DeleteBitmap>, BitmapVersion> MergeTreeBitmapSto
 
     const auto key = DeleteBitmapCache::makeKey(part_id, chosen_csn);
     /// `UniqueKeyBitmapLoadMicroseconds` is cache-miss-only by contract.
-    auto [ptr, _loaded] = cache->getOrSet(key, [&]() {
+    auto [ptr, _loaded] = cache->getOrSet(key, [&]()
+    {
         Stopwatch load_watch;
         auto bm = readFromStorage(storage, file_name);
         ProfileEvents::increment(ProfileEvents::UniqueKeyBitmapLoadMicroseconds, load_watch.elapsedMicroseconds());
@@ -176,7 +177,8 @@ size_t MergeTreeBitmapStore::gcObsoleteBitmaps(
         auto & cached_csns = map_it->second;
         cached_csns.erase(
             std::remove_if(cached_csns.begin(), cached_csns.end(),
-                           [&](BitmapVersion v) {
+                           [&](BitmapVersion v)
+                           {
                                return std::find(to_remove.begin(), to_remove.end(), v) != to_remove.end();
                            }),
             cached_csns.end());
