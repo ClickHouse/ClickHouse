@@ -11,8 +11,8 @@ UNKNOWN_SIGN = "[ UNKNOWN "
 SKIPPED_SIGN = "[ SKIPPED "
 NOT_FAILED_SIGN = "[ NOT_FAILED "
 HUNG_SIGN = "Found hung queries in processlist"
-SERVER_DIED_SIGN = "Server died, terminating all processes"
-SERVER_DIED_SIGN2 = "Server does not respond to health check"
+STOP_TESTING_SIGN = "Stopping tests, terminating all processes"
+STOP_TESTING_SIGN2 = "Server does not respond to health check"
 DATABASE_SIGN = "Database: "
 
 SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
@@ -41,7 +41,7 @@ class FTResultsProcessor:
         success: int
         test_results: List[Result]
         hung: bool = False
-        server_died: bool = False
+        stop_testing: bool = False
         retries: bool = False
         success_finish: bool = False
         test_end: bool = True
@@ -57,7 +57,7 @@ class FTResultsProcessor:
         failed = 0
         success = 0
         hung = False
-        server_died = False
+        stop_testing = False
         retries = False
         success_finish = False
         test_results = []
@@ -75,8 +75,8 @@ class FTResultsProcessor:
                 if HUNG_SIGN in line:
                     hung = True
                     break
-                if SERVER_DIED_SIGN in line or SERVER_DIED_SIGN2 in line:
-                    server_died = True
+                if STOP_TESTING_SIGN in line or STOP_TESTING_SIGN2 in line:
+                    stop_testing = True
                 if RETRIES_SIGN in line:
                     retries = True
 
@@ -167,7 +167,7 @@ class FTResultsProcessor:
             success=success,
             test_results=test_results,
             hung=hung,
-            server_died=server_died,
+            stop_testing=stop_testing,
             success_finish=success_finish,
             retries=retries,
         )
@@ -188,7 +188,7 @@ class FTResultsProcessor:
             test_results.append(
                 Result("Some queries hung", Result.Status.FAIL, info="Some queries hung")
             )
-        elif s.server_died:
+        elif s.stop_testing:
             state = Result.Status.FAIL
             failed_results = [r for r in test_results if r.is_failure()]
             if len(failed_results) > 1:
