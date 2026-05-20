@@ -24,7 +24,7 @@ namespace Setting
     extern const SettingsBool enable_join_runtime_filters;
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool make_distributed_plan;
-    extern const SettingsBool group_by_limit_pushdown;
+    extern const SettingsBool enable_group_by_top_k_optimization;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_distinct_in_order;
     extern const SettingsBool optimize_read_in_order;
@@ -151,7 +151,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     merge_filter_into_join_condition = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filter_into_join_condition];
     convert_any_join_to_semi_or_anti_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_any_join_to_semi_or_anti_join];
     try_use_top_k_optimization = from[Setting::use_skip_indexes_for_top_k] || from[Setting::use_top_k_dynamic_filtering];
-    group_by_limit_pushdown = from[Setting::query_plan_enable_optimizations] && from[Setting::group_by_limit_pushdown];
+    enable_group_by_top_k_optimization = from[Setting::query_plan_enable_optimizations] && from[Setting::enable_group_by_top_k_optimization];
     top_k_through_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_join];
 
     bool use_parallel_replicas = from[Setting::allow_experimental_parallel_reading_from_replicas] && from[Setting::max_parallel_replicas] > 1;

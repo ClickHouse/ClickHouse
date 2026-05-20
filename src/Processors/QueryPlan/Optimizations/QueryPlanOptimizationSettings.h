@@ -65,7 +65,7 @@ struct QueryPlanOptimizationSettings
     bool try_use_top_k_optimization;
     bool top_k_through_join;
     bool remove_unused_columns;
-    bool group_by_limit_pushdown;
+    bool enable_group_by_top_k_optimization;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap

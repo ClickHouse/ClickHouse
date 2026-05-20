@@ -60,7 +60,7 @@ struct Optimization
         /// join is swapped from `LEFT` to `RIGHT` after we returned.
         std::optional<bool> join_swap_table;
 
-        bool group_by_limit_pushdown;
+        bool enable_group_by_top_k_optimization;
 
         // parallel replicas
         bool parallel_replicas_filter_pushdown = false;
@@ -181,7 +181,7 @@ inline const auto & getOptimizations()
         {tryConvertAnyJoinToSemiOrAntiJoin, "convertAnyJoinToSemiOrAntiJoin", &QueryPlanOptimizationSettings::convert_any_join_to_semi_or_anti_join},
         {tryRemoveUnusedColumns, "removeUnusedColumns", &QueryPlanOptimizationSettings::remove_unused_columns},
         {tryOptimizeTopK, "tryOptimizeTopK", &QueryPlanOptimizationSettings::try_use_top_k_optimization},
-        {tryOptimizeGroupByLimitPushdown, "tryOptimizeGroupByLimitPushdown", &QueryPlanOptimizationSettings::group_by_limit_pushdown},
+        {tryOptimizeGroupByLimitPushdown, "tryOptimizeGroupByLimitPushdown", &QueryPlanOptimizationSettings::enable_group_by_top_k_optimization},
         {tryTopKThroughJoin, "topKThroughJoin", &QueryPlanOptimizationSettings::top_k_through_join},
     }};
 

@@ -1,4 +1,4 @@
--- Tests for correctness of the group_by_limit_pushdown optimization.
+-- Tests for correctness of the enable_group_by_top_k_optimization optimization.
 -- Regression test: Float32/Float64 and DateTime key types with the typed
 -- numeric fast path in `TopKAggregationHeap`.
 --
@@ -13,7 +13,7 @@
 
 -- Tags: no-parallel-replicas
 
-SET group_by_limit_pushdown = 1;
+SET enable_group_by_top_k_optimization = 1;
 
 -- ===================================================================
 -- Float32 / Float64 tests (including NaN)
@@ -44,11 +44,11 @@ FROM numbers(50000);
 SELECT 'float32_asc';
 SELECT k_f32, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_f32, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- Float32 DESC
@@ -56,11 +56,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'float32_desc';
 SELECT k_f32, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 DESC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_f32, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 DESC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- Float64 ASC
@@ -68,11 +68,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'float64_asc';
 SELECT k_f64, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f64 ORDER BY k_f64 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_f64, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f64 ORDER BY k_f64 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- Float64 DESC
@@ -80,11 +80,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'float64_desc';
 SELECT k_f64, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f64 ORDER BY k_f64 DESC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_f64, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f64 ORDER BY k_f64 DESC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- Float32 ASC NULLS FIRST  (NaN sorts first, like NULL)
@@ -92,11 +92,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'float32_asc_nulls_first';
 SELECT k_f32, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 ASC NULLS FIRST LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_f32, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 ASC NULLS FIRST LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- Float32 ASC NULLS LAST  (NaN sorts last)
@@ -104,11 +104,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'float32_asc_nulls_last';
 SELECT k_f32, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 ASC NULLS LAST LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_f32, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 ASC NULLS LAST LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- Float32 DESC NULLS FIRST  (NaN sorts first)
@@ -116,11 +116,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'float32_desc_nulls_first';
 SELECT k_f32, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 DESC NULLS FIRST LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_f32, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 DESC NULLS FIRST LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- Float32 DESC NULLS LAST  (NaN sorts last)
@@ -128,11 +128,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'float32_desc_nulls_last';
 SELECT k_f32, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 DESC NULLS LAST LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_f32, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 DESC NULLS LAST LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- Float64 ASC NULLS FIRST
@@ -140,11 +140,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'float64_asc_nulls_first';
 SELECT k_f64, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f64 ORDER BY k_f64 ASC NULLS FIRST LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_f64, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f64 ORDER BY k_f64 ASC NULLS FIRST LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- Float64 DESC NULLS LAST
@@ -152,11 +152,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'float64_desc_nulls_last';
 SELECT k_f64, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f64 ORDER BY k_f64 DESC NULLS LAST LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_f64, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f64 ORDER BY k_f64 DESC NULLS LAST LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 DROP TABLE t_gbylimit_float;
 
@@ -185,11 +185,11 @@ FROM numbers(50000);
 SELECT 'datetime_asc';
 SELECT k_dt, count(), sum(val)
 FROM t_gbylimit_datetime GROUP BY k_dt ORDER BY k_dt ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_dt, count(), sum(val)
 FROM t_gbylimit_datetime GROUP BY k_dt ORDER BY k_dt ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- DateTime DESC
@@ -197,10 +197,10 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'datetime_desc';
 SELECT k_dt, count(), sum(val)
 FROM t_gbylimit_datetime GROUP BY k_dt ORDER BY k_dt DESC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_dt, count(), sum(val)
 FROM t_gbylimit_datetime GROUP BY k_dt ORDER BY k_dt DESC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 DROP TABLE t_gbylimit_datetime;

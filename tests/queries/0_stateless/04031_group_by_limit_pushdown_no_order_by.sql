@@ -1,4 +1,4 @@
--- Tests for correctness of the group_by_limit_pushdown optimization.
+-- Tests for correctness of the enable_group_by_top_k_optimization optimization.
 -- Part 5: GROUP BY ... LIMIT without ORDER BY.
 --
 -- When there is no ORDER BY, the optimization uses all GROUP BY keys for the
@@ -9,7 +9,7 @@
 
 -- Tags: no-parallel-replicas, long
 
-SET group_by_limit_pushdown = 1;
+SET enable_group_by_top_k_optimization = 1;
 
 DROP TABLE IF EXISTS t_gbylimit_noob;
 
@@ -38,18 +38,18 @@ FROM numbers(100000);
 SELECT 'single_key_row_count';
 SELECT count() FROM (
     SELECT a, count() AS cnt FROM t_gbylimit_noob GROUP BY a LIMIT 10
-    SETTINGS group_by_limit_pushdown = 1
+    SETTINGS enable_group_by_top_k_optimization = 1
 );
 
 -- Verify every returned group has correct aggregates by joining with unoptimized result.
 SELECT 'single_key_aggregates';
 SELECT count() FROM (
     SELECT a, count() AS cnt, sum(val) AS s FROM t_gbylimit_noob GROUP BY a LIMIT 10
-    SETTINGS group_by_limit_pushdown = 1
+    SETTINGS enable_group_by_top_k_optimization = 1
 ) AS optimized
 LEFT JOIN (
     SELECT a, count() AS cnt, sum(val) AS s FROM t_gbylimit_noob GROUP BY a
-    SETTINGS group_by_limit_pushdown = 0
+    SETTINGS enable_group_by_top_k_optimization = 0
 ) AS full USING (a)
 WHERE optimized.cnt != full.cnt OR optimized.s != full.s;
 
@@ -59,17 +59,17 @@ WHERE optimized.cnt != full.cnt OR optimized.s != full.s;
 SELECT 'composite_two_key_row_count';
 SELECT count() FROM (
     SELECT a, b, count() AS cnt FROM t_gbylimit_noob GROUP BY a, b LIMIT 15
-    SETTINGS group_by_limit_pushdown = 1
+    SETTINGS enable_group_by_top_k_optimization = 1
 );
 
 SELECT 'composite_two_key_aggregates';
 SELECT count() FROM (
     SELECT a, b, count() AS cnt, sum(val) AS s FROM t_gbylimit_noob GROUP BY a, b LIMIT 15
-    SETTINGS group_by_limit_pushdown = 1
+    SETTINGS enable_group_by_top_k_optimization = 1
 ) AS optimized
 LEFT JOIN (
     SELECT a, b, count() AS cnt, sum(val) AS s FROM t_gbylimit_noob GROUP BY a, b
-    SETTINGS group_by_limit_pushdown = 0
+    SETTINGS enable_group_by_top_k_optimization = 0
 ) AS full USING (a, b)
 WHERE optimized.cnt != full.cnt OR optimized.s != full.s;
 
@@ -79,17 +79,17 @@ WHERE optimized.cnt != full.cnt OR optimized.s != full.s;
 SELECT 'composite_three_key_row_count';
 SELECT count() FROM (
     SELECT a, b, c, count() AS cnt FROM t_gbylimit_noob GROUP BY a, b, c LIMIT 20
-    SETTINGS group_by_limit_pushdown = 1
+    SETTINGS enable_group_by_top_k_optimization = 1
 );
 
 SELECT 'composite_three_key_aggregates';
 SELECT count() FROM (
     SELECT a, b, c, count() AS cnt, sum(val) AS s FROM t_gbylimit_noob GROUP BY a, b, c LIMIT 20
-    SETTINGS group_by_limit_pushdown = 1
+    SETTINGS enable_group_by_top_k_optimization = 1
 ) AS optimized
 LEFT JOIN (
     SELECT a, b, c, count() AS cnt, sum(val) AS s FROM t_gbylimit_noob GROUP BY a, b, c
-    SETTINGS group_by_limit_pushdown = 0
+    SETTINGS enable_group_by_top_k_optimization = 0
 ) AS full USING (a, b, c)
 WHERE optimized.cnt != full.cnt OR optimized.s != full.s;
 
@@ -99,18 +99,18 @@ WHERE optimized.cnt != full.cnt OR optimized.s != full.s;
 SELECT 'nullable_key_row_count';
 SELECT count() FROM (
     SELECT d, count() AS cnt FROM t_gbylimit_noob GROUP BY d LIMIT 10
-    SETTINGS group_by_limit_pushdown = 1
+    SETTINGS enable_group_by_top_k_optimization = 1
 );
 
 SELECT 'nullable_key_aggregates';
 -- Use IS NOT DISTINCT FROM for the join condition because USING/= treats NULL != NULL.
 SELECT count() FROM (
     SELECT d, count() AS cnt, sum(val) AS s FROM t_gbylimit_noob GROUP BY d LIMIT 10
-    SETTINGS group_by_limit_pushdown = 1
+    SETTINGS enable_group_by_top_k_optimization = 1
 ) AS optimized
 LEFT JOIN (
     SELECT d, count() AS cnt, sum(val) AS s FROM t_gbylimit_noob GROUP BY d
-    SETTINGS group_by_limit_pushdown = 0
+    SETTINGS enable_group_by_top_k_optimization = 0
 ) AS full ON optimized.d IS NOT DISTINCT FROM full.d
 WHERE optimized.cnt != full.cnt OR optimized.s != full.s;
 
@@ -120,17 +120,17 @@ WHERE optimized.cnt != full.cnt OR optimized.s != full.s;
 SELECT 'string_key_row_count';
 SELECT count() FROM (
     SELECT c, count() AS cnt FROM t_gbylimit_noob GROUP BY c LIMIT 10
-    SETTINGS group_by_limit_pushdown = 1
+    SETTINGS enable_group_by_top_k_optimization = 1
 );
 
 SELECT 'string_key_aggregates';
 SELECT count() FROM (
     SELECT c, count() AS cnt, sum(val) AS s FROM t_gbylimit_noob GROUP BY c LIMIT 10
-    SETTINGS group_by_limit_pushdown = 1
+    SETTINGS enable_group_by_top_k_optimization = 1
 ) AS optimized
 LEFT JOIN (
     SELECT c, count() AS cnt, sum(val) AS s FROM t_gbylimit_noob GROUP BY c
-    SETTINGS group_by_limit_pushdown = 0
+    SETTINGS enable_group_by_top_k_optimization = 0
 ) AS full USING (c)
 WHERE optimized.cnt != full.cnt OR optimized.s != full.s;
 
@@ -141,7 +141,7 @@ WHERE optimized.cnt != full.cnt OR optimized.s != full.s;
 SELECT 'with_offset_row_count';
 SELECT count() FROM (
     SELECT a, count() AS cnt FROM t_gbylimit_noob GROUP BY a LIMIT 5, 10
-    SETTINGS group_by_limit_pushdown = 1
+    SETTINGS enable_group_by_top_k_optimization = 1
 );
 
 -- =====================
@@ -151,7 +151,7 @@ SELECT count() FROM (
 SELECT 'limit_exceeds_groups';
 SELECT count() FROM (
     SELECT a, count() AS cnt FROM t_gbylimit_noob GROUP BY a LIMIT 1000
-    SETTINGS group_by_limit_pushdown = 1
+    SETTINGS enable_group_by_top_k_optimization = 1
 );
 
 -- =====================
@@ -160,7 +160,7 @@ SELECT count() FROM (
 SELECT 'limit_one_row_count';
 SELECT count() FROM (
     SELECT a, b, count() AS cnt FROM t_gbylimit_noob GROUP BY a, b LIMIT 1
-    SETTINGS group_by_limit_pushdown = 1
+    SETTINGS enable_group_by_top_k_optimization = 1
 );
 
 -- =====================
@@ -173,7 +173,7 @@ SELECT count() FROM (
         (number % 50000)::UInt32 AS y,
         count()
     FROM numbers(2000000) GROUP BY x, y LIMIT 10
-    SETTINGS group_by_limit_pushdown = 1
+    SETTINGS enable_group_by_top_k_optimization = 1
 );
 
 SELECT 'two_level_aggregates';
@@ -183,7 +183,7 @@ SELECT count() FROM (
         (number % 50000)::UInt32 AS y,
         count() AS cnt
     FROM numbers(2000000) GROUP BY x, y LIMIT 10
-    SETTINGS group_by_limit_pushdown = 1
+    SETTINGS enable_group_by_top_k_optimization = 1
 ) AS optimized
 LEFT JOIN (
     SELECT
@@ -191,7 +191,7 @@ LEFT JOIN (
         (number % 50000)::UInt32 AS y,
         count() AS cnt
     FROM numbers(2000000) GROUP BY x, y
-    SETTINGS group_by_limit_pushdown = 0
+    SETTINGS enable_group_by_top_k_optimization = 0
 ) AS full USING (x, y)
 WHERE optimized.cnt != full.cnt;
 
@@ -202,7 +202,7 @@ WHERE optimized.cnt != full.cnt;
 SELECT 'negative_with_totals';
 SELECT count() FROM (
     SELECT a, count() AS cnt FROM t_gbylimit_noob GROUP BY a WITH TOTALS LIMIT 10
-    SETTINGS group_by_limit_pushdown = 1
+    SETTINGS enable_group_by_top_k_optimization = 1
 );
 
 DROP TABLE t_gbylimit_noob;

@@ -1,9 +1,9 @@
--- Tests for correctness of the group_by_limit_pushdown optimization.
+-- Tests for correctness of the enable_group_by_top_k_optimization optimization.
 -- Part 2: string, complex, nullable, and low-cardinality key types.
 
 -- Tags: no-parallel-replicas, long
 
-SET group_by_limit_pushdown = 1;
+SET enable_group_by_top_k_optimization = 1;
 SET allow_suspicious_low_cardinality_types = 1;
 
 DROP TABLE IF EXISTS t_gbylimit;
@@ -38,11 +38,11 @@ FROM numbers(50000);
 SELECT 'key_string';
 SELECT k_str, count(), sum(val)
 FROM t_gbylimit GROUP BY k_str ORDER BY k_str ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_str, count(), sum(val)
 FROM t_gbylimit GROUP BY k_str ORDER BY k_str ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- key_fixed_string (FixedString)
@@ -50,11 +50,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'key_fixed_string';
 SELECT k_fstr, count(), sum(val)
 FROM t_gbylimit GROUP BY k_fstr ORDER BY k_fstr ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_fstr, count(), sum(val)
 FROM t_gbylimit GROUP BY k_fstr ORDER BY k_fstr ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- serialized (Tuple)
@@ -62,11 +62,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'serialized';
 SELECT k_tup, count(), sum(val)
 FROM t_gbylimit GROUP BY k_tup ORDER BY k_tup ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_tup, count(), sum(val)
 FROM t_gbylimit GROUP BY k_tup ORDER BY k_tup ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- nullable_key32 (Nullable(UInt32))
@@ -74,11 +74,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'nullable_key32';
 SELECT k_nu32, count(), sum(val)
 FROM t_gbylimit GROUP BY k_nu32 ORDER BY k_nu32 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_nu32, count(), sum(val)
 FROM t_gbylimit GROUP BY k_nu32 ORDER BY k_nu32 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- nullable_key_string (Nullable(String))
@@ -86,11 +86,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'nullable_key_string';
 SELECT k_nstr, count(), sum(val)
 FROM t_gbylimit GROUP BY k_nstr ORDER BY k_nstr ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_nstr, count(), sum(val)
 FROM t_gbylimit GROUP BY k_nstr ORDER BY k_nstr ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- low_cardinality_key64 (LowCardinality(UInt64))
@@ -98,11 +98,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'low_cardinality_key64';
 SELECT k_lcu64, count(), sum(val)
 FROM t_gbylimit GROUP BY k_lcu64 ORDER BY k_lcu64 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_lcu64, count(), sum(val)
 FROM t_gbylimit GROUP BY k_lcu64 ORDER BY k_lcu64 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- low_cardinality_key_string (LowCardinality(String))
@@ -110,10 +110,10 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'low_cardinality_key_string';
 SELECT k_lcstr, count(), sum(val)
 FROM t_gbylimit GROUP BY k_lcstr ORDER BY k_lcstr ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_lcstr, count(), sum(val)
 FROM t_gbylimit GROUP BY k_lcstr ORDER BY k_lcstr ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 DROP TABLE t_gbylimit;

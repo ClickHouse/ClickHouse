@@ -1,6 +1,6 @@
 <test>
 
-<!-- Benchmarks for the group_by_limit_pushdown optimization.
+<!-- Benchmarks for the enable_group_by_top_k_optimization optimization.
      This optimization uses a heap during aggregation to skip GROUP BY keys
      that won't make it into the final LIMIT top-N results.
      Pattern 1: GROUP BY col ORDER BY col ASC LIMIT N (ORDER BY key = GROUP BY key).

@@ -1,4 +1,4 @@
--- Tests for correctness of the group_by_limit_pushdown optimization.
+-- Tests for correctness of the enable_group_by_top_k_optimization optimization.
 -- Regression test: signed integer key types with the typed numeric fast path.
 --
 -- The hash table maps all 8-byte keys through `HashMethodOneNumber<UInt64>`,
@@ -12,7 +12,7 @@
 
 -- Tags: no-parallel-replicas
 
-SET group_by_limit_pushdown = 1;
+SET enable_group_by_top_k_optimization = 1;
 
 DROP TABLE IF EXISTS t_gbylimit_signed;
 
@@ -45,11 +45,11 @@ FROM numbers(50000);
 SELECT 'int8_asc';
 SELECT k_i8, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i8 ORDER BY k_i8 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_i8, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i8 ORDER BY k_i8 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- Int8 DESC
@@ -57,11 +57,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'int8_desc';
 SELECT k_i8, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i8 ORDER BY k_i8 DESC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_i8, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i8 ORDER BY k_i8 DESC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- Int16 ASC
@@ -69,11 +69,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'int16_asc';
 SELECT k_i16, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i16 ORDER BY k_i16 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_i16, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i16 ORDER BY k_i16 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- Int16 DESC
@@ -81,11 +81,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'int16_desc';
 SELECT k_i16, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i16 ORDER BY k_i16 DESC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_i16, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i16 ORDER BY k_i16 DESC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- Int32 ASC
@@ -93,11 +93,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'int32_asc';
 SELECT k_i32, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i32 ORDER BY k_i32 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_i32, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i32 ORDER BY k_i32 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- Int32 DESC
@@ -105,11 +105,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'int32_desc';
 SELECT k_i32, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i32 ORDER BY k_i32 DESC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_i32, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i32 ORDER BY k_i32 DESC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- Int64 ASC (the original failing case: hash table uses UInt64 for Int64)
@@ -117,11 +117,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'int64_asc';
 SELECT k_i64, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i64 ORDER BY k_i64 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_i64, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i64 ORDER BY k_i64 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- Int64 DESC
@@ -129,11 +129,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'int64_desc';
 SELECT k_i64, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i64 ORDER BY k_i64 DESC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_i64, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i64 ORDER BY k_i64 DESC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- Date32 ASC (signed 32-bit type stored as Int32)
@@ -141,11 +141,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'date32_asc';
 SELECT k_d32, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_d32 ORDER BY k_d32 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_d32, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_d32 ORDER BY k_d32 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- Date32 DESC
@@ -153,10 +153,10 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'date32_desc';
 SELECT k_d32, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_d32 ORDER BY k_d32 DESC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_d32, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_d32 ORDER BY k_d32 DESC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 DROP TABLE t_gbylimit_signed;

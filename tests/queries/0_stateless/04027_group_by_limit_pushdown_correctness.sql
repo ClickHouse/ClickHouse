@@ -1,9 +1,9 @@
--- Tests for correctness of the group_by_limit_pushdown optimization.
+-- Tests for correctness of the enable_group_by_top_k_optimization optimization.
 -- Part 1: integer key types (UInt8..UInt256).
 
 -- Tags: no-parallel-replicas, long
 
-SET group_by_limit_pushdown = 1;
+SET enable_group_by_top_k_optimization = 1;
 SET allow_suspicious_low_cardinality_types = 1;
 
 DROP TABLE IF EXISTS t_gbylimit;
@@ -36,11 +36,11 @@ FROM numbers(50000);
 SELECT 'key8';
 SELECT k_u8, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u8 ORDER BY k_u8 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_u8, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u8 ORDER BY k_u8 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- key16 (UInt16)
@@ -48,11 +48,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'key16';
 SELECT k_u16, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u16 ORDER BY k_u16 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_u16, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u16 ORDER BY k_u16 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- key32 (UInt32)
@@ -60,11 +60,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'key32';
 SELECT k_u32, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u32 ORDER BY k_u32 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_u32, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u32 ORDER BY k_u32 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- key64 (UInt64)
@@ -72,11 +72,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'key64';
 SELECT k_u64, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u64 ORDER BY k_u64 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_u64, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u64 ORDER BY k_u64 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- keys128 (UInt128)
@@ -84,11 +84,11 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'keys128';
 SELECT k_u128, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u128 ORDER BY k_u128 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_u128, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u128 ORDER BY k_u128 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 -- =====================
 -- keys256 (UInt256)
@@ -96,10 +96,10 @@ SETTINGS group_by_limit_pushdown = 0;
 SELECT 'keys256';
 SELECT k_u256, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u256 ORDER BY k_u256 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 1
+SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
 SELECT k_u256, count(), sum(val)
 FROM t_gbylimit GROUP BY k_u256 ORDER BY k_u256 ASC LIMIT 10
-SETTINGS group_by_limit_pushdown = 0;
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 DROP TABLE t_gbylimit;
