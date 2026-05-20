@@ -67,74 +67,6 @@ struct TopKAggregationHeap
     TopKAggregationHeap(TopKAggregationHeap &&) noexcept = default;
     TopKAggregationHeap & operator=(TopKAggregationHeap &&) noexcept = default;
 
-    /// Initialize for a single-column key.
-    void init(
-        const IColumn & source_column,
-        size_t cap,
-        int direction = 1,
-        int nulls_direction = 1,
-        const Collator * col = nullptr)
-    {
-        directions = {direction};
-        nulls_directions = {nulls_direction};
-        collators = {col};
-        is_composite = false;
-        capacity = cap;
-        compaction_threshold = capacity + capacity / 2;  /// 1.5x capacity
-        heap_column = source_column.cloneEmpty();
-        /// The heap fills up to `compaction_threshold + 1` rows before each
-        /// trim, so reserve once to avoid reallocation during fill.
-        heap_column->reserve(compaction_threshold + 1);
-        heap_indices.clear();
-        heap_indices.reserve(compaction_threshold + 1);
-        initNumericSkipFn();
-    }
-
-    /// Initialize for composite (multi-column) keys.
-    /// The heap stores a `ColumnTuple` of cloned-empty sub-columns.
-    void init(
-        const ColumnRawPtrs & source_columns,
-        size_t cap,
-        const std::vector<int> & dirs,
-        const std::vector<int> & null_dirs,
-        const std::vector<const Collator *> & cols)
-    {
-        const size_t n = source_columns.size();
-        is_composite = true;
-        capacity = cap;
-        compaction_threshold = capacity + capacity / 2;
-
-        directions.assign(n, 1);
-        for (size_t i = 0; i < dirs.size() && i < n; ++i)
-            directions[i] = dirs[i];
-
-        nulls_directions.assign(n, 1);
-        for (size_t i = 0; i < null_dirs.size() && i < n; ++i)
-            nulls_directions[i] = null_dirs[i];
-
-        /// Pad or copy the collators vector to match the number of key columns.
-        collators.assign(n, nullptr);
-        for (size_t i = 0; i < cols.size() && i < n; ++i)
-            collators[i] = cols[i];
-
-        /// Build a `ColumnTuple` of cloned-empty sub-columns.
-        MutableColumns sub_columns;
-        sub_columns.reserve(n);
-        for (const auto * col : source_columns)
-            sub_columns.emplace_back(col->cloneEmpty());
-        heap_column = ColumnTuple::create(std::move(sub_columns));
-        /// The heap fills up to `compaction_threshold + 1` rows before each
-        /// trim; `ColumnTuple::reserve` forwards to each sub-column.
-        heap_column->reserve(compaction_threshold + 1);
-
-        heap_indices.clear();
-        heap_indices.reserve(compaction_threshold + 1);
-        /// Composite keys never use the typed numeric fast path; reset the
-        /// pointer defensively in case the heap is re-initialized after a
-        /// previous single-column setup.
-        should_skip_numeric_fn = nullptr;
-    }
-
     /// Initialize the heap if not already initialized.
     /// Dispatches to the single-column or composite `init` based on `heap_key_count`.
     /// `total_group_by_keys` is the total number of `GROUP BY` key columns;
@@ -175,8 +107,11 @@ struct TopKAggregationHeap
     /// Returns true if the source key at `source_row` is worse than the current boundary
     /// (the heap root), meaning it should be skipped.
     /// Dispatches to single-column or composite comparison based on `is_composite`.
+    /// Precondition: heap is non-empty. Callers guard with `size() >= top_k_keys`,
+    /// and `top_k_keys >= 1` whenever the top-k path is active.
     bool shouldSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
     {
+        chassert(!heap_indices.empty());
         const size_t boundary = heap_indices.front();
         if (is_composite)
             return sourceAboveHeapComposite(source_columns, source_row, boundary);
@@ -196,6 +131,7 @@ struct TopKAggregationHeap
     /// reinterprets it to the correct actual type internally.
     bool shouldSkipNumeric(const void * source_data, size_t source_row) const
     {
+        chassert(!heap_indices.empty());
         return should_skip_numeric_fn(*this, source_data, source_row);
     }
 
@@ -225,7 +161,7 @@ struct TopKAggregationHeap
     /// and needs to be trimmed back down to `capacity`.
     bool needsTrim() const
     {
-        return compaction_threshold > 0 && heap_indices.size() > compaction_threshold;
+        return heap_indices.size() > compaction_threshold;
     }
 
     /// Trim the heap back to `capacity` by popping excess elements, calling `on_evict`
@@ -292,6 +228,74 @@ struct TopKAggregationHeap
     }
 
 private:
+    /// Initialize for a single-column key.
+    void init(
+        const IColumn & source_column,
+        size_t cap,
+        int direction,
+        int nulls_direction,
+        const Collator * col)
+    {
+        directions = {direction};
+        nulls_directions = {nulls_direction};
+        collators = {col};
+        is_composite = false;
+        capacity = cap;
+        compaction_threshold = capacity + capacity / 2;  /// 1.5x capacity
+        heap_column = source_column.cloneEmpty();
+        /// The heap fills up to `compaction_threshold + 1` rows before each
+        /// trim, so reserve once to avoid reallocation during fill.
+        heap_column->reserve(compaction_threshold + 1);
+        heap_indices.clear();
+        heap_indices.reserve(compaction_threshold + 1);
+        initNumericSkipFn();
+    }
+
+    /// Initialize for composite (multi-column) keys.
+    /// The heap stores a `ColumnTuple` of cloned-empty sub-columns.
+    void init(
+        const ColumnRawPtrs & source_columns,
+        size_t cap,
+        const std::vector<int> & dirs,
+        const std::vector<int> & null_dirs,
+        const std::vector<const Collator *> & cols)
+    {
+        const size_t n = source_columns.size();
+        is_composite = true;
+        capacity = cap;
+        compaction_threshold = capacity + capacity / 2;
+
+        directions.assign(n, 1);
+        for (size_t i = 0; i < dirs.size() && i < n; ++i)
+            directions[i] = dirs[i];
+
+        nulls_directions.assign(n, 1);
+        for (size_t i = 0; i < null_dirs.size() && i < n; ++i)
+            nulls_directions[i] = null_dirs[i];
+
+        /// Pad or copy the collators vector to match the number of key columns.
+        collators.assign(n, nullptr);
+        for (size_t i = 0; i < cols.size() && i < n; ++i)
+            collators[i] = cols[i];
+
+        /// Build a `ColumnTuple` of cloned-empty sub-columns.
+        MutableColumns sub_columns;
+        sub_columns.reserve(n);
+        for (const auto * col : source_columns)
+            sub_columns.emplace_back(col->cloneEmpty());
+        heap_column = ColumnTuple::create(std::move(sub_columns));
+        /// The heap fills up to `compaction_threshold + 1` rows before each
+        /// trim; `ColumnTuple::reserve` forwards to each sub-column.
+        heap_column->reserve(compaction_threshold + 1);
+
+        heap_indices.clear();
+        heap_indices.reserve(compaction_threshold + 1);
+        /// Composite keys never use the typed numeric fast path; reset the
+        /// pointer defensively in case the heap is re-initialized after a
+        /// previous single-column setup.
+        should_skip_numeric_fn = nullptr;
+    }
+
     /// Compare a row in `source_column` against a row in `heap_column` (single-column case).
     /// Returns true if source row is worse than the heap row in `ORDER BY` order.
     bool sourceAboveHeap(const IColumn & source_column, size_t source_row, size_t heap_row) const
@@ -378,11 +382,12 @@ private:
     }
 
     /// Resolve the typed numeric skip function pointer based on the actual column type.
-    /// Called once at init time for single-column, non-collated keys.
+    /// Called once at init time from the single-column `init`; `collators` has
+    /// exactly one entry at that point.
     void initNumericSkipFn()
     {
         should_skip_numeric_fn = nullptr;
-        if (is_composite || (!collators.empty() && collators[0]))
+        if (collators[0])
             return;
 
         switch (heap_column->getDataType())
