@@ -306,7 +306,11 @@ bool parseResizeMessage(const String & json, int & cols, int & rows)
     return cols > 0 && rows > 0;
 }
 
-/// Parse an auth message like {"type":"auth","user":"default","password":"..."}.
+/// Parse an auth message like {"type":"auth","user":"...","password":"..."}.
+/// The "user" field is optional: when omitted or empty, the caller-provided
+/// default (typically the server's default user) is preserved. This mirrors
+/// the HTTP path in `authenticateUserByHTTP`, where an absent `user` query
+/// parameter falls back to the server's default user.
 bool parseAuthMessage(const String & json, String & user, String & password)
 {
     auto object = parseRootObject(json);
@@ -315,10 +319,11 @@ bool parseAuthMessage(const String & json, String & user, String & password)
     if (getStringField(object, "type") != "auth")
         return false;
 
-    user = getStringField(object, "user");
+    auto parsed_user = getStringField(object, "user");
+    if (!parsed_user.empty())
+        user = parsed_user;
     password = getStringField(object, "password");
-    /// User is required, password can be empty
-    return !user.empty();
+    return true;
 }
 
 }
@@ -551,7 +556,10 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     /// here would unwind without a close frame and the browser would see an
     /// abnormal close (1006) indistinguishable from a network drop. Catch
     /// parse errors and send a deterministic policy close (1008) instead.
-    String auth_user;
+    ///
+    /// `auth_user` is seeded with the server's default user so that omitting
+    /// the "user" field in the JSON falls back to that default.
+    String auth_user = "default";
     String auth_password;
     bool auth_parsed = false;
     try
