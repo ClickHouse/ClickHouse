@@ -1156,6 +1156,110 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_MSAN],
         ),
     )
+    stress_test_serverfuzz_jobs = common_stress_job_config.parametrize(
+        Job.ParamSet(
+            parameter="experimental, serverfuzz, amd_debug",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.DEB_AMD_DEBUG],
+        ),
+        Job.ParamSet(
+            parameter="experimental, serverfuzz, amd_asan_ubsan",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.DEB_AMD_ASAN_UBSAN],
+        ),
+        Job.ParamSet(
+            parameter="experimental, serverfuzz, amd_tsan",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.DEB_AMD_TSAN],
+        ),
+        Job.ParamSet(
+            parameter="experimental, serverfuzz, amd_msan",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.DEB_AMD_MSAN],
+        ),
+        Job.ParamSet(
+            parameter="experimental, serverfuzz, arm_release",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.DEB_ARM_RELEASE],
+        ),
+        Job.ParamSet(
+            parameter="experimental, serverfuzz, arm_debug",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.DEB_ARM_DEBUG],
+        ),
+        Job.ParamSet(
+            parameter="experimental, serverfuzz, arm_asan_ubsan",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.DEB_ARM_ASAN_UBSAN],
+        ),
+        Job.ParamSet(
+            parameter="experimental, serverfuzz, arm_asan_ubsan, s3",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.DEB_ARM_ASAN_UBSAN],
+        ),
+        Job.ParamSet(
+            parameter="experimental, serverfuzz, arm_tsan",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.DEB_ARM_TSAN],
+        ),
+        Job.ParamSet(
+            parameter="experimental, serverfuzz, arm_msan",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.DEB_ARM_MSAN],
+        ),
+        Job.ParamSet(
+            parameter="experimental, serverfuzz, arm_ubsan",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.DEB_ARM_UBSAN],
+        ),
+        Job.ParamSet(
+            parameter="experimental, serverfuzz, azure, amd_msan",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.DEB_AMD_MSAN],
+        ),
+        Job.ParamSet(
+            parameter="experimental, serverfuzz, azure, amd_tsan",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.DEB_AMD_TSAN],
+        ),
+    )
+    buzz_fuzzer_serverfuzz_jobs = Job.Config(
+        name=JobNames.BUZZHOUSE,
+        runs_on=[],  # from parametrize()
+        command="python3 ./ci/jobs/buzzhouse_job.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/docker/fuzzer",
+                "./ci/jobs/buzzhouse_job.py",
+                "./ci/jobs/ast_fuzzer_job.py",
+                "./ci/jobs/scripts/log_parser.py",
+                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                "./ci/jobs/scripts/fuzzer/",
+                "./ci/docker/fuzzer",
+            ],
+        ),
+    ).parametrize(
+        Job.ParamSet(
+            parameter="experimental, serverfuzz, amd_debug",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_DEBUG],
+        ),
+        Job.ParamSet(
+            parameter="experimental, serverfuzz, arm_asan_ubsan",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+        ),
+        Job.ParamSet(
+            parameter="experimental, serverfuzz, amd_tsan",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_TSAN],
+        ),
+        Job.ParamSet(
+            parameter="experimental, serverfuzz, amd_msan",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_MSAN],
+        ),
+    )
     performance_comparison_with_master_head_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["#from param"],
