@@ -437,8 +437,15 @@ CONTEXT_H_EXCLUDES=(
     --include "$ROOT_PATH/src/Functions/IFunction*"
 )
 find $ROOT_PATH/src -name '*.h' -print0 | xargs -0 grep -P '#include[\s]*(<|")Interpreters/Context.h(>|")' "${CONTEXT_H_EXCLUDES[@]}" | \
-    grep . && echo '^ Too broad Context.h usage. Consider using Context_fwd.h and Context.h out from .h into .cpp'
+    grep . && echo '^ Too broad Context.h usage. Consider using Context_fwd.h and move Context.h out from .h into .cpp'
 } > "$O.17" 2>&1 &
+
+# 18: Do not use simple assert()
+{
+xargs < "$STYLE_TMPDIR/all_excluded" rg -n '\bassert[[:space:]]*\(' |
+    rg -v ':[[:space:]]*(//|/\*|\*)' &&
+    echo "Use chassert instead of assert"
+} > "$O.18" 2>&1 &
 
 # Wait for all parallel checks to complete, then output results in order
 wait
