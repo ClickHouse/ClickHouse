@@ -30,6 +30,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.jobs.stress_job import (
@@ -180,6 +182,26 @@ def test_sanitize_strips_carriage_returns():
     # `(Reading database ... 5%\r... 10%\r...)` and must not be
     # turned into LF by universal-newlines mode.
     assert sanitize_test_result_line("a\rb\rc") == "abc"
+
+
+def test_invalid_status_row_is_collected_as_malformed(tmp_path):
+    # A row with 2+ cells but an unrecognised status (anything that
+    # is not OK / FAIL / ERROR / ...) must not abort parsing — it
+    # must be collected as malformed so the neighbouring valid rows
+    # still surface.
+    path = _write(
+        tmp_path,
+        "real_failure\tFAIL\t\\N\tdetails\n"
+        "weird\tWHATEVER\n"
+        "later_check\tOK\n",
+    )
+    results, malformed = read_test_results(path)
+    names = [r.name for r in results]
+    assert "real_failure" in names
+    assert "later_check" in names
+    assert "weird" not in names
+    assert len(malformed) == 1
+    assert malformed[0][0] == 2
 
 
 def test_dpkg_progress_in_info_does_not_split_row(tmp_path):

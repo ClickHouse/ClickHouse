@@ -78,9 +78,18 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
                 pass
 
         result = Result(name, status, duration=time)
-        assert (
-            result.is_ok() or result.is_failure or result.is_error
-        ), f"Unexpected status [{result.status}]"
+        if not (result.is_ok() or result.is_failure() or result.is_error()):
+            # Unknown status — treat as a malformed row rather than
+            # aborting the whole file. Aborting would re-introduce the
+            # `Unknown job error` failure mode this parser is here to
+            # eliminate: a single unexpected-status row would discard
+            # every valid neighbour, including the real failure that
+            # triggered the job. (The pre-existing assert referenced
+            # `is_failure`/`is_error` as attributes — unbound method
+            # objects, always truthy — so it never fired and let any
+            # status through silently. Fix to call the methods.)
+            malformed.append((line_number, line[0]))
+            continue
         if len(line) == 4 and line[3]:
             # The value can be empty, but when it's not,
             # the 4th value is a pythonic list, e.g. ['file1', 'file2']
