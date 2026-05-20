@@ -34,7 +34,6 @@ const char * toString(QueryTreeNodeType type)
         case QueryTreeNodeType::COLUMN: return "COLUMN";
         case QueryTreeNodeType::LAMBDA: return "LAMBDA";
         case QueryTreeNodeType::SORT: return "SORT";
-        case QueryTreeNodeType::GROUP_BY_ELEMENT: return "GROUP_BY_ELEMENT";
         case QueryTreeNodeType::INTERPOLATE: return "INTERPOLATE";
         case QueryTreeNodeType::WINDOW: return "WINDOW";
         case QueryTreeNodeType::TABLE: return "TABLE";
@@ -44,6 +43,7 @@ const char * toString(QueryTreeNodeType type)
         case QueryTreeNodeType::CROSS_JOIN: return "CROSS_JOIN";
         case QueryTreeNodeType::JOIN: return "JOIN";
         case QueryTreeNodeType::UNION: return "UNION";
+        case QueryTreeNodeType::GROUP_BY_ELEMENT: return "GROUP_BY_ELEMENT";
     }
 }
 

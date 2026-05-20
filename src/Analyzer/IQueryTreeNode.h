@@ -37,7 +37,6 @@ enum class QueryTreeNodeType : uint8_t
     COLUMN,
     LAMBDA,
     SORT,
-    GROUP_BY_ELEMENT,
     INTERPOLATE,
     WINDOW,
     TABLE,
@@ -47,6 +46,11 @@ enum class QueryTreeNodeType : uint8_t
     CROSS_JOIN,
     JOIN,
     UNION,
+    /// Keep new values at the end of the enum: the numeric ordinal of every
+    /// node type contributes to `QueryTreeNode` hashes (used e.g. for CNF
+    /// condition ordering), so inserting a value in the middle silently
+    /// changes the hash of every later type.
+    GROUP_BY_ELEMENT,
 };
 
 /// Convert query tree node type to string
