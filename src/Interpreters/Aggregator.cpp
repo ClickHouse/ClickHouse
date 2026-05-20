@@ -1,13 +1,9 @@
 #include <optional>
-#include <unordered_set>
 #include <Core/Settings.h>
 #include <IO/NullWriteBuffer.h>
 #include <Poco/Util/Application.h>
-#include <Common/HashTable/HashTableKeyHolder.h>
-#include <base/wide_integer_to_string.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
-#include <base/types.h>
 
 #ifdef OS_LINUX
 #    include <unistd.h>
@@ -34,10 +30,13 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/FieldAccurateComparison.h>
+#include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/JSONBuilder.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/Stopwatch.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -45,8 +44,9 @@
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
-#include <Common/FieldAccurateComparison.h>
-#include <Common/VectorWithMemoryTracking.h>
+
+#include <base/wide_integer_to_string.h>
+#include <base/types.h>
 
 
 namespace ProfileEvents
