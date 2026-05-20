@@ -2330,6 +2330,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
     String temporary_table_name = create.getTable();
+
     auto creator = [&](const StorageID & table_id)
     {
         auto res = StorageFactory::instance().get(create,
@@ -2345,9 +2346,13 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
     };
 
     auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
-    /// addOrUpdateExternalTable will replace existing temporary table with the same name.
-    /// It is thread-safe because of internal locking in Context class.
-    getContext()->getSessionContext()->addOrUpdateExternalTable(temporary_table_name, std::move(temporary_table));
+    /// Bare `REPLACE` requires the target to exist (`updateExternalTable` throws `UNKNOWN_TABLE`);
+    /// `CREATE OR REPLACE` accepts either state. Both calls are thread-safe.
+    auto session_context = getContext()->getSessionContext();
+    if (create.create_or_replace)
+        session_context->addOrUpdateExternalTable(temporary_table_name, std::move(temporary_table));
+    else
+        session_context->updateExternalTable(temporary_table_name, std::move(temporary_table));
     /// Note, until BlockIO will be "executed" - the table is empty, so it is not atomic, but this is OK, since concurrent access from the same session to a temporary table is not possible
     return fillTableIfNeeded(create);
 }
