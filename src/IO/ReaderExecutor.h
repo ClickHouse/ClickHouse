@@ -68,7 +68,14 @@ public:
     size_t getPosition() const { return position; }
 
     /// Logical file size (physical size minus encryption headers).
-    size_t totalSize() const { return offset_map.totalSize() - data_start_offset; }
+    /// Saturates to 0 if the underlying objects sum to fewer bytes than the
+    /// declared encryption headers — that file is corrupt/truncated; the
+    /// next read (or initDecryption) will surface CANNOT_READ_ALL_DATA.
+    size_t totalSize() const
+    {
+        size_t physical = offset_map.totalSize();
+        return physical > data_start_offset ? physical - data_start_offset : 0;
+    }
 
     /// Merge close-together ranges to reduce source request count.
     /// Ranges separated by less than min_gap are combined.

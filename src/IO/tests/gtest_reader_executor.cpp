@@ -433,6 +433,29 @@ TEST(ReaderExecutor, MergeRangesZeroMinGap)
     ASSERT_EQ(merged.size(), 2);
 }
 
+#if USE_SSL
+TEST(ReaderExecutor, TotalSizeSaturatesOnUndersizedEncryptedFile)
+{
+    /// File is 10 bytes; two encryption layers expect 128 bytes of headers
+    /// (offset_map.totalSize() < data_start_offset). Pre-fix: unsigned
+    /// subtraction underflowed to ~SIZE_MAX, making the executor think the
+    /// logical file was enormous. Post-fix: totalSize() saturates to 0;
+    /// the next read (or initDecryption) will throw CANNOT_READ_ALL_DATA.
+    String content(10, 'A');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 10);
+
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/512);
+    executor.addDecryptionLayer("layer0", 64, [](UInt128, const String &) { return String{}; });
+    executor.addDecryptionLayer("layer1", 64, [](UInt128, const String &) { return String{}; });
+
+    EXPECT_EQ(executor.totalSize(), 0u);
+}
+#endif
+
 TEST(ReaderExecutor, MergeRangesOverlapping)
 {
     /// Overlapping ranges merge into their union regardless of min_gap > 0.
