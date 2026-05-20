@@ -78,6 +78,20 @@ def test_filesystem_cache_eviction_metrics(start_cluster):
     assert int(evictions) == sizes, f"counter={evictions} size_observations={sizes}"
     assert sum_dim("filesystem_cache_evictions_by_client_total") > 0
 
+    # Verify the `queue` label is correctly populated for SLRU. Initial inserts
+    # land in probationary; subsequent reads promote segments to protected. At
+    # least some evictions must be labelled `probationary` or `protected` — if
+    # all were `unknown` the queue_type lookup inside EvictionCandidates::evict
+    # silently regressed (e.g. dynamic-resize path losing original_queue_types).
+    slru_queue_evictions = float(node.query(
+        "SELECT coalesce(sum(value), 0) FROM system.dimensional_metrics "
+        "WHERE metric = 'filesystem_cache_evictions_total' "
+        "AND labels['queue'] IN ('probationary', 'protected')"
+    ).strip())
+    assert slru_queue_evictions > 0, (
+        f"No evictions with probationary/protected queue label — all unknown?\n{debug}"
+    )
+
     # SLRU is configured; repeated SELECTs over the same blob data promote
     # probationary segments to protected, which must show up in the
     # promotions counter (same flag enables it).
