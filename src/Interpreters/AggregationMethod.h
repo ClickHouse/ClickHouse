@@ -1,15 +1,13 @@
 #pragma once
-#include <algorithm>
-#include <queue>
-#include <vector>
-#include <Common/ColumnsHashing.h>
 
+#include <Columns/Collator.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>
-#include <Columns/Collator.h>
-
+#include <Common/ColumnsHashing.h>
 #include <Interpreters/TopKAggregationHeap.h>
+
+#include <vector>
 
 namespace DB
 {
