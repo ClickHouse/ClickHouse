@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -32,6 +33,8 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
+#include "Planner/PlannerContext.h"
+#include "Planner/PlannerExpressionAnalysis.h"
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -42,6 +45,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace Setting
@@ -221,12 +225,36 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
     query_tree = query_tree->cloneAndReplace(replacement_map);
 }
 
-static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
+namespace
+{
+
+struct StorageSubstituionOptions
+{
+    const StoragePtr & storage = nullptr;
+    const TableNodePtr & table = nullptr;
+};
+
+QueryTreeNodePtr buildQueryTreeAndRunPasses(
+    const ASTPtr & query,
     const SelectQueryOptions & select_query_options,
     const ContextPtr & context,
-    const StoragePtr & storage)
+    StorageSubstituionOptions storage_options = {}
+)
 {
     auto query_tree = buildQueryTree(query, context);
+    if (storage_options.table)
+    {
+        auto * query_node = query_tree->as<QueryNode>();
+        if (!query_node)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Invalid query provided during projection calculation: Received not a QueryNode");
+        auto * identifier_node = query_node->getJoinTree()->as<IdentifierNode>();
+        if (identifier_node == nullptr || identifier_node->getIdentifier().getFullName() != "system.one")
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Invalid query provided during projection calculation: Invalid FROM clause");
+
+        query_node->getJoinTree() = storage_options.table;
+    }
 
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(query_tree_pass_manager, select_query_options.only_analyze);
@@ -240,12 +268,31 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     else
         query_tree_pass_manager.run(query_tree);
 
-    if (storage)
-        replaceStorageInQueryTree(query_tree, context, storage);
+    if (storage_options.storage)
+        replaceStorageInQueryTree(query_tree, context, storage_options.storage);
+
+    if (storage_options.table)
+    {
+        auto * query_node = query_tree->as<QueryNode>();
+
+        std::unordered_set<size_t> used_projection_columns_indexes;
+
+        QueryTreeNodePtrWithHashSet projection_set;
+        const auto & projection_list = query_node->getProjection().getNodes();
+        for (size_t i = 0; i < projection_list.size(); ++i)
+        {
+            auto [_, inserted] = projection_set.emplace(projection_list[i]);
+            if (inserted)
+                used_projection_columns_indexes.emplace(i);
+        }
+
+        query_node->removeUnusedProjectionColumns(used_projection_columns_indexes);
+    }
 
     return query_tree;
 }
 
+}
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ASTPtr & query_,
@@ -256,7 +303,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context))
     , planner(query_tree, select_query_options, post_filter_)
     , query_plan_with_parallel_replicas_builder(
           // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
@@ -274,7 +321,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, { .storage = storage_ }))
     , planner(query_tree, select_query_options)
     , query_plan_with_parallel_replicas_builder(
           // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
@@ -285,6 +332,18 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            column_names]() { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, storage, column_names); })
 {
 }
+
+InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
+    const ASTPtr & query_,
+    const ContextPtr & context_,
+    TableNodePtr table_,
+    const SelectQueryOptions & select_query_options_)
+    : query(normalizeAndValidateQuery(query_, {}))
+    , context(buildContext(context_, select_query_options_))
+    , select_query_options(select_query_options_)
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, { .table = table_ }))
+    , planner(query_tree, select_query_options, /*post_filter*/ nullptr, /*qualify_column_names*/ false)
+{}
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const QueryTreeNodePtr & query_tree_, const ContextPtr & context_, const SelectQueryOptions & select_query_options_)
@@ -339,6 +398,23 @@ std::pair<SharedHeader, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSa
 {
     planner.buildQueryPlanIfNeeded();
     return {planner.getQueryPlan().getCurrentHeader(), planner.getPlannerContext()};
+}
+
+const Names & InterpreterSelectQueryAnalyzer::getRequiredColumns()
+{
+    planner.buildQueryPlanIfNeeded();
+    auto const & table_expression_data_map = planner.getPlannerContext()->getTableExpressionNodeToData();
+    if (table_expression_data_map.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Expected to have only 1 table expression registered, but got: {}",
+        table_expression_data_map.size());
+    return table_expression_data_map.begin()->second.getSelectedColumnsNames();
+}
+
+const PlannerExpressionsAnalysisResult & InterpreterSelectQueryAnalyzer::getExpressionAnalysisResult()
+{
+    planner.buildQueryPlanIfNeeded();
+    return planner.getExpressionAnalysisResult();
 }
 
 BlockIO InterpreterSelectQueryAnalyzer::execute()

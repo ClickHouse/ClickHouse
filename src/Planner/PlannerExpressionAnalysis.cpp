@@ -30,6 +30,7 @@
 #include <Planner/Utils.h>
 
 #include <Core/Settings.h>
+#include "Core/NamesAndTypes.h"
 
 namespace DB
 {

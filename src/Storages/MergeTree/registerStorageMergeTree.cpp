@@ -424,7 +424,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     bool is_extended_storage_def = args.engine_args.empty() || isExtendedStorageDef(args.query);
 
-    const Settings & local_settings = args.getLocalContext()->getSettingsRef();
+    auto local_context = args.getLocalContext();
+    const Settings & local_settings = local_context->getSettingsRef();
 
     bool replicated = isReplicated(args.engine_name);
     std::string_view name_part = getNamePart(args.engine_name);
@@ -552,7 +553,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         /// Allow expressions in engine arguments.
         /// In new syntax argument can be literal or identifier or array/tuple of identifiers.
-        evaluateEngineArgs(engine_args, args.getLocalContext());
+        evaluateEngineArgs(engine_args, local_context);
     }
     else if (args.mode <= LoadingStrictnessLevel::CREATE && !local_settings[Setting::allow_deprecated_syntax_for_merge_tree])
     {
@@ -567,7 +568,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (replicated)
     {
         zookeeper_info = extractZooKeeperPathAndReplicaNameFromEngineArgs(
-            args.query, args.table_id, args.engine_name, args.engine_args, args.mode, args.getLocalContext());
+            args.query, args.table_id, args.engine_name, args.engine_args, args.mode, local_context);
 
         if (zookeeper_info.replica_name.empty())
             throw Exception(ErrorCodes::NO_REPLICA_NAME_GIVEN, "No replica name in config{}", verbose_help_message);
@@ -828,7 +829,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->settings)
         {
             if (args.mode <= LoadingStrictnessLevel::CREATE)
-                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
+                local_context->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
             metadata.settings_changes = args.storage_def->settings->ptr();
         }
 
@@ -999,7 +1000,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 SettingsChanges changes;
                 changes.emplace_back("index_granularity", Field((*storage_settings)[MergeTreeSetting::index_granularity]));
-                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, changes);
+                local_context->checkMergeTreeSettingsConstraints(initial_storage_settings, changes);
             }
         }
         else
@@ -1037,14 +1038,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (replicated)
     {
         bool need_check_table_structure = true;
-        if (auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction())
+        if (auto txn = local_context->getZooKeeperMetadataTransaction())
             need_check_table_structure = txn->isInitialQuery();
 
         ZooKeeperRetriesInfo create_query_zk_retries_info{
             local_settings[Setting::keeper_max_retries],
             local_settings[Setting::keeper_retry_initial_backoff_ms],
             local_settings[Setting::keeper_retry_max_backoff_ms],
-            args.getLocalContext()->getProcessListElementSafe()};
+            local_context->getProcessListElementSafe()};
 
         return std::make_shared<StorageReplicatedMergeTree>(
             zookeeper_info,

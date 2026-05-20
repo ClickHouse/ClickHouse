@@ -41,13 +41,15 @@ public:
         const QueryNode * parallel_replicas_node_,
         const TableNode * parallel_replicas_table_,
         const UnionNode * parallel_replicas_table_union_,
-        FiltersForTableExpressionMap filters_for_table_expressions_)
+        FiltersForTableExpressionMap filters_for_table_expressions_,
+        bool qualify_column_names_ = true)
         : parallel_replicas_node(parallel_replicas_node_)
         , parallel_replicas_table(parallel_replicas_table_)
         , parallel_replicas_table_union(parallel_replicas_table_union_)
         , filters_for_table_expressions(std::move(filters_for_table_expressions_))
-    {
-    }
+        , qualify_column_names(qualify_column_names_)
+        , column_identifiers()
+    {}
 
     /** Create column identifier for column node.
       *
@@ -91,6 +93,7 @@ public:
     size_t nextUniqueId() { return next_unique_id++; }
 
 private:
+    bool qualify_column_names;
     std::unordered_set<ColumnIdentifier> column_identifiers;
     size_t next_unique_id = 0;
 

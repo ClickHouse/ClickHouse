@@ -1,3 +1,5 @@
+#include <memory>
+
 #include <Storages/ProjectionsDescription.h>
 #include <DataTypes/DataTypeString.h>
 
@@ -37,10 +39,19 @@
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <base/range.h>
+#include <Core/QueryProcessingStage.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/StorageID.h>
+#include <Common/Logger.h>
+#include <Common/StackTrace.h>
+#include <Common/logger_useful.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageValues.h>
 
 namespace DB
 {
@@ -61,6 +72,11 @@ namespace Setting
 
 extern const SettingsBool enable_positional_arguments_for_projections;
 
+}
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
@@ -558,11 +574,8 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     {
         for (const auto & key : select.getQueryAnalyzer()->aggregationKeys())
         {
-            if (result.sample_block.has(key.name))
-            {
-                result.sample_block_for_keys.insert({nullptr, key.type, key.name});
-                result.partition_value_indices.push_back(result.sample_block.getPositionByName(key.name));
-            }
+            result.sample_block_for_keys.insert({nullptr, key.type, key.name});
+            result.partition_value_indices.push_back(result.sample_block.getPositionByName(key.name));
         }
     }
 
@@ -577,6 +590,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
         ///                                                                                           size - 2
         result.primary_key_max_column_name = *(result.sample_block.getNames().cend() - 2);
     }
+
     result.type = ProjectionDescription::Type::Aggregate;
     StorageInMemoryMetadata metadata;
     metadata.setColumns(ColumnsDescription(result.sample_block.getNamesAndTypesList()));
@@ -668,16 +682,46 @@ Block ProjectionDescription::calculateByQuery(
         source_block.insert({std::move(column), std::move(uint64), "_part_offset"});
     }
 
-    auto builder = InterpreterSelectQuery(
-                       query_ast_copy ? query_ast_copy : query_ast,
-                       mut_context,
-                       Pipe(std::make_shared<ProjectionDataSource>(std::make_shared<const Block>(std::move(source_block)))),
-                       SelectQueryOptions{
-                           type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
-                                                                       : QueryProcessingStage::WithMergeableState}
-                           .ignoreASTOptimizations()
-                           .ignoreSettingConstraints())
-                       .buildQueryPipeline();
+    auto select_query_options = SelectQueryOptions{
+        type == ProjectionDescription::Type::Normal
+        ? QueryProcessingStage::FetchColumns
+        : QueryProcessingStage::WithMergeableState}
+        .ignoreASTOptimizations()
+        .ignoreSettingConstraints();
+    auto query_ast_to_use = query_ast_copy ? query_ast_copy : query_ast;
+
+    TemporaryTableHolderPtr external_storage_holder;
+    QueryPipelineBuilder builder;
+    if (mut_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        external_storage_holder = std::make_shared<TemporaryTableHolder>(
+            mut_context,
+            [&source_block](const StorageID & table_id)
+            {
+                return std::make_shared<StorageValues>(
+                    table_id,
+                    ColumnsDescription::fromNamesAndTypes(source_block.getNamesAndTypes()),
+                    source_block);
+            });
+        StoragePtr storage = external_storage_holder->getTable();
+        auto fake_table = std::make_shared<TableNode>(storage, mut_context);
+
+        builder = InterpreterSelectQueryAnalyzer(
+            query_ast_to_use,
+            mut_context,
+            fake_table,
+            select_query_options)
+            .buildQueryPipeline();
+    }
+    else
+    {
+        builder = InterpreterSelectQuery(
+                        query_ast_to_use,
+                        mut_context,
+                        Pipe(std::make_shared<ProjectionDataSource>(std::make_shared<const Block>(std::move(source_block)))),
+                        select_query_options)
+                        .buildQueryPipeline();
+    }
     builder.resize(1);
 
     // Generate aggregated blocks with rows less or equal than the original block.
@@ -705,7 +749,6 @@ Block ProjectionDescription::calculateByQuery(
 
     return projection_block;
 }
-
 
 String ProjectionsDescription::toString() const
 {

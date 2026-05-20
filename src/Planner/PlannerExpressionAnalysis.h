@@ -10,6 +10,7 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/PlannerQueryProcessingInfo.h>
+#include <Core/NamesAndTypes.h>
 #include <Planner/PlannerWindowFunctions.h>
 
 namespace DB
@@ -97,6 +98,11 @@ public:
         return aggregation_analysis_result;
     }
 
+    const AggregationAnalysisResult & getAggregation() const
+    {
+        return aggregation_analysis_result;
+    }
+
     void addAggregation(AggregationAnalysisResult aggregation_analysis_result_)
     {
         aggregation_analysis_result = std::move(aggregation_analysis_result_);
@@ -153,6 +159,11 @@ public:
     }
 
     SortAnalysisResult & getSort()
+    {
+        return sort_analysis_result;
+    }
+
+    const SortAnalysisResult & getSort() const
     {
         return sort_analysis_result;
     }

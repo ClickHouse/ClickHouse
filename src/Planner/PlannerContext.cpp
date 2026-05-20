@@ -25,17 +25,17 @@ const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const Quer
     return createColumnIdentifier(column_node_typed.getColumn(), column_source_node);
 }
 
-static std::string buildColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node)
+static std::string buildColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node, bool qualify_column_names)
 {
     const auto & source_alias = column_source_node->getAlias();
-    if (!source_alias.empty())
+    if (qualify_column_names && !source_alias.empty())
         return backQuoteIfNeed(source_alias) + "." + backQuoteIfNeed(column.name);
     return column.name;
 }
 
 const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node)
 {
-    auto column_identifier = buildColumnIdentifier(column, column_source_node);
+    auto column_identifier = buildColumnIdentifier(column, column_source_node, qualify_column_names);
 
     auto [it, inserted] = column_identifiers.emplace(std::move(column_identifier));
     if (!inserted)
@@ -46,7 +46,7 @@ const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const Name
 
 const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifierOrGet(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node)
 {
-    auto column_identifier = buildColumnIdentifier(column, column_source_node);
+    auto column_identifier = buildColumnIdentifier(column, column_source_node, qualify_column_names);
 
     auto [it, inserted] = column_identifiers.emplace(std::move(column_identifier));
     return *it;

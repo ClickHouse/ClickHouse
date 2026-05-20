@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <Common/Logger.h>
 
 #include <Interpreters/IInterpreter.h>
@@ -7,6 +9,7 @@
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/SelectQueryInfo.h>
+#include "Planner/PlannerExpressionAnalysis.h"
 
 namespace DB
 {
@@ -24,9 +27,11 @@ class Planner
 {
 public:
     /// Initialize planner with query tree after analysis phase
-    Planner(const QueryTreeNodePtr & query_tree_,
+    Planner(
+        const QueryTreeNodePtr & query_tree_,
         SelectQueryOptions & select_query_options_,
-        const ActionsDAG * post_filter_ = nullptr);
+        const ActionsDAG * post_filter_ = nullptr,
+        bool qualify_column_names = true);
 
     /// Initialize planner with query tree after query analysis phase and global planner context
     Planner(const QueryTreeNodePtr & query_tree_,
@@ -71,6 +76,7 @@ public:
     /// It is useful for parallel replicas analysis.
     using QueryNodeToPlanStepMapping = std::unordered_map<const QueryNode *, const QueryPlan::Node *>;
     const QueryNodeToPlanStepMapping & getQueryNodeToPlanStepMapping() const { return query_node_to_plan_step_mapping; }
+    const PlannerExpressionsAnalysisResult & getExpressionAnalysisResult() const { return expression_analysis_result.value(); }
 
 private:
     SelectQueryInfo buildSelectQueryInfo() const;
@@ -83,6 +89,7 @@ private:
     QueryTreeNodePtr query_tree;
     SelectQueryOptions & select_query_options;
     PlannerContextPtr planner_context;
+    std::optional<PlannerExpressionsAnalysisResult> expression_analysis_result;
     QueryPlan query_plan;
     StorageLimitsList storage_limits;
     std::set<std::string> used_row_policies;
