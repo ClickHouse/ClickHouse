@@ -421,8 +421,8 @@ private:
         const auto bytes_read_from_stream = sequential_stream->bytes_read_from_stream;
         const auto limit = sequential_stream->limit;
         std::optional<size_t> bytes_to_discard_before_final_status;
-        if (!ignore_close_errors && limit)
-            bytes_to_discard_before_final_status = bytes_read_from_stream < *limit ? *limit - bytes_read_from_stream : 0;
+        if (!ignore_close_errors && limit && bytes_read_from_stream < *limit)
+            bytes_to_discard_before_final_status = *limit - bytes_read_from_stream;
         auto close_status = closeHighLevelStream(
             sequential_stream->result.stream, ignore_close_errors, bytes_to_discard_before_final_status);
         sequential_stream.reset();
@@ -594,8 +594,8 @@ private:
             }
 
             std::optional<size_t> bytes_to_discard_before_final_status;
-            if (!cancelled)
-                bytes_to_discard_before_final_status = bytes_read < limit ? limit - bytes_read : 0;
+            if (!cancelled && bytes_read < limit)
+                bytes_to_discard_before_final_status = limit - bytes_read;
             auto finish_status = closeHighLevelStream(stream_result.stream, cancelled, bytes_to_discard_before_final_status);
             if (!finish_status.ok() && !cancelled)
             {
