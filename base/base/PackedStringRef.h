@@ -1,83 +1,44 @@
 #pragma once
 
 #include <bit>
+#include <cstring>
 
 #include <base/StringViewHash.h>
 
-/// `PackedStringRef` encodes payload and tag bits inside two `uint64_t`
-/// words using `memcpy` into byte offsets that assume the LSB sits at the
-/// lowest address. On big-endian architectures, the inline payload, size
-/// bits, and large-string tag would alias to different bit positions, so
-/// build, isSmall and operator std::string_view would misdecode keys.
-static_assert(std::endian::native == std::endian::little,
-              "PackedStringRef encoding is little-endian specific");
-
-/// PackedStringRef layout (16 bytes total):
+/// PackedStringRef is a compact, 16-byte string representation that encodes
+/// payload and tag bits inside two 64-bit words.
 ///
-///   +----------------------+----------------------+
-///   |    low (64 bits)     |    high (64 bits)    |
-///   +----------------------+----------------------+
+/// The encoding uses a byte-stable layout: every field lives at a fixed byte
+/// offset inside the struct, independent of host endianness. Writes use
+/// `memcpy` at those byte offsets (and explicit little-endian shift helpers
+/// for the 56-bit packed pointer / 64-bit length), and reads mirror that.
 ///
-/// This is a tagged union encoded in two 64-bit words. The interpretation of `high` depends on the string category.
+/// Because `operator==` compares `low`/`high` as `uint64_t`, equality still
+/// holds across two values built by the same code: identical byte sequences
+/// yield identical `uint64_t` values regardless of endianness.
 ///
 /// ------------------------------------------------------------
-/// Small string (len > 0 and len <= MAX_INLINE_LEN = 11 bytes)
+/// Byte layout (16 bytes total, identical on little-endian and big-endian):
 ///
-///   low:
-///     [ 0..31 ]   : hash32
-///     [32..63 ]   : inline string payload (first part, 4 bytes)
+///   bytes  0..3  : hash32         (small / medium)
+///                  low 32 bits of length (large)
+///   bytes  4..7  : payload 0..3   (small)
+///                  length32       (medium)
+///                  high 32 bits of length (large)
+///   bytes  8..14 : payload 4..10  (small)
+///                  low 56 bits of pointer in little-endian byte order (medium / large)
+///   byte   15    : tag byte
+///                    bit 7    : LARGE flag
+///                    bits 3-6 : SMALL length (4 bits, 0 if not small)
+///                    bits 0-2 : reserved (0)
 ///
-///   high:
-///     [ 0..55 ]   : inline string payload (second part, 7 bytes)
-///     [56..58 ]   : unused
-///     [59..62 ]   : inline string length (4 bits, max 15)
-///     [63 ]       : MUST be 0 (reserved for large-string tag)
-///
-/// ------------------------------------------------------------
-/// Medium string (len <= 2^32 - 1)
-///
-///   low:
-///     [ 0..31 ]   : hash32
-///     [32..63 ]   : length32
-///
-///   high:
-///     [ 0..55 ]   : pointer to string data
-///     [56..63 ]   : zero
-///
-/// Notes:
-///   - `high` stores an untagged pointer. Bit 63 of `high` MUST be zero for medium strings.
-///   - This is guaranteed by the platform pointer layout and is required for unambiguous mode detection.
-///
-/// ------------------------------------------------------------
-/// Large string (len > 2^32 - 1)
-///
-///   low:
-///     [ 0..63 ]   : full 64-bit length
-///
-///   high:
-///     [ 0..55 ]   : pointer to string data
-///     [56..62 ]   : zero
-///     [ 63 ]      : LARGE tag bit (borrowed from pointer high bit)
-///
-/// Notes:
-///   - Large string uses a tagged-pointer representation. Bit 63 of `high` is set to distinguish this mode.
-///   - This relies on the fact that valid user-space pointers do not occupy the highest 5 address bits on supported platforms.
-///
-/// ------------------------------------------------------------
-/// Empty string (len == 0)
-///
-///   low is unused
-///   high = 0
-///
-/// Notes:
-///   - Checking `high == 0` is sufficient to detect empty strings.
+/// Empty: all 16 bytes are 0 (in particular, `high == 0`).
 ///
 /// ------------------------------------------------------------
 /// Mode detection summary:
-///
-///   - isLarge()  : (high & LARGE_TAG) != 0
-///   - isSmall()  : !isLarge() && inline_length != 0
-///   - isMedium() : !isLarge() && inline_length == 0 && high != 0
+///   - isLarge()  : tag byte has bit 7 set
+///   - isSmall()  : !isLarge() && SMALL length nibble != 0
+///   - isMedium() : !isLarge() && !isSmall() && high != 0
 ///   - isEmpty()  : high == 0
 struct PackedStringRef
 {
@@ -85,24 +46,60 @@ struct PackedStringRef
     uint64_t high;
 
     // --- Layout Constants ---
-    static constexpr uint64_t HASH_SIZE_BYTES = 4;
-    static constexpr uint64_t HASH_SIZE_BITS = 32;
+    static constexpr size_t HASH_SIZE_BYTES = 4;
+    static constexpr size_t TAG_BYTE_OFFSET = 15;
+    static constexpr size_t PACKED_POINTER_BYTES = 7;
+    static constexpr uint64_t MAX_SMALL_LEN = 11;
 
-    // Small String: High [59..62] bits store length, bit 63 must be 0
-    static constexpr uint64_t SMALL_LEN_SHIFT = 59;
-    static constexpr uint64_t MAX_SMALL_LEN   = 11;
+    /// Tag byte bit layout.
+    static constexpr uint8_t LARGE_TAG_BYTE = 0x80;
+    static constexpr uint8_t SMALL_LEN_SHIFT_IN_BYTE = 3;
+    static constexpr uint8_t SMALL_LEN_NIBBLE_MASK = 0x78;
 
-    // Large String: Use bit 63 as tag.
-    // Most 64-bit CPUs use 48-bit or 52-bit addressing.
-    // Masking the top 5 bits (63-59) ensures safety against tagging and TBI.
-    static constexpr uint64_t LARGE_TAG    = 1ULL << 63;
-    static constexpr uint64_t POINTER_MASK = 0x07FFFFFFFFFFFFFFULL;
+private:
+    ALWAYS_INLINE uint8_t * rawBytes() { return reinterpret_cast<uint8_t *>(this); }
+    ALWAYS_INLINE const uint8_t * rawBytes() const { return reinterpret_cast<const uint8_t *>(this); }
 
+    ALWAYS_INLINE uint8_t getTagByte() const { return rawBytes()[TAG_BYTE_OFFSET]; }
+
+    /// Store the low `n` bytes (n <= 8) of `value` at `dst` in little-endian
+    /// byte order, regardless of host endianness.
+    static ALWAYS_INLINE void storeLE(uint8_t * dst, uint64_t value, size_t n)
+    {
+        if constexpr (std::endian::native == std::endian::little)
+        {
+            std::memcpy(dst, &value, n);
+        }
+        else
+        {
+            for (size_t i = 0; i < n; ++i)
+                dst[i] = static_cast<uint8_t>(value >> (i * 8));
+        }
+    }
+
+    /// Load `n` bytes (n <= 8) from `src` interpreted as a little-endian
+    /// unsigned integer, regardless of host endianness.
+    static ALWAYS_INLINE uint64_t loadLE(const uint8_t * src, size_t n)
+    {
+        uint64_t value = 0;
+        if constexpr (std::endian::native == std::endian::little)
+        {
+            std::memcpy(&value, src, n);
+        }
+        else
+        {
+            for (size_t i = 0; i < n; ++i)
+                value |= static_cast<uint64_t>(src[i]) << (i * 8);
+        }
+        return value;
+    }
+
+public:
     /// ---------- Kind checks ----------
 
     ALWAYS_INLINE bool isLarge() const
     {
-        return (high & LARGE_TAG) != 0;
+        return (getTagByte() & LARGE_TAG_BYTE) != 0;
     }
 
     ALWAYS_INLINE bool isEmpty() const
@@ -124,44 +121,47 @@ struct PackedStringRef
 
     ALWAYS_INLINE uint8_t getSmallSize() const
     {
-        return static_cast<uint8_t>(high >> SMALL_LEN_SHIFT);
+        return static_cast<uint8_t>((getTagByte() & SMALL_LEN_NIBBLE_MASK) >> SMALL_LEN_SHIFT_IN_BYTE);
     }
 
     ALWAYS_INLINE const char * getSmallPtr() const
     {
-        return reinterpret_cast<const char *>(&low) + HASH_SIZE_BYTES;
+        return reinterpret_cast<const char *>(rawBytes() + HASH_SIZE_BYTES);
     }
 
     /// ---------- Medium string ----------
 
     ALWAYS_INLINE uint32_t getMediumSize() const
     {
-        return static_cast<uint32_t>(low >> HASH_SIZE_BITS);
+        uint32_t size = 0;
+        std::memcpy(&size, rawBytes() + HASH_SIZE_BYTES, sizeof(size));
+        return size;
     }
 
     ALWAYS_INLINE const char * getMediumPtr() const
     {
-        return reinterpret_cast<const char *>(high);
+        return reinterpret_cast<const char *>(loadLE(rawBytes() + sizeof(uint64_t), PACKED_POINTER_BYTES));
     }
 
     /// ---------- Large string ----------
 
     ALWAYS_INLINE uint64_t getLargeSize() const
     {
-        return low;
+        return loadLE(rawBytes(), sizeof(uint64_t));
     }
 
     ALWAYS_INLINE const char * getLargePtr() const
     {
-        /// Clear top 5 bits to retrieve a clean canonical 64-bit pointer
-        return reinterpret_cast<const char*>(high & POINTER_MASK);
+        return reinterpret_cast<const char *>(loadLE(rawBytes() + sizeof(uint64_t), PACKED_POINTER_BYTES));
     }
 
     /// ---------- Common ----------
 
     ALWAYS_INLINE uint32_t getHash() const
     {
-        return static_cast<uint32_t>(low);
+        uint32_t hash = 0;
+        std::memcpy(&hash, rawBytes(), sizeof(hash));
+        return hash;
     }
 
     ALWAYS_INLINE size_t heapSize() const
@@ -184,6 +184,21 @@ struct PackedStringRef
         return {getLargePtr(), getLargeSize()};
     }
 
+    /// Set the medium-string pointer (low 56 bits) and clear the tag byte.
+    /// Used by `keyHolderPersistKey` to rebind the key to arena-owned memory.
+    ALWAYS_INLINE void setMediumPointer(const char * ptr)
+    {
+        storeLE(rawBytes() + sizeof(uint64_t), reinterpret_cast<uintptr_t>(ptr), PACKED_POINTER_BYTES);
+        rawBytes()[TAG_BYTE_OFFSET] = 0;
+    }
+
+    /// Set the large-string pointer (low 56 bits) and set the LARGE tag byte.
+    ALWAYS_INLINE void setLargePointer(const char * ptr)
+    {
+        storeLE(rawBytes() + sizeof(uint64_t), reinterpret_cast<uintptr_t>(ptr), PACKED_POINTER_BYTES);
+        rawBytes()[TAG_BYTE_OFFSET] = LARGE_TAG_BYTE;
+    }
+
     /// ---------- Builder ----------
 
     static ALWAYS_INLINE PackedStringRef build(const char * ptr, size_t len, uint32_t hash)
@@ -191,32 +206,31 @@ struct PackedStringRef
         PackedStringRef r{};
 
         if (len == 0)
-        {
-            r.low = 0;
-            r.high = 0;
             return r;
-        }
 
         /// 1. Small String Inline
         if (len <= MAX_SMALL_LEN)
         {
-            r.low = hash;
-            r.high = static_cast<uint64_t>(len) << SMALL_LEN_SHIFT;
-            memcpy(reinterpret_cast<char *>(&r.low) + sizeof(uint32_t), ptr, len);
+            std::memcpy(r.rawBytes(), &hash, sizeof(hash));
+            std::memcpy(r.rawBytes() + HASH_SIZE_BYTES, ptr, len);
+            r.rawBytes()[TAG_BYTE_OFFSET] = static_cast<uint8_t>(static_cast<uint8_t>(len) << SMALL_LEN_SHIFT_IN_BYTE);
             return r;
         }
 
         /// 2. Medium String (32-bit length + 32-bit hash)
         if (len <= std::numeric_limits<uint32_t>::max())
         {
-            r.low = (static_cast<uint64_t>(len) << 32) | hash;
-            r.high = reinterpret_cast<uintptr_t>(ptr);
+            uint32_t len32 = static_cast<uint32_t>(len);
+            std::memcpy(r.rawBytes(), &hash, sizeof(hash));
+            std::memcpy(r.rawBytes() + HASH_SIZE_BYTES, &len32, sizeof(len32));
+            storeLE(r.rawBytes() + sizeof(uint64_t), reinterpret_cast<uintptr_t>(ptr), PACKED_POINTER_BYTES);
             return r;
         }
 
-        /// 3. Large String (64-bit length, tagged pointer)
-        r.low = len;
-        r.high = reinterpret_cast<uintptr_t>(ptr) | LARGE_TAG;
+        /// 3. Large String (64-bit length, packed pointer + LARGE tag)
+        storeLE(r.rawBytes(), len, sizeof(uint64_t));
+        storeLE(r.rawBytes() + sizeof(uint64_t), reinterpret_cast<uintptr_t>(ptr), PACKED_POINTER_BYTES);
+        r.rawBytes()[TAG_BYTE_OFFSET] = LARGE_TAG_BYTE;
         return r;
     }
 };

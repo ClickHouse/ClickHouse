@@ -161,12 +161,11 @@ inline void ALWAYS_INLINE keyHolderPersistKey(DB::ArenaPackedStringHolder & hold
 
     if (holder.key.isMedium())
     {
-        holder.key.high = reinterpret_cast<uintptr_t>(holder.pool.insert(holder.key.getMediumPtr(), holder.key.getMediumSize()));
+        holder.key.setMediumPointer(holder.pool.insert(holder.key.getMediumPtr(), holder.key.getMediumSize()));
     }
     else
     {
-        holder.key.high = reinterpret_cast<uintptr_t>(holder.pool.insert(holder.key.getLargePtr(), holder.key.getLargeSize()))
-            | PackedStringRef::LARGE_TAG;
+        holder.key.setLargePointer(holder.pool.insert(holder.key.getLargePtr(), holder.key.getLargeSize()));
     }
 }
 
