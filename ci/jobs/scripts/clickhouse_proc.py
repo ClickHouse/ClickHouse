@@ -898,14 +898,14 @@ clickhouse-client --query "SELECT count() FROM test.visits"
     @staticmethod
     def _collect_diagnostic_reports() -> List[str]:
         # macOS writes .ips crash reports to /Library/Logs/DiagnosticReports as
-        # root. Take ownership so they can be read in place; the darwin
-        # fast-test post-hook wipes the directory afterwards, so anything we
-        # see here belongs to the current run.
+        # root. Grant read access so the runner can list and read the files
+        # in place; the darwin fast-test post-hook wipes the directory under
+        # sudo afterwards, so anything we see here belongs to the current run.
         if platform.system() != "Darwin":
             return []
         reports_dir = Path("/Library/Logs/DiagnosticReports")
         Shell.check(
-            f"sudo chown -R $(id -u):$(id -g) {reports_dir}",
+            f"sudo chmod -R a+rX {reports_dir}",
             verbose=True,
         )
         return [str(p) for p in reports_dir.glob("*.ips")]
