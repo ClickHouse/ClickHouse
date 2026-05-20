@@ -248,6 +248,7 @@ xargs < "$STYLE_TMPDIR/nobase_excluded" rg -e ' close\(.*fd' -e ' ::close\(' | g
 directories_to_lint_std_containers_usages=(
     src/AggregateFunctions
     src/Columns
+    src/Compression
     src/Dictionaries
     src/Functions
 )
