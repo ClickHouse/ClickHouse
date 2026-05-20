@@ -50,7 +50,15 @@ namespace HistogramMetrics
     public:
         MetricFamily(String name_, String documentation_, Buckets buckets_, Labels labels_);
 
+        /// Returns the metric for the given labels, creating it if absent.
+        /// Currently returns Metric & for backward compatibility; TODO: change
+        /// return type to shared_ptr<Metric> (matching getOrCreate) once
+        /// existing callers that store a Metric & are updated.
         Metric & withLabels(LabelValues label_values);
+
+        /// Like withLabels but returns a shared_ptr so the Metric stays alive
+        /// even if removeWhere concurrently erases the map entry (orphaned
+        /// write, no UB). Use this when the label set can be pruned at runtime.
         std::shared_ptr<Metric> getOrCreate(LabelValues label_values);
 
         template <typename Func>

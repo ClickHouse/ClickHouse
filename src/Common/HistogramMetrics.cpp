@@ -229,22 +229,6 @@ namespace HistogramMetrics
     {
     }
 
-    Metric & MetricFamily::withLabels(LabelValues label_values)
-    {
-        chassert(label_values.size() == labels.size());
-        {
-            std::shared_lock lock(mutex);
-            if (auto it = metrics.find(label_values); it != metrics.end())
-                return *it->second;
-        }
-
-        std::lock_guard lock(mutex);
-        auto [it, _] = metrics.try_emplace(
-            std::move(label_values),
-            std::make_shared<Metric>(buckets));
-        return *it->second;
-    }
-
     std::shared_ptr<Metric> MetricFamily::getOrCreate(LabelValues label_values)
     {
         chassert(label_values.size() == labels.size());
@@ -259,6 +243,11 @@ namespace HistogramMetrics
             std::move(label_values),
             std::make_shared<Metric>(buckets));
         return it->second;
+    }
+
+    Metric & MetricFamily::withLabels(LabelValues label_values)
+    {
+        return *getOrCreate(std::move(label_values));
     }
 
     const Buckets & MetricFamily::getBuckets() const { return buckets; }
