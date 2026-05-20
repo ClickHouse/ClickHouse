@@ -26,6 +26,10 @@ FROM (
     GROUP BY x WITH CLUSTER 1, 'lit'
 );
 
--- WITH CLUSTER on a constant key is meaningless and must be rejected.
+-- WITH CLUSTER on a constant key is degenerate but well-defined: every
+-- row shares the same key, so they all collapse into a single group.
+-- (The constant is kept in the aggregation stream because it sits in the
+-- cluster key range; otherwise the planner would elide it and break the
+-- cluster contract.)
 SELECT count() FROM (SELECT toUInt64(number) AS x FROM numbers(10))
-GROUP BY 'lit' WITH CLUSTER 1; -- { serverError BAD_ARGUMENTS }
+GROUP BY 'lit' WITH CLUSTER 1;

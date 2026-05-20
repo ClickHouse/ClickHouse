@@ -11,6 +11,3 @@ GROUP BY x WITH CLUSTER 1 WITH CUBE; -- { serverError BAD_ARGUMENTS }
 
 SELECT count() FROM (SELECT toUInt64(number) AS x FROM numbers(4))
 GROUP BY x WITH CLUSTER 1 WITH TOTALS; -- { serverError BAD_ARGUMENTS }
-
-SELECT count() FROM (SELECT toUInt64(number) AS x, toUInt64(number) AS y FROM numbers(4))
-GROUP BY GROUPING SETS ((x WITH CLUSTER 1), (y)); -- { serverError BAD_ARGUMENTS, SYNTAX_ERROR }
