@@ -20,7 +20,7 @@ namespace fs = std::filesystem;
 
 /// Keys that belong to the disk configuration layer (IDisk), not to the cache layer.
 /// They must be skipped when loading cache settings to avoid UNKNOWN_SETTING errors.
-static const std::set<std::string> non_cache_keys = {"type", "disk", "name", "data_background_cleanup", "thread_pool_size"};
+static const std::set<std::string> non_cache_keys = {"type", "disk", "name", "data_background_cleanup", "thread_pool_size", "skip_access_check"};
 
 namespace DB
 {
