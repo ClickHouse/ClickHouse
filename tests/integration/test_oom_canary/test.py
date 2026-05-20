@@ -48,7 +48,7 @@ def start_cluster():
         cluster.start()
         yield
     finally:
-        cluster.shutdown()
+        cluster.shutdown(ignore_fatal=True)
 
 
 def find_canary(node):
@@ -100,7 +100,8 @@ def test_failpoint_confirmed_oom():
     def slow_query():
         nonlocal slow_query_error
         slow_query_error = node.query_and_get_error(
-            "SELECT sleepEachRow(3) FROM numbers(100)", query_id=slow_query_id
+            "SELECT sleepEachRow(3) FROM numbers(20) SETTINGS max_block_size = 1",
+            query_id=slow_query_id,
         )
 
     slow_query_thread = threading.Thread(target=slow_query)

@@ -245,10 +245,11 @@ void OOMCanary::monitorThread()
 
         if (shutdown_requested && !canary_died)
         {
-            syscall_pidfd_send_signal(pidfd, SIGKILL);
+            if (syscall_pidfd_send_signal(pidfd, SIGKILL) != 0)
+                ::kill(pid, SIGKILL);
         }
 
-        const int status = reapChild(pid);
+        int status = reapChild(pid);
         epoll.remove(pidfd);
         if (::close(pidfd) != 0)
             LOG_WARNING(log, "close(pidfd) failed for canary pid {}: {}", pid, errnoToString());
