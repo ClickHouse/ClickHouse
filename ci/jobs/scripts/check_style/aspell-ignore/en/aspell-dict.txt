@@ -1251,6 +1251,7 @@ PostgreSQLWire
 Postgres
 PostgresSQL
 Postprocessor
+Postprocessors
 Postprocessed
 POSIX
 Prebase
@@ -3303,6 +3304,7 @@ postfixes
 postgres
 postgresql
 postprocessor
+postprocessors
 postprocessed
 pre
 pread
