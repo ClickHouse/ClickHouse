@@ -25,3 +25,18 @@ FROM (
     ), x)
     GROUP BY x WITH CLUSTER 1
 );
+
+-- Same query under `distributed_group_by_no_merge = 2`, which would normally
+-- force `WithMergeableStateAfterAggregation` and skip the initiator-side
+-- cluster merging. The stage cap in `StorageDistributed::getQueryProcessingStage`
+-- must still hold the shard stage at `WithMergeableState`.
+SET distributed_group_by_no_merge = 2;
+SELECT count() AS num_clusters
+FROM (
+    SELECT x, count() AS c
+    FROM remote('127.0.0.{1,2}', view(
+        SELECT (number * 2 + shardNum() - 1)::UInt64 AS x FROM numbers(2)
+    ), x)
+    GROUP BY x WITH CLUSTER 1
+);
+SET distributed_group_by_no_merge = 0;
