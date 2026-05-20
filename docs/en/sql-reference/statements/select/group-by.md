@@ -340,7 +340,11 @@ SELECT ... GROUP BY key1, key2 WITH CLUSTER <distance>
 
 Here `key2` is the cluster key. Rows are first aggregated by exact key values using the standard hash-table aggregation. Then adjacent groups whose cluster key values differ by at most `<distance>` are merged together. This uses chain semantics: rows A and B are in the same cluster if there is a chain of rows where each consecutive pair differs by at most `<distance>`.
 
-Only one `GROUP BY` key can have the `WITH CLUSTER` modifier. The cluster key must be a numeric type (`Int`, `UInt`, `Float`, `DateTime`).
+Only one `GROUP BY` key can have the `WITH CLUSTER` modifier. The supported cluster key kinds are:
+
+- A scalar numeric type (`Int`, `UInt`, `Float`, `DateTime`) — `<distance>` is interpreted as a numeric threshold on the absolute difference of key values.
+- A 2-element numeric tuple `(x, y)` — `<distance>` is interpreted as a Euclidean threshold; rows are merged when `sqrt((x1-x2)^2 + (y1-y2)^2) <= <distance>`. Tuples of any other arity are rejected.
+- `String` or `FixedString` — `<distance>` is interpreted as a non-negative integer maximum edit (Levenshtein) distance over raw bytes.
 
 **Example**
 
