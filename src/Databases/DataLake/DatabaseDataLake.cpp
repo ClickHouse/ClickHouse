@@ -241,12 +241,16 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 
         case DB::DatabaseDataLakeCatalogType::GLUE:
         {
+#if USE_AWS_S3
             catalog_impl = std::make_shared<DataLake::GlueCatalog>(
                 url,
                 Context::getGlobalContextInstance(),
                 catalog_parameters,
                 table_engine_definition);
             break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cannot use Glue catalog: ClickHouse was compiled without AWS S3 support");
+#endif
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE:
         {
