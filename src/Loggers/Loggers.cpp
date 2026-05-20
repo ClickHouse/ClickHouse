@@ -209,6 +209,11 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         const auto auditlog_path = renderFileNameTemplate(now, auditlog_path_prop);
         createDirectory(auditlog_path);
 
+        /// Audit messages are emitted at PRIO_NOTICE; ensure the root logger level allows them through
+        /// even when other channels are configured at warning/error.
+        const int audit_log_level = Poco::Message::Priority::PRIO_NOTICE;
+        max_log_level = std::max(audit_log_level, max_log_level);
+
         audit_log_file = new Poco::FileChannel;
         audit_log_file->setProperty(Poco::FileChannel::PROP_PATH, fs::weakly_canonical(auditlog_path));
         audit_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.rotation", config.getRawString("logger.size", "100M")));
@@ -226,7 +231,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         split->addChannel(
             auditlog,
             "AuditFileLog",
-            Poco::Message::Priority::PRIO_NOTICE,
+            audit_log_level,
             ProfileEvents::AsyncLoggingAuditFileLogTotalMessages,
             ProfileEvents::AsyncLoggingAuditFileLogDroppedMessages);
 
@@ -406,6 +411,14 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
         int errorlog_level = Poco::Logger::parseLevel(config.getString("logger.errorlog_level", "notice"));
         max_log_level = std::max(errorlog_level, max_log_level);
         split->setLevel("ErrorFileLog", errorlog_level);
+    }
+
+    // Set level to auditlog: messages are emitted at PRIO_NOTICE; keep root logger high enough to let them through.
+    if (audit_log_file)
+    {
+        const int audit_log_level = Poco::Message::Priority::PRIO_NOTICE;
+        max_log_level = std::max(audit_log_level, max_log_level);
+        split->setLevel("AuditFileLog", audit_log_level);
     }
 
     // Set level to syslog
