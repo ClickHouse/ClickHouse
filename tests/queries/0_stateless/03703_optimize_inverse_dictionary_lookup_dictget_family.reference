@@ -9,6 +9,8 @@ ORDER BY
     __table1.payload ASC
 dictGet (generic)
 1	x
+dictGet (generic), opt off
+1	x
 dictGetString - plan
 SELECT
     __table1.id AS id,
@@ -20,142 +22,124 @@ ORDER BY
     __table1.payload ASC
 dictGetString
 1	x
+dictGetString, opt off
+1	x
 dictGetInt32 - plan
 SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id IN (
-    SELECT id AS id
-    FROM dictionary(\'dictionary_all\')
-    WHERE _CAST(i32, \'Int32\') = -32
-)
+WHERE __table1.id = _CAST(1, \'UInt64\')
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
 dictGetInt32
+1	x
+dictGetInt32, opt off
 1	x
 dictGetUInt64 - plan
 SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id IN (
-    SELECT id AS id
-    FROM dictionary(\'dictionary_all\')
-    WHERE _CAST(u64, \'UInt64\') = 64
-)
+WHERE __table1.id = _CAST(1, \'UInt64\')
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
 dictGetUInt64
+1	x
+dictGetUInt64, opt off
 1	x
 dictGetFloat64 - plan
 SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id IN (
-    SELECT id AS id
-    FROM dictionary(\'dictionary_all\')
-    WHERE _CAST(f64, \'Float64\') = 20.
-)
+WHERE __table1.id = _CAST(1, \'UInt64\')
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
 dictGetFloat64
+1	x
+dictGetFloat64, opt off
 1	x
 dictGetDate - plan
 SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id IN (
-    SELECT id AS id
-    FROM dictionary(\'dictionary_all\')
-    WHERE _CAST(d, \'Date\') = _CAST(\'2025-01-01\', \'Date\')
-)
+WHERE __table1.id = _CAST(1, \'UInt64\')
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
 dictGetDate
+1	x
+dictGetDate, opt off
 1	x
 dictGetDateTime - plan
 SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id IN (
-    SELECT id AS id
-    FROM dictionary(\'dictionary_all\')
-    WHERE _CAST(dt, \'DateTime\') = _CAST(\'2025-01-01 10:00:00\', \'DateTime\')
-)
+WHERE __table1.id = _CAST(1, \'UInt64\')
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
 dictGetDateTime
+1	x
+dictGetDateTime, opt off
 1	x
 dictGetUUID - plan
 SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id IN (
-    SELECT id AS id
-    FROM dictionary(\'dictionary_all\')
-    WHERE _CAST(uid, \'UUID\') = _CAST(\'00000000-0000-0000-0000-000000000001\', \'UUID\')
-)
+WHERE __table1.id = _CAST(1, \'UInt64\')
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
 dictGetUUID
+1	x
+dictGetUUID, opt off
 1	x
 dictGetIPv4 - plan
 SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id IN (
-    SELECT id AS id
-    FROM dictionary(\'dictionary_all\')
-    WHERE _CAST(ip4, \'IPv4\') = _CAST(\'192.168.0.1\', \'IPv4\')
-)
+WHERE __table1.id = _CAST(1, \'UInt64\')
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
 dictGetIPv4
+1	x
+dictGetIPv4, opt off
 1	x
 dictGetIPv6 - plan
 SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE __table1.id IN (
-    SELECT id AS id
-    FROM dictionary(\'dictionary_all\')
-    WHERE _CAST(ip6, \'IPv6\') = _CAST(\'2001:db8::1\', \'IPv6\')
-)
+WHERE __table1.id = _CAST(1, \'UInt64\')
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
 dictGetIPv6
 1	x
-dictGetOrNull(String) - plan
+dictGetIPv6, opt off
+1	x
+dictGetOrNull(String), no rewrite (dictGetOrNull is not supported by the optimization) - plan
 SELECT
     __table1.id AS id,
     __table1.payload AS payload
 FROM default.tab AS __table1
-WHERE _CAST((__table1.id IN (
-    SELECT id AS id
-    FROM dictionary(\'dictionary_all\')
-    WHERE _CAST(name, \'Nullable(String)\') = \'alpha\'
-)), \'Nullable(UInt8)\')
+WHERE dictGetOrNull(\'dictionary_all\', \'name\', __table1.id) = \'alpha\'
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
-dictGetOrNull(String)
+dictGetOrNull(String), no rewrite (dictGetOrNull is not supported by the optimization)
 1	x
-dictGetOrNull(String) IS NULL - plan
+dictGetOrNull(String) IS NULL, no rewrite (dictGetOrNull is not supported by the optimization) - plan
 SELECT
     __table1.id AS id,
     __table1.payload AS payload
@@ -164,5 +148,5 @@ WHERE isNull(dictGetOrNull(\'dictionary_all\', \'name\', __table1.id))
 ORDER BY
     __table1.id ASC,
     __table1.payload ASC
-dictGetOrNull(String) IS NULL
+dictGetOrNull(String) IS NULL, no rewrite (dictGetOrNull is not supported by the optimization)
 99	z

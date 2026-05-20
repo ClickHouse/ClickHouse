@@ -210,11 +210,7 @@ SETTINGS optimize_inverse_dictionary_lookup = 1
 rewrite: equals on non-default - plan
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
-WHERE __table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dict_hashed\') AS __table1
-    WHERE __table1.name = \'red\'
-)
+WHERE __table1.id = _CAST(1, \'UInt64\')
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
 rewrite: equals on non-default
@@ -225,9 +221,9 @@ rewrite: greater than non-default - plan
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
 WHERE __table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dict_ops\') AS __table1
-    WHERE __table1.n > 100
+    SELECT id AS id
+    FROM dictionary(\'dict_ops\')
+    WHERE n > 100
 )
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
@@ -237,9 +233,9 @@ rewrite: != default (numeric) - plan
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
 WHERE __table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dict_ops\') AS __table1
-    WHERE __table1.n != 0
+    SELECT id AS id
+    FROM dictionary(\'dict_ops\')
+    WHERE n != 0
 )
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
@@ -251,9 +247,9 @@ rewrite: NOT LIKE default (string) - plan
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
 WHERE __table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dict_ops\') AS __table1
-    WHERE __table1.name NOT LIKE \'\'
+    SELECT id AS id
+    FROM dictionary(\'dict_ops\')
+    WHERE name NOT LIKE \'\'
 )
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
@@ -265,9 +261,9 @@ rewrite: NOT ILIKE default (string) - plan
 SELECT __table1.id AS id
 FROM default.data_ops AS __table1
 WHERE __table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dict_ops\') AS __table1
-    WHERE __table1.name NOT ILIKE \'\'
+    SELECT id AS id
+    FROM dictionary(\'dict_ops\')
+    WHERE name NOT ILIKE \'\'
 )
 ORDER BY __table1.id ASC
 SETTINGS optimize_inverse_dictionary_lookup = 1
@@ -278,11 +274,7 @@ rewrite: NOT ILIKE default (string), opt off
 rewrite: plain key - plan
 SELECT count() AS `count()`
 FROM default.data_ops AS __table1
-WHERE __table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dict_ops\') AS __table1
-    WHERE __table1.name = \'apple\'
-)
+WHERE __table1.id = _CAST(1, \'UInt64\')
 SETTINGS optimize_inverse_dictionary_lookup = 1
 rewrite: plain key
 1
@@ -292,9 +284,9 @@ rewrite: Nullable(K) key - plan
 SELECT count() AS `count()`
 FROM default.data_str_nullable AS __table1
 WHERE __table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dict_string\') AS __table1
-    WHERE __table1.name = \'abc\'
+    SELECT id AS id
+    FROM dictionary(\'dict_string\')
+    WHERE name = \'abc\'
 )
 SETTINGS optimize_inverse_dictionary_lookup = 1
 rewrite: Nullable(K) key
@@ -305,9 +297,9 @@ rewrite: LC(Nullable(K)) key - plan
 SELECT count() AS `count()`
 FROM default.data_str_lc_nullable AS __table1
 WHERE _CAST((__table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dict_string\') AS __table1
-    WHERE __table1.name = \'abc\'
+    SELECT id AS id
+    FROM dictionary(\'dict_string\')
+    WHERE name = \'abc\'
 )), \'LowCardinality(Nullable(UInt8))\')
 SETTINGS optimize_inverse_dictionary_lookup = 1
 rewrite: LC(Nullable(K)) key
@@ -326,18 +318,14 @@ SETTINGS optimize_inverse_dictionary_lookup = 1
 max_rows_in_set + break, no rewrite - plan
 SELECT groupArray(__table1.id) AS `groupArray(id)`
 FROM default.data_set_limit AS __table1
-WHERE dictGetString(\'dict_set_limit\', \'name\', __table1.id) = \'hit\'
+WHERE __table1.id IN [1, 2]
 SETTINGS optimize_inverse_dictionary_lookup = 1, max_rows_in_set = 1, set_overflow_mode = \'break\'
 max_rows_in_set + break, no rewrite
 [1,2]
 max_rows_in_set + throw, rewrite - plan
 SELECT groupArray(__table1.id) AS `groupArray(id)`
 FROM default.data_set_limit AS __table1
-WHERE __table1.id IN (
-    SELECT __table1.id AS id
-    FROM dictionary(\'dict_set_limit\') AS __table1
-    WHERE __table1.name = \'hit\'
-)
+WHERE __table1.id IN [1, 2]
 SETTINGS optimize_inverse_dictionary_lookup = 1, max_rows_in_set = 1, set_overflow_mode = \'throw\'
 max_rows_in_set + throw: execution raises SET_SIZE_LIMIT_EXCEEDED
 max_bytes_in_set + break, no rewrite

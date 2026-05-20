@@ -4,7 +4,7 @@ SELECT
     __table1.k2 AS k2,
     __table1.payload AS payload
 FROM default.f AS __table1
-WHERE (__table1.k1, __table1.k2) = _CAST((1, \'a\'), \'Tuple(UInt64, String)\')
+WHERE (__table1.k1 = _CAST(1, \'UInt64\')) AND (__table1.k2 = \'a\')
 ORDER BY
     __table1.k1 ASC,
     __table1.k2 ASC,
@@ -19,7 +19,7 @@ SELECT
     __table1.k2 AS k2,
     __table1.payload AS payload
 FROM default.f AS __table1
-WHERE (__table1.k1, __table1.k2) = _CAST((1, \'a\'), \'Tuple(UInt64, String)\')
+WHERE (__table1.k1 = _CAST(1, \'UInt64\')) AND (__table1.k2 = \'a\')
 ORDER BY
     __table1.k1 ASC,
     __table1.k2 ASC,
@@ -34,7 +34,7 @@ SELECT
     __table1.k2 AS k2,
     __table1.payload AS payload
 FROM default.f AS __table1
-WHERE (__table1.k1, __table1.k2) = _CAST((1, \'a\'), \'Tuple(UInt64, String)\')
+WHERE (__table1.k1 = _CAST(1, \'UInt64\')) AND (__table1.k2 = \'a\')
 ORDER BY
     __table1.k1 ASC,
     __table1.k2 ASC,
