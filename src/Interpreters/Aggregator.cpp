@@ -113,9 +113,6 @@ DB::AggregatedDataVariants::Type convertToTwoLevelTypeIfPossible(DB::AggregatedD
 void initDataVariantsWithSizeHint(
     DB::AggregatedDataVariants & result, DB::AggregatedDataVariants::Type method_chosen, const DB::Aggregator::Params & params)
 {
-    /// When the GROUP BY limit pushdown optimization is active (top_k_keys > 0), the hash table will contain
-    /// at most top_k_keys entries. Cached size hints from previous runs (which may have processed all keys
-    /// without the optimization) would cause massive over-allocation and unnecessary two-level conversion.
     if (params.top_k_keys > 0)
     {
         result.init(method_chosen);
@@ -958,10 +955,6 @@ void Aggregator::executeImpl(
 {
     const bool top_k = params.top_k_keys > 0;
 
-    /// Initialize the top-N heap once (lazy, guarded by heap_column check inside).
-    /// This is done here — before dispatching into the NO_INLINE `executeImplBatch`
-    /// template — so the init logic lives in one place instead of being duplicated
-    /// in both the top_k=true and top_k=false instantiations.
     if (top_k)
         method.top_k_heap.initIfNeeded(
             state.getKeyColumns(), params.top_k_key_columns,
@@ -969,8 +962,6 @@ void Aggregator::executeImpl(
             params.top_k_keys, params.top_k_keys_directions,
             params.top_k_keys_nulls_directions, params.top_k_keys_collators);
 
-    /// Helper that forwards to `executeImplBatch` with the given template arguments.
-    /// This avoids repeating the long argument list at every call site.
     auto call = [&]<bool prefetch_v, bool top_k_v>(
         bool no_more_keys_arg, bool use_compiled_functions)
     {
@@ -980,10 +971,6 @@ void Aggregator::executeImpl(
             use_compiled_functions, overflow_row);
     };
 
-    /// Dispatch on {prefetch, top_k, use_compiled_functions}.
-    /// The `top_k` and `prefetch` flags are template parameters so the compiler
-    /// generates separate NO_INLINE instantiations, keeping heap-related code
-    /// out of the common (top_k=false) path.
     auto dispatch = [&]<bool top_k_v>()
     {
         if (!no_more_keys)
@@ -1020,9 +1007,6 @@ void Aggregator::executeImpl(
         dispatch.template operator()<false>();
 }
 
-/// Trim the bounded heap and prune evicted keys from the hash table.
-/// This is NO_INLINE to avoid inflating the code size of executeImplBatch
-/// for the common case when top_k_keys == 0.
 template <typename Method>
 void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, bool destroy_states, std::vector<AggregateDataPtr> * destroyed_states) const
 {
@@ -1032,7 +1016,6 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, bool destr
     {
         auto on_evicted = [&](size_t evicted)
         {
-            /// Check if evicted key is NULL (for nullable columns).
             if (method.top_k_heap.heap_column->isNullAt(evicted))
             {
                 if constexpr (requires { method.data.hasNullKeyData(); })
@@ -1057,7 +1040,6 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, bool destr
                 return;
             }
 
-            /// Extract typed key from heap_column.
             KeyType evicted_key;
             if constexpr (std::is_same_v<KeyType, std::string_view>)
             {
@@ -1070,7 +1052,6 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, bool destr
                 evicted_key = unalignedLoad<KeyType>(ref.data());
             }
 
-            /// Destroy aggregate states if needed.
             if (destroy_states)
             {
                 auto it = method.data.find(evicted_key);
@@ -1094,8 +1075,6 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, bool destr
     }
     else
     {
-        /// FixedHashTable (key8/key16) has no erase() — just trim without pruning.
-        /// With at most 256/65536 possible keys, the hash table stays small regardless.
         (void)destroyed_states;
         auto noop = [](size_t) {};
         method.top_k_heap.trimAndCompact(noop);
@@ -1122,7 +1101,6 @@ void NO_INLINE Aggregator::executeImplBatch(
     size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
 
     /// Optimization for special case when there are no aggregate functions.
-    /// Not applicable with top-N since the key8 fast-paths below can't do per-row heap checks.
     if constexpr (!top_k)
     {
         if (params.aggregates_size == 0)
@@ -1130,7 +1108,6 @@ void NO_INLINE Aggregator::executeImplBatch(
             if (no_more_keys)
                 return;
 
-            /// This pointer is unused, but the logic will compare it for nullptr to check if the cell is set.
             AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
             if (all_keys_are_const)
             {
@@ -1161,7 +1138,6 @@ void NO_INLINE Aggregator::executeImplBatch(
     }
 
     /// Optimization for special case when aggregating by 8bit key.
-    /// Not applicable with top-N since these fast-paths can't do per-row heap checks.
     if constexpr (!top_k)
     {
         if (!no_more_keys)
@@ -1217,9 +1193,6 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
     }
 
-    /// Slice of key columns used by the top-N heap for shouldSkip/push comparisons.
-    /// For single-column keys this contains just one pointer; for composite keys
-    /// it holds the leading ORDER BY prefix.
     [[maybe_unused]] ColumnRawPtrs heap_key_cols;
     if constexpr (top_k)
     {
@@ -1228,20 +1201,10 @@ void NO_INLINE Aggregator::executeImplBatch(
         heap_key_cols.assign(all_key_cols.begin(), all_key_cols.begin() + heap_key_count);
     }
 
-    /// For single-column numeric keys (AggregationMethodOneNumber), we can avoid
-    /// the virtual IColumn::compareAt dispatch in shouldSkip by reading the raw
-    /// typed key data and using CompareHelper directly.  This eliminates ~83% of
-    /// the hot-path cost (virtual call + indirect branch).
-    /// `has_typed_key` is true when the State provides getKeyData() — which only
-    /// HashMethodOneNumber does.  We must exclude:
-    ///  - HashMethodSingleLowCardinalityColumn which inherits getKeyData() from
-    ///    HashMethodOneNumber but operates on ColumnLowCardinality, not ColumnVector<T>.
-    ///  - Nullable key methods where the heap column is ColumnNullable and
-    ///    getDataType() returns TypeIndex::Nullable, not a concrete numeric TypeIndex.
     static constexpr bool has_typed_key = requires(const State & s) { s.getKeyData(); }
         && !requires(const State & s) { s.positions; }
         && !Method::one_key_nullable_optimization;
-    /// Pointer to raw key data; meaningful only when `has_typed_key && top_k`.
+
     [[maybe_unused]] const KeyHolder * typed_key_data = nullptr;
     if constexpr (top_k && has_typed_key)
     {
@@ -1249,8 +1212,6 @@ void NO_INLINE Aggregator::executeImplBatch(
             typed_key_data = state.getKeyData();
     }
 
-    /// Wrapper: calls typed `shouldSkipNumeric` when possible, otherwise falls back
-    /// to the virtual-dispatch shouldSkip.
     [[maybe_unused]] auto heap_should_skip = [&](size_t row) -> bool
     {
         if constexpr (top_k && has_typed_key)
@@ -1260,7 +1221,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
         if constexpr (top_k)
             return method.top_k_heap.shouldSkip(heap_key_cols, row);
-        return false; /// unreachable when top_k is false, but needed for compilation
+        return false;
     };
 
     if (is_simple_count)
@@ -1371,16 +1332,7 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     state.resetCache();
 
-    /// Throwaway aggregate state for rows skipped by the top-N heap.
-    /// The JIT-compiled addBatch path does not null-check places[i],
-    /// so every slot must point to a valid aggregate state.  Skipped rows
-    /// are redirected here; the state accumulates garbage and is destroyed
-    /// at the end of this function.
     [[maybe_unused]] AggregateDataPtr discarded_row_state = nullptr;
-    /// Collects aggregate state pointers destroyed by trimHeapAndPruneHashTable.
-    /// After each trim, we scan places[key_start..current_row] and redirect any
-    /// matching (stale) pointers to discarded_row_state, preventing use-after-destroy
-    /// when executeAggregateInstructions later calls add on every row.
     [[maybe_unused]] std::vector<AggregateDataPtr> destroyed_states;
     if constexpr (top_k)
     {
@@ -1457,16 +1409,11 @@ void NO_INLINE Aggregator::executeImplBatch(
 
             if constexpr (top_k)
             {
-                /// Batch trim after emplace_result is no longer used.
-                /// erase() may move cells via memcpy, invalidating emplace_result.
                 if (method.top_k_heap.needsTrim())
                 {
                     destroyed_states.clear();
                     trimHeapAndPruneHashTable(method, !is_simple_count, !is_simple_count ? &destroyed_states : nullptr);
 
-                    /// Redirect any places[] entries that now point to destroyed aggregate
-                    /// states.  Without this, executeAggregateInstructions would call add
-                    /// on freed memory (use-after-destroy).
                     if (!destroyed_states.empty())
                     {
                         std::unordered_set<AggregateDataPtr> destroyed_set(destroyed_states.begin(), destroyed_states.end());
@@ -1476,10 +1423,6 @@ void NO_INLINE Aggregator::executeImplBatch(
                                 places[j] = discarded_row_state;
                         }
 
-                        /// The current row's key may have been inserted and
-                        /// pushed to the heap, then immediately evicted by
-                        /// the trim that just ran.  In that case
-                        /// aggregate_data points to a destroyed state.
                         if (destroyed_set.contains(aggregate_data))
                             aggregate_data = discarded_row_state;
                     }
@@ -1505,9 +1448,6 @@ void NO_INLINE Aggregator::executeImplBatch(
         }
     }
 
-    /// When top-N is active, some rows may have been redirected to `discarded_row_state`.
-    /// The "equal keys range" optimization (addBatchSinglePlace) must be disabled in this case,
-    /// because it assumes all rows belong to the single key — but skipped rows belong to no real group.
     bool has_only_one_value = top_k ? false : state.hasOnlyOneValueSinceLastReset();
 
     executeAggregateInstructions(
@@ -1521,8 +1461,6 @@ void NO_INLINE Aggregator::executeImplBatch(
         all_keys_are_const,
         use_compiled_functions);
 
-    /// Destroy the throwaway aggregate state used for skipped rows.
-    /// The memory itself lives in the arena and will be freed with it.
     if constexpr (top_k)
     {
         for (size_t j = 0; j < aggregate_functions.size(); ++j)
