@@ -39,6 +39,11 @@ public:
 
     void add(Callback && func);
 
+    /// Must be called at most once, after all `add()` calls.
+    /// The callback runs on a worker thread once every previously-added task has completed.
+    /// May or may not run if prior tasks threw.
+    void addFinal(Callback && func);
+
 private:
     /// waitTilInflightShrink waits til the number of in-flight tasks beyond the limit `max_tasks_inflight`.
     void waitTilInflightShrink() TSA_NO_THREAD_SAFETY_ANALYSIS;
@@ -57,6 +62,10 @@ private:
     std::condition_variable has_finished TSA_GUARDED_BY(mutex);
     using FinishedList = std::list<FutureList::iterator>;
     FinishedList finished_futures TSA_GUARDED_BY(mutex);
+
+    /// A packaged task for the callback added by addFinal. A non-null value means
+    /// the callback has been added, but not yet run.
+    std::shared_ptr<std::packaged_task<void()>> final_task TSA_GUARDED_BY(mutex);
 };
 
 }

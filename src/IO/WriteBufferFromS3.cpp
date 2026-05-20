@@ -195,6 +195,11 @@ void WriteBufferFromS3::preFinalize()
     else
     {
         writeMultipartUpload();
+        task_tracker->addFinal([this]()
+        {
+            completeMultipartUpload();
+            multipart_upload_finished = true;
+        });
     }
 }
 
@@ -218,12 +223,6 @@ void WriteBufferFromS3::finalizeImpl()
     task_tracker->waitAll();
 
     span.addAttributeIfNotZero("clickhouse.multipart_upload_parts", multipart_tags.size());
-
-    if (!multipart_upload_id.empty())
-    {
-        completeMultipartUpload();
-        multipart_upload_finished = true;
-    }
 
     if (request_settings[S3RequestSetting::check_objects_after_upload])
     {

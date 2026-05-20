@@ -117,14 +117,25 @@ void TaskTracker::add(Callback && func)
     /// preallocation for the second issue
     FinishedList pre_allocated_finished {future_placeholder};
 
-    Callback func_with_notification = [&, my_func = std::move(func), my_pre_allocated_finished = std::move(pre_allocated_finished)]() mutable
+    Callback func_with_notification = [this, my_func = std::move(func), my_pre_allocated_finished = std::move(pre_allocated_finished)]() mutable
     {
         SCOPE_EXIT({
-            DENY_ALLOCATIONS_IN_SCOPE;
-
-            std::lock_guard lock(mutex);
-            finished_futures.splice(finished_futures.end(), my_pre_allocated_finished);
-            has_finished.notify_one();
+            std::shared_ptr<std::packaged_task<void()>> maybe_final_task;
+            {
+                DENY_ALLOCATIONS_IN_SCOPE;
+                std::lock_guard lock(mutex);
+                finished_futures.splice(finished_futures.end(), my_pre_allocated_finished);
+                /// "+ 1" accounts for final task: it has a futures entry but no finished_futures entry.
+                if (final_task && finished_futures.size() + 1 == futures.size())
+                {
+                    maybe_final_task = std::move(final_task);
+                }
+                has_finished.notify_one();
+            }
+            if (maybe_final_task)
+            {
+                scheduler([pt = std::move(maybe_final_task)]() mutable { (*pt)(); }, Priority{});
+            }
         });
 
         my_func();
@@ -134,6 +145,33 @@ void TaskTracker::add(Callback && func)
     *future_placeholder = scheduler(std::move(func_with_notification), Priority{});
 
     waitTilInflightShrink();
+}
+
+void TaskTracker::addFinal(Callback && func)
+{
+    auto pt = std::make_shared<std::packaged_task<void()>>(std::move(func));
+    futures.emplace_back(pt->get_future());
+
+    bool run_final_task_now = false;
+    {
+        std::lock_guard lock(mutex);
+        chassert(!final_task && "addFinal must be called at most once");
+        if (finished_futures.size() + 1 == futures.size())
+        {
+            /// Every previously added task has already finished.
+            /// There will be no SCOPE_EXIT to trigger the final callback, so run it here.
+            run_final_task_now = true;
+        }
+        else
+        {
+            final_task = pt;
+        }
+    }
+    if (run_final_task_now)
+    {
+        scheduler([p = std::move(pt)]() mutable { (*p)(); }, Priority{});
+        waitTilInflightShrink();
+    }
 }
 
 void TaskTracker::waitTilInflightShrink()
