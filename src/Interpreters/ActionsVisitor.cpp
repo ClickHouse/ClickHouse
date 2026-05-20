@@ -949,19 +949,28 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     }
                 }
 
-                auto replacement = makeNonConstantInReplacement(
-                    node,
-                    right_argument_is_array,
-                    right_argument_tuple_function_is_set,
-                    right_argument_type,
-                    left_argument_is_tuple);
-                visit(replacement, data);
+                const bool should_rewrite = !left_argument_is_tuple || right_argument_is_array
+                    || right_argument_tuple_function_is_set || isTupleType(right_argument_type);
+                if (should_rewrite)
+                {
+                    auto replacement = makeNonConstantInReplacement(
+                        node,
+                        right_argument_is_array,
+                        right_argument_tuple_function_is_set,
+                        right_argument_type,
+                        left_argument_is_tuple);
+                    visit(replacement, data);
 
-                auto replacement_name = replacement->getColumnName();
-                if (replacement_name != column_name)
-                    data.addAlias(replacement_name, column_name);
+                    auto replacement_name = replacement->getColumnName();
+                    if (replacement_name != column_name)
+                        data.addAlias(replacement_name, column_name);
+                    return;
+                }
             }
-            return;
+            else
+            {
+                return;
+            }
         }
 
         if (!data.no_makeset && !(data.is_create_parameterized_view && !analyzeReceiveQueryParams(ast).empty()))
