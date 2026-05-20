@@ -24,6 +24,14 @@ SELECT formatQueryFromJSON('{"type":"StatisticsDeclaration"}'); -- { serverError
 -- CreateQuery: at least one of `database` or `table` is required.
 SELECT formatQueryFromJSON('{"type":"CreateQuery"}'); -- { serverError BAD_ARGUMENTS }
 
+-- CreateQuery: non-database forms must provide `table` (otherwise the view/table flags get
+-- silently dropped and the query is reinterpreted as `CREATE DATABASE`).
+SELECT formatQueryFromJSON('{"type":"CreateQuery","database":"db","is_ordinary_view":true}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"CreateQuery","database":"db","is_materialized_view":true}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"CreateQuery","database":"db","is_dictionary":true}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"CreateQuery","database":"db","replace_table":true}'); -- { serverError BAD_ARGUMENTS }
+SELECT formatQueryFromJSON('{"type":"CreateQuery","database":"db","is_create_empty":true}'); -- { serverError BAD_ARGUMENTS }
+
 -- RenameQuery: each element requires non-empty from_table/to_table.
 SELECT formatQueryFromJSON('{"type":"RenameQuery","elements":[{"from_table":"","to_table":"","from_database":"","to_database":"","if_exists":false}]}'); -- { serverError BAD_ARGUMENTS }
 

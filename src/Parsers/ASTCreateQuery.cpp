@@ -567,10 +567,30 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (child)
         set(refresh_strategy, child);
 
-    /// `formatQueryImpl` requires `table` for any non-database form and `database` for the database form.
-    /// Without one of them we fall into a `chassert(table); table->format(...)` path.
+    /// `formatQueryImpl` only enters the `CREATE DATABASE` branch when `database` is set and `table` is unset.
+    /// All other forms (`TABLE`, `VIEW`, `MATERIALIZED VIEW`, `WINDOW VIEW`, `DICTIONARY`, ...) require `table`;
+    /// otherwise we fall into a `chassert(table); table->format(...)` path that null-derefs in release builds.
+    /// Without form-shape validation, JSON such as `{"database":"db","is_ordinary_view":true}` would silently
+    /// format as `CREATE DATABASE db`, dropping the view-specific flags instead of being rejected.
     if (!table && !database)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`CreateQuery` must specify at least one of 'database' or 'table' during AST JSON deserialization");
+
+    const bool requires_table =
+        is_ordinary_view || is_materialized_view || is_window_view
+        || is_dictionary || is_time_series_table
+        || is_populate || is_create_empty || is_clone_as
+        || replace_view || replace_table || create_or_replace
+        || has_attach_from_path || attach_as_replicated.has_value()
+        || allowed_lateness
+        || is_watermark_strictly_ascending || is_watermark_ascending || is_watermark_bounded
+        || columns_list || aliases_list || select
+        || watermark_function || lateness_function || as_table_function
+        || targets || sql_security
+        || dictionary_attributes_list || dictionary || refresh_strategy
+        || !as_table.empty() || !attach_from_path.empty();
+    if (requires_table && !table)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` is missing 'table' during AST JSON deserialization, but the surrounding flags indicate a non-database form");
 }
 
 void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
