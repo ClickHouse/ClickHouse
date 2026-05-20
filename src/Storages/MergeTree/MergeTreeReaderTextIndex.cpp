@@ -109,12 +109,15 @@ void MergeTreeReaderTextIndex::setIndexGranule(MergeTreeIndexGranulePtr index_gr
     granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(index_granule);
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType());
 
-    /// Lazy mode requires the per-segment block-index section emitted starting with the
-    /// WithCodec header version. Older Initial-format granules fall back to eager apply.
+    /// Lazy mode requires the per-segment block-index section (from `WithCodec` onward) and
+    /// pure-token queries — pattern predicates take the eager `applyPostingsAny` branch.
     auto required_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec);
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+
     use_lazy_mode = lazy_mode_requested
         && postings_codec->getType() != IPostingListCodec::Type::None
-        && granule->getSerializationVersion() >= required_version;
+        && granule->getSerializationVersion() >= required_version
+        && condition_text.getAllSearchPatterns().empty();
 
     postings_serialization = PostingsSerialization(std::move(postings_codec));
 }
@@ -782,8 +785,9 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
     if (search_query->tokens.empty() && search_query->patterns.empty())
         return;
 
-    if (use_lazy_mode && search_query->patterns.empty())
+    if (use_lazy_mode)
     {
+        chassert(search_query->patterns.empty());
         const auto & remaining_tokens = granule->getRemainingTokens();
 
         /// Build `PostingListCursorMap` for query tokens. Cursors are cached per `(column, token)`

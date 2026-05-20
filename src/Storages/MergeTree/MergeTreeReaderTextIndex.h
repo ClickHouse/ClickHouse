@@ -119,7 +119,8 @@ private:
     std::unique_ptr<MergeTreeIndexDeserializationState> deserialization_state;
     std::optional<PostingsSerialization> postings_serialization;
 
-    /// Lazy mode is requested once in the constructor, but enabled per granule after reading the sparse-index header.
+    /// Requested in the constructor; enabled per granule in `setIndexGranule` after checking the
+    /// sparse-index header and confirming no virtual column carries pattern predicates.
     bool lazy_mode_requested = false;
     bool use_lazy_mode = false;
     float lazy_density_threshold = 0.5f;
