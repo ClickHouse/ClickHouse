@@ -3764,6 +3764,16 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
         }
 
+        if (fn->arguments && !fn->arguments->children.empty() && fuzz_rand() % 30 == 0)
+        {
+            auto * first_arg = fn->arguments->children[0]->as<ASTFunction>();
+            if (first_arg && first_arg->name == "lambda")
+            {
+                const auto & group = swapFuncs[fuzz_rand() % swapFuncs.size()];
+                fn->arguments->children[0] = make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, group));
+            }
+        }
+
         if (fn->isWindowFunction() && fn->window_definition)
         {
             auto & def = fn->window_definition->as<ASTWindowDefinition &>();
@@ -4081,22 +4091,18 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 }
                 else if (fuzz_rand() % 50 == 0)
                 {
-                    auto val = fuzz_rand() % 2 == 0
-                        ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
-                        : Field(static_cast<UInt64>(fuzz_rand() % 1001));
-                    select->setExpression(
-                        ASTSelectQuery::Expression::LIMIT_OFFSET, make_intrusive<ASTLiteral>(val));
+                    auto val = fuzz_rand() % 2 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
+                                                    : Field(static_cast<UInt64>(fuzz_rand() % 1001));
+                    select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, make_intrusive<ASTLiteral>(val));
                 }
             }
         }
         else if (fuzz_rand() % 50 == 0)
         {
             /// Add a LIMIT clause
-            auto val = fuzz_rand() % 10 == 0
-                ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
-                : Field(static_cast<UInt64>(fuzz_rand() % 1001));
-            select->setExpression(
-                ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(val));
+            auto val
+                = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001))) : Field(static_cast<UInt64>(fuzz_rand() % 1001));
+            select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(val));
         }
         /// Fuzz LIMIT BY offset/length
         if (select->limitBy())
@@ -4108,11 +4114,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
             else if (fuzz_rand() % 50 == 0)
             {
-                auto val = fuzz_rand() % 10 == 0
-                    ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
-                    : Field(static_cast<UInt64>(fuzz_rand() % 1001));
-                select->setExpression(
-                    ASTSelectQuery::Expression::LIMIT_BY_LENGTH, make_intrusive<ASTLiteral>(val));
+                auto val = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
+                                                 : Field(static_cast<UInt64>(fuzz_rand() % 1001));
+                select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, make_intrusive<ASTLiteral>(val));
             }
             if (select->limitByOffset())
             {
@@ -4121,11 +4125,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
             else if (fuzz_rand() % 50 == 0)
             {
-                auto val = fuzz_rand() % 10 == 0
-                    ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
-                    : Field(static_cast<UInt64>(fuzz_rand() % 1001));
-                select->setExpression(
-                    ASTSelectQuery::Expression::LIMIT_BY_OFFSET, make_intrusive<ASTLiteral>(val));
+                auto val = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
+                                                 : Field(static_cast<UInt64>(fuzz_rand() % 1001));
+                select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, make_intrusive<ASTLiteral>(val));
             }
         }
         fuzzColumnLikeExpressionList(select->limitBy().get());
