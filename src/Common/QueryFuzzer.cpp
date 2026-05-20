@@ -78,7 +78,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #if USE_BUZZHOUSE
-#include <Client/BuzzHouse/Generator/RandomGenerator.h>
+#    include <Client/BuzzHouse/Generator/RandomGenerator.h>
 namespace BuzzHouse
 {
 extern std::unordered_map<String, CHSetting> performanceSettings;
@@ -97,6 +97,48 @@ namespace ErrorCodes
 {
 extern const int TOO_DEEP_RECURSION;
 }
+
+static const Strings data_formats = {
+    "Values",
+    "CSV",
+    "TSV",
+    "TabSeparated",
+    "TabSeparatedRaw",
+    "TSKV",
+    "JSON",
+    "JSONCompact",
+    "JSONColumns",
+    "JSONColumnsWithMetadata",
+    "JSONEachRow",
+    "JSONStringsEachRow",
+    "JSONLines",
+    "JSONCompactEachRow",
+    "JSONCompactStringsEachRow",
+    "JSONObjectEachRow",
+    "JSONCompactColumns",
+    "JSONEachRowWithProgress",
+    "JSONCompactEachRowWithProgress",
+    "BSONEachRow",
+    "Native",
+    "RowBinary",
+    "MsgPack",
+    "LineAsString",
+    "RawBLOB",
+    "Parquet",
+    "Arrow",
+    "ArrowStream",
+    "ORC",
+    "Avro",
+    "CustomSeparated",
+    "Markdown",
+    "Pretty",
+    "PrettyCompact",
+    "Vertical",
+    "SQLInsert",
+    "XML",
+    "Npy",
+    "Null",
+};
 
 static String fieldToNumericString(const Field & f)
 {
@@ -4188,37 +4230,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         /// Swap format string — only safe when there is no inline data
         if (!insert_query->hasInlinedData() && !insert_query->format.empty() && fuzz_rand() % 20 == 0)
         {
-            static const Strings insert_fmts = {
-                "Values",
-                "CSV",
-                "TSV",
-                "TabSeparated",
-                "TabSeparatedRaw",
-                "TSKV",
-                "JSON",
-                "JSONCompact",
-                "JSONColumns",
-                "JSONColumnsWithMetadata",
-                "JSONEachRow",
-                "JSONStringsEachRow",
-                "JSONLines",
-                "JSONCompactEachRow",
-                "JSONCompactStringsEachRow",
-                "JSONObjectEachRow",
-                "JSONCompactColumns",
-                "BSONEachRow",
-                "Native",
-                "RowBinary",
-                "MsgPack",
-                "LineAsString",
-                "RawBLOB",
-                "Parquet",
-                "Arrow",
-                "ArrowStream",
-                "ORC",
-                "Avro",
-            };
-            insert_query->format = insert_fmts[fuzz_rand() % insert_fmts.size()];
+            insert_query->format = data_formats[fuzz_rand() % data_formats.size()];
         }
         /// Occasionally drop inline SETTINGS
         if (insert_query->settings_ast && fuzz_rand() % 100 == 0)
@@ -4898,6 +4910,54 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     else
     {
         fuzz(ast->children);
+    }
+
+    if (auto * query_with_output = typeid_cast<ASTQueryWithOutput *>(ast.get()))
+    {
+        if (query_with_output->out_file)
+        {
+            if (fuzz_rand() % 20 == 0)
+            {
+                query_with_output->reset(query_with_output->out_file);
+                query_with_output->reset(query_with_output->compression);
+                query_with_output->reset(query_with_output->compression_level);
+                query_with_output->setIsOutfileAppend(false);
+                query_with_output->setIsOutfileTruncate(false);
+                query_with_output->setIsIntoOutfileWithStdout(false);
+            }
+            else
+            {
+                if (fuzz_rand() % 10 == 0)
+                    query_with_output->setIsOutfileAppend(!query_with_output->isOutfileAppend());
+                if (fuzz_rand() % 10 == 0)
+                    query_with_output->setIsOutfileTruncate(!query_with_output->isOutfileTruncate());
+                if (fuzz_rand() % 10 == 0)
+                    query_with_output->setIsIntoOutfileWithStdout(!query_with_output->isIntoOutfileWithStdout());
+                if (fuzz_rand() % 20 == 0)
+                {
+                    static const Strings compressions
+                        = {"none", "gzip", "deflate", "br", "brotli", "xz", "lzma", "zstd", "zst", "lz4", "bz2", "snappy"};
+                    query_with_output->set(
+                        query_with_output->compression, make_intrusive<ASTLiteral>(compressions[fuzz_rand() % compressions.size()]));
+                }
+                if (fuzz_rand() % 20 == 0)
+                {
+                    query_with_output->set(
+                        query_with_output->compression_level, make_intrusive<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 23)));
+                }
+                if (fuzz_rand() % 10 == 0)
+                {
+                    auto fmt = make_intrusive<ASTIdentifier>(data_formats[fuzz_rand() % data_formats.size()]);
+                    query_with_output->set(query_with_output->format_ast, fmt);
+                }
+            }
+        }
+        else if (fuzz_rand() % 50 == 0)
+        {
+            query_with_output->set(query_with_output->out_file, make_intrusive<ASTLiteral>("/dev/null"));
+            if (fuzz_rand() % 2 == 0)
+                query_with_output->setIsOutfileTruncate(true);
+        }
     }
 }
 
