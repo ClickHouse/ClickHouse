@@ -128,6 +128,30 @@ ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
 {
     if (canExtractedSubcolumnsBeInsideNullable(prev))
         return ColumnNullable::create(prev, null_map);
+
+    /// `prev` is already `Nullable` (e.g. extracting `Nullable(Decimal)` from
+    /// `Nullable(Tuple(..., Nullable(Decimal), ...))`). We cannot double-wrap, but the outer
+    /// null map must still be propagated by OR-ing it into the inner null map. Otherwise rows
+    /// whose outer tuple is `NULL` but whose inner `Nullable` element has a non-`NULL` value on
+    /// disk would expose that inner value here, which breaks the sort key materialized on
+    /// write (the on-disk sort key combined both masks).
+    if (null_map)
+    {
+        if (const auto * prev_nullable = checkAndGetColumn<ColumnNullable>(prev.get()))
+        {
+            const auto & inner_null_data = prev_nullable->getNullMapData();
+            const auto & outer_null_data = assert_cast<const ColumnUInt8 &>(*null_map).getData();
+            chassert(inner_null_data.size() == outer_null_data.size());
+
+            auto combined_null_map = ColumnUInt8::create(inner_null_data.size());
+            auto & combined_data = combined_null_map->getData();
+            for (size_t i = 0; i < inner_null_data.size(); ++i)
+                combined_data[i] = inner_null_data[i] | outer_null_data[i];
+
+            return ColumnNullable::create(prev_nullable->getNestedColumnPtr(), std::move(combined_null_map));
+        }
+    }
+
     return prev;
 }
 
