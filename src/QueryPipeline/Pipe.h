@@ -95,7 +95,7 @@ public:
     /// Changes the number of output ports if needed. Adds (Strict)ResizeProcessor.
     void resize(size_t num_streams, bool strict = false, UInt64 min_outstreams_per_resize_after_split = 0);
 
-    using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
+    using Transformer = std::function<Processors(const OutputPortRawPtrs & ports)>;
 
     /// Transform Pipe in general way.
     void transform(const Transformer & transformer, bool check_ports = true);
