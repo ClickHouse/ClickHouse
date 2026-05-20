@@ -67,6 +67,10 @@ private:
 
         using nuraft::raft_server::raft_server;
 
+        /// Keeper context for accessing coordination settings (e.g. commit profiler).
+        /// Set after construction because the base class constructor is inherited.
+        KeeperContextPtr keeper_context;
+
         // peers are initially marked as responding because at least one cycle
         // of heartbeat * response_limit (20) need to pass to be marked
         // as not responding
