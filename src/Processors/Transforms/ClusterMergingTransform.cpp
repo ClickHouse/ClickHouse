@@ -769,9 +769,18 @@ Chunk ClusterMergingTransform::generateString()
             non_cluster_key_positions.push_back(i);
     }
 
-    /// Distance is interpreted as the integer maximum edit distance.
-    /// Negative is clamped to zero.
-    const size_t max_edits = (cluster_distance < 0) ? 0 : static_cast<size_t>(cluster_distance);
+    /// Distance for String keys is interpreted as a non-negative integer edit distance.
+    /// Reject NaN/Inf, negative, and fractional values explicitly; an unchecked cast
+    /// would be UB for out-of-range floats and would silently truncate `1.9 → 1`.
+    if (!std::isfinite(cluster_distance))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "GROUP BY ... WITH CLUSTER on String: distance must be finite, got {}", cluster_distance);
+
+    size_t max_edits;
+    if (!accurate::convertNumeric<Float64, size_t, /*strict=*/true>(cluster_distance, max_edits))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "GROUP BY ... WITH CLUSTER on String: distance must be a non-negative integer, got {}",
+            cluster_distance);
 
     /// d == 0: only exact-match merging — already done by the upstream `Aggregator`.
     /// Trivial path: copy input rows to output unchanged.
