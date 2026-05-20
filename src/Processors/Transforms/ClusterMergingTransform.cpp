@@ -129,6 +129,15 @@ ClusterMergingTransform::ClusterMergingTransform(
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "ClusterMergingTransform expects {} key names for {}D, got {}",
             dimensions, dimensions, cluster_key_names.size());
+    /// Reject negative / NaN / Inf upfront so bad input fails fast with a clear
+    /// message instead of being silently reinterpreted (e.g. `< 0` was previously
+    /// taking the `distance == 0` branch and producing different semantics).
+    /// The String path additionally validates integrality of `cluster_distance`
+    /// in `generateString`.
+    if (!std::isfinite(cluster_distance) || cluster_distance < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "GROUP BY ... WITH CLUSTER distance must be a non-negative finite number, got {}",
+            cluster_distance);
 }
 
 void ClusterMergingTransform::consume(Chunk chunk)
