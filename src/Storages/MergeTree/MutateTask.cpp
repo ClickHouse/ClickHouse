@@ -2858,23 +2858,21 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         /// either because a virtual file inside it is being dropped / recomputed, OR because the
         /// writer in the new part may produce a fresh archive on its own and would otherwise
         /// truncate the source's inode. The second case fires when packing is enabled in the
-        /// current settings and the mutation will run at least one skip-index aggregator (i.e.
-        /// some index gets recomputed) - the writer creates skp_idx.packed lazily on the first
-        /// substream that decides to pack, which can happen even if no source-archive member is
-        /// in the recalc set (e.g. the threshold was raised and a per-file source index now
-        /// fits inside the archive).
+        /// current settings and the mutation will run at least one packable skip-index
+        /// aggregator (text indices are never packed; see MergeTreeDataPartWriterOnDisk::
+        /// initSkipIndices). The writer creates skp_idx.packed lazily on the first substream
+        /// that decides to pack, which can happen even if no source-archive member is in the
+        /// recalc set (e.g. the threshold was raised and a per-file source index now fits
+        /// inside the archive).
         const bool source_has_archive = source_disk_storage->hasSkipIndicesPackedArchive();
         const bool writer_can_open_archive =
             (*ctx->data->getSettings())[MergeTreeSetting::packed_skip_index_max_bytes] > 0
-            && (!ctx->indices_to_recalc.empty() || !ctx->text_indices_to_recalc.empty());
+            && !ctx->indices_to_recalc.empty();
 
         bool archive_dirty = !ctx->dropped_skip_index_archive_file_names.empty()
             || (source_has_archive && writer_can_open_archive);
         if (!archive_dirty)
             for (const auto & idx : ctx->indices_to_recalc)
-                if (index_is_in_archive(*idx)) { archive_dirty = true; break; }
-        if (!archive_dirty)
-            for (const auto & idx : ctx->text_indices_to_recalc)
                 if (index_is_in_archive(*idx)) { archive_dirty = true; break; }
 
         if (archive_dirty)
