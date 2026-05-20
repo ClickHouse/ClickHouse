@@ -3718,6 +3718,11 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
                 {
                     const auto & key_type = cluster_elem->getResultType();
                     WhichDataType which(key_type);
+                    if (which.isTuple())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "GROUP BY ... WITH CLUSTER on a tuple-typed column is not supported. "
+                            "Use an inline tuple expression, e.g. `GROUP BY (p.1, p.2) WITH CLUSTER d`, "
+                            "to enable 2D Euclidean clustering.");
                     if (!is_supported_scalar(key_type) && !which.isStringOrFixedString())
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "GROUP BY ... WITH CLUSTER key must be a numeric / temporal / String / FixedString scalar, got {}",
