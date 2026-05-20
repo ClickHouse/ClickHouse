@@ -39,7 +39,7 @@ public:
     explicit MemorySourceReader(std::unordered_map<String, String> data_)
         : data(std::move(data_)) {}
 
-    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object, bool /* use_external_buffer */) override
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) override
     {
         auto it = data.find(object.remote_path);
         if (it == data.end())
@@ -544,7 +544,7 @@ public:
     explicit ThrowOnSecondOpenSourceReader(String data_)
         : data(std::move(data_)) {}
 
-    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject &, bool /* use_external_buffer */) override
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject &) override
     {
         if (call_count.fetch_add(1) > 0)
             throw Exception(ErrorCodes::CANNOT_OPEN_FILE,

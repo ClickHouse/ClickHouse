@@ -6,10 +6,11 @@
 namespace DB
 {
 
-std::unique_ptr<ReadBufferFromFileBase> LocalSourceReader::open(const StoredObject & object, bool /* use_external_buffer */)
+std::unique_ptr<ReadBufferFromFileBase> LocalSourceReader::open(const StoredObject & object)
 {
     LOG_TRACE(log, "open: file={}", object.remote_path);
-    /// Local files use pread — external buffer is not applicable.
+    /// Local files use pread; createReadBufferFromFileBase doesn't expose an
+    /// external-buffer flag at this level — the executor's set() still works.
     return createReadBufferFromFileBase(object.remote_path, ReadSettings{});
 }
 

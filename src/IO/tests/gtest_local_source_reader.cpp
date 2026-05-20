@@ -40,7 +40,7 @@ TEST_F(LocalSourceReaderTest, OpenReadFullRange)
     obj.remote_path = test_file.string();
     obj.bytes_size = 1024;
 
-    auto buf = reader.open(obj, /*use_external_buffer=*/false);
+    auto buf = reader.open(obj);
     ASSERT_TRUE(buf);
 
     std::vector<char> data(1024);
@@ -64,7 +64,7 @@ TEST_F(LocalSourceReaderTest, OpenSeekAndRead)
     obj.remote_path = test_file.string();
     obj.bytes_size = 1024;
 
-    auto buf = reader.open(obj, /*use_external_buffer=*/false);
+    auto buf = reader.open(obj);
     ASSERT_TRUE(buf);
     buf->seek(256, SEEK_SET);
 
@@ -89,7 +89,7 @@ TEST_F(LocalSourceReaderTest, OpenReadPastEOF)
     obj.remote_path = test_file.string();
     obj.bytes_size = 1024;
 
-    auto buf = reader.open(obj, /*use_external_buffer=*/false);
+    auto buf = reader.open(obj);
     ASSERT_TRUE(buf);
     buf->seek(900, SEEK_SET);
 

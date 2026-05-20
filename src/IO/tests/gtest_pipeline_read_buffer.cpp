@@ -23,7 +23,7 @@ class MemorySourceReader : public ISourceReader
 public:
     explicit MemorySourceReader(String data_) : data(std::move(data_)) {}
 
-    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject &, bool /* use_external_buffer */) override
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject &) override
     {
         auto path = std::filesystem::temp_directory_path() / ("test_pipeline_source_" + std::to_string(file_counter++));
         {

@@ -215,7 +215,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
             source_reader = std::make_shared<BufferSourceReader>(
                 [creator, captured_settings](const StoredObject & object)
                 {
-                    return creator(object, captured_settings, /*use_external_buffer=*/false, /*restrict_seek=*/false);
+                    /// External-buffer mode: ReaderExecutor drives reads via set()+next().
+                    return creator(object, captured_settings, /*use_external_buffer=*/true, /*restrict_seek=*/false);
                 },
                 "CustomSource");
         }

@@ -16,7 +16,7 @@ class ObjectStorageSourceReader : public ISourceReader
 public:
     ObjectStorageSourceReader(ObjectStoragePtr storage, const ReadSettings & read_settings);
 
-    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object, bool use_external_buffer) override;
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) override;
 
     String name() const override { return "ObjectStorageSourceReader"; }
 

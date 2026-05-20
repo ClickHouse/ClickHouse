@@ -10,7 +10,7 @@ namespace DB
 class LocalSourceReader : public ISourceReader
 {
 public:
-    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object, bool use_external_buffer) override;
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) override;
 
     String name() const override { return "LocalSourceReader"; }
 

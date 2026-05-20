@@ -14,10 +14,11 @@ ObjectStorageSourceReader::ObjectStorageSourceReader(
 {
 }
 
-std::unique_ptr<ReadBufferFromFileBase> ObjectStorageSourceReader::open(const StoredObject & object, bool use_external_buffer)
+std::unique_ptr<ReadBufferFromFileBase> ObjectStorageSourceReader::open(const StoredObject & object)
 {
-    LOG_TRACE(log, "open: object={}, use_external_buffer={}", object.remote_path, use_external_buffer);
-    return storage->readObject(object, read_settings, /*read_hint=*/{}, use_external_buffer);
+    LOG_TRACE(log, "open: object={}", object.remote_path);
+    /// Always open in external-buffer mode — ReaderExecutor drives reads via set()+next().
+    return storage->readObject(object, read_settings, /*read_hint=*/{}, /*use_external_buffer=*/true);
 }
 
 }

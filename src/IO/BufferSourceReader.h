@@ -22,8 +22,10 @@ public:
     {
     }
 
-    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object, bool /* use_external_buffer */) override
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) override
     {
+        /// Factory is expected to honor external-buffer mode where its underlying
+        /// API supports it; the executor drives reads via set()+next() either way.
         return factory(object);
     }
 

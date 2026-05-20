@@ -425,7 +425,7 @@ Rope ReaderExecutor::readFromSource(
         auto slot = buffer_limit->tryAcquire(buffer_limit, object.remote_path, String(CurrentThread::getQueryId()));
         if (slot)
         {
-            auto opened = source->open(object, /*use_external_buffer=*/true);
+            auto opened = source->open(object);
 
             if (opened)
             {
@@ -460,7 +460,7 @@ Rope ReaderExecutor::readFromSource(
     /// this function returns.
     ProfileEvents::increment(ProfileEvents::LiveSourceBufferFallbacks);
 
-    auto opened = source->open(object, /*use_external_buffer=*/true);
+    auto opened = source->open(object);
     if (offset > 0)
         opened->seek(offset, SEEK_SET);
     auto & buf = *opened;
