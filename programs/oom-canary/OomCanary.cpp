@@ -96,6 +96,8 @@ int mainEntryClickHouseOomCanary(int argc, char ** argv)
     pid_t parent_pid = 0;
     if (!DB::tryParse(size_bytes, argv[1]) || !DB::tryParse(parent_pid, argv[2]))
         return 1;
+    if (size_bytes == 0 || parent_pid <= 0)
+        return 1;
 
     runCanary(size_bytes, parent_pid);
 }
