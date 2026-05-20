@@ -20,7 +20,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FilesystemImpl : public IFunction
+class FilesystemImpl final : public IFunction
 {
 public:
     using GetFunc = UInt64 (*)(const DiskPtr &);

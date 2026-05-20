@@ -15,7 +15,7 @@ namespace DB
 /** tuple(x, y, ...) is a function that allows you to group several columns.
   * tupleElement(tuple, n) is a function that allows you to retrieve a column from tuple.
   */
-class FunctionTuple : public IFunction
+class FunctionTuple final : public IFunction
 {
     bool enable_named_columns;
 

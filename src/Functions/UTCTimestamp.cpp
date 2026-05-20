@@ -18,7 +18,7 @@ namespace
 {
 
 /// Get the UTC time. (It is a constant, it is evaluated once for the entire query.)
-class ExecutableFunctionUTCTimestamp : public IExecutableFunction
+class ExecutableFunctionUTCTimestamp final : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionUTCTimestamp(time_t time_) : time_value(time_) {}
@@ -36,7 +36,7 @@ private:
     time_t time_value;
 };
 
-class FunctionBaseUTCTimestamp : public IFunctionBase
+class FunctionBaseUTCTimestamp final : public IFunctionBase
 {
 public:
     explicit FunctionBaseUTCTimestamp(time_t time_, DataTypes argument_types_, DataTypePtr return_type_)
@@ -68,7 +68,7 @@ private:
     DataTypePtr return_type;
 };
 
-class UTCTimestampOverloadResolver : public IFunctionOverloadResolver
+class UTCTimestampOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "UTCTimestamp";

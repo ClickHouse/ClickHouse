@@ -7,7 +7,7 @@
 
 namespace DB
 {
-class FunctionInitialQueryStartTime : public IFunction
+class FunctionInitialQueryStartTime final : public IFunction
 {
     const time_t initial_query_start_time;
 public:

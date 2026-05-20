@@ -11,7 +11,7 @@ namespace
 {
 
 /// Returns global default value for type of passed argument (example: 0 for numeric types, '' for String).
-class FunctionDefaultValueOfArgumentType : public IFunction
+class FunctionDefaultValueOfArgumentType final : public IFunction
 {
 public:
     static constexpr auto name = "defaultValueOfArgumentType";

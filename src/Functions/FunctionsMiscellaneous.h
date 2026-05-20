@@ -31,7 +31,7 @@ struct LambdaCapture
 
 using LambdaCapturePtr = std::shared_ptr<LambdaCapture>;
 
-class ExecutableFunctionExpression : public IExecutableFunction
+class ExecutableFunctionExpression final : public IExecutableFunction
 {
 public:
     struct Signature
@@ -87,7 +87,7 @@ private:
 };
 
 /// Executes expression. Uses for lambda functions implementation. Can't be created from factory.
-class FunctionExpression : public IFunctionBase
+class FunctionExpression final : public IFunctionBase
 {
 public:
     using Signature = ExecutableFunctionExpression::Signature;
@@ -144,7 +144,7 @@ private:
 /// Returns ColumnFunction with captured columns.
 /// For lambda(x, x + y) x is in lambda_arguments, y is in captured arguments, expression_actions is 'x + y'.
 ///  execute(y) returns ColumnFunction(FunctionExpression(x + y), y) with type Function(x) -> function_return_type.
-class ExecutableFunctionCapture : public IExecutableFunction
+class ExecutableFunctionCapture final : public IExecutableFunction
 {
 public:
     ExecutableFunctionCapture(ExpressionActionsPtr expression_actions_, LambdaCapturePtr capture_)
@@ -211,7 +211,7 @@ private:
     LambdaCapturePtr capture;
 };
 
-class FunctionCapture : public IFunctionBase
+class FunctionCapture final : public IFunctionBase
 {
 public:
     FunctionCapture(
@@ -286,7 +286,7 @@ private:
     String name;
 };
 
-class FunctionCaptureOverloadResolver : public IFunctionOverloadResolver
+class FunctionCaptureOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     FunctionCaptureOverloadResolver(

@@ -7081,8 +7081,11 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
 class MergeTreeData::RestoredPartsHolder
 {
 public:
-    RestoredPartsHolder(const std::shared_ptr<MergeTreeData> & storage_, const BackupPtr & backup_)
-        : storage(storage_), backup(backup_)
+    RestoredPartsHolder(
+        const std::shared_ptr<MergeTreeData> & storage_,
+        const BackupPtr & backup_,
+        const ZooKeeperRetriesInfo & zookeeper_retries_info_)
+        : storage(storage_), backup(backup_), zookeeper_retries_info(zookeeper_retries_info_)
     {
     }
 
@@ -7139,7 +7142,7 @@ private:
             parts.end(),
             [](const MutableDataPartPtr & lhs, const MutableDataPartPtr & rhs) { return lhs->info.min_block < rhs->info.min_block; });
 
-        storage->attachRestoredParts(std::move(parts));
+        storage->attachRestoredParts(std::move(parts), zookeeper_retries_info);
         parts.clear();
         temp_part_dirs.clear();
         num_parts = 0;
@@ -7147,6 +7150,7 @@ private:
 
     const std::shared_ptr<MergeTreeData> storage;
     const BackupPtr backup;
+    const ZooKeeperRetriesInfo zookeeper_retries_info;
     size_t num_parts = 0;
     size_t num_broken_parts = 0;
     MutableDataPartsVector parts;
@@ -7166,7 +7170,8 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
 
     bool restore_broken_parts_as_detached = restorer.getRestoreSettings().restore_broken_parts_as_detached;
 
-    auto restored_parts_holder = std::make_shared<RestoredPartsHolder>(std::static_pointer_cast<MergeTreeData>(shared_from_this()), backup);
+    auto restored_parts_holder = std::make_shared<RestoredPartsHolder>(
+        std::static_pointer_cast<MergeTreeData>(shared_from_this()), backup, restorer.getZooKeeperRetriesInfo());
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
     size_t num_parts = 0;
@@ -11072,8 +11077,11 @@ MergeTreeData::ColumnsDescriptionCache MergeTreeData::getColumnsDescriptionForCo
             ? std::make_shared<ColumnsDescription>(Nested::collect(columns))
             : nullptr,
     };
-    if (!cache.with_collected_nested || *cache.with_collected_nested == *cache.original)
-        cache.with_collected_nested = cache.original;
+    /// Keep `with_collected_nested` only when `Nested::collect` produced a distinct list.
+    /// The caller falls back to `original` when this is null, so the cache always holds
+    /// exactly one ref to `original` regardless of the schema shape.
+    if (cache.with_collected_nested && *cache.with_collected_nested == *cache.original)
+        cache.with_collected_nested.reset();
     auto [_, inserted] = columns_descriptions_cache.emplace(columns, cache);
     columns_descriptions_metric_handle.add(inserted);
     return cache;
@@ -11082,21 +11090,17 @@ MergeTreeData::ColumnsDescriptionCache MergeTreeData::getColumnsDescriptionForCo
 void MergeTreeData::decrefColumnsDescriptionForColumns(const NamesAndTypesList & columns) const
 {
     std::lock_guard lock(columns_descriptions_cache_mutex);
-    if (auto it = columns_descriptions_cache.find(columns); it != columns_descriptions_cache.end())
+    auto it = columns_descriptions_cache.find(columns);
+    if (it == columns_descriptions_cache.end())
+        return;
+
+    /// The cache entry holds exactly one ref to `original` (via `cache.original`).
+    /// `with_collected_nested` is either null or a distinct shared_ptr, so it does
+    /// not contribute additional refs to `original`. Evict once no part holds a ref.
+    if (it->second.original.use_count() == 1)
     {
-        /// 1 in the container + 1 in the iterator
-        ///
-        /// Note, we cannot check original.use_count() == with_collected_nested.use_count(),
-        /// since in IMergeTreeDataPart::setColumns() there is a tiny window when it is not correct.
-        ///
-        /// But, if original.use_count() == 2 then it is **always** safe to delete,
-        /// since this means that there are no other references to the shared_ptr
-        /// except in the columns_descriptions_cache and local copy here in iterator.
-        if (it->second.original.use_count() == 2)
-        {
-            columns_descriptions_cache.erase(it);
-            columns_descriptions_metric_handle.sub(1);
-        }
+        columns_descriptions_cache.erase(it);
+        columns_descriptions_metric_handle.sub(1);
     }
 }
 

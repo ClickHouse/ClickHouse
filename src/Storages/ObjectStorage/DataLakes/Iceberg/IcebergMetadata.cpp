@@ -513,7 +513,9 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
         {
             return {nullptr, schema_id};
         }
-        auto current_snapshot_id = metadata_object->getValue<Int64>(f_current_snapshot_id);
+        Int64 current_snapshot_id = metadata_object->isNull(f_current_snapshot_id)
+            ? -1
+            : metadata_object->getValue<Int64>(f_current_snapshot_id);
         if (current_snapshot_id < 0)
         {
             return {nullptr, schema_id};

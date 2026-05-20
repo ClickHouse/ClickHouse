@@ -89,7 +89,7 @@ static std::string getBaseName(const String & path)
     return path.substr(basename_start + 1);
 }
 
-class StorageHiveSource : public ISource, WithContext
+class StorageHiveSource final : public ISource, WithContext
 {
 public:
     using FileFormat = StorageHive::FileFormat;

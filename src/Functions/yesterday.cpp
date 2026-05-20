@@ -10,7 +10,7 @@
 namespace DB
 {
 
-class ExecutableFunctionYesterday : public IExecutableFunction
+class ExecutableFunctionYesterday final : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionYesterday(time_t time_) : day_value(static_cast<UInt16>(time_)) {}
@@ -26,7 +26,7 @@ private:
     DayNum day_value;
 };
 
-class FunctionBaseYesterday : public IFunctionBase
+class FunctionBaseYesterday final : public IFunctionBase
 {
 public:
     explicit FunctionBaseYesterday(DayNum day_value_) : day_value(day_value_), return_type(std::make_shared<DataTypeDate>()) {}
@@ -57,7 +57,7 @@ private:
     DataTypePtr return_type;
 };
 
-class YesterdayOverloadResolver : public IFunctionOverloadResolver
+class YesterdayOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "yesterday";

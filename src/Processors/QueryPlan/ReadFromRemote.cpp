@@ -412,7 +412,16 @@ ASTPtr tryBuildAdditionalFilterAST(
                         /// and it should be built before sending the external tables.
 
                         auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(source_ast, context);
-                        NamesAndTypesList columns = header->getNamesAndTypesList();
+                        /// The subquery may produce columns with duplicate names
+                        /// (e.g. `(x, y) GLOBAL IN (SELECT number, number FROM ...)`).
+                        /// `ColumnsDescription` prohibits duplicate column names, so deduplicate
+                        /// the names here. This mirrors `buildQueryTreeForShard.cpp` which performs
+                        /// the same step. Column matching when the temporary table is populated and
+                        /// when it is later used by the remote shard's `IN` operator is by position,
+                        /// so renaming the columns is safe.
+                        Block header_with_unique_names = *header;
+                        makeUniqueColumnNamesInBlock(header_with_unique_names);
+                        NamesAndTypesList columns = header_with_unique_names.getNamesAndTypesList();
 
                         auto external_storage_holder = TemporaryTableHolder(
                             context,

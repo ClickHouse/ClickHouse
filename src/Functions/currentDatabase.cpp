@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-class FunctionCurrentDatabase : public IFunction
+class FunctionCurrentDatabase final : public IFunction
 {
     const String db_name;
 
