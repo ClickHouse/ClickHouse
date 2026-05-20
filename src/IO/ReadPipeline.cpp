@@ -189,7 +189,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
         {
             LOG_DEBUG(getLogger("ReadPipeline"), "build: using ReaderExecutor for local file, {} objects, path={}",
                 source->objects.size(), local_src->path);
-            source_reader = std::make_shared<LocalSourceReader>();
+            source_reader = std::make_shared<LocalSourceReader>(settings);
             min_bytes_for_seek = 0; /// Local seeks are free.
         }
         else if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
