@@ -180,8 +180,7 @@ bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & el
         {
             return false;
         }
-        case RPNElement::FUNCTION_IN:
-        case RPNElement::FUNCTION_MATCH:
+        case RPNElement::FUNCTION_HAS_ANY_ELEMENTS:
         {
             return element.text_search_queries.size() != 1;
         }
@@ -200,6 +199,8 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "mapContainsValue"
         || function_name == "mapContainsValueLike"
         || function_name == "has"
+        || function_name == "hasAny"
+        || function_name == "hasAll"
         || function_name == "like"
         || function_name == "ilike"
         || function_name == "hasTokenOrNull"
@@ -223,19 +224,27 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         return TextIndexDirectReadMode::Exact;
     }
 
+    bool is_array_tokenizer = typeid_cast<const ArrayTokenizer *>(tokenizer);
+    bool has_preprocessor = preprocessor && preprocessor->hasActions();
+
     if (function_name == "equals"
         || function_name == "has"
         || function_name == "mapContainsKey"
-        || function_name == "mapContainsValue")
+        || function_name == "mapContainsValue"
+        || function_name == "hasAll")
     {
         /// These functions compare the searched token as a whole and therefore
         /// exact direct read is only possible with array token extractor, that doesn't
         /// split documents into tokens. Otherwise we can only use direct read as a hint.
-        bool is_array_tokenizer = typeid_cast<const ArrayTokenizer *>(tokenizer);
-        bool has_preprocessor = preprocessor && preprocessor->hasActions();
         return is_array_tokenizer && !has_preprocessor ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
     }
 
+    if (function_name == "hasAny")
+    {
+        /// Function hasAny creates several text search queries with
+        /// tokenizers that split strings, so we can't use direct read as a hint.
+        return is_array_tokenizer && !has_preprocessor ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
+    }
 
     if (function_name == "like"
         || function_name == "hasPhrase"
@@ -300,8 +309,7 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
          RPNElement::FUNCTION_HAS_ANY_TOKENS,
          RPNElement::FUNCTION_HAS_ALL_TOKENS,
          RPNElement::FUNCTION_LIKE,
-         RPNElement::FUNCTION_IN,
-         RPNElement::FUNCTION_MATCH});
+         RPNElement::FUNCTION_HAS_ANY_ELEMENTS});
 }
 
 bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
@@ -347,10 +355,10 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             const auto & text_search_query = element.text_search_queries.front();
             bool exists_in_granule = granule->hasAllQueryTokensOrEmpty(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
-
         }
-        else if (element.function == RPNElement::FUNCTION_MATCH || element.function == RPNElement::FUNCTION_IN)
+        else if (element.function == RPNElement::FUNCTION_HAS_ANY_ELEMENTS)
         {
+            /// OR across per-element queries.
             bool exists_in_granule = false;
 
             for (const auto & text_search_query : element.text_search_queries)
@@ -481,7 +489,7 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         if ((function_name == "in" || function_name == "globalIn")
             && tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
         {
-            out.function = RPNElement::FUNCTION_IN;
+            out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
             return true;
         }
         else if (isSupportedFunction(function_name))
@@ -668,6 +676,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     const auto & settings = getContext()->getSettingsRef();
 
+    /// like/ilike optimization is only supported for splitByNonAlpha and array tokenizers.
+    static const std::unordered_set<ITokenizer::Type> like_optimization_supported_tokenizers = {
+        ITokenizer::Type::SplitByNonAlpha,
+        ITokenizer::Type::Array
+    };
+
     if (has_map_keys_column || has_map_values_column)
     {
         if (!value_data_type.isStringOrFixedString())
@@ -740,6 +754,81 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         return true;
     }
+    if (function_name == "hasAny" || function_name == "hasAll")
+    {
+        if (!value_data_type.isArray())
+            return false;
+
+        const auto & elements = value_field.safeGet<Array>();
+
+        /// hasAny(x, []) is always false, hasAll(x, []) is always true.
+        if (elements.empty())
+        {
+            out.function = function_name == "hasAny" ? RPNElement::ALWAYS_FALSE : RPNElement::ALWAYS_TRUE;
+            return true;
+        }
+
+        const bool is_array_tokenizer = typeid_cast<const ArrayTokenizer *>(tokenizer) != nullptr;
+        const bool has_preprocessor = preprocessor && preprocessor->hasActions();
+
+        if ((is_array_tokenizer && !has_preprocessor) || function_name == "hasAll")
+        {
+            /// Fold all needle elements into a single TextSearchQuery.
+            /// This unlocks exact direct read optimizations for hasAny and hasAll.
+            std::vector<String> tokens;
+            tokens.reserve(elements.size());
+
+            for (const auto & element : elements)
+            {
+                if (element.getType() != Field::Types::String)
+                    return false;
+
+                auto element_tokens = stringToTokens(element);
+                if (element_tokens.empty())
+                    return false;
+
+                std::move(element_tokens.begin(), element_tokens.end(), std::back_inserter(tokens));
+            }
+
+            if (function_name == "hasAny")
+            {
+                out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
+                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Any, direct_read_mode, std::move(tokens)));
+            }
+            else
+            {
+                out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
+                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+            }
+        }
+        else
+        {
+            /// Produce one TextSearchQuery per needle element.
+            for (const auto & element : elements)
+            {
+                if (element.getType() != Field::Types::String)
+                {
+                    out.text_search_queries.clear();
+                    return false;
+                }
+
+                auto element_tokens = stringToTokens(element);
+
+                /// An element that tokenizes to nothing cannot be proven present by the index.
+                /// Bail out to keep the original predicate, same as tryPrepareSetForTextSearch does for IN.
+                if (element_tokens.empty())
+                {
+                    out.text_search_queries.clear();
+                    return false;
+                }
+
+                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(element_tokens)));
+            }
+
+            out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
+        }
+        return true;
+    }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
         auto tokens = stringToTokens(value_field);
@@ -797,14 +886,13 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         return true;
     }
     /// Currently, not all token extractors support LIKE-style matching.
-    if (function_name == "like" && tokenizer->supportsStringLike())
+    if (function_name == "like")
     {
         const bool has_preprocessor = preprocessor && preprocessor->hasActions();
-        /// like/notLike optimization is only supported for the SplitByNonAlpha tokenizer.
         /// Requires explicit opt-in via use_text_index_like_evaluation_by_dictionary_scan because scanning
         /// the index dictionary for pattern-matching tokens has non-trivial overhead.
-        if (tokenizer->getType() == ITokenizer::Type::SplitByNonAlpha && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan]
-            && !has_preprocessor)
+        if (like_optimization_supported_tokenizers.contains(tokenizer->getType()) && !has_preprocessor
+            && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
         {
             /// TODO(ahmadov): Only '%foo%' pattern is eligible for direct read mode. An empty vector means the pattern is too complex.
             /// Add support for multiple patterns later with hint mode:
@@ -825,14 +913,17 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             }
         }
 
+        /// When the like optimization is not enabled, we fallback to the HINT mode.
+        if (!tokenizer->supportsStringLike())
+            return false;
+
         std::vector<String> exact_tokens = stringLikeToTokens(value_field);
 
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(exact_tokens)));
         return true;
     }
-    /// Currently, only SplitByNonAlpha tokenizer is supported with ilike/notilike functions for the like optimization.
-    if (function_name == "ilike" && tokenizer->getType() == ITokenizer::Type::SplitByNonAlpha
+    if (function_name == "ilike" && like_optimization_supported_tokenizers.contains(tokenizer->getType())
         && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
     {
         const bool has_preprocessor = preprocessor && preprocessor->hasActions();
@@ -852,7 +943,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "match" && tokenizer->supportsStringLike())
     {
-        out.function = RPNElement::FUNCTION_MATCH;
+        out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
 
         const auto & value = value_field.safeGet<String>();
         RegexpAnalysisResult result = OptimizedRegularExpression::analyze(value);

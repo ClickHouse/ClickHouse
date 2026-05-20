@@ -8,7 +8,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
+#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/PageCache.h>
 #include <Common/ProfileEvents.h>
@@ -247,9 +247,7 @@ void incrementAllocationWithoutCheck(Int64 size)
 
     ProfileEvents::increment(ProfileEvents::MemoryAllocatedWithoutCheckBytes, size);
 
-    /// In release builds, `isBlocked` is always true, so only profile events are collected;
-    /// the trace sending below is debug/sanitizer-only.
-    if (MemoryTrackerDebugBlockerInThread::isBlocked())
+    if (MemoryTrackerUntrackedAllocationsBlockerInThread::isBlocked())
         return;
 
     /// The choice is arbitrary (maybe we should decrease it)
@@ -257,16 +255,11 @@ void incrementAllocationWithoutCheck(Int64 size)
 
     if (size > threshold)
     {
-        auto memory_blocked_context = MemoryTrackerBlockerInThread::getLevel();
-        MemoryTrackerBlockerInThread tracker_blocker(VariableContext::Global);
-        /// Forbid recursive calls
-        [[maybe_unused]] MemoryTrackerDebugBlockerInThread debug_blocker;
-
         try
         {
             DB::TraceSender::send(DB::TraceType::MemoryAllocatedWithoutCheck, StackTrace(), DB::TraceSender::Extras{
                 .size = size,
-                .memory_blocked_context = memory_blocked_context,
+                .memory_blocked_context = MemoryTrackerBlockerInThread::getLevel(),
             });
         }
         catch (const std::exception &) // NOLINT(bugprone-empty-catch)
@@ -375,9 +368,12 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         if (level == VariableContext::Global && (jemalloc_flush_profile_on_memory_exceeded_interval_s || jemalloc_flush_profile_on_memory_exceeded))
         {
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-            if (DB::Jemalloc::getValue<bool>("prof.active"))
+            bool prof_active = false;
+            if (DB::Jemalloc::tryGetValue("prof.active", prof_active) && prof_active)
             {
-                auto * flush_prefix = DB::Jemalloc::getValue<char *>("opt.prof_prefix");
+                char * flush_prefix = nullptr;
+                if (!DB::Jemalloc::tryGetValue("opt.prof_prefix", flush_prefix))
+                    flush_prefix = nullptr;
                 if (!flush_prefix)
                 {
                     if (throw_if_memory_exceeded)
@@ -557,10 +553,13 @@ bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
             )
         {
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
-            if (DB::Jemalloc::getValue<bool>("prof.active"))
+            bool prof_active = false;
+            if (DB::Jemalloc::tryGetValue("prof.active", prof_active) && prof_active)
             {
                 static std::atomic<uint64_t> previous_flushed_peak = 0;
-                auto * flush_prefix = DB::Jemalloc::getValue<char *>("opt.prof_prefix");
+                char * flush_prefix = nullptr;
+                if (!DB::Jemalloc::tryGetValue("opt.prof_prefix", flush_prefix))
+                    flush_prefix = nullptr;
                 if (!flush_prefix)
                 {
                     if (log_memory_usage)
@@ -754,21 +753,6 @@ void MemoryTracker::setOrRaiseProfilerLimit(Int64 value)
     Int64 old_value = profiler_limit.load(std::memory_order_relaxed);
     while ((value == 0 || old_value < value) && !profiler_limit.compare_exchange_weak(old_value, value))
         ;
-}
-
-double MemoryTracker::getSampleProbability(UInt64 size)
-{
-    if (sample_probability >= 0)
-    {
-        if (!isSizeOkForSampling(size))
-            return 0;
-        return sample_probability;
-    }
-
-    if (auto * loaded_next = parent.load(std::memory_order_relaxed))
-        return loaded_next->getSampleProbability(size);
-
-    return 0;
 }
 
 bool MemoryTracker::isSizeOkForSampling(UInt64 size) const
