@@ -40,11 +40,11 @@ def started_cluster():
             "/etc/clickhouse-server/functions/test_pool_udf_echo.xml",
         )
         for script in (
-            "test_pool_udf_echo.py",
-            "test_pool_udf_sleep.py",
-            "test_pool_udf_cpu.py",
-            "test_pool_udf_mem.py",
-            "test_pool_udf_syscall.py",
+            "pool_udf_echo.py",
+            "pool_udf_sleep.py",
+            "pool_udf_cpu.py",
+            "pool_udf_mem.py",
+            "pool_udf_syscall.py",
         ):
             _copy_into_container(
                 os.path.join(SCRIPT_DIR, "user_scripts", script),
@@ -99,7 +99,7 @@ def test_invocations(started_cluster):
 def test_elapsed_microseconds(started_cluster):
     _skip_msan()
     qid = "elapsed-1"
-    # Sleep argument is interpreted by test_pool_udf_sleep.py as seconds per row.
+    # Sleep argument is interpreted by pool_udf_sleep.py as seconds per row.
     _run(
         "SELECT test_pool_udf_sleep(0.2) SETTINGS max_block_size = 1",
         qid,

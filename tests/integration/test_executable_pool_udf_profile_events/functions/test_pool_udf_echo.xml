@@ -7,7 +7,7 @@
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>test_pool_udf_echo.py</command>
+        <command>pool_udf_echo.py</command>
         <pool_size>2</pool_size>
         <max_command_execution_time>30</max_command_execution_time>
         <command_termination_timeout>5</command_termination_timeout>
@@ -22,7 +22,7 @@
             <type>Float64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>test_pool_udf_sleep.py</command>
+        <command>pool_udf_sleep.py</command>
         <pool_size>1</pool_size>
         <max_command_execution_time>30</max_command_execution_time>
         <command_termination_timeout>5</command_termination_timeout>
@@ -37,7 +37,7 @@
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>test_pool_udf_cpu.py</command>
+        <command>pool_udf_cpu.py</command>
         <pool_size>2</pool_size>
         <max_command_execution_time>30</max_command_execution_time>
         <command_termination_timeout>5</command_termination_timeout>
@@ -52,7 +52,7 @@
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>test_pool_udf_mem.py</command>
+        <command>pool_udf_mem.py</command>
         <pool_size>2</pool_size>
         <max_command_execution_time>30</max_command_execution_time>
         <command_termination_timeout>5</command_termination_timeout>
@@ -67,7 +67,7 @@
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>test_pool_udf_syscall.py</command>
+        <command>pool_udf_syscall.py</command>
         <pool_size>2</pool_size>
         <max_command_execution_time>30</max_command_execution_time>
         <command_termination_timeout>5</command_termination_timeout>
