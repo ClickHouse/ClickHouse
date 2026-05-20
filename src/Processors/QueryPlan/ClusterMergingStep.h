@@ -10,8 +10,7 @@ namespace DB
 struct AggregatingTransformParams;
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 
-/// Adds a ClusterMergingTransform to the pipeline that merges adjacent groups
-/// within a specified distance for a GROUP BY WITH CLUSTER key.
+/// Pipeline step for `GROUP BY ... WITH CLUSTER`; runs `ClusterMergingTransform`.
 class ClusterMergingStep : public ITransformingStep
 {
 public:

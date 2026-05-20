@@ -596,7 +596,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildGroupByList(const ASTPtr & group_by_expr
         }
         else
         {
-            /// Fallback for plain expressions (backward compatibility)
+            /// Non-cluster keys arrive as plain expressions (no `ASTGroupByElement` wrap).
             auto expression_node = buildExpression(expression, context);
             list_node->getNodes().push_back(std::move(expression_node));
         }

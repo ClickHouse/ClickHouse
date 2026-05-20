@@ -7,10 +7,10 @@
 namespace DB
 {
 
-/// Merges adjacent groups within a specified distance for a GROUP BY WITH CLUSTER key.
-/// Receives non-finalized aggregate states, sorts by all keys, merges adjacent rows
-/// whose cluster key values differ by at most the specified distance,
-/// then finalizes and outputs results.
+/// Implements `GROUP BY ... WITH CLUSTER <distance>`: consumes mergeable aggregate
+/// states, merges rows whose cluster keys are within `distance` of each other
+/// (numeric: absolute difference; 2D tuple: Euclidean; String: Levenshtein),
+/// finalizes, and emits the result.
 class ClusterMergingTransform : public IAccumulatingTransform
 {
 public:
@@ -34,13 +34,11 @@ private:
     size_t dimensions;
     ColumnsMask aggregates_mask;
 
-    /// 1D path: sort-based + bucket-optimized merging by scalar numeric key.
+    /// Scalar numeric key: bucket → adjacency merge.
     Chunk generate1D();
-    /// 2D path: uniform grid with cell side d/sqrt(2), adjacency graph over
-    /// cells + union-find to discover connected components.
+    /// Inline `(x, y)` tuple: grid cells of side `d / sqrt(2)` → DSU over neighbor cells.
     Chunk generate2D();
-    /// String path: byte-level Levenshtein distance, naive O(N^2) pairwise
-    /// comparison + union-find. Distance d is interpreted as integer max edits.
+    /// `String` / `FixedString`: byte-level Levenshtein, DSU over candidate pairs.
     Chunk generateString();
 
     Chunks consumed_chunks;

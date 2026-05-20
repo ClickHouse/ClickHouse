@@ -6,16 +6,14 @@
 namespace DB
 {
 
-/** Element of GROUP BY expression with optional WITH CLUSTER modifier.
-  * Example: event_time WITH CLUSTER 1800
+/** GROUP BY element carrying the optional `WITH CLUSTER <distance>` modifier
+  * (e.g. `event_time WITH CLUSTER 1800`). `children[0]` is the expression;
+  * `children[1]`, when present, is the distance literal.
   */
 class ASTGroupByElement : public IAST
 {
 public:
     bool with_cluster = false;
-
-    /// The GROUP BY expression is always children[0].
-    /// The cluster distance literal (if any) is children[1].
 
     void setClusterDistance(ASTPtr node)
     {

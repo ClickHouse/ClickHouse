@@ -34,8 +34,7 @@ struct FilterAnalysisResult
 
 struct ClusterKeyInfo
 {
-    /// Names of the aggregation keys forming the cluster key.
-    /// Size 1 for scalar numeric (1D); size 2 for `Tuple(numeric, numeric)` (2D Euclidean).
+    /// 1 name for scalar / String keys, 2 for an inline `(x, y)` tuple.
     Names key_names;
     Float64 distance = 0;
     size_t dimensions = 1;

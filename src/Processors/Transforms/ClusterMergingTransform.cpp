@@ -261,7 +261,6 @@ Chunk ClusterMergingTransform::generate()
 
 Chunk ClusterMergingTransform::generate1D()
 {
-    /// Concatenate all chunks into a single block
     const auto & header = input.getHeader();
     size_t num_columns = header.columns();
 
@@ -376,7 +375,6 @@ Chunk ClusterMergingTransform::generate1D()
     /// merging — guards against SipHash collisions.
     std::unordered_map<UInt64, absl::InlinedVector<size_t, 1>> bucket_map;
 
-    /// Translate wide integer keys to a Float64-exact range before bucket arithmetic.
     std::vector<Float64> cluster_vals;
     readClusterValues(*merged_columns[cluster_key_pos],
                       header.getByPosition(cluster_key_pos).type, total_rows, cluster_vals);
@@ -500,7 +498,6 @@ Chunk ClusterMergingTransform::generate1D()
         }
     }
 
-    /// --- Phase C: Build result columns from surviving bucket leaders ---
     size_t result_rows = 0;
     for (auto & bucket : buckets)
         if (bucket.alive)
