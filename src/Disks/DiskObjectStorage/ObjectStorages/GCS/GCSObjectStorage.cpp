@@ -717,7 +717,7 @@ public:
 private:
     static constexpr size_t max_write_chunk_bytes = google::storage::v2::ServiceConstants::MAX_WRITE_CHUNK_BYTES;
     static constexpr size_t max_compose_sources = 32;
-    static constexpr size_t max_concurrent_uploads = 4;
+    static constexpr size_t max_concurrent_uploads = 7;
 
     static UInt64 nextUploadId()
     {
