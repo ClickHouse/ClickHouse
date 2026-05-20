@@ -918,9 +918,9 @@ void PostgreSQLHandler::processCloseQuery()
             /// (portal) are valid `Close` targets; any other byte indicates a
             /// malformed packet and must not be silently acknowledged.
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
-                "Unexpected `Close` target byte 0x{:02X} in the PostgreSQL wire protocol, "
+                "Unexpected `Close` target byte {} in the PostgreSQL wire protocol, "
                 "expected 'S' (prepared statement) or 'P' (portal)",
-                static_cast<UInt8>(query->close_target));
+                static_cast<int>(static_cast<unsigned char>(query->close_target)));
         }
 
         /// Acknowledge the `Close` request. Clients that strictly track the
