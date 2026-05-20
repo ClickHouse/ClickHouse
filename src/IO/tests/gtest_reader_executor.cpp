@@ -24,29 +24,40 @@ namespace
 {
 
 /// In-memory source reader for testing.
+/// open() materializes the requested object into a temp file and returns a
+/// file-backed ReadBufferFromFileBase. Temp files are cleaned up on destruction.
 class MemorySourceReader : public ISourceReader
 {
 public:
     explicit MemorySourceReader(std::unordered_map<String, String> data_)
         : data(std::move(data_)) {}
 
-    size_t read(const StoredObject & object, size_t offset, size_t size, char * buffer) override
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object, bool /* use_external_buffer */) override
     {
         auto it = data.find(object.remote_path);
         if (it == data.end())
-            return 0;
-        const auto & content = it->second;
-        if (offset >= content.size())
-            return 0;
-        size_t to_read = std::min(size, content.size() - offset);
-        std::memcpy(buffer, content.data() + offset, to_read);
-        return to_read;
+            return nullptr;
+        auto path = std::filesystem::temp_directory_path() / ("test_memory_source_" + std::to_string(file_counter++));
+        {
+            std::ofstream f(path, std::ios::binary);
+            f.write(it->second.data(), it->second.size());
+        }
+        temp_files.push_back(path);
+        return createReadBufferFromFileBase(path.string(), ReadSettings{});
     }
 
     String name() const override { return "MemorySourceReader"; }
 
+    ~MemorySourceReader() override
+    {
+        for (const auto & p : temp_files)
+            std::filesystem::remove(p);
+    }
+
 private:
     std::unordered_map<String, String> data;
+    size_t file_counter = 0;
+    std::vector<std::filesystem::path> temp_files;
 };
 
 }
@@ -435,55 +446,6 @@ namespace ProfileEvents
 namespace
 {
 
-/// Source reader that supports open() for live buffer testing.
-/// open() returns a ReadBufferFromFileBase backed by a temp file.
-class OpenableSourceReader : public ISourceReader
-{
-public:
-    explicit OpenableSourceReader(std::unordered_map<String, String> data_)
-        : data(std::move(data_)) {}
-
-    size_t read(const StoredObject & object, size_t offset, size_t size, char * buffer) override
-    {
-        auto it = data.find(object.remote_path);
-        if (it == data.end())
-            return 0;
-        const auto & content = it->second;
-        if (offset >= content.size())
-            return 0;
-        size_t to_read = std::min(size, content.size() - offset);
-        std::memcpy(buffer, content.data() + offset, to_read);
-        return to_read;
-    }
-
-    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object, bool /* use_external_buffer */) override
-    {
-        auto it = data.find(object.remote_path);
-        if (it == data.end())
-            return nullptr;
-        auto path = std::filesystem::temp_directory_path() / ("test_openable_source_" + std::to_string(file_counter++));
-        {
-            std::ofstream f(path, std::ios::binary);
-            f.write(it->second.data(), it->second.size());
-        }
-        temp_files.push_back(path);
-        return createReadBufferFromFileBase(path.string(), ReadSettings{});
-    }
-
-    String name() const override { return "OpenableSourceReader"; }
-
-    ~OpenableSourceReader() override
-    {
-        for (const auto & p : temp_files)
-            std::filesystem::remove(p);
-    }
-
-private:
-    std::unordered_map<String, String> data;
-    size_t file_counter = 0;
-    std::vector<std::filesystem::path> temp_files;
-};
-
 /// RAII helper: creates a ThreadGroup with its own ProfileEvents counters,
 /// attaches the current thread to it, detaches in destructor.
 /// Lets us read per-test ProfileEvents without interference from other tests.
@@ -508,7 +470,7 @@ TEST(ReaderExecutor, LiveBufferReusesConnection)
 
     /// 2000 bytes, window=500 → 4 sequential readNextWindow calls.
     String content(2000, 'Q');
-    auto source = std::make_shared<OpenableSourceReader>(
+    auto source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"file", content}});
 
     StoredObjects objects;
@@ -543,7 +505,7 @@ TEST(ReaderExecutor, LiveBufferFallbackWhenFull)
 
     /// Semaphore with 0 capacity — all reads go through stateless path.
     String content(1000, 'R');
-    auto source = std::make_shared<OpenableSourceReader>(
+    auto source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"file", content}});
 
     StoredObjects objects;
@@ -579,7 +541,7 @@ TEST(ReaderExecutor, LiveBufferClosedOnSeek)
     /// Sequential read opens live buffer, seek closes it and opens a new one.
     String content(2000, 'S');
     content[1000] = 'T';
-    auto source = std::make_shared<OpenableSourceReader>(
+    auto source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{{"file", content}});
 
     StoredObjects objects;

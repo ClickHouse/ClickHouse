@@ -388,19 +388,32 @@ Rope ReaderExecutor::readFromSource(
         }
     }
 
-    /// Fallback: stateless read into the pre-allocated blocks.
+    /// Fallback: open a fresh connection without storing it as live_buffer
+    /// (slot was unavailable). Read into the pre-allocated blocks via set()+next(),
+    /// same pattern as the live-buffer path. The opened buffer is dropped when
+    /// this function returns.
     ProfileEvents::increment(ProfileEvents::LiveSourceBufferFallbacks);
+
+    auto opened = source->open(object, /*use_external_buffer=*/true);
+    if (offset > 0)
+        opened->seek(offset, SEEK_SET);
+    auto & buf = *opened;
+
     Rope rope;
     size_t total_read = 0;
-    size_t src_offset = offset;
 
     for (auto & block : blocks)
     {
         size_t chunk = block->size();
-        size_t got = source->read(object, src_offset, chunk, block->data());
+        buf.set(block->data(), chunk);
+        if (!buf.next())
+            break;
+
+        size_t got = buf.available();
+        buf.position() = buf.buffer().end();
 
         LOG_DEBUG(log, "readFromSource: stateless block offset={}, chunk={}, got={}, first_byte=0x{:02x}",
-            src_offset, chunk, got,
+            offset + total_read, chunk, got,
             got > 0 ? static_cast<unsigned char>(block->data()[0]) : 0);
 
         if (got == 0)
@@ -408,7 +421,6 @@ Rope ReaderExecutor::readFromSource(
 
         rope.append(RopeNode{block, 0, got, logical_offset + total_read});
         total_read += got;
-        src_offset += got;
     }
 
     /// Blocks not referenced from rope drop their refcount to 0 when this function returns.

@@ -10,17 +10,11 @@ namespace DB
 class IObjectStorage;
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
 
-/// Reads from any IObjectStorage (S3, Azure, HDFS, etc.) using readBigAt
-/// for stateless range reads, with seek+read fallback.
+/// Reads from any IObjectStorage (S3, Azure, HDFS, etc.).
 class ObjectStorageSourceReader : public ISourceReader
 {
 public:
     ObjectStorageSourceReader(ObjectStoragePtr storage, const ReadSettings & read_settings);
-
-    size_t read(
-        const StoredObject & object,
-        size_t offset, size_t size,
-        char * buffer) override;
 
     std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object, bool use_external_buffer) override;
 

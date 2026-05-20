@@ -6,15 +6,10 @@
 namespace DB
 {
 
-/// Reads from local filesystem using pread.
+/// Reads from local filesystem.
 class LocalSourceReader : public ISourceReader
 {
 public:
-    size_t read(
-        const StoredObject & object,
-        size_t offset, size_t size,
-        char * buffer) override;
-
     std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object, bool use_external_buffer) override;
 
     String name() const override { return "LocalSourceReader"; }

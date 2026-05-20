@@ -1,34 +1,51 @@
 #include <IO/PipelineReadBuffer.h>
 #include <IO/ReaderExecutor.h>
 #include <IO/ISourceReader.h>
+#include <IO/ReadSettings.h>
 #include <IO/ReadHelpers.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
 
 #include <gtest/gtest.h>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 
 using namespace DB;
 
 namespace
 {
 
+/// In-memory source reader for testing. open() materializes the data into a
+/// temp file and returns a file-backed ReadBufferFromFileBase; temp file is
+/// removed on destruction.
 class MemorySourceReader : public ISourceReader
 {
 public:
     explicit MemorySourceReader(String data_) : data(std::move(data_)) {}
 
-    size_t read(const StoredObject &, size_t offset, size_t size, char * buffer) override
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject &, bool /* use_external_buffer */) override
     {
-        if (offset >= data.size())
-            return 0;
-        size_t to_read = std::min(size, data.size() - offset);
-        std::memcpy(buffer, data.data() + offset, to_read);
-        return to_read;
+        auto path = std::filesystem::temp_directory_path() / ("test_pipeline_source_" + std::to_string(file_counter++));
+        {
+            std::ofstream f(path, std::ios::binary);
+            f.write(data.data(), data.size());
+        }
+        temp_files.push_back(path);
+        return createReadBufferFromFileBase(path.string(), ReadSettings{});
     }
 
     String name() const override { return "MemorySourceReader"; }
 
+    ~MemorySourceReader() override
+    {
+        for (const auto & p : temp_files)
+            std::filesystem::remove(p);
+    }
+
 private:
     String data;
+    size_t file_counter = 0;
+    std::vector<std::filesystem::path> temp_files;
 };
 
 }

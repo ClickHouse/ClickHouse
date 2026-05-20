@@ -1,5 +1,6 @@
 #include <IO/ISourceReader.h>
 #include <IO/LocalSourceReader.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 #include <gtest/gtest.h>
@@ -32,44 +33,76 @@ protected:
     }
 };
 
-TEST_F(LocalSourceReaderTest, ReadFullRange)
+TEST_F(LocalSourceReaderTest, OpenReadFullRange)
 {
     LocalSourceReader reader;
     StoredObject obj;
     obj.remote_path = test_file.string();
     obj.bytes_size = 1024;
 
-    std::vector<char> buf(1024);
-    size_t bytes_read = reader.read(obj, 0, 1024, buf.data());
-    EXPECT_EQ(bytes_read, 1024);
-    EXPECT_EQ(static_cast<unsigned char>(buf[0]), 0);
-    EXPECT_EQ(static_cast<unsigned char>(buf[255]), 255);
+    auto buf = reader.open(obj, /*use_external_buffer=*/false);
+    ASSERT_TRUE(buf);
+
+    std::vector<char> data(1024);
+    size_t total = 0;
+    while (total < data.size())
+    {
+        size_t bytes = buf->read(data.data() + total, data.size() - total);
+        if (bytes == 0)
+            break;
+        total += bytes;
+    }
+    EXPECT_EQ(total, 1024u);
+    EXPECT_EQ(static_cast<unsigned char>(data[0]), 0);
+    EXPECT_EQ(static_cast<unsigned char>(data[255]), 255);
 }
 
-TEST_F(LocalSourceReaderTest, ReadSubRange)
+TEST_F(LocalSourceReaderTest, OpenSeekAndRead)
 {
     LocalSourceReader reader;
     StoredObject obj;
     obj.remote_path = test_file.string();
     obj.bytes_size = 1024;
 
-    std::vector<char> buf(100);
-    size_t bytes_read = reader.read(obj, 256, 100, buf.data());
-    EXPECT_EQ(bytes_read, 100);
-    EXPECT_EQ(static_cast<unsigned char>(buf[0]), 0);
-    EXPECT_EQ(static_cast<unsigned char>(buf[99]), 99);
+    auto buf = reader.open(obj, /*use_external_buffer=*/false);
+    ASSERT_TRUE(buf);
+    buf->seek(256, SEEK_SET);
+
+    std::vector<char> data(100);
+    size_t total = 0;
+    while (total < data.size())
+    {
+        size_t bytes = buf->read(data.data() + total, data.size() - total);
+        if (bytes == 0)
+            break;
+        total += bytes;
+    }
+    EXPECT_EQ(total, 100u);
+    EXPECT_EQ(static_cast<unsigned char>(data[0]), 0);
+    EXPECT_EQ(static_cast<unsigned char>(data[99]), 99);
 }
 
-TEST_F(LocalSourceReaderTest, ReadPastEOF)
+TEST_F(LocalSourceReaderTest, OpenReadPastEOF)
 {
     LocalSourceReader reader;
     StoredObject obj;
     obj.remote_path = test_file.string();
     obj.bytes_size = 1024;
 
-    std::vector<char> buf(200);
-    size_t bytes_read = reader.read(obj, 900, 200, buf.data());
-    EXPECT_EQ(bytes_read, 124);
+    auto buf = reader.open(obj, /*use_external_buffer=*/false);
+    ASSERT_TRUE(buf);
+    buf->seek(900, SEEK_SET);
+
+    std::vector<char> data(200);
+    size_t total = 0;
+    while (total < data.size())
+    {
+        size_t bytes = buf->read(data.data() + total, data.size() - total);
+        if (bytes == 0)
+            break;
+        total += bytes;
+    }
+    EXPECT_EQ(total, 124u);
 }
 
 TEST_F(LocalSourceReaderTest, Name)

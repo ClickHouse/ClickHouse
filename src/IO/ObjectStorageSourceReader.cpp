@@ -14,40 +14,6 @@ ObjectStorageSourceReader::ObjectStorageSourceReader(
 {
 }
 
-size_t ObjectStorageSourceReader::read(
-    const StoredObject & object,
-    size_t offset, size_t size,
-    char * buffer)
-{
-    LOG_TRACE(log, "read: object={}, offset={}, size={}", object.remote_path, offset, size);
-
-    auto buf = storage->readObject(object, read_settings);
-
-    /// Prefer readBigAt for stateless range reads (S3, Azure support this).
-    if (buf->supportsReadAt())
-    {
-        size_t bytes_read = buf->readBigAt(buffer, size, offset, {});
-        LOG_TRACE(log, "read: readBigAt got {} bytes from {}", bytes_read, object.remote_path);
-        return bytes_read;
-    }
-
-    /// Fallback: seek + read for storages that don't support readBigAt.
-    buf->seek(offset, SEEK_SET);
-
-    size_t total_read = 0;
-    while (total_read < size)
-    {
-        size_t remaining = size - total_read;
-        size_t bytes = buf->read(buffer + total_read, remaining);
-        if (bytes == 0)
-            break;
-        total_read += bytes;
-    }
-
-    LOG_TRACE(log, "read: seek+read got {} bytes from {}", total_read, object.remote_path);
-    return total_read;
-}
-
 std::unique_ptr<ReadBufferFromFileBase> ObjectStorageSourceReader::open(const StoredObject & object, bool use_external_buffer)
 {
     LOG_TRACE(log, "open: object={}, use_external_buffer={}", object.remote_path, use_external_buffer);
