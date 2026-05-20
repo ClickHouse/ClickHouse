@@ -452,9 +452,23 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             else
             {
                 const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
-                /// For joinGet function, we don't have quote style info, so apply case-insensitivity to both parts
+                /// Each part is case-insensitive only if NOT double-quoted; quote-style info is available on the IdentifierNode.
+                bool database_name_case_insensitive = false;
+                bool table_name_case_insensitive = false;
+                if (standard_mode)
+                {
+                    if (parts_size == 2)
+                    {
+                        database_name_case_insensitive = !first_argument_identifier.isPartDoubleQuoted(0);
+                        table_name_case_insensitive = !first_argument_identifier.isPartDoubleQuoted(1);
+                    }
+                    else if (parts_size == 1)
+                    {
+                        table_name_case_insensitive = !first_argument_identifier.isPartDoubleQuoted(0);
+                    }
+                }
                 auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
-                    identifier, scope.context, standard_mode, standard_mode).resolved_identifier;
+                    identifier, scope.context, database_name_case_insensitive, table_name_case_insensitive).resolved_identifier;
                 if (!table_node)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} first argument expected table identifier '{}'. In scope {}",

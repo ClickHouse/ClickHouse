@@ -518,11 +518,19 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     const auto & table_name = table_expression_data.table_name;
     const auto & database_name = table_expression_data.database_name;
 
-    const bool use_case_insensitive = table_expression_data.standard_mode && !identifier_lookup.isLastPartDoubleQuoted();
-
-    auto strings_equal = [use_case_insensitive](const std::string & a, const std::string & b)
+    const bool standard_mode = table_expression_data.standard_mode;
+    /// Per-part quote check: unquoted parts are case-insensitive in standard mode.
+    /// Qualifier matches (db / table / alias) use the per-part flag of the corresponding part.
+    /// The column-name lookup uses `isLastPartDoubleQuoted()` since the last part is the column key.
+    auto part_case_insensitive = [&](size_t part)
     {
-        if (use_case_insensitive)
+        return standard_mode && !identifier_lookup.isPartDoubleQuoted(part);
+    };
+    const bool column_case_insensitive = standard_mode && !identifier_lookup.isLastPartDoubleQuoted();
+
+    auto strings_equal = [](const std::string & a, const std::string & b, bool case_insensitive)
+    {
+        if (case_insensitive)
             return Poco::icompare(a, b) == 0;
         return a == b;
     };
@@ -536,27 +544,32 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
                 identifier_lookup.identifier.getFullName(),
                 table_expression_node->formatASTForErrorMessage());
 
-        if (parts_size == 1 && strings_equal(path_start, table_name))
+        if (parts_size == 1 && strings_equal(path_start, table_name, part_case_insensitive(0)))
             return true;
-        if (parts_size == 2 && strings_equal(path_start, database_name) && strings_equal(identifier[1], table_name))
+        if (parts_size == 2
+            && strings_equal(path_start, database_name, part_case_insensitive(0))
+            && strings_equal(identifier[1], table_name, part_case_insensitive(1)))
             return true;
         return false;
     }
 
-    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), use_case_insensitive)
-        || table_expression_data.canBindIdentifier(IdentifierView(identifier), use_case_insensitive))
+    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), column_case_insensitive)
+        || table_expression_data.canBindIdentifier(IdentifierView(identifier), column_case_insensitive))
         return true;
 
     if (identifier.getPartsSize() == 1)
         return false;
 
-    if ((!table_name.empty() && strings_equal(path_start, table_name)) || (table_expression_node->hasAlias() && strings_equal(path_start, table_expression_node->getAlias())))
+    if ((!table_name.empty() && strings_equal(path_start, table_name, part_case_insensitive(0)))
+        || (table_expression_node->hasAlias() && strings_equal(path_start, table_expression_node->getAlias(), part_case_insensitive(0))))
         return true;
 
     if (identifier.getPartsSize() == 2)
         return false;
 
-    if (!database_name.empty() && strings_equal(path_start, database_name) && strings_equal(identifier[1], table_name))
+    if (!database_name.empty()
+        && strings_equal(path_start, database_name, part_case_insensitive(0))
+        && strings_equal(identifier[1], table_name, part_case_insensitive(1)))
         return true;
 
     return false;
@@ -862,7 +875,15 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             return {};
     }
 
-    const bool use_case_insensitive = table_expression_data.standard_mode && !identifier_lookup.isLastPartDoubleQuoted();
+    const bool standard_mode = table_expression_data.standard_mode;
+    /// Per-part quote check: unquoted parts are case-insensitive in standard mode.
+    /// Qualifier matches (db / table / alias) use the per-part flag of the corresponding part.
+    /// The column-name lookup uses `isLastPartDoubleQuoted()` since the last part is the column key.
+    auto part_case_insensitive = [&](size_t part)
+    {
+        return standard_mode && !identifier_lookup.isPartDoubleQuoted(part);
+    };
+    const bool column_case_insensitive = standard_mode && !identifier_lookup.isLastPartDoubleQuoted();
 
      /** If identifier first part binds to some column start or table has full identifier name. Then we can try to find whole identifier in table.
        * 1. Try to bind identifier first part to column in table, if true get full identifier from table or throw exception.
@@ -870,10 +891,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
        * Storage alias works for subquery, table function as well.
        * 3. Try to bind identifier first parts to database name and table name, if true remove first two parts and try to get full identifier from table or throw exception.
        */
-    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), use_case_insensitive))
+    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), column_case_insensitive))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/);
 
-    if (table_expression_data.canBindIdentifier(IdentifierView(identifier), use_case_insensitive))
+    if (table_expression_data.canBindIdentifier(IdentifierView(identifier), column_case_insensitive))
     {
         /** This check is insufficient to determine whether and identifier can be resolved from table expression.
           * A further check will be performed in `tryResolveIdentifierFromStorage` to see if we have such a subcolumn.
@@ -893,20 +914,21 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     const auto & table_name = table_expression_data.table_name;
     const auto & table_alias = table_expression_node->hasAlias() ? table_expression_node->getAlias() : "";
 
-    auto strings_equal = [use_case_insensitive](const std::string & a, const std::string & b)
+    auto strings_equal = [](const std::string & a, const std::string & b, bool case_insensitive)
     {
-        if (use_case_insensitive)
+        if (case_insensitive)
             return Poco::icompare(a, b) == 0;
         return a == b;
     };
 
-    if ((!table_name.empty() && strings_equal(path_start, table_name)) || (!table_alias.empty() && strings_equal(path_start, table_alias)))
+    if ((!table_name.empty() && strings_equal(path_start, table_name, part_case_insensitive(0)))
+        || (!table_alias.empty() && strings_equal(path_start, table_alias, part_case_insensitive(0))))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
 
     if (table_expression_node_type == QueryTreeNodeType::TABLE)
     {
         auto * table_node = table_expression_node->as<TableNode>();
-        if (table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name)
+        if (table_node->isMaterializedCTE() && strings_equal(path_start, table_node->getMaterializedCTE()->cte_name, part_case_insensitive(0)))
             return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
     }
 
@@ -914,7 +936,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         return {};
 
     const auto & database_name = table_expression_data.database_name;
-    if (!database_name.empty() && strings_equal(path_start, database_name) && strings_equal(identifier[1], table_name))
+    if (!database_name.empty()
+        && strings_equal(path_start, database_name, part_case_insensitive(0))
+        && strings_equal(identifier[1], table_name, part_case_insensitive(1)))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
 
     return {};

@@ -3756,7 +3756,7 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
         IdentifierResolveScope & interpolate_scope = createIdentifierResolveScope(interpolation_to_resolve, &scope /*parent_scope*/);
 
         auto fake_column_node = std::make_shared<ColumnNode>(NameAndTypePair(column_to_interpolate_name, interpolate_node_typed.getExpression()->getResultType()), interpolate_node);
-        interpolate_scope.expression_argument_name_to_node.emplace(column_to_interpolate_name, fake_column_node);
+        interpolate_scope.addExpressionArgument(column_to_interpolate_name, fake_column_node);
 
         resolveExpressionNode(interpolation_to_resolve, interpolate_scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
     }
@@ -6008,7 +6008,7 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
                 auto & query_node = queries_nodes[i];
 
                 IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(query_node, &scope /*parent_scope*/);
-                subquery_scope.expression_argument_name_to_node[union_node_typed.getCTEName()] = recursive_cte_table_node;
+                subquery_scope.addExpressionArgument(union_node_typed.getCTEName(), recursive_cte_table_node);
 
                 auto query_node_type = query_node->getNodeType();
                 if (query_node_type == QueryTreeNodeType::QUERY)
