@@ -185,7 +185,10 @@ void readClusterValues(
         return;
     }
 
-    /// Narrow integer / Float / Date / Decimal — `getFloat64` is precise enough.
+    /// Narrow integer / Float / Date / DateTime / DateTime64 / Decimal —
+    /// `getFloat64` is precise enough for typical clustering ranges, and for
+    /// `DateTime64` it preserves the "distance is in seconds" semantics
+    /// (translation on raw ticks would silently redefine the unit).
     for (size_t i = 0; i < total_rows; ++i)
         out[i] = col.getFloat64(i);
 }
