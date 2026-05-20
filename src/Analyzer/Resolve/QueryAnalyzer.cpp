@@ -3159,17 +3159,23 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     if (const auto & original_ast = query_node->getOriginalAST())
                     {
                         if (const auto * select_query = original_ast->as<ASTSelectQuery>(); select_query && !select_query->tables())
-                            from_clause_hint = ". Note: the query does not have the FROM clause. Did you forget to add it?";
+                        {
+                            const String & implicit_table = scope.context->getSettingsRef()[Setting::implicit_table_at_top_level];
+                            if (implicit_table.empty())
+                                from_clause_hint = "Note: the query does not have the FROM clause. Did you forget to add it?";
+                        }
                     }
                 }
 
-                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier {} in scope {}{}{}",
+                Exception exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier {} in scope {}{}",
                     toStringLowercase(IdentifierLookupContext::EXPRESSION),
                     message_clarification,
                     backQuote(unresolved_identifier.getFullName()),
                     scope.scope_node->formatASTForErrorMessage(),
-                    getHintsErrorMessageSuffix(hints),
-                    from_clause_hint);
+                    getHintsErrorMessageSuffix(hints));
+                if (!from_clause_hint.empty())
+                    exception.addMessage(from_clause_hint);
+                throw exception; /// NOLINT(hicpp-exception-baseclass)
             }
 
             node = std::move(resolved_identifier_node);
