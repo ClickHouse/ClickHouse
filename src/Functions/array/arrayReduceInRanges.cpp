@@ -37,7 +37,7 @@ namespace ErrorCodes
   *
   * arrayReduceInRanges('agg', indices, lengths, arr1, ...)
   */
-class FunctionArrayReduceInRanges : public IFunction
+class FunctionArrayReduceInRanges final : public IFunction
 {
 public:
     static const size_t minimum_step = 64;
@@ -327,7 +327,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
 namespace
 {
 
-class FunctionArrayReduceInRangesOverloadResolver : public IFunctionOverloadResolver, private WithContext
+class FunctionArrayReduceInRangesOverloadResolver final : public IFunctionOverloadResolver, private WithContext
 {
 public:
     static constexpr auto name = "arrayReduceInRanges";
