@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeObject.h>
@@ -110,8 +111,8 @@ private:
 
         /// Cache of reusable (serialization, column) structs keyed by type name,
         /// to avoid createColumn and getDefaultSerialization per shared data value.
-        std::unordered_map<String, SerializationPtr> shared_serializations_cache;
-        std::unordered_map<String, MutableColumnPtr> shared_columns_cache;
+        UnorderedMapWithMemoryTracking<String, SerializationPtr> shared_serializations_cache;
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> shared_columns_cache;
 
         const auto & shared_data_offsets = column_object.getSharedDataOffsets();
         const auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
@@ -166,8 +167,8 @@ private:
         std::string_view value_data,
         const FormatSettings & format_settings,
         ColumnString & data,
-        std::unordered_map<String, SerializationPtr> & shared_serializations_cache,
-        std::unordered_map<String, MutableColumnPtr> & shared_columns_cache)
+        UnorderedMapWithMemoryTracking<String, SerializationPtr> & shared_serializations_cache,
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> & shared_columns_cache)
     {
         ReadBufferFromMemory buf(value_data);
 

@@ -812,7 +812,7 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
         std::unordered_set<String> values;
     };
 
-    const std::unordered_map<String, SettingDefinition> settings_def = {
+    const UnorderedMapWithMemoryTracking<String, SettingDefinition> settings_def = {
         /// Serialization format for input/output data for ABI what uses serialization
         {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary"}}.withDefault("MsgPack")},
     };

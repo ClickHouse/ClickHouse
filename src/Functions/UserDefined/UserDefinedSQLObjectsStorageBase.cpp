@@ -142,7 +142,7 @@ std::unique_lock<std::recursive_mutex> UserDefinedSQLObjectsStorageBase::getLock
 
 void UserDefinedSQLObjectsStorageBase::setAllObjects(const VectorWithMemoryTracking<std::pair<String, ASTPtr>> & new_objects)
 {
-    std::unordered_map<String, ASTPtr> normalized_functions;
+    UnorderedMapWithMemoryTracking<String, ASTPtr> normalized_functions;
     for (const auto & [function_name, create_query] : new_objects)
         normalized_functions[function_name] = normalizeCreateFunctionQuery(*create_query, getContext());
 

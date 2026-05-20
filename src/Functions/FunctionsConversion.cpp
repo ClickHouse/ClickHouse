@@ -1,4 +1,5 @@
 #include <Functions/FunctionsConversion.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -105,7 +106,7 @@ ColumnPtr ConvertImplFromDynamicToColumn::execute(
     /// To do it, we remember what variant was extracted from each row and what was it's offset.
     PaddedPODArray<UInt64> shared_variant_indexes;
     PaddedPODArray<UInt64> shared_variant_offsets;
-    std::unordered_map<String, UInt64> shared_variant_to_index;
+    UnorderedMapWithMemoryTracking<String, UInt64> shared_variant_to_index;
     const auto & shared_variant = column_dynamic.getSharedVariant();
     const auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
     const auto & local_discriminators = variant_column.getLocalDiscriminators();
@@ -744,7 +745,7 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
     if (from_type->hasExplicitNames() && to_type->hasExplicitNames())
     {
         const auto & from_names = from_type->getElementNames();
-        std::unordered_map<String, size_t> from_positions;
+        UnorderedMapWithMemoryTracking<String, size_t> from_positions;
         from_positions.reserve(from_names.size());
         for (size_t i = 0; i < from_names.size(); ++i)
             from_positions[from_names[i]] = i;
@@ -1278,20 +1279,20 @@ FunctionCast::WrapperType FunctionCast::createVariantToVariantWrapper(const Data
 
     /// Create map (new variant type) -> (it's global discriminator in new order).
     const auto & new_variants = to_variant.getVariants();
-    std::unordered_map<String, ColumnVariant::Discriminator> new_variant_types_to_new_global_discriminator;
+    UnorderedMapWithMemoryTracking<String, ColumnVariant::Discriminator> new_variant_types_to_new_global_discriminator;
     new_variant_types_to_new_global_discriminator.reserve(new_variants.size());
     for (ColumnVariant::Discriminator i = 0; i != new_variants.size(); ++i)
         new_variant_types_to_new_global_discriminator[new_variants[i]->getName()] = i;
 
     /// Create set of old variant types.
     const auto & old_variants = from_variant.getVariants();
-    std::unordered_map<String, ColumnVariant::Discriminator> old_variant_types_to_old_global_discriminator;
+    UnorderedMapWithMemoryTracking<String, ColumnVariant::Discriminator> old_variant_types_to_old_global_discriminator;
     old_variant_types_to_old_global_discriminator.reserve(old_variants.size());
     for (ColumnVariant::Discriminator i = 0; i != old_variants.size(); ++i)
         old_variant_types_to_old_global_discriminator[old_variants[i]->getName()] = i;
 
     /// Check that the set of old variants types is a subset of new variant types and collect new global discriminator for each old global discriminator.
-    std::unordered_map<ColumnVariant::Discriminator, ColumnVariant::Discriminator> old_global_discriminator_to_new;
+    UnorderedMapWithMemoryTracking<ColumnVariant::Discriminator, ColumnVariant::Discriminator> old_global_discriminator_to_new;
     old_global_discriminator_to_new.reserve(old_variants.size());
     for (const auto & [old_variant_type, old_discriminator] : old_variant_types_to_old_global_discriminator)
     {

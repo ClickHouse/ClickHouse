@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Common/CacheLine.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <Functions/FunctionFactory.h>
@@ -67,7 +68,7 @@ namespace
         DateTime64
     };
 
-    const std::unordered_map<String, std::pair<String, Int32>> dayOfWeekMap{
+    const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> dayOfWeekMap{
         {"mon", {"day", 1}},
         {"tue", {"sday", 2}},
         {"wed", {"nesday", 3}},
@@ -77,7 +78,7 @@ namespace
         {"sun", {"day", 7}},
     };
 
-    const std::unordered_map<String, std::pair<String, Int32>> monthMap{
+    const UnorderedMapWithMemoryTracking<String, std::pair<String, Int32>> monthMap{
         {"jan", {"uary", 1}},
         {"feb", {"ruary", 2}},
         {"mar", {"ch", 3}},

@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <boost/algorithm/string/split.hpp>
 #include <Common/StringUtils.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <DataTypes/DataTypeFactory.h>
@@ -38,7 +39,7 @@ namespace
     VectorWithMemoryTracking<UserDefinedExecutableFunctionParameter> extractParametersFromCommand(String & command_value)
     {
         VectorWithMemoryTracking<UserDefinedExecutableFunctionParameter> parameters;
-        std::unordered_map<std::string_view, DataTypePtr> parameter_name_to_type;
+        UnorderedMapWithMemoryTracking<std::string_view, DataTypePtr> parameter_name_to_type;
 
         size_t previous_parameter_match_position = 0;
         while (true)

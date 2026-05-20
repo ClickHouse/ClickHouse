@@ -4,6 +4,7 @@
 #include <Common/Dwarf.h>
 #include <Common/SymbolIndex.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/Arena.h>
 #include <Columns/ColumnsNumber.h>
 #include <Functions/IFunction.h>
@@ -77,7 +78,7 @@ protected:
         Arena arena;
         using Map = HashMap<uintptr_t, ResultT>;
         Map map;
-        std::unordered_map<std::string, Dwarf> dwarfs;
+        UnorderedMapWithMemoryTracking<std::string, Dwarf> dwarfs;
     };
 
     mutable Cache cache;

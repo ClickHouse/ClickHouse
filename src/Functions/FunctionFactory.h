@@ -69,7 +69,7 @@ public:
     FunctionDocumentation getDocumentation(const std::string & name) const;
 
 private:
-    using Functions = std::unordered_map<std::string, Value>;
+    using Functions = std::unordered_map<std::string, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     Functions functions;
     Functions case_insensitive_functions;

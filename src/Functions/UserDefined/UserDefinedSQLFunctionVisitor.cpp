@@ -1,8 +1,9 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <stack>
-#include <unordered_map>
 #include <unordered_set>
+
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAsterisk.h>
@@ -120,7 +121,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
             function_core_expression->children.at(1)->getColumnName(),
             function.name);
 
-    std::unordered_map<std::string, ASTPtr> identifier_name_to_function_argument;
+    UnorderedMapWithMemoryTracking<std::string, ASTPtr> identifier_name_to_function_argument;
 
     for (size_t parameter_index = 0; parameter_index < identifiers_raw.size(); ++parameter_index)
     {

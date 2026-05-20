@@ -10,6 +10,7 @@
 
 #include <Common/SharedMutex.h>
 #include <Common/StopToken.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
@@ -34,7 +35,7 @@ public:
     Field getValue(const String & name) const;
 
 private:
-    std::unordered_map<String, Field> settings;
+    UnorderedMapWithMemoryTracking<String, Field> settings;
 };
 
 class UserDefinedWebAssemblyFunction
@@ -118,7 +119,7 @@ private:
     };
 
     mutable DB::SharedMutex registry_mutex;
-    std::unordered_map<String, RegistryEntry> registry;
+    UnorderedMapWithMemoryTracking<String, RegistryEntry> registry;
 };
 
 }

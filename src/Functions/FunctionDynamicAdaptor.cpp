@@ -1,5 +1,6 @@
 #include <Functions/FunctionDynamicAdaptor.h>
 #include <Common/CurrentThread.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -357,13 +358,13 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
     /// So, we allocate 0 index for rows with NULL values.
     variants.emplace_back();
     /// Remember indexes in selector for each variant type.
-    std::unordered_map<String, size_t> variant_indexes;
+    UnorderedMapWithMemoryTracking<String, size_t> variant_indexes;
     const auto & local_discriminators = variant_column.getLocalDiscriminators();
     const auto & offsets = variant_column.getOffsets();
     auto shared_variant_local_discr = variant_column.localDiscriminatorByGlobal(dynamic_column.getSharedVariantDiscriminator());
     const auto & shared_variant = dynamic_column.getSharedVariant();
     /// Remember created serializations for variants in shared variant to avoid recreating it every time.
-    std::unordered_map<String, SerializationPtr> shared_variants_serializations;
+    UnorderedMapWithMemoryTracking<String, SerializationPtr> shared_variants_serializations;
     FormatSettings format_settings;
     for (size_t i = 0; i != local_discriminators.size(); ++i)
     {

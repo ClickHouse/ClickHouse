@@ -1,11 +1,11 @@
 #pragma once
 
-#include <unordered_map>
 #include <mutex>
 
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Parsers/IAST_fwd.h>
 
@@ -67,7 +67,7 @@ protected:
     void removeObject(const String & object_name);
     void removeAllObjectsExcept(const Strings & object_names_to_keep);
 
-    std::unordered_map<String, ASTPtr> object_name_to_create_object_map;
+    UnorderedMapWithMemoryTracking<String, ASTPtr> object_name_to_create_object_map;
     mutable std::recursive_mutex mutex;
 };
 
