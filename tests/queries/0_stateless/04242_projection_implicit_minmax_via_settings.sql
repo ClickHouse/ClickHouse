@@ -9,7 +9,7 @@ CREATE TABLE test_proj_minmax
 ENGINE = MergeTree
 PARTITION BY a % 3
 ORDER BY a
-SETTINGS index_granularity = 1, storage_policy = 'default';
+SETTINGS index_granularity = 1, storage_policy = 'default', add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO test_proj_minmax SELECT number, number FROM numbers(100);
 
