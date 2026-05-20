@@ -3,6 +3,7 @@
 #include <Core/SortDescription.h>
 #include <IO/Operators.h>
 #include <Columns/IColumn.h>
+#include <Common/Exception.h>
 #include <Common/JSONBuilder.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
@@ -136,8 +137,15 @@ public:
 
     ~CompiledSortDescriptionFunctionHolder() override
     {
-        /// Use the JIT instance that compiled this module (see `CompiledAggregateFunctionsHolder`).
-        jit_owner->deleteCompiledModule(compiled_sort_description_function.compiled_module);
+        try
+        {
+            /// Use the JIT instance that compiled this module (see `CompiledAggregateFunctionsHolder`).
+            jit_owner->deleteCompiledModule(compiled_sort_description_function.compiled_module);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     CompiledSortDescriptionFunction compiled_sort_description_function;

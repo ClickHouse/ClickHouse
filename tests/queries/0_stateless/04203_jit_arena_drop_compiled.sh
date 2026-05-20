@@ -7,8 +7,9 @@
 #               registered when the build has jemalloc.
 #
 # Test that JIT compilation populates the dedicated jemalloc JIT arena and the compiled-expression
-# cache. The drop itself is exercised at the end but its post-conditions are not asserted; see the
-# comment on the drop call below for why.
+# cache, and that `SYSTEM DROP COMPILED EXPRESSION CACHE` reaches its purge path. The cache count
+# and arena `active_bytes` after the drop are not asserted because they are inherently racy with
+# concurrent server-internal JIT compiles; see the comment on the drop call below.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -51,6 +52,18 @@ echo "cache_count_after_compile $($CLICKHOUSE_CLIENT -q "
 #    not reset on drop, so any aggregation whose description has crossed the threshold before
 #    the drop will JIT-compile and re-populate the cache on first reuse — including from
 #    server-internal queries running between our drop and our metric read.
-# We still issue the drop here so that the JIT arena gets purged before the test exits, which
-# keeps the test environment tidy for subsequent runs.
+#
+# What we CAN assert deterministically is that the drop reached its purge path:
+# `SYSTEM DROP COMPILED EXPRESSION CACHE` unconditionally calls `JemallocJITArena::purge`, which
+# increments the cumulative `MemoryAllocatorPurge` ProfileEvent by 1 (see `JemallocJITArena.cpp`).
+# `ProfileEvents::increment` propagates synchronously into `global_counters` exposed by
+# `system.events`, so reading before/after a single drop must show a strict increase. Concurrent
+# cache-arena purges from elsewhere can only push the delta higher, never lower.
+purge_events_before=$($CLICKHOUSE_CLIENT -q "
+    SELECT value FROM system.events WHERE event = 'MemoryAllocatorPurge'
+    SETTINGS system_events_show_zero_values = 1")
 $CLICKHOUSE_CLIENT -q "SYSTEM DROP COMPILED EXPRESSION CACHE"
+purge_events_after=$($CLICKHOUSE_CLIENT -q "
+    SELECT value FROM system.events WHERE event = 'MemoryAllocatorPurge'
+    SETTINGS system_events_show_zero_values = 1")
+echo "purge_events_increased $(( purge_events_after > purge_events_before ? 1 : 0 ))"
