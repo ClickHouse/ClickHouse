@@ -362,6 +362,8 @@ private:
 class JITSymbolResolver : public llvm::LegacyJITSymbolResolver
 {
 public:
+    explicit JITSymbolResolver(const llvm::DataLayout & layout_) : layout(layout_) {}
+
     llvm::JITSymbol findSymbolInLogicalDylib(const std::string &) override { return nullptr; }
 
     llvm::JITSymbol findSymbol(const std::string & Name) override
@@ -376,11 +378,23 @@ public:
         return jit_symbol;
     }
 
-    void registerSymbol(const std::string & symbol_name, void * symbol) { symbol_name_to_symbol_address[symbol_name] = symbol; }
+    /// Store symbols under their target-mangled names so findSymbol, which receives
+    /// names already mangled by LLVM, can look them up directly. On macOS the mangler
+    /// prepends '_' to C symbol names; on ELF targets the mangled form is identical
+    /// to the input. Canonicalizing here means lookup never needs a fallback path.
+    void registerSymbol(const std::string & symbol_name, void * symbol)
+    {
+        std::string mangled_name;
+        llvm::raw_string_ostream mangled_name_stream(mangled_name);
+        llvm::Mangler::getNameWithPrefix(mangled_name_stream, symbol_name, layout);
+        mangled_name_stream.flush();
+        symbol_name_to_symbol_address[mangled_name] = symbol;
+    }
 
     ~JITSymbolResolver() override = default;
 
 private:
+    const llvm::DataLayout & layout;
     std::unordered_map<std::string, void *> symbol_name_to_symbol_address;
 };
 
@@ -413,7 +427,7 @@ CHJIT::CHJIT()
     : machine([] { JITAllocationScope scope; return getTargetMachine(); }())
     , layout([this] { JITAllocationScope scope; return machine->createDataLayout(); }())
     , compiler([this] { JITAllocationScope scope; return std::make_unique<JITCompiler>(*machine); }())
-    , symbol_resolver(std::make_unique<JITSymbolResolver>())
+    , symbol_resolver(std::make_unique<JITSymbolResolver>(layout))
 {
     /// Define common symbols that can be generated during compilation
     /// Necessary for valid linker symbol resolution
