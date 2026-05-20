@@ -3,6 +3,7 @@
 #include <poll.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/UDFProcessSubtreeSampler.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -543,8 +544,20 @@ namespace
             /// the worker is torn down or the slot is handed back to the pool —
             /// either path destroys `/proc/<pid>/{stat,status}` and the sampler
             /// would then read zero CPU and zero `VmHWM`.
+            /// `recordReleased` reads procfs and may throw, but `cleanup` is
+            /// called from the destructor — swallow any exception so the
+            /// destructor stays noexcept.
             if (configuration.sampler)
-                configuration.sampler->recordReleased();
+            {
+                try
+                {
+                    configuration.sampler->recordReleased();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("ShellCommandSource");
+                }
+            }
 
             if (command_is_invalid)
                 command = nullptr;
