@@ -410,10 +410,6 @@ struct HashMethodKeysFixed
                 columns_data[i] = Base::getActualColumns()[i]->getRawData().data();
         }
 #endif
-
-        /// Initialize key columns for the top-N heap optimization so that
-        /// it can use IColumn::compareAt for comparisons (single and composite keys).
-        this->setKeyColumns(ColumnRawPtrs(key_columns.begin(), key_columns.begin() + keys_size));
     }
 
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
@@ -490,12 +486,7 @@ struct HashMethodHashed
     ColumnRawPtrs key_columns;
 
     HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &)
-        : key_columns(std::move(key_columns_))
-    {
-        /// Initialize key columns for the top-N heap optimization
-        /// so that it can use IColumn::compareAt for comparisons.
-        this->setKeyColumns(key_columns);
-    }
+        : key_columns(std::move(key_columns_)) {}
 
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
     {

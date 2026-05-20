@@ -412,6 +412,7 @@ private:
     void executeImpl(
         Method & method,
         State & state,
+        const ColumnRawPtrs & key_columns,
         Arena * aggregates_pool,
         size_t row_begin,
         size_t row_end,
@@ -425,6 +426,7 @@ private:
     void executeImplBatch(
         Method & method,
         State & state,
+        const ColumnRawPtrs & key_columns,
         Arena * aggregates_pool,
         size_t row_begin,
         size_t row_end,

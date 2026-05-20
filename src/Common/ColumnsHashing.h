@@ -194,11 +194,6 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         size_of_index_type = column->getSizeOfIndexType();
         positions = column->getIndexesPtr().get();
-
-        /// Override key columns set by Base constructor (which points to the dictionary column)
-        /// with the original LowCardinality column. This is needed so that getKeyColumns()
-        /// returns the LC column for correct compareAt() behavior in the top-N heap.
-        this->setKeyColumns({key_columns_low_cardinality[0]});
     }
 
     ALWAYS_INLINE size_t getIndexAt(size_t row) const
@@ -465,11 +460,6 @@ struct HashMethodSerialized
                 }
             }
         }
-
-        /// Initialize key columns for the top-N heap optimization. Use the original
-        /// key_columns_ (before nullable stripping) so that IColumn::compareAt works
-        /// correctly with ColumnNullable.
-        this->setKeyColumns(ColumnRawPtrs(key_columns_.begin(), key_columns_.begin() + keys_size));
 
         /// We can only precompute canonical per-row hashes when:
         ///   1. We have the serialized keys upfront (batch serialization is in use), and

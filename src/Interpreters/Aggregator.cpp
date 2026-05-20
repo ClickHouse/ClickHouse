@@ -931,13 +931,13 @@ void NO_INLINE Aggregator::executeImpl(
     if (use_cache)
     {
         typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
-        executeImpl(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+        executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
         typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
-        executeImpl(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+        executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
     }
 }
 
@@ -945,6 +945,7 @@ template <typename Method, typename State>
 void Aggregator::executeImpl(
     Method & method,
     State & state,
+    const ColumnRawPtrs & key_columns,
     Arena * aggregates_pool,
     size_t row_begin,
     size_t row_end,
@@ -957,7 +958,7 @@ void Aggregator::executeImpl(
 
     if (top_k)
         method.top_k_heap.initIfNeeded(
-            state.getKeyColumns(), params.top_k_key_columns,
+            key_columns, params.top_k_key_columns,
             params.keys.size(),
             params.top_k_keys, params.top_k_keys_directions,
             params.top_k_keys_nulls_directions, params.top_k_keys_collators);
@@ -966,7 +967,7 @@ void Aggregator::executeImpl(
         bool no_more_keys_arg, bool use_compiled_functions)
     {
         executeImplBatch<prefetch_v, top_k_v>(
-            method, state, aggregates_pool, row_begin, row_end,
+            method, state, key_columns, aggregates_pool, row_begin, row_end,
             aggregate_instructions, no_more_keys_arg, all_keys_are_const,
             use_compiled_functions, overflow_row);
     };
@@ -1085,6 +1086,7 @@ template <bool prefetch, bool top_k, typename Method, typename State>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
     State & state,
+    const ColumnRawPtrs & key_columns,
     Arena * aggregates_pool,
     size_t row_begin,
     size_t row_end,
@@ -1196,9 +1198,8 @@ void NO_INLINE Aggregator::executeImplBatch(
     [[maybe_unused]] ColumnRawPtrs heap_key_cols;
     if constexpr (top_k)
     {
-        const auto & all_key_cols = state.getKeyColumns();
         size_t heap_key_count = params.top_k_key_columns;
-        heap_key_cols.assign(all_key_cols.begin(), all_key_cols.begin() + heap_key_count);
+        heap_key_cols.assign(key_columns.begin(), key_columns.begin() + heap_key_count);
     }
 
     static constexpr bool has_typed_key = requires(const State & s) { s.getKeyData(); }
