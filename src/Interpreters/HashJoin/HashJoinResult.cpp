@@ -123,16 +123,13 @@ static void appendRightColumns(
     }
 
     bool is_asof_join = table_join.strictness() == JoinStrictness::Asof;
-    /// For `LEFT ANTI JOIN`, the block only contains unmatched left rows by construction,
-    /// so the right-side key columns must be filled with type defaults rather than copied
-    /// from the left key column. The usual `copyLeftKeyColumnToRight` path relies on the
-    /// invariant that, for the rows kept by the upstream filter, `left.key == right.key`
-    /// (which holds for `INNER`, `LEFT SEMI`, and the matched part of `LEFT JOIN`).
-    /// `LEFT ANTI` violates that invariant: the kept rows are exactly the rows where no
-    /// match was found, so copying the left key value into the right key column produces
-    /// wrong results (issue #99959). After `TableJoin::swapSides`, an original `RIGHT ANTI`
-    /// also reaches this code path with `kind() == Left` and is fixed by the same branch.
+    /// For `LEFT ANTI` (and `RIGHT ANTI` after `TableJoin::swapSides`), the upstream filter
+    /// in `HashJoinResult::next` has already kept only unmatched rows, so right-side key
+    /// columns must hold defaults rather than left key values (issue #99959).
     bool is_left_anti_join = table_join.kind() == JoinKind::Left && table_join.strictness() == JoinStrictness::Anti;
+    /// `JoinFeatures::need_filter` is always true for `is_anti_join && left`, so `block.rows()`
+    /// here is the number of unmatched rows. No `filter_ptr` handling is needed.
+    chassert(!is_left_anti_join || properties.need_filter);
     std::vector<size_t> right_keys_to_replicate;
 
     /// Add join key columns from right block if needed.
