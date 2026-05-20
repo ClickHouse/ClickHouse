@@ -229,11 +229,22 @@ ExecutableFunctionHasPhrase::executeImpl(const ColumnsWithTypeAndName & argument
 REGISTER_FUNCTION(HasPhrase)
 {
     FunctionDocumentation::Description description = R"(
-Checks if the haystack contains all tokens from the phrase in consecutive order.
+Checks if the `input` contains all tokens from the `phrase` in consecutive order.
 
-Prior to searching, the function tokenizes both the `input` and the `phrase` arguments using the tokenizer specified as the optional third argument.
+:::note
+Column `input` should have a [text index](../../engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
+If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
+:::
+
+Prior to searching, the function tokenizes both the `input` and the `phrase` arguments using the tokenizer specified for the text index.
+If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead — unless a tokenizer is provided as the optional third argument.
 The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `ngrams`, or `asciiCJK`.
-If no tokenizer is specified, by default the `splitByNonAlpha` tokenizer would be used.
+
+:::note
+When a text index defines a [preprocessor](../../engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasPhrase` applies it to both `input` and `phrase` before tokenization.
+The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
+This inconsistency is tolerated to improve the usability of full-text search.
+:::
 
 Unlike [`hasToken`](#hasToken), [`hasAnyTokens`](#hasAnyTokens) and [`hasAllTokens`](#hasAllTokens), `hasPhrase` requires the tokens to appear in the same order
 and without any intervening tokens. For example, `hasPhrase('the quick brown fox', 'quick fox')` returns 0

@@ -303,16 +303,14 @@ public:
 
     VectorWithMemoryTracking<WasmVal> invokeImpl(std::string_view function_name, const VectorWithMemoryTracking<WasmVal> & params, StopToken stop_token) override;
 
-    void loadModuleFromCode(std::string_view wasm_code);
-    void loadModuleFromFile(const std::filesystem::path & file_path);
-    void loadModuleFromAst(const WasmEdge_ASTModuleContext * ast_module);
+    void loadModuleFromAst(const WasmEdge_ASTModuleContext * ast_module, StopToken stop_token);
 
     WasmEdge_ModuleInstanceContext * getHostFunctionContext() { return import_module_ctx.get(); }
 
     void setLastException(Exception e) { last_exception = std::move(e); }
 
 private:
-    void loadModuleImpl();
+    void loadModuleImpl(StopToken stop_token);
 
     /// Host functions are registered in this context
     WasmEdgeResourcePtr<WasmEdge_ModuleInstanceContext> import_module_ctx;
@@ -373,28 +371,26 @@ WasmEdge_Result HostFunctionAdapter::callFunction(
     return WasmEdge_Result_Success;
 }
 
-void WasmEdgeCompartment::loadModuleFromFile(const std::filesystem::path & file_path)
-{
-    wasmedgeCheckResult(WasmEdge_VMLoadWasmFromFile(vm_cxt.get(), file_path.c_str()), "cannot load module");
-    loadModuleImpl();
-}
-
-void WasmEdgeCompartment::loadModuleFromCode(std::string_view wasm_code)
-{
-    wasmedgeCheckResult(WasmEdge_VMLoadWasmFromBytes(vm_cxt.get(), wasmedgeBytesWrap(wasm_code)), "cannot load module");
-    loadModuleImpl();
-}
-
-void WasmEdgeCompartment::loadModuleFromAst(const WasmEdge_ASTModuleContext * ast_module)
+void WasmEdgeCompartment::loadModuleFromAst(const WasmEdge_ASTModuleContext * ast_module, StopToken stop_token)
 {
     wasmedgeCheckResult(WasmEdge_VMLoadWasmFromASTModule(vm_cxt.get(), ast_module), "cannot load module");
-    loadModuleImpl();
+    loadModuleImpl(std::move(stop_token));
 }
 
-void WasmEdgeCompartment::loadModuleImpl()
+void WasmEdgeCompartment::loadModuleImpl(StopToken stop_token)
 {
     wasmedgeCheckResult(WasmEdge_VMValidate(vm_cxt.get()), "cannot validate module");
     wasmedgeCheckResult(WasmEdge_VMRegisterModuleFromImport(vm_cxt.get(), import_module_ctx.get()), "cannot register host module");
+
+    /// WasmEdge runs the wasm `(start)` section synchronously inside `VMInstantiate`
+    /// To bound a hanging start function we set up epoch interruption before instantiation
+    StopCallback stop_callback(stop_token, [this]
+    {
+        LOG_DEBUG(log, "Stop requested for function in start section");
+        auto * stat_ctx = WasmEdge_VMGetStatisticsContext(vm_cxt.get());
+        WasmEdge_StatisticsSetCostLimit(stat_ctx, 1);
+    });
+
     wasmedgeCheckResult(WasmEdge_VMInstantiate(vm_cxt.get()), "cannot instantiate module");
     vm_instance_cxt = WasmEdge_VMGetActiveModule(vm_cxt.get());
     if (!vm_instance_cxt)
@@ -505,12 +501,12 @@ public:
         }
     }
 
-    std::unique_ptr<WasmCompartment> instantiate(Config cfg) const override
+    std::unique_ptr<WasmCompartment> instantiate(Config cfg, StopToken stop_token) const override
     {
         auto compartment = std::make_unique<WasmEdgeCompartment>(cfg);
         for (const auto & host_function : host_functions)
             compartment->addHostFunction(&host_function);
-        compartment->loadModuleFromAst(ast_module.get());
+        compartment->loadModuleFromAst(ast_module.get(), std::move(stop_token));
         return compartment;
     }
 

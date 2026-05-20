@@ -52,8 +52,10 @@ public:
 
     /** Creates a new instance of WasmCompartment using the code of this module.
       * During instantiation, functions from WASM_HOST_API_FUNCTIONS (see HostApi.h) must be registered as imported functions.
+      * `stop_token` is observed while the module's `(start)` function (if any) runs — letting the caller cancel a
+      * hanging start function via the same path used to cancel regular calls.
       */
-    virtual std::unique_ptr<WasmCompartment> instantiate(Config cfg) const = 0;
+    virtual std::unique_ptr<WasmCompartment> instantiate(Config cfg, StopToken stop_token) const = 0;
 
     virtual VectorWithMemoryTracking<WasmFunctionDeclaration> getImports() const = 0;
     virtual void linkFunction(WasmHostFunction host_function) = 0;

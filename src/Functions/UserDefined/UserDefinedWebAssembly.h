@@ -24,6 +24,7 @@ enum class WasmAbiVersion : uint8_t
 {
     RowDirect,
     BufferedV1,
+    AssemblyScript,
 };
 
 String toString(WasmAbiVersion abi_type);
