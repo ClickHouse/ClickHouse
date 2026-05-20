@@ -309,6 +309,11 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 100)); },
          {"0", "1", "2", "8", "10", "100"},
          false)},
+    {"merge_selector_min_age_to_disable_right_tail_heuristic",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 0, 60)); },
+         {"0", "1", "5", "10"},
+         false)},
     {"merge_selector_window_size", rowsRangeSetting},
     {"merge_total_max_bytes_to_prewarm_cache", bytesRangeSetting},
     {"merge_tree_clear_old_parts_interval_seconds", highRangeSetting},
