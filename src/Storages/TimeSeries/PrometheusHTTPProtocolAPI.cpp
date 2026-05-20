@@ -80,14 +80,8 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     }
 
     auto query_tree = std::make_shared<PrometheusQueryTree>();
-    String promql_query = params.promql_query;
-    if (!evaluation_settings.use_current_time)
-    {
-        promql_query = PrometheusQueryParsingUtil::replaceStartEndTimestampModifiers(
-            promql_query, *evaluation_settings.start_time, *evaluation_settings.end_time, timestamp_scale);
-    }
-    query_tree->parse(promql_query, timestamp_scale);
-    LOG_TRACE(log, "Parsed PromQL query: {}. Result type: {}", promql_query, query_tree->getResultType());
+    query_tree->parse(params.promql_query, timestamp_scale);
+    LOG_TRACE(log, "Parsed PromQL query: {}. Result type: {}", params.promql_query, query_tree->getResultType());
 
     PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings};
     auto sql_query = converter.getSQL();

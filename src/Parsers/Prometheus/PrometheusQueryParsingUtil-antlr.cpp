@@ -495,11 +495,22 @@ namespace
 
             if (auto * timestamp_ctx = ctx->timestamp())
             {
-                auto * number_ctx = timestamp_ctx->NUMBER();
-                if (!number_ctx)
+                if (auto * number_ctx = timestamp_ctx->NUMBER())
+                {
+                    new_node->at_modifier = Offset::AtModifier::Timestamp;
+                    auto & timestamp = new_node->at_timestamp.emplace();
+                    ok &= parseTimestamp(number_ctx, timestamp);
+                }
+                else if (timestamp_ctx->START())
+                {
+                    new_node->at_modifier = Offset::AtModifier::Start;
+                }
+                else if (timestamp_ctx->END())
+                {
+                    new_node->at_modifier = Offset::AtModifier::End;
+                }
+                else
                     throwInconsistentSchema("OffsetOp", ctx->getText());
-                auto & timestamp = new_node->at_timestamp.emplace();
-                ok &= parseTimestamp(number_ctx, timestamp);
             }
 
             if (auto * offset_value_ctx = ctx->offsetValue())
