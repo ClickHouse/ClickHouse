@@ -648,7 +648,8 @@ private:
         {
             if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(result_type.get()))
             {
-                for (size_t col_idx = 0; col_idx < tuple_col->tupleSize(); ++col_idx)
+                const size_t n = std::min(tuple_col->tupleSize(), tuple_type->getElements().size());
+                for (size_t col_idx = 0; col_idx < n; ++col_idx)
                 {
                     clearMaskedNullsBeforeCast(
                         tuple_col->getColumn(col_idx), mask, tuple_type->getElements()[col_idx]);
