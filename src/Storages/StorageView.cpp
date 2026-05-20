@@ -47,6 +47,7 @@
 
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Parsers/QueryParameterVisitor.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
@@ -176,9 +177,9 @@ void validateViewSelectForInsert(const ASTSelectQuery & select, const StorageID 
             "Cannot INSERT into view {} because its query contains HAVING",
             view_id.getFullTableName());
 
-    if (select.limitLength() || select.limitBy())
+    if (select.limitLength() || select.limitBy() || select.limitOffset())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Cannot INSERT into view {} because its query contains LIMIT",
+            "Cannot INSERT into view {} because its query contains LIMIT or OFFSET",
             view_id.getFullTableName());
 
     if (hasJoin(select))
@@ -344,6 +345,7 @@ public:
         , column_mapping_(std::move(column_mapping))
         , user_specified_columns_(std::move(user_specified_columns))
         , view_id_(view_id)
+        , context_(context)
     {
         auto insert_context = Context::createCopy(context);
 
@@ -442,6 +444,17 @@ public:
         if (where_actions_)
         {
             Block check_block(block);
+
+            /// For a partial `INSERT INTO view (subset) ...`, columns omitted by the user
+            /// have been filled with view-schema *type* defaults (e.g. `0`, `''`) by
+            /// `InsertDependenciesBuilder::createPreSink`. Those values do not match what
+            /// the target table will ultimately store, because the inner INSERT pipeline
+            /// will overwrite them with the target column's own DEFAULT. Materialize the
+            /// target defaults here so the `WHERE` predicate is evaluated against the
+            /// values that will actually land in the target table.
+            if (!user_specified_columns_.empty())
+                materializeTargetDefaults(check_block);
+
             for (const auto & [view_name, target_name] : column_mapping_)
             {
                 if (check_block.has(view_name) && !check_block.has(target_name))
@@ -492,10 +505,81 @@ public:
     }
 
 private:
+    /// Replace the type-default values of omitted view columns with the target table's
+    /// own DEFAULT expressions, so the view's `WHERE` predicate sees the same values
+    /// that will eventually be written to the target table.
+    void materializeTargetDefaults(Block & check_block)
+    {
+        const NameSet user_set(user_specified_columns_.begin(), user_specified_columns_.end());
+
+        const auto target_metadata = target_table_->getInMemoryMetadataPtr(context_, false);
+        const auto & target_cols = target_metadata->getColumns();
+
+        Block target_named;
+        for (const auto & view_name : user_specified_columns_)
+        {
+            auto col = check_block.getByName(view_name);
+            auto it = column_mapping_.find(view_name);
+            if (it != column_mapping_.end())
+                col.name = it->second;
+            target_named.insert(std::move(col));
+        }
+
+        struct OmittedColumn
+        {
+            String view_name;
+            String target_name;
+            DataTypePtr type;
+        };
+        std::vector<OmittedColumn> omitted;
+        omitted.reserve(check_block.columns());
+        for (const auto & col : check_block.getColumnsWithTypeAndName())
+        {
+            if (user_set.contains(col.name))
+                continue;
+
+            String target_name = col.name;
+            auto it = column_mapping_.find(col.name);
+            if (it != column_mapping_.end())
+                target_name = it->second;
+
+            if (!target_cols.has(target_name))
+                continue;
+            if (target_named.has(target_name))
+                continue;
+
+            omitted.push_back({col.name, target_name, col.type});
+        }
+
+        if (omitted.empty())
+            return;
+
+        NamesAndTypesList required_target_columns;
+        for (const auto & o : omitted)
+            required_target_columns.emplace_back(o.target_name, target_cols.get(o.target_name).type);
+
+        auto dag = evaluateMissingDefaults(target_named, required_target_columns, target_cols, context_);
+        if (dag)
+        {
+            ExpressionActions(std::move(*dag)).execute(target_named);
+        }
+
+        for (const auto & o : omitted)
+        {
+            if (!target_named.has(o.target_name))
+                continue;
+            auto materialized = target_named.getByName(o.target_name);
+            materialized.name = o.view_name;
+            check_block.erase(o.view_name);
+            check_block.insert(std::move(materialized));
+        }
+    }
+
     StoragePtr target_table_;
     std::unordered_map<String, String> column_mapping_;
     Names user_specified_columns_;
     StorageID view_id_;
+    ContextPtr context_;
 
     QueryPipeline pipeline_;
     std::unique_ptr<PushingPipelineExecutor> executor_;

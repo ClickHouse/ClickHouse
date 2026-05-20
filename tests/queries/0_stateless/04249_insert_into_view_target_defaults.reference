@@ -1,3 +1,6 @@
 star_partial:	1	target_b	0.5
 aliased_partial:	2	target_b	0.5
 star_full:	3	user_b	9.9
+where_default_partial:	1	10
+where_default_aliased:	1	10
+where_default_aliased:	2	10
