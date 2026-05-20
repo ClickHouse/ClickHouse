@@ -67,6 +67,36 @@ test3() {
         WHERE explain LIKE '%Aggr%Transform%' OR explain LIKE '%InOrder%'"
 }
 
+# `count()` amplifies under work duplication (unlike the idempotent `max(URL)` above), so
+# compare the parallel-replicas in-order result against the single-node baseline. The
+# over-announce-in-order bug — where each split independently re-distributed the full part
+# to all replicas — would inflate `count()` by `~num_streams` and trip this check. We pin
+# `max_threads` and `parallel_replicas_local_plan` so random-setting permutations don't
+# mask the regression.
+test4() {
+    expected=$($CLICKHOUSE_CLIENT -q "
+        SELECT URL, EventDate, count()
+        FROM test.hits
+        WHERE CounterID = 1704509 AND UserID = 4322253409885123546
+        GROUP BY URL, EventDate
+        ORDER BY URL, EventDate")
+
+    actual=$($CLICKHOUSE_CLIENT -q "
+        SELECT URL, EventDate, count()
+        FROM remote(test_cluster_one_shard_three_replicas_localhost, test.hits)
+        WHERE CounterID = 1704509 AND UserID = 4322253409885123546
+        GROUP BY URL, EventDate
+        ORDER BY URL, EventDate
+        SETTINGS max_threads = 16, optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, parallel_replicas_local_plan = 1, query_plan_aggregation_in_order = 1, optimize_read_in_order = 1, max_rows_to_read = 0")
+
+    if [ "$expected" = "$actual" ]; then
+        echo OK
+    else
+        diff <(echo "$expected") <(echo "$actual") | head -20
+    fi
+}
+
 test1
 test2
 test3
+test4
