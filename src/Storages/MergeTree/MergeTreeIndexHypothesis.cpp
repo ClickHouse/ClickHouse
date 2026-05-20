@@ -8,7 +8,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
 }
 
@@ -73,7 +72,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexHypothesis::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleHypothesis>(index.name);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexHypothesis::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexHypothesis::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
 {
     return std::make_shared<MergeTreeIndexAggregatorHypothesis>(index.name, index.sample_block.getNames().front());
 }
@@ -99,7 +98,7 @@ MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index)
 void hypothesisIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
     if (index.expression_list_ast->children.size() != 1)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Hypothesis index needs exactly one expression");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Hypothesis index needs exactly one expression");
 }
 
 }

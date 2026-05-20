@@ -1,8 +1,8 @@
 #pragma once
 
-#include <atomic>
-#include <exception>
 #include <functional>
+#include <atomic>
+#include <condition_variable>
 
 namespace DB
 {

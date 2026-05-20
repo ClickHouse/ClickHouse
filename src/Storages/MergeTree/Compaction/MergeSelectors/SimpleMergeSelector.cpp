@@ -1,5 +1,5 @@
-#include <Storages/MergeTree/Compaction/MergeSelectors/PartitionStatistics.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/DisjointPartsRangesSet.h>
 
 #include <base/interpolate.h>
@@ -13,6 +13,22 @@
 
 namespace DB
 {
+
+void registerSimpleMergeSelector(MergeSelectorFactory & factory)
+{
+    factory.registerPublicSelector("Simple", MergeSelectorAlgorithm::SIMPLE, [](const std::any & settings)
+    {
+        return std::make_shared<SimpleMergeSelector>(std::any_cast<SimpleMergeSelector::Settings>(settings));
+    });
+}
+
+void registerStochasticSimpleMergeSelector(MergeSelectorFactory & factory)
+{
+    factory.registerPublicSelector("StochasticSimple", MergeSelectorAlgorithm::STOCHASTIC_SIMPLE, [](const std::any & settings)
+    {
+        return std::make_shared<SimpleMergeSelector>(std::any_cast<SimpleMergeSelector::Settings>(settings));
+    });
+}
 
 namespace
 {
@@ -29,10 +45,6 @@ public:
 
     void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
     {
-        if (settings.enable_heuristic_to_remove_small_parts_at_right)
-            while (end >= begin + 3 && (end - 1)->size < settings.heuristic_to_remove_small_parts_at_right_max_ratio * sum_size)
-                --end;
-
         double current_score = score(end - begin, sum_size, settings.size_fixed_cost_to_add);
 
         if (settings.enable_heuristic_to_align_parts
@@ -43,6 +55,10 @@ public:
                 current_score *= interpolateLinear(settings.heuristic_to_align_parts_max_score_adjustment, 1,
                     difference / settings.heuristic_to_align_parts_max_absolute_difference_in_powers_of_two);
         }
+
+        if (settings.enable_heuristic_to_remove_small_parts_at_right)
+            while (end >= begin + 3 && (end - 1)->size < settings.heuristic_to_remove_small_parts_at_right_max_ratio * sum_size)
+                --end;
 
         ranges.emplace_back(range_it, begin, end, sum_size, current_score);
     }
@@ -231,35 +247,6 @@ void selectWithinPartsRange(
             begin = parts_count - parts_threshold;
     }
 
-    /// Enable heuristic for lowering selected merge ranges. This can increase number of
-    /// concurrently running merges and thus increase the merge speed.
-    size_t max_parts_to_merge_at_once = settings.max_parts_to_merge_at_once;
-    if (settings.enable_heuristic_to_lower_max_parts_to_merge_at_once)
-    {
-        assert(settings.partitions_stats);
-        assert(range_it->size() > 1);
-        const auto & partition_stats = settings.partitions_stats->at(range_it->front().info.getPartitionId());
-
-        if (partition_stats.part_count < settings.base)
-        {
-            /// Partition is not filled
-        }
-        else if (partition_stats.part_count >= settings.parts_to_throw_insert)
-        {
-            /// Partition is fully filled - let's lower the max parts to merge to base to enable only small merges
-            max_parts_to_merge_at_once = std::max<size_t>(2, static_cast<size_t>(settings.base));
-        }
-        else
-        {
-            /// Partition is not fully filled but but may be approaching it. Let's lower max parts to merge according to the fullness.
-            size_t exponent = settings.heuristic_to_lower_max_parts_to_merge_at_once_exponent;
-            max_parts_to_merge_at_once = static_cast<size_t>(
-                settings.base +
-                (max_parts_to_merge_at_once - settings.base) * (1.0 - std::pow((partition_stats.part_count - settings.base) / (settings.parts_to_throw_insert - settings.base), exponent))
-            );
-        }
-    }
-
     for (; begin < parts_count; ++begin)
     {
         size_t sum_size = parts[begin].size;
@@ -269,7 +256,7 @@ void selectWithinPartsRange(
         for (size_t end = begin + 2; end <= parts_count; ++end)
         {
             assert(end > begin);
-            if (max_parts_to_merge_at_once && end - begin > max_parts_to_merge_at_once)
+            if (settings.max_parts_to_merge_at_once && end - begin > settings.max_parts_to_merge_at_once)
                 break;
 
             size_t cur_size = parts[end - 1].size;

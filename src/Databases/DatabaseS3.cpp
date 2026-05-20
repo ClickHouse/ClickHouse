@@ -5,7 +5,6 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseS3.h>
 
-#include <Common/Logger.h>
 #include <Common/RemoteHostFilter.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -99,7 +98,7 @@ bool DatabaseS3::checkUrl(const std::string & url, ContextPtr context_, bool thr
 bool DatabaseS3::isTableExist(const String & name, ContextPtr context_) const
 {
     std::lock_guard lock(mutex);
-    if (loaded_tables.contains(name))
+    if (loaded_tables.find(name) != loaded_tables.end())
         return true;
 
     return checkUrl(getFullUrl(name), context_, false);
@@ -186,7 +185,7 @@ bool DatabaseS3::empty() const
     return loaded_tables.empty();
 }
 
-ASTPtr DatabaseS3::getCreateDatabaseQueryImpl() const
+ASTPtr DatabaseS3::getCreateDatabaseQuery() const
 {
     const auto & settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
@@ -198,14 +197,14 @@ ASTPtr DatabaseS3::getCreateDatabaseQueryImpl() const
     else if (config.access_key_id.has_value() && config.secret_access_key.has_value())
         creation_args += fmt::format(", '{}', '{}'", config.access_key_id.value(), config.secret_access_key.value());
 
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = S3({})", backQuoteIfNeed(database_name), creation_args);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = S3({})", backQuoteIfNeed(getDatabaseName()), creation_args);
     ASTPtr ast
         = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-    if (!comment.empty())
+    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(comment));
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
     }
 
     return ast;

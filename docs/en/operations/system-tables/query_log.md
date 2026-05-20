@@ -4,7 +4,6 @@ description: 'System table containing information about executed queries, for ex
 keywords: ['system table', 'query_log']
 slug: /operations/system-tables/query_log
 title: 'system.query_log'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -34,11 +33,11 @@ Each query creates one or two rows in the `query_log` table, depending on the st
 2.  If an error occurred during query processing, two events with the `QueryStart` and `ExceptionWhileProcessing` types are created.
 3.  If an error occurred before launching the query, a single event with the `ExceptionBeforeStart` type is created.
 
-You can use the [log_queries_probability](/operations/settings/settings#log_queries_probability) setting to reduce the number of queries, registered in the `query_log` table.
+You can use the [log_queries_probability](/operations/settings/settings#log_queries_probability)) setting to reduce the number of queries, registered in the `query_log` table.
 
-You can use the [log_formatted_queries](/operations/settings/settings#log_formatted_queries) setting to log formatted queries to the `formatted_query` column.
+You can use the [log_formatted_queries](/operations/settings/settings#log_formatted_queries)) setting to log formatted queries to the `formatted_query` column.
 
-## Columns {#columns}
+Columns:
 
 - `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of an event that occurred when executing the query. Values:
@@ -131,9 +130,7 @@ You can use the [log_formatted_queries](/operations/settings/settings#log_format
   - `'Write'` = The query result was written into the query cache.
   - `'Read'` = The query result was read from the query cache.
 
-## Examples {#examples}
-
-**Basic example**
+**Example**
 
 ```sql
 SELECT * FROM system.query_log WHERE type = 'QueryFinish' ORDER BY query_start_time DESC LIMIT 1 FORMAT Vertical;
@@ -213,20 +210,6 @@ used_sql_user_defined_functions:       []
 used_privileges:                       []
 missing_privileges:                    []
 query_cache_usage:                     None
-```
-
-**Cloud example**
-
-In ClickHouse Cloud, `system.query_log` is local to each node; to see all entries you must query via [`clusterAllReplicas`](/sql-reference/table-functions/cluster).
-
-For example, to aggregate query_log rows from every replica in the “default” cluster you can write:
-
-```sql
-SELECT * 
-FROM clusterAllReplicas('default', system.query_log)
-WHERE event_time >= now() - toIntervalHour(1)
-LIMIT 10
-SETTINGS skip_unavailable_shards = 1;
 ```
 
 **See Also**

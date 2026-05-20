@@ -5,7 +5,6 @@ sidebar_label: 'dictionary'
 sidebar_position: 47
 slug: /sql-reference/table-functions/dictionary
 title: 'dictionary'
-doc_type: 'reference'
 ---
 
 # dictionary Table Function

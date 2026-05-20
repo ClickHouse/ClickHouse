@@ -3,7 +3,6 @@ description: 'Computes an approximate quantile of a sample with relative-error g
 sidebar_position: 171
 slug: /sql-reference/aggregate-functions/reference/quantileddsketch
 title: 'quantileDD'
-doc_type: 'reference'
 ---
 
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a sample with relative-error guarantees. It works by building a [DD](https://www.vldb.org/pvldb/vol12/p2195-masson.pdf).

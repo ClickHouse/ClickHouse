@@ -462,6 +462,19 @@ public:
      */
     void pointwiseAddInplace(const BSINumericIndexedVector & rhs)
     {
+        /// Self-addition requires a deep copy because the full adder logic below
+        /// performs in-place XOR on shared bitmaps (`sum->rb_xor(*addend)` where
+        /// `sum` and `addend` alias the same Roaring bitmap via `shallowCopyFrom`),
+        /// which triggers an assertion in CRoaring (`assert(x1 != x2)`) and would
+        /// produce incorrect results (A XOR A = 0) in release builds.
+        if (this == &rhs)
+        {
+            BSINumericIndexedVector copy;
+            copy.deepCopyFrom(rhs);
+            pointwiseAddInplace(copy);
+            return;
+        }
+
         if (isEmpty())
         {
             deepCopyFrom(rhs);
@@ -538,6 +551,16 @@ public:
      */
     void pointwiseSubtractInplace(const BSINumericIndexedVector & rhs)
     {
+        /// Self-subtraction requires a deep copy for the same reason as
+        /// `pointwiseAddInplace`: in-place XOR on aliased bitmaps is undefined.
+        if (this == &rhs)
+        {
+            BSINumericIndexedVector copy;
+            copy.deepCopyFrom(rhs);
+            pointwiseSubtractInplace(copy);
+            return;
+        }
+
         auto total_indexes = getAllIndex();
         total_indexes->rb_or(*rhs.getAllIndex());
 
@@ -800,7 +823,7 @@ public:
 
 #if defined(__AVX512__)
             cnt = roaring::internal::bitset_extract_setbits_avx512(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, 0);
-#elif defined(__AVX2__) && !defined(__e2k__)
+#elif defined(__AVX2__)
             cnt = roaring::internal::bitset_extract_setbits_avx2(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, 0);
 #else
             cnt = roaring::internal::bitset_extract_setbits(buffer.data() + offset, len, bit_buffer.data(), 0);
@@ -810,7 +833,7 @@ public:
                 UInt64 val = bit_buffer[i];
                 UInt64 row;
                 UInt64 col = val & 0x3f;
-#if defined(__BMI2__) && !defined(__e2k__)
+#if defined(__BMI2__)
                 ASM_SHIFT_RIGHT(val, shift, row);
 #else
                 row = val >> shift;
@@ -925,7 +948,7 @@ public:
                 {
                     UInt64 tmp_offset;
                     UInt64 p = bit_buffer[i][j];
-#if defined(__BMI2__) && !defined(__e2k__)
+#if defined(__BMI2__)
                     ASM_SHIFT_RIGHT(p, shift, tmp_offset);
 #else
                     tmp_offset = p >> shift;

@@ -6,7 +6,6 @@
 #include <Core/Block.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
@@ -30,14 +29,13 @@ std::shared_ptr<DB::DataTypeEnum8> TypeEnum = std::make_shared<DB::DataTypeEnum8
 /// Put implementation here to avoid extra linking dependencies for clickhouse_common_io
 void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, bool nonzero_only)
 {
-    if (!column)
+    auto * column_map = column ? &typeid_cast<DB::ColumnMap &>(*column) : nullptr;
+    if (!column_map)
         return;
 
-    auto & column_map = typeid_cast<DB::ColumnMap &>(*column);
-
-    auto & offsets = column_map.getNestedColumn().getOffsets();
-    auto & tuple_column = column_map.getNestedData();
-    auto & key_column = typeid_cast<DB::ColumnLowCardinality &>(tuple_column.getColumn(0));
+    auto & offsets = column_map->getNestedColumn().getOffsets();
+    auto & tuple_column = column_map->getNestedData();
+    auto & key_column = tuple_column.getColumn(0);
     auto & value_column = typeid_cast<DB::ColumnUInt64 &>(tuple_column.getColumn(1));
 
     size_t size = 0;
@@ -48,8 +46,8 @@ void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, 
         if (nonzero_only && 0 == value)
             continue;
 
-        std::string_view desc = getName(event);
-        key_column.insertData(desc.data(), desc.size());
+        const char * desc = getName(event);
+        key_column.insertData(desc, strlen(desc));
         value_column.getData().push_back(value);
         size++;
     }
@@ -70,8 +68,8 @@ static void dumpProfileEvents(ProfileEventsSnapshot const & snapshot, DB::Mutabl
         if (value == 0)
             continue;
 
-        std::string_view desc = getName(event);
-        name_column->insertData(desc);
+        const char * desc = getName(event);
+        name_column->insertData(desc, strlen(desc));
         value_column->insert(value);
         rows++;
     }
@@ -144,17 +142,17 @@ DB::Block getProfileEvents(
 
     ProfileEventsSnapshot group_snapshot;
     {
-        group_snapshot.thread_id = 0;
+        group_snapshot.thread_id    = 0;
         group_snapshot.current_time = time(nullptr);
         group_snapshot.memory_usage = thread_group->memory_tracker.get();
         group_snapshot.peak_memory_usage = thread_group->memory_tracker.getPeak();
-        auto group_counters = thread_group->performance_counters.getPartiallyAtomicSnapshot();
-        auto prev_group_snapshot = last_sent_snapshots.find(0);
-        group_snapshot.counters =
+        auto group_counters         = thread_group->performance_counters.getPartiallyAtomicSnapshot();
+        auto prev_group_snapshot    = last_sent_snapshots.find(0);
+        group_snapshot.counters     =
             prev_group_snapshot != last_sent_snapshots.end()
             ? CountersIncrement(group_counters, prev_group_snapshot->second)
             : CountersIncrement(group_counters);
-        new_snapshots[0] = std::move(group_counters);
+        new_snapshots[0]            = std::move(group_counters);
     }
     last_sent_snapshots = std::move(new_snapshots);
 

@@ -26,7 +26,7 @@ public:
 protected:
     /// 1 byte (`gcd_bytes_size` value) + 1 byte (`bytes_to_skip` value) + `bytes_to_skip` bytes (trash) + `gcd_bytes_size` bytes (gcd value) + (`source_size` - `bytes_to_skip`) bytes (data)
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
-    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+    UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
     bool isCompression() const override { return false; }
@@ -47,6 +47,7 @@ namespace ErrorCodes
     extern const int CANNOT_DECOMPRESS;
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 CompressionCodecGCD::CompressionCodecGCD(UInt8 gcd_bytes_size_)
@@ -131,8 +132,9 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
 }
 
 template <typename T>
-void decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
+UInt32 decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
 {
+    const char * original_dest = dest;
     if (source_size % sizeof(T) != 0)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data, data size {} is not aligned to {}", source_size, sizeof(T));
 
@@ -153,7 +155,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data");
 
         memcpy(dest, source, source_size - sizeof(T));
-        return;
+        return source_size - sizeof(T);
     }
 
     while (source < source_end)
@@ -166,6 +168,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
         dest += sizeof(T);
     }
     chassert(source == source_end);
+    return dest - original_dest;
 }
 
 }
@@ -177,7 +180,7 @@ UInt32 CompressionCodecGCD::doCompressData(const char * source, UInt32 source_si
     dest[1] = bytes_to_skip; /// unused (backward compatibility)
     memcpy(&dest[2], source, bytes_to_skip);
     size_t start_pos = 2 + bytes_to_skip;
-    switch (gcd_bytes_size) // NOLINT(bugprone-switch-missing-default-case)
+    switch (gcd_bytes_size)
     {
     case 1:
         compressDataForType<UInt8>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
@@ -197,17 +200,19 @@ UInt32 CompressionCodecGCD::doCompressData(const char * source, UInt32 source_si
     case 32:
         compressDataForType<UInt256>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
         break;
+    default:
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compress to GCD-encoded data. Invalid byte size {}", UInt32{gcd_bytes_size});
     }
     return 2 + gcd_bytes_size + source_size;
 }
 
-void CompressionCodecGCD::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+UInt32 CompressionCodecGCD::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     if (source_size < 2)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data. File has wrong header");
 
     if (uncompressed_size == 0)
-        return;
+        return 0;
 
     UInt8 bytes_size = source[0];
 
@@ -226,26 +231,23 @@ void CompressionCodecGCD::doDecompressData(const char * source, UInt32 source_si
 
     memcpy(dest, &source[2], bytes_to_skip);
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;
-    switch (bytes_size) // NOLINT(bugprone-switch-missing-default-case)
+    switch (bytes_size)
     {
     case 1:
-        decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
-        break;
+        return bytes_to_skip + decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
     case 2:
-        decompressDataForType<UInt16>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
-        break;
+        return bytes_to_skip + decompressDataForType<UInt16>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
     case 4:
-        decompressDataForType<UInt32>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
-        break;
+        return bytes_to_skip + decompressDataForType<UInt32>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
     case 8:
-        decompressDataForType<UInt64>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
-        break;
+        return bytes_to_skip + decompressDataForType<UInt64>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
     case 16:
-        decompressDataForType<UInt128>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
-        break;
+        return bytes_to_skip + decompressDataForType<UInt128>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
     case 32:
-        decompressDataForType<UInt256>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
-        break;
+        return bytes_to_skip + decompressDataForType<UInt256>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
+    default:
+        /// This should be unreachable due to the check above
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decompress GCD-encoded data. File has unknown byte size {}", UInt32{bytes_size});
     }
 }
 

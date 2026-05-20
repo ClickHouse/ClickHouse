@@ -116,9 +116,16 @@ UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, ch
         throw Exception(decompression_error_code, "Can't decompress data with codec byte {} using codec with byte {}", method, our_method);
 
     UInt32 decompressed_size = readDecompressedBlockSize(source);
-    doDecompressData(&source[header_size], source_size - header_size, dest, decompressed_size);
+    UInt32 final_decompressed_size = doDecompressData(&source[header_size], source_size - header_size, dest, decompressed_size);
+    if (decompressed_size != final_decompressed_size)
+        throw Exception(
+            decompression_error_code,
+            "Can't decompress data: The size after decompression ({}) is different than the expected size ({}) for codec '{}'",
+            final_decompressed_size,
+            decompressed_size,
+            getCodecDesc()->formatForErrorMessage());
 
-    return decompressed_size;
+    return final_decompressed_size;
 }
 
 UInt32 ICompressionCodec::readCompressedBlockSize(const char * source) const

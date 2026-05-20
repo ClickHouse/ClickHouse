@@ -7,7 +7,6 @@ import bson
 import pymongo
 import pytest
 
-from helpers.database_disk import replace_text_in_metadata
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import mongo_pass
@@ -84,15 +83,9 @@ def test_simple_select(started_cluster):
     node.restart_clickhouse()
 
     assert node.query(system_warnings_query) == "0\n"
-
-    metadata_path = node.query(
-        f"SELECT metadata_path FROM system.tables WHERE database='default' AND table='simple_mongo_table'"
-    ).strip()
     node.stop_clickhouse()
-    replace_text_in_metadata(
-        node, metadata_path, "mongo1", "mongo1/ignored/path"
-    )
-
+    replace_definition_cmd = f"sed --follow-symlinks -i 's|mongo1|mongo1/ignored/path|' /var/lib/clickhouse/metadata/default/simple_mongo_table.sql"
+    node.exec_in_container(["bash", "-c", replace_definition_cmd])
     node.start_clickhouse()
     assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
     assert node.query(system_warnings_query) == "1\n"

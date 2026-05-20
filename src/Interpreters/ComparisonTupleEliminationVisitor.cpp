@@ -39,7 +39,7 @@ ASTPtr concatWithAnd(const ASTs & nodes)
     if (nodes.size() == 1)
         return nodes[0];
 
-    auto result = makeASTOperator("and");
+    auto result = makeASTFunction("and");
     result->arguments->children = nodes;
     return result;
 }
@@ -68,11 +68,11 @@ public:
         new_args.reserve(lhs.size());
         for (size_t i = 0; i < lhs.size(); ++i)
         {
-            new_args.emplace_back(makeASTOperator("equals", lhs[i], rhs[i]));
+            new_args.emplace_back(makeASTFunction("equals", lhs[i], rhs[i]));
         }
 
         if (func->name == "notEquals")
-            ast = makeASTOperator("not", concatWithAnd(new_args));
+            ast = makeASTFunction("not", concatWithAnd(new_args));
         else
             ast = concatWithAnd(new_args);
     }

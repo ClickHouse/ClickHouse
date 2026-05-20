@@ -36,7 +36,8 @@ def cleanup_after_test():
 
 
 def test_merge():
-    select_query = "SELECT * FROM merge('default', 'table[0-9]+') ORDER BY x"
+    merge_spec = "merge('default', 'table[0-9]+')"
+    select_query = f"SELECT * FROM {merge_spec} ORDER BY x"
     assert instance.query(select_query) == "1\n2\n"
 
     instance.query("CREATE USER A")
@@ -61,6 +62,20 @@ def test_merge():
         "it's necessary to have the grant SELECT(x) ON default.table2"
         in instance.query_and_get_error(select_query, user="A")
     )
+
+    instance.query("REVOKE ALL ON default.* FROM A")
+    describe_query = f"DESCRIBE TABLE {merge_spec}"
+    assert (
+        "Either there is no database, which matches regular expression `default`, or there are no tables in the database matches `default`, which fit tables expression: table[0-9]+"
+        in instance.query_and_get_error(describe_query, user="A")
+    )
+    instance.query("GRANT SHOW TABLES ON default.table1 TO A")
+    assert (
+        "it's necessary to have the grant SHOW COLUMNS ON default.table1"
+        in instance.query_and_get_error(describe_query, user="A")
+    )
+    instance.query("GRANT SHOW COLUMNS ON default.table1 TO A")
+    assert instance.query(describe_query) == "x\tUInt32\t\t\t\t\t\n"
 
 
 def test_view_if_permitted():

@@ -1,7 +1,0 @@
- <clickhouse>
-    <logger>
-        <level>none</level>
-        <startup_level>trace</startup_level>
-        <shutdown_level>trace</shutdown_level>
-    </logger>
-</clickhouse>

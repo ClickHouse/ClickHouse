@@ -5,7 +5,6 @@ sidebar_label: 'Tracing ClickHouse with OpenTelemetry'
 sidebar_position: 62
 slug: /operations/opentelemetry
 title: 'Tracing ClickHouse with OpenTelemetry'
-doc_type: 'guide'
 ---
 
 [OpenTelemetry](https://opentelemetry.io/) is an open standard for collecting traces and metrics from the distributed application. ClickHouse has some support for OpenTelemetry.

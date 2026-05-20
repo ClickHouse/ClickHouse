@@ -38,27 +38,11 @@ if __name__ == "__main__":
 
         info.store_kv_data("previous_commits_sha", commits)
 
-    # Unshallow repo to retrieve required info from git.
-    # If commit is a mere-commit - both parents need to be unshallowed. In PRs we might need commits from master to calculate CH version.
-    Shell.check(
-        f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin HEAD ||:",
-        verbose=True,
-        strict=True,
-    )
-
-    # store integration test diff to find: TODO: find changed test cases
-    if info.pr_number:
-        file_diff = {}
-        for file in changed_files:
-            if file.startswith("tests/integration/test") and file.endswith(".py"):
-                file_diff[file] = Shell.get_output(
-                    f"git diff $(git merge-base master HEAD)..HEAD -- {file}",
-                    verbose=True,
-                )
-        info.store_kv_data("file_diff", file_diff)
-
     # store commit sha of release branch base to find binary for performance comparison in the job script later
     # if info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
+    Shell.check(
+        f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin {info.git_branch} ||:"
+    )
     release_branch_base_sha = CHVersion.get_release_version_as_dict().get("githash")
     print(f"Release branch base sha: {release_branch_base_sha}")
     assert release_branch_base_sha

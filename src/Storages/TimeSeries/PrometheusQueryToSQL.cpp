@@ -1,6 +1,5 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL.h>
 
-#include <algorithm>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>

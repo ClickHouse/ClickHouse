@@ -32,45 +32,35 @@ struct TestKeeperRequest : virtual Request
     virtual ResponsePtr createResponse() const = 0;
     virtual std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const = 0;
     virtual void processWatches(TestKeeper::Watches & /*watches*/, TestKeeper::Watches & /*list_watches*/) const {}
-
-    static void processWatchesImpl(const String & path, TestKeeper::Watches & watches, TestKeeper::Watches & list_watches);
 };
 
 
-void TestKeeperRequest::processWatchesImpl(const String & path, TestKeeper::Watches & watches, TestKeeper::Watches & list_watches)
+static void processWatchesImpl(const String & path, TestKeeper::Watches & watches, TestKeeper::Watches & list_watches)
 {
+    WatchResponse watch_response;
+    watch_response.path = path;
+
+    auto it = watches.find(watch_response.path);
+    if (it != watches.end())
     {
-        WatchResponse watch_response;
-        watch_response.path = path;
+        for (const auto & callback : it->second)
+            if (callback)
+                (*callback)(watch_response);
 
-        auto it = watches.find(watch_response.path);
-        if (it != watches.end())
-        {
-            for (const auto & event_or_callback : it->second)
-            {
-                if (event_or_callback)
-                    event_or_callback(watch_response);
-            }
-
-            watches.erase(it);
-        }
+        watches.erase(it);
     }
 
+    WatchResponse watch_list_response;
+    watch_list_response.path = parentPath(path);
+
+    it = list_watches.find(watch_list_response.path);
+    if (it != list_watches.end())
     {
-        WatchResponse watch_list_response;
-        watch_list_response.path = parentPath(path);
+        for (const auto & callback : it->second)
+            if (callback)
+                (*callback)(watch_list_response);
 
-        auto it = list_watches.find(watch_list_response.path);
-        if (it != list_watches.end())
-        {
-            for (const auto & event_or_callback : it->second)
-            {
-                if (event_or_callback)
-                    event_or_callback(watch_list_response);
-            }
-
-            list_watches.erase(it);
-        }
+        list_watches.erase(it);
     }
 }
 
@@ -692,7 +682,7 @@ TestKeeper::~TestKeeper()
 
 void TestKeeper::processingThread()
 {
-    setThreadName(ThreadName::TEST_KEEPER_PROC);
+    setThreadName("TestKeeperProc");
 
     try
     {
@@ -771,7 +761,7 @@ void TestKeeper::exprireRequest(RequestInfo && request)
         response.error = Error::ZSESSIONEXPIRED;
         try
         {
-            request.watch(response);
+            (*request.watch)(response);
         }
         catch (...)
         {
@@ -805,13 +795,13 @@ void TestKeeper::finalize(const String &)
                 response.state = EXPIRED_SESSION;
                 response.error = Error::ZSESSIONEXPIRED;
 
-                for (const auto & event_or_callback : path_watch.second)
+                for (const auto & callback : path_watch.second)
                 {
-                    if (event_or_callback)
+                    if (callback)
                     {
                         try
                         {
-                            event_or_callback(response);
+                            (*callback)(response);
                         }
                         catch (...)
                         {
@@ -863,12 +853,12 @@ void TestKeeper::pushRequest(RequestInfo && request)
 
 
 void TestKeeper::create(
-    const String & path,
-    const String & data,
-    bool is_ephemeral,
-    bool is_sequential,
-    const ACLs &,
-    CreateCallback callback)
+        const String & path,
+        const String & data,
+        bool is_ephemeral,
+        bool is_sequential,
+        const ACLs &,
+        CreateCallback callback)
 {
     TestKeeperCreateRequest request;
     request.path = path;
@@ -883,9 +873,9 @@ void TestKeeper::create(
 }
 
 void TestKeeper::remove(
-    const String & path,
-    int32_t version,
-    RemoveCallback callback)
+        const String & path,
+        int32_t version,
+        RemoveCallback callback)
 {
     TestKeeperRemoveRequest request;
     request.path = path;
@@ -913,9 +903,9 @@ void TestKeeper::removeRecursive(
 }
 
 void TestKeeper::exists(
-    const String & path,
-    ExistsCallback callback,
-    WatchCallbackPtrOrEventPtr watch)
+        const String & path,
+        ExistsCallback callback,
+        WatchCallbackPtr watch)
 {
     TestKeeperExistsRequest request;
     request.path = path;
@@ -928,9 +918,9 @@ void TestKeeper::exists(
 }
 
 void TestKeeper::get(
-    const String & path,
-    GetCallback callback,
-    WatchCallbackPtrOrEventPtr watch)
+        const String & path,
+        GetCallback callback,
+        WatchCallbackPtr watch)
 {
     TestKeeperGetRequest request;
     request.path = path;
@@ -943,10 +933,10 @@ void TestKeeper::get(
 }
 
 void TestKeeper::set(
-    const String & path,
-    const String & data,
-    int32_t version,
-    SetCallback callback)
+        const String & path,
+        const String & data,
+        int32_t version,
+        SetCallback callback)
 {
     TestKeeperSetRequest request;
     request.path = path;
@@ -960,10 +950,10 @@ void TestKeeper::set(
 }
 
 void TestKeeper::list(
-    const String & path,
-    ListRequestType list_request_type,
-    ListCallback callback,
-    WatchCallbackPtrOrEventPtr watch)
+        const String & path,
+        ListRequestType list_request_type,
+        ListCallback callback,
+        WatchCallbackPtr watch)
 {
     TestKeeperFilteredListRequest request;
     request.path = path;
@@ -977,9 +967,9 @@ void TestKeeper::list(
 }
 
 void TestKeeper::check(
-    const String & path,
-    int32_t version,
-    CheckCallback callback)
+        const String & path,
+        int32_t version,
+        CheckCallback callback)
 {
     TestKeeperCheckRequest request;
     request.path = path;
@@ -992,8 +982,8 @@ void TestKeeper::check(
 }
 
 void TestKeeper::sync(
-    const String & path,
-    SyncCallback callback)
+        const String & path,
+        SyncCallback callback)
 {
     TestKeeperSyncRequest request;
     request.path = path;
@@ -1023,7 +1013,7 @@ void TestKeeper::reconfig(
         {
             callback(dynamic_cast<const ReconfigResponse &>(response));
         },
-        .watch = {},
+        .watch = nullptr,
         .time = {}
     });
 }

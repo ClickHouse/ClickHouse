@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int ILLEGAL_STATISTICS;
+}
+
 StatisticsMinMax::StatisticsMinMax(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
     , data_type(removeNullable(data_type_))
@@ -81,16 +86,12 @@ Float64 StatisticsMinMax::estimateLess(const Field & val) const
     return ((*val_as_float - min) / (max - min)) * row_count;
 }
 
-String StatisticsMinMax::getNameForLogs() const
-{
-    return fmt::format("MinMax: ({}, {})", min, max);
-}
-
-bool minMaxStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
+void minMaxStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
     auto inner_data_type = removeNullable(data_type);
     inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    return inner_data_type->isValueRepresentedByNumber();
+    if (!inner_data_type->isValueRepresentedByNumber())
+        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'minmax' do not support type {}", data_type->getName());
 }
 
 StatisticsPtr minMaxStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)

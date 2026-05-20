@@ -835,7 +835,7 @@ namespace
     {
         try
         {
-            DB::setThreadName(ThreadName::GRPC_SERVER_CALL);
+            setThreadName("GRPCServerCall");
             receiveQuery();
             executeQuery();
             processInput();
@@ -1435,7 +1435,7 @@ namespace
         /// because the client may decide to send another query with the same query ID or session ID
         /// immediately after it receives our final result, and it's prohibited to have
         /// two queries executed at the same time with the same query ID or session ID.
-        io.process_list_entries.clear();
+        io.process_list_entry.reset();
         if (query_context)
             query_context->setProcessListElement(nullptr);
         if (session)
@@ -1446,7 +1446,7 @@ namespace
     {
         responder.reset();
         pipeline_executor.reset();
-        pipeline = nullptr;
+        pipeline.reset();
         output_format_processor.reset();
         read_buffer.reset();
         write_buffer.reset();
@@ -1671,13 +1671,13 @@ namespace
                 auto & log_entry = *result.add_logs();
                 log_entry.set_time(column_time.getElement(row));
                 log_entry.set_time_microseconds(column_time_microseconds.getElement(row));
-                std::string_view query_id = column_query_id.getDataAt(row);
+                std::string_view query_id = column_query_id.getDataAt(row).toView();
                 log_entry.set_query_id(query_id.data(), query_id.size());
                 log_entry.set_thread_id(column_thread_id.getElement(row));
                 log_entry.set_level(static_cast<::clickhouse::grpc::LogsLevel>(column_level.getElement(row)));
-                std::string_view source = column_source.getDataAt(row);
+                std::string_view source = column_source.getDataAt(row).toView();
                 log_entry.set_source(source.data(), source.size());
-                std::string_view text = column_text.getDataAt(row);
+                std::string_view text = column_text.getDataAt(row).toView();
                 log_entry.set_text(text.data(), text.size());
             }
         }
@@ -1900,7 +1900,7 @@ private:
 
     void run()
     {
-        DB::setThreadName(ThreadName::GRPC_SERVER_QUEUE);
+        setThreadName("GRPCServerQueue");
 
         bool ok = false;
         void * tag = nullptr;

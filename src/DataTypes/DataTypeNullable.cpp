@@ -2,7 +2,6 @@
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -42,11 +41,6 @@ bool DataTypeNullable::onlyNull() const
 MutableColumnPtr DataTypeNullable::createColumn() const
 {
     return ColumnNullable::create(nested_data_type->createColumn(), ColumnUInt8::create());
-}
-
-MutableColumnPtr DataTypeNullable::createUninitializedColumnWithSize(size_t size) const
-{
-    return ColumnNullable::create(nested_data_type->createUninitializedColumnWithSize(size), ColumnUInt8::create(size));
 }
 
 Field DataTypeNullable::getDefault() const

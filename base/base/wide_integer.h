@@ -26,7 +26,6 @@
 #include <limits>
 #include <type_traits>
 #include <initializer_list>
-#include <base/types.h>
 
 // NOLINTBEGIN(*)
 

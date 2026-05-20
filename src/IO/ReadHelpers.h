@@ -9,7 +9,7 @@
 
 #include <type_traits>
 
-#include <Common/FramePointers.h>
+#include <Common/StackTrace.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
@@ -723,7 +723,7 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
 
             if (size != 36)
             {
-                s[std::min(size, size_t(36))] = 0;
+                s[size] = 0;
 
                 if constexpr (throw_exception)
                 {
@@ -740,7 +740,7 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
         return ReturnType(true);
     }
 
-    s[std::min(size, size_t(36))] = 0;
+    s[size] = 0;
 
     if constexpr (throw_exception)
     {
@@ -1563,7 +1563,7 @@ inline void readBinary(CityHash_v1_0_2::uint128 & x, ReadBuffer & buf)
     readPODBinary(x.high64, buf);
 }
 
-inline void readBinary(FramePointers & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(StackTrace::FramePointers & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 template <std::endian endian, typename T>
 inline void readBinaryEndian(T & x, ReadBuffer & buf)

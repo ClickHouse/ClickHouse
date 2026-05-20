@@ -12,16 +12,16 @@ namespace DB
 namespace
 {
 
-class FunctionWKT : public IFunction
+class FunctionWkt : public IFunction
 {
 public:
     static inline const char * name = "wkt";
 
-    explicit FunctionWKT() = default;
+    explicit FunctionWkt() = default;
 
     static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionWKT>();
+        return std::make_shared<FunctionWkt>();
     }
 
     String getName() const override
@@ -87,10 +87,9 @@ public:
 
 }
 
-REGISTER_FUNCTION(WKT)
+REGISTER_FUNCTION(Wkt)
 {
-    factory.registerFunction<FunctionWKT>();
-    factory.registerAlias("WKT", "wkt");
+    factory.registerFunction<FunctionWkt>();
 }
 
 }

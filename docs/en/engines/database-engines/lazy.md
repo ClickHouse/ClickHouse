@@ -5,7 +5,6 @@ sidebar_label: 'Lazy'
 sidebar_position: 20
 slug: /engines/database-engines/lazy
 title: 'Lazy'
-doc_type: 'reference'
 ---
 
 # Lazy

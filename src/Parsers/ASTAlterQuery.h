@@ -36,7 +36,6 @@ public:
         MODIFY_ORDER_BY,
         MODIFY_SAMPLE_BY,
         MODIFY_TTL,
-        REWRITE_PARTS,
         MATERIALIZE_TTL,
         MODIFY_SETTING,
         RESET_SETTING,

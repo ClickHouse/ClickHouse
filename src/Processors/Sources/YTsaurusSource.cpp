@@ -57,10 +57,9 @@ std::shared_ptr<ISource> YTsaurusSourceFactory::createSource(YTsaurusClientPtr c
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cypress path are empty for ytsarurus source factory.");
     }
-    String reason;
-    if (source_options.settings[YTsaurusSetting::check_table_schema] && !client->checkSchemaCompatibility(source_options.cypress_path, sample_block, reason, source_options.check_types_allow_nullable))
+    if (source_options.settings[YTsaurusSetting::check_table_schema] && !client->checkSchemaCompatibility(source_options.cypress_path, sample_block))
     {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "ClickHouse table schema doesn't match with yt table. Reason: {}", reason);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ClickHouse table schema doesn't match with yt table");
     }
     auto yt_node_type = client->getNodeType(source_options.cypress_path);
     if (yt_node_type == YTsaurusNodeType::STATIC_TABLE)

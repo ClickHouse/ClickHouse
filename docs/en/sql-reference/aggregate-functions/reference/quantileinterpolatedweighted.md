@@ -4,7 +4,6 @@ description: 'Computes quantile of a numeric data sequence using linear interpol
 sidebar_position: 176
 slug: /sql-reference/aggregate-functions/reference/quantileInterpolatedWeighted
 title: 'quantileInterpolatedWeighted'
-doc_type: 'reference'
 ---
 
 # quantileInterpolatedWeighted

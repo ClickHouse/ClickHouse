@@ -28,7 +28,6 @@ public:
     bool is_left = false;
     bool is_unaligned = false;
     size_t max_block_size = DEFAULT_BLOCK_SIZE;
-    bool enable_lazy_columns_replication = false;
 
     /// For unaligned [LEFT] ARRAY JOIN
     FunctionOverloadResolverPtr function_length;
@@ -37,7 +36,7 @@ public:
     /// For LEFT ARRAY JOIN.
     FunctionOverloadResolverPtr function_builder;
 
-    ArrayJoinAction(const Names & columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_, bool enable_lazy_columns_replication_);
+    ArrayJoinAction(const Names & columns_, bool is_left_, bool is_unaligned_, size_t max_block_size_);
     static void prepare(const NameSet & columns, ColumnsWithTypeAndName & sample);
     static void prepare(const Names & columns, ColumnsWithTypeAndName & sample);
 
@@ -49,7 +48,7 @@ using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 class ArrayJoinResultIterator
 {
 public:
-    explicit ArrayJoinResultIterator(const ArrayJoinAction * array_join_, Block block_, bool enable_lazy_columns_replication_);
+    explicit ArrayJoinResultIterator(const ArrayJoinAction * array_join_, Block block_);
     ~ArrayJoinResultIterator() = default;
 
     Block next();
@@ -58,7 +57,6 @@ public:
 private:
     const ArrayJoinAction * array_join;
     Block block;
-    bool enable_lazy_columns_replication;
 
     ColumnPtr any_array_map_ptr;
     const ColumnArray * any_array;

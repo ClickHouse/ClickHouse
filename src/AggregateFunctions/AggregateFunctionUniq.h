@@ -144,8 +144,7 @@ struct AggregateFunctionUniqExactData
     using Key = T;
 
     /// When creating, the hash table must be small.
-    static constexpr size_t initial_size_degree = 4;
-    using SingleLevelSet = HashSetWithStackMemory<Key, HashCRC32<Key>, initial_size_degree>;
+    using SingleLevelSet = HashSet<Key, HashCRC32<Key>, HashTableGrower<4>, HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 4)>>;
     using TwoLevelSet = TwoLevelHashSet<Key, HashCRC32<Key>>;
     using Set = UniqExactSet<SingleLevelSet, TwoLevelSet>;
 
@@ -165,8 +164,7 @@ struct AggregateFunctionUniqExactData<String, is_able_to_parallelize_merge_>
     using Key = UInt128;
 
     /// When creating, the hash table must be small.
-    static constexpr size_t initial_size_degree = 3;
-    using SingleLevelSet = HashSetWithStackMemory<Key, UInt128TrivialHash, initial_size_degree>;
+    using SingleLevelSet = HashSet<Key, UInt128TrivialHash, HashTableGrower<3>, HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 3)>>;
     using TwoLevelSet = TwoLevelHashSet<Key, UInt128TrivialHash>;
     using Set = UniqExactSet<SingleLevelSet, TwoLevelSet>;
 
@@ -186,8 +184,7 @@ struct AggregateFunctionUniqExactData<IPv6, is_able_to_parallelize_merge_>
     using Key = UInt128;
 
     /// When creating, the hash table must be small.
-    static constexpr size_t initial_size_degree = 3;
-    using SingleLevelSet = HashSetWithStackMemory<Key, UInt128TrivialHash, initial_size_degree>;
+    using SingleLevelSet = HashSet<Key, UInt128TrivialHash, HashTableGrower<3>, HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 3)>>;
     using TwoLevelSet = TwoLevelHashSet<Key, UInt128TrivialHash>;
     using Set = UniqExactSet<SingleLevelSet, TwoLevelSet>;
 
@@ -298,8 +295,8 @@ struct Adder
             const auto & column = *columns[0];
             if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
             {
-                auto value = column.getDataAt(row_num);
-                data.set.insert(CityHash_v1_0_2::CityHash64(value.data(), value.size()));
+                StringRef value = column.getDataAt(row_num);
+                data.set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
             }
             else
             {
@@ -313,10 +310,10 @@ struct Adder
             const auto & column = *columns[0];
             if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
             {
-                auto value = column.getDataAt(row_num);
+                StringRef value = column.getDataAt(row_num);
 
                 SipHash hash;
-                hash.update(value);
+                hash.update(value.data, value.size);
                 const auto key = hash.get128();
 
                 data.set.template insert<const UInt128 &, hint>(key);
@@ -551,7 +548,7 @@ public:
         detail::Adder<T, Data>::add(this->data(place), columns, num_args, row_num);
     }
 
-    ALWAYS_INLINE void addBatchSinglePlace(
+    void addBatchSinglePlace(
         size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena *, ssize_t if_argument_pos)
         const override
     {

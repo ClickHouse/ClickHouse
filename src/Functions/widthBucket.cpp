@@ -254,25 +254,38 @@ public:
 
 REGISTER_FUNCTION(WidthBucket)
 {
-    FunctionDocumentation::Description description = R"(
-Returns the number of the bucket in which parameter `operand` falls in a histogram having count equal-width buckets spanning the range `low` to `high`. Returns 0 if `operand` is less than `low`, and returns `count`+1 if `operand` is greater than or equal to `high`.
+    factory.registerFunction<FunctionWidthBucket>(FunctionDocumentation{
+        .description=R"(
+Returns the number of the bucket in which `operand` falls in a histogram having `count` equal-width buckets spanning the range `low` to `high`. Returns `0` if `operand < low`, and returns `count+1` if `operand >= high`.
+
+`operand`, `low`, `high` can be any native number type. `count` can only be unsigned native integer and its value cannot be zero.
+
+**Syntax**
+
+```sql
+widthBucket(operand, low, high, count)
+```
+
 There is also a case insensitive alias called `WIDTH_BUCKET` to provide compatibility with other databases.
-)";
-FunctionDocumentation::Syntax syntax = "widthBucket(operand, low, high, count)";
-FunctionDocumentation::Arguments arguments = {
-    {"operand", "The value for which to determine the bucket.", {"(U)Int8/16/32/64"}},
-    {"low", "The lower bound of the histogram range.", {"(U)Int8/16/32/64"}},
-    {"high", "The upper bound of the histogram range.", {"(U)Int8/16/32/64"}},
-    {"count", "The number of equal-width buckets. Cannot be zero.", {"UInt8/16/32/64"}}
-};
-FunctionDocumentation::ReturnedValue returned_value = {"Returns the bucket number as an integer. Returns 0 if operand < low, returns count+1 if operand >= high.", {"UInt8/16/32/64"}};
-FunctionDocumentation::Examples examples = {
-    {"Usage example", "widthBucket(10.15, -8.6, 23, 18)", "11"}
-};
-FunctionDocumentation::IntroducedIn introduced_in = {23, 3};
-FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction<FunctionWidthBucket>(documentation);
+
+**Example**
+
+Query:
+[example:simple]
+
+Result:
+
+```text
+┌─widthBucket(10.15, -8.6, 23, 18)─┐
+│                               11 │
+└──────────────────────────────────┘
+```
+)",
+        .examples{
+            {"simple", "SELECT widthBucket(10.15, -8.6, 23, 18)", ""},
+        },
+        .category = FunctionDocumentation::Category::Mathematical,
+    });
 
     factory.registerAlias("width_bucket", "widthBucket", FunctionFactory::Case::Insensitive);
 }

@@ -29,8 +29,6 @@ public:
         const std::string & description_ = "none",
         StatePtr state_ = nullptr);
 
-    Type getType() const override { return Type::LRU; }
-
     size_t getSize(const CachePriorityGuard::Lock &) const override { return state->current_size; }
 
     size_t getElementsCount(const CachePriorityGuard::Lock &) const override { return state->current_elements_num; }
@@ -98,18 +96,6 @@ public:
         return std::distance(queue.begin(), eviction_pos);
     }
 
-protected:
-    void holdImpl(
-        size_t size,
-        size_t elements,
-        const CachePriorityGuard::Lock & lock) override;
-
-    void releaseImpl(size_t size, size_t elements) override;
-
-    size_t getHoldSize() override { return total_hold_size; }
-
-    size_t getHoldElements() override { return total_hold_elements; }
-
 private:
     class LRUIterator;
     using LRUQueue = std::list<EntryPtr>;
@@ -120,11 +106,6 @@ private:
     LoggerPtr log;
     StatePtr state;
     LRUQueue::iterator eviction_pos;
-
-    /// Total "hold" size by "IFileCachePriority::HoldSpace"
-    /// (updated in holdImpl, releaseImpl).
-    std::atomic<size_t> total_hold_size = 0;
-    std::atomic<size_t> total_hold_elements = 0;
 
     void updateElementsCount(int64_t num);
     void updateSize(int64_t size);
@@ -156,6 +137,12 @@ private:
 
     void increasePriority(LRUQueue::iterator it, const CachePriorityGuard::Lock &);
 
+    void holdImpl(
+        size_t size,
+        size_t elements,
+        const CachePriorityGuard::Lock & lock) override;
+
+    void releaseImpl(size_t size, size_t elements) override;
     std::string getApproxStateInfoForLog() const;
 };
 

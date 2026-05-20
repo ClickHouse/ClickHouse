@@ -172,7 +172,7 @@ DeltaLake::KernelHelperPtr getKernelHelper(
         {
             const auto * s3_conf = dynamic_cast<const DB::StorageS3Configuration *>(configuration.get());
             return std::make_shared<DeltaLake::S3KernelHelper>(
-                s3_conf->url,
+                s3_conf->getURL(),
                 object_storage->getS3StorageClient(),
                 s3_conf->getAuthSettings());
         }

@@ -36,7 +36,7 @@ public:
     {
         std::lock_guard lock(get_stream_mutex);
         poco_check_ptr(stream);
-        LOG_TEST(getLogger("HTTPServerRequest"), "Returning request input stream with ref count {}", stream.use_count());
+        LOG_DEBUG(getLogger("HTTPServerRequest"), "Returning request input stream with ref count {}", stream.use_count());
         return stream;
     }
 

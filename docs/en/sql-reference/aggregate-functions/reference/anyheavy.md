@@ -5,7 +5,6 @@ description: 'Selects a frequently occurring value using the heavy hitters algor
 sidebar_position: 104
 slug: /sql-reference/aggregate-functions/reference/anyheavy
 title: 'anyHeavy'
-doc_type: 'reference'
 ---
 
 # anyHeavy

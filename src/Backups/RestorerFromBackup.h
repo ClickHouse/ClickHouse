@@ -64,6 +64,7 @@ public:
     bool isNonEmptyTableAllowed() const { return getRestoreSettings().allow_non_empty_tables; }
     std::shared_ptr<IRestoreCoordination> getRestoreCoordination() const { return restore_coordination; }
     ContextMutablePtr getContext() const { return context; }
+    const ZooKeeperRetriesInfo & getZooKeeperRetriesInfo() const { return zookeeper_retries_info; }
 
     /// Adds a data restore task which will be later returned by getDataRestoreTasks().
     /// This function can be called by implementations of IStorage::restoreFromBackup() in inherited storage classes.
@@ -138,7 +139,7 @@ protected:
     void setStage(const String & new_stage, const String & message = "");
 
     /// Schedule a task from the thread pool and start executing it.
-    void schedule(std::function<void()> && task_, ThreadName thread_name_);
+    void schedule(std::function<void()> && task_, const char * thread_name_);
 
     /// Returns the number of currently scheduled or executing tasks.
     size_t getNumFutures() const;

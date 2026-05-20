@@ -4,7 +4,6 @@ sidebar_label: 'SHOW'
 sidebar_position: 37
 slug: /sql-reference/statements/show
 title: 'SHOW Statements'
-doc_type: 'reference'
 ---
 
 :::note
@@ -435,7 +434,7 @@ SHOW USERS
 
 The `SHOW ROLES` statement returns a list of [roles](../../guides/sre/user-management/index.md#role-management). 
 To view other parameters, 
-see system tables [`system.roles`](/operations/system-tables/roles) and [`system.role_grants`](/operations/system-tables/role_grants).
+see system tables [`system.roles`](/operations/system-tables/roles) and [`system.role_grants`](/operations/system-tables/role-grants).
 
 ### Syntax {#syntax-14}
 
@@ -715,14 +714,4 @@ SHOW MERGES LIKE 'your_t%' LIMIT 1;
 ┌─table──────┬─database─┬─estimate_complete─┬─elapsed─┬─progress─┬─is_mutation─┬─size_compressed─┬─memory_usage─┐
 │ your_table │ default  │              0.14 │    0.36 │    73.01 │           0 │        5.40 MiB │    10.25 MiB │
 └────────────┴──────────┴───────────────────┴─────────┴──────────┴─────────────┴─────────────────┴──────────────┘
-```
-
-## SHOW CREATE MASKING POLICY {#show-create-masking-policy}
-
-The `SHOW CREATE MASKING POLICY` statement shows parameters which were used at [masking policy creation](../../sql-reference/statements/create/masking-policy.md).
-
-### Syntax {#syntax-26}
-
-```sql title="Syntax"
-SHOW CREATE MASKING POLICY name ON [database.]table
 ```

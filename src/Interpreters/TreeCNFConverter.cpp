@@ -55,7 +55,7 @@ void splitMultiLogic(ASTPtr & node)
         {
             ASTPtr res = func->arguments->children[0]->clone();
             for (size_t i = 1; i < func->arguments->children.size(); ++i)
-                res = makeASTOperator(func->name, res, func->arguments->children[i]->clone());
+                res = makeASTFunction(func->name, res, func->arguments->children[i]->clone());
 
             node = res;
         }
@@ -85,7 +85,7 @@ void traversePushNot(ASTPtr & node, bool add_negation)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Bad AND or OR function. Expected at least 2 arguments");
 
             /// apply De Morgan's Law
-            node = makeASTOperator(
+            node = makeASTFunction(
                 (func->name == "and" ? "or" : "and"),
                 func->arguments->children[0]->clone(),
                 func->arguments->children[1]->clone());
@@ -107,7 +107,7 @@ void traversePushNot(ASTPtr & node, bool add_negation)
     else
     {
         if (add_negation)
-            node = makeASTOperator("not", node->clone());
+            node = makeASTFunction("not", node->clone());
     }
 }
 
@@ -150,10 +150,10 @@ bool traversePushOr(ASTPtr & node, size_t num_atoms, size_t max_atoms)
         auto c = and_func->arguments->children[1];
 
         /// apply the distributive law ( a or (b and c) -> (a or b) and (a or c) )
-        node = makeASTOperator(
+        node = makeASTFunction(
             "and",
-            makeASTOperator("or", a->clone(), b),
-            makeASTOperator("or", a, c));
+            makeASTFunction("or", a->clone(), b),
+            makeASTFunction("or", a, c));
 
         /// Count all atoms from 'a', because it was cloned.
         num_atoms += countAtoms(a);
@@ -257,18 +257,18 @@ ASTPtr TreeCNFConverter::fromCNF(const CNFQuery & cnf)
         if (group.size() == 1)
         {
             if ((*group.begin()).negative)
-                or_groups.push_back(makeASTOperator("not", (*group.begin()).ast->clone()));
+                or_groups.push_back(makeASTFunction("not", (*group.begin()).ast->clone()));
             else
                 or_groups.push_back((*group.begin()).ast->clone());
         }
         else if (group.size() > 1)
         {
-            or_groups.push_back(makeASTOperator("or"));
+            or_groups.push_back(makeASTFunction("or"));
             auto * func = or_groups.back()->as<ASTFunction>();
             for (const auto & atom : group)
             {
                 if (atom.negative)
-                    func->arguments->children.push_back(makeASTOperator("not", atom.ast->clone()));
+                    func->arguments->children.push_back(makeASTFunction("not", atom.ast->clone()));
                 else
                     func->arguments->children.push_back(atom.ast->clone());
             }
@@ -278,7 +278,7 @@ ASTPtr TreeCNFConverter::fromCNF(const CNFQuery & cnf)
     if (or_groups.size() == 1)
         return or_groups.front();
 
-    ASTPtr res = makeASTOperator("and");
+    ASTPtr res = makeASTFunction("and");
     auto * func = res->as<ASTFunction>();
     for (const auto & group : or_groups)
         func->arguments->children.push_back(group);

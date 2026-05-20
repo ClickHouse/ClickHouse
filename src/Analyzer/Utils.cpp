@@ -104,7 +104,7 @@ bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root
         if (table_node || table_function_node)
         {
             const auto & table_storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-            if (table_storage->getStorageID() == storage->getStorageID())
+            if (table_storage && table_storage->getStorageID() == storage->getStorageID())
                 return true;
         }
 
@@ -1301,7 +1301,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
 
             const auto & shared_variant = dynamic_column.getSharedVariant();
             auto value_data = shared_variant.getDataAt(variant_column.offsetAt(row));
-            ReadBufferFromMemory buf(value_data);
+            ReadBufferFromMemory buf(value_data.data, value_data.size);
             auto type = decodeDataType(buf);
             auto tmp_column = type->createColumn();
             tmp_column->reserve(1);
@@ -1329,9 +1329,9 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             FormatSettings format_settings;
             for (size_t i = start; i != end; ++i)
             {
-                String path{shared_paths->getDataAt(i)};
+                String path = shared_paths->getDataAt(i).toString();
                 auto value_data = shared_values->getDataAt(i);
-                ReadBufferFromMemory buf(value_data);
+                ReadBufferFromMemory buf(value_data.data, value_data.size);
                 auto tmp_column = dynamic_type->createColumn();
                 tmp_column->reserve(1);
                 dynamic_serialization->deserializeBinary(*tmp_column, buf, format_settings);

@@ -4,8 +4,7 @@ description: 'This engine provides a read-only integration with existing Apache 
 sidebar_label: 'Iceberg'
 sidebar_position: 90
 slug: /engines/table-engines/integrations/iceberg
-title: 'Iceberg table engine'
-doc_type: 'reference'
+title: 'Iceberg Table Engine'
 ---
 
 # Iceberg table engine {#iceberg-table-engine}
@@ -162,6 +161,8 @@ Consider this sequence of operations:
 +------------+------------+
 |           1|        Mars|
 +------------+------------+
+
+
   SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
 
 +------------+------------+
@@ -218,6 +219,8 @@ A time travel query at a current moment might show a different schema than the c
 
 -- Query the table at a current moment
   SELECT * FROM spark_catalog.db.time_travel_example_2;
+
+
     +------------+------------+-----+
     |order_number|product_code|price|
     +------------+------------+-----+

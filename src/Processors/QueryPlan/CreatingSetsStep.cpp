@@ -218,14 +218,13 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSet
             continue;
 
         plan->optimize(optimization_settings);
-
         plans.emplace_back(std::move(plan));
     }
 
     return plans;
 }
 
-void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context)
+void addDelayedCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context)
 {
     if (!prepared_sets)
         return;
@@ -234,7 +233,17 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, 
     if (subqueries.empty())
         return;
 
-    addCreatingSetsStep(query_plan, std::move(subqueries), context);
+    const auto & settings = context->getSettingsRef();
+    SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
+    auto prepared_sets_cache = context->getPreparedSetsCache();
+
+    auto step = std::make_unique<DelayedCreatingSetsStep>(
+            query_plan.getCurrentHeader(),
+            std::move(subqueries),
+            network_transfer_limits,
+            prepared_sets_cache);
+
+    query_plan.addStep(std::move(step));
 }
 
 DelayedCreatingSetsStep::DelayedCreatingSetsStep(

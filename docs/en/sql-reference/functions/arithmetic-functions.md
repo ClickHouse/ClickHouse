@@ -3,7 +3,6 @@ description: 'Documentation for Arithmetic Functions'
 sidebar_label: 'Arithmetic'
 slug: /sql-reference/functions/arithmetic-functions
 title: 'Arithmetic Functions'
-doc_type: 'reference'
 ---
 
 # Arithmetic functions

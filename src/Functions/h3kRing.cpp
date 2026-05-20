@@ -11,7 +11,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-#include <Common/AllocatorWithMemoryTracking.h>
 #include <Interpreters/castColumn.h>
 
 #include <h3api.h>
@@ -116,7 +115,7 @@ public:
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Argument 'k' for {} function must be non negative", getName());
 
             const auto vec_size = maxGridDiskSize(k);
-            std::vector<H3Index, AllocatorWithMemoryTracking<H3Index>> hindex_vec;
+            std::vector<H3Index> hindex_vec;
             hindex_vec.resize(vec_size);
             gridDisk(origin_hindex, k, hindex_vec.data());
 
@@ -171,7 +170,7 @@ Lists all the [H3](#H3-index) hexagons in the radius of `k` from the given hexag
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3KRing>(documentation);
 }
 

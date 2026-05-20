@@ -18,7 +18,6 @@
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <base/sort.h>
-#include <Common/setThreadName.h>
 #include <Common/escapeForFileName.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/intExp2.h>
@@ -398,7 +397,7 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
 
             case ASTBackupQuery::ElementType::ALL:
             {
-                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true}))
+                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases())
                 {
                     if (!element.except_databases.contains(database_name))
                     {
@@ -796,10 +795,10 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
     if (backup_settings.structure_only)
         return;
 
-    ThreadPoolCallbackRunnerLocal<void> runner(threadpool, ThreadName::BACKUP_COLLECTOR);
+    ThreadPoolCallbackRunnerLocal<void> runner(threadpool, "BackupCollect");
     for (const auto & table_name : table_infos | boost::adaptors::map_keys)
     {
-        runner.enqueueAndKeepTrack([&]()
+        runner([&]()
         {
             makeBackupEntriesForTableData(table_name);
         });

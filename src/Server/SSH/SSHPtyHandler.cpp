@@ -26,6 +26,7 @@
 #include <stdexcept>
 
 #include <boost/iostreams/device/file_descriptor.hpp>
+#include <boost/iostreams/stream.hpp>
 
 namespace
 {

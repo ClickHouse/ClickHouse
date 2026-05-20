@@ -435,11 +435,11 @@ struct GroupArrayNodeString : public GroupArrayNodeBase<GroupArrayNodeString>
     /// Create node from string
     static Node * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {
-        auto string = assert_cast<const ColumnString &>(column).getDataAt(row_num);
+        StringRef string = assert_cast<const ColumnString &>(column).getDataAt(row_num);
 
-        Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + string.size(), alignof(Node)));
-        node->size = string.size();
-        memcpy(node->data(), string.data(), string.size());
+        Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + string.size, alignof(Node)));
+        node->size = string.size;
+        memcpy(node->data(), string.data, string.size);
 
         return node;
     }
@@ -461,7 +461,7 @@ struct GroupArrayNodeGeneral : public GroupArrayNodeBase<GroupArrayNodeGeneral>
         auto value = column.serializeValueIntoArena(row_num, *arena, begin, &settings);
 
         Node * node = reinterpret_cast<Node *>(const_cast<char *>(begin));
-        node->size = value.size();
+        node->size = value.size;
 
         return node;
     }

@@ -6,7 +6,6 @@ description: 'Totals a `value` array according to the keys specified in the `key
 sidebar_position: 199
 slug: /sql-reference/aggregate-functions/reference/summapwithoverflow
 title: 'sumMapWithOverflow'
-doc_type: 'reference'
 ---
 
 # sumMapWithOverflow

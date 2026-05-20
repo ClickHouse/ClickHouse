@@ -3,7 +3,6 @@ description: 'Calculates the list of distinct data types stored in Dynamic colum
 sidebar_position: 215
 slug: /sql-reference/aggregate-functions/reference/distinctdynamictypes
 title: 'distinctDynamicTypes'
-doc_type: 'reference'
 ---
 
 # distinctDynamicTypes

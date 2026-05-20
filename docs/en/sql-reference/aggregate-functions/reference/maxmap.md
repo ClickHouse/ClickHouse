@@ -4,7 +4,6 @@ description: 'Calculates the maximum from `value` array according to the keys sp
 sidebar_position: 165
 slug: /sql-reference/aggregate-functions/reference/maxmap
 title: 'maxMap'
-doc_type: 'reference'
 ---
 
 # maxMap

@@ -206,7 +206,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
             if (!shared_null_map[i])
             {
                 auto value = shared_variant.getDataAt(i);
-                ReadBufferFromMemory buf(value);
+                ReadBufferFromMemory buf(value.data, value.size);
                 auto type = decodeDataType(buf);
                 if (type->getName() == dynamic_element_name)
                 {
@@ -233,10 +233,18 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
                             null_map->push_back(0);
                     }
                 }
+                else if (is_null_map_subcolumn)
+                {
+                    null_map->push_back(static_cast<UInt8>(1));
+                }
                 else
                 {
                     variant_column->insertDefault();
                 }
+            }
+            else if (is_null_map_subcolumn)
+            {
+                null_map->push_back(static_cast<UInt8>(1));
             }
             else
             {

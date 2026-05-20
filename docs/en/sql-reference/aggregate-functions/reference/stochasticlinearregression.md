@@ -5,7 +5,6 @@ description: 'This function implements stochastic linear regression. It supports
 sidebar_position: 192
 slug: /sql-reference/aggregate-functions/reference/stochasticlinearregression
 title: 'stochasticLinearRegression'
-doc_type: 'reference'
 ---
 
 # stochasticLinearRegression {#agg_functions_stochasticlinearregression_parameters}

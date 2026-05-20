@@ -58,15 +58,6 @@ node7 = cluster.add_instance(
     ipv6_address="2001:3984:3989::1:1117",
     ipv4_address="10.5.95.17",
 )
-node8 = cluster.add_instance(
-    "node8",
-    main_configs=[
-        "configs/remote_servers_with_disable_dns_setting.xml",
-        "configs/listen_host.xml"
-    ],
-    stay_alive=True,
-    ipv6_address="2001:3984:3989::1:1118",
-)
 
 
 def _fill_nodes(nodes, table_name):
@@ -108,7 +99,7 @@ def cluster_ready(cluster_start):
     Many failures were found after the random-order + flaky testing were run on the file
     """
     try:
-        for node in cluster_start.instances.values():
+        for node in (node1, node2, node3, node4, node5, node6, node7):
             node.wait_for_start(10)
 
         yield cluster
@@ -382,6 +373,7 @@ def test_host_is_drop_from_cache_after_consecutive_failures(cluster_ready):
         regexp="Code: 198. DB::NetException: Not found address of host: InvalidHostThatDoesNotExist.",
         # There's noize in a normal log, let's search the error log for the exception
         filename="/var/log/clickhouse-server/clickhouse-server.err.log",
+        look_behind_lines=300,
     )
     assert node4.wait_for_log_line(
         "Cached hosts not found:.*InvalidHostThatDoesNotExist**",
@@ -457,21 +449,3 @@ def test_dns_resolver_filter(cluster_ready, allow_ipv4, allow_ipv6):
         user="root",
     )
     node.query("SYSTEM RELOAD CONFIG")
-
-
-@pytest.mark.parametrize("disable_internal_dns_cache", [1, 0])
-def test_setting_disable_internal_dns_cache(cluster_ready, disable_internal_dns_cache):
-    node = node8
-    # DNSCacheUpdater has to be created before any scenario that requires
-    # DNS resolution (e.g. the loading of tables and clusters config).
-    node.replace_in_config(
-        "/etc/clickhouse-server/config.d/remote_servers_with_disable_dns_setting.xml",
-        "<disable_internal_dns_cache>[10]</disable_internal_dns_cache>",
-        f"<disable_internal_dns_cache>{disable_internal_dns_cache}</disable_internal_dns_cache>"
-    )
-    node.restart_clickhouse()
-
-    if disable_internal_dns_cache == 1:
-        assert node.query("SELECT count(*) from system.dns_cache;") == "0\n"
-    else:
-        assert node.query("SELECT count(*) from system.dns_cache;") != "0\n"

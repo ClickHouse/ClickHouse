@@ -6,7 +6,6 @@ description: 'The result of the `cramersV` function ranges from 0 (corresponding
 sidebar_position: 127
 slug: /sql-reference/aggregate-functions/reference/cramersv
 title: 'cramersV'
-doc_type: 'reference'
 ---
 
 # cramersV
@@ -70,7 +69,7 @@ FROM
     (
         SELECT
             number % 10 AS a,
-            if(number % 12 = 0, (number + 1) % 5, number % 5) AS b
+            number % 5 AS b
         FROM
             numbers(150)
     );
@@ -80,6 +79,6 @@ Result:
 
 ```response
 ┌─────cramersV(a, b)─┐
-│ 0.9066801892162646 │
+│ 0.8944271909999159 │
 └────────────────────┘
 ```

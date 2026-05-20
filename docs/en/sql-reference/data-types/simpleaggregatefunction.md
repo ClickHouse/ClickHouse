@@ -4,7 +4,6 @@ sidebar_label: 'SimpleAggregateFunction'
 sidebar_position: 48
 slug: /sql-reference/data-types/simpleaggregatefunction
 title: 'SimpleAggregateFunction Type'
-doc_type: 'reference'
 ---
 
 # SimpleAggregateFunction Type

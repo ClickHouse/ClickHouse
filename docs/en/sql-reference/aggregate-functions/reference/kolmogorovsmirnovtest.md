@@ -4,7 +4,6 @@ sidebar_label: 'kolmogorovSmirnovTest'
 sidebar_position: 156
 slug: /sql-reference/aggregate-functions/reference/kolmogorovsmirnovtest
 title: 'kolmogorovSmirnovTest'
-doc_type: 'reference'
 ---
 
 # kolmogorovSmirnovTest

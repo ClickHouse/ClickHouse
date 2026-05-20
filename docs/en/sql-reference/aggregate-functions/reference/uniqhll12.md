@@ -4,7 +4,6 @@ description: 'Calculates the approximate number of different argument values, us
 sidebar_position: 208
 slug: /sql-reference/aggregate-functions/reference/uniqhll12
 title: 'uniqHLL12'
-doc_type: 'reference'
 ---
 
 # uniqHLL12

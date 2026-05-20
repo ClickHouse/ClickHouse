@@ -5,7 +5,6 @@ sidebar_label: 'timeSeriesData'
 sidebar_position: 145
 slug: /sql-reference/table-functions/timeSeriesData
 title: 'timeSeriesData'
-doc_type: 'reference'
 ---
 
 # timeSeriesData Table Function

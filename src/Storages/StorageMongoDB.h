@@ -73,7 +73,6 @@ public:
 
     std::string getName() const override { return "MongoDB"; }
     bool isRemote() const override { return true; }
-    bool isExternalDatabase() const override { return true; }
 
     Pipe read(
         const Names & column_names,

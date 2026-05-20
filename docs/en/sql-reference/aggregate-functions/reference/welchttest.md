@@ -4,7 +4,6 @@ sidebar_label: 'welchTTest'
 sidebar_position: 214
 slug: /sql-reference/aggregate-functions/reference/welchttest
 title: 'welchTTest'
-doc_type: 'reference'
 ---
 
 # welchTTest

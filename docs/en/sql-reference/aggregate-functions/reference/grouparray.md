@@ -4,7 +4,6 @@ description: 'Creates an array of argument values. Values can be added to the ar
 sidebar_position: 139
 slug: /sql-reference/aggregate-functions/reference/grouparray
 title: 'groupArray'
-doc_type: 'reference'
 ---
 
 # groupArray

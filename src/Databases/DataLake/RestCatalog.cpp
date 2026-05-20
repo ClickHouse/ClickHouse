@@ -1,6 +1,5 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <Common/setThreadName.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include "config.h"
 
@@ -149,32 +148,6 @@ RestCatalog::RestCatalog(
     config = loadConfig();
 }
 
-RestCatalog::RestCatalog(
-    const std::string & warehouse_,
-    const std::string & base_url_,
-    const std::string & onelake_tenant_id,
-    const std::string & onelake_client_id,
-    const std::string & onelake_client_secret,
-    const std::string & auth_scope_,
-    const std::string & oauth_server_uri_,
-    bool oauth_server_use_request_body_,
-    DB::ContextPtr context_)
-    : ICatalog(warehouse_)
-    , DB::WithContext(context_)
-    , base_url(correctAPIURI(base_url_))
-    , log(getLogger("RestCatalog(" + warehouse_ + ")"))
-    , tenant_id(onelake_tenant_id)
-    , client_id(onelake_client_id)
-    , client_secret(onelake_client_secret)
-    , auth_scope(auth_scope_)
-    , oauth_server_uri(oauth_server_uri_)
-    , oauth_server_use_request_body(oauth_server_use_request_body_)
-{
-    update_token_if_expired = true;
-    config = loadConfig();
-}
-
-
 RestCatalog::Config RestCatalog::loadConfig()
 {
     Poco::URI::QueryParameters params = {{"warehouse", warehouse}};
@@ -183,7 +156,7 @@ RestCatalog::Config RestCatalog::loadConfig()
     std::string json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
 
-    LOG_TEST(log, "Received catalog configuration settings: {}", json_str);
+    LOG_DEBUG(log, "Received catalog configuration settings: {}", json_str);
 
     Poco::JSON::Parser parser;
     Poco::Dynamic::Var json = parser.parse(json_str);
@@ -197,7 +170,7 @@ RestCatalog::Config RestCatalog::loadConfig()
     auto overrides_object = object->get("overrides").extract<Poco::JSON::Object::Ptr>();
     parseCatalogConfigurationSettings(overrides_object, result);
 
-    LOG_TEST(log, "Parsed catalog configuration settings: {}", result.toString());
+    LOG_DEBUG(log, "Parsed catalog configuration settings: {}", result.toString());
     return result;
 }
 
@@ -350,7 +323,7 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
             .create(credentials);
     };
 
-    LOG_TEST(log, "Requesting: {}", url.toString());
+    LOG_DEBUG(log, "Requesting: {}", url.toString());
 
     try
     {
@@ -389,14 +362,14 @@ bool RestCatalog::empty() const
 DB::Names RestCatalog::getTables() const
 {
     auto & pool = getContext()->getIcebergCatalogThreadpool();
-    DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_REST_CATALOG);
+    DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, "RestCatalog");
 
     DB::Names tables;
     std::mutex mutex;
 
     auto execute_for_each_namespace = [&](const std::string & current_namespace)
     {
-        runner.enqueueAndKeepTrack(
+        runner(
         [=, &tables, &mutex, this]
         {
             auto tables_in_namespace = getTables(current_namespace);
@@ -468,7 +441,7 @@ RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_name
     {
         auto buf = createReadBuffer(config.prefix / NAMESPACES_ENDPOINT, params);
         auto namespaces = parseNamespaces(*buf, base_namespace);
-        LOG_TEST(log, "Loaded {} namespaces in base namespace {}", namespaces.size(), base_namespace);
+        LOG_DEBUG(log, "Loaded {} namespaces in base namespace {}", namespaces.size(), base_namespace);
         return namespaces;
     }
     catch (const DB::HTTPException & e)
@@ -496,7 +469,7 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, buf);
 
-    LOG_TEST(log, "Received response: {}", json_str);
+    LOG_DEBUG(log, "Received response: {}", json_str);
 
     try
     {
@@ -556,6 +529,8 @@ DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & bas
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, buf);
 
+    LOG_DEBUG(log, "Received tables response: {}", json_str);
+
     try
     {
         Poco::JSON::Parser parser;
@@ -606,9 +581,9 @@ bool RestCatalog::tryGetTableMetadata(
     {
         return getTableMetadataImpl(namespace_name, table_name, result);
     }
-    catch (...)
+    catch (const DB::Exception & ex)
     {
-        DB::tryLogCurrentException(log);
+        LOG_DEBUG(log, "tryGetTableMetadata response: {}", ex.what());
         return false;
     }
 }
@@ -627,7 +602,7 @@ bool RestCatalog::getTableMetadataImpl(
     const std::string & table_name,
     TableMetadata & result) const
 {
-    LOG_TEST(log, "Checking table {} in namespace {}", table_name, namespace_name);
+    LOG_DEBUG(log, "Checking table {} in namespace {}", table_name, namespace_name);
 
     DB::HTTPHeaderEntries headers;
     if (result.requiresCredentials())
@@ -646,17 +621,18 @@ bool RestCatalog::getTableMetadataImpl(
 
     if (buf->eof())
     {
-        LOG_TEST(log, "Table doesn't exist (endpoint: {})", endpoint);
+        LOG_DEBUG(log, "Table doesn't exist (endpoint: {})", endpoint);
         return false;
     }
 
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
+    LOG_DEBUG(log, "Receiving table metadata {} {}", table_name, json_str);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     /// This log message might contain credentials,
     /// so log it only for debugging.
-    LOG_TEST(log, "Received metadata for table {}: {}", table_name, json_str);
+    LOG_DEBUG(log, "Received metadata for table {}: {}", table_name, json_str);
 #endif
 
     Poco::JSON::Parser parser;
@@ -674,7 +650,7 @@ bool RestCatalog::getTableMetadataImpl(
         {
             location = metadata_object->get("location").extract<String>();
             result.setLocation(location);
-            LOG_TEST(log, "Location for table {}: {}", table_name, location);
+            LOG_DEBUG(log, "Location for table {}: {}", table_name, location);
         }
         else
         {

@@ -55,12 +55,12 @@ ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTy
 
     if (comparator == "equals")
     {
-        return makeASTOperator("and",
-                               makeASTOperator("greaterOrEquals",
+        return makeASTFunction("and",
+                                makeASTFunction("greaterOrEquals",
                                             std::make_shared<ASTIdentifier>(column_name),
                                             std::make_shared<ASTLiteral>(start_date_or_date_time)
                                             ),
-                               makeASTOperator("less",
+                                makeASTFunction("less",
                                             std::make_shared<ASTIdentifier>(column_name),
                                             std::make_shared<ASTLiteral>(end_date_or_date_time)
                                             )
@@ -68,24 +68,24 @@ ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTy
     }
     if (comparator == "notEquals")
     {
-        return makeASTOperator(
+        return makeASTFunction(
             "or",
-            makeASTOperator("less", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(start_date_or_date_time)),
-            makeASTOperator(
+            makeASTFunction("less", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(start_date_or_date_time)),
+            makeASTFunction(
                 "greaterOrEquals", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(end_date_or_date_time)));
     }
     if (comparator == "greater")
     {
-        return makeASTOperator(
+        return makeASTFunction(
             "greaterOrEquals", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(end_date_or_date_time));
     }
     if (comparator == "lessOrEquals")
     {
-        return makeASTOperator("less", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(end_date_or_date_time));
+        return makeASTFunction("less", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(end_date_or_date_time));
     }
     if (comparator == "less" || comparator == "greaterOrEquals")
     {
-        return makeASTOperator(
+        return makeASTFunction(
             comparator, std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(start_date_or_date_time));
     }
     [[unlikely]] {

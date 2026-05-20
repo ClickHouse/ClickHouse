@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -48,7 +49,7 @@ ColumnPtr createIndexes(
         else if (global_discr == shared_variant_discr)
         {
             auto value = shared_variant_column.getDataAt(offsets[i]);
-            ReadBufferFromMemory buf(value);
+            ReadBufferFromMemory buf(value.data, value.size);
             auto type = decodeDataType(buf);
             data.push_back(static_cast<IndexesColumn::ValueType>(shared_variant_type_to_index.at(type->getName())));
         }
@@ -91,7 +92,7 @@ FlattenedDynamicColumn flattenDynamicColumn(const ColumnDynamic & dynamic_column
     for (size_t i = 0; i != shared_variant_column.size(); ++i)
     {
         auto value = shared_variant_column.getDataAt(i);
-        ReadBufferFromMemory buf(value);
+        ReadBufferFromMemory buf(value.data, value.size);
         auto type = decodeDataType(buf);
         auto type_name = type->getName();
         auto it = shared_variant_type_to_index.find(type_name);
@@ -157,6 +158,17 @@ void fillDynamicColumn(
     for (size_t i = 0; i != indexes_data.size(); ++i)
     {
         auto index = indexes_data[i];
+        if (index > null_index)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Incorrect index {} in indexes column of flattened Dynamic column at row {}: "
+                "the index should be in range [0, {}] (there are {} types, index {} is reserved for NULL values)",
+                static_cast<UInt64>(index),
+                i,
+                null_index,
+                flattened_column.types.size(),
+                null_index);
+
         if (index == null_index)
         {
             local_discriminators.push_back(ColumnVariant::NULL_DISCRIMINATOR);

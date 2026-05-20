@@ -398,9 +398,9 @@ public:
         : needle{reinterpret_cast<const UInt8 *>(needle_)}
         , needle_size{needle_size_}
         , fallback{VolnitskyTraits::isFallbackNeedle(needle_size, haystack_size_hint)}
-        , fallback_searcher{needle, needle_size}
+        , fallback_searcher{needle_, needle_size}
     {
-        if (fallback || fallback_searcher.getForceFallback())
+        if (fallback || fallback_searcher.force_fallback)
             return;
 
         hash = std::make_unique<VolnitskyTraits::Offset[]>(VolnitskyTraits::hash_size);
@@ -418,7 +418,7 @@ public:
               */
             if (!ok)
             {
-                fallback_searcher.setForceFallback(true);
+                fallback_searcher.force_fallback = true;
                 hash = nullptr;
                 return;
             }
@@ -438,7 +438,7 @@ public:
         return fallback_searcher.search(haystack, haystack_end);
 #endif
 
-        if (fallback || haystack_size <= needle_size || fallback_searcher.getForceFallback())
+        if (fallback || haystack_size <= needle_size || fallback_searcher.force_fallback)
             return fallback_searcher.search(haystack, haystack_end);
 
         /// Let's "apply" the needle to the haystack and compare the n-gram from the end of the needle.
@@ -463,7 +463,7 @@ public:
 
     const char * search(const char * haystack, size_t haystack_size) const
     {
-        return reinterpret_cast<const char *>(search(haystack, haystack + haystack_size));
+        return reinterpret_cast<const char *>(search(reinterpret_cast<const UInt8 *>(haystack), haystack_size));
     }
 
 protected:
@@ -577,7 +577,7 @@ public:
                         callback);
                 }
             }
-            fallback_searchers.emplace_back(reinterpret_cast<const UInt8 *>(cur_needle_data), cur_needle_size);
+            fallback_searchers.emplace_back(cur_needle_data, cur_needle_size);
         }
         return true;
     }

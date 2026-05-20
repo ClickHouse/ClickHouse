@@ -1,5 +1,4 @@
 #include <Common/Config/ConfigReloader.h>
-#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
 #include <filesystem>
 #include <memory>
@@ -26,8 +25,8 @@ ConfigReloader::ConfigReloader(
         std::string_view config_path_,
         const std::vector<std::string>& extra_paths_,
         const std::string & preprocessed_dir_,
-        std::unique_ptr<zkutil::ZooKeeperNodeCache> && zk_node_cache_,
-        const Coordination::EventPtr & zk_changed_event_,
+        zkutil::ZooKeeperNodeCache && zk_node_cache_,
+        const zkutil::EventPtr & zk_changed_event_,
         Updater && updater_)
     : config_path(config_path_)
     , extra_paths(extra_paths_)
@@ -85,7 +84,7 @@ ConfigReloader::~ConfigReloader()
 
 void ConfigReloader::run()
 {
-    DB::setThreadName(ThreadName::CONFIG_RELOADER);
+    setThreadName("ConfigReloader");
 
     while (true)
     {
@@ -133,7 +132,7 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true, is_config_changed);
             if (loaded_config.has_zk_includes)
                 loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
-                    zk_node_cache.get(), zk_changed_event, fallback_to_preprocessed, is_config_changed);
+                    zk_node_cache, zk_changed_event, fallback_to_preprocessed, is_config_changed);
         }
         catch (const Coordination::Exception & e)
         {

@@ -59,7 +59,7 @@ void readFinalFromNestedStorage(
         const auto & sign_column_name = std::make_shared<ASTIdentifier>(sign_column.name);
         const auto & fetch_sign_value = std::make_shared<ASTLiteral>(Field(static_cast<Int8>(1)));
 
-        expressions->children.emplace_back(makeASTOperator("equals", sign_column_name, fetch_sign_value));
+        expressions->children.emplace_back(makeASTFunction("equals", sign_column_name, fetch_sign_value));
         filter_column_name = expressions->children.back()->getColumnName();
     }
 

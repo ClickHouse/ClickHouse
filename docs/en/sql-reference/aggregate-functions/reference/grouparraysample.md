@@ -5,7 +5,6 @@ description: 'Creates an array of sample argument values. The size of the result
 sidebar_position: 145
 slug: /sql-reference/aggregate-functions/reference/grouparraysample
 title: 'groupArraySample'
-doc_type: 'reference'
 ---
 
 # groupArraySample

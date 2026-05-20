@@ -7,11 +7,9 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
-#include <Parsers/ASTViewTargets.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -50,19 +48,11 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
             visitChildren(describe_query->table_expression);
         else if (auto * create_user_query = dynamic_cast<ASTCreateUserQuery *>(ast.get()))
         {
-            ASTPtr names = create_user_query->names;
-            visitChildren(names);
-        }
-        else if (auto * create_query = dynamic_cast<ASTCreateQuery *>(ast.get());
-                 create_query && create_query->targets && create_query->targets->hasTableASTWithQueryParams(ViewTarget::To))
-        {
-            auto to_table_ast = create_query->targets->getTableASTWithQueryParams(ViewTarget::To);
-
-            visit(to_table_ast);
-
-            create_query->targets->setTableID(ViewTarget::To, to_table_ast->as<ASTTableIdentifier>()->getTableId());
-            create_query->targets->resetTableASTWithQueryParams(ViewTarget::To);
-
+            if (create_user_query->names)
+            {
+                ASTPtr names = create_user_query->names;
+                visitChildren(names);
+            }
             visitChildren(ast);
         }
         else

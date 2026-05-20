@@ -2,7 +2,6 @@
 #include <Common/logger_useful.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
-#include <QueryPipeline/BlockIO.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -47,7 +46,7 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
 }
 
 
-BlockIO FileDictionarySource::loadAll()
+QueryPipeline FileDictionarySource::loadAll()
 {
     LOG_TRACE(getLogger("FileDictionary"), "loadAll {}", toString());
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);
@@ -55,9 +54,7 @@ BlockIO FileDictionarySource::loadAll()
     source->addBuffer(std::move(in_ptr));
     last_modification = getLastModification();
 
-    BlockIO io;
-    io.pipeline = QueryPipeline(std::move(source));
-    return io;
+    return QueryPipeline(std::move(source));
 }
 
 

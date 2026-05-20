@@ -143,6 +143,7 @@ def test_max_size_0(start_cluster):
     )
     node1.restart_clickhouse()
 
+
 def test_reserved_size_greater_max_size(start_cluster):
     node1.exec_in_container(
         [

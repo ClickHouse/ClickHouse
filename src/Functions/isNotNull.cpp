@@ -47,11 +47,6 @@ public:
         if (!use_analyzer)
             return nullptr;
 
-        /// SELECT arrayFilter(x -> (x IS NOT NULL), []) can trigger `defaultImplementationForNothing()`
-        /// which will give return type Nothing. We cannot create constant column of type Nothing so return nullptr.
-        if (isNothing(result_type))
-            return nullptr;
-
         const ColumnWithTypeAndName & elem = arguments[0];
         if (elem.type->onlyNull())
             return result_type->createColumnConst(1, UInt8(0));
@@ -184,7 +179,7 @@ SELECT x FROM t_null WHERE isNotNull(y);
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIsNotNull>(documentation);
 }

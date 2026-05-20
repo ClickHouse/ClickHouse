@@ -3,7 +3,6 @@ description: 'Calculates the exact number of different argument values.'
 sidebar_position: 207
 slug: /sql-reference/aggregate-functions/reference/uniqexact
 title: 'uniqExact'
-doc_type: 'reference'
 ---
 
 # uniqExact

@@ -15,7 +15,7 @@ Expression ((Project names + Projection))
             Description: set GRANULARITY 1
             Parts: 2/2
             Granules: 50/50
-          Ranges: 2
+            Ranges: 2
 20
 Expression ((Project names + Projection))
   Aggregating
@@ -33,7 +33,7 @@ Expression ((Project names + Projection))
             Description: set GRANULARITY 1
             Parts: 1/1
             Granules: 6/6
-          Ranges: 1
+            Ranges: 1
 20
 Expression ((Project names + Projection))
   Aggregating
@@ -51,5 +51,5 @@ Expression ((Project names + Projection))
             Description: set GRANULARITY 1
             Parts: 1/1
             Granules: 6/6
-          Ranges: 1
+            Ranges: 1
 4	0

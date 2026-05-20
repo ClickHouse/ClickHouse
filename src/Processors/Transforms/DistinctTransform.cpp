@@ -54,7 +54,7 @@ void DistinctTransform::transform(Chunk & chunk)
         return;
 
     /// Convert to full column, because SetVariant for sparse column is not implemented.
-    removeSpecialColumnRepresentations(chunk);
+    convertToFullIfSparse(chunk);
     convertToFullIfConst(chunk);
 
     const auto num_rows = chunk.getNumRows();

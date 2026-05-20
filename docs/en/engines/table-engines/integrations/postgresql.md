@@ -4,11 +4,8 @@ description: 'The PostgreSQL engine allows `SELECT` and `INSERT` queries on data
 sidebar_label: 'PostgreSQL'
 sidebar_position: 160
 slug: /engines/table-engines/integrations/postgresql
-title: 'PostgreSQL table Engine'
-doc_type: 'guide'
+title: 'PostgreSQL Table Engine'
 ---
-
-# PostgreSQL table engine
 
 The PostgreSQL engine allows `SELECT` and `INSERT` queries on data stored on a remote PostgreSQL server.
 
@@ -16,7 +13,7 @@ The PostgreSQL engine allows `SELECT` and `INSERT` queries on data stored on a r
 Currently, only PostgreSQL versions 12 and up are supported.
 :::
 
-:::tip
+:::note
 ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for streaming Postgres data into ClickHouse. This natively supports high-performance insertion while ensuring the separation of concerns with the ability to scale ingestion and cluster resources independently.
 :::
 

@@ -3,13 +3,12 @@
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnDependency.h>
-#include <Storages/ColumnSize.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ColumnSize.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IndicesDescription.h>
-#include <Storages/KeyDescription.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/ProjectionsDescription.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/TTLDescription.h>
 
@@ -29,8 +28,6 @@ struct StorageInMemoryMetadata
     /// defaults, comments, etc. All table engines have columns.
     ColumnsDescription columns;
     /// Table indices. Currently supported for MergeTree only.
-    bool add_minmax_index_for_numeric_columns = false;
-    bool add_minmax_index_for_string_columns = false;
     IndicesDescription secondary_indices;
     /// Table constraints. Currently supported for MergeTree only.
     ConstraintsDescription constraints;
@@ -53,7 +50,7 @@ struct StorageInMemoryMetadata
     TTLTableDescription table_ttl;
     /// SETTINGS expression. Supported for MergeTree, Buffer, Kafka, RabbitMQ.
     ASTPtr settings_changes;
-    /// SELECT QUERY. Supported for MaterializedView and View.
+    /// SELECT QUERY. Supported for MaterializedView and View (have to support LiveView).
     SelectQueryDescription select;
     /// Materialized view REFRESH parameters.
     ASTPtr refresh;
@@ -71,9 +68,6 @@ struct StorageInMemoryMetadata
     /// Version of metadata. Managed properly by ReplicatedMergeTree only
     /// (zero-initialization is important)
     int32_t metadata_version = 0;
-
-    ///  Current state of a datalake table.
-    std::optional<DataLakeTableStateSnapshot> datalake_table_state;
 
     StorageInMemoryMetadata() = default;
 
@@ -125,8 +119,6 @@ struct StorageInMemoryMetadata
 
     /// Sets SQL security for the storage.
     void setSQLSecurity(const ASTSQLSecurity & sql_security);
-
-    void setDataLakeTableState(const DataLakeTableStateSnapshot & datalake_table_state_);
     UUID getDefinerID(ContextPtr context) const;
 
     /// Returns a copy of the context with the correct user from SQL security options.
@@ -270,7 +262,6 @@ struct StorageInMemoryMetadata
 
     /// Storage settings
     ASTPtr getSettingsChanges() const;
-    Field getSettingChange(const String & setting_name) const;
     bool hasSettingsChanges() const { return settings_changes != nullptr; }
 
     /// Select query for *View storages.
@@ -298,10 +289,7 @@ struct StorageInMemoryMetadata
     std::unordered_map<std::string, ColumnSize> getFakeColumnSizes() const;
 
     /// Elements of `columns` that have `default_desc.expression == nullptr`.
-    NameSet getColumnsWithoutDefaultExpressions(const NamesAndTypesList & exclude) const;
-
-    void addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context);
-    void dropImplicitIndicesForColumn(const String & column_name);
+    NameSet getColumnsWithoutDefaultExpressions() const;
 };
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
