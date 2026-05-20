@@ -469,6 +469,43 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info) const
 {
+    /// `WITH CLUSTER` needs a single global pass on the initiator over the
+    /// union of all shards' mergeable aggregate states; any shard-side stage
+    /// at or above `WithMergeableStateAfterAggregation` would either run
+    /// `ClusterMergingStep` shard-locally (missing cross-shard merges) or
+    /// finalize aggregates before the cluster step gets a chance. Override
+    /// every pushdown path (`distributed_group_by_no_merge`, `nodes == 1`,
+    /// `getOptimizedQueryProcessingStage*`, …) by capping the shard stage at
+    /// `WithMergeableState` here, before anything else can promote it.
+    auto has_with_cluster = [&]
+    {
+        if (query_info.query_tree)
+        {
+            if (const auto * qn = query_info.query_tree->as<QueryNode>())
+                if (qn->hasGroupByWithCluster())
+                    return true;
+        }
+        if (query_info.query)
+        {
+            if (const auto * select = query_info.query->as<ASTSelectQuery>())
+            {
+                if (auto group_by = select->groupBy())
+                {
+                    for (const auto & elem : group_by->children)
+                    {
+                        const auto * gbe = elem->as<ASTGroupByElement>();
+                        if (gbe && gbe->with_cluster)
+                            return true;
+                    }
+                }
+            }
+        }
+        return false;
+    };
+
+    if (has_with_cluster())
+        return std::min(to_stage, QueryProcessingStage::WithMergeableState);
+
     const auto & settings = local_context->getSettingsRef();
     ClusterPtr cluster = getCluster();
 
