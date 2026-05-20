@@ -363,6 +363,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_group_by_all == rhs_typed.is_group_by_all &&
         group_by_cluster_key_index == rhs_typed.group_by_cluster_key_index &&
         group_by_cluster_distance == rhs_typed.group_by_cluster_distance &&
+        group_by_cluster_dimensions == rhs_typed.group_by_cluster_dimensions &&
         is_order_by_all == rhs_typed.is_order_by_all &&
         is_limit_by_all == rhs_typed.is_limit_by_all &&
         projection_columns == rhs_typed.projection_columns &&
@@ -412,6 +413,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     state.update(is_group_by_all);
     state.update(group_by_cluster_key_index);
     state.update(group_by_cluster_distance);
+    state.update(group_by_cluster_dimensions);
     state.update(is_order_by_all);
     state.update(is_limit_by_all);
 
