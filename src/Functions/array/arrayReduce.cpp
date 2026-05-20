@@ -266,7 +266,7 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
             null_map->getData().resize_fill(input_rows_count, 0);
             array_null_map = std::move(null_map);
         }
-        return ColumnNullable::create(std::move(result_holder), std::move(array_null_map));
+        return ColumnNullable::create(std::move(result_holder), array_null_map);
     }
 
     return result_holder;

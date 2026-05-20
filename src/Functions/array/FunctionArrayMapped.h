@@ -32,6 +32,30 @@
 namespace DB
 {
 
+namespace
+{
+
+ColumnPtr unwrapNullableArrayArgumentColumn(const ColumnPtr & column, const DataTypePtr & /*type*/)
+{
+    ColumnPtr unwrapped_column = column;
+    const ColumnConst * col_const = checkAndGetColumn<ColumnConst>(unwrapped_column.get());
+    const IColumn * data_column = col_const ? &col_const->getDataColumn() : unwrapped_column.get();
+
+    if (const auto * nullable_array_column = checkAndGetColumn<ColumnNullable>(data_column))
+    {
+        if (checkAndGetColumn<ColumnArray>(&nullable_array_column->getNestedColumn()))
+        {
+            unwrapped_column = col_const
+                ? ColumnConst::create(nullable_array_column->getNestedColumnPtr(), col_const->size())
+                : nullable_array_column->getNestedColumnPtr();
+        }
+    }
+
+    return unwrapped_column;
+}
+
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -76,6 +100,8 @@ public:
     bool isDeterministicInScopeOfQuery() const override { return IsDeterministic; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// Nullable(Array) is handled explicitly; do not wrap the whole result as Nullable(Array).
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     /// Called if at least one function argument is a lambda expression.
     /// For argument-lambda expressions, it defines the types of arguments of these expressions.
@@ -254,7 +280,8 @@ public:
     {
         if (arguments.size() == 1 + num_fixed_params)
         {
-            ColumnPtr column_array_ptr = arguments[num_fixed_params].column;
+            ColumnPtr column_array_ptr = unwrapNullableArrayArgumentColumn(
+                arguments[num_fixed_params].column, arguments[num_fixed_params].type);
             const auto * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
 
             if (!column_array)
@@ -304,7 +331,8 @@ public:
             {
                 const auto & array_with_type_and_name = arguments[i];
 
-                auto column_array_ptr = array_with_type_and_name.column;
+                auto column_array_ptr = unwrapNullableArrayArgumentColumn(
+                    array_with_type_and_name.column, array_with_type_and_name.type);
                 const auto * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
 
                 const auto & array_type_ptr = array_with_type_and_name.type;

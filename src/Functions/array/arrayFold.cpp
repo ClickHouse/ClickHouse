@@ -377,7 +377,7 @@ public:
                 null_map->getData().resize_fill(result->size(), 0);
                 array_null_map = std::move(null_map);
             }
-            return ColumnNullable::create(result, std::move(array_null_map));
+            return ColumnNullable::create(result, array_null_map);
         }
 
         return result;

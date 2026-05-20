@@ -1,5 +1,7 @@
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NullableUtils.h>
@@ -28,6 +30,11 @@ static bool canExtractedSubcolumnsBeInsideNullable(const ColumnPtr & column)
     if (checkAndGetColumn<ColumnTuple>(column.get()))
         return isNullableTupleInExtractedSubcolumnsEnabledByGlobalSetting();
 
+    /// `ColumnArray::canBeInsideNullable()` is true for `Nullable(Array)`, but Dynamic subcolumns
+    /// like `Array(T).null` must stay illegal — see `canExtractedSubcolumnsBeInsideNullable` below.
+    if (checkAndGetColumn<ColumnArray>(column.get()))
+        return false;
+
     return column->canBeInsideNullable();
 }
 
@@ -35,6 +42,14 @@ bool canExtractedSubcolumnsBeInsideNullable(const DataTypePtr & type)
 {
     if (isTuple(type))
         return isNullableTupleInExtractedSubcolumnsEnabledByGlobalSetting();
+
+    /// Not the same as `IDataType::canBeInsideNullable()`.
+    /// `Array` / `Map` may appear inside `Nullable(Array)` / `Nullable(Map)` (see `DataTypeArray::canBeInsideNullable`),
+    /// yet bare `Array(T).null` / `Map(...).null` are not valid Dynamic subcolumn paths: the null map
+    /// belongs to the `Nullable(...)` wrapper, not to the compound type name parsed from `getSubcolumn`.
+    /// Without this check, `getSubcolumn(42::Dynamic, 'Array(UInt64).null')` would succeed with an all-ones null map.
+    if (isArray(type) || isMap(type))
+        return false;
 
     return type->canBeInsideNullable();
 }

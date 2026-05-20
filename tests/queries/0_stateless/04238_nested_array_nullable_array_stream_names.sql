@@ -27,7 +27,7 @@ FORMAT Null;
 
 SELECT throwIf(groupArray(arrayMap(
         x -> if(isNull(x), [], arrayMap(y -> isNull(y), assumeNotNull(x))),
-        a)) != [[], [[0, 1, 0]], [[], []]])
+        a)) != [[[]], [[0, 1, 0]], [[], []]])
 FROM (SELECT a FROM nested_array_nullable_array ORDER BY id)
 FORMAT Null;
 
@@ -40,7 +40,7 @@ FORMAT Null;
 
 SELECT throwIf(groupArray(arrayMap(
         x -> if(isNull(x), [], arrayMap(y -> isNull(y), assumeNotNull(x))),
-        a)) != [[], [[0, 1, 0]], [[], []]])
+        a)) != [[[]], [[0, 1, 0]], [[], []]])
 FROM (SELECT a FROM nested_array_nullable_array ORDER BY id)
 FORMAT Null;
 

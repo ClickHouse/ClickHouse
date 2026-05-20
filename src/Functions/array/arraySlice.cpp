@@ -7,6 +7,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/IColumn.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
@@ -151,29 +152,59 @@ public:
         if (return_type->onlyNull())
             return return_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        if (const auto * nullable_array_column = checkAndGetColumn<ColumnNullable>(arguments[0].column.get()))
+        const ColumnConst * col_const = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
+        const IColumn * data_column = col_const ? &col_const->getDataColumn() : arguments[0].column.get();
+        const bool argument_type_is_nullable = arguments[0].type->isNullable();
+
+        if (const auto * nullable_array_column = checkAndGetColumn<ColumnNullable>(data_column))
         {
             if (checkAndGetColumn<ColumnArray>(&nullable_array_column->getNestedColumn()))
             {
                 ColumnsWithTypeAndName nested_arguments = arguments;
-                nested_arguments[0].column = nullable_array_column->getNestedColumnPtr();
+                nested_arguments[0].column = col_const
+                    ? ColumnConst::create(nullable_array_column->getNestedColumnPtr(), col_const->size())
+                    : nullable_array_column->getNestedColumnPtr();
                 nested_arguments[0].type = removeNullable(arguments[0].type);
 
                 auto nested_result = executeSlice(nested_arguments);
 
-                if (return_type->isNullable())
-                {
-                    auto null_map = ColumnUInt8::create();
-                    null_map->getData().assign(
-                        nullable_array_column->getNullMapData().begin(), nullable_array_column->getNullMapData().end());
-                    return ColumnNullable::create(nested_result, std::move(null_map));
-                }
+                if (!return_type->isNullable())
+                    return nested_result;
 
-                return nested_result;
+                auto null_map = ColumnUInt8::create();
+                null_map->getData().assign(
+                    nullable_array_column->getNullMapData().begin(), nullable_array_column->getNullMapData().end());
+                if (col_const && null_map->size() == 1)
+                    null_map->getData().resize_fill(col_const->size(), nullable_array_column->getNullMapData()[0]);
+                return ColumnNullable::create(nested_result, std::move(null_map));
             }
         }
+        else if (argument_type_is_nullable)
+        {
+            /// Type is Nullable(Array) but column is bare Array (e.g. after partial constant folding).
+            ColumnsWithTypeAndName nested_arguments = arguments;
+            nested_arguments[0].type = removeNullable(arguments[0].type);
 
-        return executeSlice(arguments);
+            auto nested_result = executeSlice(nested_arguments);
+
+            if (!return_type->isNullable())
+                return nested_result;
+
+            auto null_map = ColumnUInt8::create();
+            null_map->getData().resize_fill(nested_result->size(), 0);
+            return ColumnNullable::create(nested_result, std::move(null_map));
+        }
+
+        auto result = executeSlice(arguments);
+
+        if (return_type->isNullable() && !isColumnNullable(*result))
+        {
+            auto null_map = ColumnUInt8::create();
+            null_map->getData().resize_fill(result->size(), 0);
+            return ColumnNullable::create(result, std::move(null_map));
+        }
+
+        return result;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
