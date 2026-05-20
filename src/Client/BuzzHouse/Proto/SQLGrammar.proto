@@ -504,6 +504,7 @@ message ExprFrameSpec {
     enum RangeRows {
         RANGE = 1;
         ROWS = 2;
+        GROUPS = 3;
     }
     required RangeRows range_rows = 1;
     required FrameSpecSubLeftExpr left_expr = 2;
