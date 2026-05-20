@@ -789,16 +789,33 @@ static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::
         arrow::BinaryArray & chunk = dynamic_cast<arrow::BinaryArray &>(*(arrow_column->chunk(chunk_i)));
         std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
         const size_t chunk_length = chunk.length();
+        const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
 
         for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
         {
-            auto * raw_data = buffer->mutable_data() + chunk.value_offset(offset_i);
             if (chunk.IsNull(offset_i))
             {
                 column->insertDefault();
                 continue;
             }
-            ReadBuffer in_buffer(reinterpret_cast<char*>(raw_data), chunk.value_length(offset_i), 0);
+
+            if (!buffer)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow BinaryArray has no data buffer for non-null geo row {}",
+                    offset_i);
+
+            const size_t safe_offset = static_cast<size_t>(chunk.value_offset(offset_i));
+            const size_t safe_length = static_cast<size_t>(chunk.value_length(offset_i));
+            if (unlikely(safe_offset > buffer_size || safe_length > buffer_size - safe_offset))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow BinaryArray offsets exceed data buffer bounds: "
+                    "row {} has offset {} and length {} but buffer is {} bytes",
+                    offset_i, chunk.value_offset(offset_i), chunk.value_length(offset_i), buffer_size);
+
+            const auto * raw_data = buffer->data() + safe_offset;
+            ReadBuffer in_buffer(const_cast<char *>(reinterpret_cast<const char *>(raw_data)), safe_length, 0);
             GeometricObject result_object;
             switch (geo_metadata.encoding)
             {
