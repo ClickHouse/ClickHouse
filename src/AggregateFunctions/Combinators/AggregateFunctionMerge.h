@@ -10,11 +10,6 @@ namespace DB
 {
 struct Settings;
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
 
 /** Not an aggregate function, but an adapter of aggregate functions,
   * Aggregate functions with the `Merge` suffix accept `DataTypeAggregateFunction` as an argument
@@ -26,18 +21,11 @@ class AggregateFunctionMerge final : public IAggregateFunctionHelper<AggregateFu
 {
 private:
     AggregateFunctionPtr nested_func;
+    AggregateFunctionPtr argument_func;
+    bool merge_state_from_different_variant = false;
 
 public:
-    AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionMerge>({argument}, params_, createResultType(nested_))
-        , nested_func(nested_)
-    {
-        const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(argument.get());
-
-        if (!data_type || !nested_func->haveSameStateRepresentation(*data_type->getFunction()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}, "
-                            "expected {} or equivalent type", argument->getName(), getName(), getStateType()->getName());
-    }
+    AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument, const Array & params_);
 
     String getName() const override
     {

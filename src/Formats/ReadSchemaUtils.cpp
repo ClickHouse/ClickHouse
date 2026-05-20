@@ -12,6 +12,8 @@
 #include <Common/assert_cast.h>
 #include <base/scope_guard.h>
 
+#include <stdexcept>
+
 namespace DB
 {
 namespace Setting
@@ -249,10 +251,14 @@ try
                         *format_name);
                 }
                 SchemaReaderPtr schema_reader;
+                auto schema_reader_settings = format_settings;
+                if (!schema_reader_settings)
+                    schema_reader_settings = getFormatSettings(context);
+                schema_reader_settings->log_full_buffer_fallback_during_schema_inference = true;
 
                 try
                 {
-                    schema_reader = format_factory.getSchemaReader(*format_name, *iterator_data.buf, context, format_settings);
+                    schema_reader = format_factory.getSchemaReader(*format_name, *iterator_data.buf, context, schema_reader_settings);
                     schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
                     names_and_types = schema_reader->readSchema();
                     auto num_rows = schema_reader->readNumberOrRows();
