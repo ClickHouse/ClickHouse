@@ -237,14 +237,16 @@ struct HashMethodABString : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
     static constexpr bool has_cheap_key_calculation = false;
-    static constexpr bool has_pre_computed_hashes = true;
+    /// The `hashes` array below stores 32-bit hashes used to populate the `ABStringRef`
+    /// payload itself (the layout packs the hash into the ref). It is not the canonical
+    /// 64-bit hash that `ColumnsHashingImpl.h`'s precomputed-hash hot path requires, so
+    /// this method opts out of that path until it is reworked to expose canonical hashes.
+    static constexpr bool has_pre_computed_hashes = false;
 
     const IColumn::Offset * offsets;
     const UInt8 * chars;
 
     WeakHash32 hashes{0};
-    std::unique_ptr<PrefetchingHelper> prefetching;
-    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
 
     HashMethodABString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
     {
@@ -265,7 +267,6 @@ struct HashMethodABString : public columns_hashing_impl::HashMethodBase<
             else
                 data[i] = static_cast<UInt32>(str.size());
         }
-        prefetching = std::make_unique<PrefetchingHelper>();
     }
 
     ALWAYS_INLINE size_t getSize(ssize_t row) const { return offsets[row] - offsets[row - 1]; }

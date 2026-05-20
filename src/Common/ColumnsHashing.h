@@ -575,7 +575,11 @@ struct HashMethodABSerialized
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
     static constexpr bool has_cheap_key_calculation = false;
-    static constexpr bool has_pre_computed_hashes = true;
+    /// The `hashes` array below stores 32-bit hashes used to populate the `ABStringRef`
+    /// payload itself (the layout packs the hash into the ref). It is not the canonical
+    /// 64-bit hash that `ColumnsHashingImpl.h`'s precomputed-hash hot path requires, so
+    /// this method opts out of that path until it is reworked to expose canonical hashes.
+    static constexpr bool has_pre_computed_hashes = false;
 
     ColumnRawPtrs key_columns;
     const ColumnString * column_string = nullptr;
@@ -585,8 +589,6 @@ struct HashMethodABSerialized
     PODArray<char> serialized_buffer;
     std::vector<ABStringRef> serialized_keys;
     WeakHash32 hashes{0};
-    std::unique_ptr<PrefetchingHelper> prefetching;
-    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
 
     HashMethodABSerialized(const ColumnRawPtrs & key_columns_, const Sizes & key_sizes_, const HashMethodContextPtr &)
         : num_keys(key_columns_.size())
@@ -698,8 +700,6 @@ struct HashMethodABSerialized
                 serialized_keys[i].low = row_sizes[i];
             }
         }
-
-        prefetching = std::make_unique<PrefetchingHelper>();
     }
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
