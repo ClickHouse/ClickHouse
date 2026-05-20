@@ -172,8 +172,6 @@ class JobConfigs:
         command="python3 ./ci/jobs/check_style.py",
         run_in_docker="clickhouse/style-test",
         enable_commit_status=True,
-        # Needed to verify submodule style.
-        needs_submodules=True,
     )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
