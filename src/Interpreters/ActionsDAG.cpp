@@ -2407,7 +2407,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
     return {std::move(first_actions), std::move(second_actions), std::move(split_nodes_mapping)};
 }
 
-ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & array_joined_columns, bool skip_throwing_functions) const
+ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & array_joined_columns) const
 {
     std::unordered_set<std::string_view> array_joined_columns_set(array_joined_columns.begin(), array_joined_columns.end());
     struct Frame
@@ -2460,10 +2460,6 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & ar
                     if (!split_nodes.contains(child))
                         depend_on_array_join = true;
                 }
-
-                if (skip_throwing_functions && cur.node->type == ActionType::FUNCTION
-                    && cur.node->function_base->canThrow(cur.node->getArgumentTypesWithConstInfo()))
-                    depend_on_array_join = true;
 
                 if (!depend_on_array_join)
                     split_nodes.insert(cur.node);
