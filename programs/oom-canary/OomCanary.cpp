@@ -52,7 +52,7 @@ namespace
         DB::writeString("1000", out);
         out.finalize();
     }
-    catch (...)
+    catch (const std::exception &)
     {
         ::_exit(DB::OOMCanaryExitCodes::PERMANENT);
     }

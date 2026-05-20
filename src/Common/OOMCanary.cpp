@@ -14,8 +14,6 @@
 #include <Common/Jemalloc.h>
 #include <base/errnoToString.h>
 #include <base/cgroupsv2.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -30,7 +28,9 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <charconv>
 #include <csignal>
+#include <fstream>
 #include <limits>
 #include <cstdint>
 #include <cstring>
@@ -171,31 +171,23 @@ std::optional<OOMCanary::OOMKillCounter> OOMCanary::readOOMKillCounter()
     if (!path)
         return std::nullopt;
 
-    try
+    std::ifstream f(*path);
+    if (!f.is_open())
+        return std::nullopt;
+
+    std::string line;
+    while (std::getline(f, line))
     {
-        ReadBufferFromFile in(*path);
-        while (!in.eof())
-        {
-            std::string current_key;
-            readStringUntilWhitespace(current_key, in);
-            if (current_key.empty() && in.eof())
-                break;
-
-            assertChar(' ', in);
-
-            uint64_t value = 0;
-            readIntText(value, in);
-
-            if (current_key == "oom_kill")
-                return OOMKillCounter{value};
-
-            skipToNextLineOrEOF(in);
-        }
+        static constexpr std::string_view prefix = "oom_kill ";
+        if (!line.starts_with(prefix))
+            continue;
+        uint64_t value;
+        const char * begin = line.data() + prefix.size();
+        const char * end = line.data() + line.size();
+        if (std::from_chars(begin, end, value).ec == std::errc{})
+            return OOMKillCounter{value};
+        return std::nullopt;
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
-    {
-    }
-
     return std::nullopt;
 }
 
@@ -258,7 +250,8 @@ void OOMCanary::monitorThread()
 
         const int status = reapChild(pid);
         epoll.remove(pidfd);
-        ::close(pidfd);
+        if (::close(pidfd) != 0)
+            LOG_WARNING(log, "close(pidfd) failed for canary pid {}: {}", pid, errnoToString());
 
         if (shutdown_requested)
         {
