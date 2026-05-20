@@ -13,20 +13,22 @@ DROP TABLE IF EXISTS paimon_cache_on;
 SYSTEM DROP PAIMON METADATA CACHE;
 
 -- ============ Cache OFF: neither hit nor miss ============
+-- use_paimon_metadata_files_cache defaults to false, so PaimonMetadata::create()
+-- will set cache_ptr = nullptr and no ProfileEvents will be recorded.
 CREATE TABLE paimon_cache_off
 ENGINE = PaimonS3(s3_conn, filename = 'paimon_all_types');
 
 SELECT count() FROM paimon_cache_off
-SETTINGS log_comment = '04209-cache-off-1', use_paimon_metadata_files_cache = 0
+SETTINGS log_comment = '04209-cache-off-1'
 FORMAT Null;
 
 SELECT count() FROM paimon_cache_off
-SETTINGS log_comment = '04209-cache-off-2', use_paimon_metadata_files_cache = 0
+SETTINGS log_comment = '04209-cache-off-2'
 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Expected: 0 0 (cache disabled, no events recorded for this query)
+-- Expected: 0 0 (cache disabled at table creation time, no events recorded)
 SELECT
     ProfileEvents['PaimonMetadataFilesCacheHits'],
     ProfileEvents['PaimonMetadataFilesCacheMisses']
@@ -38,15 +40,21 @@ WHERE log_comment = '04209-cache-off-2'
 DROP TABLE paimon_cache_off;
 
 -- ============ Cache ON: first query miss, second query hit ============
+-- IMPORTANT: use_paimon_metadata_files_cache must be set at session level BEFORE
+-- CREATE TABLE, because PaimonMetadata::create() reads this setting to initialize
+-- cache_ptr in PaimonPersistentComponents. Per-query SETTINGS in SELECT has no
+-- effect on an already-created metadata object (supportsUpdate path).
+SET use_paimon_metadata_files_cache = 1;
+
 CREATE TABLE paimon_cache_on
 ENGINE = PaimonS3(s3_conn, filename = 'paimon_all_types');
 
 SELECT count() FROM paimon_cache_on
-SETTINGS log_comment = '04209-cache-on-miss', use_paimon_metadata_files_cache = 1
+SETTINGS log_comment = '04209-cache-on-miss'
 FORMAT Null;
 
 SELECT count() FROM paimon_cache_on
-SETTINGS log_comment = '04209-cache-on-hit', use_paimon_metadata_files_cache = 1
+SETTINGS log_comment = '04209-cache-on-hit'
 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
