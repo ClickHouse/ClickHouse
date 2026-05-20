@@ -9,8 +9,11 @@ std::unique_ptr<ReadBufferFromFileBase> LocalSourceReader::open(const StoredObje
 {
     LOG_TRACE(log, "open: file={}", object.remote_path);
     /// Pass caller-configured ReadSettings (local_fs_method, direct_io_threshold,
-    /// local_fs_buffer_size, throttlers, etc.); createReadBufferFromFileBase
-    /// doesn't expose an external-buffer flag — the executor's set() still works.
+    /// throttlers, etc.). ReaderExecutor copies the bytes out of the returned
+    /// buffer via buf.read(block, chunk), which works for both synchronous
+    /// (pread) and asynchronous (pread_threadpool / io_uring) read methods —
+    /// the latter ignore set()'s external-buffer pointer and read into their
+    /// own allocation, so explicit copy is the only correct option.
     return createReadBufferFromFileBase(object.remote_path, read_settings);
 }
 

@@ -353,6 +353,29 @@ std::vector<std::shared_ptr<OwnedRopeBuffer>> ReaderExecutor::allocateBlocks(siz
     return blocks;
 }
 
+/// Read up to `chunk` bytes into `dest`. Uses zero-copy set()+next() when the
+/// underlying buffer honors the external-buffer pointer (synchronous impls);
+/// falls back to explicit read() for impls that do not (asynchronous readers
+/// like pread_threadpool/io_uring read into their own allocation and assume
+/// memory.size() == internal_buffer.size(), so set()+next() would corrupt
+/// the heap whenever chunk exceeds the buffer's constructor-time size).
+/// Returns bytes read; 0 means EOF.
+static size_t readIntoBlock(ReadBuffer & buf, char * dest, size_t chunk)
+{
+    if (buf.supportsExternalBufferMode())
+    {
+        buf.set(dest, chunk);
+        if (!buf.next())
+            return 0;
+        size_t got = buf.available();
+        buf.position() = buf.buffer().end();
+        return got;
+    }
+
+    /// Fallback: copy out of the buffer's own memory.
+    return buf.read(dest, chunk);
+}
+
 Rope ReaderExecutor::readFromLiveBufferIntoRope(
     std::vector<std::shared_ptr<OwnedRopeBuffer>> blocks, size_t logical_offset)
 {
@@ -365,14 +388,7 @@ Rope ReaderExecutor::readFromLiveBufferIntoRope(
     for (auto & block : blocks)
     {
         size_t chunk = block->size();
-
-        /// set() + next(): data goes directly from network into block memory.
-        buf.set(block->data(), chunk);
-        if (!buf.next())
-            break;
-
-        size_t got = buf.available();
-        buf.position() = buf.buffer().end();
+        size_t got = readIntoBlock(buf, block->data(), chunk);
 
         LOG_DEBUG(log, "readFromLiveBufferIntoRope: block {}, chunk={}, got={}, first_byte=0x{:02x}",
             rope.getNodes().size(), chunk, got,
@@ -455,9 +471,8 @@ Rope ReaderExecutor::readFromSource(
     }
 
     /// Fallback: open a fresh connection without storing it as live_buffer
-    /// (slot was unavailable). Read into the pre-allocated blocks via set()+next(),
-    /// same pattern as the live-buffer path. The opened buffer is dropped when
-    /// this function returns.
+    /// (slot was unavailable). The opened buffer is dropped when this
+    /// function returns.
     ProfileEvents::increment(ProfileEvents::LiveSourceBufferFallbacks);
 
     auto opened = source->open(object);
@@ -471,12 +486,7 @@ Rope ReaderExecutor::readFromSource(
     for (auto & block : blocks)
     {
         size_t chunk = block->size();
-        buf.set(block->data(), chunk);
-        if (!buf.next())
-            break;
-
-        size_t got = buf.available();
-        buf.position() = buf.buffer().end();
+        size_t got = readIntoBlock(buf, block->data(), chunk);
 
         LOG_DEBUG(log, "readFromSource: stateless block offset={}, chunk={}, got={}, first_byte=0x{:02x}",
             offset + total_read, chunk, got,
