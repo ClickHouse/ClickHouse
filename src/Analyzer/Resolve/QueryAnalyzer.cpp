@@ -3446,16 +3446,19 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
 {
     /// `WITH CLUSTER` runs after `Aggregating` and needs mergeable aggregate
     /// states (`ColumnAggregateFunction`); `WITH ROLLUP` / `WITH CUBE` /
-    /// `GROUPING SETS` finalize the aggregates before that point, so the
-    /// combination would either hit a `LOGICAL_ERROR` in `mergeAggregateStates`
-    /// or operate on the wrong representation. Reject the combination upfront.
+    /// `GROUPING SETS` / `WITH TOTALS` finalize the aggregates before that
+    /// point (`TotalsHavingStep` uses `need_finalize = true` on the non-rollup
+    /// path), so the combination would either hit a `LOGICAL_ERROR` in
+    /// `mergeAggregateStates` or operate on the wrong representation. Reject
+    /// the combination upfront.
     if (query_node_typed.hasGroupByWithCluster() &&
         (query_node_typed.isGroupByWithRollup()
          || query_node_typed.isGroupByWithCube()
-         || query_node_typed.isGroupByWithGroupingSets()))
+         || query_node_typed.isGroupByWithGroupingSets()
+         || query_node_typed.isGroupByWithTotals()))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "GROUP BY ... WITH CLUSTER cannot be combined with WITH ROLLUP, WITH CUBE or GROUPING SETS");
+            "GROUP BY ... WITH CLUSTER cannot be combined with WITH ROLLUP, WITH CUBE, GROUPING SETS or WITH TOTALS");
     }
 
     if (query_node_typed.isGroupByWithGroupingSets())
