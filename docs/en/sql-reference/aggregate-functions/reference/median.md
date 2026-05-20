@@ -6,9 +6,6 @@ title: 'median'
 doc_type: 'reference'
 ---
 
-
-# median
-
 The `median*` functions are the aliases for the corresponding `quantile*` functions. They calculate median of a numeric data sample.
 
 Functions:
@@ -37,15 +34,11 @@ Input table:
 └─────┘
 ```
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT medianDeterministic(val, 1) FROM t;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─medianDeterministic(val, 1)─┐
 │                         1.5 │
 └─────────────────────────────┘

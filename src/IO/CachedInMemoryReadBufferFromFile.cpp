@@ -1,5 +1,6 @@
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <base/scope_guard.h>
+#include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
@@ -244,17 +245,42 @@ std::vector<PageCache::MappedPtr> CachedInMemoryReadBufferFromFile::populateBloc
         cells[i] = cache->get(block_range.hash(cache_key_base_hash), inject_eviction);
     }
 
-    /// Phase 2: fill each missing block by reading directly into its cache cell,
-    /// avoiding a large temporary buffer and the extra memcpy.
-    for (size_t i = 0; i < num_blocks; ++i)
+    /// Phase 2: fill missing blocks, coalescing consecutive misses into single reads.
+    ///
+    /// On object storage, each `in->readBigAt` is a separate HTTP request, so reading one
+    /// block at a time turns a cold scan into one request per block (~15k for a 14 GB file
+    /// at 1 MiB blocks). Coalescing consecutive misses into a single request amortizes that
+    /// overhead.
+    ///
+    /// The coalesced read uses a temporary buffer, capped at `page_cache_max_coalesced_bytes` to
+    /// bound transient memory under parallel cold reads. A run longer than the cap is split.
+    /// Single-block misses bypass the buffer and read directly into the cache cell.
+    const size_t max_blocks_per_fetch = std::max<size_t>(1, settings.page_cache_max_coalesced_bytes / block_size);
+
+    size_t i = 0;
+    while (i < num_blocks)
     {
-        if (!cells[i])
+        if (cells[i])
         {
-            block_range.offset = first_block_start + i * block_size;
+            if (block_callback && block_callback(cells[i]))
+                return cells;
+            ++i;
+            continue;
+        }
+
+        const size_t miss_begin = i;
+        while (i < num_blocks && !cells[i] && (i - miss_begin) < max_blocks_per_fetch)
+            ++i;
+        const size_t miss_end = i;
+
+        if (miss_end - miss_begin == 1)
+        {
+            /// Single-block miss: read directly into the cache cell (no temp buffer).
+            block_range.offset = first_block_start + miss_begin * block_size;
             block_range.size = std::min(block_size, file_size.value() - block_range.offset);
             UInt128 key_hash = block_range.hash(cache_key_base_hash);
 
-            cells[i] = cache->getOrSet(
+            cells[miss_begin] = cache->getOrSet(
                 cache_file, block_range, detached_if_missing, inject_eviction,
                 [&](const auto & c)
                 {
@@ -265,8 +291,41 @@ std::vector<PageCache::MappedPtr> CachedInMemoryReadBufferFromFile::populateBloc
                 },
                 key_hash);
         }
-        if (block_callback && block_callback(cells[i]))
-            break;
+        else
+        {
+            /// Multi-block miss: fetch the whole run with one `readBigAt`, then distribute into cells.
+            const size_t range_start = first_block_start + miss_begin * block_size;
+            const size_t range_end = std::min(first_block_start + miss_end * block_size, file_size.value());
+            const size_t range_size = range_end - range_start;
+
+            PODArray<char> buf(range_size);
+            size_t bytes_read = in->readBigAt(buf.data(), range_size, range_start, nullptr);
+            if (bytes_read < range_size)
+                throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE, "File {} ended after {} bytes, but we expected {}",
+                    cache_file.path, range_start + bytes_read, file_size.value());
+
+            for (size_t j = miss_begin; j < miss_end; ++j)
+            {
+                block_range.offset = first_block_start + j * block_size;
+                block_range.size = std::min(block_size, file_size.value() - block_range.offset);
+                const size_t buf_offset = block_range.offset - range_start;
+                UInt128 key_hash = block_range.hash(cache_key_base_hash);
+
+                cells[j] = cache->getOrSet(
+                    cache_file, block_range, detached_if_missing, inject_eviction,
+                    [&](const auto & c)
+                    {
+                        memcpy(c->data(), buf.data() + buf_offset, block_range.size);
+                    },
+                    key_hash);
+            }
+        }
+
+        for (size_t j = miss_begin; j < miss_end; ++j)
+        {
+            if (block_callback && block_callback(cells[j]))
+                return cells;
+        }
     }
 
     return cells;

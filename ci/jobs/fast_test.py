@@ -345,12 +345,12 @@ def main():
             test_pattern = "|".join(args.test)
             fast_test_command += f" -- '{test_pattern}'"
 
-        res = CH.run_test(fast_test_command)
+        test_exit_code = CH.run_test(fast_test_command)
 
         test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR).run(
-            runner_exit_code=0 if res else 1,
+            runner_exit_code=test_exit_code,
         )
-        if not res:
+        if test_exit_code != 0:
             attach_debug = True
 
         results.append(test_results)
