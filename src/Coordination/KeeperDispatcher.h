@@ -141,7 +141,7 @@ public:
     /// (So e.g. we can't remove session ID from this map when the session is closed.)
     std::unordered_map<SessionAndXID, KeeperRequestsForSessions, SessionAndXIDHash> read_request_queue;
 
-    /// Just allocate some objects, real initialization is done by `initialize method`
+    /// Just allocate some objects, real initialization is done by `initialize`
     KeeperDispatcher();
 
     /// Call shutdown
