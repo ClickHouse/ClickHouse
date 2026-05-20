@@ -60,7 +60,7 @@ std::vector<FileBucketInfoPtr> trySplitParquetFileFromCacheOnly(
     const String & cache_etag,
     const ParquetMetadataCachePtr & metadata_cache);
 
-class ParquetV3BlockInputFormat : public IInputFormat
+class ParquetV3BlockInputFormat final : public IInputFormat
 {
 public:
     ParquetV3BlockInputFormat(
@@ -117,7 +117,7 @@ private:
     parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher) const;
 };
 
-class NativeParquetSchemaReader : public ISchemaReader
+class NativeParquetSchemaReader final : public ISchemaReader
 {
 public:
     NativeParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);
