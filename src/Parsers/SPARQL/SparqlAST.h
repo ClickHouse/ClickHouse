@@ -39,7 +39,8 @@ struct FilterExpr
         VarRef, LiteralVal,
         FnStr, FnLang, FnDatatype, FnBound,
         FnIsIRI, FnIsBlank, FnIsLiteral,
-        FnSameTerm, FnLangMatches, FnRegex
+        FnSameTerm, FnLangMatches, FnRegex,
+        FnStrlen
     };
 
     Op op;

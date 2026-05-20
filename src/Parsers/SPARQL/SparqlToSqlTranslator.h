@@ -28,6 +28,7 @@ private:
         bool is_left_join = false;
         std::vector<std::string> on_conditions;
         std::vector<std::string> const_conditions;
+        std::vector<std::string> filter_conditions;
     };
 
     int alias_counter = 0;

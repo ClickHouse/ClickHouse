@@ -139,6 +139,8 @@ std::string SparqlToSqlTranslator::buildFromAndJoins()
         {
             for (const auto & c : j.const_conditions)
                 all_on.push_back(c);
+            for (const auto & c : j.filter_conditions)
+                all_on.push_back(c);
         }
 
         if (all_on.empty())
@@ -283,6 +285,9 @@ std::string SparqlToSqlTranslator::translateFilterExpr(const FilterExpr & expr)
         case FilterExpr::FnLangMatches:
             return translateFilterExpr(*expr.children[0]) + " = " + translateFilterExpr(*expr.children[1]);
 
+        case FilterExpr::FnStrlen:
+            return "length(" + translateFilterExpr(*expr.children[0]) + ")";
+
         case FilterExpr::FnRegex:
         {
             std::string text = translateFilterExpr(*expr.children[0]);
@@ -311,8 +316,15 @@ std::string SparqlToSqlTranslator::translateBranch(
     {
         if (opt.pattern)
         {
+            size_t first_opt_join = joins.size();
             for (const auto & tp : opt.pattern->triples)
                 processTriple(tp, true);
+
+            if (!opt.pattern->filters.empty() && first_opt_join < joins.size())
+            {
+                for (const auto & filter : opt.pattern->filters)
+                    joins[first_opt_join].filter_conditions.push_back(translateFilterExpr(*filter));
+            }
         }
     }
 
