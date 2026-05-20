@@ -83,9 +83,21 @@ off_t PipelineReadBuffer::seek(off_t off, int whence)
 {
     size_t new_pos;
     if (whence == SEEK_SET)
-        new_pos = off;
+    {
+        if (off < 0)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "PipelineReadBuffer::seek: SEEK_SET with negative offset {}", off);
+        new_pos = static_cast<size_t>(off);
+    }
     else if (whence == SEEK_CUR)
-        new_pos = getPosition() + off;
+    {
+        off_t cur = getPosition();
+        if (off < 0 && static_cast<size_t>(-off) > static_cast<size_t>(cur))
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "PipelineReadBuffer::seek: SEEK_CUR offset {} from position {} would underflow",
+                off, cur);
+        new_pos = static_cast<size_t>(cur + off);
+    }
     else
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "PipelineReadBuffer::seek: unsupported whence");
 

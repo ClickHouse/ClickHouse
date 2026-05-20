@@ -68,6 +68,30 @@ TEST(PipelineReadBuffer, ReadAll)
     EXPECT_EQ(result, content);
 }
 
+TEST(PipelineReadBuffer, SeekNegativeOffsetThrows)
+{
+    /// Standard ReadBufferFromFileBase contract: negative SEEK_SET and
+    /// SEEK_CUR that would underflow must throw ARGUMENT_OUT_OF_BOUND.
+    /// Pre-fix: signed → unsigned cast wrapped to ~SIZE_MAX.
+    String content(1000, 'X');
+    auto source = std::make_shared<MemorySourceReader>(content);
+
+    StoredObjects objects;
+    objects.emplace_back("test", "", content.size());
+
+    auto executor = std::make_unique<ReaderExecutor>(
+        source, objects, std::vector<std::shared_ptr<ICacheProvider>>{}, 100);
+
+    PipelineReadBuffer buf(std::move(executor));
+
+    EXPECT_THROW(buf.seek(-1, SEEK_SET), Exception);
+    EXPECT_THROW(buf.seek(-1, SEEK_CUR), Exception);
+
+    /// SEEK_CUR landing exactly at 0 is valid.
+    buf.seek(10, SEEK_SET);
+    EXPECT_NO_THROW(buf.seek(-10, SEEK_CUR));
+}
+
 TEST(PipelineReadBuffer, Seek)
 {
     String content = "0123456789ABCDEF";
