@@ -208,6 +208,7 @@ class JobConfigs:
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
             "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data",
+            "rm -rf /Library/Logs/DiagnosticReports/*",
         ],
     ).parametrize(
         Job.ParamSet(
