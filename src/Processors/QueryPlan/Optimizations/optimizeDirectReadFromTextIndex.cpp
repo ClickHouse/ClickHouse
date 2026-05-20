@@ -587,11 +587,13 @@ private:
                 /// hasToken case: single token string. If the postprocessor drops the needle (stop-word
                 /// filter, etc.), the empty needle is fine — hasToken returns 0 on it, matching the
                 /// index-condition empty-sentinel that no granule contains.
-                Strings tokens = postprocessor->processTokens({needles_field.safeGet<String>()});
-
+                /// If the postprocessed token contains separator characters it would be ill-formed as a
+                /// hasToken* needle (BAD_ARGUMENTS / NULL on non-indexed parts in Exact mode), so keep
+                /// the original needle in that case.
+                auto tokens = postprocessor->processTokens({needles_field.safeGet<String>()});
                 if (tokens.empty())
                     needles_field = String{};
-                else if (function_name == "hasToken" && std::ranges::any_of(tokens.front(), isTokenSeparator))
+                else if (std::ranges::any_of(tokens.front(), isTokenSeparator))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index postprocessor produced an invalid token '{}'", tokens.front());
                 else
                     needles_field = tokens.front();

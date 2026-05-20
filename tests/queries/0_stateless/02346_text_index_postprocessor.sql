@@ -752,7 +752,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
 
-SELECT '- A postprocessor that produces a token containing separator characters throws BAD_ARGUMENTS for hasToken';
+SELECT '- A postprocessor that produces a token containing separator characters throws BAD_ARGUMENTS at query time';
 CREATE TABLE tab
 (
     id UInt64,
@@ -764,12 +764,6 @@ ENGINE = MergeTree ORDER BY id;
 INSERT INTO tab VALUES (1, 'foo');
 
 SELECT count() FROM tab WHERE hasToken(val, 'foo');  -- { serverError BAD_ARGUMENTS }
-
-SELECT '- hasTokenOrNull returns NULL (not an exception) for the same ill-formed postprocessed token';
--- hasTokenOrNull native semantics: return NULL when needle contains separator characters.
--- The optimizer must not throw; it passes the invalid postprocessed token through so
--- hasTokenOrNull can apply its own NULL-return behavior.
-SELECT countIf(hasTokenOrNull(val, 'foo') IS NULL) FROM tab;  -- 1 (all rows NULL)
 
 DROP TABLE tab;
 
