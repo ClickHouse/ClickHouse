@@ -501,15 +501,18 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         return false;
     };
 
-    if (has_with_cluster())
-        return std::min(to_stage, QueryProcessingStage::WithMergeableState);
-
     const auto & settings = local_context->getSettingsRef();
     ClusterPtr cluster = getCluster();
 
     size_t nodes = getClusterQueriedNodes(settings, cluster);
 
     query_info.cluster = cluster;
+
+    /// Now that `query_info.cluster` is initialized, the WITH CLUSTER early
+    /// return is safe — `StorageDistributed::read` (and others) unconditionally
+    /// dereference `query_info.getCluster()` later.
+    if (has_with_cluster())
+        return std::min(to_stage, QueryProcessingStage::WithMergeableState);
 
     if (!local_context->canUseParallelReplicasCustomKeyForCluster(*cluster))
     {
