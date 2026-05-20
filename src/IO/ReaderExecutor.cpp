@@ -2,6 +2,7 @@
 #include <IO/PrefetchThreadPool.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 
 #include "config.h"
@@ -12,6 +13,11 @@ namespace ProfileEvents
     extern const Event LiveSourceBufferHits;
     extern const Event LiveSourceBufferFallbacks;
     extern const Event LiveSourceBufferBytes;
+}
+
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 #if USE_SSL
@@ -555,7 +561,19 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
 
             auto blocks = allocateBlocks(pr.size);
             Rope source_rope = readFromSource(pr.object, pr.object_offset, std::move(blocks), logical_pos);
-            logical_pos += source_rope.totalBytes();
+            size_t actual = source_rope.totalBytes();
+            /// offset_map's pr.size is authoritative — any short read indicates the
+            /// source can't deliver what offset_map (and therefore StoredObject.bytes_size)
+            /// promised. Failing fast is the only correct choice: a short read on a
+            /// non-terminal range shifts subsequent ranges' logical placement, and on a
+            /// terminal range, returning an empty rope from the next readNextWindow would
+            /// produce an infinite loop because position can't advance past the missing
+            /// bytes.
+            if (actual != pr.size)
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                    "ReaderExecutor: short read from {} at offset {}: requested {} bytes, got {}",
+                    pr.object.remote_path, pr.object_offset, pr.size, actual);
+            logical_pos += pr.size;
             result.append(std::move(source_rope));
         }
     }

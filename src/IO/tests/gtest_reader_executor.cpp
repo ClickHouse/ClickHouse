@@ -450,6 +450,26 @@ TEST(ReaderExecutor, MergeRangesContained)
     EXPECT_EQ(merged[0].size, 200u);  /// [0, 200) ∪ [50, 150) = [0, 200)
 }
 
+TEST(ReaderExecutor, ShortReadThrows)
+{
+    /// offset_map sees obj_a as 1000 bytes but the source has only 300.
+    /// readFromSource short-reads pr1, which is non-terminal (obj_b follows).
+    /// Pre-fix: obj_b's data would silently land at a shifted logical offset.
+    /// Fix: throw CANNOT_READ_ALL_DATA with a clear message.
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{
+            {"obj_a", String(300, 'A')},
+            {"obj_b", String(500, 'B')},
+        });
+
+    StoredObjects objects;
+    objects.emplace_back("obj_a", "", 1000);  /// claims 1000 but actual is 300
+    objects.emplace_back("obj_b", "", 500);
+
+    ReaderExecutor executor(source, objects, {}, /*window_size=*/1500);
+    EXPECT_THROW(executor.readNextWindow(), Exception);
+}
+
 TEST(ReaderExecutor, MergeAcrossCacheHitDropsCachedNode)
 {
     /// When mergeRanges combines two miss ranges across a cached hit, the
