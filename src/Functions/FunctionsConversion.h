@@ -4,7 +4,6 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -14,7 +13,6 @@
 #include <Columns/ColumnQBit.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/AccurateComparison.h>
@@ -84,6 +82,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
+    extern const SettingsBool cast_keep_nullable;
     extern const SettingsBool cast_string_to_dynamic_use_inference;
     extern const SettingsBool cast_string_to_variant_use_inference;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
@@ -130,6 +129,7 @@ struct FunctionConvertSettings
     const bool input_format_ipv6_default_on_conversion_error;
     const bool check_conversion_from_numbers_to_enum;
     const bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
+    const bool cast_keep_nullable;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
 
@@ -145,6 +145,7 @@ struct FunctionConvertSettings
         , input_format_ipv6_default_on_conversion_error(context && context->getSettingsRef()[Setting::input_format_ipv6_default_on_conversion_error])
         , check_conversion_from_numbers_to_enum(context && context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum])
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
+        , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
     {
@@ -2798,11 +2799,18 @@ struct ConvertImplGenericFromString
 
 struct ConvertImplFromDynamicToColumn
 {
+    /// Variant and Dynamic hold NULLs natively via NULL_DISCRIMINATOR, so they
+    /// do not need Nullable wrapping. `canBeInsideNullable` returns false for them
+    /// (meaning they cannot be *wrapped* in Nullable), but that does not mean they
+    /// cannot represent NULL — so we must exclude them from the throw check.
+    static bool shouldThrowOnNull(bool keep_nullable, const DataTypePtr & result_type);
+
     static ColumnPtr execute(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
         size_t input_rows_count,
-        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert);
+        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert,
+        bool throw_on_null = false);
 };
 
 /// Declared early because used below.
@@ -3215,7 +3223,9 @@ private:
                 return executeInternal(args, to_type, args[0].column->size(), /*to_nullable=*/ false);
             };
 
-            return ConvertImplFromDynamicToColumn::execute(arguments, result_type, input_rows_count, nested_convert);
+            return ConvertImplFromDynamicToColumn::execute(
+                arguments, result_type, input_rows_count, nested_convert,
+                ConvertImplFromDynamicToColumn::shouldThrowOnNull(settings.cast_keep_nullable, result_type));
         }
 
         auto call = [&](const auto & types, BehaviourOnErrorFromString from_string_tag) -> bool
@@ -3889,23 +3899,22 @@ struct ToDateMonotonicity
 
             return {.is_monotonic = true, .is_always_monotonic = true};
         }
-        else if (
-            ((left.getType() == Field::Types::UInt64 || left.isNull()) && (right.getType() == Field::Types::UInt64 || right.isNull())
-             && ((left.isNull() || left.safeGet<UInt64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<UInt64>() > DATE_LUT_MAX_DAY_NUM)))
+        constexpr UInt64 max_day_num = std::is_same_v<T, DataTypeDate32> ? DATE_LUT_MAX_EXTEND_DAY_NUM - 1 : DATE_LUT_MAX_DAY_NUM;
+
+        if (((left.getType() == Field::Types::UInt64 || left.isNull()) && (right.getType() == Field::Types::UInt64 || right.isNull())
+             && ((left.isNull() || left.safeGet<UInt64>() <= max_day_num) && (right.isNull() || right.safeGet<UInt64>() > max_day_num)))
             || ((left.getType() == Field::Types::Int64 || left.isNull()) && (right.getType() == Field::Types::Int64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Int64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<Int64>() > DATE_LUT_MAX_DAY_NUM)))
+                && ((left.isNull() || left.safeGet<Int64>() <= static_cast<Int64>(max_day_num)) && (right.isNull() || right.safeGet<Int64>() > static_cast<Int64>(max_day_num))))
             || ((
                 (left.getType() == Field::Types::Float64 || left.isNull())
                 && (right.getType() == Field::Types::Float64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Float64>() <= DATE_LUT_MAX_DAY_NUM) && (right.isNull() || right.safeGet<Float64>() > DATE_LUT_MAX_DAY_NUM))))
+                && ((left.isNull() || left.safeGet<Float64>() <= static_cast<Float64>(max_day_num)) && (right.isNull() || right.safeGet<Float64>() > static_cast<Float64>(max_day_num)))))
             || !isNativeNumber(type))
         {
             return {};
         }
-        else
-        {
-            return {.is_monotonic = true, .is_always_monotonic = true};
-        }
+
+        return {.is_monotonic = true, .is_always_monotonic = true};
     }
 };
 
@@ -4540,7 +4549,7 @@ private:
 
     WrapperType createStringWrapper(const DataTypePtr & from_type) const;
 
-    WrapperType createFixedStringWrapper(const DataTypePtr & from_type, size_t N) const;
+    WrapperType createFixedStringWrapper(const DataTypePtr & from_type, size_t N, bool requested_result_is_nullable) const;
 
 
     WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind) const;

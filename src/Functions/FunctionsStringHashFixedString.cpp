@@ -105,16 +105,7 @@ struct MD4Impl
     };
 };
 
-struct MD5Impl
-{
-    static constexpr auto name = "MD5";
-    static constexpr const EVP_MD * (*provider)() = &EVP_md5;
-    static constexpr bool available_in_fips_mode = false;
-    enum
-    {
-        length = MD5_DIGEST_LENGTH
-    };
-};
+/// MD5Impl moved to FunctionMD5.cpp (multi-buffer SIMD implementation).
 
 struct SHA1Impl
 {
@@ -350,7 +341,7 @@ REGISTER_FUNCTION(HashFixedStrings)
 {
 #    if USE_SSL
     using FunctionMD4 = FunctionStringHashFixedString<OpenSSLProvider<MD4Impl>>;
-    using FunctionMD5 = FunctionStringHashFixedString<OpenSSLProvider<MD5Impl>>;
+    /// MD5 is registered separately in FunctionMD5.cpp (multi-buffer SIMD implementation).
     using FunctionSHA1 = FunctionStringHashFixedString<OpenSSLProvider<SHA1Impl>>;
     using FunctionSHA224 = FunctionStringHashFixedString<OpenSSLProvider<SHA224Impl>>;
     using FunctionSHA256 = FunctionStringHashFixedString<OpenSSLProvider<SHA256Impl>>;
@@ -412,36 +403,7 @@ SELECT HEX(MD4('abc'));
 
     factory.registerFunction<FunctionMD4>(documentation_MD4);
 
-
-    FunctionDocumentation::Description description_MD5 = R"(
-Calculates the MD5 hash of the given string.
-    )";
-    FunctionDocumentation::Syntax syntax_MD5 = "MD5(s)";
-    FunctionDocumentation::Arguments arguments_MD5 = {
-        {"s", "The input string to hash.", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_MD5 = {
-        "Returns the MD5 hash of the given input string as a fixed-length string.", {"FixedString(16)"}
-    };
-    FunctionDocumentation::Examples example_MD5 = {
-    {
-        "Usage example",
-        R"(
-SELECT HEX(MD5('abc'));
-        )",
-        R"(
-┌─hex(MD5('abc'))──────────────────┐
-│ 900150983CD24FB0D6963F7D28E17F72 │
-└──────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in_MD5 = {1, 1};
-    FunctionDocumentation::Category category_MD5 = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation documentation_MD5 = {description_MD5, syntax_MD5, arguments_MD5, {}, returned_value_MD5, example_MD5, introduced_in_MD5, category_MD5};
-
-    factory.registerFunction<FunctionMD5>(documentation_MD5);
-
+    /// MD5 registration moved to FunctionMD5.cpp (multi-buffer SIMD implementation).
 
     FunctionDocumentation::Description description_SHA1 = R"(
 Calculates the SHA1 hash of the given string.

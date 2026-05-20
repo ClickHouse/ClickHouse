@@ -8,8 +8,6 @@ title: 'Integration Libraries from Third-party Developers'
 doc_type: 'reference'
 ---
 
-# Integration libraries from third-party developers
-
 :::warning Disclaimer
 ClickHouse, Inc. does **not** maintain the tools and libraries listed below and haven't done extensive testing to ensure their quality.
 For official integrations please see the [integrations page](/integrations).

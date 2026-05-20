@@ -204,6 +204,7 @@ std::string ConfigProcessor::encryptValue(const std::string & codec_name, const 
     auto bytes_written = codec.compress(value.data(), static_cast<UInt32>(value.size()), memory.data());
     std::string encrypted_value(memory.data(), bytes_written);
     std::string hex_value;
+    /// NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
     boost::algorithm::hex(encrypted_value.begin(), encrypted_value.end(), std::back_inserter(hex_value));
     return hex_value;
 }
@@ -803,24 +804,27 @@ XMLDocumentPtr ConfigProcessor::processConfig(
                 include_from_path = default_path;
         }
 
-        if (!throw_on_bad_include_from && !fs::exists(include_from_path))
+        /// When --try is passed and the include_from file is missing, drop the path so that
+        /// processIncludes does not try to parse it. We must still call processIncludes
+        /// because it also performs from_env/from_zk/incl substitutions on the rest of the
+        /// config; skipping it would silently strip those values (issue #101704).
+        if (!throw_on_bad_include_from && !include_from_path.empty() && !fs::exists(include_from_path))
         {
             LOG_WARNING(log, "File {} (from 'include_from') does not exist. Ignoring.", include_from_path);
+            include_from_path.clear();
         }
-        else
-        {
-            processIncludes(
-                config,
-                substitutions,
-                include_from_path,
-                throw_on_bad_incl,
-                dom_parser,
-                log,
-                &contributing_zk_paths,
-                &contributing_files,
-                zk_node_cache,
-                zk_changed_event);
-        }
+
+        processIncludes(
+            config,
+            substitutions,
+            include_from_path,
+            throw_on_bad_incl,
+            dom_parser,
+            log,
+            &contributing_zk_paths,
+            &contributing_files,
+            zk_node_cache,
+            zk_changed_event);
     }
     catch (Exception & e)
     {

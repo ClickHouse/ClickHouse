@@ -1,47 +1,50 @@
 #include <Interpreters/TreeRewriter.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MutateTask.h>
 
+#include <Columns/ColumnsNumber.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/NestedUtils.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
-#include <Common/logger_useful.h>
-#include <Common/escapeForFileName.h>
-#include <Core/Settings.h>
-#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
-#include <Storages/Statistics/Statistics.h>
-#include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Squashing.h>
 #include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/Squashing.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
-#include <Processors/Transforms/TTLTransform.h>
-#include <Processors/Transforms/TTLCalcTransform.h>
-#include <Processors/Transforms/DistinctSortedTransform.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Processors/Transforms/DistinctSortedTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
+#include <Processors/Transforms/TTLTransform.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
-#include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/MergeTree/TextIndexUtils.h>
-#include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeVariant.h>
-#include <boost/algorithm/string/replace.hpp>
-#include <Common/ProfileEventsScope.h>
-#include <Core/ColumnsWithTypeAndName.h>
-#include <Common/FailPoint.h>
 #include <Storages/MergeTree/StatisticsSerialization.h>
+#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/MergeTree/TextIndexUtils.h>
+#include <Storages/MutationCommands.h>
+#include <Storages/Statistics/Statistics.h>
+#include <boost/algorithm/string/replace.hpp>
+#include <Common/FailPoint.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
+#include <Common/ProfileEventsScope.h>
+#include <Common/escapeForFileName.h>
 
 
 namespace ProfileEvents
@@ -86,6 +89,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
+    extern const MergeTreeSettingsBool share_nested_offsets;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
 }
 
 namespace FailPoints
@@ -278,6 +283,12 @@ static void splitAndModifyMutationCommands(
                                 if (projection.with_parent_part_offset && column == "_part_offset")
                                     continue;
 
+                                if (projection.with_block_number && column == BlockNumberColumn::name)
+                                    continue;
+
+                                if (projection.with_block_offset && column == BlockOffsetColumn::name)
+                                    continue;
+
                                 auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
                                 if (column_in_storage && !part_columns.has(*column_in_storage))
                                     extra_columns_for_indices_and_projections.emplace(*column_in_storage);
@@ -293,7 +304,10 @@ static void splitAndModifyMutationCommands(
             {
                 for_file_renames.push_back(command);
             }
-            else if (bool has_column = part_columns.has(command.column_name), has_nested_column = part_columns.hasNested(command.column_name); has_column || has_nested_column)
+            else if (bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets],
+                          has_column = part_columns.has(command.column_name),
+                          has_nested_column = share_nested && part_columns.hasNested(command.column_name);
+                     has_column || has_nested_column)
             {
                 if (command.type == MutationCommand::Type::DROP_COLUMN || command.type == MutationCommand::Type::RENAME_COLUMN)
                 {
@@ -356,7 +370,7 @@ static void splitAndModifyMutationCommands(
         {
             if (!mutated_columns.contains(column.name))
             {
-                if (!metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtualsPtr()->has(column.name) && !ignored_columns.contains(column.name))
+                if (!metadata_snapshot->columns.has(column.name) && !metadata_snapshot->virtuals.has(column.name) && !ignored_columns.contains(column.name))
                 {
                     /// We cannot add the column because there's no such column in table.
                     /// It's okay if the column was dropped. It may also absent in dropped_columns
@@ -534,6 +548,7 @@ getColumnsForNewDataPart(
     MergeTreeData::DataPartPtr source_part,
     const Block & updated_header,
     NamesAndTypesList storage_columns,
+    NamesAndTypesList persistent_virtuals,
     const SerializationInfoByName & serialization_infos,
     const MutationCommands & commands_for_interpreter,
     const MutationCommands & commands_for_removes)
@@ -594,8 +609,6 @@ getColumnsForNewDataPart(
         }
     }
 
-    auto persistent_virtuals = source_part->storage.getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::Persistent);
-
     for (const auto & [name, type] : persistent_virtuals)
     {
         if (storage_columns_set.contains(name))
@@ -627,6 +640,7 @@ getColumnsForNewDataPart(
             serialization_infos.getSettings().version,
             serialization_infos.getSettings().string_serialization_version,
             serialization_infos.getSettings().nullable_serialization_version,
+            serialization_infos.getSettings().map_serialization_version,
             serialization_infos.getSettings().propagate_types_serialization_versions_to_nested_types,
         };
     }
@@ -640,6 +654,7 @@ getColumnsForNewDataPart(
             (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
             (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
             (*source_part->storage.getSettings())[MergeTreeSetting::nullable_serialization_version],
+            (*source_part->storage.getSettings())[MergeTreeSetting::map_serialization_version],
             (*source_part->storage.getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
         };
     }
@@ -1289,7 +1304,7 @@ void finalizeMutatedPart(
 
     new_data_part->rows_count = source_part->rows_count;
     new_data_part->index_granularity = source_part->index_granularity;
-    new_data_part->minmax_idx = source_part->minmax_idx;
+    new_data_part->setMinMaxIndex(std::make_shared<IMergeTreeDataPart::MinMaxIndex>(*source_part->getMinMaxIndex()));
     new_data_part->modification_time = time(nullptr);
 
     if ((*new_data_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
@@ -1372,6 +1387,7 @@ struct MutationContext
 
     std::vector<ProjectionDescriptionRawPtr> projections_to_build;
     IMergeTreeDataPart::MinMaxIndexPtr minmax_idx;
+    NamesAndTypesList minmax_idx_columns{};
 
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<MergeTreeIndexPtr> text_indices_to_recalc;
@@ -1552,7 +1568,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         ctx->out->write(cur_block);
 
         if (ctx->minmax_idx)
-            ctx->minmax_idx->update(cur_block, MergeTreeData::getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
+            ctx->minmax_idx->update(cur_block, ctx->minmax_idx_columns);
 
         if (!ctx->all_gathered_data.statistics.empty())
             ctx->all_gathered_data.statistics.buildIfExists(cur_block);
@@ -1575,9 +1591,8 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
                     continue;
 
                 projection_squashes[i].setHeader(block_to_squash.cloneEmpty());
-                squashed_chunk = Squashing::squash(
-                    projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}),
-                    projection_squashes[i].getHeader());
+                projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()});
+                squashed_chunk = Squashing::squash(projection_squashes[i].generate(), projection_squashes[i].getHeader());
             }
 
             if (squashed_chunk)
@@ -1631,7 +1646,8 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         result,
         projection,
         ctx->new_data_part.get(),
-        ++projection_block_num);
+        ++projection_block_num,
+        ctx->context);
 
     tmp_part->finalize();
     tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1980,6 +1996,7 @@ private:
         }
 
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+        ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(ctx->metadata_snapshot->getPartitionKey(), ctx->data->getSettings());
         ctx->all_gathered_data.statistics = ColumnsStatistics(ctx->metadata_snapshot->getColumns());
 
         MutationHelpers::processStatisticsChanges(
@@ -1999,7 +2016,7 @@ private:
             skip_indices,
             ctx->compression_codec,
             std::move(index_granularity_ptr),
-            ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID,
+            ctx->txn ? ctx->txn->tid : Tx::NonTransactionalTID,
             ctx->source_part->getBytesUncompressedOnDisk(),
             /*reset_columns=*/ true,
             /*blocks_are_granules_size=*/ false,
@@ -2018,7 +2035,7 @@ private:
     void finalize()
     {
         bool noop;
-        ctx->new_data_part->minmax_idx = std::move(ctx->minmax_idx);
+        ctx->new_data_part->setMinMaxIndex(std::move(ctx->minmax_idx));
         ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
@@ -2117,11 +2134,10 @@ private:
         ctx->new_data_part->getDataPartStorage().createDirectories();
 
         /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
-        TransactionID tid = ctx->txn ? ctx->txn->tid : Tx::PrehistoricTID;
+        TransactionID tid = ctx->txn ? ctx->txn->tid : Tx::NonTransactionalTID;
         /// NOTE do not pass context for writing to system.transactions_info_log,
         /// because part may have temporary name (with temporary block numbers). Will write it later.
-        ctx->new_data_part->version.setCreationTID(tid, nullptr);
-        ctx->new_data_part->storeVersionMetadata();
+        ctx->new_data_part->version->setAndStoreCreationTID(tid, nullptr);
 
         auto settings = ctx->source_part->storage.getSettings();
         NameSet hardlinked_files;
@@ -2725,7 +2741,7 @@ bool MutateTask::prepare()
     for (const auto & name : updated_columns_in_patches)
     {
         GetColumnsOptions options = GetColumnsOptions::AllPhysical;
-        auto column = ctx->storage_snapshot->tryGetColumn(options.withVirtuals(VirtualsKind::Persistent), name);
+        auto column = ctx->storage_snapshot->tryGetColumn(options.withVirtuals(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader), name);
 
         /// Skip updated column if it was dropped from the table.
         if (!column)
@@ -2888,6 +2904,10 @@ bool MutateTask::prepare()
         }
     }
 
+    /// Same rationale as `MergeTreeData::loadDataPart`: the per-part `SingleDiskVolume` and the
+    /// resulting `IMergeTreeDataPart` constructed below live for the mutated part's lifetime.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
     ctx->disk = single_disk_volume->getDisk();
 
@@ -2913,7 +2933,7 @@ bool MutateTask::prepare()
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 
     auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
-        ctx->source_part, ctx->updated_header, ctx->storage_columns,
+        ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames);
 
     ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());

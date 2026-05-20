@@ -1,6 +1,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/validateColumnType.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
@@ -409,13 +410,13 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
     res.column = function->execute(columns, res.type, elements_size, /* dry_run = */ false);
-    if (res.column->getDataType() != res.type->getColumnType())
+    if (!columnMatchesType(*res.column, *res.type))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Unexpected return type from {}. Expected {}. Got {}",
             function->getName(),
-            res.type->getColumnType(),
-            res.column->getDataType());
+            res.type->getName(),
+            res.column->getName());
     if (recursively_convert_result_to_full_column_if_low_cardinality)
     {
         res.column = recursiveRemoveLowCardinality(res.column);

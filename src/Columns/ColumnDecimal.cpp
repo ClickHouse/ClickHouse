@@ -78,6 +78,55 @@ int ColumnDecimal<T>::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int)
 }
 
 template <is_decimal T>
+[[nodiscard]] Int64 ColumnDecimal<T>::compareTrackAt(size_t n, size_t m, const IColumn & rhs, int) const
+{
+    auto & other = assert_cast<const Self &>(rhs);
+    const T * pa = &data[n];
+    const T * pb = &other.data[m];
+
+    if (scale == other.scale)
+    {
+        Int64 res = (*pa) > (*pb) ? 1 : ((*pa) < (*pb) ? -1 : 0);
+
+        if (res < 0)
+        {
+            const T * pa_end = data.data() + size();
+            ++pa;
+            for (; pa < pa_end && (*pa) < (*pb); ++pa)
+                --res;
+        }
+        else if (res > 0)
+        {
+            const T * pb_end = other.data.data() + other.size();
+            ++pb;
+            for (; pb < pb_end && (*pb) < (*pa); ++pb)
+                ++res;
+        }
+        return res;
+    }
+    else
+    {
+        Int64 res = decimalLess<T>(*pb, *pa, other.scale, scale) ? 1 : (decimalLess<T>(*pa, *pb, scale, other.scale) ? -1 : 0);
+
+        if (res < 0)
+        {
+            const T * pa_end = data.data() + size();
+            ++pa;
+            for (; pa < pa_end && decimalLess<T>(*pa, *pb, scale, other.scale); ++pa)
+                --res;
+        }
+        else if (res > 0)
+        {
+            const T * pb_end = other.data.data() + other.size();
+            ++pb;
+            for (; pb < pb_end && decimalLess<T>(*pb, *pa, other.scale, scale); ++pb)
+                ++res;
+        }
+        return res;
+    }
+}
+
+template <is_decimal T>
 Float64 ColumnDecimal<T>::getFloat64(size_t n) const
 {
     return DecimalUtils::convertTo<Float64>(data[n], scale);
@@ -110,6 +159,12 @@ template <is_decimal T>
 void ColumnDecimal<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
     hash.update(data[n].value);
+}
+
+template <is_decimal T>
+void ColumnDecimal<T>::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    hash.update(reinterpret_cast<const char *>(&data[begin]), (end - begin) * sizeof(T));
 }
 
 template <is_decimal T>

@@ -33,6 +33,12 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
+    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
+    bool isStateful() const override { return true; }
+
+    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
+    bool isSuitableForConstantFolding() const override { return false; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
