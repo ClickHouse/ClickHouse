@@ -1929,12 +1929,8 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
 
 std::optional<String> ServerSettings::tryGetLiveValueAsString(ContextPtr context, std::string_view name) const
 {
-    /// Resolve `name` so that path-style aliases (e.g. `query_cache.max_size_in_bytes`) and any
-    /// other aliases are looked up against the canonical setting names used as keys in the map.
-    const std::string_view resolved_name = ServerSettingsTraits::resolveName(name);
-
     const auto changeable_settings = collectChangeableServerSettings(context);
-    auto it = changeable_settings.find(String{resolved_name});
+    auto it = changeable_settings.find(String{name});
     if (it == changeable_settings.end())
         return std::nullopt;
     return it->second.first;

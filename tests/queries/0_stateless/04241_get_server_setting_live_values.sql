@@ -20,9 +20,3 @@ SELECT toUInt64(getServerSetting('mark_cache_size'))
 SELECT toString(getServerSetting('mark_cache_policy'))
      = (SELECT value FROM system.server_settings WHERE name = 'mark_cache_policy')
      AS mark_cache_policy_matches;
-
--- Path-style aliases for runtime-changeable settings should also resolve to the live value.
--- `query_cache.max_size_in_bytes` is an alias for `query_cache_max_size_in_bytes`.
-SELECT toUInt64(getServerSetting('query_cache.max_size_in_bytes'))
-     = toUInt64((SELECT value FROM system.server_settings WHERE name = 'query_cache_max_size_in_bytes'))
-     AS query_cache_max_size_in_bytes_alias_matches;
