@@ -1089,13 +1089,19 @@ protected:
         emplaceNonZeroImpl(place_value, key_holder, it, inserted, hash_value);
     }
 
+public:
     void ALWAYS_INLINE prefetchByHash(size_t hash_key) const
     {
         const auto place = grower.place(hash_key);
         __builtin_prefetch(&buf[place]);
     }
 
-public:
+    bool ALWAYS_INLINE isEmptyCell(size_t hash_key) const
+    {
+        const auto place = grower.place(hash_key);
+        return buf[place].isZero(*this);
+    }
+
     void reserve(size_t num_elements)
     {
         resize(num_elements);
@@ -1145,6 +1151,9 @@ public:
         const auto & key = keyHolderGetKey(key_holder);
         const auto key_hash = hash(key);
         prefetchByHash(key_hash);
+        /// Release any temporary key memory held by the holder (e.g. `SerializedKeyHolder` rolls back the Arena allocation).
+        /// Without this, every prefetch would leak the serialized key bytes in the aggregation pool.
+        keyHolderDiscardKey(key_holder);
     }
 
     /** Insert the key.

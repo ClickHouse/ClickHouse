@@ -102,6 +102,31 @@ ColumnPtr FlatDictionary::getColumn(
                 getItemsShortCircuitImpl<ValueType, false>(
                     attribute, ids, [&](size_t, const Array & value, bool) { out->insert(value); }, default_mask);
             }
+            else if constexpr (std::is_same_v<ValueType, Map>)
+            {
+                auto * out = column.get();
+
+                getItemsShortCircuitImpl<ValueType, false>(
+                    attribute, ids, [&](size_t, const Map & value, bool) { out->insert(value); }, default_mask);
+            }
+            else if constexpr (std::is_same_v<ValueType, Object>)
+            {
+                auto * out = column.get();
+
+                if (is_attribute_nullable)
+                    getItemsShortCircuitImpl<ValueType, true>(
+                        attribute,
+                        ids,
+                        [&](size_t row, const Object & value, bool is_null)
+                        {
+                            (*vec_null_map_to)[row] = is_null;
+                            out->insert(value);
+                        },
+                        default_mask);
+                else
+                    getItemsShortCircuitImpl<ValueType, false>(
+                        attribute, ids, [&](size_t, const Object & value, bool) { out->insert(value); }, default_mask);
+            }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
                 auto * out = column.get();
@@ -155,6 +180,37 @@ ColumnPtr FlatDictionary::getColumn(
                     ids,
                     [&](size_t, const Array & value, bool) { out->insert(value); },
                     default_value_extractor);
+            }
+            else if constexpr (std::is_same_v<ValueType, Map>)
+            {
+                auto * out = column.get();
+
+                getItemsImpl<ValueType, false>(
+                    attribute,
+                    ids,
+                    [&](size_t, const Map & value, bool) { out->insert(value); },
+                    default_value_extractor);
+            }
+            else if constexpr (std::is_same_v<ValueType, Object>)
+            {
+                auto * out = column.get();
+
+                if (is_attribute_nullable)
+                    getItemsImpl<ValueType, true>(
+                        attribute,
+                        ids,
+                        [&](size_t row, const Object & value, bool is_null)
+                        {
+                            (*vec_null_map_to)[row] = is_null;
+                            out->insert(value);
+                        },
+                        default_value_extractor);
+                else
+                    getItemsImpl<ValueType, false>(
+                        attribute,
+                        ids,
+                        [&](size_t, const Object & value, bool) { out->insert(value); },
+                        default_value_extractor);
             }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
@@ -554,6 +610,16 @@ void FlatDictionary::calculateBytesAllocated()
                 /// It is not accurate calculations
                 bytes_allocated += sizeof(Array) * container.size();
             }
+            else if constexpr (std::is_same_v<ValueType, Map>)
+            {
+                /// It is not accurate calculations
+                bytes_allocated += sizeof(Map) * container.size();
+            }
+            else if constexpr (std::is_same_v<ValueType, Object>)
+            {
+                /// It is not accurate calculations
+                bytes_allocated += sizeof(Object) * container.size();
+            }
             else
             {
                 bytes_allocated += container.allocated_bytes();
@@ -567,7 +633,7 @@ void FlatDictionary::calculateBytesAllocated()
         bytes_allocated += sizeof(attribute.is_nullable_set);
 
         if (attribute.is_nullable_set.has_value())
-            bytes_allocated = attribute.is_nullable_set->getBufferSizeInBytes();
+            bytes_allocated += attribute.is_nullable_set->getBufferSizeInBytes();
     }
 
     if (update_field_loaded_block)
@@ -689,7 +755,7 @@ void FlatDictionary::resize(Attribute & attribute, UInt64 key)
         const size_t elements_count = key + 1; //id=0 -> elements_count=1
         loaded_keys.resize(elements_count, false);
 
-        if constexpr (std::is_same_v<T, Array>)
+        if constexpr (std::is_same_v<T, Array> || std::is_same_v<T, Map> || std::is_same_v<T, Object>)
             container.resize(elements_count, T{});
         else
             container.resize_fill(elements_count, T{});

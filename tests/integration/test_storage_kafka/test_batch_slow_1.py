@@ -114,13 +114,13 @@ def test_bad_reschedule(kafka_cluster, create_query_generator):
 
 
 @pytest.mark.parametrize(
-    "create_query_generator, do_direct_read",
+    "create_query_generator",
     [
-        (k.generate_old_create_table_query, True),
-        (k.generate_new_create_table_query, False),
+        k.generate_old_create_table_query,
+        k.generate_new_create_table_query,
     ],
 )
-def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read):
+def test_kafka_unavailable(kafka_cluster, create_query_generator):
     suffix = k.random_string(6)
     kafka_table = f"kafka_unavailable_{suffix}"
 
@@ -143,9 +143,8 @@ def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read
             )
             instance.query(create_query)
 
-            # First read from the table in case we should, to make sure it doesn't crash when the broker is unavailable
-            if do_direct_read:
-                instance.query(f"SELECT * FROM test.{kafka_table}")
+            # First read from the table to make sure it doesn't crash when the broker is unavailable
+            instance.query(f"SELECT * FROM test.{kafka_table}")
 
             instance.query(f"""
                 CREATE MATERIALIZED VIEW test.{kafka_table}_destination ENGINE=MergeTree ORDER BY tuple() AS

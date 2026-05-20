@@ -3,14 +3,12 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 
 
@@ -31,7 +29,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionsMultiStringPosition : public IFunction
+class FunctionsMultiStringPosition final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
