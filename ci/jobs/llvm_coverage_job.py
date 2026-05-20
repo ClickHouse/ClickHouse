@@ -369,26 +369,59 @@ if __name__ == "__main__":
                 return False
 
             _CPP_EXTS = (".cpp", ".cc", ".cxx", ".c", ".h", ".hpp", ".hxx", ".hh")
+            # Templated sources that get expanded into the above extensions at
+            # configure time (e.g. `Config.h.in` -> `Config.h`).
+            _CPP_TEMPLATE_EXTS = tuple(ext + ".in" for ext in _CPP_EXTS)
+            # Assembly and Rust sources also link into the production binary.
+            _OTHER_LINKED_EXTS = (".s", ".S", ".asm", ".rs")
 
-            def _is_production_cpp(p: str) -> bool:
-                # C/C++ source that compiles into the production ClickHouse binary.
-                # If anything in this set changes, the binary itself is different
-                # vs. baseline and the per-changed-file differential coverage report
-                # is the right signal; newly-covered transitions then mix "tests
-                # caught up to old code" with "new code exercised by old tests".
+            def _affects_binary(p: str) -> bool:
+                # Files whose change can alter the compiled production
+                # ClickHouse binary. When any of these change, the per-changed-
+                # file differential coverage report is the right signal;
+                # newly-covered transitions on a changed binary mix "tests
+                # caught up to old code" with "new code exercised by old
+                # tests" and are not attributable to test additions.
+                #
+                # Includes:
+                #   - C/C++ source and headers
+                #   - templated sources (`.cpp.in`, `.h.in`, ...)
+                #   - assembly (`.s`, `.S`, `.asm`) and Rust (`.rs`)
+                #   - build files: `CMakeLists.txt`, `*.cmake`
+                #   - codegen drivers: any `.py` under `src/`, `programs/`, `base/`
+                # Excludes:
+                #   - `contrib/` (third-party; coverage instrumentation is off)
+                #   - test code (tests/... and src/**/tests/...)
                 if p.startswith("contrib/"):
                     return False
                 if _is_test_path(p):
                     return False
-                return p.endswith(_CPP_EXTS)
+                if p.endswith(_CPP_EXTS):
+                    return True
+                if p.endswith(_CPP_TEMPLATE_EXTS):
+                    return True
+                if p.endswith(_OTHER_LINKED_EXTS):
+                    return True
+                if os.path.basename(p) == "CMakeLists.txt":
+                    return True
+                if p.endswith(".cmake"):
+                    return True
+                if p.endswith(".py") and (
+                    p.startswith("src/")
+                    or p.startswith("programs/")
+                    or p.startswith("base/")
+                ):
+                    return True
+                return False
 
             _tests_changed = any(_is_test_path(p) for p in _changed_paths)
-            # The binary is identical to baseline iff no production C/C++ source
-            # changed. Scripts (CI helpers in ci/, tests/ci/, .py / .sh), configs,
-            # docs, and test files all leave the binary unchanged, so any coverage
-            # delta is purely attributable to the test set running against it.
+            # The binary is identical to baseline iff no binary-affecting file
+            # changed. Test files, CI helpers in ci/, tests/ci/, .py / .sh
+            # outside src|programs|base, configs, and docs all leave the
+            # binary unchanged, so any coverage delta is purely attributable
+            # to the test set running against it.
             _binary_unchanged = bool(_changed_paths) and not any(
-                _is_production_cpp(p) for p in _changed_paths
+                _affects_binary(p) for p in _changed_paths
             )
 
             _base_info = f"{TEMP_DIR}/base_llvm_coverage.info"

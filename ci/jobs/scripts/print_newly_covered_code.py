@@ -288,6 +288,14 @@ if __name__ == "__main__":
 
     if total_lines == 0 and total_fns == 0:
         summary = "no newly covered lines or functions"
+        # The hook checks `if newly_covered_info:` to decide whether to render
+        # the "Newly covered by added/modified tests:" line. For PRs with no
+        # signal we want that line omitted entirely (otherwise every CI-fix /
+        # test-tweak PR with no real coverage delta would carry a confusing
+        # "Newly covered: no newly covered lines or functions" footer), so
+        # set the GH-comment payload to empty here while keeping the
+        # descriptive summary in the log + Result.info for the artifact.
+        comment_text = ""
     else:
         bits: list[str] = []
         if total_lines > 0:
@@ -295,6 +303,7 @@ if __name__ == "__main__":
         if total_fns > 0:
             bits.append(f"{total_fns} function(s)")
         summary = f"{', '.join(bits)} across {total_files} file(s)"
+        comment_text = summary
     print(f"\nNewly covered: {summary}\n")
 
     file_stats = sorted(
@@ -360,7 +369,7 @@ if __name__ == "__main__":
         status=Result.Status.OK,
         info=summary,
     )
-    r.set_comment(summary)
+    r.set_comment(comment_text)
     r.ext["newly_covered_lines"] = total_lines
     r.ext["newly_covered_fns"] = total_fns
     r.ext["newly_covered_files"] = total_files
