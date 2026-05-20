@@ -1567,24 +1567,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     DDLGuardPtr ddl_guard;
 
-    /// `ATTACH TABLE name <something>;` without `ENGINE` and without a columns list is ambiguous:
-    /// the parser allows `SETTINGS`, `ORDER BY`, `PARTITION BY`, `COMMENT`, `REFRESH`, `TO`, etc.
-    /// in this position (to support `default_table_engine` on `CREATE` and to share the parser
-    /// between `CREATE` and `ATTACH`), but the short `ATTACH` path below reads the full table
-    /// definition from stored metadata and silently overwrites anything the user typed.
-    ///
-    /// However `ATTACH TABLE t SETTINGS log_comment = 'foo';` is a legitimate, supported pattern:
-    /// `InterpreterSetQuery::applySettingsFromQuery` (called from `executeQueryImpl` before this
-    /// interpreter runs) extracts session settings out of `create.storage->settings` and applies
-    /// them to the context, then clears `create.storage->settings` when nothing engine-specific
-    /// is left. So the case we must reject is the remaining one: at this point any of the
-    /// non-engine storage fields (`ORDER BY`, `PARTITION BY`, `PRIMARY KEY`, `SAMPLE BY`, `TTL`,
-    /// `UNIQUE KEY`, or `SETTINGS` containing keys that are not known session settings) are still
-    /// populated, OR one of the top-level `ASTCreateQuery` fields (`COMMENT`, `REFRESH`,
-    /// `SQL SECURITY`, `TO target`, `EMPTY`, `CLONE`, `AS SELECT`, etc.) is set. Any of those
-    /// would be silently dropped by the short `ATTACH` path below.
-    if (create.attach && !create.columns_list && (!create.storage || !create.storage->engine))
+    // If this is a stub ATTACH query, read the query definition from the database
+    if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list)
     {
+        /// First, reject any user-supplied storage clauses or top-level fields that the
+        /// short-ATTACH path below would silently drop by overwriting `create` with the
+        /// stored table metadata. `InterpreterSetQuery::applySettingsFromQuery` (called from
+        /// `executeQueryImpl` before this interpreter) has already hoisted session settings
+        /// out of `create.storage->settings`, so anything still here is either engine-specific
+        /// (`ORDER BY`, `PARTITION BY`, `PRIMARY KEY`, `SAMPLE BY`, `TTL`, `UNIQUE KEY`, MergeTree
+        /// `SETTINGS`) or a top-level `ASTCreateQuery` field (`COMMENT`, `REFRESH`, `SQL SECURITY`,
+        /// `TO target`, `EMPTY`, `CLONE`, `AS SELECT`, `UUID`, etc.).
         bool has_dropped_clauses = false;
 
         if (create.storage)
@@ -1600,9 +1593,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 || storage.settings != nullptr;
         }
 
-        /// Top-level fields on `ASTCreateQuery` that the parser may populate for an `ATTACH`
-        /// query but that the short `ATTACH` path below silently drops by overwriting `create`
-        /// with the stored table metadata.
         has_dropped_clauses = has_dropped_clauses
             || create.comment != nullptr
             || create.refresh_strategy != nullptr
@@ -1614,7 +1604,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             || create.is_create_empty
             || create.is_clone_as
             || !create.as_database.empty()
-            || !create.as_table.empty();
+            || !create.as_table.empty()
+            || create.uuid != UUIDHelpers::Nil;
 
         if (has_dropped_clauses)
         {
@@ -1624,11 +1615,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "(or 'MODIFY ORDER BY ...') after ATTACH to change settings.",
                 backQuoteIfNeed(create.getTable()));
         }
-    }
 
-    // If this is a stub ATTACH query, read the query definition from the database
-    if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list)
-    {
         // In case of an ON CLUSTER query, the database may not be present on the initiator node
         auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
         if (database && database->shouldReplicateQuery(getContext(), query_ptr))

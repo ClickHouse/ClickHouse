@@ -71,6 +71,11 @@ ATTACH TABLE t_104791 EMPTY AS SELECT 1; -- { serverError BAD_ARGUMENTS }
 -- 10. CLONE AS source on a short ATTACH: silently dropped before this patch.
 ATTACH TABLE t_104791 CLONE AS t_104791; -- { serverError BAD_ARGUMENTS }
 
+-- 11. Top-level UUID on a short ATTACH: silently dropped before this patch
+--     (the stored UUID overwrites the user-supplied one when `create` is replaced
+--     by stored metadata in the short-ATTACH path below).
+ATTACH TABLE t_104791 UUID '00000000-0000-0000-0000-000000000001'; -- { serverError BAD_ARGUMENTS }
+
 -- Restore the table so cleanup at the end works.
 ATTACH TABLE t_104791;
 DROP TABLE t_104791;
@@ -89,14 +94,14 @@ CREATE TABLE t_mv_104791_other_target (id UInt32, x UInt32) ENGINE = MergeTree O
 CREATE MATERIALIZED VIEW t_mv_104791 REFRESH EVERY 1 HOUR TO t_mv_104791_target AS SELECT 1 AS id, 2 AS x;
 DETACH TABLE t_mv_104791;
 
--- 11. ATTACH MV with a different REFRESH schedule: silently dropped before this
+-- 12. ATTACH MV with a different REFRESH schedule: silently dropped before this
 --     patch (the stored REFRESH EVERY 1 HOUR replaced the user's EVERY 1 YEAR).
 ATTACH MATERIALIZED VIEW t_mv_104791 REFRESH EVERY 1 YEAR TO t_mv_104791_target AS SELECT 5 AS id, 6 AS x; -- { serverError BAD_ARGUMENTS }
 
--- 12. ATTACH MV with a different TO target: silently dropped before this patch.
+-- 13. ATTACH MV with a different TO target: silently dropped before this patch.
 ATTACH MATERIALIZED VIEW t_mv_104791 TO t_mv_104791_other_target AS SELECT 5 AS id, 6 AS x; -- { serverError BAD_ARGUMENTS }
 
--- 13. ATTACH MV with a different AS SELECT: silently dropped before this patch.
+-- 14. ATTACH MV with a different AS SELECT: silently dropped before this patch.
 ATTACH MATERIALIZED VIEW t_mv_104791 TO t_mv_104791_target AS SELECT 5 AS id, 6 AS x; -- { serverError BAD_ARGUMENTS }
 
 -- Restore the MV so cleanup works.
