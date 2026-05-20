@@ -120,6 +120,51 @@ private:
     Azure::Storage::Blobs::ListBlobsOptions options;
 };
 
+bool isAdlsGen2Endpoint(const String & storage_account_url)
+{
+    return storage_account_url.find("fabric.microsoft.com") != String::npos;
+}
+
+String buildAdlsGen2FileUrl(const AzureBlobStorage::Endpoint & endpoint, const String & blob_path)
+{
+    String url = endpoint.getContainerEndpoint();
+    auto query_pos = url.find('?');
+    if (query_pos == String::npos)
+    {
+        if (!url.empty() && url.back() != '/')
+            url += '/';
+        url += blob_path;
+        return url;
+    }
+
+    String path_part = url.substr(0, query_pos);
+    String query_part = url.substr(query_pos);
+    if (!path_part.empty() && path_part.back() != '/')
+        path_part += '/';
+    return path_part + blob_path + query_part;
+}
+
+std::unique_ptr<Azure::Storage::Files::DataLake::DataLakeFileClient> makeAdlsGen2FileClient(
+    const String & file_url,
+    const AzureBlobStorage::AuthMethod & auth_method,
+    const Azure::Storage::Blobs::BlobClientOptions & blob_client_options)
+{
+    using namespace Azure::Storage::Files::DataLake;
+    DataLakeClientOptions datalake_options;
+    static_cast<Azure::Core::_internal::ClientOptions &>(datalake_options)
+        = static_cast<const Azure::Core::_internal::ClientOptions &>(blob_client_options);
+
+    return std::visit(
+        [&]<typename T>(const T & auth) -> std::unique_ptr<DataLakeFileClient>
+        {
+            if constexpr (std::is_same_v<T, AzureBlobStorage::ConnectionString>)
+                return std::make_unique<DataLakeFileClient>(file_url, datalake_options);
+            else
+                return std::make_unique<DataLakeFileClient>(file_url, auth, datalake_options);
+        },
+        auth_method);
+}
+
 }
 
 
@@ -142,6 +187,17 @@ AzureObjectStorage::AzureObjectStorage(
     , connection_params(connection_params_)
     , log(getLogger("AzureObjectStorage"))
 {
+    if (isAdlsGen2Endpoint(connection_params.endpoint.storage_account_url))
+    {
+        /// Placeholder DataLakeFileClient pointing at the filesystem root. Per-file
+        /// operations build their own clients via buildDataLakeFileClient(blob_path);
+        /// this instance is kept to satisfy the MultiVersion field invariant and to
+        /// surface auth/option construction errors at object-storage creation time.
+        datalake_client.set(makeAdlsGen2FileClient(
+            connection_params.endpoint.getContainerEndpoint(),
+            auth_method,
+            connection_params.client_options));
+    }
 }
 
 ObjectStorageKeyGeneratorPtr AzureObjectStorage::createKeyGenerator() const
@@ -270,49 +326,13 @@ SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetad
 }
 
 
-static bool isOneLakeEndpoint(const String & storage_account_url)
+std::unique_ptr<Azure::Storage::Files::DataLake::DataLakeFileClient>
+AzureObjectStorage::buildDataLakeFileClient(const String & blob_path) const
 {
-    return storage_account_url.find("fabric.microsoft.com") != String::npos;
-}
-
-static String buildAdlsGen2FileUrl(const AzureBlobStorage::Endpoint & endpoint, const String & blob_path)
-{
-    String url = endpoint.getContainerEndpoint();
-    auto query_pos = url.find('?');
-    if (query_pos == String::npos)
-    {
-        if (!url.empty() && url.back() != '/')
-            url += '/';
-        url += blob_path;
-        return url;
-    }
-
-    String path_part = url.substr(0, query_pos);
-    String query_part = url.substr(query_pos);
-    if (!path_part.empty() && path_part.back() != '/')
-        path_part += '/';
-    return path_part + blob_path + query_part;
-}
-
-static Azure::Storage::Files::DataLake::DataLakeFileClient buildAdlsGen2FileClient(
-    const String & file_url,
-    const AzureBlobStorage::AuthMethod & auth_method,
-    const Azure::Storage::Blobs::BlobClientOptions & blob_client_options)
-{
-    using namespace Azure::Storage::Files::DataLake;
-    DataLakeClientOptions datalake_options;
-    static_cast<Azure::Core::_internal::ClientOptions &>(datalake_options)
-        = static_cast<const Azure::Core::_internal::ClientOptions &>(blob_client_options);
-
-    return std::visit(
-        [&]<typename T>(const T & auth) -> DataLakeFileClient
-        {
-            if constexpr (std::is_same_v<T, AzureBlobStorage::ConnectionString>)
-                return DataLakeFileClient(file_url, datalake_options);
-            else
-                return DataLakeFileClient(file_url, auth, datalake_options);
-        },
-        auth_method);
+    return makeAdlsGen2FileClient(
+        buildAdlsGen2FileUrl(connection_params.endpoint, blob_path),
+        auth_method,
+        connection_params.client_options);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NOLINT
@@ -331,7 +351,7 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     if (blob_storage_log)
         blob_storage_log->local_path = object.local_path;
 
-    if (isOneLakeEndpoint(connection_params.endpoint.storage_account_url))
+    if (isAdlsGen2Endpoint(connection_params.endpoint.storage_account_url))
     {
         return std::make_unique<WriteBufferFromAzureDataLakeStorage>(
             buildAdlsGen2FileUrl(connection_params.endpoint, object.remote_path),
@@ -378,13 +398,9 @@ void AzureObjectStorage::removeObjectImpl(
     bool success = false;
     try
     {
-        if (isOneLakeEndpoint(connection_params.endpoint.storage_account_url))
+        if (isAdlsGen2Endpoint(connection_params.endpoint.storage_account_url))
         {
-            auto datalake_client = buildAdlsGen2FileClient(
-                buildAdlsGen2FileUrl(connection_params.endpoint, path),
-                auth_method,
-                connection_params.client_options);
-            datalake_client.Delete();
+            buildDataLakeFileClient(path)->Delete();
             success = true;
         }
         else

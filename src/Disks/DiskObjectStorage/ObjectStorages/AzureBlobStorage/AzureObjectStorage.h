@@ -8,6 +8,7 @@
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/MultiVersion.h>
 #include <azure/storage/blobs.hpp>
+#include <azure/storage/files/datalake/datalake_file_client.hpp>
 #include <azure/core/http/curl_transport.hpp>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 
@@ -140,10 +141,13 @@ private:
         const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
         BlobStorageLogWriterPtr blob_storage_log);
 
+    std::unique_ptr<Azure::Storage::Files::DataLake::DataLakeFileClient> buildDataLakeFileClient(const String & blob_path) const;
+
     const String name;
     AzureBlobStorage::AuthMethod auth_method;
     /// client used to access the files in the Blob Storage cloud
     MultiVersion<AzureBlobStorage::ContainerClient> client;
+    MultiVersion<Azure::Storage::Files::DataLake::DataLakeFileClient> datalake_client;
     MultiVersion<AzureBlobStorage::RequestSettings> settings;
     const String object_namespace; /// container + prefix
 
