@@ -39,6 +39,11 @@ public:
 
     size_t getFileOffsetOfBufferEnd() const override;
 
+    /// Reads into `memory` (or prefetch_buffer) — not into the pointer set via
+    /// ReadBuffer::set(). Same reasoning as
+    /// AsynchronousReadBufferFromFileDescriptor::supportsExternalBufferMode.
+    bool supportsExternalBufferMode() const override { return false; }
+
 private:
     bool nextImpl() override;
 
