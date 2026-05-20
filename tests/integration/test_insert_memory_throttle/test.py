@@ -9,6 +9,7 @@ node = cluster.add_instance(
     "node",
     main_configs=["configs/memory_limit.xml"],
     mem_limit="600m",
+    stay_alive=True,
 )
 
 
