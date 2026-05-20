@@ -66,6 +66,13 @@ public:
 
     void preloadPackedSkipIndicesArchive(const class DataPartStorageOnDiskBase & source, const NameSet & files) override;
 
+    /// Return the in-flight packed archive. Returns the borrowed pointer when this writer is
+    /// secondary; otherwise the owned writer (or nullptr if packing is disabled here).
+    PackedFilesWriter * getSkipIndicesPackedWriter() override
+    {
+        return skip_indices_packed_writer ? skip_indices_packed_writer.get() : skip_indices_packed_writer_borrowed;
+    }
+
     const Block & getColumnsSample() const override { return block_sample; }
     const ColumnsSubstreams & getColumnsSubstreams() const override { return columns_substreams; }
 
@@ -125,8 +132,15 @@ protected:
     /// Optional packed archive shared by all skip-index substreams that stayed under the
     /// per-substream size threshold. Substreams that exceeded it were spilled to standalone
     /// files on data_part_storage by the SizeAdaptiveSpoolBuffer wrapper and are not part of
-    /// this archive. Null when packing is disabled (packed_skip_index_max_bytes = 0).
+    /// this archive. Null when packing is disabled (packed_skip_index_max_bytes = 0) or when
+    /// this writer is borrowing another writer's archive via @skip_indices_packed_writer_borrowed.
     std::unique_ptr<PackedFilesWriter> skip_indices_packed_writer;
+    /// Non-owning pointer set when this writer is a "secondary" producer sharing an outer
+    /// writer's `PackedFilesWriter` (e.g. vertical-merge per-column writers sharing the
+    /// horizontal `MergedBlockOutputStream`'s archive). When set, this writer contributes
+    /// packed substreams to the borrowed archive but never writes `skp_idx.packed` itself; the
+    /// owner finalizes the archive on disk.
+    PackedFilesWriter * skip_indices_packed_writer_borrowed = nullptr;
     /// Output buffer for the skp_idx.packed file itself. Constructed lazily during
     /// fillSkipIndicesChecksums when the writer has content to flush.
     std::unique_ptr<WriteBufferFromFileBase> skip_indices_packed_file;

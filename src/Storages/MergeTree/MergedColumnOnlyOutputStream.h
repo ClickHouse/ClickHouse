@@ -24,7 +24,8 @@ public:
         CompressionCodecPtr default_codec,
         MergeTreeIndexGranularityPtr index_granularity_ptr,
         size_t part_uncompressed_bytes,
-        WrittenOffsetSubstreams * written_offset_substreams);
+        WrittenOffsetSubstreams * written_offset_substreams,
+        class PackedFilesWriter * external_packed_skip_indices_writer = nullptr);
 
     void write(const Block & block) override;
     void finalizeIndexGranularity();

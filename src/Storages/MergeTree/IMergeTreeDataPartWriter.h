@@ -53,6 +53,12 @@ public:
     /// inode). Default implementation is a no-op for writers that don't pack skip indices.
     virtual void preloadPackedSkipIndicesArchive(const class DataPartStorageOnDiskBase & /*source*/, const NameSet & /*files*/) {}
 
+    /// Expose this writer's packed skip-indices archive (if any) so a secondary writer
+    /// (vertical-merge per-column `MergedColumnOnlyOutputStream`) can contribute its own
+    /// packed substreams to the same archive instead of racing on `skp_idx.packed`. Returns
+    /// nullptr if this writer is not packing skip indices.
+    virtual class PackedFilesWriter * getSkipIndicesPackedWriter() { return nullptr; }
+
     virtual void finalizeIndexGranularity() = 0;
     virtual void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) = 0;
 

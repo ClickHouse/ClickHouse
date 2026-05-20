@@ -132,6 +132,19 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
 
 void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 {
+    const size_t packed_spill_threshold = (*storage_settings)[MergeTreeSetting::packed_skip_index_max_bytes];
+    /// packed_skip_index_max_bytes = 0 disables packing entirely (always per-file).
+    const bool packing_enabled = packed_spill_threshold > 0;
+
+    /// Secondary writers (vertical-merge per-column `MergedColumnOnlyOutputStream`) borrow
+    /// the outer writer's `PackedFilesWriter` so the two writers don't both try to write
+    /// `skp_idx.packed`. The owner of the borrowed writer is responsible for finalizing the
+    /// archive; see `fillSkipIndicesChecksums`.
+    if (settings.external_packed_skip_indices_writer)
+        skip_indices_packed_writer_borrowed = settings.external_packed_skip_indices_writer;
+    else if (packing_enabled)
+        skip_indices_packed_writer = std::make_unique<PackedFilesWriter>();
+
     if (skip_indices.empty())
         return;
 
@@ -139,11 +152,8 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
 
-    const size_t packed_spill_threshold = (*storage_settings)[MergeTreeSetting::packed_skip_index_max_bytes];
-    /// packed_skip_index_max_bytes = 0 disables packing entirely (always per-file).
-    const bool packing_enabled = packed_spill_threshold > 0;
-    if (packing_enabled)
-        skip_indices_packed_writer = std::make_unique<PackedFilesWriter>();
+    PackedFilesWriter * packed_writer_for_streams =
+        skip_indices_packed_writer ? skip_indices_packed_writer.get() : skip_indices_packed_writer_borrowed;
 
     for (const auto & skip_index : skip_indices)
     {
@@ -185,7 +195,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                 marks_compression_codec,
                 settings.marks_compress_block_size,
                 settings.query_write_settings,
-                packs_this_index ? skip_indices_packed_writer.get() : nullptr,
+                packs_this_index ? packed_writer_for_streams : nullptr,
                 packs_this_index ? logical_stream_name + index_substream.extension : String{},
                 packs_this_index ? logical_stream_name + marks_file_extension : String{},
                 packed_spill_threshold);

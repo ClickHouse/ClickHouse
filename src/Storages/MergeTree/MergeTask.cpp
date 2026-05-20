@@ -1656,6 +1656,11 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 
     NamesAndTypesList columns_list = {*ctx->it_name_and_type};
 
+    /// The horizontal `global_ctx->to` writer owns this part's `skp_idx.packed`. Share its
+    /// `PackedFilesWriter` with this per-column writer so the per-column packed substreams land
+    /// in the same in-memory archive instead of racing on the on-disk file. The horizontal
+    /// writer is the one that finalizes `skp_idx.packed` (see `fillSkipIndicesChecksums`); this
+    /// per-column writer just contributes entries.
     ctx->column_to = std::make_unique<MergedColumnOnlyOutputStream>(
         global_ctx->new_data_part,
         global_ctx->data_settings,
@@ -1665,7 +1670,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->compression_codec,
         global_ctx->to->getIndexGranularity(),
         global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
-        &global_ctx->written_offset_substreams);
+        &global_ctx->written_offset_substreams,
+        global_ctx->to->getSkipIndicesPackedWriter());
 
     ctx->column_elems_written = 0;
 }
