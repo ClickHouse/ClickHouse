@@ -9,6 +9,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# The test SIGKILLs clickhouse-client mid-execution, so LSan's at-exit
+# stop-the-world (`ptrace`) is racy here and emits a fatal stderr warning
+# when `ptrace` is sandboxed (e.g. arm_asan_ubsan runner under seccomp).
+export LSAN_OPTIONS="${LSAN_OPTIONS:+$LSAN_OPTIONS:}detect_leaks=0"
+
 export DATA_FILE="$CLICKHOUSE_TMP/deduptest.tsv"
 export TEST_MARK="02435_insert_${CLICKHOUSE_DATABASE}_"
 export SESSION="02435_session_${CLICKHOUSE_DATABASE}"
