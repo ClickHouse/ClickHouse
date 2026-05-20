@@ -113,7 +113,56 @@ constexpr size_t MAX_ORACLE_OUTPUT_SIZE = 10 * 1024 * 1024;
 /// post-execution size check in `executeAndCollect*` triggers.
 constexpr size_t MAX_ORACLE_RESULT_ROWS = 10'000'000;
 
+/// Strip known aggregate-function combinator suffixes from the right of `name`
+/// repeatedly, so e.g. `first_valueOrNullDistinct` becomes `first_value`.
+/// Combinators are checked against the same set ClickHouse recognises in
+/// `AggregateFunctionCombinatorFactory`. Cheap and safe: we never strip into
+/// an empty string and stop as soon as no suffix matches.
+String stripAggregateCombinators(String name)
+{
+    static const std::vector<String> suffixes = {
+        "If",
+        "Array",
+        "Map",
+        "ForEach",
+        "Distinct",
+        "OrDefault",
+        "OrFill",
+        "OrNull",
+        "Resample",
+        "ArgMin",
+        "ArgMax",
+        "MergeState",
+        "State",
+        "Merge",
+        "SimpleState",
+        "Tuple",
+        "RespectNulls",
+        "IgnoreNulls",
+        "Null",
+    };
+    bool stripped = true;
+    while (stripped)
+    {
+        stripped = false;
+        for (const auto & suffix : suffixes)
+        {
+            if (name.size() > suffix.size() && name.ends_with(suffix))
+            {
+                name.resize(name.size() - suffix.size());
+                stripped = true;
+                break;
+            }
+        }
+    }
+    return name;
+}
+
 /// Walk an AST tree and check if any ASTFunction has a name in the given set.
+/// We strip aggregate combinator suffixes before the lookup so e.g.
+/// `first_valueOrNull` matches the `first_value` entry in the blocklist —
+/// the fuzzer routinely mutates aggregates into `*OrNull`/`*Distinct`/`*State`
+/// chains and exact-name matching would miss those.
 bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast)
 {
     if (!ast)
@@ -121,7 +170,8 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast)
 
     if (const auto * func = ast->as<ASTFunction>())
     {
-        if (non_deterministic_functions.contains(func->name))
+        if (non_deterministic_functions.contains(func->name)
+            || non_deterministic_functions.contains(stripAggregateCombinators(func->name)))
             return true;
     }
 
