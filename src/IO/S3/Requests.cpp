@@ -35,7 +35,7 @@ Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() 
     replace_with_gcs_header("x-amz-storage-class", "x-goog-storage-class");
 
     /// replace all x-amz-meta- headers
-    std::vector<std::pair<std::string, std::string>> new_meta_headers;
+    std::vector<std::pair<std::string, std::string>> new_meta_headers; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     for (auto it = headers.begin(); it != headers.end();)
     {
         if (it->first.starts_with("x-amz-meta-"))
@@ -167,7 +167,7 @@ void ComposeObjectRequest::SetKey(const char * value)
     key.assign(value);
 }
 
-void ComposeObjectRequest::SetComponentNames(std::vector<Aws::String> component_names_)
+void ComposeObjectRequest::SetComponentNames(std::vector<Aws::String> component_names_) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     component_names = std::move(component_names_);
 }

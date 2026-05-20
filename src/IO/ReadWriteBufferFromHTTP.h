@@ -95,9 +95,9 @@ private:
     std::string content_encoding;
     std::unique_ptr<ReadBuffer> impl;
 
-    std::vector<Poco::Net::HTTPCookie> cookies;
+    std::vector<Poco::Net::HTTPCookie> cookies; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-    std::map<String, String> response_headers;
+    std::map<String, String> response_headers; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     HTTPHeaderEntries http_header_entries;
     std::function<void(size_t)> next_callback;

@@ -252,6 +252,7 @@ directories_to_lint_std_containers_usages=(
     src/Daemon
     src/Dictionaries
     src/Functions
+    src/IO
     src/Loggers
     src/QueryPipeline
     src/TableFunctions

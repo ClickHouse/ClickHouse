@@ -28,7 +28,7 @@ namespace ErrorCodes
 }
 
 
-/** Replacement for std::vector<char> to use in buffers.
+/** Replacement for std::vector<char> to use in buffers. // STYLE_CHECK_ALLOW_STD_CONTAINERS
   * Differs in that is doesn't do unnecessary memset. (And also tries to do as little as possible.)
   * Also allows to allocate aligned piece of memory (to use with O_DIRECT, for example).
   */

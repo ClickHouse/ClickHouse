@@ -59,10 +59,10 @@ struct ClientCache
     void clearCache();
 
     mutable std::mutex region_cache_mutex;
-    std::unordered_map<std::string, std::string> region_for_bucket_cache TSA_GUARDED_BY(region_cache_mutex);
+    std::unordered_map<std::string, std::string> region_for_bucket_cache TSA_GUARDED_BY(region_cache_mutex); // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     mutable std::mutex uri_cache_mutex;
-    std::unordered_map<std::string, URI> uri_for_bucket_cache TSA_GUARDED_BY(uri_cache_mutex);
+    std::unordered_map<std::string, URI> uri_for_bucket_cache TSA_GUARDED_BY(uri_cache_mutex); // STYLE_CHECK_ALLOW_STD_CONTAINERS
 };
 
 class ClientCacheRegistry
@@ -81,7 +81,7 @@ private:
     ClientCacheRegistry() = default;
 
     std::mutex clients_mutex;
-    std::unordered_map<ClientCache *, std::weak_ptr<ClientCache>> client_caches TSA_GUARDED_BY(clients_mutex);
+    std::unordered_map<ClientCache *, std::weak_ptr<ClientCache>> client_caches TSA_GUARDED_BY(clients_mutex); // STYLE_CHECK_ALLOW_STD_CONTAINERS
 };
 
 bool isS3ExpressEndpoint(const std::string & endpoint);

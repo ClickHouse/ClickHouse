@@ -7,8 +7,8 @@
 /// https://github.com/zlib-ng/zlib-ng/issues/494
 int mainEntryExampleZlibNgBug(int, char **)
 {
-    std::vector<unsigned char> in(1048576);
-    std::vector<unsigned char> out(1048576);
+    std::vector<unsigned char> in(1048576); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::vector<unsigned char> out(1048576); // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     ssize_t in_size = read(STDIN_FILENO, in.data(), 1048576);
     if (in_size < 0)

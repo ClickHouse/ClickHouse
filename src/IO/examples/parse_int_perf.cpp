@@ -43,8 +43,8 @@ int mainEntryExampleParseIntPerf(int argc, char ** argv)
         size_t n = std::stol(argv[1]);
         assert(n > 0);
 
-        std::vector<T> data(n);
-        std::vector<T> data2(n);
+        std::vector<T> data(n); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::vector<T> data2(n); // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
         {
             Stopwatch watch;
@@ -58,11 +58,11 @@ int mainEntryExampleParseIntPerf(int argc, char ** argv)
                       << static_cast<double>(data.size()) * sizeof(data[0]) / watch.elapsedSeconds() / 1000000 << " MB/s." << std::endl;
         }
 
-        std::vector<char> formatted;
+        std::vector<char> formatted; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         formatted.reserve(n * 21);
 
         {
-            auto wb = DB::WriteBufferFromVector<std::vector<char>>(formatted);
+            auto wb = DB::WriteBufferFromVector<std::vector<char>>(formatted); // STYLE_CHECK_ALLOW_STD_CONTAINERS
             Stopwatch watch;
 
             UInt64 tsc = rdtsc();

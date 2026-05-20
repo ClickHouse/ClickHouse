@@ -17,7 +17,7 @@ namespace DB
 
 struct URIConverter
 {
-    static void modifyURI(Poco::URI & uri, std::unordered_map<std::string, std::string> mapper)
+    static void modifyURI(Poco::URI & uri, std::unordered_map<std::string, std::string> mapper) // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
         Macros macros({{"bucket", uri.getHost()}});
         uri = macros.expand(mapper[uri.getScheme()]).empty() ? uri : Poco::URI(macros.expand(mapper[uri.getScheme()]) + uri.getPathAndQuery());
@@ -71,14 +71,14 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
     if (!keep_presigned_query_parameters && looks_like_presigned)
         looks_like_presigned = false;
 
-    std::unordered_map<std::string, std::string> mapper;
+    std::unordered_map<std::string, std::string> mapper; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     auto context = Context::getGlobalContextInstance();
     if (context)
     {
         const auto *config = &context->getConfigRef();
         if (config->has("url_scheme_mappers"))
         {
-            std::vector<String> config_keys;
+            std::vector<String> config_keys; // STYLE_CHECK_ALLOW_STD_CONTAINERS
             config->keys("url_scheme_mappers", config_keys);
             for (const std::string & config_key : config_keys)
                 mapper[config_key] = config->getString("url_scheme_mappers." + config_key + ".to");

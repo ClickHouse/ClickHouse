@@ -85,7 +85,7 @@ void deleteFilesFromS3(
     size_t batch_size,
     BlobStorageLogWriterPtr blob_storage_log,
     const Strings & local_paths_for_blob_storage_log,
-    const std::vector<size_t> & file_sizes_for_blob_storage_log,
+    const std::vector<size_t> & file_sizes_for_blob_storage_log, // STYLE_CHECK_ALLOW_STD_CONTAINERS
     std::optional<ProfileEvents::Event> profile_event)
 {
     chassert(local_paths_for_blob_storage_log.empty() || (local_paths_for_blob_storage_log.size() == keys.size()));
@@ -116,7 +116,7 @@ void deleteFilesFromS3(
 
         while (current_position < keys.size())
         {
-            std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk;
+            std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk; // STYLE_CHECK_ALLOW_STD_CONTAINERS
             String comma_separated_keys;
             size_t first_position = current_position;
             for (; current_position < keys.size() && current_chunk.size() < batch_size; ++current_position)
@@ -187,7 +187,7 @@ void deleteFilesFromS3(
                 {
                     /// Mixed success/error response - some objects were removed, and some were not.
                     /// We need to extract more detailed information from the outcome.
-                    std::unordered_set<std::string_view> removed_keys{keys.begin(), keys.end()};
+                    std::unordered_set<std::string_view> removed_keys{keys.begin(), keys.end()}; // STYLE_CHECK_ALLOW_STD_CONTAINERS
                     String not_found_keys;
                     std::exception_ptr other_error;
 

@@ -66,7 +66,7 @@ public:
 
 private:
     mutable std::mutex mutex;
-    std::map<const String, const S3Settings> s3_settings;
+    std::map<const String, const S3Settings> s3_settings; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 };
 
 

@@ -383,7 +383,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
             body_stream->Rewind();
 
             /// Manual copy
-            std::vector<uint8_t> buffer(8192);
+            std::vector<uint8_t> buffer(8192); // STYLE_CHECK_ALLOW_STD_CONTAINERS
             while (auto read = body_stream->Read(buffer.data(), 8192))
             {
                 if (read > 0)

@@ -93,14 +93,14 @@ namespace
         {
             size_t part_offset;
             size_t part_size;
-            std::vector<std::string> block_ids;
+            std::vector<std::string> block_ids; // STYLE_CHECK_ALLOW_STD_CONTAINERS
             bool is_finished = false;
         };
 
         size_t normal_part_size;
-        std::vector<std::string> block_ids;
+        std::vector<std::string> block_ids; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-        std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_tasks;
+        std::list<UploadPartTask> TSA_GUARDED_BY(bg_tasks_mutex) bg_tasks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         int num_added_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
         int num_finished_bg_tasks TSA_GUARDED_BY(bg_tasks_mutex) = 0;
         std::exception_ptr bg_exception TSA_GUARDED_BY(bg_tasks_mutex);

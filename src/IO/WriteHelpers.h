@@ -106,11 +106,11 @@ inline void writeStringBinary(const char * s, WriteBuffer & buf)
 
 
 template <typename T, typename Alloc = std::allocator<T>>
-void writeVectorBinary(const std::vector<T, Alloc> & v, WriteBuffer & buf)
+void writeVectorBinary(const std::vector<T, Alloc> & v, WriteBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     writeVarUInt(v.size(), buf);
 
-    for (typename std::vector<T>::const_iterator it = v.begin(); it != v.end(); ++it)
+    for (auto it = v.begin(); it != v.end(); ++it)
         writeBinary(*it, buf);
 }
 
@@ -1386,7 +1386,7 @@ inline void writeCSV(const IPv4 & x, WriteBuffer & buf) { writeDoubleQuoted(x, b
 inline void writeCSV(const IPv6 & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 
 template <typename T, typename Alloc = std::allocator<T>>
-void writeBinary(const std::vector<T, Alloc> & x, WriteBuffer & buf)
+void writeBinary(const std::vector<T, Alloc> & x, WriteBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     size_t size = x.size();
     writeVarUInt(size, buf);
@@ -1395,7 +1395,7 @@ void writeBinary(const std::vector<T, Alloc> & x, WriteBuffer & buf)
 }
 
 template <typename T>
-void writeQuoted(const std::vector<T> & x, WriteBuffer & buf)
+void writeQuoted(const std::vector<T> & x, WriteBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     writeChar('[', buf);
     for (size_t i = 0, size = x.size(); i < size; ++i)
@@ -1408,7 +1408,7 @@ void writeQuoted(const std::vector<T> & x, WriteBuffer & buf)
 }
 
 template <typename T>
-void writeDoubleQuoted(const std::vector<T> & x, WriteBuffer & buf)
+void writeDoubleQuoted(const std::vector<T> & x, WriteBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     writeChar('[', buf);
     for (size_t i = 0, size = x.size(); i < size; ++i)
@@ -1421,7 +1421,7 @@ void writeDoubleQuoted(const std::vector<T> & x, WriteBuffer & buf)
 }
 
 template <typename T>
-void writeText(const std::vector<T> & x, WriteBuffer & buf)
+void writeText(const std::vector<T> & x, WriteBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     writeQuoted(x, buf);
 }
@@ -1458,7 +1458,7 @@ inline String toString(const CityHash_v1_0_2::uint128 & hash)
 }
 
 template <typename T>
-inline String toStringWithFinalSeparator(const std::vector<T> & x, const String & final_sep)
+inline String toStringWithFinalSeparator(const std::vector<T> & x, const String & final_sep) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     WriteBufferFromOwnString buf;
     for (auto it = x.begin(); it != x.end(); ++it)

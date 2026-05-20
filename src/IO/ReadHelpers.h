@@ -174,7 +174,7 @@ inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
 }
 
 template <typename T, typename Alloc = std::allocator<T>>
-void readVectorBinary(std::vector<T, Alloc> & v, ReadBuffer & buf)
+void readVectorBinary(std::vector<T, Alloc> & v, ReadBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -1854,7 +1854,7 @@ inline void readCSV(Int256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline bool tryReadCSV(Int256 & x, ReadBuffer & buf) { return readCSVSimple<Int256, bool>(x, buf); }
 
 template <typename T, typename Alloc = std::allocator<T>>
-void readBinary(std::vector<T, Alloc> & x, ReadBuffer & buf)
+void readBinary(std::vector<T, Alloc> & x, ReadBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -1868,7 +1868,7 @@ void readBinary(std::vector<T, Alloc> & x, ReadBuffer & buf)
 }
 
 template <typename T>
-void readQuoted(std::vector<T> & x, ReadBuffer & buf)
+void readQuoted(std::vector<T> & x, ReadBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     bool first = true;
     assertChar('[', buf);
@@ -1891,7 +1891,7 @@ void readQuoted(std::vector<T> & x, ReadBuffer & buf)
 }
 
 template <typename T>
-void readDoubleQuoted(std::vector<T> & x, ReadBuffer & buf)
+void readDoubleQuoted(std::vector<T> & x, ReadBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     bool first = true;
     assertChar('[', buf);
@@ -1914,7 +1914,7 @@ void readDoubleQuoted(std::vector<T> & x, ReadBuffer & buf)
 }
 
 template <typename T>
-void readText(std::vector<T> & x, ReadBuffer & buf)
+void readText(std::vector<T> & x, ReadBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     readQuoted(x, buf);
 }

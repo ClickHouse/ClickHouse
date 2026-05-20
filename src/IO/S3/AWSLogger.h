@@ -34,7 +34,7 @@ public:
 private:
     LoggerPtr default_logger;
     bool enable_s3_requests_logging;
-    std::unordered_map<String, LoggerPtr> tag_loggers;
+    std::unordered_map<String, LoggerPtr> tag_loggers; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 };
 
 }
