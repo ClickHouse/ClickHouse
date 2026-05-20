@@ -154,7 +154,7 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
             size_t prev_size = col.getNullMapColumnPtr()->size();
             SerializationNumber<UInt8>::create()->deserializeBinaryBulk(col.getNullMapColumn(), *stream, rows_offset, limit, 0);
             addColumnWithNumReadRowsToSubstreamsCache(
-                cache, settings.path, col.getNullMapColumnPtr(), col.getNullMapColumnPtr()->size() - prev_size);
+                cache, settings.path, col.getNullMapColumnPtr(), col.getNullMapColumnPtr()->size() - prev_size, settings.column_type);
         }
         settings.path.pop_back();
     }

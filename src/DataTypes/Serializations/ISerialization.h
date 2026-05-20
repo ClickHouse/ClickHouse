@@ -440,6 +440,9 @@ public:
         InputStreamGetter getter;
         SubstreamPath path;
 
+        /// Column type used for structured substream cache keys (for example Nullable(Array(...))).
+        const IDataType * column_type = nullptr;
+
         /// True if continue reading from previous positions in file. False if made fseek to the start of new granule.
         bool continuous_reading = true;
 
@@ -658,13 +661,16 @@ public:
     static String getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream = false, size_t initial_array_level = 0);
     static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream = false, size_t initial_array_level = 0);
 
-    static void addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows);
-    static std::optional<std::pair<ColumnPtr, size_t>> getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
-    static void addElementToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element);
-    static ISubstreamsCacheElement * getElementFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
+    /// Cache key for substreams during deserialization. Uses structured suffixes when column_type requires them.
+    static String getSubstreamCacheKey(const SubstreamPath & path, bool encode_sparse_stream = false, const IDataType * column_type = nullptr);
 
-    static void addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state);
-    static DeserializeBinaryBulkStatePtr getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path);
+    static void addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows, const IDataType * column_type = nullptr);
+    static std::optional<std::pair<ColumnPtr, size_t>> getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, const IDataType * column_type = nullptr);
+    static void addElementToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element, const IDataType * column_type = nullptr);
+    static ISubstreamsCacheElement * getElementFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, const IDataType * column_type = nullptr);
+
+    static void addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state, const IDataType * column_type = nullptr);
+    static DeserializeBinaryBulkStatePtr getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, const IDataType * column_type = nullptr);
 
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 

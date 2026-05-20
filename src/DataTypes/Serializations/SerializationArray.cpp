@@ -412,7 +412,7 @@ bool SerializationArray::deserializeOffsetsBinaryBulk(
     ISerialization::DeserializeBinaryBulkSettings & settings,
     ISerialization::SubstreamsCache * cache)
 {
-    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
+    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path, settings.column_type))
     {
         /// Usually substreams cache contains the whole column from currently deserialized block with rows from multiple ranges.
         /// It's done to avoid extra data copy, in this case we just use this cached column as the result column.
@@ -452,7 +452,7 @@ bool SerializationArray::deserializeOffsetsBinaryBulk(
 
         /// Add array sizes read from current range into the cache.
         if (cache)
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(*offsets_column), offsets_column->size() - prev_size);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(*offsets_column), offsets_column->size() - prev_size, settings.column_type);
 
         return true;
     }

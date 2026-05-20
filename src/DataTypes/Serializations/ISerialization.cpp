@@ -7,6 +7,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/StructuredSubstreamNames.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/StructuredSubstreamNames.h>
 #include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -279,7 +280,7 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
             avg_value_size_hint = settings.get_avg_value_size_hint_callback(settings.path);
         deserializeBinaryBulk(*mutable_column, *stream, rows_offset, limit, avg_value_size_hint);
         column = std::move(mutable_column);
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size, settings.column_type);
         if (settings.update_avg_value_size_hint_callback)
             settings.update_avg_value_size_hint_callback(settings.path, *column);
     }
@@ -492,6 +493,20 @@ String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, siz
     return subcolumn_name;
 }
 
+String ISerialization::getSubstreamCacheKey(const SubstreamPath & path, bool encode_sparse_stream, const IDataType * column_type)
+{
+    if (column_type && needsStructuredSubstreamNames(*column_type))
+    {
+        String key = getStructuredSubstreamNameSuffix(path);
+        if (!key.empty() && key[0] == '.')
+            key = key.substr(1);
+        if (!key.empty())
+            return key;
+    }
+
+    return getSubcolumnNameForStream(path, encode_sparse_stream);
+}
+
 namespace
 {
 
@@ -507,14 +522,14 @@ struct SubstreamsCacheColumnWithNumReadRowsElement : public ISerialization::ISub
 
 }
 
-void ISerialization::addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows)
+void ISerialization::addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows, const IDataType * column_type)
 {
-    addElementToSubstreamsCache(cache, path, std::make_unique<SubstreamsCacheColumnWithNumReadRowsElement>(column, num_read_rows));
+    addElementToSubstreamsCache(cache, path, std::make_unique<SubstreamsCacheColumnWithNumReadRowsElement>(column, num_read_rows), column_type);
 }
 
-std::optional<std::pair<ColumnPtr, size_t>> ISerialization::getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path)
+std::optional<std::pair<ColumnPtr, size_t>> ISerialization::getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, const IDataType * column_type)
 {
-    auto * element = getElementFromSubstreamsCache(cache, path);
+    auto * element = getElementFromSubstreamsCache(cache, path, column_type);
     if (!element)
         return std::nullopt;
 
@@ -522,37 +537,37 @@ std::optional<std::pair<ColumnPtr, size_t>> ISerialization::getColumnWithNumRead
     return std::make_pair(typed_element->column, typed_element->num_read_rows);
 }
 
-void ISerialization::addElementToSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element)
+void ISerialization::addElementToSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element, const IDataType * column_type)
 {
     if (!cache || path.empty())
         return;
 
-    cache->insert_or_assign(getSubcolumnNameForStream(path, true), std::move(element));
+    cache->insert_or_assign(getSubstreamCacheKey(path, true, column_type), std::move(element));
 }
 
-ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path)
+ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path, const IDataType * column_type)
 {
     if (!cache || path.empty())
         return nullptr;
 
-    auto it = cache->find(getSubcolumnNameForStream(path, true));
+    auto it = cache->find(getSubstreamCacheKey(path, true, column_type));
     return it == cache->end() ? nullptr : it->second.get();
 }
 
-void ISerialization::addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state)
+void ISerialization::addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state, const IDataType * column_type)
 {
     if (!cache || path.empty())
         return;
 
-    cache->emplace(getSubcolumnNameForStream(path, true), state);
+    cache->emplace(getSubstreamCacheKey(path, true, column_type), state);
 }
 
-ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path)
+ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, const IDataType * column_type)
 {
     if (!cache || path.empty())
         return nullptr;
 
-    auto it = cache->find(getSubcolumnNameForStream(path, true));
+    auto it = cache->find(getSubstreamCacheKey(path, true, column_type));
     return it == cache->end() ? nullptr : it->second;
 }
 
@@ -798,7 +813,7 @@ void ISerialization::addSubstreamAndCallCallback(ISerialization::SubstreamPath &
 
 bool ISerialization::insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column)
 {
-    auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path);
+    auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path, settings.column_type);
     if (!cached_column_with_num_read_rows)
         return false;
 
@@ -820,7 +835,7 @@ void ISerialization::insertDataFromCachedColumn(const ISerialization::Deserializ
         {
             /// Replace column in the cache with the new column to avoid inserting into it again
             /// from currently cached range if this substream will be read again in current range.
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, result_column, num_read_rows);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, result_column, num_read_rows, settings.column_type);
         }
     }
     else
