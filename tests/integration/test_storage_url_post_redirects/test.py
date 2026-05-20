@@ -70,7 +70,7 @@ def test_post_redirect_rejected_by_default(started_cluster):
     query = (
         f"INSERT INTO TABLE FUNCTION "
         f"url('http://localhost:{REDIRECT_PORT}/insert', JSONEachRow, 'a UInt64') "
-        f"VALUES (1)"
+        f"SELECT 1"
     )
     with pytest.raises(QueryRuntimeException) as exc_info:
         server.query(query)
@@ -81,6 +81,6 @@ def test_post_redirect_accepted_with_setting(started_cluster):
     query = (
         f"INSERT INTO TABLE FUNCTION "
         f"url('http://localhost:{REDIRECT_PORT}/insert', JSONEachRow, 'a UInt64') "
-        f"VALUES (1) SETTINGS http_allow_redirects_on_post = 1"
+        f"SELECT 1 SETTINGS http_allow_redirects_on_post = 1"
     )
     server.query(query)
