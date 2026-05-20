@@ -17,6 +17,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/readFloatText.h>
+#include <IO/readIntText.h>
 
 #include <array>
 #include <cmath>
@@ -182,6 +183,45 @@ Float64 parseRealNumber(std::string_view token, const String & line)
     if (!tryReadFloatText(v, buf) || !buf.eof() || !std::isfinite(v))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid timestamp token '{}' in OpenMetrics line: {}", token, line);
     return v;
+}
+
+/// Converts a `realnumber` timestamp token to `Int64` without `Float64` boundary ambiguity.
+///
+/// `Float64` cannot distinguish adjacent integers near `Int64` limits (e.g. `Int64::max` and
+/// `Int64::max + 1` both round to the same `Float64`). Doing the range check directly on
+/// `Float64` therefore lets out-of-range tokens reach `static_cast<Int64>` (undefined behavior).
+///
+/// Strategy:
+///   1. If the token has no fractional/exponent part, parse it exactly as `Int64` (this catches
+///      both valid and overflowing integers without relying on `Float64`).
+///   2. Otherwise, the already-parsed `Float64` value is checked against exact boundaries:
+///      `[-2^63, 2^63)` (`2^63` is exactly representable in `Float64`; `Int64::max == 2^63 - 1`).
+Int64 timestampTokenToInt64(std::string_view token, Float64 ts_value, const String & line)
+{
+    bool integer_shaped = !token.empty();
+    for (char c : token)
+        if (c == '.' || c == 'e' || c == 'E')
+        {
+            integer_shaped = false;
+            break;
+        }
+
+    if (integer_shaped)
+    {
+        std::string_view body = token;
+        if (!body.empty() && body.front() == '+')
+            body.remove_prefix(1);
+
+        Int64 i = 0;
+        if (tryParseInt<>(i, body))
+            return i;
+        throwIncorrect("Timestamp value out of Int64 range", line);
+    }
+
+    const Float64 upper = std::ldexp(1.0, 63);
+    if (!(ts_value >= -upper && ts_value < upper))
+        throwIncorrect("Timestamp value out of Int64 range", line);
+    return static_cast<Int64>(ts_value);
 }
 
 /// OpenMetrics `number`: real number, NaN, ±Inf. Requires full-token consumption.
@@ -436,10 +476,12 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
 
         bool has_ts = false;
         Float64 ts_value = 0;
+        std::string_view ts_token;
         skipAsciiSpaces(sv, pos);
         if (pos < sv.size() && sv[pos] != '#')
         {
-            ts_value = parseRealNumber(readToken(sv, pos), line);
+            ts_token = readToken(sv, pos);
+            ts_value = parseRealNumber(ts_token, line);
             has_ts = true;
         }
 
@@ -510,10 +552,7 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
             }
             else
             {
-                if (ts_value < static_cast<Float64>(std::numeric_limits<Int64>::min())
-                    || ts_value > static_cast<Float64>(std::numeric_limits<Int64>::max()))
-                    throwIncorrect("Timestamp value out of Int64 range", line);
-                const Int64 t = static_cast<Int64>(ts_value);
+                const Int64 t = timestampTokenToInt64(ts_token, ts_value, line);
                 if (col.isNullable())
                 {
                     auto & nc = assert_cast<ColumnNullable &>(col);

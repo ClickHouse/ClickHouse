@@ -124,6 +124,14 @@ OpenMetricsTextOutputFormat::OpenMetricsTextOutputFormat(
     getColumnPos(header, "unit", isStringOrFixedString, pos.unit);
     getColumnPos(header, "timestamp", isNumber, pos.timestamp);
     getColumnPos(header, "labels", isDataTypeMapString, pos.labels);
+
+    /// `getColumnPos` strips `Nullable` from optional columns before predicate validation, but
+    /// `write` later casts `labels` straight to `ColumnMap`. Accepting `Nullable(Map(...))`
+    /// here would silently drop labels for every row, so reject it explicitly.
+    if (pos.labels.has_value() && header.getByName("labels").type->isNullable())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Illegal type '{}' of column 'labels' for output format '{}': Nullable(Map(...)) is not supported",
+            header.getByName("labels").type->getName(), FORMAT_NAME);
 }
 
 /// Sort histogram/summary rows: regular buckets first (by `le`/`quantile`),

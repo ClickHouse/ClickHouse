@@ -154,3 +154,17 @@ FROM format(
     concat('# HELP rpc_duration_seconds help\n', '# TYPE rpc_duration_seconds histogram   \n', 'rpc_duration_seconds_bucket{le="0.5"} 3\n', '# EOF\n')
 )
 FORMAT TSV;
+
+-- Int64 boundary: max (2^63 - 1) is accepted exactly; max + 1 and min - 1 must be rejected
+-- (`Float64` cannot distinguish those values, so the conversion uses an exact-integer path).
+SELECT *
+FROM format(
+    OpenMetrics,
+    'name String, value Float64, timestamp Nullable(Int64)',
+    concat('m 1 9223372036854775807', char(10), '# EOF', char(10))
+)
+FORMAT TSV;
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 9223372036854775808', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 -9223372036854775809', char(10))); -- { serverError INCORRECT_DATA }
+-- Fractional timestamp that exceeds Int64 range after truncation must also be rejected.
+SELECT * FROM format(OpenMetrics, 'name String, value Float64, timestamp Nullable(Int64)', concat('m 1 1e20', char(10))); -- { serverError INCORRECT_DATA }
