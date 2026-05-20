@@ -1484,6 +1484,37 @@ class JobConfigs:
             include_paths=["./ci/jobs/libfuzzer_test_check.py"],
         ),
     )
+    collect_clickhouse_profiles_jobs = Job.Config(
+        name=JobNames.COLLECT_CLICKHOUSE_PROFILES,
+        runs_on=[],  # from parametrize()
+        command="python3 ./ci/jobs/collect_clickhouse_profiles.py",
+        run_in_docker=BINARY_DOCKER_COMMAND,
+        timeout=8 * 3600,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/collect_clickhouse_profiles.py",
+                "./cmake/profile_optimization.cmake",
+                "./tests/performance/",
+            ],
+        ),
+    ).parametrize(
+        Job.ParamSet(
+            parameter="amd64",
+            runs_on=RunnerLabels.AMD_LARGE,
+            provides=[
+                ArtifactNames.CLICKHOUSE_PGO_PROFILE_AMD,
+                ArtifactNames.CLICKHOUSE_BOLT_PROFILE_AMD,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="aarch64",
+            runs_on=RunnerLabels.ARM_LARGE,
+            provides=[
+                ArtifactNames.CLICKHOUSE_PGO_PROFILE_ARM,
+                ArtifactNames.CLICKHOUSE_BOLT_PROFILE_ARM,
+            ],
+        ),
+    )
     toolchain_build_jobs = Job.Config(
         name=JobNames.BUILD_TOOLCHAIN,
         runs_on=[],  # from parametrize()
