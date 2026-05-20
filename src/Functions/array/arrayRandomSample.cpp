@@ -19,7 +19,7 @@ namespace ErrorCodes
 }
 
 /// arrayRandomSample(arr, k) - Returns k random elements from the input array
-class FunctionArrayRandomSample : public IFunction
+class FunctionArrayRandomSample final : public IFunction
 {
 public:
     static constexpr auto name = "arrayRandomSample";
@@ -32,6 +32,8 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool useDefaultImplementationForConstants() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

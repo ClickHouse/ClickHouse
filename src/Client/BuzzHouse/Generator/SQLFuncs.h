@@ -411,6 +411,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCtoMonth, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoMonthNumSinceEpoch, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoDayOfYear, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCtoDaysInMonth, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoDayOfMonth, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoDayOfWeek, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCtoHour, 0, 0, 1, 1),
@@ -935,6 +936,10 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCendsWithCaseInsensitiveUTF8, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCstartsWithCaseInsensitive, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCstartsWithCaseInsensitiveUTF8, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCnaturalSortKey, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCcaseFoldUTF8, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCremoveDiacriticsUTF8, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCnormalizeUTF8NFKCCasefold, 0, 0, 1, 1),
     /// Time window
     CHFunction(SQLFunc::FUNCtumble, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCtumbleStart, 0, 0, 2, 3),
@@ -1439,6 +1444,8 @@ const std::vector<CHFunction> CHTableFuncs = {
     CHFunction(SQLTableFunc::TFexecutable, 0, 0, 3, 4),
     CHFunction(SQLTableFunc::TFfile, 0, 0, 1, 5),
     CHFunction(SQLTableFunc::TFfileCluster, 0, 0, 2, 5),
+    /// `filesystem([path])` — 0 or 1 string argument, lists files under user_files or the given path.
+    CHFunction(SQLTableFunc::TFfilesystem, 0, 0, 0, 1),
     CHFunction(SQLTableFunc::TFformat, 0, 0, 2, 3),
     CHFunction(SQLTableFunc::TFfuzzJSON, 0, 0, 1, 14),
     CHFunction(SQLTableFunc::TFfuzzQuery, 0, 0, 1, 3),
