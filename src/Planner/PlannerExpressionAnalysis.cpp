@@ -256,11 +256,19 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
 
                 if (constant_key && !aggregates_descriptions.empty() && (!check_constants_for_group_by_key || canRemoveConstantFromGroupByKey(*constant_key)))
                 {
-                    if (is_cluster_key_position)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "GROUP BY ... WITH CLUSTER key cannot be a constant expression");
-                    ++orig_pos;
-                    continue;
+                    /// If this constant happens to sit inside the clustered key
+                    /// range (e.g. `GROUP BY (x, 0) WITH CLUSTER d`), do NOT
+                    /// eliminate it — keep it in `aggregation_keys` so the
+                    /// downstream `cluster_key_info` matches the tuple arity
+                    /// the analyzer promised. Otherwise the cluster behavior
+                    /// would become query-shape dependent: the same key
+                    /// contract would pass in a no-aggregate query but fail
+                    /// here.
+                    if (!is_cluster_key_position)
+                    {
+                        ++orig_pos;
+                        continue;
+                    }
                 }
 
                 auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(before_aggregation_actions->dag, group_by_key_node);
