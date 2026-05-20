@@ -49,6 +49,7 @@ namespace Setting
     extern const SettingsBool query_plan_optimize_lazy_final;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool query_plan_optimize_prewhere;
+    extern const SettingsBool optimize_prewhere_after_pushdown;
     extern const SettingsBool query_plan_push_down_limit;
     extern const SettingsBool query_plan_top_k_through_join;
     extern const SettingsBool query_plan_read_in_order_through_join;
