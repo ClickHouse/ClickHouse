@@ -177,7 +177,11 @@ IProcessor::Status MemoryAwareResizeProcessor::prepare(const UpdatedInputPorts &
 
         if (output_idx >= allowed_outputs)
         {
-            output_ports[output_idx].status = OutputStatus::NotActive;
+            /// port may have finished between being queued, do not set finished
+            /// otherwise the next `updateAllowedOutputs` expansion would re-count this output
+            auto & stale = output_ports[output_idx];
+            if (stale.status != OutputStatus::Finished)
+                stale.status = OutputStatus::NotActive;
             continue;
         }
 
