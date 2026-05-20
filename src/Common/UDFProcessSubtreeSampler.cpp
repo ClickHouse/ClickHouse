@@ -18,6 +18,7 @@
 namespace DB
 {
 
+#if defined(OS_LINUX)
 namespace
 {
     UInt64 clockTicksPerSecond() noexcept
@@ -35,6 +36,7 @@ namespace
         return ticks * 1000000ULL / clockTicksPerSecond();
     }
 }
+#endif
 
 
 namespace UDFProcfs
