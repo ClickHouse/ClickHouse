@@ -507,15 +507,6 @@ void optimizeTreeSecondPass(
             "Projection {} is specified in setting force_optimize_projection_name but not used",
             optimization_settings.force_projection_name);
 
-    if (optimization_settings.optimize_prewhere && optimization_settings.optimize_prewhere_after_pushdown)
-    {
-        traverseQueryPlan(stack, root,
-            [&](auto & frame_node)
-            {
-                optimizePrewhere(frame_node, optimization_settings.remove_unused_columns);
-            });
-    }
-
     /// Trying to reuse sorting property for other steps.
     applyOrder(optimization_settings, root);
 
