@@ -249,14 +249,6 @@ public:
 
     const String & getName() const { return name; }
 
-    /// Called by the `on_drained` callback on `CacheUsage` when a user's
-    /// last segment leaves this cache. Walks all `DimensionalMetrics` and
-    /// `HistogramMetrics` families whose label set includes both `cache_name`
-    /// and `client_id` and removes every series matching this cache + user.
-    /// This keeps `_by_client` metric cardinality bounded by currently-active
-    /// users rather than growing monotonically with every distinct evicting user.
-    void pruneByClientMetrics(const String & user_id) const;
-
 private:
     void onSegmentEvicted(const FileSegment & segment, FileCacheQueueEntryType queue_type, const String & user_id) const;
     void onSegmentPromoted(const String & user_id) const;

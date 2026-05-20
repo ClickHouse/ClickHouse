@@ -2,7 +2,6 @@
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <boost/noncopyable.hpp>
-#include <functional>
 
 namespace DB
 {
@@ -29,14 +28,6 @@ struct CacheUsageStatGuard : private boost::noncopyable
 struct CacheUsage
 {
     CacheUsage(const FileCacheOriginInfo & origin_info_, FileCachePriorityPtr priority_);
-
-    /// Invoked by `~CacheUsage` (best-effort) when this per-user state is
-    /// destroyed, i.e. the user no longer has any segments in the cache.
-    /// Set by caller at construction time to trigger
-    /// pruning of the user's `_by_client` metric series.
-    std::function<void()> on_drained;
-
-    ~CacheUsage() { try { if (on_drained) on_drained(); } catch (...) {} } // Ok to swallow — destructor must not propagate
 
     const FileCacheOriginInfo origin_info;
     /// A user priority, contains only entries which belong to `user`

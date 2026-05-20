@@ -180,26 +180,6 @@ namespace
         "Disabled by default; enable via `filesystem_cache_expose_prometheus_eviction_metrics_per_client`.",
         {"cache_name", "client_id"});
 
-    /// For a single metric family, remove all series where both `cache_name`
-    /// and `client_id` labels match. Returns number of removed series.
-    template <typename FamilyT>
-    size_t pruneClientFromFamily(FamilyT & family, const std::string & cache_name, const std::string & user_id)
-    {
-        const auto & labels = family.getLabels();
-        size_t cn_idx = labels.size(), cid_idx = labels.size();
-        for (size_t i = 0; i < labels.size(); ++i)
-        {
-            if (labels[i] == "cache_name") cn_idx = i;
-            else if (labels[i] == "client_id") cid_idx = i;
-        }
-        if (cn_idx >= labels.size() || cid_idx >= labels.size())
-            return 0;
-        return family.removeWhere([&](const auto & vals)
-        {
-            return vals[cn_idx] == cache_name && vals[cid_idx] == user_id;
-        });
-    }
-
     const char * queueLabel(FileCacheQueueEntryType queue_type)
     {
         switch (queue_type)
@@ -2166,20 +2146,6 @@ FileCache::~FileCache()
 {
     deactivateBackgroundOperations();
     assertCacheCorrectness();
-}
-
-void FileCache::pruneByClientMetrics(const String & user_id) const
-{
-    if (!expose_eviction_metrics_per_client)
-        return;
-    DimensionalMetrics::Factory::instance().forEachFamily([&](DimensionalMetrics::MetricFamily & f)
-    {
-        pruneClientFromFamily(f, name, user_id);
-    });
-    HistogramMetrics::Factory::instance().forEachFamily([&](HistogramMetrics::MetricFamily & f)
-    {
-        pruneClientFromFamily(f, name, user_id);
-    });
 }
 
 void FileCache::onSegmentEvicted(const FileSegment & segment, FileCacheQueueEntryType queue_type, const String & user_id) const
