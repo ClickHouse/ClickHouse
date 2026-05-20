@@ -55,15 +55,12 @@ public:
     std::string toString() const override;
 
 private:
-    void initializeLookupThrottlerIfNeeded();
-
     ContextPtr context;
     const DictionaryStructure dict_struct;
     const std::shared_ptr<YTsaurusStorageConfiguration> configuration;
     SharedHeader sample_block;
     YTsaurusClientPtr client;
-    bool throttler_initialized = false;
-    ThrottlerPtr lookup_throttler;
+    const ThrottlerPtr lookup_throttler;
     const String name;
 };
 
