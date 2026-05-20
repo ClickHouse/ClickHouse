@@ -89,6 +89,8 @@ SELECT DISTINCT 'Sorted ORDER BY key, dt LIMIT BY key, val: ' || trim(BOTH ' ' F
 FROM (EXPLAIN PIPELINE SELECT key FROM 03701_sorted ORDER BY key, dt LIMIT 1 BY key, val LIMIT 10)
 WHERE explain LIKE '%LimitByTransform%';
 
+OPTIMIZE TABLE 03701_sorted FINAL;
+
 -- For now, we intentional do not use in order LIMIT BY for parallel replicas.
 SELECT DISTINCT 'Sorted w/o ORDER BY: ' || trim(BOTH ' ' FROM explain)
 FROM (EXPLAIN PIPELINE SELECT key FROM 03701_sorted LIMIT 1 BY key LIMIT 10 SETTINGS enable_parallel_replicas = 0)
