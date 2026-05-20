@@ -146,8 +146,6 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
 
 
 def test_generate_content_basic(started_cluster):
-    instance.query("TRUNCATE TABLE test_input")
-    instance.query("INSERT INTO test_input VALUES ('hello world')")
     result = instance.query(
         "SELECT aiGenerate('ai_mock', 'hello world')",
         settings=AI_SETTINGS,
@@ -478,10 +476,12 @@ def test_embed_null_and_empty_input(started_cluster):
     assert non_empties == 1
 
     events = get_profile_events(qid)
-    # Only the single non-empty row triggers an API call; NULL/'' are skipped.
+    # Only the single non-empty row triggers an API call; NULL/'' are pre-filtered
+    # and contribute to neither `rows_processed` nor `rows_skipped` (the latter is
+    # reserved for rows that received a default value due to quota or error).
     assert int(events["api_calls"]) == 1
     assert int(events["rows_processed"]) == 1
-    assert int(events["rows_skipped"]) == 2
+    assert int(events["rows_skipped"]) == 0
 
 
 def test_embed_profile_events_token_accounting(started_cluster):
@@ -605,3 +605,7 @@ def test_embed_quota_input_tokens_exceeded(started_cluster):
     assert sum(1 for r in rows if not r) == 3
     events = get_profile_events(qid)
     assert int(events["api_calls"]) == 1
+    # Quota-aborted live rows count as `rows_skipped` — they received a default
+    # value due to a quota cut, matching the documented `AIRowsSkipped` semantics.
+    assert int(events["rows_processed"]) == 1
+    assert int(events["rows_skipped"]) == 3

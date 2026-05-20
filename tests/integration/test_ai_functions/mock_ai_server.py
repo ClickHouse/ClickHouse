@@ -27,10 +27,10 @@ import json
 from urllib.parse import urlparse
 
 MOCK_PORT = 9123
+DEFAULT_EMBED_DIM = 4
 
 # Single-threaded `HTTPServer` handles one request at a time, so a plain dict is safe.
 LAST_REQUEST = {"path": None, "body": None}
-DEFAULT_EMBED_DIM = 4
 
 
 def extract_user_message(body):
