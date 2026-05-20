@@ -1,9 +1,12 @@
+import threading
 import time
+import uuid
 from dataclasses import dataclass
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 
 @dataclass(frozen=True)
@@ -90,13 +93,32 @@ def test_failpoint_confirmed_oom():
     canary = find_canary(node)
     assert canary is not None
 
+
+    slow_query_id = str(uuid.uuid4())
+    slow_query_error = None
+
+    def slow_query():
+        nonlocal slow_query_error
+        slow_query_error = node.query_and_get_error(
+            "SELECT sleepEachRow(3) FROM numbers(100)", query_id=slow_query_id
+        )
+
+    slow_query_thread = threading.Thread(target=slow_query)
+    slow_query_thread.start()
+
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM system.processes WHERE query_id = '{slow_query_id}'",
+        "1",
+    )
+
     node.query("SYSTEM ENABLE FAILPOINT oom_canary_force_oom_evidence")
     node.exec_in_container(["kill", "-9", str(canary.pid)])
     wait_for_relaunch(node, canary)
-    node.wait_for_log_line(
-        "OOM canary killed by SIGKILL with cgroup OOM evidence"
-    )
     assert crash_log_oom_count(node) > crash_log_oom_count_before
+
+    slow_query_thread.join(timeout=10)
+    assert slow_query_error is not None and "QUERY_WAS_CANCELLED" in str(slow_query_error), slow_query_error
 
 
 def test_manual_sigkill_no_evidence():
