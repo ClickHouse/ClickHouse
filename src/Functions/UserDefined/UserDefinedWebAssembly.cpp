@@ -520,7 +520,7 @@ WebAssembly::WasmModule::Config getWasmModuleConfig(ContextPtr context)
     return cfg;
 }
 
-class FunctionUserDefinedWasm : public IFunction
+class FunctionUserDefinedWasm final : public IFunction
 {
 public:
     FunctionUserDefinedWasm(String function_name_, std::shared_ptr<UserDefinedWebAssemblyFunction> udf_, ContextPtr context_)
