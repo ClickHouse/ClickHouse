@@ -704,7 +704,15 @@ struct MatchImpl
                 reinterpret_cast<const char *>(cur_needle_data),
                 cur_needle_length);
 
-            if (is_like && impl::likePatternIsSubstring(needle, required_substr))
+            /// Shortcut for the silly but practical case that the pattern matches everything/nothing independently of the haystack:
+            /// - 'foo' [not] [i]like '%' / '%%'
+            /// - match('foo', '.*')
+            if ((is_like && (needle == "%" || needle == "%%"))
+                || (!is_like && (needle == ".*" || needle == ".*?")))
+            {
+                res[i] = !negate;
+            }
+            else if (is_like && impl::likePatternIsSubstring(needle, required_substr))
             {
                 if (required_substr.size() > haystack_length)
                     res[i] = negate;
