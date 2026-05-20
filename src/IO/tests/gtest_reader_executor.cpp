@@ -389,6 +389,30 @@ TEST(ReaderExecutor, MergeRangesZeroMinGap)
     ASSERT_EQ(merged.size(), 2);
 }
 
+TEST(ReaderExecutor, MergeRangesOverlapping)
+{
+    /// Overlapping ranges merge into their union regardless of min_gap > 0.
+    /// Without the saturating-subtraction fix, gap = sorted[i].offset - prev.end()
+    /// underflows on overlap and the merge branch is skipped, leaving overlapping
+    /// ranges in the output.
+    std::vector<ByteRange> ranges = {{0, 100}, {50, 100}};
+    auto merged = ReaderExecutor::mergeRanges(ranges, 10);
+    ASSERT_EQ(merged.size(), 1);
+    EXPECT_EQ(merged[0].offset, 0u);
+    EXPECT_EQ(merged[0].size, 150u);  /// [0, 100) ∪ [50, 150) = [0, 150)
+}
+
+TEST(ReaderExecutor, MergeRangesContained)
+{
+    /// One range fully contained in another. The union is the wider range;
+    /// without the fix the underflow path emits both ranges.
+    std::vector<ByteRange> ranges = {{0, 200}, {50, 100}};
+    auto merged = ReaderExecutor::mergeRanges(ranges, 10);
+    ASSERT_EQ(merged.size(), 1);
+    EXPECT_EQ(merged[0].offset, 0u);
+    EXPECT_EQ(merged[0].size, 200u);  /// [0, 200) ∪ [50, 150) = [0, 200)
+}
+
 TEST(ReaderExecutor, MergeAcrossCacheHitDropsCachedNode)
 {
     /// When mergeRanges combines two miss ranges across a cached hit, the

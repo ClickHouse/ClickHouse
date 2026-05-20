@@ -64,7 +64,9 @@ std::vector<ByteRange> ReaderExecutor::mergeRanges(const std::vector<ByteRange> 
     for (size_t i = 1; i < sorted.size(); ++i)
     {
         auto & prev = merged.back();
-        size_t gap = sorted[i].offset - prev.end();
+        /// Saturating subtraction: overlapping ranges (sorted[i].offset < prev.end())
+        /// collapse to gap = 0 and merge via the same branch as adjacent ranges.
+        size_t gap = sorted[i].offset > prev.end() ? sorted[i].offset - prev.end() : 0;
 
         if (gap <= min_gap)
         {
