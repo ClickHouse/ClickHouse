@@ -173,6 +173,20 @@ SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING ((ran
 ORDER BY category
 SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
 
+-- A.8 - `grouping` predicate must stay in HAVING (validation rejects it in WHERE).
+-- Without WITH ROLLUP/CUBE/GROUPING SETS, `grouping(x)` returns 0 for all rows
+-- (force_grouping_standard_compatibility=1 default), so this returns all aggregated rows.
+SELECT 'A.8 grouping predicate stays in HAVING';
+SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING grouping(category) = 0
+ORDER BY category
+SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
+
+-- A.9 - `grouping` conjunct stays in HAVING; plain-column sibling still moves to WHERE.
+SELECT 'A.9 grouping conjunct stays, sibling moves to WHERE';
+SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING grouping(category) = 0 AND service = 'svc1'
+ORDER BY category
+SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
+
 DROP TABLE test_a1;
 DROP TABLE test_a2;
 DROP TABLE test_a3;

@@ -29,3 +29,9 @@ no-aggregation no-op
 A.7 non-deterministic conjunct stays in HAVING
 a	10
 b	30
+A.8 grouping predicate stays in HAVING
+a	30
+b	30
+A.9 grouping conjunct stays, sibling moves to WHERE
+a	10
+b	30

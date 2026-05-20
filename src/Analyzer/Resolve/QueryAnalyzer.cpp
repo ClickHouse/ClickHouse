@@ -5451,6 +5451,8 @@ namespace
   * `AbortRewrite` outranks `KeepInHaving` outranks `Move`:
   * - any window function or stateful function -> `AbortRewrite` (matches legacy `return false`);
   * - else any aggregate function -> `KeepInHaving`;
+  * - else any `grouping` function -> `KeepInHaving` (stricter than legacy; required because
+  *   `validateAggregates` rejects `grouping` in `WHERE`);
   * - else any non-deterministic function -> `KeepInHaving` (stricter than legacy, which moved them);
   * - else -> `Move`.
   */
@@ -5493,6 +5495,9 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & 
             }
 
             if (function_node->isAggregateFunction() && verdict == HavingConjunctMoveAction::Move)
+                verdict = HavingConjunctMoveAction::KeepInHaving;
+
+            if (function_node->getFunctionName() == "grouping" && verdict == HavingConjunctMoveAction::Move)
                 verdict = HavingConjunctMoveAction::KeepInHaving;
         }
 
