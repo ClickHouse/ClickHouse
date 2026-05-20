@@ -36,12 +36,7 @@ struct CacheUsage
     /// pruning of the user's `_by_client` metric series.
     std::function<void()> on_drained;
 
-    ~CacheUsage()
-    {
-        /// Best-effort: invoke cleanup (e.g. prune _by_client metric series).
-        /// Must not throw from a destructor.
-        try { if (on_drained) on_drained(); } catch (...) {}
-    }
+    ~CacheUsage() { try { if (on_drained) on_drained(); } catch (...) {} }
 
     const FileCacheOriginInfo origin_info;
     /// A user priority, contains only entries which belong to `user`
