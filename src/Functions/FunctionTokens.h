@@ -52,7 +52,7 @@ namespace ErrorCodes
 
 /// A function that takes a string, and returns an array of substrings created by some generator.
 template <typename Generator>
-class FunctionTokens : public IFunction
+class FunctionTokens final : public IFunction
 {
 private:
     using Pos = const char *;

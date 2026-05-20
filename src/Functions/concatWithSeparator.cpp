@@ -21,7 +21,7 @@ extern const int ILLEGAL_COLUMN;
 namespace
 {
 
-class ConcatWithSeparatorImpl : public IFunction
+class ConcatWithSeparatorImpl final : public IFunction
 {
 public:
     ConcatWithSeparatorImpl(ContextPtr context_, const char * name_, bool is_injective_)

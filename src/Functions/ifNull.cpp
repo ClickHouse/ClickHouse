@@ -24,7 +24,7 @@ namespace
 /// Implements the function ifNull which takes 2 arguments and returns
 /// the value of the 1st argument if it is not null. Otherwise it returns
 /// the value of the 2nd argument.
-class FunctionIfNull : public IFunction
+class FunctionIfNull final : public IFunction
 {
 public:
     static constexpr auto name = "ifNull";

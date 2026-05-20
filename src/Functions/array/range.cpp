@@ -39,7 +39,7 @@ namespace ErrorCodes
   * range(start, end): [start, end)
   * range(start, end, step): [start, end) with step increments.
   */
-class FunctionRange : public IFunction
+class FunctionRange final : public IFunction
 {
 public:
     static constexpr auto name = "range";

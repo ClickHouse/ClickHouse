@@ -17,7 +17,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class FunctionArrayJaccardIndex : public IFunction
+class FunctionArrayJaccardIndex final : public IFunction
 {
 private:
     using ResultType = Float64;

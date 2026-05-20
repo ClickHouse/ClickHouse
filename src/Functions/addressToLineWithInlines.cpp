@@ -21,7 +21,7 @@ namespace DB
 namespace
 {
 
-class FunctionAddressToLineWithInlines: public FunctionAddressToLineBase<StringViews, Dwarf::LocationInfoMode::FULL_WITH_INLINE>
+class FunctionAddressToLineWithInlines final : public FunctionAddressToLineBase<StringViews, Dwarf::LocationInfoMode::FULL_WITH_INLINE>
 {
 public:
     static constexpr auto name = "addressToLineWithInlines";

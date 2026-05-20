@@ -164,7 +164,7 @@ TemporaryBlockStreamHolder SortedBlocksWriter::flush(const BlocksList & blocks) 
     return flushToFile(tmp_data, sample_block, std::move(pipeline));
 }
 
-class TemporaryFileLazySource : public ISource
+class TemporaryFileLazySource final : public ISource
 {
 public:
     explicit TemporaryFileLazySource(TemporaryBlockStreamReaderHolder reader_)

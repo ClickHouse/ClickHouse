@@ -36,7 +36,7 @@ namespace
     // ┌───────────────────────┐
     // │ {"a":1,"name":"zoey"} │
     // └───────────────────────┘
-    class FunctionJSONMergePatch : public IFunction
+    class FunctionJSONMergePatch final : public IFunction
     {
     public:
         static constexpr auto name = "JSONMergePatch";

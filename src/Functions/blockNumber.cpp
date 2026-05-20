@@ -11,7 +11,7 @@ namespace
 {
 
 /** Incremental columns number among calls of this function. */
-class FunctionBlockNumber : public IFunction
+class FunctionBlockNumber final : public IFunction
 {
 private:
     mutable std::atomic<size_t> columns_number{0};

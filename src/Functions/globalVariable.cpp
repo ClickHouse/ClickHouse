@@ -26,7 +26,7 @@ namespace
   *
   * Currently it's a stub, no variables are implemented. Feel free to add more variables.
   */
-class FunctionGlobalVariable : public IFunction
+class FunctionGlobalVariable final : public IFunction
 {
 public:
     static constexpr auto name = "globalVariable";

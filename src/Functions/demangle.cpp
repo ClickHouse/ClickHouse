@@ -21,7 +21,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionDemangle : public IFunction
+class FunctionDemangle final : public IFunction
 {
 public:
     static constexpr auto name = "demangle";

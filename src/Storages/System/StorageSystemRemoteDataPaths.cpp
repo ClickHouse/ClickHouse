@@ -36,7 +36,7 @@ namespace ErrorCodes
 }
 
 
-class SystemRemoteDataPathsSource : public ISource
+class SystemRemoteDataPathsSource final : public ISource
 {
 public:
     SystemRemoteDataPathsSource(

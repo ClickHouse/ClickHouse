@@ -48,7 +48,7 @@ enum class ExtractAllGroupsResultKind : uint8_t
  * =>
  *   [['abc', 'def', 'ghi'], ['111', '222', '333']
 */
-class FunctionExtractAllGroups : public IFunction
+class FunctionExtractAllGroups final : public IFunction
 {
     const UInt64 regexp_max_matches_per_row;
     const char * function_name;

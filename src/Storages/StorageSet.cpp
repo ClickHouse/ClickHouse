@@ -40,7 +40,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-class SetOrJoinSink : public SinkToStorage, WithContext
+class SetOrJoinSink final : public SinkToStorage, WithContext
 {
 public:
     SetOrJoinSink(

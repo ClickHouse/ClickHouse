@@ -146,7 +146,7 @@ private:
 };
 
 
-class FunctionStem : public IFunction
+class FunctionStem final : public IFunction
 {
 public:
     static constexpr auto name = "stem";

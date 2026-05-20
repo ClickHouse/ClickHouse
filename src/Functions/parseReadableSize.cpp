@@ -38,7 +38,7 @@ enum class ErrorHandling : uint8_t
 
 using ScaleFactors = std::unordered_map<std::string_view, size_t>;
 
-class FunctionParseReadable : public IFunction
+class FunctionParseReadable final : public IFunction
 {
 public:
     FunctionParseReadable(const char * name_, ErrorHandling error_handling_)

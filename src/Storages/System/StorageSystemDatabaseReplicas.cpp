@@ -42,7 +42,7 @@ using TStatus = typename StorageSystemDatabaseReplicas::TPools::StatusPool::TSta
 namespace
 {
 
-class SystemDatabaseReplicasSource : public ISource
+class SystemDatabaseReplicasSource final : public ISource
 {
 public:
     SystemDatabaseReplicasSource(

@@ -26,7 +26,7 @@ enum class ConvertToFixedStringExceptionMode : uint8_t
 
 /** Conversion to fixed string is implemented only for strings.
   */
-class FunctionToFixedString : public IFunction
+class FunctionToFixedString final : public IFunction
 {
 public:
     static constexpr auto name = "toFixedString";

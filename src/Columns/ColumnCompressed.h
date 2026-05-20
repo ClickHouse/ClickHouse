@@ -32,7 +32,7 @@ namespace ErrorCodes
   *
   * Also in-memory compression allows to keep more data in RAM.
   */
-class ColumnCompressed : public COWHelper<IColumnHelper<ColumnCompressed>, ColumnCompressed>
+class ColumnCompressed final : public COWHelper<IColumnHelper<ColumnCompressed>, ColumnCompressed>
 {
 public:
     using Lazy = std::function<ColumnPtr()>;

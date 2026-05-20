@@ -15,7 +15,7 @@ namespace ErrorCodes
 
 /** errorCodeToName() - returns the variable name for the error code.
   */
-class FunctionErrorCodeToName : public IFunction
+class FunctionErrorCodeToName final : public IFunction
 {
 public:
     static constexpr auto name = "errorCodeToName";

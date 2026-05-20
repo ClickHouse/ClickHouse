@@ -102,6 +102,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -141,6 +142,7 @@ namespace Setting
     extern const SettingsQueryResultCacheSystemTableHandling query_cache_system_table_handling;
     extern const SettingsSeconds query_cache_ttl;
     extern const SettingsBool query_plan_enable_multithreading_after_window_functions;
+    extern const SettingsBool serialize_query_plan;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsFloat totals_auto_threshold;
     extern const SettingsTotalsMode totals_mode;
@@ -2162,6 +2164,26 @@ void Planner::buildPlanForQueryNode()
             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
             LOG_DEBUG(log, "Disabling parallel replicas to execute a query with IN with subquery");
         }
+    }
+
+    /// `additional_table_filters` keys are resolved against the initiator's session current database,
+    /// but on followers the rewritten `SELECT` uses fully qualified names and the follower's current
+    /// database is the initiator's user-default DB, so the filter match is unreliable. Rather than
+    /// patch the match (which differs case by case), disable the combination on the analyzer path.
+    /// With `serialize_query_plan` the initiator lowers `additional_table_filters` into an explicit
+    /// `FilterStep` and ships the serialized plan, so the follower never re-resolves the setting —
+    /// the combination works there and the check is skipped.
+    if (query_context->canUseParallelReplicasOnInitiator()
+        && !settings[Setting::serialize_query_plan]
+        && !settings[Setting::additional_table_filters].value.empty())
+    {
+        if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "additional_table_filters is not supported with parallel and without serialize_query_plan=1");
+
+        auto & mutable_context = planner_context->getMutableQueryContext();
+        mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+        LOG_DEBUG(log, "Disabling parallel replicas to execute a query with additional_table_filters");
     }
 
     collectTableExpressionData(query_tree, planner_context);

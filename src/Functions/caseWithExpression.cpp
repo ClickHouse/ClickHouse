@@ -20,7 +20,7 @@ namespace
 
 /// Implements the CASE construction when it is
 /// provided an expression. Users should not call this function.
-class FunctionCaseWithExpression : public IFunction
+class FunctionCaseWithExpression final : public IFunction
 {
 public:
     static constexpr auto name = "caseWithExpression";

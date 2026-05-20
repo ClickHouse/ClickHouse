@@ -77,7 +77,7 @@ struct NameEndsWithCaseInsensitiveUTF8
 };
 
 template <typename Name>
-class FunctionStartsEndsWith : public IFunction
+class FunctionStartsEndsWith final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

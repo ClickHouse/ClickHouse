@@ -162,7 +162,7 @@ void StorageMySQL::readImpl(
 }
 
 
-class StorageMySQLSink : public SinkToStorage
+class StorageMySQLSink final : public SinkToStorage
 {
 public:
     explicit StorageMySQLSink(

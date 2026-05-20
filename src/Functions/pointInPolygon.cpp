@@ -106,7 +106,7 @@ UInt128 sipHash128(const MultiPolygon & multi_polygon)
 }
 
 template <typename PointInConstPolygonImpl, typename PointInConstMultiPolygonImpl>
-class FunctionPointInPolygon : public IFunction
+class FunctionPointInPolygon final : public IFunction
 {
 public:
     static inline const char * name = "pointInPolygon";

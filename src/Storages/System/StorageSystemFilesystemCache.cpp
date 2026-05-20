@@ -27,7 +27,7 @@ namespace DB
 {
 namespace
 {
-class SystemFilesystemCacheSource : public ISource, private WithContext
+class SystemFilesystemCacheSource final : public ISource, private WithContext
 {
 public:
     SystemFilesystemCacheSource(

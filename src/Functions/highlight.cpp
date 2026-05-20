@@ -29,7 +29,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
-class FunctionHighlight : public IFunction
+class FunctionHighlight final : public IFunction
 {
     const UInt64 max_matches_per_row;
 

@@ -12,7 +12,7 @@ namespace
 /** Returns whether Thread Fuzzer is effective.
   * It can be used in tests to prevent too long runs.
   */
-class FunctionHasThreadFuzzer : public IFunction
+class FunctionHasThreadFuzzer final : public IFunction
 {
 public:
     static constexpr auto name = "hasThreadFuzzer";

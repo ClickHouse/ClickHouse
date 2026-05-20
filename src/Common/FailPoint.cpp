@@ -44,6 +44,7 @@ static struct InitFiu
     ONCE(smt_commit_merge_mutate_zk_fail_before_op) \
     ONCE(smt_commit_write_zk_fail_after_op) \
     ONCE(smt_commit_write_zk_fail_before_op) \
+    ONCE(smt_restore_attach_retry) \
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_open) \
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_close) \
     ONCE(smt_commit_merge_change_version_before_op) \
@@ -64,6 +65,8 @@ static struct InitFiu
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(object_storage_queue_fail_commit_after_success) \
+    ONCE(object_storage_queue_cancel_in_generate) \
+    ONCE(object_storage_queue_sleep_in_generate) \
     ONCE(distributed_cache_fail_continue_request) \
     ONCE(distributed_cache_fail_choose_server) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \

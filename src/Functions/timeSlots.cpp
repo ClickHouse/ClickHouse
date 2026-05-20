@@ -218,7 +218,7 @@ struct TimeSlotsImpl
 };
 
 
-class FunctionTimeSlots : public IFunction
+class FunctionTimeSlots final : public IFunction
 {
 public:
     static constexpr auto name = "timeSlots";

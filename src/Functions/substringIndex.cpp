@@ -24,7 +24,7 @@ namespace ErrorCodes
 namespace
 {
 
-    class FunctionSubstringIndex : public IFunction
+    class FunctionSubstringIndex final : public IFunction
     {
     public:
         FunctionSubstringIndex(const char * name_, bool is_utf8_)

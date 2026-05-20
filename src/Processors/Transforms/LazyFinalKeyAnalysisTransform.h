@@ -19,7 +19,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 /// 3. Checks if enough marks were filtered (`min_filtered_ratio`)
 /// 4. If OK, stores the step in shared state and signals the optimized path
 /// 5. Otherwise, signals fallback
-class LazyFinalKeyAnalysisTransform : public IProcessor
+class LazyFinalKeyAnalysisTransform final : public IProcessor
 {
 public:
     LazyFinalKeyAnalysisTransform(

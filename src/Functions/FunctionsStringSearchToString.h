@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 
 template <typename Impl, typename Name>
-class FunctionsStringSearchToString : public IFunction
+class FunctionsStringSearchToString final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

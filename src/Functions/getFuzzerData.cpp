@@ -14,7 +14,7 @@ namespace DB
 namespace
 {
 
-class FunctionGetFuzzerData : public IFunction
+class FunctionGetFuzzerData final : public IFunction
 {
     inline static String fuzz_data;
 

@@ -13,7 +13,7 @@
 namespace DB
 {
 
-class SQLiteSource : public ISource
+class SQLiteSource final : public ISource
 {
 
 using SQLitePtr = std::shared_ptr<sqlite3>;

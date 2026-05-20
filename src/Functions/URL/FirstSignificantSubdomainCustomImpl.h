@@ -30,7 +30,7 @@ struct FirstSignificantSubdomainCustomLookup
 };
 
 template <typename Extractor, typename Name>
-class FunctionCutToFirstSignificantSubdomainCustomImpl : public IFunction
+class FunctionCutToFirstSignificantSubdomainCustomImpl final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

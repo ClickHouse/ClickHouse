@@ -69,7 +69,7 @@ protected:
 
 /// Passes transaction object into PostgreSQLSource and does not close transaction after read is finished.
 template <typename T>
-class PostgreSQLTransactionSource : public PostgreSQLSource<T>
+class PostgreSQLTransactionSource final : public PostgreSQLSource<T>
 {
 public:
     using Base = PostgreSQLSource<T>;

@@ -465,7 +465,7 @@ void fuzzJSONObject(std::shared_ptr<JSONNode> n, WriteBuffer & out, const Storag
     fuzzJSONObject(n, out, config, rnd, /*depth*/ 0, node_count);
 }
 
-class FuzzJSONSource : public ISource
+class FuzzJSONSource final : public ISource
 {
 public:
     FuzzJSONSource(

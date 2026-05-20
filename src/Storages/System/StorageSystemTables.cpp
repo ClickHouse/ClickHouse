@@ -257,7 +257,7 @@ VirtualColumnsDescription StorageSystemTables::createVirtuals()
     return desc;
 }
 
-class TablesBlockSource : public ISource
+class TablesBlockSource final : public ISource
 {
 public:
     TablesBlockSource(

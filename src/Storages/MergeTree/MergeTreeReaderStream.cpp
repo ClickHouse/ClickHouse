@@ -178,6 +178,24 @@ void MergeTreeReaderStream::seekToMark(const MarkInCompressedFile & mark)
     }
 }
 
+bool MergeTreeReaderStream::hasAtMostNDistinctMarks(size_t max_transitions) const
+{
+    auto marks = marks_loader->loadMarks();
+    size_t num_transitions = 0;
+    MarkInCompressedFile last_mark{std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()};
+    for (size_t i = 0; i < marks_count; ++i)
+    {
+        auto mark = marks->getMark(i, 0);
+        if (mark != last_mark)
+        {
+            last_mark = mark;
+            if (++num_transitions > max_transitions)
+                return false;
+        }
+    }
+    return true;
+}
+
 void MergeTreeReaderStream::seekToStart()
 {
     init();

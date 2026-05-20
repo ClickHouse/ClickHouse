@@ -35,7 +35,7 @@ namespace
   * And you're right. But actually it's made similar to a random Python library from the internet:
   * https://github.com/jmoiron/humanize/blob/b37dc30ba61c2446eecb1a9d3e9ac8c9adf00f03/src/humanize/time.py#L462
   */
-class FunctionFormatReadableTimeDelta : public IFunction
+class FunctionFormatReadableTimeDelta final : public IFunction
 {
 public:
     static constexpr auto name = "formatReadableTimeDelta";

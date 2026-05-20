@@ -34,7 +34,7 @@ namespace ErrorCodes
 
 
 /// Various illegal actions to test diagnostic features of ClickHouse itself. Should not be enabled in production builds.
-class FunctionTrap : public IFunction, private WithContext
+class FunctionTrap final : public IFunction, private WithContext
 {
 public:
     static constexpr auto name = "trap";

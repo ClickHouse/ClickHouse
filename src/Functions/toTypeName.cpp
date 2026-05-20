@@ -19,7 +19,7 @@ namespace
 /** toTypeName(x) - get the type name
   * Returns name of IDataType instance (name of data type).
   */
-class FunctionToTypeName : public IFunction
+class FunctionToTypeName final : public IFunction
 {
 public:
     explicit FunctionToTypeName(bool print_pretty_type_names_) : print_pretty_type_names(print_pretty_type_names_)

@@ -126,7 +126,7 @@ struct ZkNodeCache
     }
 };
 
-class ZooKeeperSink : public SinkToStorage
+class ZooKeeperSink final : public SinkToStorage
 {
     ContextPtr context;
     std::unordered_map<String, zkutil::ZooKeeperPtr> zookeepers;
@@ -251,7 +251,7 @@ private:
 };
 
 
-class SystemZooKeeperSource : public ISource
+class SystemZooKeeperSource final : public ISource
 {
 public:
     SystemZooKeeperSource(

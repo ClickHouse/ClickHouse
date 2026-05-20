@@ -239,7 +239,7 @@ struct Keccak256Impl
 #endif
 
 template <typename Impl>
-class FunctionStringHashFixedString : public IFunction
+class FunctionStringHashFixedString final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;

@@ -19,7 +19,7 @@ namespace Setting
 
 /// Implements the function isNull which returns true if a value
 /// is null, false otherwise.
-class FunctionIsNull : public IFunction
+class FunctionIsNull final : public IFunction
 {
 public:
     static constexpr auto name = "isNull";

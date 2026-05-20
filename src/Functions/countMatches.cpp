@@ -30,7 +30,7 @@ namespace
 using Pos = const char *;
 
 template <typename CountMatchesBase>
-class FunctionCountMatches : public IFunction
+class FunctionCountMatches final : public IFunction
 {
     const bool count_matches_stop_at_empty_match;
 

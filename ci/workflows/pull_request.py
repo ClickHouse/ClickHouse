@@ -49,6 +49,7 @@ workflow = Workflow.Config(
         JobConfigs.style_check,
         JobConfigs.code_review,
         JobConfigs.docs_job,
+        JobConfigs.docs_job_mintlify,
         JobConfigs.fast_test,
         JobConfigs.ci_tests,
         *JobConfigs.darwin_fast_test_jobs,

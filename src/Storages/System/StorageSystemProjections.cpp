@@ -60,7 +60,7 @@ VirtualColumnsDescription StorageSystemProjections::createVirtuals()
     return desc;
 }
 
-class ProjectionsSource : public ISource
+class ProjectionsSource final : public ISource
 {
 public:
     ProjectionsSource(

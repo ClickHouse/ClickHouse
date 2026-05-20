@@ -24,7 +24,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionGetClientHTTPHeader : public IFunction, WithContext
+class FunctionGetClientHTTPHeader final : public IFunction, WithContext
 {
 public:
     explicit FunctionGetClientHTTPHeader(ContextPtr context_)

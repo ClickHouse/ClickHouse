@@ -27,7 +27,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3ToChildren : public IFunction
+class FunctionH3ToChildren final : public IFunction
 {
 public:
     static constexpr auto name = "h3ToChildren";

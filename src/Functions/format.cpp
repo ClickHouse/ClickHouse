@@ -24,7 +24,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FormatFunction : public IFunction
+class FormatFunction final : public IFunction
 {
 public:
     static constexpr auto name = "format";

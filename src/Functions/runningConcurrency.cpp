@@ -21,7 +21,7 @@ namespace DB
         extern const int INCORRECT_DATA;
     }
 
-    class ExecutableFunctionRunningConcurrency : public IExecutableFunction
+    class ExecutableFunctionRunningConcurrency final : public IExecutableFunction
     {
     public:
         String getName() const override
@@ -101,7 +101,7 @@ namespace DB
         }
     };
 
-    class FunctionBaseRunningConcurrency : public IFunctionBase
+    class FunctionBaseRunningConcurrency final : public IFunctionBase
     {
     public:
         explicit FunctionBaseRunningConcurrency(DataTypes argument_types_, DataTypePtr return_type_)
@@ -140,7 +140,7 @@ namespace DB
         DataTypePtr return_type;
     };
 
-    class RunningConcurrencyOverloadResolver : public IFunctionOverloadResolver
+    class RunningConcurrencyOverloadResolver final : public IFunctionOverloadResolver
     {
     public:
         static constexpr auto name = "runningConcurrency";

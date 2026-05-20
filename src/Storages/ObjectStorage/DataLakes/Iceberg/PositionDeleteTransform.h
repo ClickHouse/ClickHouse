@@ -61,7 +61,7 @@ protected:
     std::vector<std::shared_ptr<IInputFormat>> delete_sources;
 };
 
-class IcebergBitmapPositionDeleteTransform : public IcebergPositionDeleteTransform
+class IcebergBitmapPositionDeleteTransform final : public IcebergPositionDeleteTransform
 {
 public:
     using ExcludedRows = DB::DataLakeObjectMetadata::ExcludedRows;
@@ -89,7 +89,7 @@ private:
 
 
 /// Requires both the deletes and the input Chunk-s to arrive in order of increasing row number.
-class IcebergStreamingPositionDeleteTransform : public IcebergPositionDeleteTransform
+class IcebergStreamingPositionDeleteTransform final : public IcebergPositionDeleteTransform
 {
 public:
     IcebergStreamingPositionDeleteTransform(

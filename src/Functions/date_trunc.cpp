@@ -32,7 +32,7 @@ namespace Setting
 namespace
 {
 
-class FunctionDateTrunc : public IFunction
+class FunctionDateTrunc final : public IFunction
 {
 public:
     static constexpr auto name = "dateTrunc";
@@ -87,7 +87,7 @@ private:
 };
 
 
-class FunctionDateTruncOverloadResolver : public IFunctionOverloadResolver
+class FunctionDateTruncOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "dateTrunc";

@@ -32,7 +32,7 @@ const EVP_MD * getHashAlgorithm(const std::string_view & mode)
     return EVP_MD_fetch(nullptr, std::string{mode}.c_str(), nullptr);
 }
 
-class FunctionHMAC : public IFunction
+class FunctionHMAC final : public IFunction
 {
 private:
     inline static std::once_flag supported_algorithms_flag;

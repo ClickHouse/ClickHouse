@@ -25,7 +25,7 @@ using namespace GatherUtils;
 namespace
 {
 
-class ConcatImpl : public IFunction
+class ConcatImpl final : public IFunction
 {
 public:
     ConcatImpl(const char * name_, bool is_injective_)
@@ -199,7 +199,7 @@ private:
 
 /// Works with arrays via `arrayConcat`, maps via `mapConcat`, and tuples via `tupleConcat`.
 /// Additionally, allows concatenation of arbitrary types that can be cast to string using the corresponding default serialization.
-class ConcatOverloadResolver : public IFunctionOverloadResolver
+class ConcatOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "concat";

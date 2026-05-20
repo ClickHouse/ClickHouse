@@ -80,7 +80,7 @@ struct JSONSharedDataPathsWithTypesImpl
 /// Implements functions that extracts paths and types from JSON object column.
 /// Used for introspection of the content of the JSON object column.
 template <typename Impl>
-class FunctionJSONPaths : public IFunction
+class FunctionJSONPaths final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;

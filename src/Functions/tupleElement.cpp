@@ -61,7 +61,7 @@ ColumnPtr mergeNullMaps(const ColumnPtr & left, const ColumnPtr & right)
   * Also the function looks through Arrays: you can get Array of tuple elements from Array of Tuples.
   * The logic of qbitElement is integrated into this function because AST makes any dot syntax (vec.i) a tupleElement(vec, i) call.
   */
-class FunctionTupleElement : public IFunction
+class FunctionTupleElement final : public IFunction
 {
 public:
     static constexpr auto name = "tupleElement";

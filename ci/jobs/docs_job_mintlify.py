@@ -9,13 +9,25 @@ if __name__ == "__main__":
     stop_watch = Utils.Stopwatch()
     temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
-    testname = "Verify Mintlify build"
+    docs_dir = f"{Utils.cwd()}/docs"
+
     results.append(
         Result.from_commands_run(
-            name=testname,
+            name="Verify Mintlify docs.json file is valid",
             command=[
                 "mint validate",
-            ]
+            ],
+            workdir=docs_dir,
+        )
+    )
+
+    results.append(
+        Result.from_commands_run(
+            name="Check for broken links",
+            command=[
+                "mint broken-links",
+            ],
+            workdir=docs_dir,
         )
     )
 

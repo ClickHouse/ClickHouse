@@ -215,7 +215,7 @@ private:
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 
-class StorageFileSource : public ISource, WithContext
+class StorageFileSource final : public ISource, WithContext
 {
 public:
     class FilesIterator : WithContext

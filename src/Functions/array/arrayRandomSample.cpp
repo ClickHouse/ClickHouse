@@ -19,7 +19,7 @@ namespace ErrorCodes
 }
 
 /// arrayRandomSample(arr, k) - Returns k random elements from the input array
-class FunctionArrayRandomSample : public IFunction
+class FunctionArrayRandomSample final : public IFunction
 {
 public:
     static constexpr auto name = "arrayRandomSample";

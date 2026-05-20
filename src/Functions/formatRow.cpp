@@ -31,7 +31,7 @@ namespace
   * several columns to generate a string per row, such as CSV, TSV, JSONEachRow, etc.
   * formatRowNoNewline(...) trims the newline character of each row.
   */
-class FunctionFormatRow : public IFunction
+class FunctionFormatRow final : public IFunction
 {
 public:
     FunctionFormatRow(const char * name_, bool no_newline_, String format_name_, Names arguments_column_names_, ContextPtr context_)
@@ -113,7 +113,7 @@ private:
     FormatSettings format_settings;
 };
 
-class FormatRowOverloadResolver : public IFunctionOverloadResolver, private WithContext
+class FormatRowOverloadResolver final : public IFunctionOverloadResolver, private WithContext
 {
 public:
     FormatRowOverloadResolver(const char * name_, bool no_newline_, ContextPtr context_)

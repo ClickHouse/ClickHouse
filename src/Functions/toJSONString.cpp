@@ -10,7 +10,7 @@ namespace DB
 {
 namespace
 {
-    class FunctionToJSONString : public IFunction
+    class FunctionToJSONString final : public IFunction
     {
     public:
         static constexpr auto name = "toJSONString";

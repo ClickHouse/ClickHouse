@@ -14,7 +14,7 @@ namespace DB
   */
 namespace
 {
-class FunctionColorOKLABToSRGB : public ColorConversionToSRGBBase<FunctionColorOKLABToSRGB>
+class FunctionColorOKLABToSRGB final : public ColorConversionToSRGBBase<FunctionColorOKLABToSRGB>
 {
 public:
     static constexpr auto name = "colorOKLABToSRGB";

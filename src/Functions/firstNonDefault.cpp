@@ -24,7 +24,7 @@ namespace
 /// returns the value of the leftmost non-falsey argument.
 /// If all arguments are falsey, returns the default value for the result type.
 /// Result type is the supertype of all arguments.
-class FunctionFirstNonDefault : public IFunction
+class FunctionFirstNonDefault final : public IFunction
 {
 public:
     static constexpr auto name = "firstNonDefault";

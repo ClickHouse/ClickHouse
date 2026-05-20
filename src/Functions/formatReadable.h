@@ -22,7 +22,7 @@ namespace ErrorCodes
   * formatReadableQuantity - prints the quantity in form of 123 million.
   */
 
-class FunctionFormatReadable : public IFunction
+class FunctionFormatReadable final : public IFunction
 {
 public:
     using FormatFunc = void (*)(double, WriteBuffer &, int);

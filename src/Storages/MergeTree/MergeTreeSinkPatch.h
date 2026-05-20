@@ -7,7 +7,7 @@ namespace DB
 
 class StorageMergeTree;
 
-class MergeTreeSinkPatch : public MergeTreeSink
+class MergeTreeSinkPatch final : public MergeTreeSink
 {
 public:
     MergeTreeSinkPatch(

@@ -42,7 +42,7 @@ struct GroupConcatData : public GroupConcatDataBase
 };
 
 template <bool has_limit>
-class GroupConcatImpl : public IAggregateFunctionDataHelper<GroupConcatData, GroupConcatImpl<has_limit>>
+class GroupConcatImpl final : public IAggregateFunctionDataHelper<GroupConcatData, GroupConcatImpl<has_limit>>
 {
     static constexpr auto name = "groupConcat";
 

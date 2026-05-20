@@ -10,7 +10,7 @@ namespace DB
 
 class SerializationDynamicElement;
 
-class SerializationDynamic : public ISerialization
+class SerializationDynamic final : public ISerialization
 {
 private:
     explicit SerializationDynamic(

@@ -205,7 +205,7 @@ Pipe StorageArrowFlight::read(
         context_));
 }
 
-class ArrowFlightSink : public SinkToStorage
+class ArrowFlightSink final : public SinkToStorage
 {
 public:
     explicit ArrowFlightSink(
