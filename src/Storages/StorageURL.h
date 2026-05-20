@@ -158,7 +158,7 @@ bool urlWithGlobs(const String & uri);
 
 String getSampleURI(String uri, ContextPtr context);
 
-class StorageURLSource final : public ISource, WithContext
+class StorageURLSource : public ISource, WithContext
 {
     using URIParams = std::vector<std::pair<String, String>>;
 
@@ -260,7 +260,7 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
 };
 
-class StorageURLSink final : public SinkToStorage
+class StorageURLSink : public SinkToStorage
 {
 public:
     StorageURLSink(
@@ -352,18 +352,6 @@ public:
     static size_t evalArgsAndCollectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments = true);
 
     static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
-
-    /// Resolve a possibly relative URL against a base URL per RFC 3986.
-    /// If the URL already contains a scheme, it is returned as-is.
-    /// Otherwise, it is resolved relative to the base:
-    /// - `//host/path` → scheme-relative (uses scheme from base)
-    /// - `/path` → host-relative (uses scheme and host from base)
-    /// - `path` → path-relative (merged with base URL path: replaces everything
-    ///   after the last `/` in the base path, then normalizes dot segments)
-    /// - `?query` → replaces base query/fragment, preserves base path
-    /// - `#frag` → replaces base fragment, preserves base path and query
-    /// The resolution is done by string manipulation to allow malformed URLs.
-    static String resolveURLBase(const String & url, const String & base);
 };
 
 

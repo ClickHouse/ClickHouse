@@ -28,36 +28,6 @@
 
 namespace DB
 {
-
-namespace
-{
-
-/// Check if any step in the query plan tree contains correlated expressions (PLACEHOLDER nodes).
-/// Such plans cannot be executed standalone — they require decorrelation first.
-/// We must traverse both `node->children` and any nested plans returned by `step->getChildPlans()`
-/// (e.g. `ReadFromMerge`), otherwise correlated `PLACEHOLDER` actions inside a child plan can be
-/// missed and we may attempt standalone execution and hit `Trying to execute PLACEHOLDER action`.
-bool hasCorrelatedExpressions(QueryPlan::Node * node)
-{
-    if (!node)
-        return false;
-
-    if (node->step->hasCorrelatedExpressions())
-        return true;
-
-    for (auto * child : node->children)
-        if (hasCorrelatedExpressions(child))
-            return true;
-
-    for (auto * child_plan : node->step->getChildPlans())
-        if (child_plan && hasCorrelatedExpressions(child_plan->getRootNode()))
-            return true;
-
-    return false;
-}
-
-}
-
 namespace Setting
 {
     extern const SettingsUInt64 max_bytes_in_set;
@@ -327,11 +297,6 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     if (external_table_set)
         external_table_set->buildSetInplace(context);
 
-    /// Correlated subqueries contain PLACEHOLDER actions that cannot be executed standalone.
-    /// They will be decorrelated and executed as part of the outer query instead.
-    if (source && hasCorrelatedExpressions(source->getRootNode()))
-        return;
-
     const auto & settings = context->getSettingsRef();
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
     auto prepared_sets_cache = context->getPreparedSetsCache();
@@ -352,9 +317,6 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
             executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
     }
     executor.execute();
-
-    /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
-    pipeline.finalizeWriteInQueryResultCache();
 }
 
 SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
@@ -379,11 +341,6 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
             return set_and_key->set;
         }
     }
-
-    /// Correlated subqueries contain PLACEHOLDER actions that cannot be executed standalone.
-    /// They will be decorrelated and executed as part of the outer query instead.
-    if (source && hasCorrelatedExpressions(source->getRootNode()))
-        return nullptr;
 
     const auto & settings = context->getSettingsRef();
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
@@ -413,9 +370,6 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         return nullptr;
 
     logProcessorProfile(context, pipeline.getProcessors());
-
-    /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
-    pipeline.finalizeWriteInQueryResultCache();
 
     return set_and_key->set;
 }

@@ -88,9 +88,6 @@ public:
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
     Strings getDataPaths() const override;
-#if CLICKHOUSE_CLOUD
-    std::vector<StorageID> getInnerStorageIDs() const override;
-#endif
 
 private:
     TimeSeriesSettingsPtr storage_settings;

@@ -35,7 +35,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class MergeTreeTextIndexSource final : public ISource
+class MergeTreeTextIndexSource : public ISource
 {
 public:
     MergeTreeTextIndexSource(

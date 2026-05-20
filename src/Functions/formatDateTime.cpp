@@ -138,7 +138,7 @@ constexpr std::string_view monthsShort[] = {"Jan", "Feb", "Mar", "Apr", "May", "
   * PS. We can make this function to return FixedString. Currently it returns String.
   */
 template <typename Name, SupportInteger support_integer, FormatSyntax format_syntax>
-class FunctionFormatDateTimeImpl final : public IFunction
+class FunctionFormatDateTimeImpl : public IFunction
 {
 private:
     /// Time is either UInt32 for DateTime or UInt16 for Date.

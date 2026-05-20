@@ -19,7 +19,7 @@ namespace DB
 
 struct ObjectMetadata;
 
-class ObjectStorageQueueSource final : public ISource, WithContext
+class ObjectStorageQueueSource : public ISource, WithContext
 {
 public:
     using Storage = StorageObjectStorage;
@@ -184,8 +184,7 @@ public:
         const StorageID & storage_id_,
         LoggerPtr log_,
         bool commit_once_processed_,
-        bool add_deduplication_info_,
-        bool is_deduplication_v2_);
+        bool add_deduplication_info_);
 
     static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
 
@@ -236,7 +235,7 @@ private:
     /// Commit processed files.
     /// This method is only used for SELECT query, not for streaming to materialized views.
     /// Which is defined by passing a flag commit_once_processed.
-    void commit(bool insert_succeeded, const std::string & exception_message = {}, int error_code = 0);
+    void commit(bool insert_succeeded, const std::string & exception_message = {});
 
     const String name;
     const size_t processor_id;
@@ -259,8 +258,6 @@ private:
     const StorageID storage_id;
     const bool commit_once_processed;
     const bool add_deduplication_info;
-    /// Effective dedup: gates whether shutdown can abort mid-file.
-    const bool is_deduplication_v2;
     const InsertDeduplicationVersions insert_deduplication_version;
     time_t transaction_start_time;
 
