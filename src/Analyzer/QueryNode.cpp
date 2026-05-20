@@ -506,36 +506,36 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     if (projection_expression_list_ast_children_size != projection.getNodes().size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query node invalid projection conversion to AST");
 
-    if (!projection_columns.empty())
-    {
-        /// Avoid `AS <name>` collisions for `SELECT *` over a JOIN, where both sides
-        /// expose columns with the same bare name (e.g. `a` from `__table1.a` and
-        /// `__table3.a`). Without this, re-resolving the dispatched AST on a remote
-        /// replica triggers MULTIPLE_EXPRESSIONS_FOR_ALIAS. Suppress the alias only
-        /// when the current projection is a `ColumnNode` and an earlier projection
-        /// used the same name for a `ColumnNode` with a different source — source
-        /// identity is checked explicitly because `ColumnNode::isEqualImpl` ignores
-        /// the column source.
-        const auto & projection_nodes = projection.getNodes();
-        std::unordered_map<std::string_view, const ColumnNode *> first_column_by_name;
-        for (size_t i = 0; i < projection_expression_list_ast_children_size; ++i)
-        {
-            auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(projection_expression_list_ast.children[i].get());
-            if (!ast_with_alias)
-                continue;
-
-            const auto & column_name = projection_columns[i].name;
-            const auto * current_column = projection_nodes[i]->as<ColumnNode>();
-            if (current_column)
-            {
-                auto [it, inserted] = first_column_by_name.try_emplace(column_name, current_column);
-                if (!inserted && it->second->getColumnSourceOrNull() != current_column->getColumnSourceOrNull())
-                    continue;
-            }
-
-            ast_with_alias->setAlias(column_name);
-        }
-    }
+    // if (!projection_columns.empty())
+    // {
+    //     /// Avoid `AS <name>` collisions for `SELECT *` over a JOIN, where both sides
+    //     /// expose columns with the same bare name (e.g. `a` from `__table1.a` and
+    //     /// `__table3.a`). Without this, re-resolving the dispatched AST on a remote
+    //     /// replica triggers MULTIPLE_EXPRESSIONS_FOR_ALIAS. Suppress the alias only
+    //     /// when the current projection is a `ColumnNode` and an earlier projection
+    //     /// used the same name for a `ColumnNode` with a different source — source
+    //     /// identity is checked explicitly because `ColumnNode::isEqualImpl` ignores
+    //     /// the column source.
+    //     const auto & projection_nodes = projection.getNodes();
+    //     std::unordered_map<std::string_view, const ColumnNode *> first_column_by_name;
+    //     for (size_t i = 0; i < projection_expression_list_ast_children_size; ++i)
+    //     {
+    //         auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(projection_expression_list_ast.children[i].get());
+    //         if (!ast_with_alias)
+    //             continue;
+    //
+    //         const auto & column_name = projection_columns[i].name;
+    //         const auto * current_column = projection_nodes[i]->as<ColumnNode>();
+    //         if (current_column)
+    //         {
+    //             auto [it, inserted] = first_column_by_name.try_emplace(column_name, current_column);
+    //             if (!inserted && it->second->getColumnSourceOrNull() != current_column->getColumnSourceOrNull())
+    //                 continue;
+    //         }
+    //
+    //         ast_with_alias->setAlias(column_name);
+    //     }
+    // }
 
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_ast));
 
