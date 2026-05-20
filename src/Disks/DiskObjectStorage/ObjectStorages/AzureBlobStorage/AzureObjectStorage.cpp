@@ -12,10 +12,13 @@
 #include <Common/getRandomASCIIString.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
+#include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
 
+#include <azure/storage/files/datalake/datalake_file_client.hpp>
+#include <azure/storage/files/datalake/datalake_options.hpp>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
@@ -267,7 +270,51 @@ SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetad
 }
 
 
-/// Open the file for write and return WriteBufferFromFileBase object.
+static bool isOneLakeEndpoint(const String & storage_account_url)
+{
+    return storage_account_url.find("fabric.microsoft.com") != String::npos;
+}
+
+static String buildAdlsGen2FileUrl(const AzureBlobStorage::Endpoint & endpoint, const String & blob_path)
+{
+    String url = endpoint.getContainerEndpoint();
+    auto query_pos = url.find('?');
+    if (query_pos == String::npos)
+    {
+        if (!url.empty() && url.back() != '/')
+            url += '/';
+        url += blob_path;
+        return url;
+    }
+
+    String path_part = url.substr(0, query_pos);
+    String query_part = url.substr(query_pos);
+    if (!path_part.empty() && path_part.back() != '/')
+        path_part += '/';
+    return path_part + blob_path + query_part;
+}
+
+static Azure::Storage::Files::DataLake::DataLakeFileClient buildAdlsGen2FileClient(
+    const String & file_url,
+    const AzureBlobStorage::AuthMethod & auth_method,
+    const Azure::Storage::Blobs::BlobClientOptions & blob_client_options)
+{
+    using namespace Azure::Storage::Files::DataLake;
+    DataLakeClientOptions datalake_options;
+    static_cast<Azure::Core::_internal::ClientOptions &>(datalake_options)
+        = static_cast<const Azure::Core::_internal::ClientOptions &>(blob_client_options);
+
+    return std::visit(
+        [&]<typename T>(const T & auth) -> DataLakeFileClient
+        {
+            if constexpr (std::is_same_v<T, AzureBlobStorage::ConnectionString>)
+                return DataLakeFileClient(file_url, datalake_options);
+            else
+                return DataLakeFileClient(file_url, auth, datalake_options);
+        },
+        auth_method);
+}
+
 std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NOLINT
     const StoredObject & object,
     WriteMode mode,
@@ -280,13 +327,26 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
 
     LOG_TEST(log, "Writing file: {}", object.remote_path);
 
-    ThreadPoolCallbackRunnerUnsafe<void> scheduler;
-    if (write_settings.azure_allow_parallel_part_upload)
-        scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::REMOTE_FS_WRITE_THREAD_POOL);
-
     auto blob_storage_log = BlobStorageLogWriter::create(name);
     if (blob_storage_log)
         blob_storage_log->local_path = object.local_path;
+
+    if (isOneLakeEndpoint(connection_params.endpoint.storage_account_url))
+    {
+        return std::make_unique<WriteBufferFromAzureDataLakeStorage>(
+            buildAdlsGen2FileUrl(connection_params.endpoint, object.remote_path),
+            auth_method,
+            connection_params.client_options,
+            object.remote_path,
+            write_settings.use_adaptive_write_buffer ? write_settings.adaptive_write_buffer_initial_size : buf_size,
+            settings.get(),
+            connection_params.getContainer(),
+            std::move(blob_storage_log));
+    }
+
+    ThreadPoolCallbackRunnerUnsafe<void> scheduler;
+    if (write_settings.azure_allow_parallel_part_upload)
+        scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::REMOTE_FS_WRITE_THREAD_POOL);
 
     return std::make_unique<WriteBufferFromAzureBlobStorage>(
         client.get(),
@@ -318,12 +378,24 @@ void AzureObjectStorage::removeObjectImpl(
     bool success = false;
     try
     {
-        auto delete_info = client_ptr->GetBlobClient(path).Delete();
-        success = delete_info.Value.Deleted;
-        if (!if_exists && !delete_info.Value.Deleted)
-            throw Exception(
-                ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file (path: {}) in AzureBlob Storage, reason: {}",
-                path, delete_info.RawResponse ? delete_info.RawResponse->GetReasonPhrase() : "Unknown");
+        if (isOneLakeEndpoint(connection_params.endpoint.storage_account_url))
+        {
+            auto datalake_client = buildAdlsGen2FileClient(
+                buildAdlsGen2FileUrl(connection_params.endpoint, path),
+                auth_method,
+                connection_params.client_options);
+            datalake_client.Delete();
+            success = true;
+        }
+        else
+        {
+            auto delete_info = client_ptr->GetBlobClient(path).Delete();
+            success = delete_info.Value.Deleted;
+            if (!if_exists && !delete_info.Value.Deleted)
+                throw Exception(
+                    ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file (path: {}) in AzureBlob Storage, reason: {}",
+                    path, delete_info.RawResponse ? delete_info.RawResponse->GetReasonPhrase() : "Unknown");
+        }
     }
     catch (const Azure::Storage::StorageException & e)
     {
