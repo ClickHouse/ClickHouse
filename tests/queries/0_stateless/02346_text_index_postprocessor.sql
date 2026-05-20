@@ -767,4 +767,33 @@ SELECT count() FROM tab WHERE hasToken(val, 'foo');  -- { serverError BAD_ARGUME
 
 DROP TABLE tab;
 
+SELECT '28. ngrams tokenizer + postprocessor: postprocessed tokens are not re-tokenized.';
+-- Before the fix, postprocessed tokens were fed back through addDocument, re-running the tokenizer.
+-- A 3-char ngram truncated to 2 chars is shorter than n=3, so re-tokenization produces nothing
+-- and the index is empty, causing false negatives on all hasToken queries.
+
+CREATE TABLE tab
+(
+    id  UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = ngrams(3), postprocessor = substring(val, 1, 2))
+)
+ENGINE = MergeTree ORDER BY id;
+
+SYSTEM STOP MERGES tab;
+INSERT INTO tab VALUES (1, 'hello'), (2, 'world');
+
+-- 'hello' → ngrams(3) → ['hel','ell','llo'] → substring(1,2) → ['he','el','ll']
+-- 'world' → ngrams(3) → ['wor','orl','rld'] → substring(1,2) → ['wo','or','rl']
+SELECT token, cardinality
+FROM mergeTreeTextIndex(currentDatabase(), tab, idx)
+ORDER BY token;
+
+SELECT count() FROM tab WHERE hasToken(val, 'hello');  -- 1
+SELECT count() FROM tab WHERE hasToken(val, 'world');  -- 1
+SELECT count() FROM tab WHERE hasToken(val, 'xyz');    -- 0
+
+SYSTEM START MERGES tab;
+DROP TABLE tab;
+
 DROP TABLE IF EXISTS tab;

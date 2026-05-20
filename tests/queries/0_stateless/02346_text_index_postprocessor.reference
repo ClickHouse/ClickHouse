@@ -171,3 +171,13 @@ started	1
 - The postprocessor must not contain non-deterministic functions
 - The postprocessor must not contain arrayJoin
 - A postprocessor that produces a token containing separator characters throws BAD_ARGUMENTS at query time
+28. ngrams tokenizer + postprocessor: postprocessed tokens are not re-tokenized.
+el	1
+he	1
+ll	1
+or	1
+rl	1
+wo	1
+1
+1
+0
