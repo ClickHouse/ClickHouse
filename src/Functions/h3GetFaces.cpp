@@ -23,7 +23,7 @@ extern const int ILLEGAL_COLUMN;
 namespace
 {
 
-class FunctionH3GetFaces : public IFunction
+class FunctionH3GetFaces final : public IFunction
 {
 public:
     static constexpr auto name = "h3GetFaces";
@@ -87,11 +87,11 @@ public:
                 continue;
             }
 
-            int max_faces = maxFaceCount(data[row]);
+            int max_faces = 0;
+            maxFaceCount(data[row], &max_faces);
 
             faces.resize(max_faces);
 
-            // function name h3GetFaces (v3.x) changed to getIcosahedronFaces (v4.0.0).
             getIcosahedronFaces(data[row], faces.data());
 
             for (int i = 0; i < max_faces; ++i)

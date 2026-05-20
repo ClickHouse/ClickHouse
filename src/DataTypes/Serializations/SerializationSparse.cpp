@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationSparse.h>
 
 #include <Columns/ColumnConst.h>
@@ -20,6 +21,22 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+
+UInt128 SerializationSparse::getHash(const SerializationPtr & nested_)
+{
+    SipHash hash;
+    hash.update("Sparse");
+    hash.update(nested_->getHash());
+    return hash.get128();
+}
+
+UInt128 SerializationSparseNullMap::getHash()
+{
+    SipHash hash;
+    hash.update("SparseNullMap");
+    return hash.get128();
 }
 
 namespace
@@ -226,8 +243,8 @@ SerializationSparse::SerializationSparse(const SerializationPtr & nested_)
 {
     if (const auto * nested_nullable = typeid_cast<const SerializationNullable *>(nested.get()))
     {
-        nested = std::make_shared<SerializationNullable>(nested_nullable->getNested(), true /* use_default_null_map */);
-        sparse_null_map = std::make_shared<SerializationSparseNullMap>();
+        nested = SerializationNullable::create(nested_nullable->getNested(), true /* use_default_null_map */);
+        sparse_null_map = SerializationSparseNullMap::create();
     }
 }
 
@@ -240,7 +257,7 @@ ISerialization::KindStack SerializationSparse::getKindStack() const
 
 SerializationPtr SerializationSparse::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
 {
-    return std::make_shared<SerializationSparse>(prev);
+    return SerializationSparse::create(prev);
 }
 
 ColumnPtr SerializationSparse::SubcolumnCreator::create(const ColumnPtr & prev) const
@@ -266,7 +283,7 @@ void SerializationSparse::enumerateStreams(
     size_t column_size = column_sparse ? column_sparse->size() : 0;
 
     settings.path.push_back(Substream::SparseOffsets);
-    auto offsets_data = SubstreamData(std::make_shared<SerializationNumber<UInt64>>())
+    auto offsets_data = SubstreamData(SerializationNumber<UInt64>::create())
                             .withType(data.type ? std::make_shared<DataTypeUInt64>() : nullptr)
                             .withColumn(column_sparse ? column_sparse->getOffsetsPtr() : nullptr)
                             .withSerializationInfo(data.serialization_info);
@@ -549,6 +566,21 @@ void SerializationSparse::serializeTextXML(const IColumn & column, size_t row_nu
     nested->serializeTextXML(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
 }
 
+
+void SerializationSparse::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
+    nested->serializeTextRaw(column_sparse.getValuesColumn(), column_sparse.getValueIndex(row_num), ostr, settings);
+}
+
+void SerializationSparse::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserialize(column, [&](auto & nested_column)
+    {
+        nested->deserializeTextRaw(nested_column, istr, settings);
+    });
+}
+
 void SerializationSparseNullMap::assertSettings(const SerializeBinaryBulkSettings & settings)
 {
     if (settings.position_independent_encoding)
@@ -643,6 +675,28 @@ void SerializationSparseNullMap::deserializeBinaryBulkWithMultipleStreams(
 
         column = std::move(mutable_column);
     }
+}
+
+size_t SerializationSparse::allocatedBytes() const
+{
+    return sizeof(*this);
+}
+
+SerializationPtr SerializationSparse::create(const SerializationPtr & nested_)
+{
+    if (!nested_->supportsPooling())
+        return std::shared_ptr<ISerialization>(new SerializationSparse(nested_));
+    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationSparse(nested_); });
+}
+
+size_t SerializationSparseNullMap::allocatedBytes() const
+{
+    return sizeof(*this);
+}
+
+SerializationPtr SerializationSparseNullMap::create()
+{
+    return ISerialization::pooled(getHash(), [] { return new SerializationSparseNullMap(); });
 }
 
 }

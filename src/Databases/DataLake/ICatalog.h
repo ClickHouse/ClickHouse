@@ -33,6 +33,7 @@ public:
     TableMetadata & withSchema() { with_schema = true; return *this; }
     TableMetadata & withStorageCredentials() { with_storage_credentials = true; return *this; }
     TableMetadata & withDataLakeSpecificProperties() { with_datalake_specific_metadata = true; return *this; }
+    TableMetadata & withForceAddBucket() { force_add_bucket = true; return *this; }
 
     bool hasLocation() const;
     bool hasSchema() const;
@@ -41,7 +42,7 @@ public:
 
     void setLocation(const std::string & location_);
     std::string getLocation() const;
-    std::string getLocationWithEndpoint(const std::string & endpoint_) const;
+    std::string getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style = DB::S3UriStyle::AUTO) const;
     std::string getMetadataLocation(const std::string & iceberg_metadata_file_location) const;
 
     void setEndpoint(const std::string & endpoint_);
@@ -55,6 +56,9 @@ public:
 
     void setDataLakeSpecificProperties(std::optional<DataLakeSpecificProperties> && metadata);
     std::optional<DataLakeSpecificProperties> getDataLakeSpecificProperties() const;
+
+    void setTableUUID(const std::string & uuid_) { table_uuid = uuid_; }
+    std::optional<std::string> getTableUUID() const { return table_uuid; }
 
     bool requiresLocation() const { return with_location; }
     bool requiresSchema() const { return with_schema; }
@@ -93,6 +97,7 @@ private:
     /// For Azure ABFSS URLs: stores the account with suffix (e.g., "account.dfs.core.windows.net")
     /// This is extracted from URLs like: abfss://container@account.dfs.core.windows.net/path
     std::string azure_account_with_suffix;
+    bool force_add_bucket = false;
     /// Endpoint is set and used in case we have non-AWS storage implementation, for example, Minio.
     /// Also not all catalogs support non-AWS storages.
     std::string endpoint;
@@ -104,6 +109,7 @@ private:
     std::optional<DataLakeSpecificProperties> data_lake_specific_metadata;
 
     std::string reason_why_table_is_not_readable;
+    std::optional<std::string> table_uuid;
 
     bool is_default_readable_table = true;
 
@@ -112,7 +118,7 @@ private:
     bool with_storage_credentials = false;
     bool with_datalake_specific_metadata = false;
 
-    std::string constructLocation(const std::string & endpoint_) const;
+    std::string constructLocation(const std::string & endpoint_, DB::S3UriStyle uri_style) const;
 };
 
 

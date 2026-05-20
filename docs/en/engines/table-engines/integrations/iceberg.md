@@ -8,8 +8,6 @@ title: 'Iceberg table engine'
 doc_type: 'reference'
 ---
 
-# Iceberg table engine {#iceberg-table-engine}
-
 :::warning 
 We recommend using the [Iceberg Table Function](/sql-reference/table-functions/iceberg.md) for working with Iceberg data in ClickHouse. The Iceberg Table Function currently provides sufficient functionality, offering a partial read-only interface for Iceberg tables.
 
@@ -75,6 +73,38 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 ## Aliases {#aliases}
 
 Table engine `Iceberg` is an alias to `IcebergS3` now.
+
+## Data types {#data-types}
+
+The following table shows how Iceberg data types are mapped to ClickHouse data types during schema inference (for reading purposes).
+
+### Primitive types {#primitive-types}
+
+| Iceberg type | ClickHouse type | Notes |
+|---|---|---|
+| `boolean` | `Bool` | |
+| `int` | `Int32` | |
+| `long`, `bigint` | `Int64` | |
+| `float` | `Float32` | |
+| `double` | `Float64` | |
+| `date` | `Date32` | |
+| `time` | `Int64` | Microseconds since midnight |
+| `timestamp` | `DateTime64(6)` | Microseconds, no timezone |
+| `timestamptz` | `DateTime64(6, 'UTC')` | Microseconds, UTC timezone |
+| `timestamp_ns` | `DateTime64(9)` | Nanoseconds, no timezone (since Iceberg v3 only) |
+| `timestamptz_ns` | `DateTime64(9, 'UTC')` | Nanoseconds, UTC timezone (since Iceberg v3 only) |
+| `string`, `binary` | `String` | |
+| `uuid` | `UUID` | |
+| `fixed(N)` | `FixedString(N)` | |
+| `decimal(P, S)` | `Decimal(P, S)` | |
+
+### Complex types {#complex-types}
+
+| Iceberg type | ClickHouse type |
+|---|---|
+| `list` | `Array` |
+| `map` | `Map` |
+| `struct` | `Tuple` |
 
 ## Schema evolution {#schema-evolution}
 ClickHouse supports reading Iceberg tables whose schema has evolved over time. This includes tables where columns have been added, removed, or reordered, as well as columns changed from required to nullable. Additionally, the following type casts are supported:
