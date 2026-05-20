@@ -103,6 +103,16 @@ DataTypeObject::DataTypeObject(const DB::DataTypeObject::SchemaFormat & schema_f
 {
 }
 
+void DataTypeObject::insertDefaultInto(IColumn & column) const
+{
+    auto & column_object = assert_cast<ColumnObject &>(column);
+    for (auto & [path, typed_column] : column_object.getTypedPaths())
+        typed_paths.at(path)->insertDefaultInto(*typed_column);
+    for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
+        dynamic_column->insertDefault();
+    column_object.getSharedDataColumn().insertDefault();
+}
+
 bool DataTypeObject::equals(const IDataType & rhs) const
 {
     if (const auto * object = typeid_cast<const DataTypeObject *>(&rhs))
@@ -495,8 +505,9 @@ ColumnPtr extractCombinedColumn(
     auto literal_column = extractLiteralColumn(object_column, path, max_dynamic_types);
     auto sub_object_column = extractSubObjectColumn(object_column, prefix, sub_object_type);
 
-    /// If sub-object is all defaults, just use literal.
-    if (sub_object_column->getNumberOfDefaultRows() == sub_object_column->size())
+    /// If sub-object contains only empty objects, just use literal.
+    const auto * sub_object_typed_column = assert_cast<const ColumnObject *>(sub_object_column.get());
+    if (!sub_object_typed_column->hasNonEmptyRows())
         return literal_column;
 
     /// Cast sub-object to Dynamic.
@@ -509,7 +520,7 @@ ColumnPtr extractCombinedColumn(
     {
         if (!literal_column->isDefaultAt(i))
             merged->insertFrom(*literal_column, i);
-        else if (!sub_object_column->isDefaultAt(i))
+        else if (!sub_object_typed_column->isEmptyAt(i))
             merged->insertFrom(*casted_sub_object, i);
         else
             merged->insertDefault();

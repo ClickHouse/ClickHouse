@@ -301,7 +301,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     }
     else
     {
-        bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+        bool is_on_cluster = getContext()->isDDLOrOnClusterInternal();
         if (create.uuid != UUIDHelpers::Nil && !is_on_cluster && !internal)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Ordinary database engine does not support UUID");
 
@@ -332,7 +332,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
-    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext());
+    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext(), mode);
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -784,7 +784,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
-                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, nullptr, getContext());
+                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, nullptr, getContext(), mode);
                 properties.projections.add(std::move(projection));
             }
 
@@ -1429,7 +1429,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     const auto * kind_upper = create.is_dictionary ? "DICTIONARY" : "TABLE";
     bool is_replicated_database_internal = database->getEngineName() == "Replicated" && getContext()->getClientInfo().is_replicated_database_internal;
     bool from_path = create.has_attach_from_path;
-    bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    bool is_on_cluster = getContext()->isDDLOrOnClusterInternal();
 
     if (database->getEngineName() == "Replicated" && create.uuid != UUIDHelpers::Nil && !is_replicated_database_internal && !internal && !is_on_cluster && !create.attach)
     {
@@ -1643,7 +1643,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         fs::path user_files = fs::path(getContext()->getUserFilesPath()).lexically_normal();
         fs::path root_path = fs::path(getContext()->getPath()).lexically_normal();
 
-        if (getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+        if (!getContext()->isDDLOrOnClusterInternal())
         {
             fs::path data_path = fs::path(create.attach_from_path).lexically_normal();
             if (data_path.is_relative())
@@ -1663,7 +1663,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                                 "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
         }
     }
-    else if (create.attach && !create.attach_short_syntax && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+    else if (create.attach && !create.attach_short_syntax && !getContext()->isDDLOrOnClusterInternal())
     {
         auto log = getLogger("InterpreterCreateQuery");
         LOG_WARNING(log, "ATTACH TABLE query with full table definition is not recommended: "
@@ -2047,9 +2047,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// Before actually creating the table, check if it will lead to cyclic dependencies.
     checkTableCanBeAddedWithNoCyclicDependencies(create, query_ptr, getContext());
 
-    /// Initial queries in Replicated database at this point have query_kind = ClientInfo::QueryKind::SECONNDARY_QUERY,
+    /// Initial queries in Replicated database at this point have is_ddl_or_on_cluster_internal = true,
     /// so we need to check whether the query is initial through getZooKeeperMetadataTransaction()->isInitialQuery()
-    bool is_initial_query = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY ||
+    bool is_initial_query = !getContext()->isDDLOrOnClusterInternal() ||
                             (getContext()->getZooKeeperMetadataTransaction() && getContext()->getZooKeeperMetadataTransaction()->isInitialQuery());
     bool is_predefined_database = DatabaseCatalog::isPredefinedDatabase(create.getDatabase());
     if (!internal && is_initial_query && !is_predefined_database)
@@ -2201,7 +2201,10 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         if (database->getUUID() == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "{} query is supported only for Atomic databases",
-                            create.create_or_replace ? "CREATE OR REPLACE TABLE" : "REPLACE TABLE");
+                            create.create_or_replace
+                ? (create.is_materialized_view ? "CREATE OR REPLACE MATERIALIZED VIEW"
+                    : (create.isView() ? "CREATE OR REPLACE VIEW" : "CREATE OR REPLACE TABLE"))
+                : "REPLACE TABLE");
 
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(table_to_replace_name);

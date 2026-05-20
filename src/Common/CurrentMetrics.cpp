@@ -213,6 +213,10 @@
     M(IcebergCatalogThreadsScheduled, "Number of queued or active jobs in the IcebergCatalog thread pool.") \
     M(IcebergSchedulePoolTask, "Number of tasks in the background schedule pool for Iceberg tables.") \
     M(IcebergSchedulePoolSize, "Limit on number of tasks in the background schedule pool for Iceberg tables.") \
+    M(IcebergCompactionThreads, "Number of threads in the IcebergCompaction thread pool.") \
+    M(IcebergCompactionThreadsActive, "Number of threads in the IcebergCompaction thread pool running a task.") \
+    M(IcebergCompactionThreadsScheduled, "Number of queued or active jobs in the IcebergCompaction thread pool.") \
+    M(IcebergCompactionSnapshots, "Number of iceberg compactions.") \
     M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryActiveThreads, "Number of active threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryScheduledThreads, "Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.") \
@@ -322,6 +326,7 @@
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
     M(FilesystemCacheKeys, "Number of keys in filesystem cache") \
+    M(FilesystemCacheOvercommitUsers, "Number of users tracked by the overcommit filesystem cache eviction policy") \
     M(FilesystemCacheReserveThreads, "Threads number trying to reserve space in cache") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(IcebergMetadataFilesCacheBytes, "Size of the Iceberg metadata cache in bytes") \
@@ -329,7 +334,7 @@
     M(ParquetMetadataCacheBytes, "Size of the Parquet metadata cache in bytes") \
     M(ParquetMetadataCacheFiles, "Number of cached files in the Parquet metadata cache") \
     M(AvroSchemaCacheBytes, "Size of the Avro schema cache in bytes") \
-    M(AvroSchemaCacheCells, "Number of cached Avro schemas") \
+    M(AvroSchemaCacheCells, "Number of cached Avro schemas, including both registered and fetched schemas.") \
     M(AvroSchemaRegistryCacheBytes, "Size of the Avro schema registry cache in bytes") \
     M(AvroSchemaRegistryCacheCells, "Number of entries in Avro schema registry cache") \
     M(HiveFilesCacheBytes, "Size of the hive cache in bytes") \
