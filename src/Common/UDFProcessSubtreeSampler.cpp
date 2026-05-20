@@ -48,8 +48,8 @@ std::vector<pid_t> walkSubtree(pid_t root_pid)
 #if defined(OS_LINUX)
     /// Iterative DFS: for every pid in `result`, append the union of
     /// `/proc/<pid>/task/<tid>/children` lists. A bounded depth limit guards
-    /// against pathological /proc states; UDFs in practice are 3 levels deep
-    /// (execute.sh -> nsjail -> python).
+    /// against pathological /proc states; UDFs in practice nest only a few
+    /// levels deep (a wrapper script may spawn the actual interpreter).
     constexpr size_t MAX_PIDS = 1024;
 
     for (size_t i = 0; i < result.size() && result.size() < MAX_PIDS; ++i)
@@ -279,8 +279,9 @@ void UDFProcessSubtreeSampler::recordReleased()
     /// always preferable to silent over-attribution.
     ///
     /// For peak memory we take the max VmHWM observed across the subtree
-    /// because pids run mostly serially inside one borrow (nsjail+exec
-    /// chain) so peak resident set per pid is a better estimate than a sum.
+    /// because pids run mostly serially inside one borrow (a parent process
+    /// hands off to a child) so peak resident set per pid is a better
+    /// estimate than a sum.
     auto pids = UDFProcfs::walkSubtree(root_pid);
 
     UInt64 post_utime_sum_in_baseline = 0;
