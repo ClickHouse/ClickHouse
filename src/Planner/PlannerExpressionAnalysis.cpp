@@ -234,10 +234,9 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
         }
         else
         {
-            /// Capture WITH CLUSTER key name(s) here — `aggregation_keys` is built
-            /// after constant elimination below, so the post-analyzer
-            /// `cluster_idx` cannot be used to index it directly. Resolving the
-            /// name(s) in this loop tracks any shift the elision introduces.
+            /// Resolve cluster key names by following the visit, not by indexing
+            /// `aggregation_keys` post-hoc — constant elimination below would shift
+            /// the analyzer-side `cluster_idx`.
             const int cluster_idx_orig = query_node.hasGroupByWithCluster()
                 ? query_node.getGroupByClusterKeyIndex() : -1;
             const size_t cluster_dims = query_node.getGroupByClusterDimensions();
@@ -255,14 +254,9 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
 
                 if (constant_key && !aggregates_descriptions.empty() && (!check_constants_for_group_by_key || canRemoveConstantFromGroupByKey(*constant_key)))
                 {
-                    /// If this constant happens to sit inside the clustered key
-                    /// range (e.g. `GROUP BY (x, 0) WITH CLUSTER d`), do NOT
-                    /// eliminate it — keep it in `aggregation_keys` so the
-                    /// downstream `cluster_key_info` matches the tuple arity
-                    /// the analyzer promised. Otherwise the cluster behavior
-                    /// would become query-shape dependent: the same key
-                    /// contract would pass in a no-aggregate query but fail
-                    /// here.
+                    /// Keep constants that sit in the cluster key range (e.g. the `0`
+                    /// in `GROUP BY (x, 0) WITH CLUSTER d`); otherwise the cluster
+                    /// step would see a key tuple of the wrong arity.
                     if (!is_cluster_key_position)
                     {
                         ++orig_pos;
@@ -288,13 +282,8 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
                     before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
                 }
 
-                /// Capture the cluster key name AFTER the visit. `actions_visitor.visit`
-                /// can return multiple DAG nodes for a single `GROUP BY` element
-                /// (input, intermediate function applications, final result). The
-                /// LAST one is the top-level expression that becomes the cluster
-                /// key. Picking the first or an intermediate (e.g. `cityHash64(x)`
-                /// instead of the outer `hex(cityHash64(x))`) would aim the cluster
-                /// step at a different column with a different type.
+                /// `visit` may return several DAG nodes (input, intermediates, result);
+                /// the last one is the top-level expression and the right cluster key.
                 if (is_cluster_key_position && !expression_dag_nodes.empty())
                     cluster_key_names_resolved.push_back(expression_dag_nodes.back()->result_name);
 

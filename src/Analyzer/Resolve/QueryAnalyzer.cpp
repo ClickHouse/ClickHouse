@@ -3603,13 +3603,9 @@ void expandTuplesInList(QueryTreeNodes & key_list)
   */
 void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope)
 {
-    /// `WITH CLUSTER` runs after `Aggregating` and needs mergeable aggregate
-    /// states (`ColumnAggregateFunction`); `WITH ROLLUP` / `WITH CUBE` /
-    /// `GROUPING SETS` / `WITH TOTALS` finalize the aggregates before that
-    /// point (`TotalsHavingStep` uses `need_finalize = true` on the non-rollup
-    /// path), so the combination would either hit a `LOGICAL_ERROR` in
-    /// `mergeAggregateStates` or operate on the wrong representation. Reject
-    /// the combination upfront.
+    /// `WITH CLUSTER` runs after `Aggregating` and needs mergeable states;
+    /// ROLLUP/CUBE/GROUPING SETS/TOTALS finalize aggregates earlier and would
+    /// hit a `LOGICAL_ERROR` in `mergeAggregateStates`.
     if (query_node_typed.hasGroupByWithCluster() &&
         (query_node_typed.isGroupByWithRollup()
          || query_node_typed.isGroupByWithCube()
@@ -3654,9 +3650,8 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
         // It's required to support queries like: SELECT number FROM numbers(3) GROUP BY (number, number % 2)
         auto & group_by_list = query_node_typed.getGroupBy().getNodes();
 
-        /// If GROUP BY ... WITH CLUSTER targets a `tuple(x, y)` element, record the
-        /// dimensionality (1 for scalar, 2 for 2-element numeric tuple) and adjust
-        /// the cluster key index to compensate for any preceding tuple expansions.
+        /// Record `cluster_dims` (1 or 2 for inline tuples) and shift `cluster_idx`
+        /// to compensate for tuple-expansion of preceding keys.
         if (query_node_typed.hasGroupByWithCluster())
         {
             int orig_cluster_idx = query_node_typed.getGroupByClusterKeyIndex();
@@ -3674,17 +3669,10 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
             {
                 const auto & cluster_elem = group_by_list[orig_cluster_idx];
 
-                /// Accepted element types for `WITH CLUSTER`:
-                ///   - 2D: tuple of exactly two supported scalars.
-                ///   - 1D numeric: any single supported scalar.
-                ///   - 1D string: `String` or `FixedString` (Levenshtein path).
-                /// Supported means: native ints up to 64 bits, floats, `Decimal32`,
-                /// or any temporal type — these have an exact (or trivially-exact)
-                /// path in `ClusterMergingTransform`. Wider numerics
-                /// (`Int128/256`, `UInt128/256`, `Decimal64/128/256`) lose
-                /// precision well before their natural range when forced through
-                /// `getFloat64`, so reject them here to avoid silent
-                /// miscluster ing instead of a clear error.
+                /// Wider-than-64-bit numerics (`Int128/256`, `UInt128/256`,
+                /// `Decimal64/128/256`) lose precision before their natural range
+                /// when forced through `getFloat64` — reject them here so the user
+                /// gets a clear error instead of silent misclustering.
                 auto is_supported_scalar = [](const DataTypePtr & t)
                 {
                     WhichDataType which(t);

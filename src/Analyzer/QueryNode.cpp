@@ -412,11 +412,9 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     state.update(is_group_by_with_cube);
     state.update(is_group_by_with_grouping_sets);
     state.update(is_group_by_all);
-    /// Only hash WITH CLUSTER fields when the modifier is actually present.
-    /// This keeps the `QueryNode` hash stable for the overwhelming majority
-    /// of queries (which don't use `WITH CLUSTER`) — important because
-    /// some optimizations (e.g. CNF condition ordering) depend on the hash
-    /// being identical across unrelated query shapes.
+    /// Hash cluster fields only when the modifier is set, otherwise non-cluster
+    /// queries would get a different hash than before the feature existed and
+    /// hash-sensitive optimizations (e.g. CNF condition ordering) would shift.
     if (hasGroupByWithCluster())
     {
         state.update(group_by_cluster_key_index);
@@ -552,11 +550,9 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     {
         if (hasGroupByWithCluster())
         {
-            /// Reconstruct the per-element `GROUP BY` AST and re-attach `WITH CLUSTER`
-            /// to the right element. For 2D, the analyzer has expanded the tuple key
-            /// `(x, y)` into two separate `GROUP BY` keys; we must rebuild the tuple
-            /// here so the AST round-trips back to the original semantics. Otherwise
-            /// a 2D query would serialize as `GROUP BY x WITH CLUSTER d, y` (1D on x).
+            /// Re-attach `WITH CLUSTER` to the cluster key element. For 2D the analyzer
+            /// expanded `(x, y)` into two scalar keys, so the tuple has to be rebuilt
+            /// here — otherwise the AST would round-trip as 1D on the first scalar.
             auto group_by_ast = make_intrusive<ASTExpressionList>(',');
             const auto & group_by_nodes = getGroupBy().getNodes();
             const int n = static_cast<int>(group_by_nodes.size());
@@ -567,9 +563,6 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
             {
                 if (i == group_by_cluster_key_index)
                 {
-                    /// Cluster key — emit an `ASTGroupByElement` wrapper carrying
-                    /// the `WITH CLUSTER <distance>` modifier. For 2D rebuild the
-                    /// original tuple from the two adjacent scalar keys.
                     auto elem = make_intrusive<ASTGroupByElement>();
                     if (dims == 2 && i + 1 < n)
                     {
@@ -595,9 +588,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
                 }
                 else
                 {
-                    /// Non-cluster keys are emitted bare (no wrapper) — matches
-                    /// what the parser produces for `WITH CLUSTER`-less items
-                    /// so the AST round-trip stays shape-stable.
+                    /// Non-cluster keys emitted bare to match `ParserGroupByElement`.
                     group_by_ast->children.push_back(group_by_nodes[i]->toAST(options));
                     i += 1;
                 }

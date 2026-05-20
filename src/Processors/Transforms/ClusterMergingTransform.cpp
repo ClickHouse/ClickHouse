@@ -37,10 +37,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Cast `floor(v)` to `Int64`, throwing if the result would be out of `Int64` range
-/// or if the input is non-finite. Uses `accurate::convertNumeric` which avoids the UB
-/// of a direct `static_cast<Int64>` on out-of-range `Float64`. The `isFinite` guard
-/// matches the pre-check pattern used by `FunctionsConversion` for float→int.
+/// Direct `static_cast<Int64>` on out-of-range `Float64` is UB; this guards it.
 Int64 safeFloorToInt64(Float64 v)
 {
     if (!std::isfinite(v))
@@ -55,18 +52,15 @@ Int64 safeFloorToInt64(Float64 v)
     return result;
 }
 
-
-/// State of one bucket during the bucket-reduction phase.
 struct BucketState
 {
-    size_t leader_row_index;   /// Index in merged_columns where aggregate states live
+    size_t leader_row_index;
     Int64 bucket_id;
     Float64 min_cluster_key;
     Float64 max_cluster_key;
-    bool alive = true;         /// False if merged into another bucket
+    bool alive = true;
 };
 
-/// Merge aggregate states of row `src` into row `dst` in merged_columns.
 void mergeAggregateStates(
     MutableColumns & merged_columns,
     const ColumnsMask & aggregates_mask,
@@ -85,15 +79,12 @@ void mergeAggregateStates(
         auto & data = agg_col->getData();
         const auto & func = agg_col->getAggregateFunction();
 
-        /// Allocate into the destination column's own arena. Aggregate functions
-        /// that grow their state during `merge` (e.g. the `groupArray`-family)
-        /// require a real arena; passing `nullptr` would dereference null on
-        /// reallocation. The arena is owned by `agg_col` for its lifetime.
+        /// `groupArray`-family aggregates allocate during `merge`; passing nullptr would
+        /// dereference null on reallocation. The arena is owned by `agg_col`.
         func->merge(data[dst], data[src], &agg_col->createOrGetArena());
     }
 }
 
-/// Compute a 64-bit hash of (non_cluster_key_values..., bucket_id) for a given row.
 UInt64 computeBucketHash(
     const MutableColumns & merged_columns,
     const std::vector<size_t> & non_cluster_key_positions,
@@ -107,22 +98,12 @@ UInt64 computeBucketHash(
     return hash.get64();
 }
 
-/// Compile-time switch: true = bucket optimization, false = old sort-based algorithm.
 constexpr bool USE_BUCKET_OPTIMIZATION = true;
 
-/// Read cluster-key values into a Float64 vector. For wide 64-bit integer column
-/// types (`UInt64`, `Int64`) `getFloat64` would silently lose precision past 2^53
-/// (e.g. `2^53` and `2^53 + 1` collapse to the same `Float64`), which can split
-/// pairs that should merge. Translate by the column's minimum so the values
-/// always fit Float64's 53-bit integer-exact range. Translation preserves all
-/// pairwise differences, so it does not affect the clustering result.
-///
-/// Throws if even after translation the range exceeds 2^53 — the user should
-/// pick a narrower key type or normalize their data.
-///
-/// For other numeric column types the existing `getFloat64` path is exact
-/// (narrow integers fit Float64 trivially; Float32/Float64 already chose Float
-/// precision).
+/// `getFloat64` loses precision past 2^53 for `UInt64`/`Int64`/`DateTime64`/`Time64`,
+/// which can split numerically-adjacent values into different buckets. Translate by
+/// the column minimum so values fit Float64's 53-bit integer-exact range; throw if
+/// the post-translation range still exceeds 2^53.
 void readClusterValues(
     const IColumn & col,
     const DataTypePtr & type,
@@ -175,9 +156,8 @@ void readClusterValues(
             min_val = std::min(min_val, data[i]);
             max_val = std::max(max_val, data[i]);
         }
-        /// Compute range as unsigned: two's-complement subtraction yields the
-        /// correct difference modulo 2^64, and `max - min >= 0` fits UInt64 as
-        /// long as the actual range is < 2^64.
+        /// Unsigned subtraction wraps consistently in two's complement; the result
+        /// fits UInt64 whenever the actual range fits 2^64.
         UInt64 range = static_cast<UInt64>(max_val) - static_cast<UInt64>(min_val);
         if (range >= FLOAT64_EXACT_INT_LIMIT)
             throw_range(range);
@@ -187,12 +167,9 @@ void readClusterValues(
         return;
     }
 
-    /// `DateTime64` and `Time64` are `Decimal64`-backed by an `Int64` tick
-    /// count. They inherit the wide-integer precision problem (microsecond /
-    /// nanosecond timestamps quickly exceed 2^53). Translate the raw ticks,
-    /// matching how ClickHouse arithmetic on these types already works in
-    /// native units (e.g. `now64(6) + 1` adds one microsecond).
-    /// `WITH CLUSTER d` is therefore interpreted as `d` ticks for these types.
+    /// `DateTime64` / `Time64` are `Decimal64`-backed by an `Int64` tick count;
+    /// `WITH CLUSTER d` is interpreted as `d` native ticks for these types, matching
+    /// `now64(6) + 1` adding one microsecond.
     auto translate_decimal64_backed = [&](const auto & data)
     {
         Int64 min_val = data[0].value;
@@ -222,11 +199,8 @@ void readClusterValues(
         return;
     }
 
-    /// Narrow integer / Float / Date / DateTime / Decimal32-256 —
-    /// `getFloat64` is precise enough for typical clustering ranges.
-    /// Adding `0.0` canonicalizes `-0.0` to `+0.0` (and is the identity for
-    /// everything else), so numerically equal values get identical bit
-    /// patterns in the `distance == 0` fast path (which buckets by raw bits).
+    /// `+ 0.0` canonicalizes `-0.0` → `+0.0` so numerically equal values share a bit
+    /// pattern (used by the `distance == 0` fast path that buckets by raw bits).
     for (size_t i = 0; i < total_rows; ++i)
         out[i] = col.getFloat64(i) + 0.0;
 }
@@ -253,11 +227,6 @@ ClusterMergingTransform::ClusterMergingTransform(
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "ClusterMergingTransform expects {} key names for {}D, got {}",
             dimensions, dimensions, cluster_key_names.size());
-    /// Reject negative / NaN / Inf upfront so bad input fails fast with a clear
-    /// message instead of being silently reinterpreted (e.g. `< 0` was previously
-    /// taking the `distance == 0` branch and producing different semantics).
-    /// The String path additionally validates integrality of `cluster_distance`
-    /// in `generateString`.
     if (!std::isfinite(cluster_distance) || cluster_distance < 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "GROUP BY ... WITH CLUSTER distance must be a non-negative finite number, got {}",
@@ -282,12 +251,9 @@ Chunk ClusterMergingTransform::generate()
     if (dimensions == 2)
         return generate2D();
 
-    /// 1D: dispatch by cluster-key column type. String / FixedString → Levenshtein,
-    /// numeric → existing bucket-based path.
     const auto & header = input.getHeader();
     size_t cluster_key_pos = header.getPositionByName(cluster_key_names[0]);
-    const auto & col_type = header.getByPosition(cluster_key_pos).type;
-    if (isStringOrFixedString(col_type))
+    if (isStringOrFixedString(header.getByPosition(cluster_key_pos).type))
         return generateString();
 
     return generate1D();
@@ -316,10 +282,8 @@ Chunk ClusterMergingTransform::generate1D()
     if (total_rows == 0)
         return {};
 
-    /// Find column positions
     size_t cluster_key_pos = header.getPositionByName(cluster_key_names[0]);
 
-    /// Build a list of key column positions (non-aggregate columns)
     std::vector<size_t> non_cluster_key_positions;
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -329,8 +293,7 @@ Chunk ClusterMergingTransform::generate1D()
 
     if constexpr (!USE_BUCKET_OPTIMIZATION)
     {
-        /// Old sort-based algorithm: O(n log n)
-        /// Sort all rows by (non_cluster_keys, cluster_key), then linear merge.
+        /// Reference O(n log n) sort-merge implementation, kept around for benchmarks.
         std::vector<size_t> row_order(total_rows);
         std::iota(row_order.begin(), row_order.end(), 0);
 
@@ -345,7 +308,6 @@ Chunk ClusterMergingTransform::generate1D()
             return merged_columns[cluster_key_pos]->compareAt(a, b, *merged_columns[cluster_key_pos], 1) < 0;
         });
 
-        /// Linear scan: merge adjacent rows within distance
         std::vector<bool> alive(total_rows, true);
         std::vector<Float64> max_cluster(total_rows);
         for (size_t i = 0; i < total_rows; ++i)
@@ -353,7 +315,6 @@ Chunk ClusterMergingTransform::generate1D()
 
         for (size_t i = 1; i < total_rows; ++i)
         {
-            /// Find previous alive row
             size_t prev = i - 1;
             while (prev < total_rows && !alive[prev])
             {
@@ -366,7 +327,6 @@ Chunk ClusterMergingTransform::generate1D()
             size_t prev_row = row_order[prev];
             size_t curr_row = row_order[i];
 
-            /// Check non-cluster keys match
             bool same = true;
             for (size_t pos : non_cluster_key_positions)
             {
@@ -387,7 +347,6 @@ Chunk ClusterMergingTransform::generate1D()
             }
         }
 
-        /// Build result
         size_t result_rows = 0;
         for (bool a : alive)
             if (a) ++result_rows;
@@ -410,16 +369,11 @@ Chunk ClusterMergingTransform::generate1D()
         return result;
     }
 
-    /// --- Phase A: Bucket reduction ---
-    /// For distance == 0, each unique value is its own bucket (no merging across values).
-    /// For distance > 0, bucket_id = floor(cluster_key / distance) groups nearby values.
-    /// All values within the same bucket differ by at most distance-1 < distance,
-    /// so they unconditionally belong to the same cluster.
-
+    /// Phase A: bucket each row by `floor(cluster_key / distance)`. Rows sharing a bucket
+    /// are unconditionally within `distance` of each other.
     std::vector<BucketState> buckets;
-    /// hash → list of bucket indices sharing that hash. Collision-safe: on a hash hit
-    /// we still verify `bucket_id` and the non-cluster key values match before merging.
-    /// `InlinedVector<_, 1>` keeps the typical single-candidate case heap-free.
+    /// On a hash hit we still verify `bucket_id` and the non-cluster key values before
+    /// merging — guards against SipHash collisions.
     std::unordered_map<UInt64, absl::InlinedVector<size_t, 1>> bucket_map;
 
     /// Translate wide integer keys to a Float64-exact range before bucket arithmetic.
@@ -436,11 +390,8 @@ Chunk ClusterMergingTransform::generate1D()
             bucket_id = safeFloorToInt64(cluster_val / cluster_distance);
         else
         {
-            /// distance == 0: each distinct value is its own bucket.
-            /// Use memcpy to reinterpret Float64 bits as Int64,
-            /// so identical values get the same bucket_id.
-            /// `readClusterValues` already canonicalized `-0.0` to `+0.0`, so
-            /// numerically equal values share the same bit pattern here.
+            /// `distance == 0`: bit-cast canonicalized Float64 → Int64 so numerically
+            /// equal values share `bucket_id`.
             static_assert(sizeof(Float64) == sizeof(Int64));
             std::memcpy(&bucket_id, &cluster_val, sizeof(Int64));
         }
@@ -472,7 +423,6 @@ Chunk ClusterMergingTransform::generate1D()
 
         if (found != std::numeric_limits<size_t>::max())
         {
-            /// Existing bucket: merge aggregate states, update min/max
             auto & bucket = buckets[found];
             mergeAggregateStates(merged_columns, aggregates_mask, bucket.leader_row_index, i);
             bucket.min_cluster_key = std::min(bucket.min_cluster_key, cluster_val);
@@ -480,15 +430,14 @@ Chunk ClusterMergingTransform::generate1D()
         }
         else
         {
-            /// New bucket
             size_t idx = buckets.size();
             buckets.push_back({i, bucket_id, cluster_val, cluster_val, true});
             candidates.push_back(idx);
         }
     }
 
-    /// --- Phase B: Sort buckets and merge adjacent ones ---
-    /// Sort by (non_cluster_keys, bucket_id)
+    /// Phase B: sort buckets by `(non_cluster_keys, bucket_id)`, then merge adjacent
+    /// buckets whose `[min, max]` ranges are within `cluster_distance`.
     std::vector<size_t> bucket_order(buckets.size());
     std::iota(bucket_order.begin(), bucket_order.end(), 0);
 
@@ -497,30 +446,23 @@ Chunk ClusterMergingTransform::generate1D()
         size_t row_a = buckets[a].leader_row_index;
         size_t row_b = buckets[b].leader_row_index;
 
-        /// Compare non-cluster keys first
         for (size_t pos : non_cluster_key_positions)
         {
             int cmp = merged_columns[pos]->compareAt(row_a, row_b, *merged_columns[pos], 1);
             if (cmp != 0)
                 return cmp < 0;
         }
-        /// Then compare by bucket_id
         return buckets[a].bucket_id < buckets[b].bucket_id;
     });
 
-    /// Adjacent bucket merging is only needed when distance > 0.
-    /// With distance == 0, Phase A already merged all identical values,
-    /// and no cross-bucket merging should occur.
+    /// `distance == 0` already merged identical values in Phase A; no cross-bucket pass.
     if (cluster_distance > 0)
     {
-        /// Linear scan: merge adjacent buckets where non_cluster_keys match
-        /// and max_cluster_key of the leader is within distance of min_cluster_key of the next.
         for (size_t i = 1; i < bucket_order.size(); ++i)
         {
             size_t curr_idx = bucket_order[i];
             auto & curr = buckets[curr_idx];
 
-            /// Find the previous alive bucket
             size_t prev_alive_pos = i - 1;
             while (prev_alive_pos < bucket_order.size() && !buckets[bucket_order[prev_alive_pos]].alive)
             {
@@ -535,7 +477,6 @@ Chunk ClusterMergingTransform::generate1D()
             size_t prev_idx = bucket_order[prev_alive_pos];
             auto & prev = buckets[prev_idx];
 
-            /// Check if non-cluster keys match
             bool same_non_cluster = true;
             for (size_t pos : non_cluster_key_positions)
             {
@@ -549,10 +490,8 @@ Chunk ClusterMergingTransform::generate1D()
             if (!same_non_cluster)
                 continue;
 
-            /// Check if buckets should merge: max of previous cluster is within distance of min of current
             if (prev.max_cluster_key + cluster_distance >= curr.min_cluster_key)
             {
-                /// Merge current bucket into previous
                 mergeAggregateStates(merged_columns, aggregates_mask, prev.leader_row_index, curr.leader_row_index);
                 prev.max_cluster_key = std::max(prev.max_cluster_key, curr.max_cluster_key);
                 prev.min_cluster_key = std::min(prev.min_cluster_key, curr.min_cluster_key);
@@ -581,10 +520,7 @@ Chunk ClusterMergingTransform::generate1D()
     }
 
     Chunk result(std::move(result_columns), result_rows);
-
-    /// Finalize aggregate functions
     finalizeChunk(result, aggregates_mask);
-
     return result;
 }
 
@@ -625,20 +561,18 @@ struct DisjointSetUnion
     }
 };
 
-/// State of one grid cell during 2D clustering.
 struct CellState
 {
-    size_t leader_row_index;          /// Row in merged_columns that accumulates aggregate states.
+    size_t leader_row_index;
     Int64 cx;
     Int64 cy;
-    std::vector<size_t> row_indices;  /// All rows assigned to this cell (for neighbor distance checks).
+    std::vector<size_t> row_indices;
     Float64 min_x;
     Float64 max_x;
     Float64 min_y;
     Float64 max_y;
 };
 
-/// Hash `(non_cluster_key_values..., cx, cy)` for a given row in merged_columns.
 UInt64 computeCellHash(
     const MutableColumns & merged_columns,
     const std::vector<size_t> & non_cluster_key_positions,
@@ -678,8 +612,7 @@ Chunk ClusterMergingTransform::generate2D()
     if (total_rows == 0)
         return {};
 
-    /// In 2D, the upstream `Aggregating` step flattens `(x, y)` into two
-    /// separate scalar aggregation keys. Read both column positions.
+    /// The analyzer flattens the tuple `(x, y)` into two scalar aggregation keys upstream.
     size_t x_pos = header.getPositionByName(cluster_key_names[0]);
     size_t y_pos = header.getPositionByName(cluster_key_names[1]);
 
@@ -693,23 +626,16 @@ Chunk ClusterMergingTransform::generate2D()
             non_cluster_key_positions.push_back(i);
     }
 
-
     const Float64 d = cluster_distance;
     const Float64 d_sq = d * d;
-    const Float64 a = d / std::numbers::sqrt2;   /// Cell side: diagonal == d.
+    const Float64 a = d / std::numbers::sqrt2;   /// Cell side; cell diagonal == d.
 
-    /// --- Phase A: Cell reduction (O(n)) ---
-    /// Hash each row by (non_cluster_keys..., cx, cy). Same-bucket rows are
-    /// unconditionally within d of each other (diagonal == d), merge them.
-
+    /// Phase A: bucket each row into a cell of side `a`. Two rows in the same cell are
+    /// unconditionally within `d` of each other (the cell diagonal equals `d`).
     std::vector<CellState> cells;
-    /// hash → list of cell indices sharing that hash. Collision-safe: on a hash hit
-    /// we still verify `(cx, cy)` and the non-cluster key values match before merging.
-    /// `InlinedVector<_, 1>` keeps the typical single-candidate case heap-free.
+    /// On a hash hit we still verify `(cx, cy)` and the non-cluster keys — guards SipHash collisions.
     std::unordered_map<UInt64, absl::InlinedVector<size_t, 1>> cell_map;
 
-    /// Find a cell with the requested `(cx, cy)` whose non-cluster keys equal those
-    /// of `probe_row`. Returns size_t(-1) if no such cell exists.
     auto lookup_cell = [&](Int64 cx, Int64 cy, size_t probe_row, UInt64 h) -> size_t
     {
         auto it = cell_map.find(h);
@@ -735,8 +661,6 @@ Chunk ClusterMergingTransform::generate2D()
         return std::numeric_limits<size_t>::max();
     };
 
-    /// Translate wide integer x/y keys to a Float64-exact range before bucketing.
-    /// Same precision rationale as the 1D path.
     std::vector<Float64> x_vals;
     std::vector<Float64> y_vals;
     readClusterValues(x_col, header.getByPosition(x_pos).type, total_rows, x_vals);
@@ -750,9 +674,6 @@ Chunk ClusterMergingTransform::generate2D()
         Int64 cy;
         if (d == 0)
         {
-            /// Exact-match path: bit-cast canonical-zero `Float64` → `Int64`,
-            /// so numerically equal values (incl. `-0.0` / `+0.0` already
-            /// canonicalized by `readClusterValues`) share the same cell.
             static_assert(sizeof(Float64) == sizeof(Int64));
             std::memcpy(&cx, &xv, sizeof(Int64));
             std::memcpy(&cy, &yv, sizeof(Int64));
@@ -798,9 +719,9 @@ Chunk ClusterMergingTransform::generate2D()
 
     DisjointSetUnion dsu(cells.size());
 
-    /// Cross-cell adjacency merging is only meaningful when `d > 0`. For
-    /// `d == 0` cells are already keyed by exact `(x, y)` bit patterns, so
-    /// Phase A is the complete answer.
+    /// Phase B: for each cell, probe forward neighbors in a 5x5 window and unite cells
+    /// holding rows within `d`. For `d == 0` Phase A's exact bit-cast keys are the
+    /// final answer; skip cross-cell merging entirely.
     for (size_t ci = 0; d > 0 && ci < cells.size(); ++ci)
     {
         const auto & A = cells[ci];
@@ -808,11 +729,8 @@ Chunk ClusterMergingTransform::generate2D()
 
         for (auto [dx, dy] : forward_offsets)
         {
-            /// `A.cx` / `A.cy` can be near `INT64_MAX` / `INT64_MIN` (the bounds
-            /// of `safeFloorToInt64`), so a raw `A.cx + dx` could overflow signed
-            /// `Int64` (UB). Use checked addition; on overflow, no cell exists at
-            /// the would-be coordinate (Phase A only inserts cells at `Int64`
-            /// coordinates), so skip the neighbor.
+            /// `safeFloorToInt64` lets `A.cx`/`A.cy` reach `INT64_MIN..INT64_MAX`,
+            /// so a raw add can overflow (UB).
             Int64 ncx;
             Int64 ncy;
             if (__builtin_add_overflow(A.cx, static_cast<Int64>(dx), &ncx)
@@ -824,17 +742,15 @@ Chunk ClusterMergingTransform::generate2D()
             if (cj == std::numeric_limits<size_t>::max())
                 continue;
             if (cj == ci)
-                continue;   /// Should not happen — forward_offsets exclude (0,0) — defensive.
+                continue;
             const auto & B = cells[cj];
 
-            /// Axis-aligned early reject: if the bounding boxes are already > d apart
-            /// on either axis, no pair can satisfy the distance constraint.
+            /// Axis-aligned BB early reject — no pair across cells can satisfy `d`.
             Float64 gap_x = std::max({0.0, A.min_x - B.max_x, B.min_x - A.max_x});
             Float64 gap_y = std::max({0.0, A.min_y - B.max_y, B.min_y - A.max_y});
             if (gap_x * gap_x + gap_y * gap_y > d_sq)
                 continue;
 
-            /// Brute-force pairwise check.
             bool connected = false;
             for (size_t ra : A.row_indices)
             {
@@ -859,9 +775,7 @@ Chunk ClusterMergingTransform::generate2D()
         }
     }
 
-    /// --- Phase C: Merge aggregate states within each component ---
-    /// For each cell, find its DSU root; merge non-root cells into the root's leader.
-
+    /// Phase C: collapse each DSU component into its root cell's leader row.
     std::vector<bool> is_root(cells.size(), false);
     for (size_t ci = 0; ci < cells.size(); ++ci)
         if (dsu.find(ci) == ci)
@@ -875,7 +789,6 @@ Chunk ClusterMergingTransform::generate2D()
         mergeAggregateStates(merged_columns, aggregates_mask, cells[root].leader_row_index, cells[ci].leader_row_index);
     }
 
-    /// --- Phase D: Build result ---
     size_t result_rows = 0;
     for (bool r : is_root)
         if (r)
@@ -900,7 +813,6 @@ Chunk ClusterMergingTransform::generate2D()
 
 Chunk ClusterMergingTransform::generateString()
 {
-    /// Concatenate all chunks into a single block.
     const auto & header = input.getHeader();
     size_t num_columns = header.columns();
 
@@ -931,9 +843,7 @@ Chunk ClusterMergingTransform::generateString()
             non_cluster_key_positions.push_back(i);
     }
 
-    /// Distance for String keys is interpreted as a non-negative integer edit distance.
-    /// Reject NaN/Inf, negative, and fractional values explicitly; an unchecked cast
-    /// would be UB for out-of-range floats and would silently truncate `1.9 → 1`.
+    /// Distance for String keys is a non-negative integer Levenshtein bound.
     if (!std::isfinite(cluster_distance))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "GROUP BY ... WITH CLUSTER on String: distance must be finite, got {}", cluster_distance);
@@ -944,8 +854,7 @@ Chunk ClusterMergingTransform::generateString()
             "GROUP BY ... WITH CLUSTER on String: distance must be a non-negative integer, got {}",
             cluster_distance);
 
-    /// d == 0: only exact-match merging — already done by the upstream `Aggregator`.
-    /// Trivial path: copy input rows to output unchanged.
+    /// `max_edits == 0`: upstream `Aggregator` already merged exact matches.
     if (max_edits == 0)
     {
         MutableColumns result_columns(num_columns);
@@ -959,7 +868,6 @@ Chunk ClusterMergingTransform::generateString()
         return result;
     }
 
-    /// Cache string views to avoid repeated `getDataAt()` calls.
     std::vector<std::string_view> strings;
     strings.reserve(total_rows);
     for (size_t i = 0; i < total_rows; ++i)
@@ -967,8 +875,7 @@ Chunk ClusterMergingTransform::generateString()
 
     DisjointSetUnion dsu(total_rows);
 
-    /// Verify a pair (i, j): length filter → non-cluster keys → same-component
-    /// skip → exact byte-level Levenshtein. Unites in DSU on match.
+    /// Length filter → non-cluster keys → same-component skip → byte-level Levenshtein.
     auto verify_pair = [&](size_t i, size_t j) -> void
     {
         const auto & si = strings[i];
@@ -996,23 +903,20 @@ Chunk ClusterMergingTransform::generateString()
 
     /// Q-gram filter: for two strings within edit distance d, the number of
     /// shared q-grams is at least `max(|a|, |b|) - q + 1 - q*d` (Ukkonen, 1992).
-    /// We build an inverted index `qgram → [row_ids]` and walk it per row.
-    /// q = 3 is a literature standard. Threshold: below 10k rows the naive
-    /// O(N^2) loop with the length filter is faster than building the index.
+    /// Below 10k rows the naive O(N²) sweep beats building the inverted index.
 
     constexpr size_t Q = 3;
     constexpr size_t QGRAM_THRESHOLD = 10000;
 
     if (total_rows < QGRAM_THRESHOLD)
     {
-        /// Naive O(N^2) pairwise sweep. UTF-8 strings are treated as raw bytes.
         for (size_t i = 0; i < total_rows; ++i)
             for (size_t j = i + 1; j < total_rows; ++j)
                 verify_pair(i, j);
     }
     else
     {
-        /// Pack 3 bytes into a UInt32 — fits the whole 24-bit q-gram space.
+        /// Pack 3 bytes into a UInt32 — covers the full 24-bit q-gram space.
         auto pack_qgram = [](const char * p) -> UInt32
         {
             return (static_cast<UInt32>(static_cast<uint8_t>(p[0])) << 16)
@@ -1020,22 +924,14 @@ Chunk ClusterMergingTransform::generateString()
                  |  static_cast<UInt32>(static_cast<uint8_t>(p[2]));
         };
 
-        /// Build inverted index over rows of length ≥ Q. Each q-gram occurrence
-        /// adds the row id to the posting list (multiset semantics, required for
-        /// the Ukkonen bound to hold).
-        ///
-        /// We also track `small_rows` — rows for which the Ukkonen lower bound
-        /// `max(qgrams_i, qgrams_j) - Q * max_edits` collapses to zero. For these
-        /// the filter is non-informative and pairs with zero shared q-grams may
-        /// still be within edit distance, so they need a pairwise fallback.
+        /// Multiset semantics on posting lists are required for the Ukkonen bound.
+        /// `small_rows` tracks rows where the bound collapses to zero — these need a
+        /// pairwise fallback because pairs may share zero q-grams yet still merge.
         std::unordered_map<UInt32, std::vector<size_t>> index;
         std::vector<size_t> short_rows;
         std::vector<size_t> small_rows;
-        /// Saturating `Q * max_edits`: for very large `max_edits` the unchecked
-        /// product wraps `size_t` and `small_qgrams_bound` becomes tiny, which
-        /// turns the filter into a false-negative source. The clamped value is
-        /// equivalent for filtering purposes — any `qgrams` is `<= max size_t`
-        /// already.
+        /// `Q * max_edits` saturated to `size_t` max — silent overflow would turn the
+        /// filter into a false-negative source on pathological `max_edits` inputs.
         const size_t small_qgrams_bound =
             std::min(max_edits, std::numeric_limits<size_t>::max() / Q) * Q;
         for (size_t i = 0; i < total_rows; ++i)
@@ -1053,8 +949,7 @@ Chunk ClusterMergingTransform::generateString()
                 small_rows.push_back(i);
         }
 
-        /// Reusable counter buffer: counter[j] = matched q-grams between current i and row j.
-        /// Tracked through `dirty` to keep clearing O(touched) instead of O(total_rows).
+        /// `counter[j]` is reset via the per-i `dirty` list so the clear is O(touched).
         std::vector<size_t> counter(total_rows, 0);
         std::vector<size_t> dirty;
 
@@ -1062,7 +957,6 @@ Chunk ClusterMergingTransform::generateString()
         {
             const auto & si = strings[i];
 
-            /// Short strings (no q-grams) bypass the index: pairwise verify with all j > i.
             if (si.size() < Q)
             {
                 for (size_t j = i + 1; j < total_rows; ++j)
@@ -1070,7 +964,6 @@ Chunk ClusterMergingTransform::generateString()
                 continue;
             }
 
-            /// Long string i: collect candidates from inverted index.
             const size_t qgrams_i = si.size() - Q + 1;
             for (size_t k = 0; k < qgrams_i; ++k)
             {
@@ -1087,33 +980,25 @@ Chunk ClusterMergingTransform::generateString()
                 }
             }
 
-            /// Apply Ukkonen lower bound per pair, then verify.
-            /// Counter reset is deferred until after the small_rows fallback below
-            /// so that pass can use `counter[j] > 0` as a "already handled" marker.
+            /// Counter reset is deferred so the small_rows pass below can use
+            /// `counter[j] > 0` to skip already-handled pairs.
             for (size_t j : dirty)
             {
                 const auto & sj = strings[j];
                 const size_t qgrams_j = sj.size() - Q + 1;
                 const size_t max_qg = std::max(qgrams_i, qgrams_j);
-                /// Reuses the saturating `small_qgrams_bound` to avoid the same
-                /// `Q * max_edits` overflow as above.
                 const size_t threshold = (max_qg > small_qgrams_bound) ? (max_qg - small_qgrams_bound) : 0;
                 if (counter[j] >= threshold)
                     verify_pair(i, j);
             }
 
-            /// Pair i with all short rows j > i (they're not in the index).
+            /// Short rows aren't in the index — pair them in directly.
             for (size_t j : short_rows)
                 if (j > i)
                     verify_pair(i, j);
 
-            /// Ukkonen-bound fallback: when `qgrams_i <= Q * max_edits` the lower
-            /// bound on shared q-grams collapses to zero for pairs `(i, j ∈ small_rows)`,
-            /// so such pairs can satisfy `edit-distance <= max_edits` while sharing
-            /// zero q-grams — they never land in `dirty`. Verify them directly here,
-            /// skipping those that *did* land in `dirty` (counter[j] > 0) to avoid
-            /// a redundant `verify_pair` for false-matches the q-gram filter already
-            /// passed but Levenshtein rejected.
+            /// When `qgrams_i <= Q * max_edits` the Ukkonen bound is non-informative
+            /// for `(i, small_rows[j > i])` pairs; verify them even without a shared q-gram.
             if (qgrams_i <= small_qgrams_bound)
             {
                 for (size_t j : small_rows)
@@ -1121,14 +1006,12 @@ Chunk ClusterMergingTransform::generateString()
                         verify_pair(i, j);
             }
 
-            /// Reset counters before the next iteration.
             for (size_t j : dirty)
                 counter[j] = 0;
             dirty.clear();
         }
     }
 
-    /// Merge aggregate states by component root.
     std::vector<bool> is_root(total_rows, false);
     for (size_t i = 0; i < total_rows; ++i)
         if (dsu.find(i) == i)

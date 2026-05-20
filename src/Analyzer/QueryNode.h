@@ -260,37 +260,31 @@ public:
         is_group_by_all = is_group_by_all_value;
     }
 
-    /// Returns true if any GROUP BY key has WITH CLUSTER modifier
     bool hasGroupByWithCluster() const
     {
         return group_by_cluster_key_index >= 0;
     }
 
-    /// Get the index of the GROUP BY key with WITH CLUSTER modifier (-1 if none)
     int getGroupByClusterKeyIndex() const
     {
         return group_by_cluster_key_index;
     }
 
-    /// Get the cluster distance
     Float64 getGroupByClusterDistance() const
     {
         return group_by_cluster_distance;
     }
 
-    /// Set the GROUP BY WITH CLUSTER info
     void setGroupByClusterInfo(int key_index, Float64 distance)
     {
         group_by_cluster_key_index = key_index;
         group_by_cluster_distance = distance;
     }
 
-    /// Number of dimensions (1 or 2) of the cluster key.
-    /// 1 — scalar numeric. 2 — `Tuple(numeric, numeric)`, Euclidean clustering.
+    /// 1 — scalar key, 2 — inline `(x, y)` tuple (Euclidean clustering).
     size_t getGroupByClusterDimensions() const { return group_by_cluster_dimensions; }
     void setGroupByClusterDimensions(size_t dims) { group_by_cluster_dimensions = dims; }
 
-    /// Adjust the cluster key index after `tuple` expansion in GROUP BY.
     void setGroupByClusterKeyIndex(int key_index) { group_by_cluster_key_index = key_index; }
 
     /// Returns true, if query node has ORDER BY ALL modifier, false otherwise

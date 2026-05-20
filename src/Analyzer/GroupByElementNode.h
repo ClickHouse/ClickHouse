@@ -5,8 +5,8 @@
 namespace DB
 {
 
-/** GroupByElement node represents a GROUP BY element with optional WITH CLUSTER modifier.
-  * Example: GROUP BY user_id, event_time WITH CLUSTER 1800
+/** A `GROUP BY` element with an optional `WITH CLUSTER <distance>` modifier
+  * (e.g. `GROUP BY event_time WITH CLUSTER 1800`).
   */
 class GroupByElementNode;
 using GroupByElementNodePtr = std::shared_ptr<GroupByElementNode>;
@@ -14,10 +14,8 @@ using GroupByElementNodePtr = std::shared_ptr<GroupByElementNode>;
 class GroupByElementNode final : public IQueryTreeNode
 {
 public:
-    /// Initialize with expression and optional cluster distance
     explicit GroupByElementNode(QueryTreeNodePtr expression_, bool with_cluster_ = false, Float64 cluster_distance_ = 0);
 
-    /// Get the GROUP BY expression
     const QueryTreeNodePtr & getExpression() const
     {
         return children[expression_child_index];
@@ -28,13 +26,11 @@ public:
         return children[expression_child_index];
     }
 
-    /// Returns true if this element has WITH CLUSTER modifier
     bool withCluster() const
     {
         return with_cluster;
     }
 
-    /// Get the cluster distance
     Float64 getClusterDistance() const
     {
         return cluster_distance;

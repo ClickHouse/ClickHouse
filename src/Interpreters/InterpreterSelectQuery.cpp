@@ -723,12 +723,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
     ASTSelectQuery & query = getSelectQuery();
 
-    /// `GROUP BY ... WITH CLUSTER` is only implemented for the new analyzer.
-    /// Reject it on the legacy path early with a clear message instead of
-    /// letting it slip into `ExpressionAnalyzer`, where the per-element
-    /// modifier would either be silently dropped or fail later with an
-    /// opaque `UNKNOWN_IDENTIFIER` (the modifier is part of the AST node's
-    /// printed name, which the legacy resolver does not understand).
+    /// WITH CLUSTER is only implemented for the new analyzer.
     if (auto group_by = query.groupBy())
     {
         for (const auto & elem : group_by->children)

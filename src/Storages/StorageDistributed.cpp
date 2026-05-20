@@ -467,14 +467,10 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info) const
 {
-    /// `WITH CLUSTER` needs a single global pass on the initiator over the
-    /// union of all shards' mergeable aggregate states; any shard-side stage
-    /// at or above `WithMergeableStateAfterAggregation` would either run
-    /// `ClusterMergingStep` shard-locally (missing cross-shard merges) or
-    /// finalize aggregates before the cluster step gets a chance. Override
-    /// every pushdown path (`distributed_group_by_no_merge`, `nodes == 1`,
-    /// `getOptimizedQueryProcessingStage*`, …) by capping the shard stage at
-    /// `WithMergeableState` here, before anything else can promote it.
+    /// `WITH CLUSTER` requires a global merge on the initiator; any shard-side
+    /// stage `>= WithMergeableStateAfterAggregation` would either run the cluster
+    /// step shard-locally or finalize aggregates first. Cap the shard stage at
+    /// `WithMergeableState` to override every pushdown path.
     auto has_with_cluster = [&]
     {
         if (query_info.query_tree)
@@ -508,9 +504,8 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     query_info.cluster = cluster;
 
-    /// Now that `query_info.cluster` is initialized, the WITH CLUSTER early
-    /// return is safe — `StorageDistributed::read` (and others) unconditionally
-    /// dereference `query_info.getCluster()` later.
+    /// `StorageDistributed::read` dereferences `query_info.getCluster()` later,
+    /// so the WITH CLUSTER early return must come after the assignment above.
     if (has_with_cluster())
         return std::min(to_stage, QueryProcessingStage::WithMergeableState);
 
@@ -671,12 +666,8 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     if (query_node.isGroupByWithTotals() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube())
         return {};
 
-    // `WITH CLUSTER` connects different key values across shard boundaries,
-    // so shard-local execution is not semantics-preserving even when the
-    // GROUP BY key matches the sharding key. Force a global merge by
-    // disabling the shard-local optimization here; the fallback
-    // `WithMergeableState` ships mergeable aggregate states to the
-    // initiator, which then runs a single global `ClusterMergingStep`.
+    // Sharding-key match doesn't guarantee correctness for WITH CLUSTER:
+    // clusters can connect different key values across shard boundaries.
     if (query_node.hasGroupByWithCluster())
         return {};
 
@@ -758,10 +749,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     if (select.group_by_with_totals || select.group_by_with_rollup || select.group_by_with_cube)
         return {};
 
-    // `WITH CLUSTER` requires a single global pass across all shards
-    // (clusters connect different key values across shard boundaries);
-    // disable the shard-local optimization symmetrically with the
-    // analyzer path above.
+    // Same reasoning as the analyzer path above.
     if (select.groupBy())
     {
         for (const auto & elem : select.groupBy()->children)

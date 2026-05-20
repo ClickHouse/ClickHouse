@@ -2425,17 +2425,13 @@ bool ParserGroupByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         }
         else
         {
-            /// Not WITH CLUSTER — restore position so that WITH ROLLUP/CUBE/TOTALS
-            /// can be parsed at the SELECT level.
+            /// Restore so WITH ROLLUP/CUBE/TOTALS can be parsed at the SELECT level.
             pos = saved_pos;
         }
     }
 
-    /// Only wrap in `ASTGroupByElement` when the per-element `WITH CLUSTER`
-    /// modifier is actually present. Otherwise leave the plain expression as
-    /// the `GROUP BY` child so legacy passes (positional-argument rewrite in
-    /// `TreeRewriter`/`ExpressionAnalyzer`, sharding-key matching, etc.) keep
-    /// seeing the same shape they always saw.
+    /// Wrap in `ASTGroupByElement` only when `WITH CLUSTER` is present, otherwise
+    /// the legacy positional rewrite and sharding-key matching break on the wrapper.
     if (!with_cluster)
     {
         node = expr_elem;
