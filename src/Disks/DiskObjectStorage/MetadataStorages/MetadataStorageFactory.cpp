@@ -73,6 +73,7 @@ std::string MetadataStorageFactory::getCompatibilityMetadataTypeHint(
         case ObjectStorageType::HDFS:
         case ObjectStorageType::Local:
         case ObjectStorageType::Azure:
+        case ObjectStorageType::GCS:
             return "local";
         case ObjectStorageType::Web:
             return "web";
@@ -238,4 +239,5 @@ void MetadataStorageFactory::clearRegistry()
 {
     registry.clear();
 }
+
 }

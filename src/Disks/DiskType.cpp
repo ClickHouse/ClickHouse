@@ -71,6 +71,8 @@ String DataSourceDescription::name() const
                     return "local_blob_storage";
                 case ObjectStorageType::Web:
                     return "web";
+                case ObjectStorageType::GCS:
+                    return "gcs";
                 case ObjectStorageType::None:
                     return "none";
                 case ObjectStorageType::Max:
@@ -85,5 +87,4 @@ String DataSourceDescription::toString() const
     return fmt::format("{} (description = '{}', is_encrypted = {}, is_cached = {}, zookeeper_name = '{}')",
                        name(), description, is_encrypted, is_cached, zookeeper_name);
 }
-
 }

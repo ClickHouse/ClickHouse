@@ -63,11 +63,11 @@ std::shared_ptr<PlainRewritableMetrics> createPlainRewritableMetrics(ObjectStora
         case ObjectStorageType::None:
         case ObjectStorageType::HDFS:
         case ObjectStorageType::Web:
+        case ObjectStorageType::GCS:
         case ObjectStorageType::Max:
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not Implemented");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Plain rewritable metrics are not implemented for this object storage type");
         }
     }
 }
-
 }

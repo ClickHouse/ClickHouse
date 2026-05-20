@@ -98,6 +98,7 @@ set(PROJECT_SOURCE_DIR ${PROJECT_SOURCE_DIR_BAK})
 # Link against external libraries.
 list(APPEND GOOGLE_CLOUD_CPP_PRIVATE_LIBS
     google_cloud_cpp_common
+    google_cloud_cpp_grpc_utils
     google_cloud_cpp_rest_internal
     google_cloud_cpp_storage
     google_cloud_cpp_storage_protos

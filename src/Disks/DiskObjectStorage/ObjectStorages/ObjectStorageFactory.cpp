@@ -15,6 +15,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #endif
+#include <Disks/DiskObjectStorage/ObjectStorages/GCS/GCSObjectStorage.h>
 
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
@@ -271,6 +272,12 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
     factory.registerObjectStorageType("local_plain_rewritable", creator);
 }
 
+void registerGCSObjectStorage(ObjectStorageFactory & factory)
+{
+    factory.registerObjectStorageType("gcs", createGCSObjectStorage);
+}
+
+
 void registerObjectStorages()
 {
     auto & factory = ObjectStorageFactory::instance();
@@ -286,8 +293,9 @@ void registerObjectStorages()
 #if USE_AZURE_BLOB_STORAGE
     registerAzureObjectStorage(factory);
 #endif
-
     registerWebObjectStorage(factory);
+    registerGCSObjectStorage(factory);
+
     registerLocalObjectStorage(factory);
 }
 

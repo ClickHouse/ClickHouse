@@ -698,6 +698,8 @@ bool DiskObjectStorage::isSharedCompatible() const
         case ObjectStorageType::Azure:
         case ObjectStorageType::Web:
             break;
+        case ObjectStorageType::GCS:
+            return false;
         default:
             return false;
     }
@@ -1014,5 +1016,4 @@ DiskObjectStorageReservation::~DiskObjectStorageReservation()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
-
 }

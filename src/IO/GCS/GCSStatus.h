@@ -1,7 +1,7 @@
 #pragma once
 
-#include <base/types.h>
 #include <config.h>
+#include <base/types.h>
 
 #if USE_GOOGLE_CLOUD
 #    include <grpcpp/support/status.h>
@@ -16,6 +16,7 @@ enum class StatusCode
     NotFound,
     PermissionDenied,
     DeadlineExceeded,
+    ResourceExhausted,
     Unavailable,
     InvalidArgument,
     Unsupported,
@@ -33,6 +34,7 @@ struct Status
 Status makeStatus(StatusCode code, String message = {});
 const char * statusCodeName(StatusCode code);
 bool isRetryableStatus(StatusCode code);
+bool isThrottlingStatus(StatusCode code);
 int errorCodeForStatus(StatusCode code);
 void throwIfError(const Status & status, const String & operation);
 
