@@ -48,6 +48,19 @@ FORMAT TSV;
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 abc', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 2 extra', char(10))); -- { serverError INCORRECT_DATA }
 
+-- Reject `#` tails that are not a valid exemplar (`# {labels} <value>`).
+SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 # not_an_exemplar', char(10))); -- { serverError INCORRECT_DATA }
+SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m 1 # {broken', char(10))); -- { serverError INCORRECT_DATA }
+
+-- Valid exemplar suffix is accepted (labels are not ingested into the row schema).
+SELECT *
+FROM format(
+    OpenMetrics,
+    'name String, value Float64',
+    concat('demo_http_requests_total 1 # {trace_id="abc"} 0.5', char(10), '# EOF', char(10))
+)
+FORMAT TSV;
+
 -- Reject empty metric name and duplicate label keys (invalid exposition text).
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('{k="v"} 1', char(10))); -- { serverError INCORRECT_DATA }
 SELECT * FROM format(OpenMetrics, 'name String, value Float64', concat('m{a="1",a="2"} 1', char(10))); -- { serverError INCORRECT_DATA }

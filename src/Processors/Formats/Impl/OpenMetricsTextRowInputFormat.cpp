@@ -186,12 +186,30 @@ bool parseOptionalIntToken(std::string_view s, size_t & pos, String & out)
     return true;
 }
 
-void stripExemplarSuffix(std::string_view s, size_t & pos)
+/// Optional exemplar after sample value / timestamp: `# {labels} <value>` (OpenMetrics text).
+void consumeOptionalExemplarSuffix(std::string_view s, size_t & pos, const String & line)
 {
-    /// OpenMetrics: optional exemplar / histogram metadata after `#` (rest of line is not a float sample).
     skipAsciiSpaces(s, pos);
-    if (pos < s.size() && s[pos] == '#')
-        pos = s.size();
+    if (pos >= s.size() || s[pos] != '#')
+        return;
+
+    ++pos;
+    skipAsciiSpaces(s, pos);
+    if (pos >= s.size() || s[pos] != '{')
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid exemplar in OpenMetrics line: {}", line);
+
+    std::map<String, String> exemplar_labels;
+    if (!parseLabelSet(s, pos, exemplar_labels))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid exemplar label set in OpenMetrics line: {}", line);
+
+    String exemplar_value_token;
+    if (!parseValueToken(s, pos, exemplar_value_token))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse exemplar value in OpenMetrics line: {}", line);
+
+    Float64 exemplar_value = 0;
+    ReadBufferFromString buf(exemplar_value_token);
+    if (!tryReadFloatText(exemplar_value, buf) || !buf.eof())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse exemplar value '{}' in OpenMetrics line: {}", exemplar_value_token, line);
 }
 
 void checkMetricLineFullyConsumed(std::string_view s, size_t & pos, const String & line)
@@ -479,7 +497,7 @@ bool OpenMetricsTextRowInputFormat::readRow(MutableColumns & columns, RowReadExt
 
         String ts_token;
         bool has_ts = parseOptionalIntToken(sv, pos, ts_token);
-        stripExemplarSuffix(sv, pos);
+        consumeOptionalExemplarSuffix(sv, pos, line);
         checkMetricLineFullyConsumed(sv, pos, line);
 
         /// Resolve logical metric name (histogram/summary suffixes).
