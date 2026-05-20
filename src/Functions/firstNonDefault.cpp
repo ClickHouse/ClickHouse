@@ -24,7 +24,7 @@ namespace
 /// returns the value of the leftmost non-falsey argument.
 /// If all arguments are falsey, returns the default value for the result type.
 /// Result type is the supertype of all arguments.
-class FunctionFirstNonDefault final : public IFunction
+class FunctionFirstNonDefault : public IFunction
 {
 public:
     static constexpr auto name = "firstNonDefault";
@@ -131,7 +131,6 @@ REGISTER_FUNCTION(FirstNonDefault)
 {
     FunctionDocumentation doc;
     doc.description = "Returns the first non-default value from a set of arguments";
-    doc.syntax = "firstNonDefault(arg1[, arg2[ ...]])";
     doc.arguments = {
         {"arg1", "The first argument to check"},
         {"arg2", "The second argument to check"},

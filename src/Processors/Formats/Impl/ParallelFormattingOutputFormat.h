@@ -3,10 +3,11 @@
 #include <Processors/Formats/IOutputFormat.h>
 
 #include <Common/ThreadPool.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/CurrentThread.h>
 #include <IO/WriteBufferFromString.h>
 #include <Poco/Event.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -64,7 +65,7 @@ namespace ErrorCodes
  * To stop the execution, a fake Chunk is added (ProcessingUnitType = FINALIZE) and finalize()
  * function is blocked until the Collector thread is done.
 */
-class ParallelFormattingOutputFormat final : public IOutputFormat
+class ParallelFormattingOutputFormat : public IOutputFormat
 {
 public:
     /// Used to recreate formatter on every new data piece.
@@ -103,7 +104,7 @@ public:
         /// Because otherwise the destructor of this class won't be called and this thread won't be joined.
         /// Also some race condition is possible, because collector_thread runs in parallel with
         /// the destruction of the objects already created in this scope.
-        collector_thread = ThreadFromGlobalPool([thread_group = getCurrentThreadGroup(), this]
+        collector_thread = ThreadFromGlobalPool([thread_group = CurrentThread::getGroup(), this]
         {
             collectorThreadFunction(thread_group);
         });
@@ -292,7 +293,7 @@ private:
 
     void scheduleFormatterThreadForUnitWithNumber(size_t ticket_number, size_t first_row_num)
     {
-        pool.scheduleOrThrowOnError([this, thread_group = getCurrentThreadGroup(), ticket_number, first_row_num]
+        pool.scheduleOrThrowOnError([this, thread_group = CurrentThread::getGroup(), ticket_number, first_row_num]
         {
             formatterThreadFunction(ticket_number, first_row_num, thread_group);
         });

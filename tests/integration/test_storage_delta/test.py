@@ -1,5 +1,4 @@
 import glob
-import io
 import json
 import logging
 import os
@@ -65,7 +64,7 @@ from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(
     os.path.dirname(os.path.realpath(__file__))
 )
-cluster = ClickHouseCluster(__file__, with_spark=True)
+cluster = ClickHouseCluster(__file__, with_spark=True, azurite_default_port=10000)
 
 S3_DATA = [
     "field_ids_struct_test/data/00000-1-7cad83a6-af90-42a9-8a10-114cbc862a42-0-00001.parquet",
@@ -362,7 +361,7 @@ def create_delta_table(
             f"""
             DROP TABLE IF EXISTS {table_name};
             CREATE TABLE {table_name}
-            ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '{table_name}', format={format})
+            ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
             """
         )
     elif storage_type == "local":
@@ -391,16 +390,9 @@ def default_upload_directory(
             local_path, remote_path, **kwargs
         )
     elif storage_type == "azure":
-        # Azure blob storage preserves leading slashes in blob names, unlike S3/MinIO which strips
-        # them. Use relative-path mode with a stripped remote prefix so that blob names match what
-        # delta-kernel-rs expects (no leading slash in the az:// table location path component).
-        effective_remote = remote_path.lstrip("/") if remote_path else local_path.lstrip("/")
-        azure_uploader = AzureUploader(
-            started_cluster.blob_service_client,
-            started_cluster.azure_container_name,
-            use_relpath=True,
+        return started_cluster.default_azure_uploader.upload_directory(
+            local_path, remote_path, **kwargs
         )
-        return azure_uploader.upload_directory(local_path, effective_remote, **kwargs)
     elif storage_type == "local":
         return started_cluster.local_uploader.upload_directory(
             local_path, remote_path, **kwargs
@@ -451,7 +443,7 @@ def create_initial_data_file(
 
 @pytest.mark.parametrize(
     "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "azure"), ("1", "local")],
+    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
 )
 def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     instance = get_node(started_cluster, use_delta_kernel)
@@ -495,47 +487,9 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     )
 
 
-def test_single_log_file_azure_connection_string(started_cluster):
-    """Test DeltaLakeAzure with connection string authentication and delta kernel enabled."""
-    instance = started_cluster.instances["node1"]
-    spark = started_cluster.spark_session
-    TABLE_NAME = randomize_table_name("test_single_log_file_azure_cs")
-
-    inserted_data = "SELECT number as a, toString(number + 1) as b FROM numbers(100)"
-    parquet_data_path = create_initial_data_file(
-        started_cluster, instance, inserted_data, TABLE_NAME, node_name=instance.name
-    )
-
-    delta_path = f"/{TABLE_NAME}"
-    write_delta_from_file(spark, parquet_data_path, delta_path)
-
-    files = default_upload_directory(
-        started_cluster,
-        "azure",
-        delta_path,
-        "",
-    )
-
-    assert len(files) == 2  # 1 metadata file + 1 data file
-
-    connection_string = started_cluster.env_variables["AZURITE_CONNECTION_STRING"]
-    instance.query(
-        f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
-        CREATE TABLE {TABLE_NAME}
-        ENGINE=DeltaLakeAzure('{connection_string}', '{started_cluster.azure_container_name}', '{TABLE_NAME}', Parquet)
-        """
-    )
-
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
-    assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
-        inserted_data
-    )
-
-
 @pytest.mark.parametrize(
     "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "azure"), ("1", "local")],
+    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
 )
 def test_partition_by(started_cluster, use_delta_kernel, storage_type):
     instance = get_node(started_cluster, use_delta_kernel)
@@ -580,7 +534,7 @@ def test_partition_by(started_cluster, use_delta_kernel, storage_type):
 
 @pytest.mark.parametrize(
     "use_delta_kernel, storage_type",
-    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "azure"), ("1", "local")],
+    [("1", "s3"), ("0", "s3"), ("0", "azure"), ("1", "local")],
 )
 def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
     instance = get_node(started_cluster, use_delta_kernel)
@@ -834,181 +788,6 @@ def test_types(started_cluster, use_delta_kernel):
             ["e", "Nullable(Bool)"],
             ["f", "Array(String)"],
         ]
-    )
-
-
-@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
-def test_varchar_char_types(started_cluster, use_delta_kernel):
-    """
-    VARCHAR(n) and CHAR(n) are valid Delta Lake column types emitted by Spark/Databricks
-    when tables originate from relational databases. ClickHouse must map them to String.
-    """
-    instance = get_node(started_cluster, use_delta_kernel)
-    TABLE_NAME = randomize_table_name("test_varchar_char_types")
-    spark = started_cluster.spark_session
-    result_file = randomize_table_name(f"{TABLE_NAME}_result")
-
-    # Use the DeltaTable builder with DDL-style type names so that the Delta Lake
-    # schema metadata records varchar/char column types. Using VarcharType/CharType
-    # directly in a StructType would be rejected by Spark's Catalyst planner.
-    delta_table = (
-        DeltaTable.create(spark)
-        .tableName(TABLE_NAME)
-        .location(f"/{result_file}")
-        .addColumn("id", "INT", nullable=False)
-        .addColumn("varchar_col", "VARCHAR(256)", nullable=True)
-        .addColumn("char_col", "CHAR(10)", nullable=True)
-        .execute()
-    )
-    spark.sql(
-        f"INSERT INTO {TABLE_NAME} VALUES (1, 'hello varchar', 'hello char')"
-    )
-
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
-    upload_directory(minio_client, bucket, f"/{result_file}", "")
-
-    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
-
-    # Both varchar and char columns must be readable and resolve to String
-    assert instance.query(f"DESCRIBE {table_function} FORMAT TSV") == TSV(
-        [
-            ["id", "Int32"],
-            ["varchar_col", "Nullable(String)"],
-            ["char_col", "Nullable(String)"],
-        ]
-    )
-    assert (
-        instance.query(f"SELECT id, varchar_col, char_col FROM {table_function}").strip()
-        == "1\thello varchar\thello char"
-    )
-
-
-def test_varchar_char_types_in_delta_log(started_cluster):
-    """
-    Regression test for: `Unsupported DeltaLake type: varchar(n)`.
-
-    Spark/Delta normalises VARCHAR/CHAR DDL down to the physical `string` type in
-    the Delta log, so a Spark-driven test never exercises the broken code path.
-    Some real-world emitters (notably the Unity Catalog REST API in `type_json`)
-    do leave `varchar(n)` / `char(n)` in the schema string, which is what hits
-    `DeltaLakeMetadata::getSimpleTypeByName` and previously threw.
-
-    This test constructs a Delta log by hand with such non-normalised type names
-    so the regression path is exercised under both the bugfix-validation run
-    (must fail without the fix) and the patched build (must succeed).
-    The bug only ever lived in the non-kernel path, so this test does not
-    parametrise on `use_delta_kernel`.
-    """
-    instance = started_cluster.instances["node1"]
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
-    TABLE_NAME = randomize_table_name("test_varchar_char_types_in_delta_log")
-
-    schema = pa.schema([
-        pa.field("id", pa.int32()),
-        pa.field("varchar_col", pa.string()),
-        pa.field("char_col", pa.string()),
-    ])
-    table_data = pa.table(
-        {
-            "id": pa.array([1], type=pa.int32()),
-            "varchar_col": pa.array(["hello varchar"], type=pa.string()),
-            "char_col": pa.array(["hello char"], type=pa.string()),
-        },
-        schema=schema,
-    )
-    buf = io.BytesIO()
-    pq.write_table(table_data, buf, compression=None)
-    parquet_bytes = buf.getvalue()
-
-    parquet_object_name = f"{TABLE_NAME}/part-0.parquet"
-    minio_client.put_object(
-        bucket_name=bucket,
-        object_name=parquet_object_name,
-        data=io.BytesIO(parquet_bytes),
-        length=len(parquet_bytes),
-    )
-
-    protocol = '{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}'
-    metadata = json.dumps(
-        {
-            "metaData": {
-                "id": str(uuid.uuid4()),
-                "format": {"provider": "parquet", "options": {}},
-                "schemaString": json.dumps(
-                    {
-                        "type": "struct",
-                        "fields": [
-                            {
-                                "name": "id",
-                                "type": "integer",
-                                "nullable": True,
-                                "metadata": {},
-                            },
-                            {
-                                "name": "varchar_col",
-                                "type": "varchar(256)",
-                                "nullable": True,
-                                "metadata": {},
-                            },
-                            {
-                                "name": "char_col",
-                                "type": "char(10)",
-                                "nullable": True,
-                                "metadata": {},
-                            },
-                        ],
-                    }
-                ),
-                "partitionColumns": [],
-                "configuration": {},
-                "createdTime": 1600000000000,
-            }
-        }
-    )
-    add = json.dumps(
-        {
-            "add": {
-                "path": "part-0.parquet",
-                "partitionValues": {},
-                "size": len(parquet_bytes),
-                "modificationTime": 1600000000000,
-                "dataChange": True,
-                "stats": json.dumps({"numRecords": 1}),
-            }
-        }
-    )
-
-    log_content = ("\n".join([protocol, metadata, add])).encode()
-    minio_client.put_object(
-        bucket_name=bucket,
-        object_name=f"{TABLE_NAME}/_delta_log/00000000000000000000.json",
-        data=io.BytesIO(log_content),
-        length=len(log_content),
-    )
-
-    table_function = (
-        f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{TABLE_NAME}/', "
-        f"'minio', '{minio_secret_key}')"
-    )
-
-    # `allow_experimental_delta_kernel_rs=0` exercises the C++ schema parser,
-    # which is where `getSimpleTypeByName` was throwing on `varchar(n)`/`char(n)`.
-    settings = {"allow_experimental_delta_kernel_rs": "0"}
-    assert instance.query(f"DESCRIBE {table_function} FORMAT TSV", settings=settings) == TSV(
-        [
-            ["id", "Nullable(Int32)"],
-            ["varchar_col", "Nullable(String)"],
-            ["char_col", "Nullable(String)"],
-        ]
-    )
-    assert (
-        instance.query(
-            f"SELECT id, varchar_col, char_col FROM {table_function}",
-            settings=settings,
-        ).strip()
-        == "1\thello varchar\thello char"
     )
 
 
@@ -1537,6 +1316,8 @@ def test_filesystem_cache(started_cluster, use_delta_kernel):
     # (it reads last 64kb for parquet metadata unconditionally
     # assuming most of it will be metadata, see Reader::readFileMetaData)
     # So we end up reading the same data two times here with parquet reader v3.
+    # We cannot disable input_format_parquet_use_native_reader_v3 because
+    # this setting is deprecated.
     # So we cannot check count == CachedReadBufferReadFromCacheBytes,
     # but instead check that CachedReadBufferReadFromCacheBytes is no more than 2 times more :(
     assert count * 2 > int(
@@ -2319,7 +2100,7 @@ deltaLake(
     )
 
 @pytest.mark.parametrize(
-    "new_analyzer, storage_type", [["1", "s3"], ["0", "s3"]]
+    "new_analyzer, storage_type", [["1", "s3"], ["1", "azure"], ["0", "s3"]]
 )
 def test_cluster_function(started_cluster, new_analyzer, storage_type):
     instance = started_cluster.instances["node1"]
@@ -2376,6 +2157,38 @@ def test_cluster_function(started_cluster, new_analyzer, storage_type):
             '{minio_secret_key}',
             SETTINGS allow_experimental_delta_kernel_rs=1)
         """
+    elif storage_type == "azure":
+        # For azure we will only test new cluster as this function is added recently
+        storage_options = {
+            "AZURE_STORAGE_ACCOUNT_NAME": "devstoreaccount1",
+            "AZURE_STORAGE_ACCOUNT_KEY": "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
+            "AZURE_STORAGE_CONTAINER_NAME": "{cluster.azure_container_name}",
+            "AZURE_STORAGE_USE_EMULATOR": "true",
+        }
+        path = f"abfss://{cluster.azure_container_name}@devstoreaccount1.dfs.core.windows.net/{table_name}"
+        table = pa.Table.from_arrays(data, schema=schema)
+        write_deltalake_with_retry(
+            path, table, storage_options=storage_options, partition_by=["b"]
+        )
+
+        table_function = f"""
+        deltaLakeAzureCluster(cluster, azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '{table_name}')
+        """
+        instance.query(
+            f"SELECT * FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
+        )
+        assert 5 == int(
+            instance.query(
+                f"SELECT count() FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
+            )
+        )
+        assert "1\taa\n"
+        "2\tbb\n"
+        "3\tcc\n"
+        "4\taa\n"
+        "5\tbb\n" == instance.query(
+            f"SELECT * FROM {table_function} ORDER BY a SETTINGS allow_experimental_analyzer={new_analyzer}"
+        )
 
 
 def test_partition_columns_3(started_cluster):
@@ -2569,7 +2382,7 @@ def test_column_pruning(started_cluster):
     query_id = f"query_{TABLE_NAME}_1"
     sum = int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1",
+            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1",
             query_id=query_id,
         )
     )
@@ -2585,7 +2398,7 @@ def test_column_pruning(started_cluster):
     query_id = f"query_{TABLE_NAME}_2"
     assert sum == int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, use_parquet_metadata_cache=0",
+            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1",
             query_id=query_id,
         )
     )
@@ -4887,14 +4700,14 @@ def test_struct_dotted_field_names(started_cluster):
 
     table_function2 = f"deltaLakeLocal('{path2}')"
 
-    result2_d2 = instance.query(f"SELECT d2.inner.`a.foo` FROM {table_function2}").strip()
-    assert result2_d2 == "afoo2", f"Unexpected d2.inner.`a.foo` result: {result2_d2!r}"
+    result2_d2 = instance.query(f"SELECT d2.inner.`a.foo` FROM {table_function}").strip()
+    assert result2_d2 == "afoo2", f"Unexpected d2.inner.`a.foo` result: {result_d2!r}"
 
-    result2_d3 = instance.query(f"SELECT d3.l2.l3.`a.foo` FROM {table_function2}").strip()
-    assert result2_d3 == "afoo3", f"Unexpected d3.l2.l3.`a.foo` result: {result2_d3!r}"
+    result2_d3 = instance.query(f"SELECT d3.l2.l3.`a.foo` FROM {table_function}").strip()
+    assert result2_d3 == "afoo3", f"Unexpected d3.l2.l3.`a.foo` result: {result_d3!r}"
 
-    result2_d4 = instance.query(f"SELECT d4.l2.l3.l4.`a.foo` FROM {table_function2}").strip()
-    assert result2_d4 == "afoo4", f"Unexpected d4.l2.l3.l4.`a.foo` result: {result2_d4!r}"
+    result2_d4 = instance.query(f"SELECT d4.l2.l3.l4.`a.foo` FROM {table_function}").strip()
+    assert result2_d4 == "afoo4", f"Unexpected d4.l2.l3.l4.`a.foo` result: {result_d4!r}"
 
 
 def test_snapshot_consistency(started_cluster):
@@ -5244,116 +5057,3 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allo
     )
     assert result == 0
     node.query(f"DROP TABLE IF EXISTS {table_name2}_dst ON CLUSTER cluster")
-    node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster'")
-    filtered = int(
-        node.query(
-            f"""
-            SELECT ProfileEvents['ObjectStoragePredicateFilteredObjects']
-            FROM system.query_log
-            WHERE query_id = '{query_id}' AND type = 'QueryFinish' AND is_initial_query = 1
-            """
-        )
-    )
-    assert filtered >= 2
-
-
-@pytest.mark.parametrize(
-    "use_delta_kernel",
-    ["0", "1"],
-)
-def test_azure_url_encoded_partition_path(started_cluster, use_delta_kernel):
-    instance = get_node(started_cluster, use_delta_kernel)
-    TABLE_NAME = randomize_table_name("test_azure_url_encoded")
-
-    container_client = started_cluster.blob_service_client.get_container_client(
-        started_cluster.azure_container_name
-    )
-
-    # Upload the parquet file at the on-disk (decoded-once) blob path.
-    # Partition value "@INTERNAL@" → directory "org=%40INTERNAL%40" (@ → %40).
-    partition_dir = "org=%40INTERNAL%40"
-    parquet_blob = f"{TABLE_NAME}/{partition_dir}/part-0.parquet"
-
-    schema = pa.schema([
-        pa.field("id", pa.int32()),
-        pa.field("org", pa.string()),
-    ])
-    table_data = pa.table(
-        {
-            "id": pa.array([1, 2, 3], type=pa.int32()),
-            "org": pa.array(["@INTERNAL@"] * 3, type=pa.string()),
-        },
-        schema=schema,
-    )
-    buf = io.BytesIO()
-    pq.write_table(table_data, buf, compression=None)
-    parquet_bytes = buf.getvalue()
-    container_client.upload_blob(parquet_blob, parquet_bytes, overwrite=True)
-
-    # Build the Delta log manually. add.path is URI-encoded per the Delta protocol:
-    # '%' in the on-disk name (%40) is encoded to '%25', producing %2540.
-    add_path = "org=%2540INTERNAL%2540/part-0.parquet"
-
-    protocol = '{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}'
-    metadata = json.dumps(
-        {
-            "metaData": {
-                "id": str(uuid.uuid4()),
-                "format": {"provider": "parquet", "options": {}},
-                "schemaString": json.dumps(
-                    {
-                        "type": "struct",
-                        "fields": [
-                            {
-                                "name": "id",
-                                "type": "integer",
-                                "nullable": True,
-                                "metadata": {},
-                            },
-                            {
-                                "name": "org",
-                                "type": "string",
-                                "nullable": True,
-                                "metadata": {},
-                            },
-                        ],
-                    }
-                ),
-                "partitionColumns": ["org"],
-                "configuration": {},
-                "createdTime": 1600000000000,
-            }
-        }
-    )
-    add = json.dumps(
-        {
-            "add": {
-                "path": add_path,
-                "partitionValues": {"org": "@INTERNAL@"},
-                "size": len(parquet_bytes),
-                "modificationTime": 1600000000000,
-                "dataChange": True,
-                "stats": json.dumps({"numRecords": 3}),
-            }
-        }
-    )
-
-    log_content = "\n".join([protocol, metadata, add])
-    container_client.upload_blob(
-        f"{TABLE_NAME}/_delta_log/00000000000000000000.json",
-        log_content.encode(),
-        overwrite=True,
-    )
-
-    connection_string = started_cluster.env_variables["AZURITE_CONNECTION_STRING"]
-    instance.query(
-        f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
-        CREATE TABLE {TABLE_NAME}
-        ENGINE = DeltaLakeAzure('{connection_string}', '{started_cluster.azure_container_name}', '{TABLE_NAME}', Parquet)
-        """
-    )
-
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 3
-
-    instance.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")

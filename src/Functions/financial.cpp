@@ -282,7 +282,7 @@ std::expected<double, SolverErrorCode> solver(Function && fun, Derivative && der
     {
         return std::unexpected(SolverErrorCode::CANNOT_CONVERGE_DUE_TO_INVALID_ARGUMENTS);
     }
-    catch (...) // Ok: return generic error for unexpected exception types
+    catch (...)
     {
         return std::unexpected(SolverErrorCode::OTHER_ERROR);
     }
@@ -339,7 +339,7 @@ bool isCashFlowColumn(const IDataType & type)
     if (isArray(type))
     {
         const auto & nested = checkAndGetDataType<DataTypeArray>(type).getNestedType();
-        return isNativeInt(nested) || isNativeFloat(nested);
+        return isNativeInt(nested) || isFloat(nested);
     }
     return false;
 }
@@ -380,7 +380,7 @@ void dispatchCashflowDate(const IColumn * cashflow_data, const IColumn * date_da
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cashflow array must contain Float64/Float32/Int64/Int32/Int16/Int8 values");
 }
 
-class FunctionXirr final : public IFunction
+class FunctionXirr : public IFunction
 {
 public:
     static constexpr auto name = "financialInternalRateOfReturnExtended";
@@ -404,7 +404,7 @@ public:
         };
 
         auto optional_args = FunctionArgumentDescriptors{
-            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32|Float64"},
+            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float32|Float64"},
             {"daycount", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
 
@@ -498,7 +498,7 @@ public:
     }
 };
 
-class FunctionIRR final : public IFunction
+class FunctionIRR : public IFunction
 {
 public:
     static constexpr auto name = "financialInternalRateOfReturn";
@@ -521,7 +521,7 @@ public:
         };
 
         auto optional_args = FunctionArgumentDescriptors{
-            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32|Float64"},
+            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float32|Float64"},
         };
 
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
@@ -594,7 +594,7 @@ public:
     }
 };
 
-class FunctionXnpv final : public IFunction
+class FunctionXnpv : public IFunction
 {
 public:
     static constexpr auto name = "financialNetPresentValueExtended";
@@ -611,7 +611,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto mandatory_args = FunctionArgumentDescriptors{
-            {"rate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32|Float64"},
+            {"rate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float32|Float64"},
             {"cashflow",
              static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn),
              nullptr,
@@ -712,7 +712,7 @@ public:
     }
 };
 
-class FunctionNPV final : public IFunction
+class FunctionNPV : public IFunction
 {
 public:
     static constexpr auto name = "financialNetPresentValue";
@@ -728,7 +728,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto mandatory_args = FunctionArgumentDescriptors{
-            {"rate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32|Float64"},
+            {"rate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float32|Float64"},
             {"cashflow",
              static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn),
              nullptr,

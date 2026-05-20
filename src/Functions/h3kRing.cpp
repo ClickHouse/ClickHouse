@@ -28,7 +28,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3KRing final : public IFunction
+class FunctionH3KRing : public IFunction
 {
 public:
     static constexpr auto name = "h3kRing";
@@ -123,9 +123,7 @@ public:
                 continue;
             }
 
-            int64_t disk_size = 0;
-            maxGridDiskSize(k, &disk_size);
-            const auto vec_size = static_cast<size_t>(disk_size);
+            const auto vec_size = maxGridDiskSize(k);
             std::vector<H3Index, AllocatorWithMemoryTracking<H3Index>> hindex_vec;
             hindex_vec.resize(vec_size);
             gridDisk(origin_hindex, k, hindex_vec.data());

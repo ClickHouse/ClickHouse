@@ -5,6 +5,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <rocksdb/db.h>
 #include <rocksdb/status.h>
+#include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 
@@ -21,7 +22,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 /// Optimized for bulk importing into StorageEmbeddedRocksDB:
 /// 1. No mem-table: an SST file is built from chunk, then import to rocksdb
 /// 2. Squash chunks to reduce the number of SST files
-class EmbeddedRocksDBBulkSink final : public SinkToStorage, public WithContext
+class EmbeddedRocksDBBulkSink : public SinkToStorage, public WithContext
 {
 public:
     EmbeddedRocksDBBulkSink(ContextPtr context_, StorageEmbeddedRocksDB & storage_, const StorageMetadataPtr & metadata_snapshot_);

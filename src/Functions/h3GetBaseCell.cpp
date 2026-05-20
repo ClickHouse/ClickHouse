@@ -1,36 +1,34 @@
-#include <Functions/h3Common.h>
+#include "config.h"
 
 #if USE_H3
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
+
+#include <h3api.h>
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
 namespace
 {
 
-class FunctionH3GetBaseCell final : public IFunction
+class FunctionH3GetBaseCell : public IFunction
 {
 public:
     static constexpr auto name = "h3GetBaseCell";
 
-    H3Validator validator;
-
-    explicit FunctionH3GetBaseCell(const ContextPtr & context) : validator(context) {}
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3GetBaseCell>(context); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3GetBaseCell>(); }
 
     std::string getName() const override { return name; }
 
@@ -38,13 +36,14 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"index", &isUInt64, nullptr, "UInt64"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
+        const auto * arg = arguments[0].get();
+        if (!WhichDataType(arg).isUInt64())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arg->getName(), 1, getName());
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -79,9 +78,7 @@ public:
         {
             const UInt64 hindex = data[row];
 
-            UInt8 res = 0;
-            if (validator.validateCell(hindex))
-                res = static_cast<UInt8>(getBaseCellNumber(hindex));
+            auto res = static_cast<UInt8>(getBaseCellNumber(hindex));
 
             dst_data[row] = res;
         }
@@ -102,7 +99,7 @@ Returns the base cell number of the [H3](#h3-index) index.
         {"index", "Hexagon index number.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the hexagon base cell number. Throws an exception if the input is not a valid H3 cell (controlled by the `functions_h3_default_if_invalid` setting).",
+        "Returns the hexagon base cell number.",
         {"UInt8"}
     };
     FunctionDocumentation::Examples examples = {
