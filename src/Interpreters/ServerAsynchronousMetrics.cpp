@@ -9,6 +9,8 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 
+#include <Dictionaries/IDictionary.h>
+
 #include <Databases/IDatabase.h>
 
 #include <IO/UncompressedCache.h>
@@ -620,19 +622,71 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
     {
         Duration max_update_delay{0};
         size_t failed_counter = 0;
+        size_t total_count = 0;
+        size_t loaded_count = 0;
+        size_t failed_count = 0;
+        size_t loading_count = 0;
+        size_t total_bytes_allocated = 0;
+        size_t total_element_count = 0;
+        size_t max_query_count = 0;
+
         const auto & external_dictionaries = getContext()->getExternalDictionariesLoader();
 
         for (const auto & load_result : external_dictionaries.getLoadResults())
         {
+            ++total_count;
+
             if (load_result.error_count > 0 && load_result.last_successful_update_time.time_since_epoch().count() > 0)
             {
                 max_update_delay = std::max(max_update_delay, std::chrono::duration_cast<Duration>(current_time - load_result.last_successful_update_time));
             }
             failed_counter += load_result.error_count;
+
+            /// Classify by current status. `LOADING` covers first-time loads only;
+            /// in-progress reloads remain classified as `loaded_count` or `failed_count`
+            /// via the `_AND_RELOADING` variants, matching `system.dictionaries` semantics.
+            using Status = ExternalLoader::Status;
+            switch (load_result.status)
+            {
+                case Status::LOADED:
+                case Status::LOADED_AND_RELOADING:
+                    ++loaded_count;
+                    break;
+                case Status::FAILED:
+                case Status::FAILED_AND_RELOADING:
+                    ++failed_count;
+                    break;
+                case Status::LOADING:
+                    ++loading_count;
+                    break;
+                default:
+                    break;
+            }
+
+            if (auto dict_ptr = std::dynamic_pointer_cast<const IDictionary>(load_result.object))
+            {
+                total_bytes_allocated += dict_ptr->getBytesAllocated();
+                total_element_count += dict_ptr->getElementCount();
+                max_query_count = std::max(max_query_count, dict_ptr->getQueryCount());
+            }
         }
         new_values["DictionaryMaxUpdateDelay"] = {
             std::chrono::duration_cast<std::chrono::seconds>(max_update_delay).count(), "The maximum delay (in seconds) of dictionary update"};
         new_values["DictionaryTotalFailedUpdates"] = {failed_counter, "Number of errors since last successful loading in all dictionaries."};
+        new_values["DictionaryTotalCount"] = {total_count,
+            "Total number of dictionaries known to the server (regardless of load status)."};
+        new_values["DictionaryLoadedCount"] = {loaded_count,
+            "Number of dictionaries currently in a loaded state (includes the LOADED_AND_RELOADING transient state)."};
+        new_values["DictionaryFailedCount"] = {failed_count,
+            "Number of dictionaries currently in a failed state (includes the FAILED_AND_RELOADING transient state)."};
+        new_values["DictionaryLoadingCount"] = {loading_count,
+            "Number of dictionaries currently being loaded for the first time (excludes reloads of already-loaded or failed dictionaries)."};
+        new_values["DictionaryTotalBytesAllocated"] = {total_bytes_allocated,
+            "Total bytes allocated by all currently loaded dictionaries (sum of `getBytesAllocated` over each dictionary instance)."};
+        new_values["DictionaryTotalElementCount"] = {total_element_count,
+            "Total number of keys stored across all currently loaded dictionaries."};
+        new_values["DictionaryMaxQueryCount"] = {max_query_count,
+            "Maximum query count among loaded dictionaries, counted since each dictionary's last load."};
     }
 
     new_values["AsynchronousHeavyMetricsCalculationTimeSpent"] = { watch.elapsedSeconds(), "Time in seconds spent for calculation of asynchronous heavy (tables related) metrics (this is the overhead of asynchronous metrics)." };

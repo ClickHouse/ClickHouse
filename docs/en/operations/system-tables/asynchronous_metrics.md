@@ -176,9 +176,37 @@ The value is similar to `CGroupUserTime` but divided by the number of available 
 
 The current frequency of the CPU, in MHz. Most of the modern CPUs adjust the frequency dynamically for power saving and Turbo Boosting.
 
+### DictionaryFailedCount {#dictionaryfailedcount}
+
+Number of dictionaries currently in a failed state (includes the FAILED_AND_RELOADING transient state).
+
+### DictionaryLoadedCount {#dictionaryloadedcount}
+
+Number of dictionaries currently in a loaded state (includes the LOADED_AND_RELOADING transient state).
+
+### DictionaryLoadingCount {#dictionaryloadingcount}
+
+Number of dictionaries currently being loaded for the first time (excludes reloads of already-loaded or failed dictionaries).
+
+### DictionaryMaxQueryCount {#dictionarymaxquerycount}
+
+Maximum query count among loaded dictionaries, counted since each dictionary's last load.
+
 ### DictionaryMaxUpdateDelay {#dictionarymaxupdatedelay}
 
 The maximum delay (in seconds) of dictionary update
+
+### DictionaryTotalBytesAllocated {#dictionarytotalbytesallocated}
+
+Total bytes allocated by all currently loaded dictionaries (sum of `getBytesAllocated` over each dictionary instance).
+
+### DictionaryTotalCount {#dictionarytotalcount}
+
+Total number of dictionaries known to the server (regardless of load status).
+
+### DictionaryTotalElementCount {#dictionarytotalelementcount}
+
+Total number of keys stored across all currently loaded dictionaries.
 
 ### DictionaryTotalFailedUpdates {#dictionarytotalfailedupdates}
 
