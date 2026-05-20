@@ -28,8 +28,7 @@ SelectWithUnionQuery (children 1)
        ExpressionList (children 1)
         Literal UInt64_10
    ExpressionList (children 2)
-    GroupByElement (children 1)
-     Identifier number
+    Identifier number
     GroupByElement (children 2)
      Identifier x
      Literal UInt64_42
