@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- Regression test for STID 4701-4d85 and sibling sightings (STID 3738-56e0, STID 4287-5905):
 -- adversarial AST-fuzzer inputs that set the `window` (staleness) parameter to a value
 -- near `INT64_MAX` triggered UBSan signed-integer overflow in the sliding-window check
