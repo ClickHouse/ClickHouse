@@ -20,7 +20,18 @@ class ServerDied(Exception):
 
 
 def escape_tsv_info(text: str) -> str:
-    return text.replace("\0", "\\0").replace("\t", "\\t").replace("\n", "\\n")
+    # Strip CR before escaping the other separators. Bare CR is emitted
+    # by tools like `apt-get`/`dpkg` to overwrite progress frames in
+    # place, and the hung-check path embeds dpkg output verbatim when
+    # `clickhouse-test --capture-client-stacktrace` installs `lldb` on
+    # the fly. Left in the TSV, those CRs are turned back into LF by
+    # universal-newlines mode at read time and fragment the row.
+    return (
+        text.replace("\r", "")
+        .replace("\0", "\\0")
+        .replace("\t", "\\t")
+        .replace("\n", "\\n")
+    )
 
 
 class RandomQueryKiller:
