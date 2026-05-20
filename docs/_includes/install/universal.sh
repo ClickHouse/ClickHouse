@@ -99,3 +99,70 @@ echo "Successfully downloaded the ClickHouse binary, you can run it as:
 echo
 echo "You can also install it:
 sudo ./${clickhouse} install"
+
+# Also install clickhousectl, the CLI for ClickHouse local and Cloud
+chctl_target=
+if [ "${OS}" = "Linux" ]
+then
+    if [ "${ARCH}" = "x86_64" -o "${ARCH}" = "amd64" ]
+    then
+        chctl_target="x86_64-unknown-linux-musl"
+    elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]
+    then
+        chctl_target="aarch64-unknown-linux-musl"
+    fi
+elif [ "${OS}" = "Darwin" ]
+then
+    if [ "${ARCH}" = "x86_64" -o "${ARCH}" = "amd64" ]
+    then
+        chctl_target="x86_64-apple-darwin"
+    elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]
+    then
+        chctl_target="aarch64-apple-darwin"
+    fi
+fi
+
+if [ -n "${chctl_target}" ]
+then
+    echo
+    echo "Fetching the latest clickhousectl release..."
+    chctl_tag=$(curl -fsSL "https://api.github.com/repos/ClickHouse/clickhousectl/releases/latest" \
+        | grep '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')
+
+    if [ -n "${chctl_tag}" ]
+    then
+        chctl_install_dir="${HOME}/.local/bin"
+        chctl_archive="clickhousectl-${chctl_target}-${chctl_tag}.tar.gz"
+        chctl_url="https://github.com/ClickHouse/clickhousectl/releases/download/${chctl_tag}/${chctl_archive}"
+        echo "Will download ${chctl_url} into ${chctl_install_dir}/clickhousectl"
+        chctl_tmp=$(mktemp -d)
+        if mkdir -p "${chctl_install_dir}" \
+            && curl -fsSL "${chctl_url}" -o "${chctl_tmp}/${chctl_archive}" \
+            && tar -xzf "${chctl_tmp}/${chctl_archive}" -C "${chctl_tmp}" \
+            && mv -f "${chctl_tmp}/clickhousectl-${chctl_target}-${chctl_tag}/clickhousectl" "${chctl_install_dir}/clickhousectl"
+        then
+            chmod a+x "${chctl_install_dir}/clickhousectl"
+            ln -sf "${chctl_install_dir}/clickhousectl" "${chctl_install_dir}/chctl"
+            echo
+            echo "Successfully installed clickhousectl to ${chctl_install_dir}/clickhousectl"
+            echo "Created alias: chctl -> clickhousectl"
+            case ":$PATH:" in
+                *":${chctl_install_dir}:"*) ;;
+                *)
+                    echo
+                    echo "NOTE: ${chctl_install_dir} is not in your PATH."
+                    echo "Add it by running:"
+                    echo
+                    echo "  export PATH=\"${chctl_install_dir}:\$PATH\""
+                    echo
+                    echo "You may want to add that line to your shell profile (~/.bashrc, ~/.zshrc, etc.)"
+                    ;;
+            esac
+        else
+            echo "Warning: failed to download clickhousectl. Continuing."
+        fi
+        rm -rf "${chctl_tmp}"
+    else
+        echo "Warning: could not determine the latest clickhousectl release. Continuing."
+    fi
+fi
