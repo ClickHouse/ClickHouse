@@ -861,8 +861,15 @@ Chunk ClusterMergingTransform::generateString()
         /// Build inverted index over rows of length ≥ Q. Each q-gram occurrence
         /// adds the row id to the posting list (multiset semantics, required for
         /// the Ukkonen bound to hold).
+        ///
+        /// We also track `small_rows` — rows for which the Ukkonen lower bound
+        /// `max(qgrams_i, qgrams_j) - Q * max_edits` collapses to zero. For these
+        /// the filter is non-informative and pairs with zero shared q-grams may
+        /// still be within edit distance, so they need a pairwise fallback.
         std::unordered_map<UInt32, std::vector<size_t>> index;
         std::vector<size_t> short_rows;
+        std::vector<size_t> small_rows;
+        const size_t small_qgrams_bound = Q * max_edits;
         for (size_t i = 0; i < total_rows; ++i)
         {
             const auto & s = strings[i];
@@ -874,6 +881,8 @@ Chunk ClusterMergingTransform::generateString()
             const size_t qgrams = s.size() - Q + 1;
             for (size_t k = 0; k < qgrams; ++k)
                 index[pack_qgram(s.data() + k)].push_back(i);
+            if (qgrams <= small_qgrams_bound)
+                small_rows.push_back(i);
         }
 
         /// Reusable counter buffer: counter[j] = matched q-grams between current i and row j.
@@ -911,6 +920,8 @@ Chunk ClusterMergingTransform::generateString()
             }
 
             /// Apply Ukkonen lower bound per pair, then verify.
+            /// Counter reset is deferred until after the small_rows fallback below
+            /// so that pass can use `counter[j] > 0` as a "already handled" marker.
             for (size_t j : dirty)
             {
                 const auto & sj = strings[j];
@@ -919,14 +930,31 @@ Chunk ClusterMergingTransform::generateString()
                 const size_t threshold = (max_qg > Q * max_edits) ? (max_qg - Q * max_edits) : 0;
                 if (counter[j] >= threshold)
                     verify_pair(i, j);
-                counter[j] = 0;
             }
-            dirty.clear();
 
-            /// Pair long i with all short rows j > i (they're not in the index).
+            /// Pair i with all short rows j > i (they're not in the index).
             for (size_t j : short_rows)
                 if (j > i)
                     verify_pair(i, j);
+
+            /// Ukkonen-bound fallback: when `qgrams_i <= Q * max_edits` the lower
+            /// bound on shared q-grams collapses to zero for pairs `(i, j ∈ small_rows)`,
+            /// so such pairs can satisfy `edit-distance <= max_edits` while sharing
+            /// zero q-grams — they never land in `dirty`. Verify them directly here,
+            /// skipping those that *did* land in `dirty` (counter[j] > 0) to avoid
+            /// a redundant `verify_pair` for false-matches the q-gram filter already
+            /// passed but Levenshtein rejected.
+            if (qgrams_i <= small_qgrams_bound)
+            {
+                for (size_t j : small_rows)
+                    if (j > i && counter[j] == 0)
+                        verify_pair(i, j);
+            }
+
+            /// Reset counters before the next iteration.
+            for (size_t j : dirty)
+                counter[j] = 0;
+            dirty.clear();
         }
     }
 
