@@ -23,6 +23,7 @@
 #include <boost/circular_buffer.hpp>
 #include <fmt/ranges.h>
 
+#include <csignal>
 #include <ranges>
 
 
