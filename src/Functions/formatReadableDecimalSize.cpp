@@ -13,9 +13,9 @@ Given a size (number of bytes), this function returns a readable, rounded size w
 
 The opposite operations of this function are [`parseReadableSize`](#parseReadableSize).
     )";
-    FunctionDocumentation::Syntax syntax = "formatReadableDecimalSize(x[, precision])";
+    FunctionDocumentation::Syntax syntax = "formatReadableDecimalSize(value[, precision])";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "Size in bytes.", {"Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64", "Float32", "Float64", "Decimal"}},
+        {"value", "Size in bytes.", {"Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64", "Float32", "Float64", "Decimal"}},
         {"precision", "Optional. Number of digits after the decimal point. Defaults to 2.", {"const UInt8"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a readable, rounded size with suffix as a string.", {"String"}};

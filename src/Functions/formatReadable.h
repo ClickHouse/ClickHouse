@@ -27,31 +27,23 @@ public:
     using FormatFunc = void (*)(double, WriteBuffer &, int);
 
     FunctionFormatReadable(const char * name_, FormatFunc format_func_)
-        : function_name(name_), format_func(format_func_) {}
+        : function_name(name_)
+        , format_func(format_func_)
+    {}
 
-    static FunctionPtr create(const char * name, FormatFunc format_func)
-    {
-        return std::make_shared<FunctionFormatReadable>(name, format_func);
-    }
+    static FunctionPtr create(const char * name, FormatFunc format_func) { return std::make_shared<FunctionFormatReadable>(name, format_func); }
 
-    String getName() const override
-    {
-        return function_name;
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
-    {
-        return true;
-    }
-
+    String getName() const override { return function_name; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-
     bool isVariadic() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_arguments{
-            {"x", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), nullptr, "Number"},
         };
 
         FunctionArgumentDescriptors optional_arguments{
@@ -63,14 +55,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -85,7 +70,8 @@ public:
                 throw Exception(
                     DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
                     "Too high precision requested, must not be more than {}, got {}",
-                     static_cast<int>(double_conversion::DoubleToStringConverter::kMaxFixedDigitsAfterPoint), static_cast<uint8_t>(precision));
+                     double_conversion::DoubleToStringConverter::kMaxFixedDigitsAfterPoint,
+                     precision);
         }
 
         auto col_to = ColumnString::create();
