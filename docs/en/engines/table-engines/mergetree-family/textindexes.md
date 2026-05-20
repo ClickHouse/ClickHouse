@@ -326,12 +326,15 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [`hasAnyTokens(col, arr)`](/sql-reference/functions/string-search-functions.md/#hasAnyTokens), [`hasAllTokens(col, arr)`](/sql-reference/functions/string-search-functions.md/#hasAllTokens) | no (array elements are tokens as-is) | any | yes (skipped for `array`) |
 | [`hasPhrase`](/sql-reference/functions/string-search-functions.md/#hasPhrase) | yes | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | yes |
 | [`startsWith`](/sql-reference/functions/string-functions.md/#startsWith), [`endsWith`](/sql-reference/functions/string-functions.md/#endsWith) | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
-| `LIKE`, `ILIKE`, `match` | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
+| `LIKE`, `match` | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
+| `ILIKE` | yes² (`lower`/`upper` only) | `splitByNonAlpha`, `array`² | no² |
 | [`mapContainsKey`](/sql-reference/functions/tuple-map-functions#mapContainsKey), [`mapContainsValue`](/sql-reference/functions/tuple-map-functions#mapContainsValue) | yes | any | yes (skipped for `array`) |
 | [`mapContainsKeyLike`](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike), [`mapContainsValueLike`](/sql-reference/functions/tuple-map-functions#mapContainsValueLike) | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes (skipped for `array`) |
 | [`has`](/sql-reference/functions/array-functions.md/#has), [`hasAny`](/sql-reference/functions/array-functions.md/#hasAny), [`hasAll`](/sql-reference/functions/array-functions.md/#hasAll) | no | `array` | no |
 
-¹ `LIKE` and `ILIKE` have a *direct-read mode* (enabled via setting `use_text_index_like_evaluation_by_dictionary_scan`) which requires neither a preprocessor nor a postprocessor and supports only the `splitByNonAlpha` and `array` tokenizers. Outside direct-read mode, `LIKE`, `ILIKE`, and `match` use the index in Hint mode with the values shown in the table.
+¹ `LIKE` and `match` use the index in Hint mode for the tokenizers shown. `LIKE` additionally supports a *direct-read mode* (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor.
+
+² `ILIKE` is only supported via direct-read mode (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer). There is no hint-mode fallback: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`. The preprocessor, if present, must be `lower` or `upper`; postprocessors are not supported.
 
 When the index is built with `tokenizer = 'array'`, the index stores raw array elements unchanged and the postprocessor is bypassed at index build. To stay consistent, all lookups that would otherwise apply the postprocessor also skip it for `array` (rows marked "skipped for `array`" above). As a result, combining `tokenizer = 'array'` with a postprocessor is effectively a no-op for query semantics — every search compares against raw array elements.
 
