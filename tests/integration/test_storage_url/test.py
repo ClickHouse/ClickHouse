@@ -394,6 +394,15 @@ def test_url_wildcard_preserves_failover_options():
     assert result.strip() == "13"
 
 
+def test_url_wildcard_ignores_failed_failover_option_after_success():
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT sum(x) FROM url('http://resolver:8087/data/source_query/**/part*.tsv?token={fail|abc}', 'TSV', 'x UInt64')"
+        )
+    )
+    assert result.strip() == "13"
+
+
 def test_url_engine_wildcard_preserves_failover_options():
     table_name = "url_wildcard_failover"
     node1.query(f"DROP TABLE IF EXISTS {table_name}")

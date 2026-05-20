@@ -225,6 +225,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_html(body)
             return
         if path == "/data/source_query/":
+            if parsed.query == "token=fail":
+                self.send_response(403)
+                self.end_headers()
+                return
             if parsed.query != "token=abc":
                 self.send_response(404)
                 self.end_headers()
@@ -233,6 +237,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_html(body)
             return
         if path == "/data/source_query/subdir/":
+            if parsed.query == "token=fail":
+                self.send_response(403)
+                self.end_headers()
+                return
             if parsed.query != "token=abc":
                 self.send_response(404)
                 self.end_headers()

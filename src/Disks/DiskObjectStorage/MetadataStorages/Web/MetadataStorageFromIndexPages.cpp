@@ -353,7 +353,6 @@ bool MetadataStorageFromIndexPages::tryListDirectory(
     if (requested_shard_index && *requested_shard_index >= url_shards.size())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid URL shard index: {}", *requested_shard_index);
 
-    std::exception_ptr last_exception;
     bool has_not_found = false;
     bool has_listed_directory = false;
 
@@ -364,6 +363,7 @@ bool MetadataStorageFromIndexPages::tryListDirectory(
     {
         const auto listing_urls = makeListingURLs(normalized_path, shard_index);
         const auto & url_options = url_shards[shard_index];
+        std::exception_ptr shard_exception;
         bool has_listed_shard = false;
 
         for (size_t i = 0; i != listing_urls.size(); ++i)
@@ -394,28 +394,25 @@ bool MetadataStorageFromIndexPages::tryListDirectory(
                     has_not_found = true;
                     continue;
                 }
-                last_exception = std::current_exception();
+                shard_exception = std::current_exception();
             }
             catch (const Exception & e)
             {
                 if (e.code() == ErrorCodes::CANNOT_READ_ALL_DATA)
-                    last_exception = std::make_exception_ptr(
+                    shard_exception = std::make_exception_ptr(
                         Exception(ErrorCodes::BAD_ARGUMENTS, "Index page '{}' exceeds max_http_index_page_size", listing_url));
                 else
-                    last_exception = std::current_exception();
+                    shard_exception = std::current_exception();
             }
             catch (...)
             {
-                last_exception = std::current_exception();
+                shard_exception = std::current_exception();
             }
         }
 
-        if (!has_listed_shard && last_exception)
-            std::rethrow_exception(last_exception);
+        if (!has_listed_shard && shard_exception)
+            std::rethrow_exception(shard_exception);
     }
-
-    if (last_exception)
-        std::rethrow_exception(last_exception);
 
     if (has_listed_directory)
         return true;
