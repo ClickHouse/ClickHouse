@@ -105,7 +105,7 @@
         .header {
             background: var(--header-background);
             color: var(--header-text);
-            padding: 1rem 2rem;
+            padding: 0.6rem 0.6rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -196,16 +196,16 @@
 
         .container {
             max-width: 100%;
-            margin: 0 auto;
-            padding: 1.5rem 2rem 2rem;
+            margin: 0;
+            padding: 0.4rem 0.4rem 0.5rem;
         }
         .section {
             background: var(--card-background);
             border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 1rem 1.25rem;
-            margin-bottom: 1.25rem;
-            box-shadow: 0 2px 4px var(--shadow-color);
+            border-radius: 6px;
+            padding: 0.5rem 0.6rem;
+            margin-bottom: 0.5rem;
+            box-shadow: 0 1px 2px var(--shadow-color);
         }
         .filter-row {
             display: flex;
@@ -609,11 +609,11 @@
                 <option value="30">Last 30 days</option>
             </select>
             <select id="load-metric" title="Metric used to colour the heat-map">
-                <option value="written_rows" selected>Rows written</option>
+                <option value="total_duration_ms" selected>View duration</option>
+                <option value="written_rows">Rows written</option>
                 <option value="written_bytes">Bytes written</option>
                 <option value="read_rows">Rows read</option>
                 <option value="read_bytes">Bytes read</option>
-                <option value="total_duration_ms">View duration</option>
                 <option value="peak_memory_usage">Peak memory</option>
                 <option value="executions">Executions</option>
             </select>
@@ -700,7 +700,7 @@ const state = {
     zoom: 1.0,
     /// INSERT-pipeline heat-map state populated from `system.query_views_log`.
     loadPeriodDays: 7,                 /// 0 disables the heat-map; otherwise the lookback window.
-    loadMetric: 'written_rows',
+    loadMetric: 'total_duration_ms',
     loadByMv: new Map(),               /// node key -> { executions, total_duration_ms, read_rows, ... }
     loadByEdge: new Map(),             /// "from\x00to" -> same shape (MV -> target only)
     loadMax: { byMv: {}, byEdge: {} }, /// per-metric maxima used to normalize colour intensity
@@ -766,6 +766,14 @@ function engineKind(engine) {
     if (engine === 'MaterializedView') return 'mv';
     if (engine.includes('MergeTree')) return 'mt';
     return 'other';
+}
+
+/// Short engine label for node headers — full engine names like
+/// "MaterializedView" hide the actual table name in the header.
+function engineLabel(n) {
+    if (n.kind === 'rmv') return 'RMV';
+    if (n.kind === 'mv') return 'MV';
+    return n.engine || '';
 }
 
 async function loadAll() {
@@ -1329,7 +1337,7 @@ function render() {
         nameEl.textContent = n.name;
         const kindEl = document.createElement('span');
         kindEl.className = 'node-kind';
-        kindEl.textContent = n.kind === 'rmv' ? 'Refreshable MV' : (n.engine || '');
+        kindEl.textContent = engineLabel(n);
         header.appendChild(nameEl);
         header.appendChild(kindEl);
         /// INSERT-pipeline load badge: only on MVs/RMVs that ran during the window.
