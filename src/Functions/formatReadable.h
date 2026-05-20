@@ -70,8 +70,8 @@ public:
                 throw Exception(
                     DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
                     "Too high precision requested, must not be more than {}, got {}",
-                     double_conversion::DoubleToStringConverter::kMaxFixedDigitsAfterPoint,
-                     precision);
+                     static_cast<int>(double_conversion::DoubleToStringConverter::kMaxFixedDigitsAfterPoint),
+                     static_cast<uint8_t>(precision));
         }
 
         auto col_to = ColumnString::create();
