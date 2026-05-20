@@ -12,6 +12,8 @@
 
 #include <IO/HTTPCommon.h>
 
+#include <Processors/Formats/Impl/AvroRowInputFormat.h>
+
 #include <Compiler.hh>
 #include <ValidSchema.hh>
 
@@ -127,7 +129,7 @@ avro::ValidSchema ConfluentSchemaRegistry::fetchSchema(uint32_t id, const Format
 
             auto schema = json_body->getValue<std::string>("schema");
             LOG_TRACE(getLogger("ConfluentSchemaRegistry"), "Successfully fetched schema id = {}\n{}", id, schema);
-            return avro::compileJsonSchemaFromString(schema);
+            return avro::compileJsonSchemaFromString(schema, MAX_AVRO_SCHEMA_DEPTH);
         }
         catch (const Exception &)
         {

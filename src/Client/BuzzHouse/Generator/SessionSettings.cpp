@@ -329,6 +329,7 @@ std::unordered_map<String, CHSetting> performanceSettings
             false)},
        {"join_any_take_last_row", trueOrFalseSetting},
        {"max_bytes_ratio_before_external_group_by", probRangeNoZeroSetting},
+       {"max_bytes_ratio_before_external_join", probRangeNoZeroSetting},
        {"max_bytes_ratio_before_external_sort", probRangeNoZeroSetting},
        {"max_streams_to_max_threads_ratio", probRangeSetting},
        {"merge_tree_determine_task_size_by_prewhere_columns", trueOrFalseSetting},
@@ -378,6 +379,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_truncate_order_by_after_group_by_keys", trueOrFalseSetting},
        {"optimize_trivial_approximate_count_query", trueOrFalseSetting},
        {"optimize_trivial_count_query", trueOrFalseSetting},
+       {"optimize_trivial_group_by_limit_query", trueOrFalseSetting},
        {"optimize_uniq_to_count", trueOrFalseSetting},
        {"optimize_use_implicit_projections", trueOrFalseSetting},
        {"optimize_use_projections", trueOrFalseSetting},
@@ -493,7 +495,8 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_skip_indexes_on_data_read", trueOrFalseSetting},
        {"use_statistics", trueOrFalseSetting},
        {"use_statistics_for_part_pruning", trueOrFalseSetting},
-       {"use_top_k_dynamic_filtering", trueOrFalseSetting}};
+       {"use_top_k_dynamic_filtering", trueOrFalseSetting},
+       {"use_top_k_dynamic_filtering_for_variable_length_types", trueOrFalseSetting}};
 
 std::unordered_map<String, CHSetting> serverSettings = {
     {"add_http_cors_header", trueOrFalseSettingNoOracle},
@@ -568,7 +571,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
              static const DB::Strings choices = {"'best_effort'", "'best_effort_us'", "'basic'"};
              return rg.pickRandomly(choices);
          },
-         {"'best_effort'", "'best_effort_us'", "'basic'"},
+         {},
          false)},
     {"cast_string_to_dynamic_use_inference", trueOrFalseSettingNoOracle},
     {"cast_string_to_variant_use_inference", trueOrFalseSettingNoOracle},
@@ -1061,6 +1064,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"materialize_ttl_after_modify", trueOrFalseSettingNoOracle},
     {"materialized_views_ignore_errors", trueOrFalseSettingNoOracle},
     {"materialized_views_squash_parallel_inserts", trueOrFalseSettingNoOracle},
+    {"max_consume_snapshots",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10)); },
+         {"0", "1", "2", "5"},
+         false)},
     {"max_download_threads", threadSetting},
     {"max_dynamic_subcolumns_in_json_type_parsing", CHSetting(columnsRange, {"0", "1", "2", "16", "64"}, false)},
     {"max_final_threads", threadSetting},
@@ -1304,13 +1312,17 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
     {"query_plan_text_index_add_hint", trueOrFalseSetting},
     {"query_plan_read_in_order_through_join", trueOrFalseSetting},
-    {"query_plan_use_logical_join_step", trueOrFalseSetting},
     /// ClickHouse cloud setting
     {"read_from_distributed_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
     {"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
     {"read_from_page_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
     /// ClickHouse cloud setting
     {"read_through_distributed_cache", trueOrFalseSetting},
+    {"recursive_cte_max_steps_in_type_inference",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 32)); },
+         {"0", "1", "5", "10", "32"},
+         false)},
     {"regexp_dict_allow_hyperscan", trueOrFalseSetting},
     {"regexp_dict_flag_case_insensitive", trueOrFalseSettingNoOracle},
     {"regexp_dict_flag_dotall", trueOrFalseSettingNoOracle},
