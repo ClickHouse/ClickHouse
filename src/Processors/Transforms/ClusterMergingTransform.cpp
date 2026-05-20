@@ -693,91 +693,6 @@ Chunk ClusterMergingTransform::generate2D()
             non_cluster_key_positions.push_back(i);
     }
 
-    /// Edge case: `distance == 0` — only exact-match `(x, y)` per non-cluster
-    /// key should collapse, no spatial merging. We cannot simply pass rows
-    /// through: upstream `Aggregator` hashes `Float64` by raw bits, so values
-    /// like `-0.0` and `+0.0` arrive here as separate rows yet must merge
-    /// under `abs(a - b) == 0`. Dedup by canonical-zero `(x, y)` bit pattern
-    /// and non-cluster keys, then emit one row per group.
-    if (cluster_distance == 0)
-    {
-        std::vector<Float64> x_vals_eq;
-        std::vector<Float64> y_vals_eq;
-        readClusterValues(x_col, header.getByPosition(x_pos).type, total_rows, x_vals_eq);
-        readClusterValues(y_col, header.getByPosition(y_pos).type, total_rows, y_vals_eq);
-
-        std::unordered_map<UInt64, absl::InlinedVector<size_t, 1>> dedup_map;
-        std::vector<bool> alive(total_rows, true);
-
-        for (size_t i = 0; i < total_rows; ++i)
-        {
-            Int64 ix;
-            Int64 iy;
-            static_assert(sizeof(Float64) == sizeof(Int64));
-            std::memcpy(&ix, &x_vals_eq[i], sizeof(Int64));
-            std::memcpy(&iy, &y_vals_eq[i], sizeof(Int64));
-
-            SipHash hasher;
-            for (size_t pos : non_cluster_key_positions)
-                merged_columns[pos]->updateHashWithValue(i, hasher);
-            hasher.update(ix);
-            hasher.update(iy);
-            UInt64 h = hasher.get64();
-
-            auto & candidates = dedup_map[h];
-            size_t found = std::numeric_limits<size_t>::max();
-            for (size_t cand : candidates)
-            {
-                Int64 cand_ix;
-                Int64 cand_iy;
-                std::memcpy(&cand_ix, &x_vals_eq[cand], sizeof(Int64));
-                std::memcpy(&cand_iy, &y_vals_eq[cand], sizeof(Int64));
-                if (cand_ix != ix || cand_iy != iy)
-                    continue;
-                bool same = true;
-                for (size_t pos : non_cluster_key_positions)
-                {
-                    if (merged_columns[pos]->compareAt(cand, i, *merged_columns[pos], 1) != 0)
-                    {
-                        same = false;
-                        break;
-                    }
-                }
-                if (same)
-                {
-                    found = cand;
-                    break;
-                }
-            }
-
-            if (found != std::numeric_limits<size_t>::max())
-            {
-                mergeAggregateStates(merged_columns, aggregates_mask, found, i);
-                alive[i] = false;
-            }
-            else
-            {
-                candidates.push_back(i);
-            }
-        }
-
-        size_t result_rows = 0;
-        for (bool a : alive)
-            if (a)
-                ++result_rows;
-
-        MutableColumns result_columns(num_columns);
-        for (size_t i = 0; i < num_columns; ++i)
-            result_columns[i] = merged_columns[i]->cloneEmpty();
-        for (size_t i = 0; i < total_rows; ++i)
-            if (alive[i])
-                for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
-                    result_columns[col_idx]->insertFrom(*merged_columns[col_idx], i);
-
-        Chunk result(std::move(result_columns), result_rows);
-        finalizeChunk(result, aggregates_mask);
-        return result;
-    }
 
     const Float64 d = cluster_distance;
     const Float64 d_sq = d * d;
@@ -831,8 +746,22 @@ Chunk ClusterMergingTransform::generate2D()
     {
         Float64 xv = x_vals[i];
         Float64 yv = y_vals[i];
-        Int64 cx = safeFloorToInt64(xv / a);
-        Int64 cy = safeFloorToInt64(yv / a);
+        Int64 cx;
+        Int64 cy;
+        if (d == 0)
+        {
+            /// Exact-match path: bit-cast canonical-zero `Float64` → `Int64`,
+            /// so numerically equal values (incl. `-0.0` / `+0.0` already
+            /// canonicalized by `readClusterValues`) share the same cell.
+            static_assert(sizeof(Float64) == sizeof(Int64));
+            std::memcpy(&cx, &xv, sizeof(Int64));
+            std::memcpy(&cy, &yv, sizeof(Int64));
+        }
+        else
+        {
+            cx = safeFloorToInt64(xv / a);
+            cy = safeFloorToInt64(yv / a);
+        }
 
         UInt64 h = computeCellHash(merged_columns, non_cluster_key_positions, i, cx, cy);
 
@@ -869,7 +798,10 @@ Chunk ClusterMergingTransform::generate2D()
 
     DisjointSetUnion dsu(cells.size());
 
-    for (size_t ci = 0; ci < cells.size(); ++ci)
+    /// Cross-cell adjacency merging is only meaningful when `d > 0`. For
+    /// `d == 0` cells are already keyed by exact `(x, y)` bit patterns, so
+    /// Phase A is the complete answer.
+    for (size_t ci = 0; d > 0 && ci < cells.size(); ++ci)
     {
         const auto & A = cells[ci];
         size_t leader_A = A.leader_row_index;
