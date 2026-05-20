@@ -1,4 +1,7 @@
 #include <Planner/Planner.h>
+
+#include <tuple>
+
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Core/Names.h>
@@ -1808,8 +1811,8 @@ PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
     auto min_minor = static_cast<UInt64>(DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD);
 
     bool need_to_disable_two_level_aggregation = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
-        client_info.connection_client_version_major < min_major &&
-        client_info.connection_client_version_minor < min_minor;
+        std::forward_as_tuple(client_info.connection_client_version_major, client_info.connection_client_version_minor)
+            < std::forward_as_tuple(min_major, min_minor);
 
     if (need_to_disable_two_level_aggregation)
     {
