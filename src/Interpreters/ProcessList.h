@@ -260,6 +260,10 @@ public:
 
     bool isKilled() const { return is_killed; }
 
+    /// Returns the reason `cancelQuery` was called with, or `UNDEFINED` if the query has not been cancelled.
+    /// Always returns `UNDEFINED` when `isKilled` is false, so consult `isKilled` first.
+    CancelReason getCancelReason() const;
+
     /// Throws QUERY_WAS_CANCELLED or TIMEOUT_EXCEEDED if the query has been killed
     void throwIfKilled();
 
