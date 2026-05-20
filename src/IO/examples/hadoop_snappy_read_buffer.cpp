@@ -27,7 +27,7 @@ std::string uncompress(size_t buf_size)
     return output;
 }
 
-int main()
+int mainEntryExampleHadoopSnappyReadBuffer(int, char **)
 {
     auto output = uncompress(1024 * 1024);
     for (size_t i = 1; i < 1024; ++i)

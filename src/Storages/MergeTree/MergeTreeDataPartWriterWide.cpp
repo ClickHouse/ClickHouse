@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Columns/ColumnSparse.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionFactory.h>
@@ -9,12 +10,14 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/FailPoint.h>
 #include <IO/NullWriteBuffer.h>
 
 namespace DB
@@ -24,6 +27,12 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_FILE_NAME;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char wide_part_writer_fail_in_add_streams[];
 }
 
 namespace
@@ -93,7 +102,6 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const VirtualsDescriptionPtr & virtual_columns_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
@@ -103,7 +111,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     : MergeTreeDataPartWriterOnDisk(
             data_part_name_, logger_name_, serializations_,
             data_part_storage_, index_granularity_info_, storage_settings_,
-            columns_list_, metadata_snapshot_, virtual_columns_,
+            columns_list_, metadata_snapshot_,
             indices_to_recalc_, marks_file_extension_,
             default_codec_, settings_, std::move(index_granularity_),
             written_offset_substreams_)
@@ -185,6 +193,8 @@ void MergeTreeDataPartWriterWide::addStreams(
                 max_compress_block_size = value->safeGet<UInt64>();
         if (!max_compress_block_size)
             max_compress_block_size = settings.max_compress_block_size;
+        /// Clamp to prevent absurd memory allocations from fuzzed or misconfigured column settings.
+        max_compress_block_size = std::min<UInt64>(max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
 
         WriteSettings query_write_settings = settings.query_write_settings;
         query_write_settings.use_adaptive_write_buffer =
@@ -192,7 +202,12 @@ void MergeTreeDataPartWriterWide::addStreams(
             || (settings.use_adaptive_write_buffer_for_dynamic_subcolumns && ISerialization::isDynamicSubcolumn(substream_path, substream_path.size()));
         query_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;
 
-        column_streams[stream_name] = std::make_unique<MergeTreeWriterStream>(
+        fiu_do_on(FailPoints::wide_part_writer_fail_in_add_streams,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in Wide part writer addStreams");
+        });
+
+        column_streams.emplace(stream_name, std::make_unique<MergeTreeWriterStream>(
             stream_name,
             data_part_storage,
             stream_name,
@@ -203,7 +218,7 @@ void MergeTreeDataPartWriterWide::addStreams(
             max_compress_block_size,
             marks_compression_codec,
             settings.marks_compress_block_size,
-            query_write_settings);
+            query_write_settings));
 
         if (columns_to_load_marks.contains(name_and_type.name))
             cached_marks.emplace(stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
@@ -398,7 +413,7 @@ void MergeTreeDataPartWriterWide::writeSingleMark(const NameAndTypePair & name_a
 
 void MergeTreeDataPartWriterWide::flushMarkToFile(const StreamNameAndMark & stream_with_mark, size_t rows_in_mark)
 {
-    auto & stream = *column_streams[stream_with_mark.stream_name];
+    auto & stream = *column_streams.at(stream_with_mark.stream_name);
     WriteBuffer & marks_out = stream.compress_marks ? stream.marks_compressed_hashing : stream.marks_hashing;
 
     writeBinaryLittleEndian(stream_with_mark.mark.offset_in_compressed_file, marks_out);
@@ -438,7 +453,7 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(const Nam
         if (is_offsets && offset_substreams.contains(stream_name))
             return;
 
-        auto & stream = *column_streams[stream_name];
+        auto & stream = *column_streams.at(stream_name);
 
         /// There could already be enough data to compress into the new block.
         if (stream.compressed_hashing.offset() >= min_compress_block_size)
@@ -640,7 +655,15 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
         if (settings.can_use_adaptive_granularity)
             readBinaryLittleEndian(index_granularity_rows, *mrk_in);
         else
-            index_granularity_rows = index_granularity_info.fixed_index_granularity;
+            /// Non-adaptive mark files do not store per-mark row counts. The writer uses the
+            /// in-memory `index_granularity` to determine how many rows belong to each mark,
+            /// and `MergeTreeIndexGranularityConstant` allows the last data mark to have fewer
+            /// rows than `fixed_index_granularity` (e.g. after `fixFromRowsCount` adjusts it
+            /// during part loading). Read back the per-mark row count from the in-memory
+            /// granularity rather than blindly assuming `fixed_index_granularity`, otherwise
+            /// the comparison below would falsely fail for parts whose last mark is incomplete
+            /// (issue #98585).
+            index_granularity_rows = index_granularity->getMarkRows(mark_num);
 
         if (must_be_last)
         {
@@ -792,10 +815,15 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums &
 void MergeTreeDataPartWriterWide::finishDataSerialization(bool sync)
 {
     for (auto & stream : column_streams)
-    {
         stream.second->finalize();
-        if (sync)
-            stream.second->sync();
+
+    if (sync)
+    {
+        std::vector<const MergeTreeWriterStream *> streams_to_sync;
+        streams_to_sync.reserve(column_streams.size());
+        for (const auto & stream : column_streams)
+            streams_to_sync.push_back(stream.second.get());
+        parallelSyncFiles(streams_to_sync);
     }
 
     column_streams.clear();
@@ -843,8 +871,9 @@ void MergeTreeDataPartWriterWide::finish(bool sync)
 
 void MergeTreeDataPartWriterWide::cancel() noexcept
 {
-     for (auto & stream : column_streams)
-        stream.second->cancel();
+    for (auto & stream : column_streams)
+        if (stream.second)
+            stream.second->cancel();
 
     column_streams.clear();
     serialization_states.clear();

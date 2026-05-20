@@ -26,7 +26,7 @@ namespace
   * notIn(x, set) - and NOT IN.
   */
 
-class FunctionIn : public IFunction
+class FunctionIn final : public IFunction
 {
 public:
     FunctionIn(String name_, bool negative_, bool null_is_skipped_, bool ignore_set_)
@@ -125,12 +125,7 @@ public:
 
         auto set = future_set->get();
         if (!set)
-        {
-            if (dry_run)
-                return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
-
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Not-ready Set is passed as the second argument for function '{}'", getName());
-        }
 
         auto set_types = set->getDataTypes();
 

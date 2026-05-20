@@ -904,6 +904,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
 
     result->setAlias(expression->tryGetAlias());
     result->setOriginalAST(expression);
+    result->setParenthesized(expression->isParenthesized());
 
     return result;
 }

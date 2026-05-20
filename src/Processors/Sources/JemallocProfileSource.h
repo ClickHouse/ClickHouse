@@ -25,7 +25,7 @@ namespace DB
 ///
 /// The Symbolized and Collapsed formats support a symbolize_with_inline flag: when true, inline
 /// frames are resolved; when false they are skipped.
-class JemallocProfileSource : public ISource
+class JemallocProfileSource final : public ISource
 {
 public:
     JemallocProfileSource(
@@ -95,6 +95,12 @@ private:
 void symbolizeJemallocHeapProfile(
     const std::string & input_filename,
     const std::string & output_filename,
+    JemallocProfileFormat format = JemallocProfileFormat::Symbolized,
+    bool symbolize_with_inline = true);
+
+/// Like symbolizeJemallocHeapProfile but returns the result as a string.
+std::string symbolizeJemallocHeapProfileToString(
+    const std::string & input_filename,
     JemallocProfileFormat format = JemallocProfileFormat::Symbolized,
     bool symbolize_with_inline = true);
 
