@@ -693,13 +693,13 @@ Chunk ClusterMergingTransform::generate2D()
             non_cluster_key_positions.push_back(i);
     }
 
-    /// Edge case: `distance <= 0` — only exact-match `(x, y)` per non-cluster
+    /// Edge case: `distance == 0` — only exact-match `(x, y)` per non-cluster
     /// key should collapse, no spatial merging. We cannot simply pass rows
     /// through: upstream `Aggregator` hashes `Float64` by raw bits, so values
     /// like `-0.0` and `+0.0` arrive here as separate rows yet must merge
-    /// under `abs(a - b) <= 0`. Dedup by canonical-zero `(x, y)` bit pattern
+    /// under `abs(a - b) == 0`. Dedup by canonical-zero `(x, y)` bit pattern
     /// and non-cluster keys, then emit one row per group.
-    if (cluster_distance <= 0)
+    if (cluster_distance == 0)
     {
         std::vector<Float64> x_vals_eq;
         std::vector<Float64> y_vals_eq;
