@@ -151,9 +151,6 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
         }
 
         size_t num_key_columns = sort_description.size();
-        LOG_DEBUG(getLogger("QueryPlanOptimizations"),
-            "GROUP BY ... ORDER BY ... LIMIT optimization applied (top_k_keys={}, order_by_keys={}, group_by_keys={})",
-            limit, num_key_columns, params.keys.size());
         aggregating_step->applyLimitPushdown(limit, std::move(directions), std::move(nulls_directions), std::move(collators), num_key_columns);
         return 0;
     }
@@ -184,9 +181,6 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
         std::vector<int> nulls_directions(num_key_columns, 1);
         std::vector<const Collator *> collators(num_key_columns, nullptr);
 
-        LOG_DEBUG(getLogger("QueryPlanOptimizations"),
-            "GROUP BY ... LIMIT optimization applied (top_k_keys={}, group_by_keys={})",
-            limit, num_key_columns);
         aggregating_step->applyLimitPushdown(limit, std::move(directions), std::move(nulls_directions), std::move(collators), num_key_columns);
         return 0;
     }
