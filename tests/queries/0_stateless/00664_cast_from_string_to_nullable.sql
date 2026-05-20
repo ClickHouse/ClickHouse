@@ -1,4 +1,5 @@
 SET session_timezone = 'Asia/Dubai';
+SET date_time_input_format = 'basic', cast_string_to_date_time_mode = 'basic';
 
 SELECT CAST(arrayJoin(['', 'abc', '123', '123a', '-123']) AS Nullable(UInt8));
 SELECT CAST(arrayJoin(['', '2018', '2018-01-02', '2018-1-2', '2018-01-2', '2018-1-02', '2018-ab-cd', '2018-01-02a']) AS Nullable(Date));

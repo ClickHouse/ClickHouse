@@ -46,6 +46,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 
 #include <fmt/format.h>
 

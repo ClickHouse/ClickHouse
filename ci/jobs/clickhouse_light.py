@@ -94,7 +94,7 @@ class TestResult:
             info=info,
         )
         if "xfail" in self.tags:
-            r.set_label("xfail")
+            r.set_label(Result.Label.XFAIL)
         return r
 
 
