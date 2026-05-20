@@ -42,7 +42,7 @@ void GroupByModifierTransform::mergeConsumed()
     if (use_nulls)
     {
         for (auto key : keys)
-            columns[key] = makeNullableSafe(columns[key]);
+            columns[key] = makeNullableOrLowCardinalityNullableSafe(columns[key]);
     }
     current_chunk = Chunk{ columns, rows };
 
