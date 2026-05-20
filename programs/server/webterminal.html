@@ -77,7 +77,8 @@
     // because URLs end up in browser history, referrer headers, server access logs, and proxy logs.
     // The password is collected interactively or, when embedded in an iframe, sent in via postMessage.
     var params = new URLSearchParams(window.location.search);
-    var currentUser = params.get('user') || 'default';
+    /// Empty user means "let the server pick its configured default user", which is not necessarily named "default".
+    var currentUser = params.get('user') || '';
     var currentPassword = '';
     var userFromURL = params.has('user');
     var inIframe = (window.parent !== window);
@@ -85,6 +86,26 @@
     // First connection attempt uses the URL-supplied user (or `default`) with empty password.
     // On failure we fall back to the interactive prompt or postMessage-supplied credentials.
     var initialAutoAuth = true;
+
+    // Trusted parent origin learned from the first valid postMessage we receive.
+    // We need this because postMessage's targetOrigin must equal the parent's actual origin,
+    // and cross-origin restrictions prevent reading window.parent.location.
+    var trustedParentOrigin = null;
+
+    function isTrustedParentOrigin(origin) {
+        if (origin === window.location.origin) return true;
+        try {
+            var u = new URL(origin);
+            if (u.protocol !== 'https:') return false;
+            var h = u.hostname;
+            return h === 'clickhouse.com'
+                || h === 'clickhouse.cloud'
+                || h.endsWith('.clickhouse.com')
+                || h.endsWith('.clickhouse.cloud');
+        } catch (e) {
+            return false;
+        }
+    }
 
     function getWebSocketURL() {
         var loc = window.location;
@@ -134,7 +155,9 @@
         if (window.parent !== window) {
             term.attachCustomKeyEventHandler(function(e) {
                 if (e.type === 'keydown' && e.key === 'Escape') {
-                    window.parent.postMessage({type: 'webterminal-escape'}, window.location.origin);
+                    if (trustedParentOrigin) {
+                        window.parent.postMessage({type: 'webterminal-escape'}, trustedParentOrigin);
+                    }
                     return false;
                 }
                 return true;
@@ -195,7 +218,7 @@
                 inputBuffer = '';
 
                 if (state === 'prompt_user') {
-                    currentUser = value || 'default';
+                    currentUser = value;
                     promptPassword();
                 } else if (state === 'prompt_password') {
                     currentPassword = value;
@@ -277,12 +300,14 @@
 
         ws.onopen = function() {
             opened = true;
-            // Send credentials as the first message (avoids leaking password in URL)
-            ws.send(JSON.stringify({
-                type: 'auth',
-                user: currentUser,
-                password: currentPassword
-            }));
+            // Send credentials as the first message (avoids leaking password in URL).
+            // The "user" field is omitted when empty so the server falls back to
+            // its default user (which is not necessarily named "default").
+            const authMessage = { type: 'auth', password: currentPassword };
+            if (currentUser) {
+                authMessage.user = currentUser;
+            }
+            ws.send(JSON.stringify(authMessage));
             state = 'active';
             // Erase the "Connecting..." message so PTY output starts on a clean line
             term.write('\r\x1b[2K');
@@ -315,7 +340,9 @@
                 // Normal disconnect after session was active
                 if (window.parent !== window) {
                     // Inside an iframe - notify parent to deactivate terminal
-                    window.parent.postMessage({type: 'webterminal-closed'}, window.location.origin);
+                    if (trustedParentOrigin) {
+                        window.parent.postMessage({type: 'webterminal-closed'}, trustedParentOrigin);
+                    }
                 } else {
                     window.location.href = 'https://github.com/ClickHouse/ClickHouse';
                 }
@@ -327,17 +354,29 @@
         };
     }
 
-    // Listen for messages from the parent (credentials, refit requests)
+    // Listen for messages from the parent (credentials, refit requests).
+    // Accepted origins: same-origin, *.clickhouse.com, *.clickhouse.cloud (https only).
+    // A 'webterminal-hello' handshake lets the parent register its origin so the iframe
+    // can post back even when the parent is cross-origin.
     window.addEventListener('message', function(e) {
-        if (e.origin !== window.location.origin) return;
+        // Only accept messages from the embedding parent window. Without this, any window
+        // from an allowed origin that obtains a reference to us (e.g. via window.open)
+        // could drive the credentials/refit handlers.
+        if (e.source !== window.parent) return;
+        if (!isTrustedParentOrigin(e.origin)) return;
         if (!e.data) return;
 
-        if (e.data.type === 'webterminal-credentials' && waitingForCredentials) {
+        // Remember the parent origin so outbound posts (escape/closed) can reach it.
+        trustedParentOrigin = e.origin;
+
+        if (e.data.type === 'webterminal-hello') {
+            return;
+        } else if (e.data.type === 'webterminal-credentials' && waitingForCredentials) {
             waitingForCredentials = false;
             // Parent-supplied credentials are explicit; subsequent failures should prompt
             // interactively rather than wait for another (one-shot) parent message.
             initialAutoAuth = false;
-            currentUser = e.data.user || 'default';
+            currentUser = e.data.user || '';
             currentPassword = e.data.password || '';
             userFromURL = true;
             attemptConnect();
