@@ -178,6 +178,7 @@ public:
         std::optional<size_t> read_hint_,
         bool remote_fs_prefetch_,
         size_t prefetch_buffer_size_,
+        size_t remote_read_min_bytes_for_seek_,
         ThrottlerPtr remote_throttler_,
         BlobStorageLogWriterPtr blob_storage_log_)
         : ReadBufferFromFileBase(buf_size, nullptr, 0, file_size_)
@@ -187,6 +188,7 @@ public:
         , read_hint(read_hint_)
         , remote_fs_prefetch(remote_fs_prefetch_)
         , prefetch_buffer_size(prefetch_buffer_size_)
+        , remote_read_min_bytes_for_seek(remote_read_min_bytes_for_seek_)
         , remote_throttler(std::move(remote_throttler_))
         , blob_storage_log(std::move(blob_storage_log_))
     {
@@ -221,6 +223,27 @@ public:
         if (file_size && static_cast<size_t>(new_position) > *file_size)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "Native GCS read buffer seek offset {} is past object size {}", new_position, *file_size);
+
+        if (!working_buffer.empty() && read_offset >= working_buffer.size())
+        {
+            const size_t current_buffer_start = read_offset - working_buffer.size();
+            if (static_cast<size_t>(new_position) >= current_buffer_start && static_cast<size_t>(new_position) < read_offset)
+            {
+                pos = working_buffer.end() - (read_offset - static_cast<size_t>(new_position));
+                return getPosition();
+            }
+        }
+
+        const off_t current_position = getPosition();
+        if (sequential_stream && new_position > current_position)
+        {
+            const size_t diff = static_cast<size_t>(new_position - current_position);
+            if (diff < remote_read_min_bytes_for_seek)
+            {
+                ignore(diff);
+                return new_position;
+            }
+        }
 
         read_offset = static_cast<size_t>(new_position);
         resetSequentialStream();
@@ -374,7 +397,7 @@ private:
 
     size_t sequentialWindowSizeForKnownFile() const
     {
-        size_t limit = std::max(internal_buffer.size(), internal_buffer.size() * 16);
+        size_t limit = std::max(internal_buffer.size(), internal_buffer.size() * 8);
         limit = std::max(limit, prefetch_buffer_size);
         if (read_hint)
             limit = std::max(limit, *read_hint);
@@ -635,6 +658,7 @@ private:
     std::optional<size_t> read_until_position;
     bool remote_fs_prefetch;
     size_t prefetch_buffer_size;
+    size_t remote_read_min_bytes_for_seek;
     ThrottlerPtr remote_throttler;
     BlobStorageLogWriterPtr blob_storage_log;
     std::optional<SequentialStream> sequential_stream;
@@ -1084,6 +1108,7 @@ GCSObjectStorage::readObject(const StoredObject & object, const ReadSettings & r
         read_hint,
         read_settings.remote_fs_prefetch,
         read_settings.prefetch_buffer_size,
+        read_settings.remote_read_min_bytes_for_seek,
         read_settings.remote_throttler,
         std::move(blob_storage_log));
 #else
