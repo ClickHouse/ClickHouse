@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
@@ -106,6 +107,88 @@ UInt64 computeBucketHash(
 
 /// Compile-time switch: true = bucket optimization, false = old sort-based algorithm.
 static constexpr bool USE_BUCKET_OPTIMIZATION = true;
+
+/// Read cluster-key values into a Float64 vector. For wide 64-bit integer column
+/// types (`UInt64`, `Int64`) `getFloat64` would silently lose precision past 2^53
+/// (e.g. `2^53` and `2^53 + 1` collapse to the same `Float64`), which can split
+/// pairs that should merge. Translate by the column's minimum so the values
+/// always fit Float64's 53-bit integer-exact range. Translation preserves all
+/// pairwise differences, so it does not affect the clustering result.
+///
+/// Throws if even after translation the range exceeds 2^53 — the user should
+/// pick a narrower key type or normalize their data.
+///
+/// For other numeric column types the existing `getFloat64` path is exact
+/// (narrow integers fit Float64 trivially; Float32/Float64 already chose Float
+/// precision).
+void readClusterValues(
+    const IColumn & col,
+    const DataTypePtr & type,
+    size_t total_rows,
+    std::vector<Float64> & out)
+{
+    out.resize(total_rows);
+
+    if (total_rows == 0)
+        return;
+
+    WhichDataType which(type);
+
+    auto throw_range = [&](UInt64 range)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "GROUP BY ... WITH CLUSTER: 64-bit integer cluster-key value range ({}) "
+            "exceeds Float64 exact-integer limit (2^53). Use a narrower key type or "
+            "pre-normalize the values.",
+            range);
+    };
+
+    constexpr UInt64 FLOAT64_EXACT_INT_LIMIT = UInt64{1} << 53;
+
+    if (which.isUInt64())
+    {
+        const auto & data = assert_cast<const ColumnVector<UInt64> &>(col).getData();
+        UInt64 min_val = data[0];
+        UInt64 max_val = data[0];
+        for (size_t i = 1; i < total_rows; ++i)
+        {
+            min_val = std::min(min_val, data[i]);
+            max_val = std::max(max_val, data[i]);
+        }
+        UInt64 range = max_val - min_val;
+        if (range >= FLOAT64_EXACT_INT_LIMIT)
+            throw_range(range);
+        for (size_t i = 0; i < total_rows; ++i)
+            out[i] = static_cast<Float64>(data[i] - min_val);
+        return;
+    }
+
+    if (which.isInt64())
+    {
+        const auto & data = assert_cast<const ColumnVector<Int64> &>(col).getData();
+        Int64 min_val = data[0];
+        Int64 max_val = data[0];
+        for (size_t i = 1; i < total_rows; ++i)
+        {
+            min_val = std::min(min_val, data[i]);
+            max_val = std::max(max_val, data[i]);
+        }
+        /// Compute range as unsigned: two's-complement subtraction yields the
+        /// correct difference modulo 2^64, and `max - min >= 0` fits UInt64 as
+        /// long as the actual range is < 2^64.
+        UInt64 range = static_cast<UInt64>(max_val) - static_cast<UInt64>(min_val);
+        if (range >= FLOAT64_EXACT_INT_LIMIT)
+            throw_range(range);
+        for (size_t i = 0; i < total_rows; ++i)
+            out[i] = static_cast<Float64>(
+                static_cast<UInt64>(data[i]) - static_cast<UInt64>(min_val));
+        return;
+    }
+
+    /// Narrow integer / Float / Date / Decimal — `getFloat64` is precise enough.
+    for (size_t i = 0; i < total_rows; ++i)
+        out[i] = col.getFloat64(i);
+}
 
 }
 
@@ -298,9 +381,14 @@ Chunk ClusterMergingTransform::generate1D()
     /// `InlinedVector<_, 1>` keeps the typical single-candidate case heap-free.
     std::unordered_map<UInt64, absl::InlinedVector<size_t, 1>> bucket_map;
 
+    /// Translate wide integer keys to a Float64-exact range before bucket arithmetic.
+    std::vector<Float64> cluster_vals;
+    readClusterValues(*merged_columns[cluster_key_pos],
+                      header.getByPosition(cluster_key_pos).type, total_rows, cluster_vals);
+
     for (size_t i = 0; i < total_rows; ++i)
     {
-        Float64 cluster_val = merged_columns[cluster_key_pos]->getFloat64(i);
+        Float64 cluster_val = cluster_vals[i];
 
         Int64 bucket_id;
         if (cluster_distance > 0)
@@ -618,10 +706,17 @@ Chunk ClusterMergingTransform::generate2D()
         return std::numeric_limits<size_t>::max();
     };
 
+    /// Translate wide integer x/y keys to a Float64-exact range before bucketing.
+    /// Same precision rationale as the 1D path.
+    std::vector<Float64> x_vals;
+    std::vector<Float64> y_vals;
+    readClusterValues(x_col, header.getByPosition(x_pos).type, total_rows, x_vals);
+    readClusterValues(y_col, header.getByPosition(y_pos).type, total_rows, y_vals);
+
     for (size_t i = 0; i < total_rows; ++i)
     {
-        Float64 xv = x_col.getFloat64(i);
-        Float64 yv = y_col.getFloat64(i);
+        Float64 xv = x_vals[i];
+        Float64 yv = y_vals[i];
         Int64 cx = safeFloorToInt64(xv / a);
         Int64 cy = safeFloorToInt64(yv / a);
 
@@ -689,12 +784,12 @@ Chunk ClusterMergingTransform::generate2D()
             bool connected = false;
             for (size_t ra : A.row_indices)
             {
-                Float64 ax = x_col.getFloat64(ra);
-                Float64 ay = y_col.getFloat64(ra);
+                Float64 ax = x_vals[ra];
+                Float64 ay = y_vals[ra];
                 for (size_t rb : B.row_indices)
                 {
-                    Float64 dxv = ax - x_col.getFloat64(rb);
-                    Float64 dyv = ay - y_col.getFloat64(rb);
+                    Float64 dxv = ax - x_vals[rb];
+                    Float64 dyv = ay - y_vals[rb];
                     if (dxv * dxv + dyv * dyv <= d_sq)
                     {
                         connected = true;
