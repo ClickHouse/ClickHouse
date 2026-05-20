@@ -67,13 +67,18 @@ public:
                 arguments[key_col]->getName(),
                 getName());
 
-        if (isDynamic(arguments[key_col]) || isVariant(arguments[key_col]))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of aggregate function {} because the column of that type can contain values with different "
-                "data types. Consider using typed subcolumns or cast column to a specific data type",
-                arguments[key_col]->getName(),
-                getName());
+        auto check_not_dynamic_or_variant = [&](const IDataType & type)
+        {
+            if (isDynamic(type) || isVariant(type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
+                    "different data types. Consider using typed subcolumns or cast column to a specific data type",
+                    arguments[key_col]->getName(),
+                    getName());
+        };
+        check_not_dynamic_or_variant(*arguments[key_col]);
+        arguments[key_col]->forEachChild(check_not_dynamic_or_variant);
     }
 
     String getName() const override
