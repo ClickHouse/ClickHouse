@@ -2247,7 +2247,9 @@ Dwarf::Path Dwarf::LineNumberVM::getFullFileName(uint64_t index) const
     // Program Header and relies on the CU's DW_AT_comp_dir.
     // DWARF 5: the current directory is explicitly present.
     const std::string_view base_dir = version_ == 5 ? "" : compilationDirectory_;
-    return Path(base_dir, getIncludeDirectory(fn.directoryIndex), fn.relativeName);
+    const std::string_view include_dir = getIncludeDirectory(fn.directoryIndex);
+    // A directory entry of "." is the current directory and adds no meaningful prefix.
+    return Path(base_dir, include_dir == "." ? std::string_view{} : include_dir, fn.relativeName);
 }
 
 bool Dwarf::LineNumberVM::findAddress(uintptr_t target, Path & file, uint64_t & line, uint64_t & column)

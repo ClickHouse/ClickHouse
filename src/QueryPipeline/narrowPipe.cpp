@@ -35,13 +35,12 @@ void narrowPipe(Pipe & pipe, size_t width)
 
     auto distribution = getDistribution(size, width);
 
-    pipe.transform([&](OutputPortRawPtrs ports)
+    pipe.transform([&](const OutputPortRawPtrs & ports)
     {
         for (size_t i = 0; i < size; ++i)
             partitions[distribution[i]].emplace_back(ports[i]);
 
         Processors concats;
-        concats.reserve(width);
 
         for (size_t i = 0; i < width; ++i)
         {
