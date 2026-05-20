@@ -1,4 +1,7 @@
 #include <Common/OOMCanaryExitCodes.h>
+
+#if defined(OS_LINUX)
+
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -106,3 +109,12 @@ int mainEntryClickHouseOomCanary(int argc, char ** argv)
 
     runCanary(size_bytes, parent_pid);
 }
+
+#else
+
+int mainEntryClickHouseOomCanary(int /*argc*/, char ** /*argv*/)
+{
+    return DB::OOMCanaryExitCodes::PERMANENT;
+}
+
+#endif
