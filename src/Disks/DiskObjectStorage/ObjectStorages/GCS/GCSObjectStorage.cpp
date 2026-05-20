@@ -31,6 +31,7 @@
 
 #if USE_GOOGLE_CLOUD
 #    include <absl/strings/cord.h>
+#    include <google/storage/v2/storage.pb.h>
 #endif
 
 namespace ProfileEvents

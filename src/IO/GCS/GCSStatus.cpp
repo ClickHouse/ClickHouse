@@ -2,8 +2,6 @@
 
 #include <Common/Exception.h>
 
-#include <fmt/format.h>
-
 namespace DB::ErrorCodes
 {
 extern const int ACCESS_DENIED;
@@ -91,40 +89,5 @@ void throwIfError(const Status & status, const String & operation)
         errorCodeForStatus(status.code), "GCS gRPC {} failed with {}: {}", operation, statusCodeName(status.code), status.message);
 }
 
-#if USE_GOOGLE_CLOUD
-Status fromGrpcStatus(const grpc::Status & status)
-{
-    if (status.ok())
-        return {};
-
-    String message = status.error_message();
-    if (!status.error_details().empty())
-        message += fmt::format("; details: {}", status.error_details());
-    message += fmt::format("; grpc_status_code: {}", static_cast<int>(status.error_code()));
-
-    switch (status.error_code())
-    {
-        case grpc::StatusCode::NOT_FOUND:
-            return makeStatus(StatusCode::NotFound, std::move(message));
-        case grpc::StatusCode::PERMISSION_DENIED:
-        case grpc::StatusCode::UNAUTHENTICATED:
-            return makeStatus(StatusCode::PermissionDenied, std::move(message));
-        case grpc::StatusCode::DEADLINE_EXCEEDED:
-            return makeStatus(StatusCode::DeadlineExceeded, std::move(message));
-        case grpc::StatusCode::RESOURCE_EXHAUSTED:
-            return makeStatus(StatusCode::ResourceExhausted, std::move(message));
-        case grpc::StatusCode::UNAVAILABLE:
-            return makeStatus(StatusCode::Unavailable, std::move(message));
-        case grpc::StatusCode::INVALID_ARGUMENT:
-        case grpc::StatusCode::FAILED_PRECONDITION:
-        case grpc::StatusCode::OUT_OF_RANGE:
-            return makeStatus(StatusCode::InvalidArgument, std::move(message));
-        case grpc::StatusCode::UNIMPLEMENTED:
-            return makeStatus(StatusCode::Unsupported, std::move(message));
-        default:
-            return makeStatus(StatusCode::Unknown, std::move(message));
-    }
-}
-#endif
 
 }
