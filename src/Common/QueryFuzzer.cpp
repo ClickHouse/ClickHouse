@@ -3093,6 +3093,22 @@ static const std::map<size_t, Strings> swapAggrs
          "analysisOfVariance",
          "intervalLengthSum"}}};
 
+static const std::unordered_set<String> higher_order_array_funcs = {
+    "arraySort",        "arrayReverseSort", "arrayPartialSort",  "arrayPartialReverseSort",
+    "arrayFilter",      "arrayMap",         "arrayCount",        "arrayExists",
+    "arrayAll",         "arrayFirst",       "arrayFirstOrNull",  "arrayLast",
+    "arrayLastOrNull",  "arrayFirstIndex",  "arrayLastIndex",    "arrayFill",
+    "arrayReverseFill", "arraySplit",       "arrayReverseSplit", "arrayFold",
+};
+
+static const std::unordered_set<String> higher_order_map_funcs = {
+    "mapFilter",
+    "mapApply",
+    "mapExists",
+    "mapAll",
+    "mapSort",
+};
+
 static const std::vector<std::unordered_set<String>> & swapFuncs
     = { /// String pattern matching operators
         {"ilike", "like", "match", "notILike", "notLike"},
@@ -3210,15 +3226,25 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "toDecimal256OrNull",
          "toDecimal256OrZero",
          "toDecimal256OrDefault"},
-        /// Integer type casts (bare, OrNull, and OrZero variants)
-        {"toInt8",    "toInt8OrNull",    "toInt8OrZero",    "toInt16",   "toInt16OrNull",   "toInt16OrZero",
-         "toInt32",   "toInt32OrNull",   "toInt32OrZero",   "toInt64",   "toInt64OrNull",   "toInt64OrZero",
-         "toInt128",  "toInt128OrNull",  "toInt128OrZero",  "toInt256",  "toInt256OrNull",  "toInt256OrZero",
-         "toUInt8",   "toUInt8OrNull",   "toUInt8OrZero",   "toUInt16",  "toUInt16OrNull",  "toUInt16OrZero",
-         "toUInt32",  "toUInt32OrNull",  "toUInt32OrZero",  "toUInt64",  "toUInt64OrNull",  "toUInt64OrZero",
-         "toUInt128", "toUInt128OrNull", "toUInt128OrZero", "toUInt256", "toUInt256OrNull", "toUInt256OrZero"},
-        /// Floating-point type casts (bare, OrNull, and OrZero variants)
-        {"toBFloat16", "toFloat32", "toFloat32OrNull", "toFloat32OrZero", "toFloat64", "toFloat64OrNull", "toFloat64OrZero"},
+        /// Integer type casts (bare, OrNull, OrZero, and OrDefault variants)
+        {"toInt8",          "toInt8OrNull",       "toInt8OrZero",   "toInt8OrDefault",   "toInt16",         "toInt16OrNull",
+         "toInt16OrZero",   "toInt16OrDefault",   "toInt32",        "toInt32OrNull",     "toInt32OrZero",   "toInt32OrDefault",
+         "toInt64",         "toInt64OrNull",      "toInt64OrZero",  "toInt64OrDefault",  "toInt128",        "toInt128OrNull",
+         "toInt128OrZero",  "toInt128OrDefault",  "toInt256",       "toInt256OrNull",    "toInt256OrZero",  "toInt256OrDefault",
+         "toUInt8",         "toUInt8OrNull",      "toUInt8OrZero",  "toUInt8OrDefault",  "toUInt16",        "toUInt16OrNull",
+         "toUInt16OrZero",  "toUInt16OrDefault",  "toUInt32",       "toUInt32OrNull",    "toUInt32OrZero",  "toUInt32OrDefault",
+         "toUInt64",        "toUInt64OrNull",     "toUInt64OrZero", "toUInt64OrDefault", "toUInt128",       "toUInt128OrNull",
+         "toUInt128OrZero", "toUInt128OrDefault", "toUInt256",      "toUInt256OrNull",   "toUInt256OrZero", "toUInt256OrDefault"},
+        /// Floating-point type casts (bare, OrNull, OrZero, and OrDefault variants)
+        {"toBFloat16",
+         "toFloat32",
+         "toFloat32OrNull",
+         "toFloat32OrZero",
+         "toFloat32OrDefault",
+         "toFloat64",
+         "toFloat64OrNull",
+         "toFloat64OrZero",
+         "toFloat64OrDefault"},
         /// Date/datetime type casts
         {"toDate",
          "toDate32",
@@ -3229,18 +3255,22 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "toTime64",
          "toDateOrNull",
          "toDateOrZero",
+         "toDateOrDefault",
          "toDate32OrNull",
          "toDate32OrZero",
+         "toDate32OrDefault",
          "toDateTimeOrNull",
          "toDateTimeOrZero",
+         "toDateTimeOrDefault",
+         "toDateTime64OrNull",
+         "toDateTime64OrZero",
+         "toDateTime64OrDefault",
          "toTimeOrNull",
          "toTimeOrZero",
-         "toDateOrDefault",
-         "toDate32OrDefault",
-         "toDateTimeOrDefault",
-         "toTimeOrDefault"},
+         "toTimeOrDefault",
+         "toTime64OrDefault"},
         /// Rounding functions (number → number)
-        {"ceil", "floor", "round", "roundBankers", "roundDown", "trunc"},
+        {"ceil", "floor", "round", "roundBankers", "roundDown", "trunc", "roundAge", "roundDuration", "roundToExp2"},
         /// Bitwise binary operators
         {"bitAnd", "bitOr", "bitXor"},
         /// Bit shift operators
@@ -3299,16 +3329,17 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Array scalar reductions (array → scalar)
         {"arrayMin", "arrayMax", "arraySum", "arrayProduct", "arrayAvg", "arrayUniq"},
         /// Array transform functions (array → array, no lambda)
-        {"arrayReverse",           "arrayShuffle",    "arrayDistinct", "arrayCompact",   "arrayFlatten",       "arrayConcat",
-         "arrayIntersect",         "arrayPopFront",   "arrayPopBack",  "arrayPushFront", "arrayPushBack",      "arrayRotateLeft",
-         "arrayRotateRight",       "arraySlice",      "arrayZip",      "arrayEnumerate", "arrayEnumerateUniq", "arrayCumSum",
-         "arrayCumSumNonNegative", "arrayDifference", "arrayTranspose"},
+        {"arrayReverse",           "arrayShuffle",    "arrayDistinct",  "arrayCompact",      "arrayFlatten",       "arrayConcat",
+         "arrayIntersect",         "arrayPopFront",   "arrayPopBack",   "arrayPushFront",    "arrayPushBack",      "arrayRotateLeft",
+         "arrayRotateRight",       "arraySlice",      "arrayZip",       "arrayEnumerate",    "arrayEnumerateUniq", "arrayCumSum",
+         "arrayCumSumNonNegative", "arrayDifference", "arrayTranspose", "arrayJaccardIndex", "arrayRandomSample",  "arrayShingles",
+         "arrayShiftLeft",         "arrayShiftRight"},
         /// URL hierarchy generators (url → Array(String))
         {"URLHierarchy", "URLPathHierarchy"},
         /// Trig functions, logarithms, exponentials and roots (number → Float64)
-        {"sin",   "sinh",    "cos",     "cosh",  "tan",   "tanh",   "asin",     "asinh",   "acos",   "acosh",  "atan",
-         "atanh", "log",     "log2",    "log1p", "log10", "lgamma", "intExp10", "intExp2", "ln",     "exp",    "exp2",
-         "exp10", "degrees", "radians", "sqrt",  "cbrt",  "erf",    "erfc",     "power",   "tgamma", "sigmoid"},
+        {"sin",   "sinh",    "cos",     "cosh",  "tan",   "tanh",   "asin",     "asinh",   "acos",   "acosh",   "atan",
+         "atanh", "log",     "log2",    "log1p", "log10", "lgamma", "intExp10", "intExp2", "ln",     "exp",     "exp2",
+         "exp10", "degrees", "radians", "sqrt",  "cbrt",  "erf",    "erfc",     "power",   "tgamma", "sigmoid", "atan2"},
         /// Non-cryptographic hash functions (→ UInt32/UInt64)
         {"cityHash64",
          "CRC32",
@@ -3325,7 +3356,8 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "sipHash64",
          "wyHash64",
          "xxHash32",
-         "xxHash64"},
+         "xxHash64",
+         "xxh3"},
         /// Non-cryptographic 128-bit hash functions (→ FixedString(16))
         {"sipHash128", "murmurHash3_128"},
         /// Cryptographic hashes (string → FixedString)
@@ -3362,10 +3394,8 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"mapAdd", "mapSubtract"},
         /// Map sorting (map → map)
         {"mapSort", "mapReverseSort"},
-        /// Higher-order map transforms (lambda, map → map)
-        {"mapFilter", "mapApply"},
-        /// Higher-order map predicates (lambda, map → UInt8)
-        {"mapExists", "mapAll"},
+        /// Higher-order map functions (lambda, map → map or UInt8)
+        higher_order_map_funcs,
         /// Binary encoding (bytes → encoded String)
         {"hex", "bin", "base64Encode", "base64URLEncode"},
         /// Binary decoding (encoded String → bytes)
@@ -3427,8 +3457,8 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Bitmap ↔ Array conversion (single-arg)
         {"bitmapBuild", "bitmapToArray"},
         /// IP address type casts (String → IPv4/IPv6)
-        {"toIPv4", "toIPv4OrNull", "toIPv4OrZero"},
-        {"toIPv6", "toIPv6OrNull", "toIPv6OrZero"},
+        {"toIPv4", "toIPv4OrNull", "toIPv4OrZero", "toIPv4OrDefault"},
+        {"toIPv6", "toIPv6OrNull", "toIPv6OrZero", "toIPv6OrDefault"},
         /// IPv4 numeric ↔ string conversions
         {"IPv4NumToString", "IPv4NumToStringClassC"},
         /// IPv6 numeric ↔ string conversions
@@ -3454,20 +3484,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Conditional branching (if: 3 args; multiIf: 2n+1 args; caseWithExpression: subject + 2n+1 args — errors on mismatch are fine)
         {"if", "multiIf", "caseWithExpression"},
         /// Array higher-order functions ([lambda,] array → array or scalar)
-        {"arraySort",
-         "arrayReverseSort",
-         "arrayFilter",
-         "arrayMap",
-         "arrayCount",
-         "arrayExists",
-         "arrayAll",
-         "arrayAny",
-         "arrayFirst",
-         "arrayLast",
-         "arrayFirstIndex",
-         "arrayLastIndex",
-         "arrayFill",
-         "arrayReverseFill"},
+        higher_order_array_funcs,
         /// Window ranking functions (no arguments, window clause required)
         {"rank", "dense_rank", "row_number", "percent_rank", "cume_dist"},
         /// Window lag/lead functions (expr[, offset[, default]])
@@ -3493,7 +3510,9 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Text classification (arity mismatch is intentional: naiveBayesClassifier takes (model, text), the rest take (text))
         {"naiveBayesClassifier", "detectCharset", "detectLanguage", "detectLanguageUnknown", "detectLanguageMixed", "detectTonality"},
         /// Word-level NLP (language/extension + word)
-        {"stem", "lemmatize", "synonyms"}};
+        {"stem", "lemmatize", "synonyms"},
+        /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
+        {"greatCircleDistance", "geoDistance", "greatCircleAngle"}};
 
 void QueryFuzzer::fuzz(ASTPtr & ast)
 {
@@ -3771,6 +3790,14 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             {
                 const auto & group = swapFuncs[fuzz_rand() % swapFuncs.size()];
                 fn->arguments->children[0] = make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, group));
+            }
+            else if (
+                (higher_order_array_funcs.contains(fn->name) || higher_order_map_funcs.contains(fn->name))
+                && !(first_arg && first_arg->name == "lambda") && !fn->arguments->children[0]->as<ASTIdentifier>())
+            {
+                const auto & group = swapFuncs[fuzz_rand() % swapFuncs.size()];
+                fn->arguments->children.insert(
+                    fn->arguments->children.begin(), make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, group)));
             }
         }
 
