@@ -102,8 +102,27 @@ void MergeTreeBitmapStore::installBitmap(
     DeleteBitmapFileOps::writeBitmapToStorage(storage, csn, bitmap, part.name);
     ProfileEvents::increment(ProfileEvents::UniqueKeyBitmapUpdates);
 
+    /// If `dropPart` raced between `snapshotCsns` and here, the entry is
+    /// gone. A plain `push_back` would leave the in-memory list holding
+    /// only the new csn while older bitmap files remain on disk —
+    /// future `readBitmap` calls for those older snapshots would miss
+    /// them. Re-enumerate to recover disk truth in that case.
     std::unique_lock lock(csns_mutex);
-    csns_per_part[part_id].push_back(csn);
+    auto it = csns_per_part.find(part_id);
+    if (it != csns_per_part.end())
+    {
+        it->second.push_back(csn);
+    }
+    else
+    {
+        auto files = DeleteBitmapFileOps::enumerateFiles(storage);
+        std::vector<BitmapVersion> csns;
+        csns.reserve(files.size());
+        for (const auto & f : files)
+            csns.push_back(f.version);
+        std::sort(csns.begin(), csns.end());
+        csns_per_part.emplace(part_id, std::move(csns));
+    }
     /// No cache invalidation: bitmaps are immutable by version; readers
     /// at `snapshot_version < csn` may still need the prior version.
 }

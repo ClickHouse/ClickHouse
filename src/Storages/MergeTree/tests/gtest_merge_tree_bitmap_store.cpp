@@ -56,7 +56,7 @@ namespace
 
         std::filesystem::path partFile(const std::string & name) const { return base_path / part_dir / name; }
 
-        void writeBitmap(UInt64 csn, UInt64 row)
+        void writeBitmap(UInt64 csn, UInt64 row) const
         {
             DeleteBitmap bm;
             bm.add(row);
@@ -146,7 +146,7 @@ TEST(MergeTreeBitmapStoreTest, GcObsoleteRemovesVbWhenVnextLeqOldest)
     MergeTreeBitmapStore store{/*cache=*/nullptr};
     /// (3,5) and (5,7) qualify; (7,10) keeps 7 because V_next=10 > 7.
     /// 10 is the newest committed → never V_b.
-    EXPECT_EQ(store.gcObsoleteBitmaps(*fx.storage, "p", /*committed=*/10, /*oldest=*/7), 2u);
+    EXPECT_EQ(store.gcObsoleteBitmaps(*fx.storage, "p", /*committed_csn=*/10, /*oldest_snapshot_csn=*/7), 2u);
 
     auto survivors = DeleteBitmapFileOps::enumerateFiles(*fx.storage);
     ASSERT_EQ(survivors.size(), 2u);
@@ -168,7 +168,7 @@ TEST(MergeTreeBitmapStoreTest, GcObsoleteRespectsCommittedFilter)
     MergeTreeBitmapStore store{/*cache=*/nullptr};
     EXPECT_EQ(store.gcObsoleteBitmaps(
         *fx.storage, "p",
-        /*committed=*/5, /*oldest=*/std::numeric_limits<UInt64>::max()), 1u);
+        /*committed_csn=*/5, /*oldest_snapshot_csn=*/std::numeric_limits<UInt64>::max()), 1u);
 
     auto survivors = DeleteBitmapFileOps::enumerateFiles(*fx.storage);
     ASSERT_EQ(survivors.size(), 2u);
