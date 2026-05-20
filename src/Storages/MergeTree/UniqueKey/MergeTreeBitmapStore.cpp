@@ -85,16 +85,18 @@ void MergeTreeBitmapStore::installBitmap(
     (void)snapshotCsns(storage, part_id);
 
     /// Enforce strict monotonicity. The caller's per-partition UK mutex
-    /// guarantees no concurrent installs on this part, so the
-    /// shared-lock snapshot below is stable for the rest of this call.
+    /// guarantees no concurrent installs on this part. `find()` (not
+    /// `operator[]`) avoids inserting a default-constructed entry under
+    /// a shared lock when `dropPart` raced and erased the part_id
+    /// between the populate above and this check.
     {
         std::shared_lock lock(csns_mutex);
-        const auto & csns = csns_per_part[part_id];
-        if (!csns.empty() && csn <= csns.back())
+        auto it = csns_per_part.find(part_id);
+        if (it != csns_per_part.end() && !it->second.empty() && csn <= it->second.back())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Bitmap version {} for part {} must be strictly greater "
                 "than the latest installed version {}",
-                csn, part.name, csns.back());
+                csn, part.name, it->second.back());
     }
 
     DeleteBitmapFileOps::writeBitmapToStorage(storage, csn, bitmap, part.name);
