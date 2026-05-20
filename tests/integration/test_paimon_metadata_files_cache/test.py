@@ -56,20 +56,37 @@ def _run_writer(
     rows_per_commit: int,
     commit_times: int,
 ) -> None:
-    writer_cmd = (
-        f"java -jar {INCREMENTAL_WRITER_JAR} "
-        f'"{PAIMON_WAREHOUSE_URI}" "test" "test_table" "{start_id}" "{rows_per_commit}" "{commit_times}"'
-    )
+    # Pass arguments as a list so docker exec receives them directly without shell parsing.
     run_and_check(
-        [f"docker exec {container_id} bash -c '{writer_cmd}'"],
-        shell=True,
+        [
+            "docker",
+            "exec",
+            container_id,
+            "java",
+            "-jar",
+            INCREMENTAL_WRITER_JAR,
+            PAIMON_WAREHOUSE_URI,
+            "test",
+            "test_table",
+            str(start_id),
+            str(rows_per_commit),
+            str(commit_times),
+        ],
     )
 
 
 def _clean_warehouse(container_id: str):
+    # Use argument-list form (shell=False) so the destructive rm -rf path is
+    # passed verbatim to docker exec without any shell interpolation.
     run_and_check(
-        [f'docker exec {container_id} bash -c "rm -rf {USER_FILES_PATH}/warehouse"'],
-        shell=True,
+        [
+            "docker",
+            "exec",
+            container_id,
+            "rm",
+            "-rf",
+            f"{USER_FILES_PATH}/warehouse",
+        ],
     )
 
 
