@@ -62,6 +62,39 @@ class Targeting:
         else:
             self.job_type = None
 
+    # Keep in sync with TEST_FILE_EXTENSIONS in tests/clickhouse-test.
+    _TEST_FILE_EXTENSIONS = (".sql.j2", ".sql", ".sh", ".py", ".expect")
+
+    @classmethod
+    def _derive_test_name(cls, fpath: str):
+        """Map a changed file under `tests/queries/0_stateless/` to a test name.
+
+        Returns the test base name (without extension) suitable for `clickhouse-test --test`,
+        or `None` if the file does not correspond to a real test (e.g. a data file like
+        `02995_settings_26_4_1.tsv`, which is consumed by `02995_new_settings_history.sh`
+        but has no test of its own).
+        """
+        fname = os.path.basename(fpath)
+
+        # Direct hit: the changed file is itself a test source file.
+        for ext in cls._TEST_FILE_EXTENSIONS:
+            if fname.endswith(ext):
+                return fname[: -len(ext)]
+
+        # Supporting file (`.reference`, `.reference.j2`, `.tsv`, ...). Walk the
+        # extensions one at a time looking for a sibling test source file with
+        # the same base name. This catches reference updates like
+        # `00172_hits_joins.reference.j2` → `00172_hits_joins.sql.j2` while
+        # rejecting orphan data files like `02995_settings_26_4_1.tsv`.
+        test_dir = Path("tests/queries/0_stateless")
+        candidate = fname
+        while "." in candidate:
+            candidate = candidate.rsplit(".", 1)[0]
+            for ext in cls._TEST_FILE_EXTENSIONS:
+                if (test_dir / f"{candidate}{ext}").is_file():
+                    return candidate
+        return None
+
     def get_changed_tests(self):
         # TODO: add support for integration tests
         result = set()
@@ -87,13 +120,19 @@ class Targeting:
                     print(f"File '{fpath}' was removed — skipping")
                     continue
 
-                print(f"Detected changed test file: '{fpath}'")
+                test_base_name = self._derive_test_name(fpath)
+                if test_base_name is None:
+                    # Avoid emitting a regex like `02995_settings_26_4_1.` that
+                    # matches no test — clickhouse-test exits with code 1 when
+                    # "no tests were run", failing the flaky check.
+                    print(
+                        f"File '{fpath}' is not a test source and has no sibling test — skipping"
+                    )
+                    continue
 
-                fname = os.path.basename(fpath)
-                fname_without_ext = os.path.splitext(fname)[0]
-
+                print(f"Detected changed test: '{test_base_name}' (from '{fpath}')")
                 # Add '.' suffix to precisely match this test only
-                result.add(f"{fname_without_ext}.")
+                result.add(f"{test_base_name}.")
 
             elif fpath.startswith("tests/queries/"):
                 # Log any other changed file under tests/queries for future debugging
@@ -187,6 +226,25 @@ class Targeting:
     PASS_WEIGHT_SIBLING       = 0.25  # Pass 2: test covers a sibling file in the same source directory
     PASS_WEIGHT_KEYWORD       = 0.20  # Fallback: test filename contains domain keywords from changed files
 
+    # Shared-registry files: purely declarative files whose changes are virtually always
+    # additive (`extern const Event …`, new setting entries, new error codes).  Every
+    # test emits profile events / reads settings, so coverage for any changed line in
+    # these files returns thousands of tests and floods the candidate pool with noise
+    # (the real signal lives in the other files touched by the same PR).  Skip them
+    # entirely from coverage, sibling, indirect, and keyword-fallback passes.
+    SHARED_REGISTRY_FILES = frozenset({
+        "src/Common/ProfileEvents.cpp",
+        "src/Common/ProfileEvents.h",
+        "src/Common/CurrentMetrics.cpp",
+        "src/Common/CurrentMetrics.h",
+        "src/Common/ErrorCodes.cpp",
+        "src/Common/ErrorCodes.h",
+        "src/Common/SettingsChanges.cpp",
+        "src/Core/Settings.cpp",
+        "src/Core/SettingsChangesHistory.cpp",
+        "src/Core/SettingsChangesHistory.h",
+    })
+
     def get_tests_by_changed_lines(self, changed_lines: list,
                                    hunk_ranges: dict | None = None) -> dict:
         """
@@ -222,12 +280,21 @@ class Targeting:
             (f, ln)
             for f, ln in changed_lines
             if any(f.startswith(p) for p in COVERAGE_TRACKED_PREFIXES)
+            and f not in self.SHARED_REGISTRY_FILES
         ]
         skipped = len(changed_lines) - len(coverage_lines)
         if skipped:
             print(
-                f"[find_tests] skipping {skipped} lines in non-tracked files "
-                f"(test scripts, docs, CI, contrib)"
+                f"[find_tests] skipping {skipped} lines in non-tracked or shared-registry "
+                f"files (test scripts, docs, CI, contrib, ProfileEvents/Settings registries)"
+            )
+        skipped_registry = sorted(
+            {f for f, _ in changed_lines if f in self.SHARED_REGISTRY_FILES}
+        )
+        if skipped_registry:
+            print(
+                f"[find_tests] skipping {len(skipped_registry)} shared-registry file(s): "
+                f"{skipped_registry}"
             )
 
         # Return the original (full) key-set in the result dict so that
@@ -1532,7 +1599,7 @@ class Targeting:
             info += f" - {test}\n"
         return tests, Result(
             name="tests that were changed or added",
-            status=Result.StatusExtended.OK,
+            status=Result.Status.OK,
             info=info,
         )
 
@@ -1551,7 +1618,7 @@ class Targeting:
             info += f" - {test}\n"
         return tests, Result(
             name="tests that failed in previous runs",
-            status=Result.StatusExtended.OK,
+            status=Result.Status.OK,
             info=info,
         )
 
@@ -1692,6 +1759,7 @@ class Targeting:
             f for f, ln in changed_lines
             if any(f.startswith(p) for p in COVERAGE_TRACKED_PREFIXES)
             and (f.endswith(".cpp") or f.endswith(".h"))
+            and f not in self.SHARED_REGISTRY_FILES
             and not any(pairs for (ff, _), pairs in line_to_tests.items() if ff == f)
         ]
         # Deduplicate file list.
@@ -1728,6 +1796,7 @@ class Targeting:
             if any(f.startswith(p) for p in COVERAGE_TRACKED_PREFIXES)
             and (f.endswith(".cpp") or f.endswith(".h"))
             and f not in cpp_with_zero_coverage
+            and f not in self.SHARED_REGISTRY_FILES
             and any(pairs for (ff, _), pairs in line_to_tests.items() if ff == f)
         ))
         # Always run the supplementary keyword pass: keyword tests get PASS_WEIGHT_KEYWORD
@@ -1912,7 +1981,7 @@ class Targeting:
             info += f"Bottom test: {bottom} (score={width_score[bottom]:.6f})\n"
 
         return ranked, Result(
-            name="tests found by coverage", status=Result.StatusExtended.OK, info=info
+            name="tests found by coverage", status=Result.Status.OK, info=info
         )
 
     def get_all_relevant_tests_with_info(self):
@@ -1954,7 +2023,7 @@ class Targeting:
                 results.append(
                     Result(
                         name="tests found by coverage",
-                        status=Result.StatusExtended.OK,
+                        status=Result.Status.OK,
                         info=f"Skipped: {e}",
                     )
                 )
@@ -1962,7 +2031,7 @@ class Targeting:
 
         return ranked, Result(
             name="Fetch relevant tests",
-            status=Result.Status.SUCCESS,
+            status=Result.Status.OK,
             info=f"Found {len(ranked)} relevant tests",
             results=results,
         )

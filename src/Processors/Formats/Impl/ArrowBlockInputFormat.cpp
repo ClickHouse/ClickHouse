@@ -166,7 +166,7 @@ static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer &
     }
 
     auto options = arrow::ipc::IpcReadOptions::Defaults();
-    options.memory_pool = arrow::default_memory_pool();
+    options.memory_pool = ArrowMemoryPool::instance();
     auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(std::make_unique<ArrowInputStreamFromReadBuffer>(in), options);
     if (!stream_reader_status.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
@@ -174,14 +174,17 @@ static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer &
     return *stream_reader_status;
 }
 
-static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(ReadBuffer & in, const FormatSettings & format_settings, std::atomic<int> & is_stopped)
+static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(
+    ReadBuffer & in,
+    const FormatSettings & format_settings,
+    std::atomic<int> & is_stopped)
 {
     auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Arrow", ARROW_MAGIC_BYTES);
     if (is_stopped)
         return nullptr;
 
     auto options = arrow::ipc::IpcReadOptions::Defaults();
-    options.memory_pool = arrow::default_memory_pool();
+    options.memory_pool = ArrowMemoryPool::instance();
     auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(arrow_file, options);
     if (!file_reader_status.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,

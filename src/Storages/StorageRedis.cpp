@@ -8,6 +8,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ISource.h>
@@ -43,7 +44,7 @@ namespace ErrorCodes
     extern const int INTERNAL_REDIS_ERROR;
 }
 
-class RedisDataSource : public ISource
+class RedisDataSource final : public ISource
 {
 public:
     RedisDataSource(
@@ -152,7 +153,7 @@ private:
 };
 
 
-class RedisSink : public SinkToStorage
+class RedisSink final : public SinkToStorage
 {
 public:
     RedisSink(StorageRedis & storage_, const StorageMetadataPtr & metadata_snapshot_);
