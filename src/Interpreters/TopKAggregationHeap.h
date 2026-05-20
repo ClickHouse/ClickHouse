@@ -290,10 +290,11 @@ private:
 
         heap_indices.clear();
         heap_indices.reserve(compaction_threshold + 1);
-        /// Composite keys never use the typed numeric fast path; reset the
-        /// pointer defensively in case the heap is re-initialized after a
+        /// Composite keys never use the typed numeric fast paths; reset the
+        /// pointers defensively in case the heap is re-initialized after a
         /// previous single-column setup.
         should_skip_numeric_fn = nullptr;
+        numeric_cmp_fn = nullptr;
     }
 
     /// Compare a row in `source_column` against a row in `heap_column` (single-column case).
@@ -348,12 +349,19 @@ private:
     /// front, so we return true when `a` should be below `b` in `ORDER BY` order.
     /// The struct stores only a back-pointer; it is constructed transiently at
     /// each `std::*_heap` call and never persisted as a member of the heap.
+    ///
+    /// When a typed numeric fast path is installed at init time (single-column,
+    /// non-collated, plain numeric), `numeric_cmp_fn` is dispatched directly,
+    /// avoiding the virtual `IColumn::compareAt` call on every comparison.
     struct HeapComparator
     {
         const TopKAggregationHeap * owner;
 
         bool operator()(size_t a, size_t b) const
         {
+            if (owner->numeric_cmp_fn)
+                return owner->numeric_cmp_fn(*owner, a, b);
+
             if (owner->is_composite)
                 return owner->compareHeapRowsComposite(a, b) < 0;
 
@@ -368,6 +376,13 @@ private:
     using ShouldSkipNumericFn = bool (*)(const TopKAggregationHeap &, const void *, size_t);
     ShouldSkipNumericFn should_skip_numeric_fn = nullptr;
 
+    /// Type-erased function pointer for the numeric heap-comparator fast path.
+    /// Resolved alongside `should_skip_numeric_fn` for the same set of types.
+    /// Returns true when row `a` is worse than row `b` in `ORDER BY` order —
+    /// matching `HeapComparator::operator()` semantics.
+    using NumericCmpFn = bool (*)(const TopKAggregationHeap &, size_t, size_t);
+    NumericCmpFn numeric_cmp_fn = nullptr;
+
     /// Typed implementation of the numeric skip comparison.
     /// `ActualKeyType` is the real column element type (e.g., `Int32` for `RegionID`).
     /// The source data pointer is reinterpreted from the hash key type (always unsigned)
@@ -381,33 +396,51 @@ private:
         return self.directions[0] * CompareHelper<ActualKeyType>::compare(src[source_row], heap_data[boundary_row], self.nulls_directions[0]) > 0;
     }
 
-    /// Resolve the typed numeric skip function pointer based on the actual column type.
+    /// Typed implementation of the heap comparator for single-column numeric keys.
+    /// Reads the heap column's raw data directly, skipping the virtual `compareAt`.
+    template <typename ActualKeyType>
+    static bool heapCompareNumericImpl(const TopKAggregationHeap & self, size_t a, size_t b)
+    {
+        const auto & data = assert_cast<const ColumnVector<ActualKeyType> &>(*self.heap_column).getData();
+        return self.directions[0] * CompareHelper<ActualKeyType>::compare(data[a], data[b], self.nulls_directions[0]) < 0;
+    }
+
+    /// Install both numeric fast paths for the given column element type.
+    template <typename ActualKeyType>
+    void resolveNumericFastPath()
+    {
+        should_skip_numeric_fn = &shouldSkipNumericImpl<ActualKeyType>;
+        numeric_cmp_fn = &heapCompareNumericImpl<ActualKeyType>;
+    }
+
+    /// Resolve the typed numeric fast paths for `shouldSkipNumeric` and the heap comparator.
     /// Called once at init time from the single-column `init`; `collators` has
     /// exactly one entry at that point.
     void initNumericSkipFn()
     {
         should_skip_numeric_fn = nullptr;
+        numeric_cmp_fn = nullptr;
         if (collators[0])
             return;
 
         switch (heap_column->getDataType())
         {
-            case TypeIndex::UInt8:     should_skip_numeric_fn = &shouldSkipNumericImpl<UInt8>; break;
-            case TypeIndex::UInt16:    should_skip_numeric_fn = &shouldSkipNumericImpl<UInt16>; break;
-            case TypeIndex::UInt32:    should_skip_numeric_fn = &shouldSkipNumericImpl<UInt32>; break;
-            case TypeIndex::UInt64:    should_skip_numeric_fn = &shouldSkipNumericImpl<UInt64>; break;
-            case TypeIndex::Int8:      should_skip_numeric_fn = &shouldSkipNumericImpl<Int8>; break;
-            case TypeIndex::Int16:     should_skip_numeric_fn = &shouldSkipNumericImpl<Int16>; break;
-            case TypeIndex::Int32:     should_skip_numeric_fn = &shouldSkipNumericImpl<Int32>; break;
-            case TypeIndex::Int64:     should_skip_numeric_fn = &shouldSkipNumericImpl<Int64>; break;
-            case TypeIndex::Float32:   should_skip_numeric_fn = &shouldSkipNumericImpl<Float32>; break;
-            case TypeIndex::Float64:   should_skip_numeric_fn = &shouldSkipNumericImpl<Float64>; break;
-            case TypeIndex::Date:      should_skip_numeric_fn = &shouldSkipNumericImpl<UInt16>; break;
-            case TypeIndex::Date32:    should_skip_numeric_fn = &shouldSkipNumericImpl<Int32>; break;
-            case TypeIndex::DateTime:  should_skip_numeric_fn = &shouldSkipNumericImpl<UInt32>; break;
-            case TypeIndex::Enum8:     should_skip_numeric_fn = &shouldSkipNumericImpl<Int8>; break;
-            case TypeIndex::Enum16:    should_skip_numeric_fn = &shouldSkipNumericImpl<Int16>; break;
-            case TypeIndex::IPv4:      should_skip_numeric_fn = &shouldSkipNumericImpl<UInt32>; break;
+            case TypeIndex::UInt8:     resolveNumericFastPath<UInt8>(); break;
+            case TypeIndex::UInt16:    resolveNumericFastPath<UInt16>(); break;
+            case TypeIndex::UInt32:    resolveNumericFastPath<UInt32>(); break;
+            case TypeIndex::UInt64:    resolveNumericFastPath<UInt64>(); break;
+            case TypeIndex::Int8:      resolveNumericFastPath<Int8>(); break;
+            case TypeIndex::Int16:     resolveNumericFastPath<Int16>(); break;
+            case TypeIndex::Int32:     resolveNumericFastPath<Int32>(); break;
+            case TypeIndex::Int64:     resolveNumericFastPath<Int64>(); break;
+            case TypeIndex::Float32:   resolveNumericFastPath<Float32>(); break;
+            case TypeIndex::Float64:   resolveNumericFastPath<Float64>(); break;
+            case TypeIndex::Date:      resolveNumericFastPath<UInt16>(); break;
+            case TypeIndex::Date32:    resolveNumericFastPath<Int32>(); break;
+            case TypeIndex::DateTime:  resolveNumericFastPath<UInt32>(); break;
+            case TypeIndex::Enum8:     resolveNumericFastPath<Int8>(); break;
+            case TypeIndex::Enum16:    resolveNumericFastPath<Int16>(); break;
+            case TypeIndex::IPv4:      resolveNumericFastPath<UInt32>(); break;
             default: break;
         }
     }
