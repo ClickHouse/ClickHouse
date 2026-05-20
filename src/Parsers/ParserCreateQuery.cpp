@@ -1581,7 +1581,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     sql_security_p.parse(pos, sql_security, expected);
 
-    if (!replace_view && s_materialized.ignore(pos, expected))
+    if (s_materialized.ignore(pos, expected))
     {
         is_materialized_view = true;
     }
