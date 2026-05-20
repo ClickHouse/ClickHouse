@@ -82,7 +82,11 @@ struct TopKAggregationHeap
         capacity = cap;
         compaction_threshold = capacity + capacity / 2;  /// 1.5x capacity
         heap_column = source_column.cloneEmpty();
+        /// The heap fills up to `compaction_threshold + 1` rows before each
+        /// trim, so reserve once to avoid reallocation during fill.
+        heap_column->reserve(compaction_threshold + 1);
         heap_indices.clear();
+        heap_indices.reserve(compaction_threshold + 1);
         initNumericSkipFn();
     }
 
@@ -119,8 +123,12 @@ struct TopKAggregationHeap
         for (const auto * col : source_columns)
             sub_columns.emplace_back(col->cloneEmpty());
         heap_column = ColumnTuple::create(std::move(sub_columns));
+        /// The heap fills up to `compaction_threshold + 1` rows before each
+        /// trim; `ColumnTuple::reserve` forwards to each sub-column.
+        heap_column->reserve(compaction_threshold + 1);
 
         heap_indices.clear();
+        heap_indices.reserve(compaction_threshold + 1);
         /// Composite keys never use the typed numeric fast path; reset the
         /// pointer defensively in case the heap is re-initialized after a
         /// previous single-column setup.
@@ -273,12 +281,14 @@ struct TopKAggregationHeap
         /// For `ColumnTuple` this filters all sub-columns and updates `column_length`.
         heap_column->filter(filter);
 
-        /// Remap all indices and rebuild the heap structure on top of the
-        /// renumbered container.  The comparator's identity has not changed, but
-        /// the indices have, so we need a fresh `make_heap`.
+        /// Remap all indices in lockstep with the filter: the row formerly at
+        /// `idx` now lives at `old_to_new[idx]`, so each heap entry resolves to
+        /// the same physical data as before.  Because the comparator reads
+        /// column data via the index, every parent/child pair compares the same
+        /// values as before the compaction — the heap invariant is preserved by
+        /// construction and no `std::make_heap` is needed.
         for (auto & idx : heap_indices)
             idx = old_to_new[idx];
-        std::make_heap(heap_indices.begin(), heap_indices.end(), HeapComparator{this});
     }
 
 private:
