@@ -41,6 +41,7 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTGroupByElement.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -622,6 +623,15 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     if (query_node.isGroupByWithTotals() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube())
         return {};
 
+    // `WITH CLUSTER` connects different key values across shard boundaries,
+    // so shard-local execution is not semantics-preserving even when the
+    // GROUP BY key matches the sharding key. Force a global merge by
+    // disabling the shard-local optimization here; the fallback
+    // `WithMergeableState` ships mergeable aggregate states to the
+    // initiator, which then runs a single global `ClusterMergingStep`.
+    if (query_node.hasGroupByWithCluster())
+        return {};
+
     // Window functions are not supported.
     if (hasWindowFunctionNodes(query_info.query_tree))
         return {};
@@ -699,6 +709,21 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     // - TODO: WITH ROLLUP can be implemented (I guess)
     if (select.group_by_with_totals || select.group_by_with_rollup || select.group_by_with_cube)
         return {};
+
+    // `WITH CLUSTER` requires a single global pass across all shards
+    // (clusters connect different key values across shard boundaries);
+    // disable the shard-local optimization symmetrically with the
+    // analyzer path above.
+    if (select.groupBy())
+    {
+        for (const auto & elem : select.groupBy()->children)
+        {
+            const auto * gbe = elem->as<ASTGroupByElement>();
+            if (gbe && gbe->with_cluster)
+                return {};
+        }
+    }
+
     // Window functions are not supported.
     if (query_info.has_window)
         return {};
