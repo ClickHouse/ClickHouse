@@ -79,35 +79,25 @@ void MergeTreeBitmapStore::installBitmap(
     const std::string part_id = part.getDeleteBitmapCacheIdentity();
     auto & storage = const_cast<IDataPartStorage &>(part.getDataPartStorage());
 
-    /// Populate before the monotonicity check so a first-install on a
-    /// never-seen part does not erase pre-existing on-disk versions
-    /// from a prior run.
-    (void)snapshotCsns(storage, part_id);
-
-    /// Enforce strict monotonicity. The caller's per-partition UK mutex
-    /// guarantees no concurrent installs on this part. `find()` (not
-    /// `operator[]`) avoids inserting a default-constructed entry under
-    /// a shared lock when `dropPart` raced and erased the part_id
-    /// between the populate above and this check.
-    {
-        std::shared_lock lock(csns_mutex);
-        auto it = csns_per_part.find(part_id);
-        if (it != csns_per_part.end() && !it->second.empty() && csn <= it->second.back())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Bitmap version {} for part {} must be strictly greater "
-                "than the latest installed version {}",
-                csn, part.name, it->second.back());
-    }
+    /// `snapshotCsns` returns a local copy so the monotonicity check is
+    /// immune to `dropPart` racing between this read and the check. The
+    /// caller's per-partition UK mutex guarantees no concurrent install
+    /// on this part, so disk for `part_id` cannot grow between the
+    /// snapshot and the check.
+    auto pre_install_csns = snapshotCsns(storage, part_id);
+    if (!pre_install_csns.empty() && csn <= pre_install_csns.back())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Bitmap version {} for part {} must be strictly greater "
+            "than the latest installed version {}",
+            csn, part.name, pre_install_csns.back());
 
     DeleteBitmapFileOps::writeBitmapToStorage(storage, csn, bitmap, part.name);
     ProfileEvents::increment(ProfileEvents::UniqueKeyBitmapUpdates);
 
-    /// Refresh the in-memory list from disk under unique_lock. A racing
-    /// `dropPart` can erase the entry, and a racing `readBitmap` can then
-    /// repopulate it via `snapshotCsns` *after* the just-written file is
-    /// visible — so an append-only update would either miss older
-    /// versions (erased entry, no re-enum) or duplicate `csn` (repopulated
-    /// entry already includes our file). Disk is the source of truth.
+    /// Refresh from disk under unique_lock — a racing `dropPart`+reader
+    /// pair can leave `csns_per_part[part_id]` in any of (absent,
+    /// pre-write list, pre-write + csn). Re-enumerate so the published
+    /// list matches disk truth regardless.
     auto files = DeleteBitmapFileOps::enumerateFiles(storage);
     std::vector<BitmapVersion> csns;
     csns.reserve(files.size());
