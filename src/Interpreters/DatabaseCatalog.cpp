@@ -1363,7 +1363,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
                     {
                         skip_disk_cleanup = !value->isNull() && applyVisitor(FieldVisitorConvertToNumber<bool>(), *value);
                     }
-                    catch (...)
+                    catch (...) /// Ok: fail close on any parse error
                     {
                         /// Treat an unparsable `leader_election` value as fail close: we
                         /// cannot prove the table is local, so do not risk a destructive
