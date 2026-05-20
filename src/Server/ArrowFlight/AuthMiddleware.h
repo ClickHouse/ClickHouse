@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_ARROWFLIGHT
+
 #include <Interpreters/Session.h>
 #include <Server/IServer.h>
 
@@ -109,3 +113,5 @@ public:
 };
 
 }
+
+#endif
