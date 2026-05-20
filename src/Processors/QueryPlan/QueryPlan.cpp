@@ -351,7 +351,8 @@ static void explainStep(
     IQueryPlanStep & step,
     IQueryPlanStep::FormatSettings & settings,
     const ExplainPlanOptions & options,
-    size_t max_description_length)
+    size_t max_description_length,
+    const AnalyzeStepsStats * steps_to_stats= nullptr)
 {
 
     settings.out << settings.header_prefix << step.getName();
@@ -467,6 +468,9 @@ static void explainStep(
 
     if (options.distributed)
         step.describeDistributedPlan(settings, options);
+
+    if (steps_to_stats)
+        steps_to_stats->printStepStats(&step, settings.out, prefix);
 }
 
 std::string debugExplainStep(IQueryPlanStep & step)
@@ -554,7 +558,8 @@ void QueryPlan::explainPlan(
     size_t offset,
     size_t max_description_length,
     const std::string & parent_tree_prefix,
-    bool is_last_child_plan) const
+    bool is_last_child_plan,
+    const AnalyzeStepsStats * steps_to_stats) const
 {
     checkInitialized();
 
@@ -609,7 +614,7 @@ void QueryPlan::explainPlan(
             else
                 buildIndentOffset(stack, settings, offset);
 
-            explainStep(*frame.node->step, settings, options, max_description_length);
+            explainStep(*frame.node->step, settings, options, max_description_length, steps_to_stats);
             frame.is_description_printed = true;
         }
 

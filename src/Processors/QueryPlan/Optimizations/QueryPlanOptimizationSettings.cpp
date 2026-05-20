@@ -285,4 +285,56 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
                 max_parallel_replicas = std::min<size_t>(nodes, max_parallel_replicas);
     }
 }
+
+void QueryPlanOptimizationSettings::keepOnlyExplicitlyEnabled(const Settings & from)
+{
+    if (!from[Setting::query_plan_remove_redundant_sorting].changed)                    remove_redundant_sorting = false;
+
+    if (!from[Setting::query_plan_lift_up_array_join].changed)                          lift_up_array_join = false;
+    if (!from[Setting::query_plan_push_down_limit].changed)                             push_down_limit = false;
+    if (!from[Setting::query_plan_split_filter].changed)                                split_filter = false;
+    if (!from[Setting::query_plan_merge_expressions].changed)                           merge_expressions = false;
+    if (!from[Setting::query_plan_merge_filters].changed)                               merge_filters = false;
+    if (!from[Setting::query_plan_filter_push_down].changed)                            filter_push_down = false;
+    if (!from[Setting::query_plan_convert_outer_join_to_inner_join].changed)            convert_outer_join_to_inner_join = false;
+    if (!from[Setting::query_plan_execute_functions_after_sorting].changed)             execute_functions_after_sorting = false;
+    if (!from[Setting::query_plan_reuse_storage_ordering_for_window_functions].changed) reuse_storage_ordering_for_window_functions = false;
+    if (!from[Setting::query_plan_lift_up_union].changed)                               lift_up_union = false;
+    if (!from[Setting::allow_aggregate_partitions_independently].changed)               aggregate_partitions_independently = false;
+    if (!from[Setting::query_plan_remove_redundant_distinct].changed)                   remove_redundant_distinct = false;
+    if (!from[Setting::query_plan_try_use_vector_search].changed)                       try_use_vector_search = false;
+    if (!from[Setting::query_plan_convert_join_to_in].changed)                          convert_join_to_in = false;
+    if (!from[Setting::query_plan_merge_filter_into_join_condition].changed)            merge_filter_into_join_condition = false;
+    if (!from[Setting::query_plan_convert_any_join_to_semi_or_anti_join].changed)       convert_any_join_to_semi_or_anti_join = false;
+    if (!from[Setting::use_skip_indexes_for_top_k].changed
+        && !from[Setting::use_top_k_dynamic_filtering].changed)                         try_use_top_k_optimization = false;
+    if (!from[Setting::query_plan_top_k_through_join].changed)                          top_k_through_join = false;
+
+    if (!from[Setting::use_join_disjunctions_push_down].changed)                        use_join_disjunctions_push_down = false;
+    if (!from[Setting::query_plan_remove_unused_columns].changed)                       remove_unused_columns = false;
+
+    if (!from[Setting::query_plan_optimize_prewhere].changed)                           optimize_prewhere = false;
+    if (!from[Setting::optimize_read_in_order].changed
+        && !from[Setting::query_plan_read_in_order].changed)                            read_in_order = false;
+    if (!from[Setting::optimize_distinct_in_order].changed)                             distinct_in_order = false;
+    if (!from[Setting::optimize_sorting_by_input_stream_properties].changed)            optimize_sorting_by_input_stream_properties = false;
+    if (!from[Setting::optimize_aggregation_in_order].changed
+        && !from[Setting::query_plan_aggregation_in_order].changed)                     aggregation_in_order = false;
+
+    if (!from[Setting::optimize_use_projections].changed)                               optimize_projection = false;
+    if (!from[Setting::optimize_use_implicit_projections].changed)                      optimize_use_implicit_projections = false;
+    if (!from[Setting::force_optimize_projection].changed)                              force_use_projection = false;
+
+    if (!from[Setting::use_query_condition_cache].changed)                              use_query_condition_cache = false;
+    if (!from[Setting::query_plan_direct_read_from_text_index].changed)                 direct_read_from_text_index = false;
+    if (!from[Setting::query_plan_read_in_order_through_join].changed)                  read_in_order_through_join = false;
+    if (!from[Setting::correlated_subqueries_use_in_memory_buffer].changed)             correlated_subqueries_use_in_memory_buffer = false;
+
+    if (!from[Setting::query_plan_optimize_lazy_materialization].changed)               optimize_lazy_materialization = false;
+    if (!from[Setting::query_plan_optimize_lazy_final].changed)                         optimize_lazy_final = false;
+
+    if (!from[Setting::enable_join_runtime_filters].changed)                            enable_join_runtime_filters = false;
+
+    if (!from[Setting::parallel_replicas_filter_pushdown].changed)                      parallel_replicas_filter_pushdown = false;
+}
 }

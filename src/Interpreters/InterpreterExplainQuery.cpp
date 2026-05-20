@@ -28,6 +28,9 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/Sinks/EmptySink.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/JSONBuilder.h>
@@ -37,6 +40,9 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
+
+
+
 
 
 namespace DB
@@ -292,6 +298,44 @@ struct QueryPipelineSettings
             {"graph", graph},
             {"compact", compact},
             {"distributed", query_pipeline_options.distributed},
+    };
+
+    std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
+};
+
+struct QueryAnalyzeSettings
+{
+    /// ANALYZE renders the same plan tree as EXPLAIN PLAN; defaults match the
+    /// recommended baseline for analyze (pretty=1, compact=1, actions=1).
+    ExplainPlanOptions query_plan_options{
+        .actions = true,
+        .indexes = true,
+        .compact = true,
+        .pretty = true,
+    };   
+
+    /// Apply query plan optimizations.
+    /// Turning off turns off ALL optimizations
+    /// You can still turn on particular optimization using query SETTINGS
+    bool optimize = true;
+
+    constexpr static char name[] = "ANALYZE";
+
+    std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
+    {
+        {"header", query_plan_options.header},
+        {"description", query_plan_options.description},
+        {"actions", query_plan_options.actions},
+        {"indexes", query_plan_options.indexes},
+        {"indices", query_plan_options.indexes},
+        {"projections", query_plan_options.projections},
+        {"sorting", query_plan_options.sorting},
+        {"distributed", query_plan_options.distributed},
+        {"input_headers", query_plan_options.input_headers},
+        {"column_structure", query_plan_options.column_structure},
+        {"compact", query_plan_options.compact},
+        {"pretty", query_plan_options.pretty},
+        {"optimize", optimize},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -744,6 +788,61 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             }
 
             break;
+        }
+        case DB::ASTExplainQuery::Analyze:
+        {
+            if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is currently supported for EXPLAIN ANALYZE query");
+
+            auto settings = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings());
+            QueryPlan plan;
+            ContextPtr context;
+
+            if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            {
+                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
+                context = interpreter.getContext();
+                plan = std::move(interpreter).extractQueryPlan();
+            }
+            else
+            {
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, options);
+                interpreter.buildQueryPlan(plan);
+                context = interpreter.getContext();
+            }
+
+            auto optimization_settings = QueryPlanOptimizationSettings(context);
+
+            /// TODO: add the same decision branch into EXPLAIN PLAN
+            if (!settings.optimize)
+                optimization_settings.keepOnlyExplicitlyEnabled(context->getSettingsRef());
+
+            optimization_settings.is_explain = true;
+            optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+            plan.optimize(optimization_settings);
+            auto pipeline_builder = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
+
+            pipeline_builder->setSinks([](const SharedHeader & header, Pipe::StreamType)-> ProcessorPtr
+            {
+                return std::make_shared<EmptySink>(header);
+            });
+
+            auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
+
+            CompletedPipelineExecutor executor(pipeline);
+
+            /// TODO: this function might throw -- wrap into try catch loop
+            executor.execute();
+
+            AnalyzeStepsStats steps_to_stats(pipeline);
+
+            plan.explainPlan(buf, 
+            settings.query_plan_options, 
+            0, 
+            query_context->getSettingsRef()[Setting::query_plan_max_step_description_length],
+            "",
+            0,
+            &steps_to_stats);
         }
     }
     buf.finalize();
