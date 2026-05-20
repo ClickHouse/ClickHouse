@@ -27,6 +27,13 @@ protected:
     void work() override;
 
 private:
+    enum class Stage
+    {
+        ReadFirstInput,
+        ReadSecondInput,
+        ReadRemainingFirstInput,
+    };
+
     Operator current_operator;
 
     std::optional<SetVariants> data;
@@ -37,14 +44,23 @@ private:
 
     Chunk current_input_chunk;
     Chunk current_output_chunk;
+    Chunk first_input_chunk;
 
-    bool finished_second_input = false;
+    Stage stage = Stage::ReadSecondInput;
+    bool has_first_input_chunk = false;
+    bool has_second_input_rows = false;
     bool has_input = false;
 
     bool isAllOperator() const
     {
         return current_operator == Operator::EXCEPT_ALL
             || current_operator == Operator::INTERSECT_ALL;
+    }
+
+    bool isIntersectOperator() const
+    {
+        return current_operator == Operator::INTERSECT_ALL
+            || current_operator == Operator::INTERSECT_DISTINCT;
     }
 
     static UInt128 hashRow(const ColumnRawPtrs & columns, size_t row);
