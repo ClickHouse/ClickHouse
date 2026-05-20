@@ -26,7 +26,6 @@ SELECT count(), uniqExact(r_id), if(uniqExact(r_id) = 4, 'PASS', 'FAIL')
   ON l.l_key = r.r_key
 SETTINGS max_joined_block_size_rows = 2, join_algorithm = 'hash';
 
-SET query_plan_optimize_join_order_limit = 0;
 SET query_plan_join_swap_table = 0;
 SET join_algorithm = 'hash';
 
