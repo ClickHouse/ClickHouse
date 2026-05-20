@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel
+# Tags: long
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/80648
 #
 # Reproduces a race between `ALTER TABLE ... RENAME COLUMN` and a concurrent

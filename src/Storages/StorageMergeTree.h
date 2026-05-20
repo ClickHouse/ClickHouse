@@ -221,6 +221,28 @@ private:
         const MutationCommands & commands,
         ContextPtr query_context,
         const std::lock_guard<std::mutex> & currently_processing_in_background_mutex_lock);
+
+    /// Result of `prepareMutationEntry`. Holds the block-number reservation
+    /// that must outlive the call to `addPreparedMutationEntry`.
+    struct PreparedMutationEntry
+    {
+        MergeTreeMutationEntry entry;
+        Int64 version;
+        String mutation_id;
+        String additional_info;
+        std::unique_ptr<PlainCommittingBlockHolder> block_holder;
+    };
+
+    /// Allocate a block number, build the mutation entry, and commit it to disk.
+    /// Touches no state guarded by `currently_processing_in_background_mutex`, so
+    /// it is safe to call without that lock. The result must subsequently be
+    /// passed to `addPreparedMutationEntry` under the mutex.
+    PreparedMutationEntry prepareMutationEntry(const MutationCommands & commands, ContextPtr query_context);
+
+    /// Register a prepared mutation in `current_mutations_by_version` and
+    /// increment `mutation_counters`. Caller must hold
+    /// `currently_processing_in_background_mutex`.
+    void addPreparedMutationEntry(PreparedMutationEntry prepared);
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version, bool wait_for_another_mutation);
     void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override;

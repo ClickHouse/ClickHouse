@@ -467,23 +467,12 @@ void StorageMergeTree::alter(
     }
     else
     {
-        /// Validate the resulting CREATE query BEFORE entering the
-        /// `currently_processing_in_background_mutex` (M1) critical section below.
-        /// `validateCreateQuery` (called from `applyMetadataChangesToCreateQuery`)
-        /// runs `validateColumnsDefaultsAndGetSampleBlock` -> `QueryAnalyzer`, which
-        /// acquires `QueryMetadataCache::storage_snapshot_cache_mutex` (M0) via
-        /// `MergeTreeData::getStorageSnapshot`. Query resolution paths take the
-        /// locks in the opposite order — M0 first, then M1 via `getMutationsSnapshot`
-        /// at `StorageMergeTree.cpp:getMutationsSnapshot` — so running validation
-        /// under M1 caused TSan lock-order inversion (STID 4119-5a23) and a real
-        /// cross-thread deadlock seen as `server died` in `03404_dynamic_in_interval_bug`.
-        ///
-        /// Doing the validation upfront (no locks held) catches the same errors
-        /// (e.g. `MULTIPLE_EXPRESSIONS_FOR_ALIAS` from `concat(str, 'b' AS a)` when an
-        /// existing column already binds alias `a` to a different expression — see
-        /// `tests/queries/0_stateless/03224_invalid_alter.sql` and
-        /// `03274_aliases_in_udf.sql`) without touching M0 from inside M1. Mirrors
-        /// the pattern in `StorageReplicatedMergeTree::alter`.
+        /// Validate the new CREATE query before taking the lock below. Validation
+        /// runs through `QueryAnalyzer`, which acquires `storage_snapshot_cache_mutex`.
+        /// Query resolution paths acquire `currently_processing_in_background_mutex`
+        /// while holding that cache mutex (via `getMutationsSnapshot`), so doing the
+        /// validation under the lock below would invert the order and deadlock.
+        /// Mirrors the pattern in `StorageReplicatedMergeTree::alter`.
         {
             auto create_ast = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, local_context);
             applyMetadataChangesToCreateQuery(create_ast, new_metadata, local_context);
@@ -513,21 +502,12 @@ void StorageMergeTree::alter(
             changeSettings(new_metadata.settings_changes, table_lock_holder);
             checkTTLExpressions(new_metadata, old_metadata);
 
-            /// Hold `currently_processing_in_background_mutex` across `setProperties` and the
-            /// mutation registration in `startMutation` (which inserts into
-            /// `current_mutations_by_version`). Background merge selection acquires the same
-            /// mutex; without this fix, a merge could observe the new in-memory metadata
-            /// published by `setProperties` while `current_mutations_by_version` is still
-            /// missing the pending barrier mutation. For an `ALTER RENAME COLUMN d TO d1`,
-            /// such a merge would read the old parts with the new column name (`d1`),
-            /// find no file, and fill `d1` with default values — losing the renamed
-            /// column's data. See issue #80648.
-            ///
-            /// `alterTable` is called with `validate_new_create_query=false` because we
-            /// already validated the new CREATE query above (outside the M1 critical
-            /// section). Re-running that validation here would re-trigger the M0/M1
-            /// lock-order inversion described above. This mirrors the pattern in
-            /// `StorageReplicatedMergeTree::setTableStructure`.
+            /// Hold the lock across `setProperties` and the mutation registration in
+            /// `startMutation` so background merge selection (which uses the same
+            /// mutex) cannot observe new in-memory metadata without seeing the pending
+            /// rename mutation. See #80648. `alterTable` uses
+            /// `validate_new_create_query=false` because validation already ran above;
+            /// re-running it under the lock would re-trigger the inversion.
             std::lock_guard background_lock(currently_processing_in_background_mutex);
 
             /// Reinitialize primary key because primary key column types might have changed.
@@ -680,10 +660,11 @@ MergeMutateSelectedEntry::~MergeMutateSelectedEntry()
     }
 }
 
-Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
+StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
+    const MutationCommands & commands, ContextPtr query_context)
 {
     /// Choose any disk, because when we load mutations we search them at each disk
-    /// where storage can be placed. See loadMutations().
+    /// where storage can be placed. See `loadMutations`.
     auto disk = getStoragePolicy()->getAnyDisk();
     TransactionID current_tid = Tx::NonTransactionalTID;
     String additional_info;
@@ -698,31 +679,37 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
 
     Int64 version = block_holder->block.number;
-    /// File I/O (`writeFile` + `sync` + `moveFile`) intentionally happens outside
-    /// `currently_processing_in_background_mutex`. The mutex only guards in-memory
-    /// state (`current_mutations_by_version` and `mutation_counters`); holding it
-    /// across the file I/O would block merge selection for the full I/O duration.
-    /// For the `alter` path that additionally needs an atomic
-    /// `(setProperties + mutation registration)` transition, see the private
-    /// overload below — that path holds the lock throughout, which is acceptable
-    /// because `alter` is rare.
     entry.commit(version);
     String mutation_id = entry.file_name;
     if (txn)
         txn->addMutation(shared_from_this(), mutation_id);
 
+    return {std::move(entry), version, std::move(mutation_id), std::move(additional_info), std::move(block_holder)};
+}
+
+void StorageMergeTree::addPreparedMutationEntry(PreparedMutationEntry prepared)
+{
+    auto [it, inserted] = current_mutations_by_version.try_emplace(prepared.version, std::move(prepared.entry));
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", prepared.version);
+
+    incrementMutationsCounters(mutation_counters, *it->second.commands);
+
+    LOG_INFO(log, "Added mutation: {}{}", prepared.mutation_id, prepared.additional_info);
+    background_operations_assignee.trigger();
+}
+
+Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
+{
+    /// File I/O (`writeFile` + `sync` + `moveFile`) happens in `prepareMutationEntry`
+    /// outside the mutex; only the in-memory registration is locked. Holding the
+    /// mutex across the file I/O would block merge selection for its full duration.
+    auto prepared = prepareMutationEntry(commands, query_context);
+    Int64 version = prepared.version;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
-
-        auto [it, inserted] = current_mutations_by_version.try_emplace(version, std::move(entry));
-        if (!inserted)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
-
-        incrementMutationsCounters(mutation_counters, *it->second.commands);
+        addPreparedMutationEntry(std::move(prepared));
     }
-
-    LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
-    background_operations_assignee.trigger();
     return version;
 }
 
@@ -731,40 +718,13 @@ Int64 StorageMergeTree::startMutation(
     ContextPtr query_context,
     const std::lock_guard<std::mutex> & /*currently_processing_in_background_mutex_lock*/)
 {
-    /// Same as the public overload, but the caller (`alter`) already holds
-    /// `currently_processing_in_background_mutex` to make the
-    /// `(setProperties + current_mutations_by_version insert)` transition atomic
-    /// against background merge selection. File I/O (`entry.commit`) is therefore
-    /// performed under the caller's lock here; this is acceptable because the
-    /// `alter` path is rare and the atomicity is required for correctness (see
-    /// issue #80648).
-    auto disk = getStoragePolicy()->getAnyDisk();
-    TransactionID current_tid = Tx::NonTransactionalTID;
-    String additional_info;
-    auto txn = query_context->getCurrentTransaction();
-    if (txn)
-    {
-        current_tid = txn->tid;
-        additional_info = fmt::format(" (TID: {}; TIDH: {})", current_tid, current_tid.getHash());
-    }
-
-    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
-    auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
-
-    Int64 version = block_holder->block.number;
-    entry.commit(version);
-    String mutation_id = entry.file_name;
-    if (txn)
-        txn->addMutation(shared_from_this(), mutation_id);
-
-    auto [it, inserted] = current_mutations_by_version.try_emplace(version, std::move(entry));
-    if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
-
-    incrementMutationsCounters(mutation_counters, *it->second.commands);
-
-    LOG_INFO(log, "Added mutation: {}{}", mutation_id, additional_info);
-    background_operations_assignee.trigger();
+    /// Caller (`alter`) already holds `currently_processing_in_background_mutex` so
+    /// that `(setProperties + current_mutations_by_version insert)` is atomic against
+    /// background merge selection. File I/O happens under that lock here; acceptable
+    /// because `alter` is rare and the atomicity is required (see #80648).
+    auto prepared = prepareMutationEntry(commands, query_context);
+    Int64 version = prepared.version;
+    addPreparedMutationEntry(std::move(prepared));
     return version;
 }
 
