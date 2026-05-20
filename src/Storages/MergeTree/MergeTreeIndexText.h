@@ -400,6 +400,9 @@ struct MergeTreeIndexTextGranuleBuilder
 
     /// Extracts tokens from the document and adds them to the granule.
     void addDocument(std::string_view document);
+    // Adds a document to the granule. The document is inserted directly as a single token.
+    void addToken(std::string_view token);
+
     void incrementCurrentRow();
     void setCurrentRow(size_t row) { current_row = row; }
 
@@ -447,7 +450,8 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     UInt64 getNumProcessedTokens() const { return granule_builder.num_processed_tokens; }
 
 private:
-    /// Iterates over a ColumnArray(String) slice and adds each element as a document.
+    /// Iterates over a ColumnArray(String) slice and calls addDocument<tokenize> on each element.
+    template <bool tokenize>
     void addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read);
 
     String index_column_name;

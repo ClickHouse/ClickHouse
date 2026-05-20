@@ -1410,15 +1410,20 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
         document.size(),
         [&](const char * token_start, size_t token_length)
         {
-            bool inserted;
-            TokenToPostingsBuilderMap::LookupResult it;
-            ArenaKeyHolder key_holder{std::string_view(token_start, token_length), *arena};
-            tokens_map.emplace(key_holder, it, inserted);
-            auto & posting_list_builder = it->getMapped();
-            posting_list_builder.add(static_cast<UInt32>(current_row), posting_lists);
-            ++num_processed_tokens;
+            addToken({token_start, token_length});
             return false;
         });
+}
+
+void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token)
+{
+    bool inserted;
+    TokenToPostingsBuilderMap::LookupResult it;
+    ArenaKeyHolder key_holder(token, *arena);
+    tokens_map.emplace(key_holder, it, inserted);
+    PostingListBuilder & posting_list_builder = it->getMapped();
+    posting_list_builder.add(static_cast<UInt32>(current_row), posting_lists);
+    ++num_processed_tokens;
 }
 
 void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
@@ -1512,11 +1517,11 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     {
         ColumnPtr tokenized = tokenizeToArray(*tokenizer, *preprocessed_column, offset, rows_read);
         ColumnPtr postprocessed = postprocessor->processTokensArrayBatch(assert_cast<const ColumnArray *>(tokenized.get()));
-        addDocumentsFromArray(postprocessed, 0, rows_read);
+        addDocumentsFromArray<false>(postprocessed, 0, rows_read);
     }
     else if (isArray(index_column.type))
     {
-        addDocumentsFromArray(preprocessed_column, offset, rows_read);
+        addDocumentsFromArray<true>(preprocessed_column, offset, rows_read);
     }
     else
     {
@@ -1536,6 +1541,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     *pos += rows_read;
 }
 
+template <bool tokenize>
 void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read)
 {
     const ColumnArray * column_array = assert_cast<const ColumnArray *>(column.get());
@@ -1551,7 +1557,10 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
                 continue;
 
             const std::string_view ref = column_data.getDataAt(element_idx);
-            granule_builder.addDocument(ref);
+            if constexpr (tokenize)
+                granule_builder.addDocument(ref);
+            else
+                granule_builder.addToken(ref);
         }
         granule_builder.incrementCurrentRow();
     }

@@ -590,7 +590,7 @@ private:
                 /// If the postprocessed token contains separator characters it would be ill-formed as a
                 /// hasToken* needle (BAD_ARGUMENTS / NULL on non-indexed parts in Exact mode), so keep
                 /// the original needle in that case.
-                auto tokens = postprocessor->processTokens({needles_field.safeGet<String>()});
+                std::vector<String> tokens = postprocessor->processTokens({needles_field.safeGet<String>()});
                 if (tokens.empty())
                     needles_field = String{};
                 else if (std::ranges::any_of(tokens.front(), isTokenSeparator))
@@ -602,7 +602,7 @@ private:
             {
                 const auto & src_array = needles_field.safeGet<Array>();
                 std::vector<String> tokens;
-                for (const auto & element : src_array)
+                for (const Field & element : src_array)
                     if (element.getType() == Field::Types::String)
                         tokens.push_back(element.safeGet<String>());
                 tokens = postprocessor->processTokens(std::move(tokens));
@@ -619,8 +619,8 @@ private:
         new_children[1] = &actions_dag.addColumn(std::move(arg));
 
         /// Recreate a function object because we have modified the arguments.
-        auto new_function_base = FunctionFactory::instance().get(function_name, context);
-        const auto * new_function_node = &actions_dag.addFunction(new_function_base, new_children, "");
+        FunctionOverloadResolverPtr new_function_base = FunctionFactory::instance().get(function_name, context);
+        const ActionsDAG::Node * new_function_node = &actions_dag.addFunction(new_function_base, new_children, "");
 
         if (!new_function_node->result_type->equals(*function_node.result_type))
             new_function_node = &actions_dag.addCast(*new_function_node, function_node.result_type, "", context);
@@ -635,7 +635,7 @@ private:
         std::unordered_map<String, const ActionsDAG::Node *> & virtual_column_to_node,
         const ContextPtr & context)
     {
-        const auto & function_node = *replacement.node;
+        const ActionsDAG::Node & function_node = *replacement.node;
 
         std::vector<SelectedCondition> selected_conditions;
         for (const auto & condition : all_conditions)
