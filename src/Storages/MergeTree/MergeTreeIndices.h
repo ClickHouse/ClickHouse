@@ -354,14 +354,9 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach);
 MergeTreeIndexPtr bloomFilterIndexCreator(const IndexDescription & index);
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
 
-#if USE_USEARCH
+#if USE_USEARCH || USE_SCANN
 MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index);
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach);
-#endif
-
-#if USE_SCANN
-MergeTreeIndexPtr vectorSimilarityScannIndexCreator(const IndexDescription & index);
-void vectorSimilarityScannIndexValidator(const IndexDescription & index, bool attach);
 #endif
 
 MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index);

@@ -65,7 +65,10 @@ public:
 
 private:
     LoggerPtr log;
-    static constexpr UInt8 FILE_FORMAT_VERSION = 2;
+    /// Version 1: stores raw vectors plus all pre-trained ScaNN artifacts
+    /// (serialized_partitioner_proto, ah_codebook, hashed_data, datapoints_by_token)
+    /// so that the index can be restored from disk without retraining.
+    static constexpr UInt8 FILE_FORMAT_VERSION = 1;
 };
 
 using MergeTreeIndexGranuleVectorSimilarityScannPtr = std::shared_ptr<MergeTreeIndexGranuleVectorSimilarityScann>;

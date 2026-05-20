@@ -7577,7 +7577,7 @@ Higher values increase recall at the cost of query latency.
     DECLARE(UInt64, scann_candidate_pool_size, 0, R"(
 The size of the approximate-hashing candidate pool fed into ScaNN's exact reranker when querying a `vector_similarity('scann', ...)` index.
 This is the number of vectors that are scored by the fast asymmetric hashing stage before the slower exact distance reranking.
-Value 0 means automatic: `100 × num_candidates` where `num_candidates` is the number of results requested from the index.
+Value 0 means automatic: `1000 × num_candidates` where `num_candidates` is the number of results requested from the index.
 Higher values increase recall at the cost of query latency.
 )", 0) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(

@@ -5,7 +5,6 @@
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarityScann.h>
 
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Core/Settings.h>
@@ -138,7 +137,7 @@ size_t MergeTreeIndexGranuleVectorSimilarityScann::memoryUsageBytes() const
 
 void MergeTreeIndexGranuleVectorSimilarityScann::serializeBinary(WriteBuffer & ostr) const
 {
-    writeIntBinary(FILE_FORMAT_VERSION, ostr); /// 2
+    writeIntBinary(FILE_FORMAT_VERSION, ostr); /// 1
     writeIntBinary(static_cast<UInt64>(num_vectors), ostr);
     writeIntBinary(static_cast<UInt64>(padded_dim), ostr);
     ostr.write(reinterpret_cast<const char *>(vectors.data()), vectors.size() * sizeof(float));
@@ -277,8 +276,7 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
     /// Auto-tune partitioning parameters based on dataset size.
     const size_t num_leaves = std::max(size_t(1),
         static_cast<size_t>(std::sqrt(static_cast<double>(num_vectors))));
-    /// Search all leaves at query time so no IVF partition is ever skipped.
-    /// This trades speed for recall; recall correctness takes priority here.
+
     const size_t num_leaves_to_search = std::max(size_t(1), static_cast<size_t>(std::sqrt(static_cast<double>(num_leaves))));
     const size_t training_sample_size = std::min(num_vectors, num_leaves * 75);
     const size_t num_blocks = std::max(size_t(1), padded_dim / 2);

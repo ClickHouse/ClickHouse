@@ -1,11 +1,15 @@
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 
-#if USE_USEARCH
+#if USE_USEARCH || USE_SCANN
 
 #if USE_SCANN
 #    include <Storages/MergeTree/MergeTreeIndexVectorSimilarityScann.h>
 #endif
 
+#include <ranges>
+#include <fmt/ranges.h>
+
+#if USE_USEARCH
 #include <usearch/index_plugins.hpp>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
@@ -27,6 +31,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/castColumn.h>
+#endif // USE_USEARCH
 
 #include <cmath>
 #include <ranges>
@@ -34,6 +39,7 @@
 
 #include <fmt/ranges.h>
 
+#if USE_USEARCH
 namespace ProfileEvents
 {
     extern const Event USearchAddCount;
@@ -43,22 +49,27 @@ namespace ProfileEvents
     extern const Event USearchSearchVisitedMembers;
     extern const Event USearchSearchComputedDistances;
 }
+#endif
 
 namespace DB
 {
 
 namespace Setting
 {
-    extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
     extern const SettingsFloat vector_search_index_fetch_multiplier;
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
     extern const SettingsBool vector_search_with_rescoring;
 }
-
+#if USE_USEARCH
+namespace Setting
+{
+    extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
+}
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
 }
+#endif
 
 namespace ErrorCodes
 {
@@ -82,6 +93,7 @@ const std::set<String> methods = {
 #endif
 };
 
+#if USE_USEARCH
 /// Maps from user-facing name to internal name
 const std::unordered_map<String, unum::usearch::metric_kind_t> distanceFunctionToMetricKind = {
     {"L2Distance", unum::usearch::metric_kind_t::l2sq_k},
@@ -97,6 +109,7 @@ const std::unordered_map<String, unum::usearch::scalar_kind_t> quantizationToSca
     {"i8", unum::usearch::scalar_kind_t::i8_k},
     {"b1", unum::usearch::scalar_kind_t::b1x8_k}};
 /// Usearch provides more quantizations but ^^ above ones seem the only ones comprehensively supported across all distance functions.
+#endif // USE_USEARCH
 
 template<typename T>
 concept is_set = std::same_as<T, std::set<typename T::key_type, typename T::key_compare, typename T::allocator_type>>;
@@ -120,6 +133,8 @@ String joinByComma(const T & t)
 }
 
 }
+
+#if USE_USEARCH
 
 USearchIndexWithSerialization::USearchIndexWithSerialization(
     size_t dimensions,
@@ -632,6 +647,8 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(parameters, index_column, metric_kind, context);
 }
 
+#endif // USE_USEARCH
+
 MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
@@ -647,6 +664,7 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
     }
 #endif
 
+#if USE_USEARCH
     UInt64 dimensions = args[2].safeGet<UInt64>();
 
     /// Default parameters:
@@ -668,6 +686,11 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
     }
 
     return std::make_shared<MergeTreeIndexVectorSimilarity>(index, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
+#else
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "vector_similarity index with method '{}' requires USearch to be enabled at build time",
+        args[0].safeGet<String>());
+#endif
 }
 
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */)
@@ -727,6 +750,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
     }
 #endif
 
+#if USE_USEARCH
     /// HNSW-specific validation
     const bool has_three_args = (args.size() == 3);
     const bool has_six_args = (args.size() == 6);
@@ -781,8 +805,13 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
     WhichDataType which(nested_type_index);
     if (!which.isNativeFloat() && !which.isBFloat16())
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity index can only be created on columns of type Array(Float32|Float64|BFloat16)");
-}
-
-}
-
+#else
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "vector_similarity index with method '{}' requires USearch to be enabled at build time",
+        method);
 #endif
+}
+
+}
+
+#endif /// USE_USEARCH || USE_SCANN

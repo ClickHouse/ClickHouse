@@ -143,23 +143,25 @@ set_source_files_properties(
 )
 
 # scale_encoding_helpers.cc calls absl::little_endian::Load32(encoded.end() - sizeof(float))
-# where encoded is absl::string_view.  Load32 expects const void*, but ClickHouse's libc++
-# (ABI version 999 >= 2) unconditionally defines _LIBCPP_ABI_USE_WRAP_ITER_IN_STD_STRING_VIEW
-# in __configuration/abi.h, making string_view::iterator = __wrap_iter<const char*> regardless
-# of the C++ standard version.  __wrap_iter<const char*> does not implicitly convert to const void*.
+# where encoded is absl::string_view.  When ABSL_USES_STD_STRING_VIEW is active (C++17+),
+# absl::string_view is aliased to std::string_view, whose const_iterator is
+# __wrap_iter<const char*> under ClickHouse's libc++ ABI.  __wrap_iter<const char*> has no
+# implicit conversion to const void*, so the call fails to compile.
 #
-# Fix: force-include a header that triggers the abi.h include guard first, then undefines the
-# problematic macro, then includes <string_view> — so string_view is compiled with
-# const_iterator = const char* (plain pointer) in this translation unit only.
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/scann_stringview_fixup.h"
-    "#include <__configuration/abi.h>\n"
-    "#undef _LIBCPP_ABI_USE_WRAP_ITER_IN_STD_STRING_VIEW\n"
-    "#include <string_view>\n"
-)
-set_source_files_properties(
-    "${SCANN_SOURCE_DIR}/scann/utils/scale_encoding_helpers.cc"
-    PROPERTIES COMPILE_OPTIONS "-include;${CMAKE_CURRENT_BINARY_DIR}/scann_stringview_fixup.h"
-)
+# Fix: replace encoded.end() - sizeof(float) with encoded.data() + encoded.size() - sizeof(float),
+# which yields a plain const char* that converts to const void* without issue.
+# The patched copy lives only in the build directory; the submodule source is not modified.
+set(_scale_enc_src "${SCANN_SOURCE_DIR}/scann/utils/scale_encoding_helpers.cc")
+set(_scale_enc_dst "${CMAKE_CURRENT_BINARY_DIR}/scale_encoding_helpers.cc")
+configure_file("${_scale_enc_src}" "${_scale_enc_dst}" COPYONLY)
+file(READ "${_scale_enc_dst}" _scale_enc_content)
+string(REPLACE
+    "Load32(encoded.end() - sizeof(float))"
+    "Load32(encoded.data() + encoded.size() - sizeof(float))"
+    _scale_enc_content "${_scale_enc_content}")
+file(WRITE "${_scale_enc_dst}" "${_scale_enc_content}")
+list(REMOVE_ITEM SCANN_SOURCES "${_scale_enc_src}")
+list(APPEND SCANN_SOURCES "${_scale_enc_dst}")
 
 # many_to_many_sfp8.cc uses Intel AMX tile instructions (Sapphire Rapids+).
 # The build host does not support AMX; exclude this file.

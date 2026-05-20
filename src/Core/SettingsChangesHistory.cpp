@@ -307,6 +307,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
             {"deduplicate_insert_select", "enable_even_for_bad_queries", "enable_even_for_bad_queries", "New setting, replace insert_select_deduplicate"},
+            {"scann_num_leaves_to_search", 0, 0, "New setting. Number of IVF partitions to probe at query time for vector_similarity('scann', ...) index. 0 means use the build-time default (sqrt(num_leaves))."},
+            {"scann_candidate_pool_size", 0, 0, "New setting. AH candidate pool size for vector_similarity('scann', ...) index before exact reranking. 0 means automatic (1000 x num_candidates)."},
 
         });
         addSettingsChanges(settings_changes_history, "25.11",

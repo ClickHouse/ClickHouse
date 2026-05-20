@@ -187,11 +187,10 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("bloom_filter", bloomFilterIndexCreator);
     registerValidator("bloom_filter", bloomFilterIndexValidator);
 
-#if USE_USEARCH
+#if USE_USEARCH || USE_SCANN
     registerCreator("vector_similarity", vectorSimilarityIndexCreator);
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
-
 
     registerCreator("text", textIndexCreator);
     registerValidator("text", textIndexValidator);
