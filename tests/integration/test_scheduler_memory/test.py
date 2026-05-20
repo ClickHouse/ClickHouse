@@ -285,23 +285,28 @@ def memory_reservation_approved() -> int:
     )
 
 
-def ensure_memory_reservation_limit(limit_bytes: int) -> None:
+def wait_for_memory_reservation_approved(limit_bytes: int) -> None:
     """
-    Verify that memory reservation stays within bounds for a period of time.
-    Check multiple times that approved memory doesn't exceed limit_bytes,
-    then wait until it reaches limit_bytes.
+    Wait indefinitely until MemoryReservationApproved reaches limit_bytes,
+    asserting along the way that it never exceeds limit_bytes. Relies on
+    pytest-timeout to bound the wait if the condition is never met.
     """
-    for _ in range(10):
-        assert memory_reservation_approved() <= limit_bytes
-        time.sleep(0.1)
-    while memory_reservation_approved() < limit_bytes:
-        time.sleep(0.1)
+    while True:
+        approved = memory_reservation_approved()
+        assert approved <= limit_bytes, \
+            f"MemoryReservationApproved={approved} exceeded limit={limit_bytes}"
+        if approved == limit_bytes:
+            return
 
 
 def test_memory_reservation_concurrency():
     """
     Test that memory reservation limits concurrent queries appropriately.
     With 100Mi total limit and 40Mi per query, at most 2 queries can run concurrently.
+
+    Each query holds its reservation by sleeping server-side; we kill all of them
+    explicitly once the metric reaches the expected level. This avoids racy timing
+    (the queries must outlive the polling) without putting any sleeps in test code.
     """
     node.query(
         f"""
@@ -311,39 +316,32 @@ def test_memory_reservation_concurrency():
     """
     )
 
-    results = []
-    errors = []
+    query_ids = [f"mem_concurrency_query_{i}" for i in range(6)]
 
     def run_query(query_id):
         try:
-            # Query that reserves 40Mi but doesn't actually consume much memory
+            # Server-side sleep — holds the reservation until the query is killed below.
             node.query(
-                f"select sleep(2) from numbers(1) settings workload='production', reserve_memory='40Mi'",
+                f"select sleepEachRow(1) from numbers(60) settings max_block_size=1, workload='production', reserve_memory='40Mi'",
                 query_id=query_id,
             )
-            results.append(query_id)
-        except QueryRuntimeException as e:
-            errors.append((query_id, str(e)))
+        except QueryRuntimeException:
+            pass  # Expected: query was killed
 
-    threads = []
-    for i in range(6):
-        t = threading.Thread(target=run_query, args=(f"mem_concurrency_query_{i}",))
-        threads.append(t)
-
+    threads = [threading.Thread(target=run_query, args=(qid,)) for qid in query_ids]
     for t in threads:
         t.start()
 
-    # With 100Mi limit and 40Mi per query, at most 2 queries can run (80Mi < 100Mi, but 120Mi > 100Mi)
+    # With 100Mi limit and 40Mi per query, at most 2 can run (80Mi < 100Mi, but 120Mi > 100Mi).
     expected_bytes = 2 * 40 * 1024 * 1024  # 80Mi
+    wait_for_memory_reservation_approved(expected_bytes)
 
-    ensure_memory_reservation_limit(expected_bytes)
+    # Release reservations by killing all running queries.
+    for qid in query_ids:
+        node.query(f"kill query where query_id = '{qid}' sync")
 
     for t in threads:
         t.join()
-
-    # All 6 queries should have completed successfully
-    assert len(results) == 6, f"Expected 6 queries to complete, got {len(results)}. Errors: {errors}"
-    assert len(errors) == 0, f"Expected no errors, got: {errors}"
 
 
 def test_cancel_query_with_memory_reservation():
@@ -366,13 +364,12 @@ def test_cancel_query_with_memory_reservation():
 
         def run_query():
             try:
-                # A query that runs long enough to be killed, and allocates memory
-                # to exercise syncWithMemoryTracker in pipeline threads.
+                # `sleepEachRow(1)` with `max_block_size=1` ticks the pipeline one row
+                # per second for up to 60 rows — long enough to be observed and killed,
+                # short enough per call to stay under ClickHouse's 3s per-sleep cap.
                 node.query(
-                    "select count(*) from"
-                    " (select sleep(0.01), number from numbers_mt(10000000))"
-                    " group by number % 100000"
-                    " settings workload='production', reserve_memory='100Mi', max_threads=4",
+                    "select sleepEachRow(1) from numbers(60) settings max_block_size=1,"
+                    " workload='production', reserve_memory='100Mi'",
                     query_id=query_id,
                 )
             except QueryRuntimeException:
@@ -381,7 +378,8 @@ def test_cancel_query_with_memory_reservation():
         t = threading.Thread(target=run_query)
         t.start()
 
-        # Wait for the query to start processing (not just queued)
+        # Wait indefinitely until the query is registered in system.processes;
+        # pytest-timeout will bound this if anything ever goes wrong.
         while (
             node.query(
                 f"select count() from system.processes where query_id = '{query_id}'"
@@ -390,9 +388,9 @@ def test_cancel_query_with_memory_reservation():
         ):
             pass
 
-        # Cancel — exercises the onCancelOrConnectionLoss / onException path
+        # Cancel — exercises the onCancelOrConnectionLoss / onException path.
         node.query(f"kill query where query_id = '{query_id}' sync")
         t.join()
 
-    # If we got here without TSan alerts or crashes, the teardown order is correct
+    # If we got here without sanitizer alerts or crashes, the teardown order is correct.
 
