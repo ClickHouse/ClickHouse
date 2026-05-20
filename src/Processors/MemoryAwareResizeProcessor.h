@@ -1,6 +1,7 @@
 #pragma once
 
 #include <queue>
+#include <unordered_map>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/InsertMemoryThrottle.h>
@@ -65,6 +66,8 @@ private:
 
     std::vector<InputPortWithStatus> input_ports;
     std::vector<OutputPortWithStatus> output_ports;
+    std::unordered_map<const InputPort *, UInt64> input_port_index;
+    std::unordered_map<const OutputPort *, UInt64> output_port_index;
 
     void updateAllowedOutputs();
 };

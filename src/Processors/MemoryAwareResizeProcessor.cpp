@@ -55,16 +55,23 @@ IProcessor::Status MemoryAwareResizeProcessor::prepare(const UpdatedInputPorts &
         initialized = true;
 
         for (auto & input : inputs)
+        {
+            input_port_index[&input] = input_ports.size();
             input_ports.push_back({.port = &input, .status = InputStatus::NotActive});
+        }
 
         for (auto & output : outputs)
+        {
+            output_port_index[&output] = output_ports.size();
             output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
+        }
     }
 
     updateAllowedOutputs();
 
-    for (const auto & output_number : updated_outputs)
+    for (const auto * output_port : updated_outputs)
     {
+        const auto output_number = output_port_index.at(output_port);
         auto & output = output_ports[output_number];
         if (output.port->isFinished())
         {
@@ -139,8 +146,9 @@ IProcessor::Status MemoryAwareResizeProcessor::prepare(const UpdatedInputPorts &
         return Status::Finished;
     }
 
-    for (const auto & input_number : updated_inputs)
+    for (const auto * input_port : updated_inputs)
     {
+        const auto input_number = input_port_index.at(input_port);
         auto & input = input_ports[input_number];
         if (input.port->isFinished())
         {
