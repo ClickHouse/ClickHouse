@@ -107,14 +107,37 @@ def test_log_to_exceptions(kafka_cluster, max_retries=20):
     )
     instance.query("SYSTEM FLUSH LOGS")
 
-    system_kafka_consumers_content = instance.query(
-        "SELECT exceptions.text FROM system.kafka_consumers ARRAY JOIN exceptions WHERE table LIKE 'foo_exceptions' LIMIT 1"
-    )
-
-    logging.debug(f"system.kafka_consumers content: {system_kafka_consumers_content}")
-    assert system_kafka_consumers_content.startswith(
+    # `librdkafka` emits several log lines when the broker is unreachable
+    # (per-attempt `Connect ... failed: Connection refused` plus a periodic
+    # `N/M brokers are down` summary). Their order inside
+    # `system.kafka_consumers.exceptions` is not guaranteed and depends on
+    # broker-thread timing, so look for the expected log line in any position
+    # and retry until it has been surfaced.
+    expected_prefix = (
         f"[thrd:localhost:{non_existent_broker_port}/bootstrap]: 1/1 brokers are down"
     )
+    matching_count = instance.query_with_retry(
+        f"""
+        SELECT count()
+        FROM system.kafka_consumers
+        ARRAY JOIN exceptions
+        WHERE table = 'foo_exceptions'
+          AND startsWith(exceptions.text, '{expected_prefix}')
+        """,
+        check_callback=lambda res: int(res.strip()) >= 1,
+        retry_count=max_retries,
+        sleep_time=1,
+    )
+    if int(matching_count.strip()) < 1:
+        # Surface the full exceptions array on failure to make debugging easier.
+        all_exceptions = instance.query(
+            "SELECT exceptions.text FROM system.kafka_consumers ARRAY JOIN exceptions WHERE table = 'foo_exceptions'"
+        )
+        logging.debug(f"system.kafka_consumers content: {all_exceptions}")
+        raise AssertionError(
+            f"Expected at least one entry in system.kafka_consumers.exceptions starting with "
+            f"{expected_prefix!r}, but none was found. Captured exceptions:\n{all_exceptions}"
+        )
 
     instance.query("DROP TABLE foo_exceptions")
 
