@@ -778,6 +778,9 @@ std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
 /// - No existing ORDER BY/LIMIT in the view
 ///
 /// Outer query restrictions (to preserve semantics under shard-local truncation):
+/// - Must have an outer LIMIT (without LIMIT, the outer planner still applies
+///   a full ORDER BY on the coordinator, so pushing ORDER BY into the view only
+///   adds a redundant inner sort and risks a regression)
 /// - Single-table outer query (JOINs may filter/expand rows after per-shard truncation)
 /// - No GROUP BY/HAVING/DISTINCT/window
 /// - No LIMIT BY (per-shard truncation can drop candidates needed for global groups)
@@ -805,6 +808,14 @@ void pushOrderByIntoView(
 
     const auto * outer = select_query_info.query_tree->as<QueryNode>();
     if (!outer || !outer->hasOrderBy())
+        return;
+
+    /// Without an outer LIMIT, the outer planner still performs a full ORDER BY
+    /// on the coordinator: it does not see the merge-sorted-streams produced by
+    /// the inner view and re-sorts on top. Pushing ORDER BY into the view would
+    /// only add a redundant per-shard sort with no benefit, and can regress
+    /// plain `SELECT ... FROM view ORDER BY ...` queries.
+    if (!outer->hasLimit())
         return;
 
     /// Outer query must be a transparent SELECT — pushing ORDER BY through
@@ -895,9 +906,7 @@ void pushOrderByIntoView(
         order_ast->children.push_back(elem);
     }
     sel->setExpression(ASTSelectQuery::Expression::ORDER_BY, order_ast);
-
-    if (outer->hasLimit())
-        sel->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, outer->getLimit()->toAST());
+    sel->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, outer->getLimit()->toAST());
 
     table_expression_query_info.view_query = modified;
 }

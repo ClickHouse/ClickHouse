@@ -7,6 +7,8 @@ NULLS FIRST result count:	10
 WITH TIES disables pushdown:	1
 WITH TIES result count:	10
 WITH FILL disables pushdown:	1
+No LIMIT disables pushdown:	1
+No LIMIT returns rows:	1
 GROUP BY result count:	5
 OFFSET result count:	5
 LIMIT BY disables pushdown:	1

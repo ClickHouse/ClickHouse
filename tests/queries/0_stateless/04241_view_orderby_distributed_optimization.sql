@@ -74,6 +74,17 @@ SELECT 'WITH FILL disables pushdown:',
     (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_04241 ORDER BY id WITH FILL FROM 0 TO 5)
      WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
 
+-- ORDER BY without outer LIMIT: pushdown must be disabled (the outer planner
+-- still applies a full ORDER BY on the coordinator and would not see the
+-- merge-sorted streams from the inner view, so pushing only adds a redundant
+-- per-shard sort with no benefit).
+SELECT 'No LIMIT disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_04241 ORDER BY ts DESC)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
+SELECT 'No LIMIT returns rows:',
+    (SELECT count() > 0 FROM (SELECT id FROM test_view_04241 ORDER BY ts DESC)) AS has_rows;
+
 -- Outer GROUP BY: pushdown must be disabled (it would otherwise break aggregate
 -- projection matching and similar optimizations). The query must still produce
 -- correct results.
