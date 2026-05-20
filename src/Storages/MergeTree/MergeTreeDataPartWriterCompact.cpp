@@ -277,6 +277,11 @@ void MergeTreeDataPartWriterCompact::writeDataBlockPrimaryIndexAndSkipIndices(co
 {
     writeDataBlock(block, granules_to_write);
 
+    /// `block` here is already fully permuted by `permuteBlockIfNeeded` in `write`,
+    /// so we pass `permutation = nullptr` and intentionally do not pass the permuted
+    /// columns cache: the columns in `block` are already permuted, so re-inserting
+    /// them via the cache would be pointless. The cache only helps when columns are
+    /// permuted on the fly (the Wide writer path).
     if (settings.rewrite_primary_key)
     {
         Block primary_key_block = getIndexBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), nullptr);

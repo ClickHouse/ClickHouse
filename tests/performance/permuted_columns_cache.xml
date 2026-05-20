@@ -1,6 +1,7 @@
 <test>
-    <!-- OpenTelemetry-style traces table: 4 String ORDER BY columns with
-         bloom_filter skip indices for point lookups, plus a minmax index
+    <!-- OpenTelemetry-style traces table: 3 String ORDER BY columns
+         (service, trace_id, span_id) plus a DateTime64 timestamp, with
+         bloom_filter skip indices for point lookups and a minmax index
          on timestamp for range scans. Without the permuted columns cache,
          each ORDER BY column with a skip index is permuted twice (primary
          key + skip index). With the cache, only once. -->

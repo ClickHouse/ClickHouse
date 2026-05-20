@@ -381,14 +381,12 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
                 const auto & index_column = *skip_indexes_block.getByName(it->name).column;
                 writeColumn(*it, index_column, offset_substreams, granules_to_write);
             }
-            else if (permuted_columns_cache && permuted_columns_cache->has(it->name))
-            {
-                const auto & cached_column = *permuted_columns_cache->getByName(it->name).column;
-                writeColumn(*it, cached_column, offset_substreams, granules_to_write);
-            }
             else
             {
                 /// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
+                /// The permuted columns cache is populated above only with PK and skip-index columns
+                /// (via `getIndexBlockAndPermute`), so by construction it cannot contain this column,
+                /// and there is no point looking it up here.
                 ColumnPtr permuted_column = column.column->permute(*permutation, 0);
                 writeColumn(*it, *permuted_column, offset_substreams, granules_to_write);
             }

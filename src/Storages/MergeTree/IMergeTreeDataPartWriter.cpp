@@ -24,12 +24,17 @@ namespace MergeTreeSetting
 
 Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation, Block * permuted_columns_cache)
 {
+    /// The cache is meaningful only when a permutation is applied: it stores the result
+    /// of `permute()` so that subsequent lookups by name return the already-permuted column.
+    /// If `permutation == nullptr`, there is nothing to amortize, so we ignore the cache.
+    Block * cache = permutation ? permuted_columns_cache : nullptr;
+
     Block result;
     for (size_t i = 0, size = names.size(); i < size; ++i)
     {
-        if (permuted_columns_cache && permuted_columns_cache->has(names[i]))
+        if (cache && cache->has(names[i]))
         {
-            result.insert(i, permuted_columns_cache->getByName(names[i]));
+            result.insert(i, cache->getByName(names[i]));
             continue;
         }
 
@@ -41,8 +46,8 @@ Block getIndexBlockAndPermute(const Block & block, const Names & names, const IC
         if (permutation)
             src_column.column = src_column.column->permute(*permutation, 0);
 
-        if (permuted_columns_cache)
-            permuted_columns_cache->insert(src_column);
+        if (cache)
+            cache->insert(src_column);
 
         result.insert(i, src_column);
     }
@@ -52,13 +57,17 @@ Block getIndexBlockAndPermute(const Block & block, const Names & names, const IC
 
 Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache)
 {
+    /// See the comment in `getIndexBlockAndPermute`: the cache only stores genuinely
+    /// permuted columns, so it is ignored when `permutation == nullptr`.
+    Block * cache = permutation ? permuted_columns_cache : nullptr;
+
     Block result;
     for (size_t i = 0; i < block.columns(); ++i)
     {
         const auto & col = block.getByPosition(i);
-        if (permuted_columns_cache && permuted_columns_cache->has(col.name))
+        if (cache && cache->has(col.name))
         {
-            result.insert(i, permuted_columns_cache->getByName(col.name));
+            result.insert(i, cache->getByName(col.name));
             continue;
         }
 
@@ -66,8 +75,8 @@ Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permu
         if (permutation)
             column_with_type.column = column_with_type.column->permute(*permutation, 0);
 
-        if (permuted_columns_cache)
-            permuted_columns_cache->insert(column_with_type);
+        if (cache)
+            cache->insert(column_with_type);
 
         result.insert(i, column_with_type);
     }
