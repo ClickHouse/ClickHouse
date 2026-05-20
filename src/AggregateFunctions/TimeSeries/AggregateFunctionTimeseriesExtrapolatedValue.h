@@ -139,15 +139,7 @@ private:
         /// The following logic is copied from Prometheus' rate calculation
         /// https://github.com/prometheus/prometheus/blob/5e124cf4f2b9467e4ae1c679840005e727efd599/promql/functions.go#L127
         /// which is licensed under the Apache License 2.0
-        // Duration between first/last samples and boundary of range.
-        //
-        // The two durations are mathematically:
-        //   duration_to_start = first_timestamp - (current_timestamp - window)
-        //                     = first_timestamp - current_timestamp + window
-        //   duration_to_end   = current_timestamp - last_timestamp
-        // Both terms are computed in `Float64` to avoid signed integer overflow on the
-        // intermediate `current_timestamp - Base::window` subtraction when `Base::window`
-        // is set near `INT64_MAX` by adversarial AST fuzzer inputs.
+        // Duration between first/last samples and boundary of range. Computed in `Float64` to avoid signed overflow on `current_timestamp - Base::window`.
         Float64 duration_to_start =
             static_cast<Float64>(first_timestamp) - static_cast<Float64>(current_timestamp)
             + static_cast<Float64>(Base::window);
@@ -266,9 +258,7 @@ public:
                 }
             }
 
-            /// Remove samples that are out of the window. Use `Base::isSampleOutOfWindow` so
-            /// the comparison does not signed-overflow `TimestampType` when `Base::window`
-            /// is set near `INT64_MAX` by adversarial AST fuzzer inputs.
+            /// Remove samples that are out of the window
             while (!samples_in_window.empty()
                    && Base::isSampleOutOfWindow(samples_in_window.front().first, current_timestamp))
             {

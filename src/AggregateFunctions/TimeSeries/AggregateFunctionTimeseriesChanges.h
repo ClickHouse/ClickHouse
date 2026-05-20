@@ -193,9 +193,7 @@ public:
                     samples_in_window.push_back({timestamp, value});
             }
 
-            /// Remove samples that are out of the window. Use `Base::isSampleOutOfWindow` so
-            /// the comparison does not signed-overflow `TimestampType` when `Base::window`
-            /// is set near `INT64_MAX` by adversarial AST fuzzer inputs.
+            /// Remove samples that are out of the window
             while (!samples_in_window.empty()
                    && Base::isSampleOutOfWindow(samples_in_window.front().first, current_timestamp))
             {

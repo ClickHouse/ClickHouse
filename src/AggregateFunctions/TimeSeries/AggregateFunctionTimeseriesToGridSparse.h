@@ -151,10 +151,7 @@ public:
             }
             else if (has_previous_value && !Base::isSampleOutOfWindow(previous_timestamp, current_timestamp))
             {
-                /// Use the previous value if the current timestamp is missing and the previous one is not stale.
-                /// `Base::isSampleOutOfWindow` evaluates `previous_timestamp + Base::window <= current_timestamp`
-                /// without signed-overflowing `TimestampType` when `Base::window` is near `INT64_MAX` (reachable
-                /// from adversarial AST fuzzer inputs).
+                /// Use the previous value if the current timestamp is missing and the previous one is not stale
                 values[i] = previous_value;
                 nulls[i] = 0;
             }

@@ -161,10 +161,7 @@ public:
             if (bucket_it != buckets.end())
                 last_2_samples.merge(bucket_it->second);
 
-            /// If the oldest of last 2 samples is within the window, we can calculate the rate or delta.
-            /// `Base::isSampleOutOfWindow` evaluates `timestamps[1] + Base::window <= current_timestamp`
-            /// without signed-overflowing `TimestampType` when `Base::window` is near `INT64_MAX`
-            /// (reachable from adversarial AST fuzzer inputs).
+            /// If the oldest of last 2 samples is within the window, we can calculate the rate or delta
             if (last_2_samples.filled == 2 && !Base::isSampleOutOfWindow(last_2_samples.timestamps[1], current_timestamp))
             {
                 fillResultValue(last_2_samples.timestamps[0], last_2_samples.values[0],

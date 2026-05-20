@@ -192,22 +192,14 @@ public:
         return static_cast<TimestampType>(static_cast<Int64>(result_bits));
     }
 
-    /// Returns whether a sample at `sample_timestamp` is past the sliding-window cutoff
-    /// for grid point `current_timestamp`, i.e. evaluates `sample_timestamp + window <= current_timestamp`
-    /// (`window` is non-negative, validated in the constructor).
-    ///
-    /// Computed in 128-bit signed arithmetic so the plain expression
-    /// `sample_timestamp + window` does not signed-overflow `TimestampType`/`IntervalType`
-    /// when `window` is set near `INT64_MAX` by adversarial AST fuzzer inputs. The 64-bit
-    /// operands are first sign-extended via `Int64` to preserve the original semantics for
-    /// signed and unsigned `TimestampType`s (`DateTime64`/`Int64` and `UInt32`/`DateTime`).
+    /// Returns whether a sample at `sample_timestamp` is past the sliding-window cutoff for grid point `current_timestamp`.
     bool isSampleOutOfWindow(const TimestampType sample_timestamp, const TimestampType current_timestamp) const
     {
-        using WideInt = __int128;
-        const WideInt sum =
-            static_cast<WideInt>(static_cast<Int64>(sample_timestamp)) +
-            static_cast<WideInt>(static_cast<Int64>(window));
-        return sum <= static_cast<WideInt>(static_cast<Int64>(current_timestamp));
+        /// Use `Int128` so the addition does not signed-overflow `TimestampType` when `window` is set near `INT64_MAX`.
+        const Int128 sum =
+            static_cast<Int128>(static_cast<Int64>(sample_timestamp)) +
+            static_cast<Int128>(static_cast<Int64>(window));
+        return sum <= static_cast<Int128>(static_cast<Int64>(current_timestamp));
     }
 
     static const State * data(ConstAggregateDataPtr __restrict place)
