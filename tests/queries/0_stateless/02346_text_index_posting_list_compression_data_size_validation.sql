@@ -136,7 +136,8 @@ SELECT
     sum(secondary_indices_compressed_bytes)
 FROM system.parts
 WHERE database = currentDatabase() AND active AND table IN ('tab_bitpacking','tab_uncompressed')
-GROUP BY table;
+GROUP BY table
+ORDER BY table;
 
 DROP TABLE tab_bitpacking;
 DROP TABLE tab_uncompressed;
