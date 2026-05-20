@@ -116,9 +116,7 @@ TEST(DeleteBitmapFileOpsTest, WriteAndReadRoundtrip)
     in.add(12345);
     DeleteBitmapFileOps::writeBitmapToStorage(*fx.storage, /*version=*/5, in);
 
-    /// File appears under the expected name.
     EXPECT_TRUE(std::filesystem::exists(fx.partFile("delete_bitmap_5.rbm")));
-    /// No `.tmp` leftover.
     EXPECT_FALSE(std::filesystem::exists(fx.partFile("delete_bitmap_5.rbm.tmp")));
 
     auto loaded = DeleteBitmapFileOps::readBitmapFromStorage(*fx.storage, 5);
@@ -195,7 +193,6 @@ TEST(DeleteBitmapFileOpsTest, WriteClearsStaleTmpLeftover)
     bm.add(11);
     DeleteBitmapFileOps::writeBitmapToStorage(*fx.storage, 4, bm);
 
-    /// Successful write: final file present, tmp gone.
     EXPECT_TRUE(std::filesystem::exists(fx.partFile("delete_bitmap_4.rbm")));
     EXPECT_FALSE(std::filesystem::exists(fx.partFile("delete_bitmap_4.rbm.tmp")));
 
