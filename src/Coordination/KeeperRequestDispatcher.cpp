@@ -252,6 +252,16 @@ void KeeperRequestDispatcher::shutdown(bool closed_all_connections)
             temp_stream->append(std::move(entries));
 
             /// Wait for the request to reach the leader, don't wait for commit.
+            ///
+            /// TODO: It would be better to wait for commit, at least if the current node is the
+            ///       leader. Otherwise we may shut down the leader before it replicates the
+            ///       Close requests to followers.
+            ///       This change could be done together with the TODO at dropInFlightRequests call
+            ///       in recreateStreamWithBackoff, because both need
+            ///       client_req_stream::append completion callback (here to get log_idx that needs
+            ///       to be committed, there to get error code).
+            ///       If shutdown Close is made reliable, remove retries in
+            ///       test_session_close_shutdown.
             while (!temp_stream->is_idle() && std::chrono::steady_clock::now() - start_time < std::chrono::milliseconds(timeout_ms))
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
@@ -473,8 +483,9 @@ void KeeperRequestDispatcher::recreateStreamWithBackoff()
     /// Currently we drop all in-flight appends (that weren't committed within
     /// stream_in_flight_drain_timeout_ms).
     ///
-    /// We could do better: if some batches were cleanly rejected by the leader (e.g. because of
-    /// term mismatch), we can re-send them into the new stream. I imagine it would looke like this:
+    /// TODO: We could do better: if some batches were cleanly rejected by the leader (e.g. because
+    ///       of term mismatch), we can re-send them into the new stream. I imagine it would look
+    ///       like this:
     ///  * client_req_stream::append would accept a callback and just call it in `handler`.
     ///  * We'd pass a callback that stores the result status in InFlightBatch. (Probably by adding
     ///    a shared_ptr field in InFlightBatch.)
@@ -489,18 +500,27 @@ void KeeperRequestDispatcher::recreateStreamWithBackoff()
 
     stream.reset();
 
-    if (!shutting_down.load())
-    {
-        current_stream_is_suspect.store(true);
-        /// May return nullptr.
-        stream = server->raft_instance->open_client_req_stream(
-            keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds());
+    if (shutting_down.load())
+        return;
 
-        if (stream)
-            LOG_INFO(log, "Created append stream");
-        else
-            LOG_DEBUG(log, "Failed to create append stream");
+    if (!server->isLeaderAlive())
+    {
+        /// Don't attempt reads or writes if there's no working leader.
+        /// In particular, avoid doing reads, because they may succeed and see very old data
+        /// if this replica was down for a while, then came up and never saw a healthy leader.
+        LOG_DEBUG(log, "Not creating append stream because leader is not alive");
+        return;
     }
+
+    current_stream_is_suspect.store(true);
+    /// May return nullptr.
+    stream = server->raft_instance->open_client_req_stream(
+        keeper_context->getCoordinationSettings()[CoordinationSetting::operation_timeout_ms].totalMilliseconds());
+
+    if (stream)
+        LOG_INFO(log, "Created append stream");
+    else
+        LOG_DEBUG(log, "Failed to create append stream");
 }
 
 void KeeperRequestDispatcher::dispatchThread()

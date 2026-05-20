@@ -31,7 +31,7 @@ namespace ErrorCodes
     DECLARE(Milliseconds, leadership_expiry_ms, 0, "Duration after which a leader will expire if it fails to receive responses from peers. Set it lower or equal to election_timeout_lower_bound_ms to avoid multiple leaders.", 0) \
     DECLARE(UInt64, reserved_log_items, 100000, "How many log items to store (don't remove during compaction)", 0) \
     DECLARE(UInt64, snapshot_distance, 100000, "How many log items we have to collect to write new snapshot", 0) \
-    DECLARE(Bool, auto_forwarding, true, "Allow to forward write requests from followers to leader", 0) \
+    DECLARE(Bool, auto_forwarding, true, "Allow to forward write requests from followers to leader. Has no effect if use_new_dispatcher = true as the new dispatcher has its own forwarding that's always enabled.", 0) \
     DECLARE(Milliseconds, shutdown_timeout, 5000, "How much time we will wait until RAFT shutdown", 0) \
     DECLARE(Milliseconds, session_shutdown_timeout, 10000, "How much time we will wait until sessions are closed during shutdown", 0) \
     DECLARE(Milliseconds, startup_timeout, 180000, "How much time we will wait until RAFT to start.", 0) \

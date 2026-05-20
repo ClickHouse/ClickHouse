@@ -167,8 +167,10 @@ def test_session_close_shutdown(started_cluster):
         # restart while session is active so it's closed during shutdown
         node2.restart_clickhouse()
 
-        # give the Close request some time to get committed
-        # (shutdown only waits for the request to reach the leader)
+        # Give the Close request some time to get committed
+        # (shutdown only waits for the request to reach the leader).
+        # (It would be better to instead make shutdown wait for the Close requests to be committed,
+        #  so that no wait or retrying is needed, see TODO in KeeperRequestDispatcher::shutdown.)
         time.sleep(1)
 
         if node1_zk.exists(eph_node) == None:
