@@ -264,7 +264,6 @@ def started_cluster():
             main_configs=[
                 "configs/query_log.xml",
                 "configs/text_log.xml",
-                "configs/cluster.xml"
             ],
             user_configs=[],
             stay_alive=True,
