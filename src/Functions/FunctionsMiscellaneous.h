@@ -52,6 +52,16 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        return executeImpl(arguments, result_type, input_rows_count, /*dry_run=*/false);
+    }
+
+    ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return executeImpl(arguments, result_type, input_rows_count, /*dry_run=*/true);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+    {
         if (input_rows_count == 0)
             return result_type->createColumn();
 
@@ -69,7 +79,7 @@ public:
         /// Do not propagate the outer dry_run into the lambda body: non-deterministic
         /// functions (e.g. WASM UDFs) would return defaults during dry-run, producing
         /// wrong constant-folding results for higher-order functions.
-        expression_actions->execute(expr_columns);
+        expression_actions->execute(expr_columns, dry_run);
 
         return expr_columns.getByName(signature->return_name).column;
     }
