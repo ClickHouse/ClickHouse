@@ -10,8 +10,6 @@ IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Ope
     : IProcessor(InputPorts(2, header_), {header_})
     , current_operator(operator_)
 {
-    if (isIntersectOperator())
-        stage = Stage::ReadFirstInput;
 }
 
 

@@ -46,7 +46,7 @@ private:
     Chunk current_output_chunk;
     Chunk first_input_chunk;
 
-    Stage stage = Stage::ReadSecondInput;
+    Stage stage = Stage::ReadFirstInput;
     bool has_first_input_chunk = false;
     bool has_second_input_rows = false;
     bool has_input = false;
