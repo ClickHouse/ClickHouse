@@ -5,6 +5,7 @@
 #include <IO/SourceBufferLimit.h>
 #include <IO/ReadSettings.h>
 #include <IO/Rope.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
@@ -13,10 +14,16 @@
 
 #include <gtest/gtest.h>
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <unordered_map>
+
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_OPEN_FILE;
+}
 
 using namespace DB;
 
@@ -527,6 +534,46 @@ namespace ProfileEvents
 namespace
 {
 
+/// Succeeds on the first open() and throws on every subsequent one.
+/// Used to drive an asynchronous failure into the prefetch lambda so the
+/// future held by ReaderExecutor ends up holding an exception when the
+/// destructor calls future.get() via discardPrefetch.
+class ThrowOnSecondOpenSourceReader : public ISourceReader
+{
+public:
+    explicit ThrowOnSecondOpenSourceReader(String data_)
+        : data(std::move(data_)) {}
+
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject &, bool /* use_external_buffer */) override
+    {
+        if (call_count.fetch_add(1) > 0)
+            throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
+                "ThrowOnSecondOpenSourceReader: synthetic failure (would abort in debug if LOGICAL_ERROR)");
+
+        auto path = std::filesystem::temp_directory_path() / ("test_throw_on_second_open_" + std::to_string(file_counter++));
+        {
+            std::ofstream f(path, std::ios::binary);
+            f.write(data.data(), data.size());
+        }
+        temp_files.push_back(path);
+        return createReadBufferFromFileBase(path.string(), ReadSettings{});
+    }
+
+    String name() const override { return "ThrowOnSecondOpenSourceReader"; }
+
+    ~ThrowOnSecondOpenSourceReader() override
+    {
+        for (const auto & p : temp_files)
+            std::filesystem::remove(p);
+    }
+
+private:
+    String data;
+    std::atomic<size_t> call_count{0};
+    size_t file_counter = 0;
+    std::vector<std::filesystem::path> temp_files;
+};
+
 /// RAII helper: creates a ThreadGroup with its own ProfileEvents counters,
 /// attaches the current thread to it, detaches in destructor.
 /// Lets us read per-test ProfileEvents without interference from other tests.
@@ -543,6 +590,33 @@ struct TestThreadGroup
     }
 };
 
+}
+
+TEST(ReaderExecutor, DestructorTolerantOfThrowingPrefetch)
+{
+    /// Pre-fix: ~ReaderExecutor calls discardPrefetch → future.get(), which
+    /// re-throws the prefetch lambda's exception. Because ~ReaderExecutor is
+    /// implicitly noexcept, this terminates the process.
+    /// Post-fix: discardPrefetch catches and logs, scope exit is clean.
+
+    auto source = std::make_shared<ThrowOnSecondOpenSourceReader>(String(2000, 'A'));
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 2000);
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+
+    {
+        ReaderExecutor executor(source, objects, {}, /*window_size=*/500);
+        executor.setPrefetchPool(pool);
+
+        /// First sync read consumes the 1st open() and primes maybeTriggerPrefetch,
+        /// which submits a task whose 2nd open() will throw on the pool thread.
+        auto rope = executor.readNextWindow();
+        ASSERT_FALSE(rope.empty());
+
+        /// executor's destructor must drain the throwing future without terminating.
+    }
+    SUCCEED();
 }
 
 TEST(ReaderExecutor, LiveBufferReusesConnection)

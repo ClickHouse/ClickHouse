@@ -129,7 +129,21 @@ void ReaderExecutor::discardPrefetch()
     {
         LOG_TRACE(log, "Prefetch: discarding [{}, {})", prefetch_range.offset, prefetch_range.end());
         if (prefetch_future.valid())
-            std::ignore = prefetch_future.get();
+        {
+            try
+            {
+                std::ignore = prefetch_future.get();
+            }
+            catch (...)
+            {
+                /// We're discarding the prefetch — either from the destructor (where
+                /// throwing is forbidden) or from seek (where the lambda's failure is
+                /// orthogonal to the seek). Log and swallow either way; the next
+                /// readNextWindow will surface a fresh exception if the underlying
+                /// I/O is still broken.
+                tryLogCurrentException(log, "Discarded prefetch task threw");
+            }
+        }
         prefetch_valid = false;
     }
 }
