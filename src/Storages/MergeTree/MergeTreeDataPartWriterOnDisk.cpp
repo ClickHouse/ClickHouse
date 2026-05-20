@@ -439,7 +439,7 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         skip_indices_packed_file = getDataPartStorage().writeFile(packed_filename, DBMS_DEFAULT_BUFFER_SIZE, settings.query_write_settings);
         HashingWriteBuffer packed_hashing(*skip_indices_packed_file);
 
-        skip_indices_packed_writer->finalize(packed_hashing);
+        auto [packed_index, _] = skip_indices_packed_writer->finalize(packed_hashing);
         packed_hashing.finalize();
 
         auto & checksum = checksums.files[packed_filename];
@@ -447,6 +447,15 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         checksum.file_hash = packed_hashing.getHash();
 
         skip_indices_packed_file->preFinalize();
+
+        /// Seed the storage's PackedFilesReader from the in-memory archive index so the per-part
+        /// secondary-indices size accounting (which runs between preFinalize and the actual
+        /// finalize) can answer existsFile / getFileSize without touching disk. On object-storage
+        /// disks the archive file isn't visible until the underlying multipart upload completes,
+        /// which only happens at finalize time; without this seed the accounting caches 0 for
+        /// every packed substream.
+        if (auto * disk_storage = dynamic_cast<DataPartStorageOnDiskBase *>(&getDataPartStorage()))
+            disk_storage->seedSkipIndicesPackedReader(packed_index);
     }
 }
 

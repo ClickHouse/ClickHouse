@@ -168,6 +168,17 @@ protected:
     /// that operate on the archive.
     const PackedFilesReader * getSkipIndicesPackedReader() const;
 
+public:
+    /// Pre-populate the cached PackedFilesReader from an in-memory index produced by the
+    /// writer's PackedFilesWriter::finalize. This lets the overlay (existsFile / getFileSize)
+    /// answer queries about packed substreams BEFORE the archive file is fully committed on
+    /// disk, which matters on object-storage disks where the file isn't visible until the
+    /// underlying multipart upload finishes (the writer only calls preFinalize at fillChecksums
+    /// time; the actual finalize happens later). After the file is committed, on-disk reads
+    /// would work too, but the in-memory index is always cheaper and equally authoritative.
+    void seedSkipIndicesPackedReader(const PackedFilesIO::Index & index) const;
+protected:
+
     VolumePtr volume;
     std::string root_path;
     std::string part_dir;

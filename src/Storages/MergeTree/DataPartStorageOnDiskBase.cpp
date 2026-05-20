@@ -1028,6 +1028,14 @@ const PackedFilesReader * DataPartStorageOnDiskBase::getSkipIndicesPackedReader(
     return skip_indices_packed_reader.get();
 }
 
+void DataPartStorageOnDiskBase::seedSkipIndicesPackedReader(const PackedFilesIO::Index & index) const
+{
+    std::lock_guard lock(skip_indices_packed_mutex);
+    const String packed_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
+    skip_indices_packed_reader = std::make_unique<PackedFilesReader>(volume->getDisk(), packed_path, index);
+    skip_indices_packed_probed = true;
+}
+
 bool DataPartStorageOnDiskBase::isFileInPackedSkipIndicesArchive(const std::string & name) const
 {
     const auto * reader = getSkipIndicesPackedReader();
