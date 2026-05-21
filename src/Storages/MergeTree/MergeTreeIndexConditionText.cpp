@@ -636,19 +636,34 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// because we have to match the specific key to the value and therefore execute a real filter.
         direct_read_mode = getHintOrNoneMode();
     }
-    else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues")
-          || tryMatchNodeToJSONValuesIndex(index_column_node, header))
+    else
     {
-        has_index_column = true;
-        direct_read_mode = getHintOrNoneMode();
-        bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
-
-        /// Convert non-string values to their text representation to match the format produced by `JSONAllValues`.
-        /// Keep array values as-is for special text index functions.
-        if (!is_special_text_index_function && !WhichDataType(value_type).isStringOrFixedString())
+        /// JSONAllValues indexes all values including typed-path defaults, so it is always safe.
+        /// JSONValues omits typed-path defaults (via isDefaultAt); for equality against a default
+        /// value the index would produce a false-negative skip, so we only use it when
+        /// isJSONPathFilterSafe confirms the comparison value differs from the type default.
+        bool json_values_safe_to_index = false;
+        if (auto match = tryMatchNodeToJSONValuesIndex(index_column_node, header))
         {
-            value_field = serializeFieldAsText(value_field, value_type);
-            value_type = std::make_shared<DataTypeString>();
+            if (function_name != "equals")
+                json_values_safe_to_index = true;
+            else if (const auto * dag_node = index_column_node.getDAGNode())
+                json_values_safe_to_index = isJSONPathFilterSafe(dag_node->result_type, value_field);
+        }
+
+        if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues") || json_values_safe_to_index)
+        {
+            has_index_column = true;
+            direct_read_mode = getHintOrNoneMode();
+            bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
+
+            /// Convert non-string values to their text representation to match the format produced by `JSONAllValues`.
+            /// Keep array values as-is for special text index functions.
+            if (!is_special_text_index_function && !WhichDataType(value_type).isStringOrFixedString())
+            {
+                value_field = serializeFieldAsText(value_field, value_type);
+                value_type = std::make_shared<DataTypeString>();
+            }
         }
     }
 

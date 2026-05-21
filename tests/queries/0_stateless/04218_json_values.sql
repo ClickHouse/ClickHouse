@@ -53,3 +53,30 @@ CREATE TABLE tab_typed (id UInt32, json JSON(a UInt32)) ENGINE = Memory;
 INSERT INTO tab_typed VALUES (1, '{"a": 0}'), (2, '{"a": 1}'), (3, '{}');
 SELECT id, JSONValues(json, ['a']) FROM tab_typed ORDER BY id;
 DROP TABLE tab_typed;
+
+-- Safety guard: JSONValues omits typed-path default values from the index.
+-- Without the guard, WHERE data.a = 0 would produce a false-negative skip:
+-- the token "0" is absent from the granule's JSONValues index, so the index
+-- would incorrectly report the granule as non-matching and skip it.
+-- The guard detects that 0 is the UInt32 default and disables index skipping.
+SELECT '-- safety guard: equality against typed-path default returns correct rows';
+DROP TABLE IF EXISTS tab_guard;
+CREATE TABLE tab_guard
+(
+    id UInt32,
+    data JSON(a UInt32),
+    INDEX idx JSONValues(data, ['a']) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id SETTINGS index_granularity = 1;
+
+INSERT INTO tab_guard VALUES (1, '{"a": 0}');
+INSERT INTO tab_guard VALUES (2, '{"a": 1}');
+INSERT INTO tab_guard VALUES (3, '{}');
+
+-- Both a=0 and absent-a store the default 0, so both rows 1 and 3 must be returned.
+SELECT id FROM tab_guard WHERE data.a = 0 ORDER BY id;
+-- Non-default value: index filtering is effective (only row 2 matches).
+SELECT id FROM tab_guard WHERE data.a = 1 ORDER BY id;
+
+DROP TABLE tab_guard;
