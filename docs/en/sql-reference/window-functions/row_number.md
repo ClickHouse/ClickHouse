@@ -4,8 +4,9 @@ sidebar_label: 'row_number'
 sidebar_position: 2
 slug: /sql-reference/window-functions/row_number
 title: 'row_number'
-doc_type: 'reference'
 ---
+
+# row_number
 
 Numbers the current row within its partition starting from 1.
 
@@ -29,7 +30,9 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 The following example is based on the example provided in the video instructional [Ranking window functions in ClickHouse](https://youtu.be/Yku9mmBYm_4?si=XIMu1jpYucCQEoXA).
 
-```sql title="Query"
+Query:
+
+```sql
 CREATE TABLE salaries
 (
     `team` String,
@@ -47,13 +50,15 @@ INSERT INTO salaries FORMAT Values
     ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M');
 ```
 
-```sql title="Query"
+```sql
 SELECT player, salary, 
        row_number() OVER (ORDER BY salary DESC) AS row_number
 FROM salaries;
 ```
 
-```response title="Response"
+Result:
+
+```response
    ┌─player──────────┬─salary─┬─row_number─┐
 1. │ Gary Chen       │ 195000 │          1 │
 2. │ Robert George   │ 195000 │          2 │

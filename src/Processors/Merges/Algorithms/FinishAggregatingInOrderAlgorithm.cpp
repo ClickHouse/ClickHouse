@@ -20,18 +20,9 @@ FinishAggregatingInOrderAlgorithm::State::State(const Chunk & chunk, const SortD
     if (!chunk)
         return;
 
-    /// sorting_columns must be indexed by column_number (position in the header),
-    /// not by description iteration order, because less() uses elem.column_number
-    /// to index into this array. With the old code (emplace_back), sorting_columns
-    /// was indexed 0..desc.size()-1, but less() used column_number which is the
-    /// header position. When the sort description column order differed from the
-    /// header column order (e.g., GROUP BY a, b on a table ORDER BY b — header has
-    /// a at position 0 and b at position 1, but sort description is [b, a]),
-    /// the wrong columns were compared, corrupting merge group boundaries and
-    /// producing duplicate rows in the aggregation result.
-    sorting_columns.resize(all_columns.size(), nullptr);
+    sorting_columns.reserve(desc.size());
     for (const auto & column_desc : desc)
-        sorting_columns[column_desc.column_number] = all_columns[column_desc.column_number].get();
+        sorting_columns.emplace_back(all_columns[column_desc.column_number].get());
 }
 
 FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
@@ -49,7 +40,6 @@ FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
 
 void FinishAggregatingInOrderAlgorithm::initialize(Inputs inputs)
 {
-    removeReplicatedFromSortingColumns(inputs, description);
     removeConstAndSparse(inputs);
     current_inputs = std::move(inputs);
     states.resize(num_inputs);
@@ -59,7 +49,6 @@ void FinishAggregatingInOrderAlgorithm::initialize(Inputs inputs)
 
 void FinishAggregatingInOrderAlgorithm::consume(Input & input, size_t source_num)
 {
-    removeReplicatedFromSortingColumns(input, description);
     removeConstAndSparse(input);
     if (!input.chunk.hasRows())
         return;
@@ -179,7 +168,7 @@ void FinishAggregatingInOrderAlgorithm::addToAggregation()
         states[i].current_row = states[i].to_row;
 
         /// We assume that sizes in bytes of rows are almost the same.
-        accumulated_bytes += static_cast<size_t>(static_cast<double>(states[i].total_bytes) * static_cast<double>(current_rows) / static_cast<double>(states[i].num_rows));
+        accumulated_bytes += static_cast<size_t>(static_cast<double>(states[i].total_bytes) * current_rows / states[i].num_rows);
         accumulated_rows += current_rows;
 
         if (!states[i].isValid())
