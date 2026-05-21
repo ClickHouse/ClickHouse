@@ -179,21 +179,19 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
     }
 }
 
-bool canWriteStatistics(
-    const std::vector<std::pair<size_t, Field>> & statistics,
+/// Remove statistics entries for columns whose type cannot be serialized into Iceberg bounds.
+/// Columns such as Tuple/Map/Array are skipped per-column; the remaining serializable columns
+/// (e.g. Float64 bbox columns alongside a Tuple geometry column) are preserved.
+void filterSerializableStats(
+    std::vector<std::pair<size_t, Field>> & statistics,
     const std::unordered_map<size_t, size_t> & field_id_to_column_index,
     SharedHeader sample_block)
 {
-    if (statistics.empty())
-        return false;
-
-    for (const auto & [field_id, stat] : statistics)
+    std::erase_if(statistics, [&](const std::pair<size_t, Field> & p)
     {
-        auto type = sample_block->getDataTypes()[field_id_to_column_index.at(field_id)];
-        if (!canDumpIcebergStats(stat, type))
-            return false;
-    }
-    return true;
+        auto type = sample_block->getDataTypes()[field_id_to_column_index.at(p.first)];
+        return !canDumpIcebergStats(p.second, type);
+    });
 }
 
 }
@@ -375,15 +373,14 @@ void generateManifestFile(
             { return dumpFieldToBytes(value, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]); };
 
             auto lower_statistics = data_file_statistics->getLowerBounds();
-            if (canWriteStatistics(lower_statistics, field_id_to_column_index, sample_block))
-            {
+            filterSerializableStats(lower_statistics, field_id_to_column_index, sample_block);
+            if (!lower_statistics.empty())
                 set_fields(lower_statistics, Iceberg::f_lower_bounds, dump_fields);
-            }
+
             auto upper_statistics = data_file_statistics->getUpperBounds();
-            if (canWriteStatistics(upper_statistics, field_id_to_column_index, sample_block))
-            {
+            filterSerializableStats(upper_statistics, field_id_to_column_index, sample_block);
+            if (!upper_statistics.empty())
                 set_fields(upper_statistics, Iceberg::f_upper_bounds, dump_fields);
-            }
         }
         data_file.field(Iceberg::f_record_count) = avro::GenericDatum(static_cast<Int64>(data_file_row_counts[file_idx]));
         data_file.field(Iceberg::f_file_size_in_bytes) = avro::GenericDatum(static_cast<Int64>(data_file_byte_counts[file_idx]));
