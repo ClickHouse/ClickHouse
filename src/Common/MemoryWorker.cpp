@@ -439,7 +439,8 @@ void MemoryWorker::updateResidentMemoryThread()
             /// headroom, so `MemoryTracker::allocImpl` will throw `MEMORY_LIMIT_EXCEEDED` (via the
             /// global `will_be_rss > current_hard_limit` branch) before the kernel OOM-killer
             /// closes the gap. `ratio = 0` disables the speculation (`rss = resident`); sanitizer
-            /// test configs pin it to `0` because shadow-memory overhead dominates the gap there.
+            /// builds default to `0` (computed at compile time in `getDefaultMemoryWorkerRssSpeculativeReserveRatio`)
+            /// because shadow-memory overhead dominates the gap there.
             Int64 speculative_rss = resident;
             if (rss_speculative_reserve_ratio > 0.0)
             {
