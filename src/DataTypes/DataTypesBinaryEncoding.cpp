@@ -822,7 +822,7 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             size_t path_regexps_to_skip_size;
             readVarUInt(path_regexps_to_skip_size, buf);
             if (path_regexps_to_skip_size > MAX_ARRAY_SIZE)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many path regexps to skip during JSON type decoding: {}. Maximum: {}", paths_to_skip_size, MAX_ARRAY_SIZE);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many path regexps to skip during JSON type decoding: {}. Maximum: {}", path_regexps_to_skip_size, MAX_ARRAY_SIZE);
 
             std::vector<String> path_regexps_to_skip;
             path_regexps_to_skip.reserve(path_regexps_to_skip_size);
