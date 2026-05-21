@@ -9,6 +9,8 @@
 #include <libnuraft/nuraft.hxx>
 #include <IO/WriteBuffer.h>
 
+#include <mutex>
+
 namespace DB
 {
 
@@ -133,6 +135,14 @@ struct SnapshotFileInfo
 };
 
 using SnapshotFileInfoPtr = std::shared_ptr<SnapshotFileInfo>;
+
+struct KeeperSnapshotStatus
+{
+    uint64_t last_log_index;
+    String path;
+    DiskPtr disk;
+    bool is_received;
+};
 #if USE_ROCKSDB
 using KeeperStorageSnapshotPtr = std::variant<std::shared_ptr<KeeperStorageSnapshot<KeeperMemoryStorage>>, std::shared_ptr<KeeperStorageSnapshot<KeeperRocksStorage>>>;
 #else
@@ -225,6 +235,8 @@ public:
     size_t getLatestSnapshotIndex() const;
 
     SnapshotFileInfoPtr getLatestSnapshotInfo() const;
+
+    std::vector<KeeperSnapshotStatus> getSnapshotsStatus(const std::lock_guard<std::mutex> & /*snapshots_lock*/) const;
 
 private:
     void removeOutdatedSnapshotsIfNeeded();

@@ -125,6 +125,8 @@ public:
 
     virtual void reconfigure(const KeeperRequestForSession& request_for_session) = 0;
 
+    virtual std::vector<KeeperSnapshotStatus> getSnapshotsStatus() const = 0;
+
 protected:
     CommitCallback commit_callback;
 
@@ -276,6 +278,8 @@ public:
     void recalculateStorageStats() override;
 
     void reconfigure(const KeeperRequestForSession& request_for_session) override;
+
+    std::vector<KeeperSnapshotStatus> getSnapshotsStatus() const override;
 
     /// Cancel an in-progress snapshot receive: remove partial files and reset the context.
     void cancelIfHasUnfinishedSnapshotReceive() TSA_REQUIRES(snapshots_lock);
