@@ -681,6 +681,9 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         after_processing_settings_copy = after_processing_settings;
         add_deduplication_info = deduplication_v2;
     }
+    /// Mirrors `is_deduplication_v2` computed in `streamToViews`.
+    const bool is_deduplication_v2 = add_deduplication_info
+        && local_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
     return std::make_shared<ObjectStorageQueueSource>(
         getName(),
         processor_id,
@@ -702,7 +705,8 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         getStorageID(),
         log,
         commit_once_processed,
-        add_deduplication_info);
+        add_deduplication_info,
+        is_deduplication_v2);
 }
 
 size_t StorageObjectStorageQueue::getDependencies() const
