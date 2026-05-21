@@ -64,7 +64,7 @@ public:
     }
 
     /// Runs separate scheduler thread
-    void start(ThreadName name)
+    void start(const String & name)
     {
         if (!scheduler.joinable())
             scheduler = ThreadFromGlobalPool([this, name] { schedulerThread(name); });
@@ -80,8 +80,6 @@ public:
             scheduler.join();
             if (graceful)
             {
-                // Attach to event queue for graceful shutdown processing
-                EventQueue::SchedulerThread scheduler_thread(&events);
                 // Do the same cycle as schedulerThread() but never block or wait postponed events
                 bool has_work = true;
                 while (has_work)
@@ -234,11 +232,9 @@ private:
         value->next = nullptr;
     }
 
-    void schedulerThread(ThreadName name)
+    void schedulerThread(const String & name)
     {
-        DB::setThreadName(name);
-        EventQueue::SchedulerThread scheduler_thread(&events);
-
+        setThreadName(name.c_str(), true);
         while (!stop_flag.load())
         {
             // Dequeue and execute single request

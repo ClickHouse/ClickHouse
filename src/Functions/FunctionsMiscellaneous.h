@@ -2,8 +2,8 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/DataTypeFunction.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -30,7 +30,7 @@ struct LambdaCapture
 
 using LambdaCapturePtr = std::shared_ptr<LambdaCapture>;
 
-class ExecutableFunctionExpression final : public IExecutableFunction
+class ExecutableFunctionExpression : public IExecutableFunction
 {
 public:
     struct Signature
@@ -83,7 +83,7 @@ private:
 };
 
 /// Executes expression. Uses for lambda functions implementation. Can't be created from factory.
-class FunctionExpression final : public IFunctionBase
+class FunctionExpression : public IFunctionBase
 {
 public:
     using Signature = ExecutableFunctionExpression::Signature;
@@ -140,7 +140,7 @@ private:
 /// Returns ColumnFunction with captured columns.
 /// For lambda(x, x + y) x is in lambda_arguments, y is in captured arguments, expression_actions is 'x + y'.
 ///  execute(y) returns ColumnFunction(FunctionExpression(x + y), y) with type Function(x) -> function_return_type.
-class ExecutableFunctionCapture final : public IExecutableFunction
+class ExecutableFunctionCapture : public IExecutableFunction
 {
 public:
     ExecutableFunctionCapture(ExpressionActionsPtr expression_actions_, LambdaCapturePtr capture_)
@@ -207,7 +207,7 @@ private:
     LambdaCapturePtr capture;
 };
 
-class FunctionCapture final : public IFunctionBase
+class FunctionCapture : public IFunctionBase
 {
 public:
     FunctionCapture(
@@ -244,7 +244,7 @@ private:
     String name;
 };
 
-class FunctionCaptureOverloadResolver final : public IFunctionOverloadResolver
+class FunctionCaptureOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     FunctionCaptureOverloadResolver(
@@ -260,7 +260,7 @@ public:
         if (actions_dag.hasArrayJoin())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression with arrayJoin or other unusual action cannot be captured");
 
-        UnorderedMapWithMemoryTracking<std::string, DataTypePtr> arguments_map;
+        std::unordered_map<std::string, DataTypePtr> arguments_map;
 
         for (const auto * input : actions_dag.getInputs())
             arguments_map[input->result_name] = input->result_type;
