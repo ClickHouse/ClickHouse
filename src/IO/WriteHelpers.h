@@ -19,6 +19,7 @@
 #include <base/IPv4andIPv6.h>
 
 #include <Common/NaNUtils.h>
+#include <Common/Concepts.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteIntText.h>
@@ -105,8 +106,8 @@ inline void writeStringBinary(const char * s, WriteBuffer & buf)
 }
 
 
-template <typename Vec>
-void writeVectorBinary(const Vec & v, WriteBuffer & buf)
+template <StdVector V>
+void writeVectorBinary(const V & v, WriteBuffer & buf)
 {
     writeVarUInt(v.size(), buf);
 
@@ -1385,8 +1386,8 @@ inline void writeCSV(const UUID & x, WriteBuffer & buf) { writeDoubleQuoted(x, b
 inline void writeCSV(const IPv4 & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const IPv6 & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 
-template <typename Vec>
-void writeBinary(const Vec & x, WriteBuffer & buf)
+template <StdVector V>
+void writeBinary(const V & x, WriteBuffer & buf)
 {
     size_t size = x.size();
     writeVarUInt(size, buf);
@@ -1394,8 +1395,8 @@ void writeBinary(const Vec & x, WriteBuffer & buf)
         writeBinary(x[i], buf);
 }
 
-template <typename Vec>
-void writeQuoted(const Vec & x, WriteBuffer & buf)
+template <StdVector V>
+void writeQuoted(const V & x, WriteBuffer & buf)
 {
     writeChar('[', buf);
     for (size_t i = 0, size = x.size(); i < size; ++i)
@@ -1407,8 +1408,8 @@ void writeQuoted(const Vec & x, WriteBuffer & buf)
     writeChar(']', buf);
 }
 
-template <typename Vec>
-void writeDoubleQuoted(const Vec & x, WriteBuffer & buf)
+template <StdVector V>
+void writeDoubleQuoted(const V & x, WriteBuffer & buf)
 {
     writeChar('[', buf);
     for (size_t i = 0, size = x.size(); i < size; ++i)
@@ -1420,8 +1421,8 @@ void writeDoubleQuoted(const Vec & x, WriteBuffer & buf)
     writeChar(']', buf);
 }
 
-template <typename Vec>
-void writeText(const Vec & x, WriteBuffer & buf)
+template <StdVector V>
+void writeText(const V & x, WriteBuffer & buf)
 {
     writeQuoted(x, buf);
 }
@@ -1457,8 +1458,8 @@ inline String toString(const CityHash_v1_0_2::uint128 & hash)
     return buf.str();
 }
 
-template <typename Vec>
-inline String toStringWithFinalSeparator(const Vec & x, const String & final_sep)
+template <StdVector V>
+inline String toStringWithFinalSeparator(const V & x, const String & final_sep)
 {
     WriteBufferFromOwnString buf;
     for (auto it = x.begin(); it != x.end(); ++it)
