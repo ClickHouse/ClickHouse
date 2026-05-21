@@ -25,7 +25,7 @@ const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::U
 {
     /// We map levels to our own logger 1 to 1 except INFO+ levels. In most cases we fail over such errors with retries
     /// and don't want to see them as Errors in our logs.
-    static const std::unordered_map<Aws::Utils::Logging::LogLevel, std::pair<DB::LogsLevel, Poco::Message::Priority>> mapping = // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    static const DB::UnorderedMapWithMemoryTracking<Aws::Utils::Logging::LogLevel, std::pair<DB::LogsLevel, Poco::Message::Priority>> mapping =
     {
         {Aws::Utils::Logging::LogLevel::Off, {DB::LogsLevel::none, Poco::Message::PRIO_INFORMATION}},
         {Aws::Utils::Logging::LogLevel::Fatal, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
