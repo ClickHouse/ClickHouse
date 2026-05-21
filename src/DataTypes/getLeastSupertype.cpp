@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime.h>
@@ -72,6 +73,61 @@ DataTypePtr throwOrReturn(const DataTypes & types, std::string_view message_suff
         throw Exception(error_code, "There is no supertype for types {}", getExceptionMessagePrefix(types));
 
     throw Exception(error_code, "There is no supertype for types {} {}", getExceptionMessagePrefix(types), message_suffix);
+}
+
+
+template <LeastSupertypeOnError on_error>
+DataTypePtr getFixedStringWithTextRepresentationSupertypeIfAny(const DataTypes & types)
+{
+    const DataTypeFixedString * target = nullptr;
+
+    for (const auto & type : types)
+    {
+        const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(type.get());
+        if (!fixed_string || !fixed_string->hasCustomTextRepresentation())
+            continue;
+
+        if (!target)
+        {
+            target = fixed_string;
+            continue;
+        }
+
+        if (target->getN() != fixed_string->getN() || target->getTextRepresentation() != fixed_string->getTextRepresentation())
+            return throwOrReturn<on_error>(
+                types,
+                "because FixedString types with different text representations or sizes are not implicitly compatible",
+                ErrorCodes::NO_COMMON_TYPE);
+    }
+
+    if (!target)
+        return nullptr;
+
+    for (const auto & type : types)
+    {
+        if (const auto * fixed_string = typeid_cast<const DataTypeFixedString *>(type.get()))
+        {
+            if (fixed_string->getN() == target->getN()
+                && (fixed_string->getTextRepresentation() == FixedStringTextRepresentation::Raw
+                    || fixed_string->getTextRepresentation() == target->getTextRepresentation()))
+                continue;
+
+            return throwOrReturn<on_error>(
+                types,
+                "because FixedString size or text representation differs",
+                ErrorCodes::NO_COMMON_TYPE);
+        }
+
+        if (type->getTypeId() == TypeIndex::String)
+            continue;
+
+        return throwOrReturn<on_error>(
+            types,
+            "because FixedString with text representation can be combined only with String or compatible FixedString",
+            ErrorCodes::NO_COMMON_TYPE);
+    }
+
+    return std::make_shared<DataTypeFixedString>(target->getN(), target->getTextRepresentation());
 }
 
 template <LeastSupertypeOnError on_error>
@@ -683,6 +739,9 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
     TypeIndexSet type_ids;
     for (const auto & type : types)
         type_ids.insert(type->getTypeId());
+
+    if (auto fixed_string_text_representation_supertype = getFixedStringWithTextRepresentationSupertypeIfAny<on_error>(types))
+        return fixed_string_text_representation_supertype;
 
     /// For String and FixedString, or for different FixedStrings, the common type is String.
     /// If there are Enums and any type of Strings, the common type is String.

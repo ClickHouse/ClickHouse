@@ -4542,7 +4542,7 @@ private:
 
     WrapperType createStringWrapper(const DataTypePtr & from_type) const;
 
-    WrapperType createFixedStringWrapper(const DataTypePtr & from_type, size_t N, bool requested_result_is_nullable) const;
+    WrapperType createFixedStringWrapper(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const;
 
 
     WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind) const;

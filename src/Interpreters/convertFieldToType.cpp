@@ -490,7 +490,16 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         {
             if (which_type.isFixedString())
             {
-                size_t n = assert_cast<const DataTypeFixedString &>(type).getN();
+                const auto & fixed_string_type = assert_cast<const DataTypeFixedString &>(type);
+                if (fixed_string_type.hasCustomTextRepresentation())
+                {
+                    auto column = type.createColumn();
+                    ReadBufferFromString in_buffer(src.safeGet<String>());
+                    type.getDefaultSerialization()->deserializeWholeText(*column, in_buffer, format_settings);
+                    return (*column)[0];
+                }
+
+                size_t n = fixed_string_type.getN();
                 const auto & src_str = src.safeGet<String>();
                 if (src_str.size() < n)
                 {

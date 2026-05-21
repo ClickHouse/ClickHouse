@@ -1398,6 +1398,56 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
+
+    ColumnPtr executeFixedStringTextRepresentationComparison(
+        const ColumnWithTypeAndName & left,
+        const ColumnWithTypeAndName & right,
+        size_t /*input_rows_count*/) const
+    {
+        const auto * left_fixed_string = typeid_cast<const DataTypeFixedString *>(left.type.get());
+        const auto * right_fixed_string = typeid_cast<const DataTypeFixedString *>(right.type.get());
+
+        const DataTypeFixedString * target_type = nullptr;
+        const ColumnWithTypeAndName * target = nullptr;
+        const ColumnWithTypeAndName * source = nullptr;
+        bool left_is_target = false;
+
+        if (left_fixed_string && left_fixed_string->hasCustomTextRepresentation())
+        {
+            target_type = left_fixed_string;
+            target = &left;
+            source = &right;
+            left_is_target = true;
+        }
+        else if (right_fixed_string && right_fixed_string->hasCustomTextRepresentation())
+        {
+            target_type = right_fixed_string;
+            target = &right;
+            source = &left;
+        }
+        else
+            return nullptr;
+
+        if (const auto * source_fixed_string = typeid_cast<const DataTypeFixedString *>(source->type.get()))
+        {
+            if (source_fixed_string->getN() != target_type->getN())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Cannot compare {} and {} because their FixedString sizes differ",
+                    left.type->getName(),
+                    right.type->getName());
+        }
+        else if (!WhichDataType(source->type).isString())
+            return nullptr;
+
+        ColumnPtr converted_source = castColumnAccurate(*source, target->type);
+
+        if (left_is_target)
+            return executeString(target->column.get(), converted_source.get());
+
+        return executeString(converted_source.get(), target->column.get());
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         checkStackSize();
@@ -1472,6 +1522,9 @@ public:
         bool types_equal = left_type->equals(*right_type);
 
         ColumnPtr res;
+        if ((res = executeFixedStringTextRepresentationComparison(col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count)))
+            return res;
+
         if (left_is_num && right_is_num && !date_and_time_datetime
             && (!left_is_interval || !right_is_interval || types_equal))
         {
