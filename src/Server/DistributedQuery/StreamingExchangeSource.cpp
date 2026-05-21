@@ -67,8 +67,7 @@ void StreamingExchangeSource::sendHello()
     hello_out.write(reinterpret_cast<const char *>(&header), sizeof(header));
     if (!body_str.empty())
         hello_out.write(body_str.data(), body_str.size());
-    hello_out.next();
-    hello_out.cancel();
+    hello_out.finalize();
 }
 
 void StreamingExchangeSource::receiveHello()

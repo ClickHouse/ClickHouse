@@ -176,8 +176,7 @@ void ExchangeServer::handleConnection(Poco::Net::StreamSocket socket, ExchangeCo
         out.write(reinterpret_cast<const char *>(&reply_header), sizeof(reply_header));
         if (!reply_body_str.empty())
             out.write(reply_body_str.data(), reply_body_str.size());
-        out.next();
-        out.cancel();
+        out.finalize();
     };
 
     if (source_version != StreamingExchangeProtocol::PROTOCOL_VERSION)
