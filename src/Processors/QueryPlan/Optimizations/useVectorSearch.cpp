@@ -471,12 +471,12 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
         return false;
     const String & sort_column = sort_description.front().column_name;
 
-    /// The Usearch index calculates and returns (at index granule level) the row ID(s) + corresponding distances for the top-N most similar
-    /// matches to the given reference vector. This creates a mismatch to the granule-based interface of skip indexes in ClickHouse.
-    /// To bridge this gap, MergeTreeVectorSimilarityIndex historically extrapolated the result from USearch to granule level. This caused
-    /// vector search queries to slow down as ClickHouse subsequently loaded the returned granules from disk and applied the distance
-    /// function to _all_ contained rows (e.g. 8191 out of 8192 rows). This is maximally silly but we decided to give this mode the fancy
-    /// name "rescoring mode" and turn a weakness into a strength (in terms of feature completeness).
+    /// The Usearch index calculates and returns the row IDs and corresponding distances for the top-N most similar
+    /// matches to the given reference vector. This creates a mismatch with the granule-based interface of skip indexes
+    /// in ClickHouse. To bridge this gap, MergeTreeVectorSimilarityIndex historically expanded the USearch result to
+    /// granules, then ClickHouse loaded the returned granules from disk and applied the distance function to all rows
+    /// in these granules. For selective vector search results this evaluates many rows that were not returned by the
+    /// vector index.
     ///
     /// A more natural way (called "optimized plan" below) goes like this: We rewrite the query plan and
     /// - remove the vector_column from the read list in ReadFromMergeTreeStep,
@@ -493,7 +493,7 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
     /// Two mutually exclusive rewrite modes sharing the same DAG rewrite:
     ///   - rescoring = 0: drop the vector column entirely from the read list and wire
     ///     `_distance` (populated from USearch's quantized distances) into the sort.
-    ///   - rescoring = 1 (Phase 2 fused rerank): keep the vector column in the read list
+    ///   - rescoring = 1: keep the vector column in the read list
     ///     so the range reader can compute full-precision kernel values from vector bytes
     ///     and overwrite `_distance`; the downstream DAG is rewritten identically, which
     ///     eliminates the redundant `cosineDistance(vec, [...])` compute in ExpressionStep.

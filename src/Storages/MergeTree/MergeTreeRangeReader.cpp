@@ -24,12 +24,23 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 
+#include <cmath>
+
 #ifdef __SSE2__
 #include <emmintrin.h>
 #endif
 
 #if USE_MULTITARGET_CODE
 #include <immintrin.h>
+#endif
+
+/// Include immintrin first. Otherwise `simsimd` fails to build on some targets:
+/// `unknown type name '__bfloat16'`.
+#if USE_SIMSIMD
+#    if defined(__x86_64__) || defined(__i386__)
+#        include <immintrin.h>
+#    endif
+#    include <simsimd/simsimd.h>
 #endif
 
 #if defined(__aarch64__) && defined(__ARM_NEON)
@@ -1244,20 +1255,36 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
 namespace
 {
 
-/// Scalar kernels for fused full-precision rescoring.
-/// Dimensions here are small (typically 128..1536) and invoked only for the
-/// M filtered rows per granule batch, so scalar code is fine for a first cut.
-/// A simsimd-backed path can be layered on once this is measured.
+Float64 dotProductF32(const Float32 * lhs, const Float32 * rhs, size_t dim)
+{
+#if USE_SIMSIMD
+    simsimd_distance_t result = 0;
+    simsimd_dot_f32(lhs, rhs, dim, &result);
+    return result;
+#else
+    Float32 result = 0;
+    for (size_t i = 0; i < dim; ++i)
+        result += lhs[i] * rhs[i];
+    return result;
+#endif
+}
+
 Float32 computeFusedDistance(
     VectorSearchKernel kernel,
     const Float32 * vec,
     const Float32 * query,
-    size_t dim)
+    size_t dim,
+    Float64 query_norm_squared)
 {
     switch (kernel)
     {
         case VectorSearchKernel::L2:
         {
+#if USE_SIMSIMD
+            simsimd_distance_t result = 0;
+            simsimd_l2_f32(vec, query, dim, &result);
+            return static_cast<Float32>(result);
+#else
             Float32 sum = 0;
             for (size_t k = 0; k < dim; ++k)
             {
@@ -1265,19 +1292,13 @@ Float32 computeFusedDistance(
                 sum += d * d;
             }
             return std::sqrt(sum);
+#endif
         }
         case VectorSearchKernel::Cosine:
         {
-            Float32 dot = 0;
-            Float32 norm_a = 0;
-            Float32 norm_b = 0;
-            for (size_t k = 0; k < dim; ++k)
-            {
-                dot += vec[k] * query[k];
-                norm_a += vec[k] * vec[k];
-                norm_b += query[k] * query[k];
-            }
-            return Float32(1) - dot / std::sqrt(norm_a * norm_b);
+            const Float64 dot = dotProductF32(vec, query, dim);
+            const Float64 vec_norm_squared = dotProductF32(vec, vec, dim);
+            return static_cast<Float32>(Float64(1) - dot / std::sqrt(vec_norm_squared * query_norm_squared));
         }
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected vector search kernel for fused rescoring");
@@ -1324,7 +1345,7 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
 
     /// Fused full-precision rescoring path: overwrite the quantized USearch distances
     /// with full-precision kernel values computed from the actual vector column bytes.
-    /// Handles only Array(Float32) element type on the first cut - other element types
+    /// Handles only Array(Float32) element type. Other element types
     /// (BFloat16, Float64) should have been rejected by the optimizer before setting the hint.
     if (read_hints.fused_rescore.has_value())
     {
@@ -1333,6 +1354,9 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Fused rescoring expected query vector to be set");
         const size_t dim = hint.query_vector->size();
         const Float32 * query = hint.query_vector->data();
+        const Float64 query_norm_squared = hint.kernel == VectorSearchKernel::Cosine
+            ? dotProductF32(query, query, dim)
+            : 0;
 
         if (!read_sample_block.has(hint.vector_column))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -1365,7 +1389,7 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
                     "Fused rescoring: row {} has vector of length {} but query vector has length {}",
                     i, end - start, dim);
 
-            distances[i] = computeFusedDistance(hint.kernel, all_elems + start, query, dim);
+            distances[i] = computeFusedDistance(hint.kernel, all_elems + start, query, dim, query_norm_squared);
         }
     }
 

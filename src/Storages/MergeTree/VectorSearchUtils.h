@@ -37,7 +37,7 @@ enum class VectorSearchKernel : uint8_t
 /// Hint that instructs MergeTreeRangeReader to overwrite the USearch-quantized distances
 /// in the `_distance` virtual column with full-precision kernel values computed directly
 /// from the read vector column. Enables fusion of the rerank step into the reader for the
-/// `vector_search_with_rescoring = 1` path (Phase 2 of the rerank-scoring design).
+/// `vector_search_with_rescoring = 1` path.
 struct FusedRescoreHint
 {
     String vector_column;
