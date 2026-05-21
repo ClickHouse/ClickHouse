@@ -561,6 +561,7 @@ QueryResultCache::Key::Key(IASTHash ast_hash_)
     : ast_hash(ast_hash_)
     , is_shared(false)
     , is_compressed(false)
+    , is_subquery(false)
 {
 }
 
@@ -584,6 +585,7 @@ QueryResultCache::Key::Key(
     , query_string(query_string_)
     , query_id(query_id_)
     , tag(tag_)
+    , is_subquery(false)
 {
 }
 
