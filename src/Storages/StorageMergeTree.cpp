@@ -1236,7 +1236,12 @@ void StorageMergeTree::loadDeduplicationLog()
 
 void StorageMergeTree::loadMutations()
 {
-    std::lock_guard lock(currently_processing_in_background_mutex);
+    /// Called only from the constructor, before this storage is published to any
+    /// database, so no other thread holds a reference and the lock is unnecessary.
+    /// Avoiding it also breaks a TSan lock-order edge between `DatabaseAtomic::mutex`
+    /// (held during lazy table construction via `tryCreateSymlink`) and
+    /// `currently_processing_in_background_mutex`. See STID 3367-4813.
+    chassert(current_mutations_by_version.empty());
 
     for (const auto & disk : getDisks())
     {
