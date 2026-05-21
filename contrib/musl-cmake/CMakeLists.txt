@@ -1,5 +1,9 @@
 set(MUSL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl")
 
+# Only arches with a matching contrib/musl/crt/${MUSL_ARCH}/ subtree (crti.s,
+# crtn.s, ...) are supported here. riscv64 and loongarch64 are absent from the
+# vendored musl source tree, so they cannot be built even though the ARCH_*
+# flags exist elsewhere in the build system.
 if (ARCH_AMD64)
     set(MUSL_ARCH "x86_64")
 elseif (ARCH_AARCH64)
@@ -8,12 +12,8 @@ elseif (ARCH_PPC64LE)
     set(MUSL_ARCH "powerpc64")
 elseif (ARCH_S390X)
     set(MUSL_ARCH "s390x")
-elseif (ARCH_RISCV64)
-    set(MUSL_ARCH "riscv64")
-elseif (ARCH_LOONGARCH64)
-    set(MUSL_ARCH "loongarch64")
 else()
-    message(FATAL_ERROR "Unsupported architecture for musl: ${CMAKE_SYSTEM_PROCESSOR}")
+    message(FATAL_ERROR "USE_MUSL is not supported for ${CMAKE_SYSTEM_PROCESSOR}: contrib/musl has no CRT sources for this arch")
 endif()
 
 message(STATUS "Building musl libc for architecture: ${MUSL_ARCH}")
