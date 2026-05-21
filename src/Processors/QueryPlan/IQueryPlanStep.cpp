@@ -1,5 +1,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/ThreadStatus.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ActionsDAG.h>
