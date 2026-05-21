@@ -2125,6 +2125,16 @@ void TCPHandler::sendHello()
         writeVarUInt(rules.size(), *out);
         for (const auto & [original_pattern, exception_message] : rules)
         {
+            /// Same per-string cap the client enforces on receive; fail at the
+            /// server boundary so the operator fixes the offending entry instead
+            /// of seeing a downstream client-side rejection.
+            if (original_pattern.size() > DBMS_MAX_HELLO_STRING_SIZE
+                || exception_message.size() > DBMS_MAX_HELLO_STRING_SIZE)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Password-complexity rule pattern or message exceeds the maximum "
+                    "size of {} bytes. Shorten the offending <password_complexity> "
+                    "entry in the server config.",
+                    DBMS_MAX_HELLO_STRING_SIZE);
             writeStringBinary(original_pattern, *out);
             writeStringBinary(exception_message, *out);
         }

@@ -576,7 +576,7 @@ void Connection::receiveHello()
     readVarUInt(packet_type, *in);
     if (packet_type == Protocol::Server::Hello)
     {
-        readStringBinary(server_name, *in, MAX_SERVER_HELLO_STRING_SIZE);
+        readStringBinary(server_name, *in, DBMS_MAX_HELLO_STRING_SIZE);
         sanitizeUntrustedServerString(server_name);
         readVarUInt(server_version_major, *in);
         readVarUInt(server_version_minor, *in);
@@ -585,12 +585,12 @@ void Connection::receiveHello()
             readVarUInt(server_parallel_replicas_protocol_version, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
         {
-            readStringBinary(server_timezone, *in, MAX_SERVER_HELLO_STRING_SIZE);
+            readStringBinary(server_timezone, *in, DBMS_MAX_HELLO_STRING_SIZE);
             sanitizeUntrustedServerString(server_timezone);
         }
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
         {
-            readStringBinary(server_display_name, *in, MAX_SERVER_HELLO_STRING_SIZE);
+            readStringBinary(server_display_name, *in, DBMS_MAX_HELLO_STRING_SIZE);
             sanitizeUntrustedServerString(server_display_name);
         }
         if (server_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
@@ -602,8 +602,8 @@ void Connection::receiveHello()
         {
             /// These are tiny protocol tokens ("chunked" / "notchunked") compared in
             /// `is_chunked`; cap them so a hostile server cannot force a large allocation.
-            readStringBinary(proto_send_chunked_srv, *in, MAX_SERVER_HELLO_STRING_SIZE);
-            readStringBinary(proto_recv_chunked_srv, *in, MAX_SERVER_HELLO_STRING_SIZE);
+            readStringBinary(proto_send_chunked_srv, *in, DBMS_MAX_HELLO_STRING_SIZE);
+            readStringBinary(proto_recv_chunked_srv, *in, DBMS_MAX_HELLO_STRING_SIZE);
         }
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
@@ -623,8 +623,8 @@ void Connection::receiveHello()
             {
                 String original_pattern;
                 String exception_message;
-                readStringBinary(original_pattern, *in, MAX_SERVER_HELLO_STRING_SIZE);
-                readStringBinary(exception_message, *in, MAX_SERVER_HELLO_STRING_SIZE);
+                readStringBinary(original_pattern, *in, DBMS_MAX_HELLO_STRING_SIZE);
+                readStringBinary(exception_message, *in, DBMS_MAX_HELLO_STRING_SIZE);
                 sanitizeUntrustedServerString(original_pattern);
                 sanitizeUntrustedServerString(exception_message);
                 password_complexity_rules.push_back({std::move(original_pattern), std::move(exception_message)});
@@ -1444,7 +1444,7 @@ Packet Connection::receivePacket()
             case Protocol::Server::TimezoneUpdate:
                 /// Same cap + control-char sanitization as the handshake read; the field
                 /// reaches the client's terminal via the time-zone warning path.
-                readStringBinary(server_timezone, *in, MAX_SERVER_HELLO_STRING_SIZE);
+                readStringBinary(server_timezone, *in, DBMS_MAX_HELLO_STRING_SIZE);
                 sanitizeUntrustedServerString(server_timezone);
                 res.server_timezone = server_timezone;
                 return res;

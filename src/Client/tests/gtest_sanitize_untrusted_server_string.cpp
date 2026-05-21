@@ -142,8 +142,8 @@ TEST(SanitizeUntrustedServerString, MaxStringSizeCapIsTight)
     /// (hostnames cap at HOST_NAME_MAX = 255 on Linux; "Europe/Madrid" is 13
     /// bytes). Bumping the cap back to `readStringBinary`'s 1 GiB default would
     /// re-open the unbounded-allocation vector the helper exists to close.
-    EXPECT_LE(MAX_SERVER_HELLO_STRING_SIZE, 64u * 1024u);
-    EXPECT_GE(MAX_SERVER_HELLO_STRING_SIZE, 256u);
+    EXPECT_LE(DBMS_MAX_HELLO_STRING_SIZE, 64u * 1024u);
+    EXPECT_GE(DBMS_MAX_HELLO_STRING_SIZE, 256u);
 }
 
 TEST(SanitizeUntrustedServerString, MaxPasswordComplexityRulesCapIsTight)

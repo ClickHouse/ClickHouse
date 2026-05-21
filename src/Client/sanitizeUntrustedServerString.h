@@ -1,19 +1,11 @@
 #pragma once
 
-#include <cstddef>
 #include <base/types.h>
 #include <Common/StringUtils.h>
 
 
 namespace DB
 {
-
-/// Cap on server-supplied display strings read during the client's Hello packet
-/// (server name, time zone, display name, password-rule patterns/messages) and
-/// post-handshake updates of the same fields. Legitimate values are short; a
-/// high cap is purely an attack surface (`readStringBinary` defaults to 1 GiB,
-/// which is a denial-of-service vector against the connecting client).
-constexpr size_t MAX_SERVER_HELLO_STRING_SIZE = 4096;
 
 /// Replace ASCII C0 control characters (0x00-0x1F), DEL (0x7F), and the UTF-8
 /// encoding of C1 controls (U+0080-U+009F, encoded as `0xC2 0x80..0x9F`) with '?'
