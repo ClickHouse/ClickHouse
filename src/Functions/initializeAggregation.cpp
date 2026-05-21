@@ -26,7 +26,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionInitializeAggregation final : public IFunction, private WithContext
+class FunctionInitializeAggregation : public IFunction, private WithContext
 {
 public:
     static constexpr auto name = "initializeAggregation";
@@ -122,7 +122,7 @@ private:
 };
 
 
-class FunctionInitializeAggregationOverloadResolver final : public IFunctionOverloadResolver, private WithContext
+class FunctionInitializeAggregationOverloadResolver : public IFunctionOverloadResolver, private WithContext
 {
 public:
     static constexpr auto name = "initializeAggregation";

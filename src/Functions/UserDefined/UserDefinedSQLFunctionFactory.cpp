@@ -1,7 +1,5 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Common/CurrentThread.h>
-#include <Common/quoteString.h>
-#include <Common/ThreadStatus.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Backups/RestorerFromBackup.h>
@@ -20,6 +18,7 @@
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Common/quoteString.h>
 
 
 namespace DB

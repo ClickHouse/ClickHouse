@@ -505,9 +505,8 @@ ColumnPtr extractCombinedColumn(
     auto literal_column = extractLiteralColumn(object_column, path, max_dynamic_types);
     auto sub_object_column = extractSubObjectColumn(object_column, prefix, sub_object_type);
 
-    /// If sub-object contains only empty objects, just use literal.
-    const auto * sub_object_typed_column = assert_cast<const ColumnObject *>(sub_object_column.get());
-    if (!sub_object_typed_column->hasNonEmptyRows())
+    /// If sub-object is all defaults, just use literal.
+    if (sub_object_column->getNumberOfDefaultRows() == sub_object_column->size())
         return literal_column;
 
     /// Cast sub-object to Dynamic.
@@ -520,7 +519,7 @@ ColumnPtr extractCombinedColumn(
     {
         if (!literal_column->isDefaultAt(i))
             merged->insertFrom(*literal_column, i);
-        else if (!sub_object_typed_column->isEmptyAt(i))
+        else if (!sub_object_column->isDefaultAt(i))
             merged->insertFrom(*casted_sub_object, i);
         else
             merged->insertDefault();

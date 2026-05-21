@@ -18,7 +18,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 

@@ -24,7 +24,6 @@
 #include <Common/FailPoint.h>
 #include <Common/re2.h>
 #include <Common/setThreadName.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
@@ -201,7 +200,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 "Table {} is not a Dictionary",
                 table_id.getNameForLogs());
 
-        bool secondary_query = getContext()->isDDLOrOnClusterInternal();
+        bool secondary_query = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
         /// Don't ignore DROP for refreshable materialized views: TRUNCATE doesn't stop
         /// the periodic refresh task, so the orphaned view would keep refreshing indefinitely,
@@ -879,7 +878,7 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
 
         if (ignore_sync_setting)
             drop_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
-        drop_context->setDDLOrOnClusterInternal(true);
+        drop_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
         if (auto txn = current_context->getZooKeeperMetadataTransaction())
         {
             /// For Replicated database

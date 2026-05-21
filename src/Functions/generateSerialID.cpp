@@ -41,7 +41,7 @@ namespace Setting
 namespace
 {
 
-class FunctionSerial final : public IFunction
+class FunctionSerial : public IFunction
 {
 private:
     ContextPtr context;

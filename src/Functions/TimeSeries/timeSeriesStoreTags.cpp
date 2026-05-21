@@ -16,7 +16,7 @@ namespace ErrorCodes
 /// Function timeSeriesStoreTags(id, [('tag_name_1', 'tag_value_1'), ...], 'tag_name_2', 'tag_value_2', ...) returns `id`
 /// and stores the mapping between the identifier of a time series and its tags in the query context so that
 /// they can later be extracted by function timeSeriesIdToTags().
-class FunctionTimeSeriesStoreTags final : public IFunction
+class FunctionTimeSeriesStoreTags : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesStoreTags";

@@ -567,11 +567,6 @@ protected:
     bool is_internal_query = false;
     /// A flag, used to detect sub-operations of background operations - in this case we won't need to build another background contexts
     bool is_background_operation = false;
-    /// Set for queries created internally by the server for DDL replication (ON CLUSTER, DatabaseReplicated)
-    /// and internal backup coordination.
-    /// Unlike query_kind == SECONDARY_QUERY (which comes from the client and can be spoofed),
-    /// this flag can only be set server-side and is safe to use for security-sensitive checks.
-    bool is_ddl_or_on_cluster_internal = false;
     /// True when this context belongs to the inner query of an expanded view.
     /// Positional arguments inside views must be resolved even on remote/secondary nodes where
     /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
@@ -1649,9 +1644,6 @@ public:
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
-
-    bool isDDLOrOnClusterInternal() const { return is_ddl_or_on_cluster_internal; }
-    void setDDLOrOnClusterInternal(bool value) { is_ddl_or_on_cluster_internal = value; }
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
     void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
