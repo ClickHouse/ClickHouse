@@ -1,5 +1,5 @@
-SELECT g(1, (2 IN (3 IN (4, 5) AS x)))
-SELECT concatAssumeInjective((1, (2 IN (3 IN (4, 5) AS x))), 6)
-SELECT g(1, (2 GLOBAL NOT IN (3 IN (4, 5) AS x)))
-SELECT g(1, (2 NOT IN (3 GLOBAL IN (4, 5) AS x)))
-SELECT 1 IN (2 IN (3, 4) AS x)
+1
+1
+1
+1
+1
