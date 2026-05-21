@@ -7,8 +7,6 @@ title: 'Table Settings Manipulations'
 doc_type: 'reference'
 ---
 
-# Table Settings Manipulations
-
 There is a set of queries to change table settings. You can modify settings or reset them to default values. A single query can change several settings at once.
 If a setting with the specified name does not exist, then the query raises an exception.
 
