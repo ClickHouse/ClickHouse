@@ -485,6 +485,20 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     oracle_context->setSetting("max_result_rows", Field(UInt64(MAX_ORACLE_RESULT_ROWS)));
     oracle_context->setSetting("max_result_bytes", Field(UInt64(MAX_ORACLE_OUTPUT_SIZE)));
     oracle_context->setSetting("result_overflow_mode", String("throw"));
+
+    /// Run oracle sub-queries single-threaded so the nested pipeline cannot have
+    /// background-pool workers running while the outer call site (this thread)
+    /// is tearing the pipeline down. TSan caught a heap-use-after-free on
+    /// `shared_ptr<FunctionToExecutableFunctionAdaptor>::__on_zero_shared` that
+    /// fired exactly when a global-pool worker was still in
+    /// `FilterTransform::doTransform → castColumn` for the nested oracle query
+    /// at the moment `executeQuery(...)` returned and started destroying the
+    /// pipeline. Constraining the nested execution to the caller thread closes
+    /// that race (worker tasks run inline, finish before the executor returns).
+    oracle_context->setSetting("max_threads", Field(UInt64(1)));
+    oracle_context->setSetting("max_insert_threads", Field(UInt64(1)));
+    oracle_context->setSetting("output_format_parallel_formatting", Field(false));
+
     oracle_context->setCurrentQueryId("");
     return oracle_context;
 }
