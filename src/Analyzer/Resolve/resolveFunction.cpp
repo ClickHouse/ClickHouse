@@ -230,13 +230,15 @@ ProjectionNames QueryAnalyzer::handleNullInTuple(
 QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
     const QueryTreeNodes & tuple_args,
     const QueryTreeNodePtr & in_first_argument,
-    IdentifierResolveScope & scope)
+    IdentifierResolveScope & scope,
+    bool expand_single_tuple_value)
 {
     auto array_function_node = std::make_shared<FunctionNode>("array");
     auto array_arguments_list = std::make_shared<ListNode>();
 
     QueryTreeNodes array_elements;
-    if (tuple_args.size() == 1
+    if (expand_single_tuple_value
+        && tuple_args.size() == 1
         && !isTuple(removeNullable(in_first_argument->getResultType()))
         && isTuple(removeNullable(tuple_args[0]->getResultType())))
     {
@@ -1090,8 +1092,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// If the second argument of IN is a non-constant, non-table expression (e.g. a column reference
             /// from `IN (col)` where the parentheses were stripped by the parser), wrap it in tuple()
             /// so it can be handled by the tuple/array → has() rewrite below.
+            bool expand_single_tuple_value = false;
             if (in_second_argument->as<ColumnNode>())
             {
+                expand_single_tuple_value = true;
                 auto tuple_function = std::make_shared<FunctionNode>("tuple");
                 tuple_function->getArguments().getNodes().push_back(std::move(in_second_argument));
                 in_second_argument = std::move(tuple_function);
@@ -1158,7 +1162,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     }
 
                     /// convert tuple to array and rewrite to has()
-                    QueryTreeNodePtr array_arg = convertTupleToArray(tuple_args, in_first_argument, scope);
+                    QueryTreeNodePtr array_arg = convertTupleToArray(tuple_args, in_first_argument, scope, expand_single_tuple_value);
                     return buildHasExpression(node, array_arg, in_first_argument, is_not_in, transform_null_in,
                         arguments_projection_names, parameters_projection_names, scope);
                 }

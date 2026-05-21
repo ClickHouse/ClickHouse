@@ -2,6 +2,7 @@
 
 SET enable_analyzer = 1;
 
+SELECT 1 IN (tuple(tuple(1, 2))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT number FROM numbers(10) WHERE number % 2 IN (number % 3, number % 5) ORDER BY number;
 SELECT number FROM numbers(10) WHERE number % 2 IN [number % 3, number % 5] ORDER BY number;
 SELECT number FROM numbers(3) WHERE number IN (number + 1) ORDER BY number;

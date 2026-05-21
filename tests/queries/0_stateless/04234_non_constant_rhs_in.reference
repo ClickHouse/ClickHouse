@@ -1,6 +1,7 @@
 -- { echoOn }
 
 SET enable_analyzer = 1;
+SELECT 1 IN (tuple(tuple(1, 2)));
 SELECT number FROM numbers(10) WHERE number % 2 IN (number % 3, number % 5) ORDER BY number;
 0
 1
