@@ -1,13 +1,16 @@
 #include <Common/ThreadPool.h>
 
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/StackTrace.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/noexcept_scope.h>
+#include <base/scope_guard.h>
 
 #include <type_traits>
 
@@ -932,6 +935,48 @@ void GlobalThreadPool::shutdown()
     {
         the_instance->finalize();
     }
+}
+
+void startThreadFromGlobalPool(
+    std::shared_ptr<ThreadFromGlobalPoolState> state,
+    std::function<void()> func,
+    UInt64 global_profiler_real_time_period_ns,
+    UInt64 global_profiler_cpu_time_period_ns,
+    bool global_trace_collector_allowed,
+    bool propagate_opentelemetry_context)
+{
+    /// NOTE:
+    /// - If scheduleOrThrow throws, the ThreadFromGlobalPoolImpl destructor won't be called.
+    /// - `this` cannot be passed in the lambda since after detach() it is no longer valid.
+    GlobalThreadPool::instance().scheduleOrThrow(
+        [my_state = std::move(state),
+         my_func = std::move(func),
+         global_profiler_real_time_period_ns,
+         global_profiler_cpu_time_period_ns,
+         global_trace_collector_allowed]() mutable
+        {
+            SCOPE_EXIT(
+                my_state->thread_id = std::thread::id();
+                my_state->event.set();
+            );
+
+            my_state->thread_id = std::this_thread::get_id();
+
+            /// Move out so captured callable is destroyed before join() is signalled.
+            auto function = std::move(my_func);
+
+            /// ThreadStatus holds a raw pointer to the query context, so it must be
+            /// destroyed before the signal that allows join() to return.
+            DB::ThreadStatus thread_status;
+            if (global_trace_collector_allowed
+                && unlikely(global_profiler_real_time_period_ns != 0 || global_profiler_cpu_time_period_ns != 0))
+                thread_status.initGlobalProfiler(global_profiler_real_time_period_ns, global_profiler_cpu_time_period_ns);
+
+            function();
+        },
+        {},
+        0,
+        propagate_opentelemetry_context);
 }
 
 CannotAllocateThreadFaultInjector & CannotAllocateThreadFaultInjector::instance()
