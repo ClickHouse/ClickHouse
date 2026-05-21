@@ -312,6 +312,14 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & netwo
     if (!plan)
         return nullptr;
 
+    /// Correlated subqueries contain `PLACEHOLDER` actions that cannot be executed standalone.
+    /// `buildSetInplace` / `buildOrderedSetInplace` already skip such plans, but the pipeline
+    /// integration paths (`addCreatingSetsStep`, `addCreatingSetsTransform`,
+    /// `DelayedCreatingSetsStep::makePlansForSets`) call `build` directly, so the guard must
+    /// also live here to prevent `Trying to execute PLACEHOLDER action` during execution.
+    if (hasCorrelatedExpressions(plan->getRootNode()))
+        return nullptr;
+
     auto creating_set = std::make_unique<CreatingSetStep>(
         plan->getCurrentHeader(),
         set_and_key,

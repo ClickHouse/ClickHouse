@@ -1,0 +1,6 @@
+-- correlated IN subquery
+-- correlated MATERIALIZED CTE in IN
+-- non-correlated IN subquery still works
+2
+-- non-correlated MATERIALIZED CTE in IN still works
+2
