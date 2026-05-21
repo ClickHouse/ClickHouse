@@ -18,6 +18,7 @@ RewriteRuleObject::RewriteRuleObject(const ASTAlterRewriteRuleQuery& query_)
     create_query.source_query = std::move(copy.source_query);
     create_query.resulting_query = std::move(copy.resulting_query);
     create_query.reject_message = std::move(copy.reject_message);
+    create_query.is_reject = copy.is_reject;
     create_query.whole_query = "CREATE " + copy.whole_query.substr(sizeof("ALTER ") - 1);
 }
 

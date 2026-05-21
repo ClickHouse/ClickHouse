@@ -30,6 +30,7 @@ bool ParserAlterRewriteRuleQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ASTPtr reject_message;
     ASTPtr source_query;
     ASTPtr resulting_query;
+    bool is_reject = false;
 
     Pos begin_pos = pos;
 
@@ -70,6 +71,7 @@ bool ParserAlterRewriteRuleQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
         if (!reject_message_p.parse(pos, reject_message, expected))
             return false;
 
+        is_reject = true;
     } else
     {
         return false;
@@ -91,6 +93,7 @@ bool ParserAlterRewriteRuleQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     {
         query->reject_message = literal->value.safeGet<String>();
     }
+    query->is_reject = is_reject;
     query->source_query = std::move(source_query);
     query->resulting_query = std::move(resulting_query);
     query->whole_query = std::move(whole_query);

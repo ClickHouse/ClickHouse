@@ -15,6 +15,11 @@ public:
     String whole_query;
     ASTPtr source_query;
     ASTPtr resulting_query;
+    /// True iff the rule was created with `REJECT WITH ...`. Tracked
+    /// independently of `reject_message` so that `REJECT WITH ''` is still
+    /// a rejecting rule (with an empty user-facing message) rather than a
+    /// silent no-op.
+    bool is_reject = false;
 
     String getID(char) const override { return "AlterRewriteRuleQuery"; }
 
@@ -27,7 +32,7 @@ public:
     bool hasSecretParts() const override { return false; }
 
     bool rewrite() const { if (resulting_query) { return true; } return false; }
-    bool reject()  const { return !reject_message.empty(); }
+    bool reject()  const { return is_reject; }
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
