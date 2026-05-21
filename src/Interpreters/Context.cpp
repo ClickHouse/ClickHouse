@@ -3980,7 +3980,10 @@ void Context::clearMarkCache() const
     JemallocCacheArena::purge();
 }
 
-void Context::setUniqueKeyIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
+void Context::setUniqueKeyIndexCache(
+    [[maybe_unused]] const String & cache_policy,
+    [[maybe_unused]] size_t max_cache_size_in_bytes,
+    [[maybe_unused]] double size_ratio)
 {
     std::lock_guard lock(shared->mutex);
 
@@ -3997,16 +4000,15 @@ void Context::setUniqueKeyIndexCache(const String & cache_policy, size_t max_cac
         CurrentMetrics::UniqueKeyIndexCacheEntries,
         max_cache_size_in_bytes,
         size_ratio);
-#else
-    /// RocksDB not linked: index cache is never registered. Silently accept
-    /// the call so startup works on non-RocksDB builds; getUniqueKeyIndexCache returns nullptr.
-    (void)cache_policy;
-    (void)max_cache_size_in_bytes;
-    (void)size_ratio;
 #endif
+    /// !USE_ROCKSDB: index cache is never registered; silently accept the
+    /// call so startup works on non-RocksDB builds. `getUniqueKeyIndexCache`
+    /// returns nullptr.
 }
 
-void Context::updateUniqueKeyIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+void Context::updateUniqueKeyIndexCacheConfiguration(
+    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
+    [[maybe_unused]] size_t max_cache_size)
 {
     std::lock_guard lock(shared->mutex);
 
@@ -4041,9 +4043,6 @@ void Context::updateUniqueKeyIndexCacheConfiguration(const Poco::Util::AbstractC
     if (size != before)
         LOG_INFO(shared->log, "Reconfigured UNIQUE KEY index cache from {} to {}",
                  formatReadableSizeWithBinarySuffix(before), formatReadableSizeWithBinarySuffix(size));
-#else
-    (void)config;
-    (void)max_cache_size;
 #endif
 }
 
