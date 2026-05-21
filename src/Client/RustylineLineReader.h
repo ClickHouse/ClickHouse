@@ -4,12 +4,13 @@
 
 #include <Client/LineReader.h>
 #include <base/strong_typedef.h>
-#include <replxx.hxx>
 
 namespace DB
 {
 
-class ReplxxLineReader : public LineReader
+/// Line reader backed by the Rust `rustyline` crate exposed via cxx.
+/// Replaces the previous `replxx`-based implementation.
+class RustylineLineReader : public LineReader
 {
 public:
     struct Options
@@ -21,10 +22,10 @@ public:
         bool ignore_shell_suspend = false;
         bool embedded_mode = false;
         bool interactive_history_legacy_keymap = false;
+        bool enable_highlight = true;
         Patterns extenders;
         Patterns delimiters;
         std::span<char> word_break_characters;
-        replxx::Replxx::highlighter_callback_with_pos_t highlighter;
         std::istream & input_stream = std::cin;
         std::ostream & output_stream = std::cout;
         int in_fd = STDIN_FILENO;
@@ -32,35 +33,27 @@ public:
         int err_fd = STDERR_FILENO;
     };
 
-    explicit ReplxxLineReader(Options && options);
-    ~ReplxxLineReader() override;
+    explicit RustylineLineReader(Options && options);
+    ~RustylineLineReader() override;
 
     void enableBracketedPaste() override;
     void disableBracketedPaste() override;
 
-    /// If highlight is on, we will set a flag to denote whether the last token is a delimiter.
-    /// This is useful to determine the behavior of <ENTER> key when multiline is enabled.
+    /// Set by the highlighter to indicate that the current buffer ends in
+    /// a SQL terminator (`;` or `\G`). Drives Enter / Ctrl-J behavior.
     static void setLastIsDelimiter(bool flag);
 
-    /// Set text to be prepopulated in the next readLine call
     void setInitialText(const String & text) override;
+
 private:
     InputStatus readOneLine(const String & prompt) override;
     void addToHistory(const String & line) override;
-    int executeEditor(const std::string & path);
-    void openEditor(bool format_query);
 
-    replxx::Replxx rx;
-    replxx::Replxx::highlighter_callback_with_pos_t highlighter;
+    struct Impl;
+    std::unique_ptr<Impl> impl;
 
-    const char * word_break_characters;
-
-    // used to call flock() to synchronize multiple clients using same history file
     int history_file_fd = -1;
     bool bracketed_paste_enabled = false;
-
-    std::string editor;
-    bool overwrite_mode = false;
 };
 
 }

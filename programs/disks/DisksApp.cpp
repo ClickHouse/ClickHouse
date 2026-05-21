@@ -1,6 +1,7 @@
 #include <DisksApp.h>
 #include <Client/ClientBase.h>
-#include <Client/ReplxxLineReader.h>
+#include <Client/RustylineLineReader.h>
+#include <Client/RustylineCallbackContext.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/SignalHandlers.h>
@@ -262,19 +263,20 @@ bool DisksApp::processQueryText(const String & text)
 
 void DisksApp::runInteractiveReplxx()
 {
-    auto reader_options = ReplxxLineReader::Options
+    auto reader_options = RustylineLineReader::Options
     {
         .suggest = suggest,
         .history_file_path = history_file,
         .history_max_entries = history_max_entries,
         .multiline = false,
         .ignore_shell_suspend = false,
+        .enable_highlight = false,
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
-        .highlighter = {},
     };
-    ReplxxLineReader lr(std::move(reader_options));
+    DB::rustyline::setCallbackContext(&suggest, nullptr, word_break_characters.data(), false, false);
+    RustylineLineReader lr(std::move(reader_options));
     lr.enableBracketedPaste();
 
     while (true)

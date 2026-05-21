@@ -66,7 +66,7 @@ bool LineReader::hasInputData() const
     return select(1, &fds, nullptr, nullptr, &timeout) == 1;
 }
 
-replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length, const char * word_break_characters)
+std::vector<std::string> LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length, const char * word_break_characters)
 {
     std::string_view last_word;
 
@@ -114,7 +114,7 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
                 return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0; /// NOLINT(bugprone-suspicious-stringview-data-usage)
             });
 
-    return replxx::Replxx::completions_t(range.first, range.second);
+    return std::vector<std::string>(range.first, range.second);
 }
 
 void LineReader::Suggest::addWords(Words && new_words) // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)

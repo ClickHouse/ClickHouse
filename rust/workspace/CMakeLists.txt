@@ -88,4 +88,24 @@ if (ENABLE_SKIM)
     add_library(ch_rust::skim ALIAS _ch_rust_skim_rust)
 endif()
 
+# Rustyline-backed line editor — always built (unless this whole subdir is
+# disabled e.g. on FreeBSD), since ClickHouse's interactive client depends
+# on it. The cxx-generated header is exposed via `rustyline/include`; we
+# also point consumers at the vendored cxx crate so `<rust/cxx.h>` resolves.
+clickhouse_config_crate_flags(_ch_rust_rustyline)
+target_include_directories(_ch_rust_rustyline INTERFACE rustyline/include)
+
+file(GLOB _cxx_crate_dir LIST_DIRECTORIES true
+    "${ClickHouse_SOURCE_DIR}/contrib/rust_vendor/cxx-[0-9]*")
+if (_cxx_crate_dir)
+    list(GET _cxx_crate_dir 0 _cxx_crate_first)
+    set(_cxx_include_root "${CMAKE_CURRENT_BINARY_DIR}/cxx_include")
+    file(MAKE_DIRECTORY "${_cxx_include_root}/rust")
+    configure_file("${_cxx_crate_first}/include/cxx.h"
+                   "${_cxx_include_root}/rust/cxx.h" COPYONLY)
+    target_include_directories(_ch_rust_rustyline INTERFACE "${_cxx_include_root}")
+endif()
+
+add_library(ch_rust::rustyline ALIAS _ch_rust_rustyline)
+
 add_subdirectory (wasmtime)

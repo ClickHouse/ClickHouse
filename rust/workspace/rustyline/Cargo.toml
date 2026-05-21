@@ -1,0 +1,20 @@
+[package]
+name = "_ch_rust_rustyline"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Pinned to a version whose `nix` dependency (0.29) is already vendored.
+# When bumping, re-run rust/vendor.sh.
+rustyline = { version = "15.0.0", default-features = false, features = [
+    "custom-bindings",
+    "with-file-history",
+] }
+cxx = "1.0.83"
+libc = "0.2"
+
+[build-dependencies]
+cxx-build = "1.0.83"
+
+[lib]
+crate-type = ["staticlib"]

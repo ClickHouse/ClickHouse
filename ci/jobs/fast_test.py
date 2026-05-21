@@ -51,7 +51,6 @@ def clone_submodules():
         "contrib/fast_float",
         "contrib/NuRaft",
         "contrib/jemalloc",
-        "contrib/replxx",
         "contrib/wyhash",
         "contrib/c-ares",
         "contrib/morton-nd",
