@@ -56,3 +56,23 @@ CREATE TABLE t_geometry_cast_custom_type_name_geom (g Geometry) ENGINE = Memory;
 INSERT INTO t_geometry_cast_custom_type_name_geom VALUES (CAST([[(0., 0.), (0., 5.), (5., 5.), (5., 0.)]], 'Polygon'));
 SELECT areaCartesian(g) FROM t_geometry_cast_custom_type_name_geom;
 DROP TABLE t_geometry_cast_custom_type_name_geom;
+
+-- flipCoordinates on Geometry exercises the default FunctionBaseVariantAdaptor path
+-- (flipCoordinates does not override useDefaultImplementationForVariant).
+-- This verifies that the Variant adaptor preserves all 6 custom-named geometry types
+-- instead of deduplicating to 4 raw types. See https://github.com/ClickHouse/ClickHouse/issues/103207
+SELECT 'flipCoordinates on Geometry round-trip';
+SET allow_suspicious_variant_types = 1;
+DROP TABLE IF EXISTS t_flip_src;
+DROP TABLE IF EXISTS t_flip_dst;
+CREATE TABLE t_flip_src (id UInt32, geom Geometry) ENGINE = Memory;
+CREATE TABLE t_flip_dst (id UInt32, geom Geometry) ENGINE = Memory;
+INSERT INTO t_flip_src VALUES
+    (1, readWkt('POINT(10 20)')),
+    (2, readWkt('LINESTRING(1 2, 3 4)')),
+    (3, readWkt('POLYGON((0 0, 5 0, 5 5, 0 5, 0 0))')),
+    (4, readWkt('MULTIPOLYGON(((0 0, 2 0, 2 2, 0 2, 0 0)))'));
+INSERT INTO t_flip_dst SELECT id, flipCoordinates(geom) FROM t_flip_src;
+SELECT id, geom FROM t_flip_dst ORDER BY id;
+DROP TABLE t_flip_src;
+DROP TABLE t_flip_dst;
