@@ -239,5 +239,4 @@ void MetadataStorageFactory::clearRegistry()
 {
     registry.clear();
 }
-
 }

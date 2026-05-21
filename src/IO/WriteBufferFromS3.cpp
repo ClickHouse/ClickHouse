@@ -204,6 +204,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , blob_log(std::move(blob_log_))
 {
     LOG_TRACE(limited_log, "Create {}, {}", log_name, getShortLogDetails());
+
     allocateBuffer();
 }
 
@@ -242,6 +243,7 @@ void WriteBufferFromS3::preFinalize()
         return;
 
     LOG_TEST(limited_log, "preFinalize {}. {}", log_name, getShortLogDetails());
+
     /// This function should not be run again if an exception has occurred
     is_prefinalized = true;
 
@@ -285,6 +287,7 @@ void WriteBufferFromS3::finalizeImpl()
     span.addAttribute("clickhouse.total_size", total_size);
 
     LOG_TRACE(limited_log, "finalizeImpl {}. {}.", log_name, getShortLogDetails());
+
     WriteBufferFromFileBase::finalizeImpl();
 
     if (!is_prefinalized)
@@ -376,6 +379,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
     }
     else if (!finalized)
     {
+        /// That destructor could be call with finalized=false in case of exceptions
         LOG_INFO(
             log,
             "{} is not finalized in destructor. "
@@ -384,6 +388,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
             log_name, object_storage_name, getVerboseLogDetails());
     }
 
+    /// Wait for all tasks, because they contain reference to this write buffer.
     task_tracker->safeWaitAll();
 
     if (!canceled && !multipart_upload_id.empty() && !multipart_upload_finished)
@@ -489,6 +494,7 @@ void WriteBufferFromS3::createMultipartUpload()
     req.SetBucket(bucket);
     req.SetKey(key);
 
+    /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
     if (object_metadata.has_value())
@@ -577,14 +583,17 @@ S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, Pa
 
     S3::UploadPartRequest req;
 
+    /// Setup request.
     req.SetBucket(bucket);
     req.SetKey(key);
     req.SetPartNumber(static_cast<int>(part_number));
     req.SetUploadId(multipart_upload_id);
     req.SetContentLength(data.data_size);
     req.SetBody(data.createAwsBuffer());
+    /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
+    /// Checksums need to be provided on CompleteMultipartUpload requests, so we calculate then manually and store in multipart_checksums
     if (client_ptr->isS3ExpressBucket())
     {
         auto checksum = S3::RequestChecksum::calculateChecksum(req);
@@ -603,6 +612,8 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
         return;
     }
 
+    /// all iterators are invalidated after push_back,
+    /// so we create part_tag reference after push_back as the reference will not be invalidated
     multipart_tags.push_back({});
     auto & part_tag = multipart_tags.back();
     size_t part_number = multipart_tags.size();
@@ -630,7 +641,11 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Part size exceeded max_upload_part_size. {}, part number {}, part size {}, max_upload_part_size {}",
-            getShortLogDetails(), part_number, data.data_size, request_settings[S3RequestSetting::max_upload_part_size].value);
+            getShortLogDetails(),
+            part_number,
+            data.data_size,
+            request_settings[S3RequestSetting::max_upload_part_size].value
+            );
     }
 
     auto req = getUploadRequest(part_number, data);
@@ -640,7 +655,8 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
     {
         auto & data_size = std::get<1>(*worker_data).data_size;
 
-        LOG_TEST(limited_log, "Write part started {}, part size {}, part number {}", getShortLogDetails(), data_size, part_number);
+        LOG_TEST(limited_log, "Write part started {}, part size {}, part number {}",
+                 getShortLogDetails(), data_size, part_number);
 
         const auto & events = writeBufferProfileEvents(profile_events_namespace);
         ProfileEvents::increment(events.upload_part);
@@ -751,6 +767,8 @@ void WriteBufferFromS3::completeMultipartUpload()
 
         if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
         {
+            /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
+            /// BTW, NO_SUCH_UPLOAD is expected error and we shouldn't retry it here, DB::S3::Client take care of it
             LOG_INFO(log, "Multipart upload failed with NO_SUCH_KEY error, will retry. {}, Parts: {}", getVerboseLogDetails(), multipart_tags.size());
         }
         else
@@ -789,6 +807,7 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     if (!write_settings.object_storage_write_if_match.empty())
         req.SetIfMatch(write_settings.object_storage_write_if_match);
 
+    /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
     client_ptr->setKMSHeaders(req);
@@ -841,10 +860,14 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
 
             if (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
             {
+
+                /// For unknown reason, at least MinIO can respond with NO_SUCH_KEY for put requests
                 LOG_INFO(log, "Single part upload failed with NO_SUCH_KEY error. {}, size {}, will retry", getShortLogDetails(), content_length);
             }
             else
             {
+                /// PreconditionFailed is an expected response for conditional writes (e.g. If-None-Match: *),
+                /// not a genuine error — the caller handles it.
                 if (outcome.GetError().GetExceptionName() == "PreconditionFailed")
                     LOG_INFO(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
                               outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);

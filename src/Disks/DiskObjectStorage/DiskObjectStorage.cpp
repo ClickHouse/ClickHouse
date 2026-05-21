@@ -1016,4 +1016,5 @@ DiskObjectStorageReservation::~DiskObjectStorageReservation()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
+
 }

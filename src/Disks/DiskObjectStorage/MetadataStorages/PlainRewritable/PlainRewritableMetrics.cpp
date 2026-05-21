@@ -66,8 +66,9 @@ std::shared_ptr<PlainRewritableMetrics> createPlainRewritableMetrics(ObjectStora
         case ObjectStorageType::GCS:
         case ObjectStorageType::Max:
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Plain rewritable metrics are not implemented for this object storage type");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not Implemented");
         }
     }
 }
+
 }

@@ -87,4 +87,5 @@ String DataSourceDescription::toString() const
     return fmt::format("{} (description = '{}', is_encrypted = {}, is_cached = {}, zookeeper_name = '{}')",
                        name(), description, is_encrypted, is_cached, zookeeper_name);
 }
+
 }
