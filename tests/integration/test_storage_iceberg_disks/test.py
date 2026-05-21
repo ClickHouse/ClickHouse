@@ -157,6 +157,12 @@ def started_cluster():
 
         cluster.blob_service_client = cluster.blob_service_client
 
+        container_client = cluster.blob_service_client.get_container_client(
+            cluster.azure_container_name
+        )
+        if not container_client.exists():
+            container_client.create_container()
+
         cluster.default_azure_uploader = AzureUploader(
             cluster.blob_service_client, cluster.azure_container_name
         )
