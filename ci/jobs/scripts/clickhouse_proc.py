@@ -1,6 +1,7 @@
 import glob
 import json as json_module
 import os
+import platform
 import signal
 import subprocess
 import sys
@@ -748,6 +749,14 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             return False
 
     def run_test(self, cmd, timeout=7200):
+        """Run a `clickhouse-test` command and return its integer exit code.
+
+        Returns 0 on success, non-zero on failure. In particular, exit code
+        `STOP_TESTING_EXIT_CODE` (2) signals that `clickhouse-test` aborted
+        the run via `StopTesting` (server died, hung check failed, etc.) and
+        is forwarded to `FTResultsProcessor.run` as `runner_exit_code` so it
+        can populate the synthetic "Server died" leaf.
+        """
         print(f"Run test: [{cmd}]")
         with open(self.test_output_file, "w") as f:
             process = subprocess.Popen(
@@ -772,7 +781,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             try:
                 process.wait(timeout=timeout)
                 reader_thread.join()
-                return process.returncode == 0
+                return process.returncode
             except subprocess.TimeoutExpired:
                 print(
                     f"ERROR: fast test timed out after {timeout}s, killing process group"
@@ -780,7 +789,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                 process.wait()
                 reader_thread.join()
-                return False
+                return process.returncode
             finally:
                 # Kill any test processes that survived clickhouse-test's own cleanup
                 # (e.g. if it was killed with SIGKILL before its signal handlers ran).
@@ -864,6 +873,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res += self.debug_artifacts
                 res += self.dump_system_tables()
                 res += self._collect_core_dumps()
+                res += self._collect_diagnostic_reports()
                 res += self._get_logs_archive_coordination()
                 if Path(self.MINIO_LOG).exists():
                     res.append(self.MINIO_LOG)
@@ -892,6 +902,21 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         for run_dir in sorted(p_temp_dir.glob("run_r*")):
             result.extend(ClickHouseService.collect_cores(run_dir))
         return result
+
+    @staticmethod
+    def _collect_diagnostic_reports() -> List[str]:
+        # macOS writes .ips crash reports to /Library/Logs/DiagnosticReports as
+        # root. Grant read access so the runner can list and read the files
+        # in place; the darwin fast-test post-hook wipes the directory under
+        # sudo afterwards, so anything we see here belongs to the current run.
+        if platform.system() != "Darwin":
+            return []
+        reports_dir = Path("/Library/Logs/DiagnosticReports")
+        Shell.check(
+            f"sudo chmod -R a+rX {reports_dir}",
+            verbose=True,
+        )
+        return [str(p) for p in reports_dir.glob("*.ips")]
 
     @classmethod
     def _get_logs_archive_coordination(cls):

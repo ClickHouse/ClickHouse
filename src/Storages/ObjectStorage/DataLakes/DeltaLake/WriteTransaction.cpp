@@ -17,6 +17,7 @@
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
+#include <base/scope_guard.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
 
