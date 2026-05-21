@@ -568,7 +568,7 @@ std::optional<AuthResult> TokenAccessStorage::authenticateImpl(
         bool /* allow_no_password */,
         bool /* allow_plaintext_password */) const
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock lock(mutex);
 
     /// Reject mismatched credential types BEFORE the typeid_cast that would
     /// throw a `LOGICAL_ERROR`. The reference-form `typeid_cast` is fatal on
@@ -756,6 +756,11 @@ std::optional<AuthResult> TokenAccessStorage::authenticateImpl(
     /// it queues are picked up by the very loop that called it. Only
     /// `authenticateImpl` runs outside of any drain and so is the one site
     /// that has to flush explicitly.
+    /// Release `mutex` first: the notifier drain re-enters this storage via
+    /// `processRoleChange` (subscribed for Role changes) while holding the
+    /// notifier's `sending_notifications`, so holding both in opposite order
+    /// here would deadlock (tsan lock-order-inversion vs. CREATE ROLE).
+    lock.unlock();
     access_control.getChangesNotifier().sendNotifications();
 
     if (id)

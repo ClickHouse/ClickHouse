@@ -1,0 +1,5 @@
+{
+    "issuer": "http://keycloak:8080/realms/clickhouse-test",
+    "userinfo_endpoint": "http://keycloak:8080/realms/clickhouse-test/protocol/openid-connect/userinfo",
+    "introspection_endpoint": "http://keycloak:8080/realms/clickhouse-test/protocol/openid-connect/token/introspect"
+}

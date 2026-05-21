@@ -35,6 +35,34 @@ node = cluster.add_instance(
     stay_alive=True,
 )
 
+# Each introspection scenario gets its own node so the targeted processor is the
+# only one that can authenticate a token -- otherwise we cannot tell which
+# processor handled a successful auth.
+node_manual_introspect = cluster.add_instance(
+    "node_manual_introspect",
+    main_configs=["configs/validators_manual_introspect.xml"],
+    user_configs=["configs/users.xml"],
+    with_keycloak=True,
+    stay_alive=True,
+)
+
+node_discovery_introspect = cluster.add_instance(
+    "node_discovery_introspect",
+    main_configs=["configs/validators_discovery_introspect.xml"],
+    user_configs=["configs/users.xml"],
+    with_keycloak=True,
+    with_mock_oidc=True,
+    stay_alive=True,
+)
+
+node_manual_introspect_bad = cluster.add_instance(
+    "node_manual_introspect_bad",
+    main_configs=["configs/validators_manual_introspect_bad_secret.xml"],
+    user_configs=["configs/users.xml"],
+    with_keycloak=True,
+    stay_alive=True,
+)
+
 
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
@@ -418,3 +446,119 @@ def test_device_flow_round_trip(started_cluster):
     # --- 4. Use the token to authenticate a ClickHouse query ---
     result = query_with_token(node, id_token, "SELECT 1")
     assert result.strip() == "1"
+
+
+KEYCLOAK_INTROSPECT_PATH = (
+    f"/realms/{KEYCLOAK_REALM}/protocol/openid-connect/token/introspect"
+)
+KEYCLOAK_REVOKE_PATH = (
+    f"/realms/{KEYCLOAK_REALM}/protocol/openid-connect/revoke"
+)
+
+# Pin Host header on backchannel calls so tokens have the same `iss` as the URL
+# ClickHouse uses to introspect them (the existing helpers used by other tests
+# keep the host-mapped URL so device-flow HTML redirects stay reachable).
+KEYCLOAK_BACKCHANNEL_HOST = "keycloak:8080"
+
+
+def _keycloak_backchannel_headers():
+    return {"Host": KEYCLOAK_BACKCHANNEL_HOST}
+
+
+def get_keycloak_access_token(started_cluster, username="alice", password="secret"):
+    url = f"{keycloak_url(started_cluster)}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/token"
+    data = {
+        "grant_type": "password",
+        "client_id": KEYCLOAK_CLIENT_ID,
+        "client_secret": KEYCLOAK_CLIENT_SECRET,
+        "username": username,
+        "password": password,
+        "scope": "openid profile email",
+    }
+    resp = requests.post(url, data=data, headers=_keycloak_backchannel_headers(), timeout=30)
+    resp.raise_for_status()
+    body = resp.json()
+    assert "access_token" in body, f"No access_token in response: {body}"
+    return body["access_token"]
+
+
+def introspect_directly(started_cluster, token):
+    """POST to Keycloak's introspection endpoint with the client credentials
+    we use in the ClickHouse config. Returns the parsed JSON body."""
+    url = f"{keycloak_url(started_cluster)}{KEYCLOAK_INTROSPECT_PATH}"
+    resp = requests.post(
+        url,
+        data={"token": token, "token_type_hint": "access_token"},
+        auth=(KEYCLOAK_CLIENT_ID, KEYCLOAK_CLIENT_SECRET),
+        headers=_keycloak_backchannel_headers(),
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def revoke_keycloak_token(started_cluster, token):
+    url = f"{keycloak_url(started_cluster)}{KEYCLOAK_REVOKE_PATH}"
+    resp = requests.post(
+        url,
+        data={"token": token, "token_type_hint": "access_token"},
+        auth=(KEYCLOAK_CLIENT_ID, KEYCLOAK_CLIENT_SECRET),
+        headers=_keycloak_backchannel_headers(),
+        timeout=10,
+    )
+    resp.raise_for_status()
+
+
+def _expect_auth_failure(node_instance, token):
+    """Assert that ClickHouse rejects the token with a 401/403, not some
+    other 5xx that would falsely satisfy a blanket-catch test."""
+    try:
+        query_with_token(node_instance, token, "SELECT 1")
+    except requests.HTTPError as ex:
+        assert ex.response.status_code in (401, 403), \
+            f"expected 401/403, got {ex.response.status_code}: {ex.response.text}"
+        return
+    pytest.fail("Expected authentication failure but query succeeded")
+
+
+# token_cache_lifetime in the introspection validator configs.
+INTROSPECT_CACHE_TTL_SECONDS = 3
+
+
+def _assert_revocation_detected(started_cluster, node_instance):
+    """Fresh token works, then is revoked, then is rejected after the cache TTL
+    elapses. Only passes when introspection runs on the second request."""
+    token = get_keycloak_access_token(started_cluster)
+
+    assert introspect_directly(started_cluster, token)["active"] is True
+    assert query_with_token(node_instance, token, "SELECT 1").strip() == "1"
+
+    revoke_keycloak_token(started_cluster, token)
+
+    # Wait past the cache TTL with a margin generous enough for slow CI.
+    time.sleep(INTROSPECT_CACHE_TTL_SECONDS + 3)
+
+    assert introspect_directly(started_cluster, token)["active"] is False
+    _expect_auth_failure(node_instance, token)
+
+
+def test_manual_introspect_detects_revocation(started_cluster):
+    """Manual mode: opaque-flow introspection rejects a token after revocation."""
+    _assert_revocation_detected(started_cluster, node_manual_introspect)
+
+
+def test_discovery_introspect_detects_revocation(started_cluster):
+    """Discovery mode against a mock OIDC doc that omits jwks_uri: the only
+    available validation path is RFC 7662, exercised end-to-end here."""
+    _assert_revocation_detected(started_cluster, node_discovery_introspect)
+
+
+def test_manual_introspect_rejects_on_bad_client_secret(started_cluster):
+    """When the resource server cannot authenticate to the introspection
+    endpoint (Keycloak returns 401), ClickHouse must reject the bearer token
+    rather than fall through to /userinfo."""
+    token = get_keycloak_access_token(started_cluster)
+    # Sanity: the token itself is fine -- the failure must come from the
+    # ClickHouse-side introspection auth, not from the token being invalid.
+    assert introspect_directly(started_cluster, token)["active"] is True
+    _expect_auth_failure(node_manual_introspect_bad, token)

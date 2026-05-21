@@ -88,54 +88,95 @@ std::unique_ptr<DB::ITokenProcessor> ITokenProcessor::parseTokenProcessor(
     }
     else if (provider_type == "openid")
     {
-        auto verifier_leeway = config.getUInt64(prefix + ".verifier_leeway", 60);
-        auto jwks_cache_lifetime = config.getUInt64(prefix + ".jwks_cache_lifetime", 3600);
-
-        /// `token_introspection_endpoint` is currently unused at runtime: the
-        /// processor relies on JWT-local validation (when JWKS is configured)
-        /// or on userinfo, never on RFC 7662 introspection. Don't require it
-        /// for "locally configured" mode -- forcing operators to set a value
-        /// that does nothing is a footgun. If introspection is wired up later,
-        /// the field is already plumbed and can become required at that point.
-        bool externally_configured = config.hasProperty(prefix + ".configuration_endpoint") && !config.hasProperty(prefix + ".jwks_uri");
+        bool externally_configured = config.hasProperty(prefix + ".configuration_endpoint");
         bool locally_configured = config.hasProperty(prefix + ".userinfo_endpoint");
 
-        if (externally_configured && ! locally_configured)
+        if (externally_configured && locally_configured)
+            throw DB::Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                                "Token processor '{}': 'configuration_endpoint' and 'userinfo_endpoint' are mutually exclusive.",
+                                processor_name);
+
+        const auto introspection_client_id = config.getString(prefix + ".introspection_client_id", "");
+        const auto introspection_client_secret = config.getString(prefix + ".introspection_client_secret", "");
+        if (introspection_client_id.empty() != introspection_client_secret.empty())
+            throw DB::Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                                "Token processor '{}': 'introspection_client_id' and 'introspection_client_secret' "
+                                "must be configured together.",
+                                processor_name);
+
+        auto reject_unsupported_key = [&](const char * key, const char * hint)
         {
+            if (config.hasProperty(prefix + "." + key))
+                throw DB::Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                                    "Token processor '{}': '{}' is not supported in this mode. {}",
+                                    processor_name, key, hint);
+        };
+
+        if (externally_configured)
+        {
+            reject_unsupported_key("jwks_uri",
+                "In discovery mode the JWKS URL is resolved from the discovery document; "
+                "for an explicit JWKS URL use a 'jwt_dynamic_jwks' processor.");
+
+            auto verifier_leeway = config.getUInt64(prefix + ".verifier_leeway", 60);
+            auto jwks_cache_lifetime = config.getUInt64(prefix + ".jwks_cache_lifetime", 3600);
             const auto configuration_endpoint = config.getString(prefix + ".configuration_endpoint");
             require_allowed_url(configuration_endpoint, "configuration_endpoint");
-            /// Opt-out for the HTTPS-on-discovery-returned-URLs check. False by
-            /// default; operators who knowingly run an IdP over plain HTTP can
-            /// enable it without falling back to manual trust-chain config.
             const auto allow_http_discovery_urls = config.getBool(prefix + ".allow_http_discovery_urls", false);
             return std::make_unique<OpenIdTokenProcessor>(processor_name, token_cache_lifetime, username_claim, groups_claim,
                                                           expected_issuer, expected_audience, allow_no_expiration,
                                                           configuration_endpoint,
                                                           verifier_leeway,
                                                           jwks_cache_lifetime,
+                                                          introspection_client_id,
+                                                          introspection_client_secret,
                                                           remote_host_filter,
                                                           allow_http_discovery_urls);
         }
-        else if (locally_configured && !externally_configured)
+
+        if (locally_configured)
         {
-            const auto userinfo_endpoint = config.getString(prefix + ".userinfo_endpoint");
+            reject_unsupported_key("jwks_uri",
+                "For local JWT validation against a JWKS use a 'jwt_dynamic_jwks' processor.");
+            reject_unsupported_key("allow_no_expiration", "It applies only to JWT validation.");
+            reject_unsupported_key("verifier_leeway", "It applies only to JWT validation.");
+            reject_unsupported_key("jwks_cache_lifetime", "It applies only to JWKS-backed processors.");
+
             const auto token_introspection_endpoint = config.getString(prefix + ".token_introspection_endpoint", "");
-            const auto jwks_uri = config.getString(prefix + ".jwks_uri", "");
+            const bool has_introspection = !token_introspection_endpoint.empty();
+
+            if (has_introspection && introspection_client_id.empty())
+                throw DB::Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                                    "Token processor '{}': 'token_introspection_endpoint' is set but "
+                                    "'introspection_client_id' / 'introspection_client_secret' are not.",
+                                    processor_name);
+            if (!has_introspection && !introspection_client_id.empty())
+                throw DB::Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                                    "Token processor '{}': 'introspection_client_id' / 'introspection_client_secret' "
+                                    "are set but no 'token_introspection_endpoint' is configured.",
+                                    processor_name);
+
+            if ((config.hasProperty(prefix + ".expected_issuer") || config.hasProperty(prefix + ".expected_audience"))
+                && !has_introspection)
+                throw DB::Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                                    "Token processor '{}': 'expected_issuer' / 'expected_audience' need either a "
+                                    "'token_introspection_endpoint' (RFC 7662) or a 'jwt_dynamic_jwks' processor.",
+                                    processor_name);
+
+            const auto userinfo_endpoint = config.getString(prefix + ".userinfo_endpoint");
             require_allowed_url(userinfo_endpoint, "userinfo_endpoint");
             require_allowed_url(token_introspection_endpoint, "token_introspection_endpoint");
-            require_allowed_url(jwks_uri, "jwks_uri");
             return std::make_unique<OpenIdTokenProcessor>(processor_name, token_cache_lifetime, username_claim, groups_claim,
-                                                          expected_issuer, expected_audience, allow_no_expiration,
+                                                          expected_issuer, expected_audience,
                                                           userinfo_endpoint,
                                                           token_introspection_endpoint,
-                                                          verifier_leeway,
-                                                          jwks_uri,
-                                                          jwks_cache_lifetime);
+                                                          introspection_client_id,
+                                                          introspection_client_secret);
         }
 
         throw DB::Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                            "Either 'configuration_endpoint' or 'userinfo_endpoint' "
-                            "(and, optionally, 'token_introspection_endpoint' / 'jwks_uri') must be specified for 'openid' processor");
+                            "Either 'configuration_endpoint' (discovery) or 'userinfo_endpoint' (manual) "
+                            "must be specified for 'openid' processor");
     }
     else if (provider_type == "entra")
     {
@@ -256,8 +297,6 @@ std::unique_ptr<DB::ITokenProcessor> ITokenProcessor::parseTokenProcessor(
     }
     else
         throw DB::Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Invalid type: {}", provider_type);
-
-    // throw DB::Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Failed to parse token processor: {}", processor_name);
 }
 
 #else

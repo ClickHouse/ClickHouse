@@ -695,6 +695,7 @@ class ClickHouseCluster:
         self.with_cassandra = False
         self.with_ldap = False
         self.with_keycloak = False
+        self.with_mock_oidc = False
         self.with_jdbc_bridge = False
         self.with_nginx = False
         self.with_hive = False
@@ -800,6 +801,11 @@ class ClickHouseCluster:
         self.keycloak_host = "keycloak"
         self.keycloak_port = 18080
         self.base_keycloak_cmd = None
+
+        # available when with_mock_oidc == True
+        self.mock_oidc_host = "mock-oidc"
+        self.mock_oidc_port = 18091
+        self.base_mock_oidc_cmd = None
 
         # available when with_rabbitmq == True
         self.rabbitmq_host = "rabbitmq1"
@@ -1967,6 +1973,25 @@ class ClickHouseCluster:
         )
         return self.base_keycloak_cmd
 
+    def setup_mock_oidc_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_mock_oidc = True
+        env_variables["MOCK_OIDC_EXTERNAL_PORT"] = str(self.mock_oidc_port)
+        env_variables["MOCK_OIDC_CONFIG_FILE"] = p.join(
+            self.base_dir,
+            "mock_oidc",
+            "openid-configuration",
+        )
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_mock_oidc.yml")]
+        )
+        self.base_mock_oidc_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_mock_oidc.yml"),
+        )
+        return self.base_mock_oidc_cmd
+
     def setup_jdbc_bridge_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_jdbc_bridge = True
         env_variables["JDBC_DRIVER_LOGS"] = self.jdbc_driver_logs_dir
@@ -2120,6 +2145,7 @@ class ClickHouseCluster:
         with_cassandra=False,
         with_ldap=False,
         with_keycloak=False,
+        with_mock_oidc=False,
         with_jdbc_bridge=False,
         with_hive=False,
         with_coredns=False,
@@ -2263,6 +2289,7 @@ class ClickHouseCluster:
             with_cassandra=with_cassandra,
             with_ldap=with_ldap,
             with_keycloak=with_keycloak,
+            with_mock_oidc=with_mock_oidc,
             with_iceberg_catalog=with_iceberg_catalog,
             with_glue_catalog=with_glue_catalog,
             with_hms_catalog=with_hms_catalog,
@@ -2537,6 +2564,11 @@ class ClickHouseCluster:
         if with_keycloak and not self.with_keycloak:
             cmds.append(
                 self.setup_keycloak_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_mock_oidc and not self.with_mock_oidc:
+            cmds.append(
+                self.setup_mock_oidc_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_jdbc_bridge and not self.with_jdbc_bridge:
@@ -3573,6 +3605,26 @@ class ClickHouseCluster:
     def get_keycloak_url(self):
         return f"http://localhost:{self.keycloak_port}"
 
+    def wait_mock_oidc_to_start(self, timeout=60):
+        url = (
+            f"http://localhost:{self.mock_oidc_port}"
+            f"/.well-known/openid-configuration"
+        )
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                resp = requests.get(url, timeout=5)
+                if resp.status_code == 200:
+                    logging.info("mock-oidc is online")
+                    return
+            except Exception as ex:
+                logging.warning("Waiting for mock-oidc: %s", ex)
+            time.sleep(2)
+        raise Exception("mock-oidc did not start in time")
+
+    def get_mock_oidc_url(self):
+        return f"http://localhost:{self.mock_oidc_port}"
+
     def wait_prometheus_to_start(self):
         for prometheus_server in self.prometheus_servers:
             ip = self.get_instance_ip(f"{self.prometheus_host}_{prometheus_server}")
@@ -4144,6 +4196,11 @@ class ClickHouseCluster:
                 subprocess_check_call(self.base_keycloak_cmd + ["up", "-d"])
                 self.up_called = True
                 self.wait_keycloak_to_start()
+
+            if self.with_mock_oidc and self.base_mock_oidc_cmd:
+                subprocess_check_call(self.base_mock_oidc_cmd + ["up", "-d"])
+                self.up_called = True
+                self.wait_mock_oidc_to_start()
 
             if self.with_jdbc_bridge and self.base_jdbc_bridge_cmd:
                 os.makedirs(self.jdbc_driver_logs_dir)
@@ -4845,6 +4902,7 @@ class ClickHouseInstance:
         with_cassandra,
         with_ldap,
         with_keycloak,
+        with_mock_oidc,
         with_iceberg_catalog,
         with_glue_catalog,
         with_hms_catalog,
@@ -4971,6 +5029,7 @@ class ClickHouseInstance:
         self.with_cassandra = with_cassandra
         self.with_ldap = with_ldap
         self.with_keycloak = with_keycloak
+        self.with_mock_oidc = with_mock_oidc
         self.with_jdbc_bridge = with_jdbc_bridge
         self.with_hive = with_hive
         self.with_coredns = with_coredns
@@ -6386,6 +6445,9 @@ class ClickHouseInstance:
 
         if self.with_keycloak:
             depends_on.append("keycloak")
+
+        if self.with_mock_oidc:
+            depends_on.append("mock-oidc")
 
         if self.with_rabbitmq:
             depends_on.append("rabbitmq1")

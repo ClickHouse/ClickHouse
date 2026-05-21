@@ -1,0 +1,17 @@
+<clickhouse>
+    <token_processors>
+        <!-- Discovery mode pointed at a mock OIDC server whose .well-known doc
+             omits jwks_uri. With no JWT fast-path available the processor falls
+             through to RFC 7662 introspection at the discovered endpoint, which
+             the mock points back at real Keycloak. -->
+        <keycloak_discovery_introspect>
+            <type>openid</type>
+            <configuration_endpoint>http://mock-oidc/.well-known/openid-configuration</configuration_endpoint>
+            <introspection_client_id>clickhouse</introspection_client_id>
+            <introspection_client_secret>test-secret</introspection_client_secret>
+            <username_claim>preferred_username</username_claim>
+            <token_cache_lifetime>3</token_cache_lifetime>
+            <allow_http_discovery_urls>true</allow_http_discovery_urls>
+        </keycloak_discovery_introspect>
+    </token_processors>
+</clickhouse>

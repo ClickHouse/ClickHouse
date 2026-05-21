@@ -197,19 +197,18 @@ private:
 class OpenIdTokenProcessor : public ITokenProcessor
 {
 public:
-    /// Specify endpoints manually
+    /// Manual mode: `/userinfo` for identity, plus RFC 7662 introspection
+    /// before it when an introspection endpoint and client credentials are set.
     OpenIdTokenProcessor(const String & processor_name_,
                          UInt64 token_cache_lifetime_,
                          const String & username_claim_,
                          const String & groups_claim_,
                          const String & expected_issuer_,
                          const String & expected_audience_,
-                         bool allow_no_expiration_,
                          const String & userinfo_endpoint_,
                          const String & token_introspection_endpoint_,
-                         UInt64 verifier_leeway_,
-                         const String & jwks_uri_,
-                         UInt64 jwks_cache_lifetime_);
+                         const String & introspection_client_id_,
+                         const String & introspection_client_secret_);
 
     /// Obtain endpoints from openid-configuration URL
     OpenIdTokenProcessor(const String & processor_name_,
@@ -222,15 +221,24 @@ public:
                          const String & openid_config_endpoint_,
                          UInt64 verifier_leeway_,
                          UInt64 jwks_cache_lifetime_,
+                         const String & introspection_client_id_,
+                         const String & introspection_client_secret_,
                          const RemoteHostFilter & remote_host_filter_,
                          bool allow_http_discovery_urls_);
 
     bool resolveAndValidate(TokenCredentials & credentials) const override;
 private:
+    /// True on `active=true`; populates `expires_at` from `exp` if present.
+    bool runIntrospection(const String & token, std::chrono::system_clock::time_point & expires_at) const;
+
     Poco::URI userinfo_endpoint;
     Poco::URI token_introspection_endpoint;
+    String expected_issuer;
+    String expected_audience;
+    String introspection_client_id;
+    String introspection_client_secret;
 
-    /// Access token is often a valid JWT, so we can validate it locally to avoid unnecesary network requests.
+    /// Populated only by the discovery constructor when the doc advertises a `jwks_uri`.
     std::optional<JwksJwtProcessor> jwt_validator = std::nullopt;
 };
 
