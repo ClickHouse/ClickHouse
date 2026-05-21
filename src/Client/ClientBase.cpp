@@ -936,10 +936,6 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
             default_output_format = *format_from_file_name;
         else
             default_output_format = "TSV";
-
-        std::optional<String> file_name = tryGetFileNameFromFileDescriptor(stdout_fd);
-        if (file_name)
-            default_output_compression_method = chooseCompressionMethod(*file_name, "");
     }
     else if (is_interactive)
     {
@@ -948,6 +944,17 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
     else
     {
         default_output_format = "TSV";
+    }
+
+    /// Detect output compression independently of format selection.
+    /// Even when the user specifies --output-format or --format explicitly,
+    /// stdout may still be redirected to a compressed file (e.g., output.gz).
+    if (default_output_compression_method == CompressionMethod::None
+        && isFileDescriptorSuitableForInput(stdout_fd))
+    {
+        std::optional<String> file_name = tryGetFileNameFromFileDescriptor(stdout_fd);
+        if (file_name)
+            default_output_compression_method = chooseCompressionMethod(*file_name, "");
     }
 
     if (getClientConfiguration().has("input-format"))
@@ -974,7 +981,13 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
             default_input_format = *format_from_file_name;
         else
             default_input_format = "auto";
+    }
 
+    /// Detect input compression independently of format selection.
+    /// Even when the user specifies --input-format or --format explicitly,
+    /// stdin may still be redirected from a compressed file (e.g., input.gz).
+    if (default_input_compression_method == CompressionMethod::None)
+    {
         std::optional<String> file_name = tryGetFileNameFromFileDescriptor(stdin_fd);
         if (file_name)
             default_input_compression_method = chooseCompressionMethod(*file_name, "");
