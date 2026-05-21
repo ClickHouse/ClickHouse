@@ -1,13 +1,12 @@
 #include <Interpreters/detachQuery.h>
 
 #include <Common/CurrentThread.h>
-#include <Common/PODArray.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <IO/NullWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromVector.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 
@@ -52,8 +51,7 @@ DetachedQueryHandle detachQuery(String query_text, ContextMutablePtr context)
 
             try
             {
-                PODArray<char> discard_buf;
-                WriteBufferFromVector<PODArray<char>> discard_ostr(discard_buf);
+                NullWriteBuffer discard_ostr;
                 executeQuery(
                     std::make_unique<ReadBufferFromString>(query_for_thread),
                     discard_ostr,
