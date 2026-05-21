@@ -2100,14 +2100,33 @@ void TCPHandler::sendHello()
         writeVarUInt(DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
+    /// Reject oversized config-driven Hello fields at the server boundary so the
+    /// operator sees which setting is misconfigured, rather than a downstream
+    /// `UNEXPECTED_PACKET_FROM_SERVER` on the client.
+    auto check_hello_field_size = [](const String & value, const String & setting_name)
+    {
+        if (value.size() > DBMS_MAX_HELLO_STRING_SIZE)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Server config setting <{}> is {} bytes, maximum allowed in Hello is {}. "
+                "Shorten the value.",
+                setting_name, value.size(), DBMS_MAX_HELLO_STRING_SIZE);
+    };
+
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
+    {
+        check_hello_field_size(server_display_name, "display_name");
         writeStringBinary(server_display_name, *out);
+    }
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
         writeVarUInt(VERSION_PATCH, *out);
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
     {
-        writeStringBinary(server.config().getString("proto_caps.send", "notchunked"), *out);
-        writeStringBinary(server.config().getString("proto_caps.recv", "notchunked"), *out);
+        const auto proto_send = server.config().getString("proto_caps.send", "notchunked");
+        const auto proto_recv = server.config().getString("proto_caps.recv", "notchunked");
+        check_hello_field_size(proto_send, "proto_caps.send");
+        check_hello_field_size(proto_recv, "proto_caps.recv");
+        writeStringBinary(proto_send, *out);
+        writeStringBinary(proto_recv, *out);
     }
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES)
     {
