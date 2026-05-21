@@ -58,12 +58,12 @@ DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
         const auto & old_elements = tuple_type->getElements();
         DataTypes elements = old_elements;
         bool changed = false;
-        for (size_t i = 0; i < elements.size(); ++i)
+        for (auto & element : elements)
         {
-            auto element_no_lc = recursiveRemoveLowCardinality(elements[i]);
-            if (element_no_lc.get() != elements[i].get())
+            auto element_no_lc = recursiveRemoveLowCardinality(element);
+            if (element_no_lc.get() != element.get())
             {
-                elements[i] = std::move(element_no_lc);
+                element = std::move(element_no_lc);
                 changed = true;
             }
         }
