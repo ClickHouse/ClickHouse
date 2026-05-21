@@ -44,6 +44,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
+    extern const SettingsBool analyzer_compatibility_resolve_alias_prefix_over_subcolumn;
 }
 
 namespace ErrorCodes
@@ -759,6 +760,29 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             return {};
     }
 
+    /** Compatibility setting: when enabled, multi-part identifiers prefer the alias-prefix
+      * strip path over `hasFullIdentifierName` / subcolumn lookup. This restores the
+      * old-analyzer convention where `b.id` against a table aliased `b` resolves to the
+      * `id` column even when the table also has a same-named subcolumn or when a
+      * sibling subquery exposes an asterisk-renamed `b.id` column.
+      */
+    if (scope.context->getSettingsRef()[Setting::analyzer_compatibility_resolve_alias_prefix_over_subcolumn]
+        && identifier.getPartsSize() > 1)
+    {
+        const auto & table_name_compat = table_expression_data.table_name;
+        const bool prefix_matches_table_name = !table_name_compat.empty() && path_start == table_name_compat;
+        const bool prefix_matches_alias
+            = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
+        if (prefix_matches_table_name || prefix_matches_alias)
+        {
+            auto alias_prefix_result = tryResolveIdentifierFromStorage(
+                identifier_lookup, table_expression_node, table_expression_data, scope,
+                1 /*identifier_column_qualifier_parts*/, true /*can_be_not_found*/);
+            if (alias_prefix_result.resolved_identifier)
+                return alias_prefix_result;
+        }
+    }
+
      /** If identifier first part binds to some column start or table has full identifier name. Then we can try to find whole identifier in table.
        * 1. Try to bind identifier first part to column in table, if true get full identifier from table or throw exception.
        * 2. Try to bind identifier first part to table name or storage alias, if true remove first part and try to get full identifier from table or throw exception.
@@ -1208,23 +1232,28 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
                 resolved_identifier = left_resolved_identifier;
             }
         }
-        else if (scope.joins_count == 1 && scope.context->getSettingsRef()[Setting::single_join_prefer_left_table])
-        {
-            resolved_side = JoinTableSide::Left;
-            resolved_identifier = left_resolved_identifier;
-        }
         else
         {
-            /** Asterisk expansion of a join can produce subquery output columns whose names
-              * contain dots (e.g. `SELECT * FROM a JOIN b ...` yields columns `id`, `b.id`).
-              * A multi-part identifier like `b.id` then matches both this synthetic dotted
-              * name in one side and the real `b.id` in the other side, raising a spurious
-              * ambiguity. Prefer the side that resolved by stripping the alias prefix
-              * (its column name is a suffix of the identifier) over the side that matched
-              * the whole identifier as a literal dotted column name in a subquery output.
-              */
+            const auto & ambiguity_path_start = identifier_lookup.identifier.front();
+            auto column_source_matches_path_start = [&](const QueryTreeNodePtr & resolved) -> bool
+            {
+                const auto * column = resolved->as<ColumnNode>();
+                if (!column)
+                    return false;
+                auto it = scope.table_expression_node_to_data.find(column->getColumnSource());
+                if (it == scope.table_expression_node_to_data.end())
+                    return false;
+                const auto & data = it->second;
+                if (!data.table_expression_name.empty() && data.table_expression_name == ambiguity_path_start)
+                    return true;
+                if (!data.table_name.empty() && data.table_name == ambiguity_path_start)
+                    return true;
+                return false;
+            };
             auto is_dotted_subquery_column_match = [&](const QueryTreeNodePtr & resolved) -> bool
             {
+                if (identifier_lookup.identifier.getPartsSize() < 2)
+                    return false;
                 const auto * column = resolved->as<ColumnNode>();
                 if (!column)
                     return false;
@@ -1236,14 +1265,31 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
                     return false;
                 return column->getColumnName() == identifier_lookup.identifier.getFullName();
             };
-            const bool left_is_dotted = is_dotted_subquery_column_match(left_resolved_identifier);
-            const bool right_is_dotted = is_dotted_subquery_column_match(right_resolved_identifier);
-            if (left_is_dotted && !right_is_dotted)
+            const bool left_source_matches = column_source_matches_path_start(left_resolved_identifier);
+            const bool right_source_matches = column_source_matches_path_start(right_resolved_identifier);
+            const bool left_is_dotted_subq = is_dotted_subquery_column_match(left_resolved_identifier);
+            const bool right_is_dotted_subq = is_dotted_subquery_column_match(right_resolved_identifier);
+            if (left_source_matches && !right_source_matches)
+            {
+                resolved_side = JoinTableSide::Left;
+                resolved_identifier = left_resolved_identifier;
+            }
+            else if (right_source_matches && !left_source_matches)
             {
                 resolved_side = JoinTableSide::Right;
                 resolved_identifier = right_resolved_identifier;
             }
-            else if (!left_is_dotted && right_is_dotted)
+            else if (left_is_dotted_subq && !right_is_dotted_subq)
+            {
+                resolved_side = JoinTableSide::Right;
+                resolved_identifier = right_resolved_identifier;
+            }
+            else if (right_is_dotted_subq && !left_is_dotted_subq)
+            {
+                resolved_side = JoinTableSide::Left;
+                resolved_identifier = left_resolved_identifier;
+            }
+            else if (scope.joins_count == 1 && scope.context->getSettingsRef()[Setting::single_join_prefer_left_table])
             {
                 resolved_side = JoinTableSide::Left;
                 resolved_identifier = left_resolved_identifier;

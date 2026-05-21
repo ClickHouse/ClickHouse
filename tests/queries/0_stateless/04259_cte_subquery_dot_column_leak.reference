@@ -3,3 +3,16 @@
 1
 [1]
 [1]
+-- compat setting --
+2
+1
+-- inline subquery, no subcolumn --
+1	1	1	1
+-- CTE leak with subcolumn (default) --
+1	(2)	0	(0)	0	(0)	0	(0)
+-- CTE leak with subcolumn (compat) --
+1	(2)	1	(2)	1	(2)	1	(2)
+-- inline subquery aliased b, with subcolumn (default) --
+1	(2)	0	(0)	0	(0)
+-- inline subquery aliased b, with subcolumn (compat) --
+1	(2)	1	(2)	1	(2)
