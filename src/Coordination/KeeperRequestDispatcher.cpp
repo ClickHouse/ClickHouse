@@ -396,7 +396,14 @@ void KeeperRequestDispatcher::onResponse(KeeperResponseForSession response) noex
                 ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
                 /// Also prevent sending any future responses for this session to avoid breaking
                 /// ordering. The client will disconnect after session timeout.
-                finishSession(response.session_id);
+                try
+                {
+                    finishSession(response.session_id);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("Failed to close session");
+                }
                 return;
             }
         }
