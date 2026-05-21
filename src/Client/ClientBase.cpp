@@ -423,6 +423,10 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
                 "Support for clickhouse_json dialect is disabled "
                 "(turn on setting 'allow_experimental_json_ast_dialect')");
 
+        if (max_length != 0 && static_cast<size_t>(end - pos) > max_length)
+            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                "Max query size exceeded (can be increased with the `max_query_size` setting)");
+
         try
         {
             res = IAST::createFromJSON(String(pos, end),

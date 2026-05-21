@@ -62,6 +62,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int SYNTAX_ERROR;
 }
 
 LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
@@ -246,6 +247,11 @@ void LocalConnection::sendQuery(
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Support for clickhouse_json dialect is disabled "
                     "(turn on setting 'allow_experimental_json_ast_dialect')");
+
+            const size_t max_query_size = settings[Setting::max_query_size];
+            if (max_query_size != 0 && static_cast<size_t>(end - begin) > max_query_size)
+                throw Exception(ErrorCodes::SYNTAX_ERROR,
+                    "Max query size exceeded (can be increased with the `max_query_size` setting)");
 
             parsed_query = IAST::createFromJSON(String(begin, end),
                 settings[Setting::max_ast_depth],
