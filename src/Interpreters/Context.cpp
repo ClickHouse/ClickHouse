@@ -2245,7 +2245,7 @@ void Context::setCurrentProfiles(const SettingsProfilesInfo & profiles_info, boo
     setCurrentProfilesWithLock(profiles_info, check_constraints, lock);
 }
 
-std::vector<UUID> Context::getCurrentProfiles() const
+UUIDs Context::getCurrentProfiles() const
 {
     SharedLockGuard lock(mutex);
     if (!settings_constraints_and_current_profiles)
@@ -2253,7 +2253,7 @@ std::vector<UUID> Context::getCurrentProfiles() const
     return settings_constraints_and_current_profiles->current_profiles;
 }
 
-std::vector<UUID> Context::getEnabledProfiles() const
+UUIDs Context::getEnabledProfiles() const
 {
     SharedLockGuard lock(mutex);
     if (!settings_constraints_and_current_profiles)
