@@ -18,17 +18,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-/// Skip-index substream filenames always start with SKIP_INDEX_FILE_PREFIX (underscore-suffixed).
-/// The archive itself is SKIP_INDICES_PACKED_FILENAME ("skp_idx.packed", dot-suffixed), so this
-/// check never matches the archive and we don't re-enter the lookup recursively.
-bool looksLikePackedSkipIndexFile(const std::string & name)
-{
-    return name.starts_with(SKIP_INDEX_FILE_PREFIX);
-}
-}
-
 DataPartStorageOnDiskFull::DataPartStorageOnDiskFull(VolumePtr volume_, std::string root_path_, std::string part_dir_)
     : DataPartStorageOnDiskBase(std::move(volume_), std::move(root_path_), std::move(part_dir_))
 {

@@ -166,7 +166,11 @@ protected:
     /// cached reader (or nullptr if no archive exists). Used internally by the readFile /
     /// existsFile / getFileSize overlays in the subclasses, and by the public helpers above
     /// that operate on the archive.
-    const PackedFilesReader * getSkipIndicesPackedReader() const;
+    ///
+    /// Virtual so storage subclasses where skp_idx.packed isn't a standalone file on disk can
+    /// override the probe path. The default implementation does a disk->existsFile against the
+    /// part-relative path and constructs a PackedFilesReader from there if it exists.
+    virtual const PackedFilesReader * getSkipIndicesPackedReader() const;
 
 public:
     /// Pre-populate the cached PackedFilesReader from an in-memory index produced by the

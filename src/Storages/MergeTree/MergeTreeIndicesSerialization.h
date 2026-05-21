@@ -15,6 +15,15 @@ inline constexpr std::string_view SKIP_INDEX_FILE_PREFIX = "skp_idx_";
 /// (underscore-suffixed), while the archive uses "skp_idx." (dot-suffixed).
 inline constexpr std::string_view SKIP_INDICES_PACKED_FILENAME = "skp_idx.packed";
 
+/// True iff @name looks like a per-substream skip-index file name (and so could be a virtual
+/// file inside skp_idx.packed). The archive itself uses SKIP_INDICES_PACKED_FILENAME
+/// ("skp_idx.packed", dot-suffixed) so this check never matches the archive — callers can use
+/// it as a cheap pre-filter before consulting the archive overlay without risking recursion.
+inline bool looksLikePackedSkipIndexFile(std::string_view name)
+{
+    return name.starts_with(SKIP_INDEX_FILE_PREFIX);
+}
+
 class IMergeTreeIndexCondition;
 class IMergeTreeDataPart;
 struct IMergeTreeIndex;
