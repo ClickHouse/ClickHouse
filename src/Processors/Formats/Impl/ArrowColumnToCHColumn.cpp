@@ -1355,7 +1355,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             DataTypePtr nested_type_hint;
             if (type_hint)
             {
-                const auto * array_type_hint = typeid_cast<const DataTypeArray *>(type_hint.get());
+                const auto * array_type_hint = typeid_cast<const DataTypeArray *>(removeNullable(type_hint).get());
                 if (array_type_hint)
                     nested_type_hint = array_type_hint->getNestedType();
             }
@@ -1673,6 +1673,13 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
     }
 }
 
+static bool nestedTypeAllowsNullableWrapperForArrowRead(const DataTypePtr & nested_type, const FormatSettings & format_settings)
+{
+    if (typeid_cast<const DataTypeArray *>(nested_type.get()))
+        return format_settings.schema_inference_allow_nullable_array_type;
+    return nested_type->canBeInsideNullable();
+}
+
 static ColumnWithTypeAndName readColumnFromArrowColumn(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
     std::string column_name,
@@ -1687,7 +1694,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse,
     const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet)
 {
-    bool type_hint_not_nullable_capable = type_hint && !removeNullable(type_hint)->canBeInsideNullable();
+    bool type_hint_not_nullable_capable = type_hint && !nestedTypeAllowsNullableWrapperForArrowRead(removeNullable(type_hint), settings.format_settings);
     bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && !type_hint_not_nullable_capable && settings.allow_inferring_nullable_columns;
     if (read_as_nullable_column &&
         arrow_column->type()->id() != arrow::Type::MAP &&

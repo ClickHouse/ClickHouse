@@ -1690,7 +1690,7 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
             return nullptr;
 
         auto array_res = std::make_shared<DataTypeArray>(nested_type);
-        return (make_nullable && settings.schema_inference_allow_nullable_array_type) ? makeNullableSafe(array_res) : array_res;
+        return (make_nullable && canBeInsideNullableBySchemaSettings(array_res, settings)) ? makeNullable(array_res) : array_res;
     }
 
     if (which.isVariant())

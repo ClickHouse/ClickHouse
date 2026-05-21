@@ -9,6 +9,14 @@ CREATE TABLE ctas_nullable_array_bad2 ENGINE = Memory AS SELECT CAST(NULL AS Nul
 
 SET allow_experimental_nullable_array_type = 1;
 
+SELECT throwIf(toTypeName(if(number % 2, [1, 2], CAST(NULL AS Nullable(Array(Int32))))) != 'Nullable(Array(Int32))')
+FROM numbers(1)
+FORMAT Null;
+
+SELECT throwIf(toTypeName(multiIf(number % 2, [1, 2], CAST(NULL AS Nullable(Array(Int32))))) != 'Nullable(Array(Int32))')
+FROM numbers(1)
+FORMAT Null;
+
 CREATE TABLE nullable_array_type
 (
     id UInt8,

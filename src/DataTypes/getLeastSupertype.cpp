@@ -460,7 +460,9 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 return nullptr;
 
             DataTypePtr result_type = std::make_shared<DataTypeArray>(nested_type);
-            if (have_nullable && result_type->canBeInsideNullable())
+            /// `DataTypeArray::canBeInsideNullable()` is false by design; outer nullability is gated at
+            /// CREATE/CAST time via settings, not during type inference for mixed Array/Nullable(Array) inputs.
+            if (have_nullable)
                 result_type = std::make_shared<DataTypeNullable>(result_type);
 
             return result_type;
