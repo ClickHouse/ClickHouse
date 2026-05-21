@@ -131,7 +131,11 @@ void SystemLogQueue<LogElement>::handleCrash()
 {
     if (settings.notify_flush_on_crash)
     {
-        waitFlush(getLastLogIndex(),  /* should_prepare_tables_anyway */ true);
+        /// `SignalHandlers.cpp` gives the crash path a hard ~303s wall before the default
+        /// handler kills the process, and `SystemLogs::handleCrash` walks every queue in
+        /// sequence. Keep the per-queue wait short so one stuck queue cannot starve the
+        /// remaining ones (in particular `crash_log`, which is flushed first).
+        waitFlush(getLastLogIndex(), /* should_prepare_tables_anyway */ true, /* timeout_seconds */ 60);
     }
 }
 
@@ -154,16 +158,9 @@ void SystemLogQueue<LogElement>::notifyFlush(SystemLogQueue<LogElement>::Index e
 }
 
 template <typename LogElement>
-void SystemLogQueue<LogElement>::waitFlush(SystemLogQueue<LogElement>::Index expected_flushed_index, bool should_prepare_tables_anyway)
+void SystemLogQueue<LogElement>::waitFlush(SystemLogQueue<LogElement>::Index expected_flushed_index, bool should_prepare_tables_anyway, int timeout_seconds)
 {
     LOG_DEBUG(log, "Requested flush up to offset {}", expected_flushed_index);
-
-    // Use an arbitrary timeout to avoid endless waiting. Earlier bumps
-    // (60s -> 180s) still produced TIMEOUT_EXCEEDED in `SYSTEM FLUSH LOGS`
-    // on heavily loaded parallel CI runners. Raised to 600s for the same
-    // reason: heavy parallel tests on slow disks can stall flush longer
-    // than 180s without anything actually going wrong.
-    const int timeout_seconds = 600;
 
     std::unique_lock lock(mutex);
 

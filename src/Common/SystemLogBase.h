@@ -138,7 +138,9 @@ public:
 
     Index getLastLogIndex();
     void notifyFlush(Index expected_flushed_index, bool should_prepare_tables_anyway);
-    void waitFlush(Index expected_flushed_index, bool should_prepare_tables_anyway);
+    /// `timeout_seconds` bounds how long we block on the flush. The crash path passes a small
+    /// value so a single stuck queue does not starve the signal handler's per-process budget.
+    void waitFlush(Index expected_flushed_index, bool should_prepare_tables_anyway, int timeout_seconds = 600);
 
     /// Handles crash, flushes log without blocking if notify_flush_on_crash is set
     void handleCrash();
