@@ -482,6 +482,9 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     set_and_key->set = std::move(inplace_set_and_key->set);
     if (set_and_key->external_table)
         buildExternalTableFromInplaceSet(set_and_key->external_table);
+
+    /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
+    pipeline.finalizeWriteInQueryResultCache();
 }
 
 SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
@@ -573,6 +576,9 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     if (set_and_key->external_table)
         buildExternalTableFromInplaceSet(set_and_key->external_table);
     logProcessorProfile(context, pipeline.getProcessors());
+
+    /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
+    pipeline.finalizeWriteInQueryResultCache();
 
     return set_and_key->set;
 }
