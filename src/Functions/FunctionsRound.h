@@ -699,6 +699,13 @@ public:
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
+        /// Validate constant scale.
+        if (arguments.size() > 1)
+        {
+            if (const auto * scale_const = checkAndGetColumnConst<IColumn>(arguments[1].column.get()))
+                validateScale(scale_const->getInt(0));
+        }
+
         return arguments[0].type;
     }
 
