@@ -33,7 +33,7 @@ namespace
         if (!database.empty() && database != new_context->getCurrentDatabase())
             new_context->setCurrentDatabase(database);
 
-        new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames());
+        new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
         new_context->setProgressCallback(context->getProgressCallback());
         new_context->setProcessListElement(context->getProcessListElement());
 
