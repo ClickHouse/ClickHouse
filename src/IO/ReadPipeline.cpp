@@ -458,15 +458,30 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ReadPipeline: distributed cache requires ObjectStorageSource");
 
+            /// Disk cache + DC without gather is rejected: in the single-object path DC
+            /// builds its own buffer and assigns it to `impl` outright, so any disk cache
+            /// layer built earlier would be unreachable (the assignment replaces the chain).
+            ///
+            /// The gather path composes both naturally: disk cache wraps each per-object
+            /// reader inside the gather lambda, Gather assembles them into a single buffer,
+            /// then DC wraps that Gather as the outermost layer with Gather itself as the
+            /// fallback. Callers that need both stages must call needGather().
             if (!disk_caches.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "ReadPipeline: disk cache + distributed cache without gather is not supported. "
                     "Use needGather() to enable the gather path which handles both stages");
 
             /// Fallback: read directly from object storage (same as non-DC path).
-            /// `ReadBufferFromDistributedCache::readFromFallbackBuffer` calls
-            /// `buffer->set(internal_buffer.begin(), internal_buffer.size())` on the fallback,
-            /// so the fallback must accept an external buffer (use_external_buffer=true).
+            ///
+            /// use_external_buffer=true: `ReadBufferFromDistributedCache::readFromFallbackBuffer`
+            /// calls `buffer->set(internal_buffer.begin(), internal_buffer.size())` on the
+            /// fallback to hand over DC's working buffer. The fallback must accept external
+            /// memory.
+            ///
+            /// restrict_seek=false: DC calls `buffer->seek(file_offset_of_buffer_end, SEEK_SET)`
+            /// on the fallback before reading. In the gather path the enclosing Gather handles
+            /// seeks internally (per-object readers can have restricted seek). Here there is
+            /// no Gather, so the underlying object reader must support seeks directly.
             auto fallback_creator = [storage = dc_obj_source->storage,
                                      read_hint = dc_obj_source->read_hint,
                                      captured_object = source->objects.at(0),
