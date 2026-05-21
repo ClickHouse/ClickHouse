@@ -10,7 +10,9 @@ OPTIMIZE TABLE t_read_in_order_2 FINAL;
 SET optimize_read_in_order = 1;
 SET max_threads = 4;
 SET read_in_order_use_buffering = 1;
-SET max_memory_usage = '100M';
+-- Bumped from `100M` to absorb the server-level `additional_memory_tracking_per_thread`
+-- speculative reservation (4 MiB per pipeline worker, default) for `max_threads = 4`.
+SET max_memory_usage = '120M';
 
 SELECT * FROM t_read_in_order_2 ORDER BY id FORMAT Null;
 

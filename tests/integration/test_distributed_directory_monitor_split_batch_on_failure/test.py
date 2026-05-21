@@ -6,15 +6,24 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 # node1 -- distributed_background_insert_split_batch_on_failure=on
+# The 20 MiB `max_memory_usage` budget is too tight to absorb the
+# server-level `additional_memory_tracking_per_thread` speculative
+# reservation, so disable it for this test.
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/remote_servers.xml"],
+    main_configs=[
+        "configs/remote_servers.xml",
+        "configs/additional_memory_tracking_per_thread.xml",
+    ],
     user_configs=["configs/overrides_1.xml"],
 )
 # node2 -- distributed_background_insert_split_batch_on_failure=off
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["configs/remote_servers.xml"],
+    main_configs=[
+        "configs/remote_servers.xml",
+        "configs/additional_memory_tracking_per_thread.xml",
+    ],
     user_configs=["configs/overrides_2.xml"],
 )
 

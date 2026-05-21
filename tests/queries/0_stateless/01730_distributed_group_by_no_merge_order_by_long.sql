@@ -9,8 +9,10 @@ SET enable_parallel_blocks_marshalling = 0;
 -- does not use 127.1 due to prefer_localhost_replica
 
 select * from remote('127.{2..11}', view(select * from numbers(1e6))) group by number order by number limit 20 settings distributed_group_by_no_merge=0, max_memory_usage='100Mi'; -- { serverError MEMORY_LIMIT_EXCEEDED }
--- no memory limit error, because with distributed_group_by_no_merge=2 remote servers will do ORDER BY and will cut to the LIMIT
-select * from remote('127.{2..11}', view(select * from numbers(1e6))) group by number order by number limit 20 settings distributed_group_by_no_merge=2, max_memory_usage='100Mi';
+-- no memory limit error, because with distributed_group_by_no_merge=2 remote servers will do ORDER BY and will cut to the LIMIT.
+-- `max_memory_usage` is bumped to absorb the server-level `additional_memory_tracking_per_thread`
+-- speculative reservation (4 MiB per pipeline worker, default) across many remote connections.
+select * from remote('127.{2..11}', view(select * from numbers(1e6))) group by number order by number limit 20 settings distributed_group_by_no_merge=2, max_memory_usage='200Mi';
 
 -- since the MergingSortedTransform will start processing only when all ports (remotes) will have some data,
 -- and the query with GROUP BY on remote servers will first do GROUP BY and then send the block,
@@ -24,5 +26,7 @@ select * from remote('127.{2..11}', view(select * from numbers(1e6))) group by n
 -- Set max_threads equal to the number of replicas so that we don't have too many threads
 -- receiving the small blocks.
 create table data_01730 engine=MergeTree() order by key as select number key from numbers(1e6);
-select * from remote('127.{2..11}', currentDatabase(), data_01730) group by key order by key limit 1e6 settings distributed_group_by_no_merge=2, max_memory_usage='100Mi', optimize_aggregation_in_order=1, max_threads=10 format Null;
+-- `max_memory_usage` is bumped to absorb the server-level `additional_memory_tracking_per_thread`
+-- speculative reservation (4 MiB per pipeline worker, default) for `max_threads=10`.
+select * from remote('127.{2..11}', currentDatabase(), data_01730) group by key order by key limit 1e6 settings distributed_group_by_no_merge=2, max_memory_usage='200Mi', optimize_aggregation_in_order=1, max_threads=10 format Null;
 drop table data_01730;
