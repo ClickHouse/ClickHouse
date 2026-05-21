@@ -416,6 +416,20 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
             || xmax_it == entry_hyperrectangles.end() || ymax_it == entry_hyperrectangles.end())
             continue;
 
+        /// Gate on zero nulls for all four bbox columns, matching the min/max path above.
+        /// With nullable bbox columns, partial NULL stats can make bounds disjoint from
+        /// the query while matching rows still exist.
+        auto check_nulls = [&](const std::string & col_id) -> bool
+        {
+            auto info = entry->parsed_entry->columns_infos.find(col_id);
+            return info != entry->parsed_entry->columns_infos.end()
+                && info->second.nulls_count.has_value()
+                && *info->second.nulls_count == 0;
+        };
+        if (!check_nulls(sp.xmin_col_id) || !check_nulls(sp.ymin_col_id)
+            || !check_nulls(sp.xmax_col_id) || !check_nulls(sp.ymax_col_id))
+            continue;
+
         const auto & xmin_range = xmin_it->second;
         const auto & xmax_range = xmax_it->second;
         const auto & ymin_range = ymin_it->second;
