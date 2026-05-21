@@ -8,6 +8,8 @@
 namespace DB
 {
 
+struct Settings;
+
 /** Replace Nullable key_columns to corresponding nested columns.
   * In 'null_map' return a map of positions where at least one column was NULL.
   * @returns ownership column of null_map.
@@ -19,8 +21,12 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
   * Config changes for global context settings are applied after server restart.
   * For non-tuple types this matches `IDataType::canBeInsideNullable()`.
   */
-/** Whether `Nullable(Array(...))` is allowed (``allow_experimental_nullable_array_type``). */
-bool isExperimentalNullableArrayTypeEnabled();
+/** Whether `Nullable(Array(...))` is allowed for the given settings. */
+bool allowNullableArrayType(const Settings & settings);
+
+/** Like `IDataType::canBeInsideNullable`, but respects `allow_experimental_nullable_array_type` for `Array`. */
+bool canBeInsideNullableWithSettings(const IDataType & type, const Settings & settings);
+bool canBeInsideNullableWithSettings(const DataTypePtr & type, const Settings & settings);
 
 bool canExtractedSubcolumnsBeInsideNullable(const DataTypePtr & type);
 

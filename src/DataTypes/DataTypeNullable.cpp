@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -30,7 +31,13 @@ DataTypeNullable::DataTypeNullable(const DataTypePtr & nested_data_type_)
     : nested_data_type{nested_data_type_}
 {
     if (!nested_data_type->canBeInsideNullable())
+    {
+        /// `Nullable(Array)` is gated by `allow_experimental_nullable_array_type` in context-aware validation
+        /// (`validateDataType`, CAST, CREATE, etc.), not in `IDataType::canBeInsideNullable()`.
+        if (isArray(nested_data_type))
+            return;
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Nested type {} cannot be inside Nullable type", nested_data_type->getName());
+    }
 }
 
 

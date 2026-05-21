@@ -1403,8 +1403,8 @@ bool canBeInsideNullableBySchemaSettings(const DataTypePtr & type, const FormatS
     if (isTuple(type) && !settings.schema_inference_allow_nullable_tuple_type)
         return false;
 
-    if (isArray(type) && !settings.schema_inference_allow_nullable_array_type)
-        return false;
+    if (isArray(type))
+        return settings.schema_inference_allow_nullable_array_type;
 
     return type->canBeInsideNullable();
 }

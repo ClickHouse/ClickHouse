@@ -1,5 +1,4 @@
 #include <Columns/ColumnArray.h>
-#include <DataTypes/NullableUtils.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -22,11 +21,6 @@
 
 namespace DB
 {
-
-bool ColumnArray::canBeInsideNullable() const
-{
-    return isExperimentalNullableArrayTypeEnabled();
-}
 
 namespace ErrorCodes
 {

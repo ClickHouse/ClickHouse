@@ -36,7 +36,10 @@ public:
         return "Array";
     }
 
-    bool canBeInsideNullable() const override;
+    bool canBeInsideNullable() const override
+    {
+        return false;
+    }
 
     MutableColumnPtr createColumn() const override;
 

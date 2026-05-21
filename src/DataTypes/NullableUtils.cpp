@@ -26,10 +26,21 @@ static bool isNullableTupleInExtractedSubcolumnsEnabledByGlobalSetting()
     return context && context->getSettingsRef()[Setting::allow_nullable_tuple_in_extracted_subcolumns];
 }
 
-bool isExperimentalNullableArrayTypeEnabled()
+bool allowNullableArrayType(const Settings & settings)
 {
-    auto context = Context::getGlobalContextInstance();
-    return context && context->getSettingsRef()[Setting::allow_experimental_nullable_array_type];
+    return settings[Setting::allow_experimental_nullable_array_type];
+}
+
+bool canBeInsideNullableWithSettings(const IDataType & type, const Settings & settings)
+{
+    if (isArray(type))
+        return allowNullableArrayType(settings);
+    return type.canBeInsideNullable();
+}
+
+bool canBeInsideNullableWithSettings(const DataTypePtr & type, const Settings & settings)
+{
+    return canBeInsideNullableWithSettings(*type, settings);
 }
 
 static bool canExtractedSubcolumnsBeInsideNullable(const ColumnPtr & column)
@@ -37,7 +48,7 @@ static bool canExtractedSubcolumnsBeInsideNullable(const ColumnPtr & column)
     if (checkAndGetColumn<ColumnTuple>(column.get()))
         return isNullableTupleInExtractedSubcolumnsEnabledByGlobalSetting();
 
-    /// `ColumnArray::canBeInsideNullable()` is true for `Nullable(Array)`, but Dynamic subcolumns
+    /// `Nullable(Array)` is allowed only with `allow_experimental_nullable_array_type`, but Dynamic subcolumns
     /// like `Array(T).null` must stay illegal — see `canExtractedSubcolumnsBeInsideNullable` below.
     if (checkAndGetColumn<ColumnArray>(column.get()))
         return false;
@@ -51,7 +62,7 @@ bool canExtractedSubcolumnsBeInsideNullable(const DataTypePtr & type)
         return isNullableTupleInExtractedSubcolumnsEnabledByGlobalSetting();
 
     /// Not the same as `IDataType::canBeInsideNullable()`.
-    /// `Array` / `Map` may appear inside `Nullable(Array)` / `Nullable(Map)` (see `DataTypeArray::canBeInsideNullable`),
+    /// `Array` / `Map` may appear inside `Nullable(Array)` / `Nullable(Map)` when enabled by settings,
     /// yet bare `Array(T).null` / `Map(...).null` are not valid Dynamic subcolumn paths: the null map
     /// belongs to the `Nullable(...)` wrapper, not to the compound type name parsed from `getSubcolumn`.
     /// Without this check, `getSubcolumn(42::Dynamic, 'Array(UInt64).null')` would succeed with an all-ones null map.
