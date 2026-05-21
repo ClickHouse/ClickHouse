@@ -105,6 +105,18 @@ private:
     void maybeTriggerPrefetch();
     void discardPrefetch();
 
+    /// Try to acquire a buffer_limit slot up front so the next source read can
+    /// be promoted to live without re-checking. When a slot is held (either
+    /// pre-acquired or via an existing live_buffer), the read window shrinks
+    /// to ROPE_BLOCK_SIZE because the live buffer streams 1 MiB at a time and
+    /// allocating a larger rope just inflates the in-flight memory.
+    void ensurePreAcquiredSlot();
+
+    /// Effective window size for the next read: ROPE_BLOCK_SIZE when we're
+    /// (or about to be) on the live path, the constructor-supplied
+    /// window_size otherwise. Caller still caps by remaining file bytes.
+    size_t effectiveWindowSize() const;
+
     /// Decrypt rope data; returns the input unchanged when no decryption layers
     /// are configured (which is always the case in builds without SSL).
     Rope decryptRope(Rope rope, size_t logical_offset);
@@ -133,6 +145,19 @@ private:
 
     std::optional<LiveBuffer> live_buffer;
     std::shared_ptr<SourceBufferLimit> buffer_limit;
+
+    /// Slot pre-acquired at the top of readNextWindow. When present, the
+    /// next source read is guaranteed to be promoted to live (no re-attempt
+    /// in readFromSource), and we use a 1 MiB read window because the live
+    /// buffer streams 1 MiB at a time anyway. The slot is consumed (moved
+    /// into live_buffer) on the first source read of this window; if the
+    /// open fails it's released here.
+    std::optional<SourceBufferSlot> pre_acquired_slot;
+    String pre_acquired_slot_path;
+
+    /// First object's path — used by pre-acquire to ask the right slot key.
+    /// Empty for executors with no objects (no-op fallback path).
+    String first_object_path;
 
 #if USE_SSL
     /// Decryption

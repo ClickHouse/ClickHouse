@@ -114,6 +114,8 @@ ReaderExecutor::ReaderExecutor(
     , min_bytes_for_seek(min_bytes_for_seek_)
 {
     offset_map.build(objects);
+    if (!objects.empty())
+        first_object_path = objects.front().remote_path;
     LOG_DEBUG(log, "Created: {} objects, total_size={}, window_size={}, min_bytes_for_seek={}, {} caches",
         objects.size(), offset_map.totalSize(), window_size, min_bytes_for_seek, caches.size());
 }
@@ -166,6 +168,33 @@ void ReaderExecutor::setBufferLimit(std::shared_ptr<SourceBufferLimit> limit)
     buffer_limit = std::move(limit);
 }
 
+void ReaderExecutor::ensurePreAcquiredSlot()
+{
+    if (live_buffer || pre_acquired_slot || !buffer_limit || first_object_path.empty())
+        return;
+
+    auto slot = buffer_limit->tryAcquire(buffer_limit, first_object_path, String(CurrentThread::getQueryId()));
+    if (slot)
+    {
+        LOG_TRACE(log, "ensurePreAcquiredSlot: got slot for {}", first_object_path);
+        pre_acquired_slot.emplace(std::move(*slot));
+        pre_acquired_slot_path = first_object_path;
+    }
+}
+
+size_t ReaderExecutor::effectiveWindowSize() const
+{
+    /// Live path streams 1 MiB at a time via the live buffer's next() — a
+    /// larger window just inflates the in-flight rope without any throughput
+    /// gain. Cap to ROPE_BLOCK_SIZE in that mode but never grow past the
+    /// caller-configured window_size (tests pin it small on purpose).
+    /// Stateless path benefits from the larger batch read to amortise the
+    /// HTTP setup cost of a fresh underlying buffer.
+    if (live_buffer || pre_acquired_slot)
+        return std::min(window_size, ROPE_BLOCK_SIZE);
+    return window_size;
+}
+
 void ReaderExecutor::maybeTriggerPrefetch()
 {
     if (!prefetch_pool || prefetch_valid)
@@ -175,7 +204,8 @@ void ReaderExecutor::maybeTriggerPrefetch()
     if (position >= logical_size)
         return;
 
-    size_t next_size = std::min(window_size, logical_size - position);
+    ensurePreAcquiredSlot();
+    size_t next_size = std::min(effectiveWindowSize(), logical_size - position);
     ByteRange next_physical_window{position + data_start_offset, next_size};
     size_t next_logical_offset = position;
 
@@ -405,7 +435,8 @@ Rope ReaderExecutor::readNextWindow()
             prefetch_handle.reset();
             prefetch_valid = false;
 
-            size_t win_size = std::min(window_size, logical_size - position);
+            ensurePreAcquiredSlot();
+            size_t win_size = std::min(effectiveWindowSize(), logical_size - position);
             ByteRange physical_window{position + data_start_offset, win_size};
             rope = decryptRope(readPhysicalWindow(physical_window), position);
         }
@@ -428,7 +459,8 @@ Rope ReaderExecutor::readNextWindow()
     }
     else
     {
-        size_t win_size = std::min(window_size, logical_size - position);
+        ensurePreAcquiredSlot();
+        size_t win_size = std::min(effectiveWindowSize(), logical_size - position);
         ByteRange physical_window{position + data_start_offset, win_size};
         LOG_TRACE(log, "readNextWindow: synchronous read physical [{}, {}), logical [{}, {})",
             physical_window.offset, physical_window.end(), position, position + win_size);
@@ -558,39 +590,49 @@ Rope ReaderExecutor::readFromSource(
         live_buffer.reset();
     }
 
-    /// Try to acquire a slot for a new live buffer.
-    if (buffer_limit)
+    /// Try to acquire a slot for a new live buffer. If `pre_acquired_slot`
+    /// was set by the caller (readNextWindow / maybeTriggerPrefetch) and
+    /// matches this object, reuse it instead of asking buffer_limit again.
+    std::optional<SourceBufferSlot> slot;
+    if (pre_acquired_slot && pre_acquired_slot_path == object.remote_path)
     {
-        auto slot = buffer_limit->tryAcquire(buffer_limit, object.remote_path, String(CurrentThread::getQueryId()));
-        if (slot)
+        slot.emplace(std::move(*pre_acquired_slot));
+        pre_acquired_slot.reset();
+        pre_acquired_slot_path.clear();
+    }
+    else if (buffer_limit)
+    {
+        slot = buffer_limit->tryAcquire(buffer_limit, object.remote_path, String(CurrentThread::getQueryId()));
+    }
+
+    if (slot)
+    {
+        auto opened = source->open(object);
+        if (opened)
         {
-            auto opened = source->open(object);
+            if (offset > 0)
+                opened->seek(offset, SEEK_SET);
 
-            if (opened)
-            {
-                if (offset > 0)
-                    opened->seek(offset, SEEK_SET);
+            live_buffer.emplace(LiveBuffer{
+                .object_path = object.remote_path,
+                .current_position = offset,
+                .buffer = std::move(opened),
+                .slot = std::move(*slot),
+            });
 
-                live_buffer.emplace(LiveBuffer{
-                    .object_path = object.remote_path,
-                    .current_position = offset,
-                    .buffer = std::move(opened),
-                    .slot = std::move(*slot),
-                });
+            Rope rope = readFromLiveBufferIntoRope(std::move(blocks), logical_offset);
+            size_t total_read = rope.totalBytes();
 
-                Rope rope = readFromLiveBufferIntoRope(std::move(blocks), logical_offset);
-                size_t total_read = rope.totalBytes();
+            live_buffer->current_position += total_read;
+            live_buffer->slot.updatePosition(live_buffer->current_position);
 
-                live_buffer->current_position += total_read;
-                live_buffer->slot.updatePosition(live_buffer->current_position);
-
-                ProfileEvents::increment(ProfileEvents::LiveSourceBufferCreated);
-                ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, total_read);
-                LOG_TRACE(log, "readFromSource: opened live buffer for {}, read {} bytes, position={}",
-                    object.remote_path, total_read, live_buffer->current_position);
-                return rope;
-            }
+            ProfileEvents::increment(ProfileEvents::LiveSourceBufferCreated);
+            ProfileEvents::increment(ProfileEvents::LiveSourceBufferBytes, total_read);
+            LOG_TRACE(log, "readFromSource: opened live buffer for {}, read {} bytes, position={}",
+                object.remote_path, total_read, live_buffer->current_position);
+            return rope;
         }
+        /// open() failed — `slot` drops here, releasing the buffer_limit reservation.
     }
 
     /// Fallback: open a fresh connection without storing it as live_buffer
