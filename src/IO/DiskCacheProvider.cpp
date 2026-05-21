@@ -2,6 +2,7 @@
 
 #include <Interpreters/FileCache/FileSegment.h>
 #include <IO/ReadBufferFromFile.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <cstring>
@@ -10,6 +11,13 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_READ_ALL_DATA;
+}
+
 
 DiskCacheHandle::DiskCacheHandle(
     FileCachePtr cache_,
@@ -79,7 +87,11 @@ Rope DiskCacheHandle::get(ByteRange range)
         size_t overlap_end = std::min(seg_r.end(), range.end());
         size_t overlap_size = overlap_end - overlap_start;
 
-        /// Read from local file.
+        /// Read from local file. The segment is pinned by the holder, so the
+        /// file is guaranteed to exist for the lifetime of this handle; any
+        /// failure here is a hard I/O error (or external tampering), not a
+        /// race with eviction — throw rather than silently drop a hit that
+        /// `status()` already promised.
         String path = segment->getPath();
         size_t offset_in_file = overlap_start - seg_range.left;
 
@@ -87,22 +99,25 @@ Rope DiskCacheHandle::get(ByteRange range)
 
         int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
         if (fd < 0)
-        {
-            LOG_WARNING(log, "DiskCacheHandle::get: failed to open cache file {}: {}", path, errnoToString());
-            continue;
-        }
+            throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
+                "DiskCacheHandle::get: open({}) failed: {}", path, errnoToString());
 
         ssize_t bytes_read = ::pread(fd, buf->data(), overlap_size, offset_in_file);
+        int saved_errno = errno;
         if (0 != ::close(fd))
             LOG_WARNING(log, "DiskCacheHandle::get: close failed for {}: {}", path, errnoToString());
 
-        if (bytes_read <= 0)
-        {
-            LOG_WARNING(log, "DiskCacheHandle::get: pread returned {} for {}", bytes_read, path);
-            continue;
-        }
+        if (bytes_read < 0)
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                "DiskCacheHandle::get: pread({}, size={}, offset={}) failed: {}",
+                path, overlap_size, offset_in_file, errnoToString(saved_errno));
 
-        result.append(RopeNode{std::move(buf), 0, static_cast<size_t>(bytes_read), overlap_start});
+        if (static_cast<size_t>(bytes_read) != overlap_size)
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                "DiskCacheHandle::get: pread({}) short read: got {} bytes, expected {} at offset {}",
+                path, bytes_read, overlap_size, offset_in_file);
+
+        result.append(RopeNode{std::move(buf), 0, overlap_size, overlap_start});
     }
     return result;
 }
