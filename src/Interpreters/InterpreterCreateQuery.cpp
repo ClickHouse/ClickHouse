@@ -1606,7 +1606,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             || !create.as_database.empty()
             || !create.as_table.empty()
             || create.has_attach_from_path
-            || create.has_uuid_clause;
+            || create.has_uuid_clause
+            || create.has_inner_uuid_clause;
 
         if (has_dropped_clauses)
         {

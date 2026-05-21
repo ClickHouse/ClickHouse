@@ -92,6 +92,20 @@ ATTACH TABLE t_104791 UUID '00000000-0000-0000-0000-000000000000'; -- { serverEr
 --     not affected by this guard.
 ATTACH TABLE t_104791 FROM '/var/lib/clickhouse/detached/t_104791'; -- { serverError BAD_ARGUMENTS }
 
+-- 14. `TO INNER UUID '...'` on a short `ATTACH TABLE`: silently dropped before
+--     this patch. `ParserCreateTableQuery` parses `TO INNER UUID` into a local
+--     variable BEFORE the short-ATTACH early return, but the short-ATTACH branch
+--     does not persist it into the query AST. The non-short branch persists it
+--     into `create.targets` (already covered by the guard), so we only need the
+--     new `has_inner_uuid_clause` flag to also catch the short-ATTACH shape.
+ATTACH TABLE t_104791 TO INNER UUID '00000000-0000-0000-0000-000000000001'; -- { serverError BAD_ARGUMENTS }
+
+-- 15. Explicit `Nil` `TO INNER UUID` on a short `ATTACH TABLE`: same code path as
+--     case 14, but with the all-zero UUID. The parser sets
+--     `has_inner_uuid_clause = true` based on the presence of the literal, not
+--     its value, so the all-zero case is also rejected.
+ATTACH TABLE t_104791 TO INNER UUID '00000000-0000-0000-0000-000000000000'; -- { serverError BAD_ARGUMENTS }
+
 -- Restore the table so cleanup at the end works.
 ATTACH TABLE t_104791;
 DROP TABLE t_104791;
@@ -110,14 +124,14 @@ CREATE TABLE t_mv_104791_other_target (id UInt32, x UInt32) ENGINE = MergeTree O
 CREATE MATERIALIZED VIEW t_mv_104791 REFRESH EVERY 1 HOUR TO t_mv_104791_target AS SELECT 1 AS id, 2 AS x;
 DETACH TABLE t_mv_104791;
 
--- 14. ATTACH MV with a different REFRESH schedule: silently dropped before this
+-- 16. ATTACH MV with a different REFRESH schedule: silently dropped before this
 --     patch (the stored REFRESH EVERY 1 HOUR replaced the user's EVERY 1 YEAR).
 ATTACH MATERIALIZED VIEW t_mv_104791 REFRESH EVERY 1 YEAR TO t_mv_104791_target AS SELECT 5 AS id, 6 AS x; -- { serverError BAD_ARGUMENTS }
 
--- 15. ATTACH MV with a different TO target: silently dropped before this patch.
+-- 17. ATTACH MV with a different TO target: silently dropped before this patch.
 ATTACH MATERIALIZED VIEW t_mv_104791 TO t_mv_104791_other_target AS SELECT 5 AS id, 6 AS x; -- { serverError BAD_ARGUMENTS }
 
--- 16. ATTACH MV with a different AS SELECT: silently dropped before this patch.
+-- 18. ATTACH MV with a different AS SELECT: silently dropped before this patch.
 ATTACH MATERIALIZED VIEW t_mv_104791 TO t_mv_104791_target AS SELECT 5 AS id, 6 AS x; -- { serverError BAD_ARGUMENTS }
 
 -- Restore the MV so cleanup works.

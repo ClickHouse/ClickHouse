@@ -136,6 +136,7 @@ public:
     bool replace_view : 1 = false;         /// CREATE OR REPLACE VIEW
     bool has_uuid : 1 = false;             /// CREATE TABLE x UUID '...' with a non-`Nil` value (see `has_uuid_clause` for clause-presence tracking)
     bool has_uuid_clause : 1 = false;      /// Parser saw an explicit `UUID '...'` clause, true even when the value is `Nil`
+    bool has_inner_uuid_clause : 1 = false; /// Parser saw an explicit `TO INNER UUID '...'` clause
     bool is_dictionary : 1 = false;        /// CREATE DICTIONARY
     bool is_watermark_strictly_ascending : 1 = false; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
     bool is_watermark_ascending : 1 = false;          /// ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW

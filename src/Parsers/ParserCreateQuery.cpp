@@ -857,6 +857,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->uuid = table_id->uuid;
         query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
         query->has_uuid_clause = table_id->has_uuid;
+        query->has_inner_uuid_clause = to_inner_uuid != nullptr;
         query->setIsTemporary(is_temporary);
 
         query->attach_as_replicated = attach_as_replicated;
@@ -1016,6 +1017,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->uuid = table_id->uuid;
     query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
     query->has_uuid_clause = table_id->has_uuid;
+    query->has_inner_uuid_clause = to_inner_uuid != nullptr;
     query->cluster = cluster_str;
 
     if (query->database)
