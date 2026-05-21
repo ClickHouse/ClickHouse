@@ -1,5 +1,6 @@
 #include <Parsers/SPARQL/SparqlToSqlTranslator.h>
 
+#include <algorithm>
 #include <sstream>
 #include <stdexcept>
 
@@ -367,27 +368,100 @@ std::string SparqlToSqlTranslator::translateFilterExpr(const FilterExpr & expr)
     return "1";
 }
 
+int SparqlToSqlTranslator::tripleSelectivityScore(const TriplePattern & tp)
+{
+    int score = 0;
+    if (tp.predicate.kind != Term::Variable)
+        score += 2;
+    if (tp.subject.kind != Term::Variable)
+        score += 1;
+    if (tp.object.kind != Term::Variable)
+        score += 1;
+    return score;
+}
+
+void SparqlToSqlTranslator::collectFilterVars(const FilterExpr & expr, std::unordered_set<std::string> & vars)
+{
+    if (expr.op == FilterExpr::VarRef)
+    {
+        vars.insert(expr.value);
+        return;
+    }
+    for (const auto & child : expr.children)
+        collectFilterVars(*child, vars);
+}
+
 std::string SparqlToSqlTranslator::translateBranch(
     const GroupGraphPattern & ggp, const std::vector<std::string> & projection_vars, bool distinct)
 {
     reset();
 
-    for (const auto & tp : ggp.triples)
+    auto ordered = ggp.triples;
+    std::stable_sort(ordered.begin(), ordered.end(), [](const TriplePattern & a, const TriplePattern & b)
+    {
+        return tripleSelectivityScore(a) > tripleSelectivityScore(b);
+    });
+
+    for (const auto & tp : ordered)
         processTriple(tp, false);
 
-    for (const auto & opt : ggp.optionals)
-    {
-        if (opt.pattern)
-        {
-            size_t first_opt_join = joins.size();
-            for (const auto & tp : opt.pattern->triples)
-                processTriple(tp, true);
+    std::unordered_set<std::string> bound_vars;
+    for (const auto & pair : bindings)
+        bound_vars.insert(pair.first);
 
-            if (!opt.pattern->filters.empty() && first_opt_join < joins.size())
+    std::unordered_set<std::string> needed_vars(projection_vars.begin(), projection_vars.end());
+    for (const auto & filter : ggp.filters)
+        collectFilterVars(*filter, needed_vars);
+
+    std::vector<bool> keep_optional(ggp.optionals.size(), false);
+    for (int i = static_cast<int>(ggp.optionals.size()) - 1; i >= 0; --i)
+    {
+        const auto & opt = ggp.optionals[i];
+        if (!opt.pattern)
+            continue;
+
+        std::unordered_set<std::string> opt_vars;
+        for (const auto & tp : opt.pattern->triples)
+        {
+            if (tp.subject.kind == Term::Variable)
+                opt_vars.insert(tp.subject.value);
+            if (tp.predicate.kind == Term::Variable)
+                opt_vars.insert(tp.predicate.value);
+            if (tp.object.kind == Term::Variable)
+                opt_vars.insert(tp.object.value);
+        }
+
+        bool has_needed_new_var = false;
+        for (const auto & v : opt_vars)
+        {
+            if (!bound_vars.contains(v) && needed_vars.contains(v))
             {
-                for (const auto & filter : opt.pattern->filters)
-                    joins[first_opt_join].filter_conditions.push_back(translateFilterExpr(*filter));
+                has_needed_new_var = true;
+                break;
             }
+        }
+
+        if (has_needed_new_var)
+        {
+            keep_optional[i] = true;
+            needed_vars.insert(opt_vars.begin(), opt_vars.end());
+        }
+    }
+
+    for (size_t i = 0; i < ggp.optionals.size(); ++i)
+    {
+        if (!keep_optional[i])
+            continue;
+
+        const auto & opt = ggp.optionals[i];
+        size_t first_opt_join = joins.size();
+        for (const auto & tp : opt.pattern->triples)
+            processTriple(tp, true);
+
+        if (!opt.pattern->filters.empty() && first_opt_join < joins.size())
+        {
+            for (const auto & filter : opt.pattern->filters)
+                joins[first_opt_join].filter_conditions.push_back(translateFilterExpr(*filter));
         }
     }
 

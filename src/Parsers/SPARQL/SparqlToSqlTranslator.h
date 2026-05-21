@@ -3,6 +3,7 @@
 #include <Parsers/SPARQL/SparqlAST.h>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace DB
@@ -47,6 +48,9 @@ private:
     std::string translateFilterExpr(const FilterExpr & expr);
     std::string translateBranch(const GroupGraphPattern & ggp, const std::vector<std::string> & projection_vars, bool distinct = false);
     std::string buildUnionQuery(const Union & u, const std::vector<std::string> & projection_vars);
+
+    static int tripleSelectivityScore(const TriplePattern & tp);
+    static void collectFilterVars(const FilterExpr & expr, std::unordered_set<std::string> & vars);
 
     void reset();
 };

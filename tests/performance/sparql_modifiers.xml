@@ -70,5 +70,36 @@
     <!-- Same query with LIMIT (should be faster due to early termination) -->
     <query>SELECT * FROM sparql('SELECT ?name ?age WHERE { ?p &lt;:name&gt; ?name . ?p &lt;:age&gt; ?age } LIMIT 1000') FORMAT Null</query>
 
+    <!-- SPARQL four-way join -->
+    <query>SELECT * FROM sparql('SELECT ?name ?age ?score WHERE { ?p &lt;rdf:type&gt; &lt;:Person&gt; . ?p &lt;:name&gt; ?name . ?p &lt;:age&gt; ?age . ?p &lt;:score&gt; ?score }') FORMAT Null</query>
+
+    <!-- Hand-written SQL baseline for four-way join -->
+    <query>
+        SELECT t2.object AS name, t3.object AS age, t4.object AS score
+        FROM rdf_triples AS t1
+        PREWHERE t1.predicate = 'rdf:type'
+        JOIN rdf_triples AS t2 ON t2.subject = t1.subject
+        JOIN rdf_triples AS t3 ON t3.subject = t1.subject
+        JOIN rdf_triples AS t4 ON t4.subject = t1.subject
+        WHERE t1.object = ':Person' AND t2.predicate = ':name' AND t3.predicate = ':age' AND t4.predicate = ':score'
+        FORMAT Null
+    </query>
+
+    <!-- SPARQL OPTIONAL with FILTER (exercises LEFT JOIN + WHERE) -->
+    <query>SELECT * FROM sparql('SELECT ?name ?email WHERE { ?p &lt;rdf:type&gt; &lt;:Person&gt; . ?p &lt;:name&gt; ?name . ?p &lt;:age&gt; ?age . OPTIONAL { ?p &lt;:email&gt; ?email } . FILTER(?age &gt; 50) }') FORMAT Null</query>
+
+    <!-- Hand-written SQL baseline for OPTIONAL+FILTER -->
+    <query>
+        SELECT t2.object AS name, t4.object AS email
+        FROM rdf_triples AS t1
+        PREWHERE t1.predicate = 'rdf:type'
+        JOIN rdf_triples AS t2 ON t2.subject = t1.subject
+        JOIN rdf_triples AS t3 ON t3.subject = t1.subject
+        LEFT JOIN rdf_triples AS t4 ON t4.subject = t1.subject AND t4.predicate = ':email'
+        WHERE t1.object = ':Person' AND t2.predicate = ':name' AND t3.predicate = ':age'
+          AND toInt64OrNull(t3.object) > 50
+        FORMAT Null
+    </query>
+
     <drop_query>DROP TABLE IF EXISTS rdf_triples</drop_query>
 </test>
