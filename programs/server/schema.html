@@ -23,9 +23,9 @@
             --btn-primary-color: white;
             --accent: #FCFF74;
             --accent-hover: #f0f24a;
-            /// Engine palette — yellow stays the brand, supporting colors stay distinct enough
-            /// to scan a complex graph at a glance.
-            --header-mt: #B58900;          /// dark yellow (MergeTree / table — anchored on the brand color)
+            /* Engine palette — yellow stays the brand, supporting colors stay distinct enough
+               to scan a complex graph at a glance. */
+            --header-mt: #B58900;          /* dark yellow (MergeTree / table — anchored on the brand color) */
             --header-mt-text: black;
             --header-mv: #6A1B9A;
             --header-mv-text: white;
@@ -699,16 +699,27 @@ function setStatus(text, isError) {
     $('status').classList.toggle('error', !!isError);
 }
 
-function fullName(db, t) { return db + '.' + t; }
+/// Unambiguous composite key for a `(database, table)` pair. We cannot use
+/// `db + '.' + t` because both halves are arbitrary ClickHouse identifiers
+/// (any byte is legal in a backquoted name), so the resulting string is not
+/// invertible — a database called `a.b` and a table called `c` would collide
+/// with database `a` and table `b.c`. `JSON.stringify` on a two-element array
+/// gives a one-to-one encoding regardless of the characters inside.
+function tableKey(db, t) { return JSON.stringify([db, t]); }
 
-/// Mirrors `backQuoteIfNeed` in ClickHouse (`src/IO/WriteHelpers.cpp`): bare identifier
+/// Mirrors `backQuoteIfNeed` in ClickHouse (`src/IO/WriteHelpers.h`): bare identifier
 /// when it matches `[A-Za-z_][A-Za-z0-9_]*` and is not a reserved word, otherwise
-/// backquoted with internal backticks escaped. Used to reconstruct the `view_name` /
-/// `view_target` strings that `system.query_views_log` produces via `getFullTableName`.
+/// backquoted with the same character set the server escapes inside
+/// `writeBackQuotedString` (backslash, backtick, plus `\b\f\n\r\t\0`). We need
+/// to match exactly because the strings we compare against (`view_name` /
+/// `view_target` in `system.query_views_log`) are produced by `getFullTableName`
+/// on the server, which calls into the same writer.
 const QUOTED_NAME_RESERVED = /^(distinct|all|table|select|from|values)$/i;
+const QUOTED_NAME_ESCAPE = { '\\': '\\\\', '`': '\\`', '\b': '\\b', '\f': '\\f',
+                             '\n': '\\n', '\r': '\\r', '\t': '\\t', '\0': '\\0' };
 function backQuoteIfNeed(s) {
     if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(s) && !QUOTED_NAME_RESERVED.test(s)) return s;
-    return '`' + s.replace(/`/g, '\\`') + '`';
+    return '`' + s.replace(/[\\`\b\f\n\r\t\0]/g, ch => QUOTED_NAME_ESCAPE[ch]) + '`';
 }
 function quotedFullName(db, t) { return backQuoteIfNeed(db) + '.' + backQuoteIfNeed(t); }
 
@@ -789,8 +800,10 @@ async function loadAll() {
             comment,
             target_database,
             target_table,
-            arrayMap((d, t) -> concat(d, '.', t), dependencies_database, dependencies_table) AS dependents,
-            arrayMap((d, t) -> concat(d, '.', t), loading_dependencies_database, loading_dependencies_table) AS depends_on
+            dependencies_database,
+            dependencies_table,
+            loading_dependencies_database,
+            loading_dependencies_table
         FROM system.tables
         ${sysFilter}
         ORDER BY database, name
@@ -838,19 +851,19 @@ async function loadAll() {
     state.tables = tablesRes.rows;
     state.columnsByTable = new Map();
     for (const c of columnsRes.rows) {
-        const k = fullName(c.database, c.table);
+        const k = tableKey(c.database, c.table);
         if (!state.columnsByTable.has(k)) state.columnsByTable.set(k, []);
         state.columnsByTable.get(k).push(c);
     }
 
     state.dictSources = new Map();
     for (const d of dictsRes.rows) {
-        state.dictSources.set(fullName(d.database, d.name), d.source);
+        state.dictSources.set(tableKey(d.database, d.name), d.source);
     }
 
     state.refreshes = new Map();
     for (const r of refreshesRes.rows) {
-        state.refreshes.set(fullName(r.database, r.view), r);
+        state.refreshes.set(tableKey(r.database, r.view), r);
     }
 
     setStatus(`Loaded ${state.tables.length} tables, ${columnsRes.rows.length} columns.`);
@@ -982,12 +995,23 @@ function loadIntensity(value, max) {
 function buildGraph() {
     const nodes = new Map();
     const nodesByDb = new Map();
+    const zipKeys = (dbs, tbls) => {
+        if (!dbs || !tbls) return [];
+        const out = [];
+        for (let i = 0; i < dbs.length && i < tbls.length; i++)
+            out.push(tableKey(dbs[i], tbls[i]));
+        return out;
+    };
     for (const t of state.tables) {
-        const key = fullName(t.database, t.name);
+        const key = tableKey(t.database, t.name);
         const isRefreshable = state.refreshes.has(key);
         const kind = isRefreshable ? 'rmv' : engineKind(t.engine);
         const node = {
             key,
+            /// `key` is the unambiguous lookup key (a JSON tuple); `displayName`
+            /// is the human-facing qualified name we render in tooltips, lonely
+            /// labels, and the sidebar.
+            displayName: quotedFullName(t.database, t.name),
             database: t.database,
             name: t.name,
             engine: t.engine,
@@ -1003,8 +1027,8 @@ function buildGraph() {
             comment: t.comment,
             targetDatabase: t.target_database || '',
             targetTable: t.target_table || '',
-            dependents: t.dependents || [],
-            dependsOn: t.depends_on || [],
+            dependents: zipKeys(t.dependencies_database, t.dependencies_table),
+            dependsOn: zipKeys(t.loading_dependencies_database, t.loading_dependencies_table),
             columns: state.columnsByTable.get(key) || [],
             dictSource: state.dictSources.get(key),
             refresh: state.refreshes.get(key),
@@ -1054,7 +1078,7 @@ function buildGraph() {
         /// covering both the explicit `TO` target and the implicit `.inner.*`
         /// table created by `MATERIALIZED VIEW ... ENGINE = ... AS SELECT ...`.
         if (isMv && node.targetTable) {
-            addEdge(node.key, fullName(node.targetDatabase || node.database, node.targetTable), 'mv');
+            addEdge(node.key, tableKey(node.targetDatabase || node.database, node.targetTable), 'mv');
         }
     }
 
@@ -1454,16 +1478,18 @@ function render() {
     const filtered = new Set();
     if (search) {
         for (const n of state.nodes.values()) {
-            if (n.key.toLowerCase().includes(search)) filtered.add(n.key);
+            if (n.displayName.toLowerCase().includes(search)) filtered.add(n.key);
             else if (n.columns.some(c => c.name.toLowerCase().includes(search))) filtered.add(n.key);
         }
     }
 
     let maxX = 0, maxY = 0;
 
-    for (const s of state.sections) {
+    for (let i = 0; i < state.sections.length; ++i) {
+        const s = state.sections[i];
         const g = document.createElement('div');
         g.className = 'db-group';
+        g.dataset.sectionIndex = String(i);
         g.style.left = s.x + 'px';
         g.style.top = s.y + 'px';
         g.style.width = s.w + 'px';
@@ -1491,10 +1517,10 @@ function render() {
         header.className = 'node-header';
         const nameEl = document.createElement('span');
         nameEl.className = 'node-name';
-        nameEl.title = n.key;
+        nameEl.title = n.displayName;
         /// Lonely nodes live in the shared "Independent tables" section that doesn't
         /// have a per-database label, so show the qualified name there.
-        nameEl.textContent = n._lonely ? n.key : n.name;
+        nameEl.textContent = n._lonely ? n.displayName : n.name;
         const kindEl = document.createElement('span');
         kindEl.className = 'node-kind';
         kindEl.textContent = engineLabel(n);
@@ -1585,13 +1611,18 @@ function render() {
         }
     }
 
-    /// Update section bounds based on actual node sizes.
+    /// Update section bounds based on actual node sizes. Use the section index
+    /// stamped on each `.db-group` so we can resolve nodes via `state.sections`
+    /// instead of looking up by label text — the synthetic "Independent tables"
+    /// section's label is not a database key and would otherwise collapse the
+    /// section to the empty 24x24 padding.
     for (const g of canvas.querySelectorAll('.db-group')) {
-        /// Find max extents within section.
-        const lbl = g.querySelector('.db-label').textContent;
+        const idx = Number(g.dataset.sectionIndex);
+        const section = state.sections[idx];
+        if (!section) continue;
         let mx = 0, my = 0;
         const sx = parseFloat(g.style.left), sy = parseFloat(g.style.top);
-        for (const n of state.nodesByDb.get(lbl) || []) {
+        for (const n of section.nodes) {
             if (state.dbFilter && n.database !== state.dbFilter) continue;
             mx = Math.max(mx, n.x + n.w - sx);
             my = Math.max(my, n.y + n.h - sy);
@@ -1623,7 +1654,7 @@ function drawEdges() {
     const filtered = new Set();
     if (search) {
         for (const n of state.nodes.values()) {
-            if (n.key.toLowerCase().includes(search) ||
+            if (n.displayName.toLowerCase().includes(search) ||
                 n.columns.some(c => c.name.toLowerCase().includes(search))) filtered.add(n.key);
         }
     }
@@ -1749,7 +1780,7 @@ function selectNode(key) {
 function showSidebar(key) {
     const n = state.nodes.get(key);
     if (!n) return;
-    $('sidebar-title').textContent = n.key;
+    $('sidebar-title').textContent = n.displayName;
     const c = $('sidebar-content');
     c.innerHTML = '';
 
@@ -1824,7 +1855,7 @@ function showSidebar(key) {
         wrap.className = 'related-table';
         for (const k of ins) {
             const a = document.createElement('a');
-            a.textContent = k;
+            a.textContent = state.nodes.get(k)?.displayName || k;
             a.onclick = () => selectNode(k);
             wrap.appendChild(a);
         }
@@ -1838,7 +1869,7 @@ function showSidebar(key) {
         wrap.className = 'related-table';
         for (const k of outs) {
             const a = document.createElement('a');
-            a.textContent = k;
+            a.textContent = state.nodes.get(k)?.displayName || k;
             a.onclick = () => selectNode(k);
             wrap.appendChild(a);
         }
