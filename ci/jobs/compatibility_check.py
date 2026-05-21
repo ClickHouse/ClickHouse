@@ -1,8 +1,6 @@
 import argparse
 from pathlib import Path
 
-from pip._vendor.packaging.version import Version
-
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -12,47 +10,6 @@ IMAGE_CENTOS = "clickhouse/test-old-centos"
 DOWNLOAD_RETRIES_COUNT = 5
 
 temp_path = Path(f"{Utils.cwd()}/ci/tmp")
-
-
-def process_glibc_check():
-    # See https://sourceware.org/glibc/wiki/Glibc%20Timeline
-    if Utils.is_amd():
-        max_glibc_version = "2.4"
-    elif Utils.is_arm():
-        max_glibc_version = "2.18"  # because of build with newer sysroot?
-    else:
-        raise RuntimeError("Can't determine max glibc version")
-
-    commands = (
-        [
-            f"readelf -s --wide {temp_path}/clickhouse | grep '@GLIBC_' > {temp_path}/glibc.log",
-            # FIXME: odbc bridge is not present in the deb package
-            # f"readelf -s --wide {temp_path}/clickhouse-odbc-bridge | grep '@GLIBC_' >> {temp_path}/glibc.log",
-            # FIXME: library bridge is not present in the deb package
-            # f"readelf -s --wide {temp_path}/clickhouse-library-bridge | grep '@GLIBC_' >> {temp_path}/glibc.log",
-        ],
-    )
-
-    for command in commands:
-        Shell.check(command, verbose=True, strict=True)
-
-    test_results = []
-    ok = True
-    with open(f"{temp_path}/glibc.log", "r", encoding="utf-8") as log:
-        for line in log:
-            if line.strip():
-                columns = line.strip().split(" ")
-                symbol_with_glibc = columns[-2]  # sysconf@GLIBC_2.2.5
-                _, version = symbol_with_glibc.split("@GLIBC_")
-                if version == "PRIVATE":
-                    print(f"FAILED: PRIVATE version: {symbol_with_glibc}")
-                    ok = False
-                elif Version(version) > Version(max_glibc_version):
-                    print(
-                        f"FAILED: version is more than max version [{max_glibc_version}]: [{symbol_with_glibc}]"
-                    )
-                    ok = False
-    return ok
 
 
 def parse_args():
@@ -66,7 +23,6 @@ def main():
 
     check_name = Info().job_name
     assert check_name
-    check_glibc = False
     # currently hardcoded to x86, don't enable for AARCH64
     check_distributions = (
         "aarch64" not in check_name.lower() and "arm" not in check_name.lower()
@@ -88,13 +44,18 @@ def main():
 
     test_results = []
 
-    if check_glibc:
-        test_results.append(
-            Result.from_commands_run(
-                name="glibc version",
-                command=process_glibc_check,
-            )
+    # A fully static (musl) binary must not have a PT_INTERP segment or any
+    # DT_NEEDED entries. Either would mean the binary depends on a dynamic
+    # linker / shared libraries at runtime.
+    test_results.append(
+        Result.from_commands_run(
+            name="not dynamically linked",
+            command=[
+                f"test \"$(readelf -l {temp_path}/clickhouse | grep -c INTERP)\" = 0",
+                f"test \"$(readelf -d {temp_path}/clickhouse 2>/dev/null | grep -c '(NEEDED)')\" = 0",
+            ],
         )
+    )
 
     if check_distributions:
         test_results.append(
