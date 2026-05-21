@@ -53,7 +53,7 @@ template <> struct DataTypeToTimeTypeMap<DataTypeDateTime64>
 template <typename DataType>
 using DateTypeToTimeType = typename DataTypeToTimeTypeMap<DataType>::TimeType;
 
-class FunctionDateNameImpl final : public IFunction
+class FunctionDateNameImpl : public IFunction
 {
 public:
     static constexpr auto name = "dateName";

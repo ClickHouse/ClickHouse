@@ -19,7 +19,7 @@ namespace DB
 
 struct ObjectMetadata;
 
-class ObjectStorageQueueSource final : public ISource, WithContext
+class ObjectStorageQueueSource : public ISource, WithContext
 {
 public:
     using Storage = StorageObjectStorage;

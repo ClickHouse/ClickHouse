@@ -161,7 +161,7 @@ public:
 };
 
 /// Provides source data for the projection pipeline
-class ProjectionDataSource final : public ISource
+class ProjectionDataSource : public ISource
 {
 public:
     explicit ProjectionDataSource(SharedHeader block)
@@ -184,7 +184,7 @@ private:
 
 /// Collects processed data from the projection pipeline into a single chunk,
 /// Enforces that projections cannot increase the number of rows beyond the original input.
-class ProjectionDataSink final : public ISink
+class ProjectionDataSink : public ISink
 {
 public:
     ProjectionDataSink(SharedHeader header, size_t max_rows_allowed_)

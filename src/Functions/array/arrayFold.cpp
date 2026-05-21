@@ -22,7 +22,7 @@ namespace ErrorCodes
 /**
  * arrayFold( acc,a1,...,aN->expr, arr1, ..., arrN, acc_initial)
  */
-class FunctionArrayFold final : public IFunction
+class FunctionArrayFold : public IFunction
 {
 public:
     static constexpr auto name = "arrayFold";

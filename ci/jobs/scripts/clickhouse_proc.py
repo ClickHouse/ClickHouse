@@ -748,14 +748,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             return False
 
     def run_test(self, cmd, timeout=7200):
-        """Run a `clickhouse-test` command and return its integer exit code.
-
-        Returns 0 on success, non-zero on failure. In particular, exit code
-        `STOP_TESTING_EXIT_CODE` (2) signals that `clickhouse-test` aborted
-        the run via `StopTesting` (server died, hung check failed, etc.) and
-        is forwarded to `FTResultsProcessor.run` as `runner_exit_code` so it
-        can populate the synthetic "Server died" leaf.
-        """
         print(f"Run test: [{cmd}]")
         with open(self.test_output_file, "w") as f:
             process = subprocess.Popen(
@@ -780,7 +772,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             try:
                 process.wait(timeout=timeout)
                 reader_thread.join()
-                return process.returncode
+                return process.returncode == 0
             except subprocess.TimeoutExpired:
                 print(
                     f"ERROR: fast test timed out after {timeout}s, killing process group"
@@ -788,7 +780,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                 process.wait()
                 reader_thread.join()
-                return process.returncode
+                return False
             finally:
                 # Kill any test processes that survived clickhouse-test's own cleanup
                 # (e.g. if it was killed with SIGKILL before its signal handlers ran).
