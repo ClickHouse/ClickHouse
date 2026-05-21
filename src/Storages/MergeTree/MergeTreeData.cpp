@@ -95,6 +95,7 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -761,6 +762,10 @@ MergeTreeData::MergeTreeData(
 
     checkColumnFilenamesForCollision(metadata_.getColumns(), *settings, sanity_checks);
     checkTTLExpressions(metadata_, metadata_);
+
+    /// UNIQUE KEY — sidecar lifecycle helper. Constructed unconditionally;
+    /// methods are no-ops on non-UK tables (one pointer + one ctor call cost).
+    unique_key_dense_index_ops = std::make_unique<UniqueKeyDenseIndexOps>(*this);
 
     String reason;
     if (!canUsePolymorphicParts(*settings, reason) && !reason.empty())
@@ -2406,7 +2411,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     num_parts += active_parts.size();
 
-    auto part_lock = lockParts();
+    std::optional<DataPartsLock> part_lock_holder{lockParts()};
+    DataPartsLock & part_lock = *part_lock_holder;
 
     MutableDataPartsVector broken_parts_to_detach;
     MutableDataPartsVector duplicate_parts_to_remove;
@@ -2510,10 +2516,37 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         for (auto & part : broken_parts_to_detach)
             part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
 
+    /// UNIQUE KEY — SST sweep for parts that landed without a sidecar
+    /// (restore, freeze taken before UK shipped). The active set is captured
+    /// here under `part_lock`; the I/O-heavy per-part rebuild runs below,
+    /// after the lock is released.
+    MutableDataPartsVector active_uk_parts_to_rebuild;
+    if (!is_static_storage && !all_disks_are_readonly && !is_table_readonly)
+    {
+        sweepUniqueKeyDenseIndexOrphans(part_lock);
+
+        auto metadata_snapshot_for_rebuild = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/false);
+        if (metadata_snapshot_for_rebuild && metadata_snapshot_for_rebuild->hasUniqueKey())
+        {
+            for (const auto & p : data_parts_by_info)
+            {
+                if (p->getState() == DataPartState::Active)
+                    active_uk_parts_to_rebuild.push_back(std::const_pointer_cast<IMergeTreeDataPart>(p));
+            }
+        }
+    }
+
     resetSerializationHints(part_lock);
 
     if (!(*settings)[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
         calculateColumnAndSecondaryIndexSizesImpl(part_lock);
+
+    /// Release the parts lock before the I/O-heavy UNIQUE KEY SST rebuild: it
+    /// reads each part's UK columns and writes a sidecar, and needs no
+    /// parts-collection lock (the active set was captured above under it).
+    part_lock_holder.reset();
+    for (auto & p : active_uk_parts_to_rebuild)
+        ensureUniqueKeyIndexOnLoad(p);
 
     PartLoadingTreeNodes unloaded_parts;
 
@@ -2761,6 +2794,26 @@ catch (...)
         refresh_stats_task->scheduleAfter(interval_seconds * 1000);
     else
         throw;
+}
+
+MergeTreeData::~MergeTreeData() = default;
+
+void MergeTreeData::sweepUniqueKeyDenseIndexOrphans(const DataPartsLock & part_lock)
+{
+    if (unique_key_dense_index_ops)
+        unique_key_dense_index_ops->sweepOrphans(part_lock);
+}
+
+void MergeTreeData::ensureUniqueKeyIndexOnLoad(MutableDataPartPtr & part) const
+{
+    if (unique_key_dense_index_ops)
+        unique_key_dense_index_ops->rebuildIfMissing(part);
+}
+
+void MergeTreeData::onPartAttachUniqueKey(MutableDataPartPtr & part) const
+{
+    if (unique_key_dense_index_ops)
+        unique_key_dense_index_ops->onPartAttach(part);
 }
 
 void MergeTreeData::loadUnexpectedDataParts()
@@ -6356,6 +6409,9 @@ void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
     part->removeDeleteOnDestroyMarker();
     part->removeVersionMetadata();
+
+    /// UNIQUE KEY — per-part ATTACH hook: `.sst.tmp` cleanup + rebuild.
+    onPartAttachUniqueKey(part);
 }
 
 void MergeTreeData::unregisterFromMergeSelection(const MergeTreeSettingsPtr & settings)

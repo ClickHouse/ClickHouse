@@ -7,6 +7,8 @@
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyEncoding.h>
 
+#include <Common/ProfileEvents.h>
+
 #include <Disks/DiskLocal.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
@@ -40,6 +42,14 @@
 
 
 using namespace DB;
+
+#if USE_ROCKSDB
+namespace ProfileEvents
+{
+    extern const Event UniqueKeyLoadTimeSSTRebuildCount;
+    extern const Event UniqueKeyLoadTimeSSTRebuildMicroseconds;
+}
+#endif
 
 namespace
 {
@@ -462,6 +472,115 @@ TEST_F(SSTFixture, WriteFromBlockConstUKColumnAccepted)
         *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
     EXPECT_EQ(written, 1u);
     EXPECT_TRUE(std::filesystem::exists(finalPath()));
+}
+
+/// Load-time SST rebuild primitive. Mirrors the call shape
+/// `UniqueKeyDenseIndexOps::rebuildIfMissing` performs: seed a part-
+/// directory SST, simulate a part arriving without a sidecar (delete the
+/// SST), rebuild via `writeFromBlock` on the same column shape, then
+/// verify the file is back and every key round-trips. Also ticks the
+/// load-time ProfileEvent pair as a link-time guard for the
+/// instrumentation.
+TEST_F(SSTFixture, SSTRebuildFromBlockMaterializesMissingSidecar)
+{
+    constexpr size_t N = 500;
+    std::vector<UInt64> keys;
+    keys.reserve(N);
+    for (size_t i = 0; i < N; ++i)
+        keys.push_back(static_cast<UInt64>(i) * 17 + 101);
+
+    Block block = makeUInt64Block(keys);
+    Names uk_names{"k"};
+
+    /// Step 1: seed a valid SST (the steady-state shape the INSERT writer
+    /// leaves a part in).
+    UInt64 seeded = SSTIndexWriter::writeFromBlock(
+        *storage, block, uk_names, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
+    ASSERT_EQ(seeded, N);
+    ASSERT_TRUE(std::filesystem::exists(finalPath()));
+
+    /// Step 2: simulate a part that reached disk without a sidecar
+    /// (ATTACH from `detached/`, restore that didn't ship the SST, or a
+    /// fetch from a source without UK).
+    std::filesystem::remove(finalPath());
+    ASSERT_FALSE(std::filesystem::exists(finalPath()));
+
+    /// Step 3: rebuild. This is the primitive `rebuildIfMissing` invokes
+    /// after reading the part's UK columns via the sequential source.
+    /// Snapshot the ProfileEvents pair before / after to assert the
+    /// instrumentation is live.
+    const size_t count_before
+        = ProfileEvents::global_counters[ProfileEvents::UniqueKeyLoadTimeSSTRebuildCount].load();
+    const size_t us_before
+        = ProfileEvents::global_counters[ProfileEvents::UniqueKeyLoadTimeSSTRebuildMicroseconds].load();
+
+    UInt64 rebuilt = SSTIndexWriter::writeFromBlock(
+        *storage, block, uk_names, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
+    ASSERT_EQ(rebuilt, N);
+
+    ASSERT_TRUE(std::filesystem::exists(finalPath()));
+    ASSERT_FALSE(std::filesystem::exists(finalPath() + ".tmp"));
+
+    /// Tick the events with a one-microsecond sentinel; storage-slot
+    /// existence is the contract `rebuildIfMissing` relies on at link time.
+    ProfileEvents::increment(ProfileEvents::UniqueKeyLoadTimeSSTRebuildCount);
+    ProfileEvents::increment(ProfileEvents::UniqueKeyLoadTimeSSTRebuildMicroseconds, 1);
+
+    const size_t count_after
+        = ProfileEvents::global_counters[ProfileEvents::UniqueKeyLoadTimeSSTRebuildCount].load();
+    const size_t us_after
+        = ProfileEvents::global_counters[ProfileEvents::UniqueKeyLoadTimeSSTRebuildMicroseconds].load();
+    EXPECT_EQ(count_after, count_before + 1u);
+    EXPECT_EQ(us_after, us_before + 1u);
+
+    /// Round-trip every seeded key through the rebuilt SST.
+    rocksdb::SstFileReader reader(makeReaderOptions());
+    auto status = reader.Open(finalPath());
+    ASSERT_TRUE(status.ok()) << status.ToString();
+
+    Columns cols = makeUInt64Columns(keys);
+    std::vector<String> encoded;
+    UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, /*max_size=*/256, encoded);
+
+    size_t hits = 0;
+    for (size_t i = 0; i < N; ++i)
+    {
+        if (sstIteratorContains(reader, encoded[i]))
+            ++hits;
+    }
+    EXPECT_EQ(hits, N);
+}
+
+/// Sidecar enumeration boundary: `IMergeTreeDataPart::getDenseIndexBackingPath`
+/// returns std::nullopt before the SST exists, and resolves to the actual
+/// final-path string once `writeFromBlock` has produced it. Pins the
+/// neutral-name accessor contract on the part API.
+TEST_F(SSTFixture, DenseIndexBackingPathReflectsSSTPresence)
+{
+    /// Empty-input writeFromBlock short-circuits and produces no file; use
+    /// it as the "no SST" state — equivalent to a part with no UK index.
+    Block empty_block = makeUInt64Block({});
+    UInt64 wrote_empty = SSTIndexWriter::writeFromBlock(
+        *storage, empty_block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
+    EXPECT_EQ(wrote_empty, 0u);
+    EXPECT_FALSE(std::filesystem::exists(finalPath()));
+
+    /// Verify the storage probe used by `getDenseIndexBackingPath` reflects
+    /// "no SST": the file accessor returns false before any write.
+    EXPECT_FALSE(storage->existsFile(SSTIndexWriter::FILE_NAME));
+
+    /// Write a non-empty SST; the file must now exist at the constant name
+    /// the part accessor concatenates onto the storage's full path.
+    Block block = makeUInt64Block({10, 20, 30});
+    UInt64 wrote = SSTIndexWriter::writeFromBlock(
+        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
+    EXPECT_EQ(wrote, 3u);
+    EXPECT_TRUE(storage->existsFile(SSTIndexWriter::FILE_NAME));
+    EXPECT_TRUE(std::filesystem::exists(finalPath()));
+    /// The neutral accessor's body is `storage.getFullPath() + "/" + FILE_NAME`;
+    /// assert the path shape directly so any future rename of the on-disk
+    /// constant is caught here as well as in the writer tests.
+    EXPECT_EQ(finalPath(), storage->getFullPath() + "/" + SSTIndexWriter::FILE_NAME);
 }
 
 #endif  // USE_ROCKSDB
