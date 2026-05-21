@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-class ExecutableFunctionToday final : public IExecutableFunction
+class ExecutableFunctionToday : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionToday(time_t time_) : day_value(static_cast<UInt16>(time_)) {}
@@ -27,7 +27,7 @@ private:
     DayNum day_value;
 };
 
-class FunctionBaseToday final : public IFunctionBase
+class FunctionBaseToday : public IFunctionBase
 {
 public:
     explicit FunctionBaseToday(DayNum day_value_) : day_value(day_value_), return_type(std::make_shared<DataTypeDate>()) {}
@@ -58,7 +58,7 @@ private:
     DataTypePtr return_type;
 };
 
-class TodayOverloadResolver final : public IFunctionOverloadResolver
+class TodayOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "today";
@@ -66,8 +66,6 @@ public:
     String getName() const override { return name; }
 
     bool isDeterministic() const override { return false; }
-
-    bool allowsOmittingParentheses() const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
 
@@ -100,23 +98,13 @@ R"(
 │ 2025-03-03 │ 2025-03-03 │   2025-03-03 │
 └────────────┴────────────┴──────────────┘
 )"
-        },
-        {"SQL standard syntax without parentheses", R"(
-SELECT TODAY, CURDATE,CURRENT_DATE
-        )",
-        R"(
-┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
-┃      TODAY ┃    CURDATE ┃ CURRENT_DATE ┃
-┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
-│ 2025-03-04 │ 2025-03-04 │   2025-03-04 │
-└────────────┴────────────┴──────────────┘
-        )"}
+        }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
 
-    factory.registerFunction<TodayOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<TodayOverloadResolver>(documentation);
     factory.registerAlias("current_date", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("curdate", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }

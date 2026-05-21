@@ -1,7 +1,5 @@
 #pragma once
 
-#include <map>
-
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 
@@ -24,13 +22,14 @@ public:
         const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot_,
+        const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
         MergeTreeIndexGranularityPtr index_granularity_);
 
-    void write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache) override;
+    void write(const Block & block, const IColumnPermutation * permutation) override;
 
     void finalizeIndexGranularity() final;
     void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) final;
@@ -57,7 +56,7 @@ private:
 
     void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) override;
 
-    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
+    void initColumnsSubstreamsIfNeeded(const Block & sample);
 
     Block header;
 
@@ -96,9 +95,7 @@ private:
 
     /// Create compressed stream for every different codec. All streams write to
     /// a single file on disk.
-    /// Use std::map for deterministic iteration order — the order affects
-    /// the uncompressed_hash computation in addToChecksums.
-    std::map<UInt64, CompressedStreamPtr> streams_by_codec;
+    std::unordered_map<UInt64, CompressedStreamPtr> streams_by_codec;
 
     /// Stream for each column's substreams path (look at addStreams).
     std::unordered_map<String, CompressedStreamPtr> compressed_streams;

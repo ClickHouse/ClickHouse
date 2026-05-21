@@ -172,8 +172,8 @@ namespace
         addThrottler(read_settings.remote_throttler, context->getBackupsThrottler());
         addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = false;
-        read_settings.read_through_distributed_cache = false;
         read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
+        read_settings.read_through_distributed_cache = false;
         return read_settings;
     }
 
@@ -399,7 +399,7 @@ struct BackupsWorker::BackupStarter
 
         /// The "internal" option can only be used by a query that was initiated by another query (e.g., ON CLUSTER query).
         /// It should not be allowed for an initial query explicitly specified by a user.
-        if (is_internal_backup && !query_context->isDDLOrOnClusterInternal())
+        if (is_internal_backup && (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY))
             throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
 
         on_cluster = !backup_query->cluster.empty() || is_internal_backup;
@@ -585,7 +585,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
                 {
                     starter->doBackup();
                 }
-                catch (const std::exception &)
+                catch (...)
                 {
                     starter->onException();
                 }
@@ -875,7 +875,7 @@ struct BackupsWorker::RestoreStarter
 
         /// The "internal" option can only be used by a query that was initiated by another query (e.g., ON CLUSTER query).
         /// It should not be allowed for an initial query explicitly specified by a user.
-        if (is_internal_restore && !query_context->isDDLOrOnClusterInternal())
+        if (is_internal_restore && (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY))
             throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
 
         /// RESTORE is a write operation, it should be forbidden in strict readonly mode (readonly=1).
@@ -1010,7 +1010,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startRestoring(const A
                 {
                     starter->doRestore();
                 }
-                catch (const std::exception &)
+                catch (...)
                 {
                     starter->onException();
                 }

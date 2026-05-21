@@ -7,7 +7,6 @@
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
@@ -361,7 +360,7 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
 {
     /// If there is query context then we need to attach materialized storage.
     /// If there is no query context then we need to attach internal storage from atomic database.
-    if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
+    if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
     {
         auto current_context = Context::createCopy(getContext()->getGlobalContext());
         current_context->setInternalQuery(true);
@@ -410,7 +409,7 @@ void DatabaseMaterializedPostgreSQL::detachTablePermanently(ContextPtr, const St
 {
     /// If there is query context then we need to detach materialized storage.
     /// If there is no query context then we need to detach internal storage from atomic database.
-    if (CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext())
+    if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
     {
         auto & table_to_delete = materialized_tables[table_name];
         if (!table_to_delete)
@@ -565,8 +564,6 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         .supports_arguments = true,
         .supports_settings = true,
         .supports_table_overrides = true,
-        .is_external = true,
-        .source_access_type = AccessTypeObjects::Source::POSTGRES,
     });
 }
 }

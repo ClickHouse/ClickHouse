@@ -21,7 +21,7 @@ It's optimized for pattern-match lookups (e.g. classifying strings like user age
 
 Regular expression tree dictionaries are defined in ClickHouse open-source using the [`YAMLRegExpTree`](../sources/yamlregexptree.md) source which is provided the path to a YAML file containing the regular expression tree.
 
-```sql title="Query"
+```sql
 CREATE DICTIONARY regexp_dict
 (
     regexp String,
@@ -82,7 +82,7 @@ ClickHouse supports [uap-core](https://github.com/ua-parser/uap-core) and you ca
 
 ### Collecting attribute values {#collecting-attribute-values}
 
-Sometimes it is useful to return values from multiple regular expressions that matched, rather than just the value of a leaf node. In these cases, the specialized [`dictGetAll`](/sql-reference/functions/ext-dict-functions.md#dictGetAll) function can be used. If a node has an attribute value of type `T`, `dictGetAll` will return an `Array(T)` containing zero or more values.
+Sometimes it is useful to return values from multiple regular expressions that matched, rather than just the value of a leaf node. In these cases, the specialized [`dictGetAll`](../../../functions/ext-dict-functions.md#dictGetAll) function can be used. If a node has an attribute value of type `T`, `dictGetAll` will return an `Array(T)` containing zero or more values.
 
 By default, the number of matches returned per key is unbounded. A bound can be passed as an optional fourth argument to `dictGetAll`. The array is populated in _topological order_, meaning that child nodes come before parent nodes, and sibling nodes follow the ordering in the source.
 
@@ -125,13 +125,15 @@ LIFETIME(0)
   captured: 'NULL'
 ```
 
-```sql title="Query"
+```sql
 CREATE TABLE urls (url String) ENGINE=MergeTree ORDER BY url;
 INSERT INTO urls VALUES ('clickhouse.com'), ('clickhouse.com/docs/en'), ('github.com/clickhouse/tree/master/docs');
 SELECT url, dictGetAll('regexp_dict', ('tag', 'topological_index', 'captured', 'parent'), url, 2) FROM urls;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─url────────────────────────────────────┬─dictGetAll('regexp_dict', ('tag', 'topological_index', 'captured', 'parent'), url, 2)─┐
 │ clickhouse.com                         │ (['ClickHouse'],[1],[],[])                                                            │
 │ clickhouse.com/docs/en                 │ (['ClickHouse Documentation','ClickHouse'],[0,1],['/en'],['ClickHouse'])              │
@@ -148,7 +150,7 @@ Pattern matching behavior can be modified with certain dictionary settings:
 ## Use regular expression tree dictionary in ClickHouse Cloud {#use-regular-expression-tree-dictionary-in-clickhouse-cloud}
 
 The [`YAMLRegExpTree`](../sources/yamlregexptree.md) source works in ClickHouse Open Source but not in ClickHouse Cloud.
-To use regexp tree dictionaries in ClickHouse Cloud, first create a regexp tree dictionary from a YAML file locally in ClickHouse Open Source, then dump this dictionary into a CSV file using the `dictionary` table function and the [INTO OUTFILE](/sql-reference/statements/select/into-outfile.md) clause.
+To use regexp tree dictionaries in ClickHouse Cloud, first create a regexp tree dictionary from a YAML file locally in ClickHouse Open Source, then dump this dictionary into a CSV file using the `dictionary` table function and the [INTO OUTFILE](../../select/into-outfile.md) clause.
 
 ```sql
 SELECT * FROM dictionary(regexp_dict) INTO OUTFILE('regexp_dict.csv')

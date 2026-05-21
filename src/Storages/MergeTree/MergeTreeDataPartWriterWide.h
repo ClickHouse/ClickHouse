@@ -31,6 +31,7 @@ public:
         const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
+        const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
@@ -38,7 +39,7 @@ public:
         MergeTreeIndexGranularityPtr index_granularity_,
         WrittenOffsetSubstreams * written_offset_substreams_);
 
-    void write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache) override;
+    void write(const Block & block, const IColumnPermutation * permutation) override;
 
     void finalizeIndexGranularity() final;
     void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) final;
@@ -115,7 +116,9 @@ private:
     /// Also useful to have exact amount of rows in last (non-final) mark.
     void adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark);
 
-    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
+    void initColumnsSubstreamsIfNeeded(const Block & block);
+
+    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const;
 
     ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column,
         const WrittenOffsetSubstreams & offset_substreams) const;

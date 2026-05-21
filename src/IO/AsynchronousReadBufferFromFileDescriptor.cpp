@@ -1,7 +1,6 @@
 #include <ctime>
 #include <optional>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -179,7 +178,7 @@ AsynchronousReadBufferFromFileDescriptor::AsynchronousReadBufferFromFileDescript
     , required_alignment(alignment)
     , fd(fd_)
     , throttler(throttler_)
-    , query_id(CurrentThread::isInitialized() && CurrentThread::get().tryGetQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
+    , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
     , current_reader_id(getRandomASCIIString(8))
     , prefetches_log(prefetches_log_)
 {
@@ -295,10 +294,6 @@ void AsynchronousReadBufferFromFileDescriptor::rewind()
     pos = working_buffer.begin();
     file_offset_of_buffer_end = 0;
     bytes_to_ignore = 0;
-
-    /// A previous read cycle may have failed, leaving the buffer in a canceled state.
-    /// Reset so the next read cycle can proceed normally after rewind.
-    canceled = false;
 }
 
 std::optional<size_t> AsynchronousReadBufferFromFileDescriptor::tryGetFileSize()

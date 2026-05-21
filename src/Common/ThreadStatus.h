@@ -36,14 +36,7 @@ struct PerfEventsCounters;
 class InternalTextLogsQueue;
 struct ViewRuntimeData;
 class QueryViewsLog;
-struct Settings;
 enum class ThreadName : uint8_t;
-
-/// Apply memory-profiler / fault-injection / soft-limit related query settings to a `MemoryTracker`.
-/// Query-level sample settings (`memory_profiler_*`) are pushed only when they were actually changed
-/// from their default — otherwise the tracker is left at `sample_probability == -1` so that
-/// `getResolvedSampleConfig` transparently falls through to `total_memory_tracker_sample_probability`.
-void configureMemoryTrackerFromSettings(bool has_trace_collector, MemoryTracker & memory_tracker, const Settings & settings);
 
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
@@ -156,6 +149,46 @@ private:
     static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
 };
 
+/**
+ * RAII wrapper around CurrentThread::attachToGroup/detachFromGroupIfNotDetached.
+ *
+ * Typically used for inheriting thread group when scheduling tasks on a thread pool:
+ *   pool->scheduleOrThrow([thread_group = CurrentThread::getGroup()]()
+ *       {
+ *           ThreadGroupSwitcher switcher(thread_group, "MyThread");
+ *           ...
+ *       });
+ */
+class ThreadGroupSwitcher : private boost::noncopyable
+{
+public:
+    /// If thread_group_ is nullptr or equal to current thread group, does nothing.
+    /// allow_existing_group:
+    ///  * If false, asserts that the thread is not already attached to a different group.
+    ///    Use this when running a task in a thread pool.
+    ///  * If true, remembers the current group and restores it in destructor.
+    /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
+    ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group = false) noexcept;
+    ~ThreadGroupSwitcher();
+
+private:
+    ThreadStatus * prev_thread = nullptr;
+    ThreadGroupPtr prev_thread_group;
+    ThreadGroupPtr thread_group;
+};
+
+
+/**
+ * We use **constinit** here to tell the compiler the current_thread variable is initialized.
+ * If we didn't help the compiler, then it would most likely add a check before every use of the variable to initialize it if needed.
+ * Instead it will trust that we are doing the right thing (and we do initialize it to nullptr) and emit more optimal code.
+ * This is noticeable in functions like CurrentMemoryTracker::free and CurrentMemoryTracker::allocImpl
+ * See also:
+ * - https://en.cppreference.com/w/cpp/language/constinit
+ * - https://github.com/ClickHouse/ClickHouse/pull/40078
+ */
+extern thread_local constinit ThreadStatus * current_thread;
+
 /** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).
   * The object must be created in thread function and destroyed in the same thread before the exit.
   * It is accessed through thread-local pointer.
@@ -254,7 +287,7 @@ public:
     void clearQueryId() noexcept;
     const String & getQueryId() const;
 
-    ContextPtr tryGetQueryContext() const;
+    ContextPtr getQueryContext() const;
     ContextPtr getGlobalContext() const;
 
     /// Attaches slave thread to existing thread group
@@ -302,17 +335,6 @@ public:
     size_t getNextPlanStepIndex() const;
     size_t getNextPipelineProcessorIndex() const;
 
-    double getEffectiveSampleProbability(UInt64 size) const
-    {
-        if (sample_probability <= 0)
-            return 0;
-        if (sample_min_allocation_size && size < sample_min_allocation_size)
-            return 0;
-        if (sample_max_allocation_size && size > sample_max_allocation_size)
-            return 0;
-        return sample_probability;
-    }
-
 private:
     void applyGlobalSettings();
     void applyQuerySettings();
@@ -326,11 +348,6 @@ private:
     void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database);
 
     void attachToGroupImpl(const ThreadGroupPtr & thread_group_);
-
-    /// Cached sample probability resolved from MemoryTracker hierarchy to avoid parent traversal on every allocation
-    double sample_probability = 0;
-    UInt64 sample_min_allocation_size = 0;
-    UInt64 sample_max_allocation_size = 0;
 };
 
 /**
@@ -342,6 +359,7 @@ public:
     static MainThreadStatus & getInstance();
     static ThreadStatus * get() { return main_thread; }
     static bool initialized() { return is_initialized.test(std::memory_order_relaxed); }
+    static bool isMainThread() { return main_thread == current_thread; }
 
     static void reset() { is_initialized.clear(std::memory_order_relaxed); }
 

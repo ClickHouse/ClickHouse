@@ -7,6 +7,8 @@ title: 'clickhouse-benchmark'
 doc_type: 'reference'
 ---
 
+# clickhouse-benchmark 
+
 Connects to a ClickHouse server and repeatedly sends specified queries.
 
 **Syntax**
@@ -45,7 +47,6 @@ clickhouse-benchmark [keys] < queries_file;
 - `--query=QUERY` — Query to execute. If this parameter is not passed, `clickhouse-benchmark` will read queries from standard input.
 - `--query_id=ID` — Query Id.
 - `--query_id_prefix=ID_PREFIX` — Query Id Prefix.
-- `--queries-format=FORMAT` — Format of queries read from standard input. Possible values: `tsv` (default, one tab-escaped query per line) and `script` (parse the input as a script of multiple queries separated by semicolons). Limitation of `script`: `INSERT ... FORMAT` queries must be on a single line.
 - `-c N`, `--concurrency=N` — Number of queries that `clickhouse-benchmark` sends simultaneously. Default value: 1.
 - `-C N`, `--max_concurrency=N` — Gradually increases number of parallel queries up to specified value, making one report for every concurrency level.
 - `--precise` — Enables precise per-interval reporting with weighted metrics.
@@ -61,7 +62,7 @@ clickhouse-benchmark [keys] < queries_file;
 - `--database=DATABASE_NAME` — ClickHouse database name. Default value: `default`.
 - `--user=USERNAME` — ClickHouse user name. Default value: `default`.
 - `--password=PSWD` — ClickHouse user password. Default value: empty string.
-- `--stacktrace` — Stack traces output. When the key is set, `clickhouse-benchmark` outputs stack traces of exceptions.
+- `--stacktrace` — Stack traces output. When the key is set, `clickhouse-bencmark` outputs stack traces of exceptions.
 - `--stage=WORD` — Query processing stage at server. ClickHouse stops query processing and returns an answer to `clickhouse-benchmark` at the specified stage. Possible values: `complete`, `fetch_columns`, `with_mergeable_state`. Default value: `complete`.
 - `--roundrobin` — Instead of comparing queries for different `--host`/`--port` just pick one random `--host`/`--port` for every query and send query to it.
 - `--reconnect=N` — Control reconnection behaviour. Possible values 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries). Default value: 0.

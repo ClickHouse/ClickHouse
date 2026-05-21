@@ -3,6 +3,7 @@
 #include <Common/OpenTelemetryTracingContext.h>
 #include <base/types.h>
 #include <IO/WriteHelpers.h>
+#include <Core/Field.h>
 
 #include <chrono>
 #include <exception>
@@ -149,7 +150,7 @@ private:
         {
             attributes.emplace_back(name, value);
         }
-        catch (...) // Ok: noexcept, allocation failure
+        catch (...)
         {
             return false;
         }

@@ -2,7 +2,6 @@
 #include "config.h"
 
 #include <filesystem>
-#include <optional>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Types.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -12,7 +11,6 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/CacheBase.h>
-#include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/SettingsChanges.h>
@@ -186,9 +184,6 @@ public:
 
     ObjectStorageQueuePartitioningMode getPartitioningMode() const { return partitioning_mode; }
     const ObjectStorageQueueFilenameParser * getFilenameParser() const { return filename_parser.get(); }
-
-    /// Compute StartAfter for ordered S3 listing when it is safe.
-    std::optional<std::string> getStartAfterForListing() const;
 
     void updateSettings(const SettingsChanges & changes);
 

@@ -305,7 +305,7 @@ arrow::Status ArrowMemoryPool::Reallocate(int64_t old_size, int64_t new_size, in
     return arrow::Status::OK();
 }
 
-void ArrowMemoryPool::Free(uint8_t * buffer, int64_t size, int64_t alignment)
+void ArrowMemoryPool::Free(uint8_t * buffer, int64_t size, int64_t /* alignment */)
 {
     if (size == 0)
     {
@@ -313,7 +313,7 @@ void ArrowMemoryPool::Free(uint8_t * buffer, int64_t size, int64_t alignment)
         return;
     }
 
-    Allocator<false>().free(buffer, size_t(size), alignment);
+    Allocator<false>().free(buffer, size_t(size));
     stats.DidFreeBytes(size);
 }
 
@@ -330,11 +330,6 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
     bool has_file_size = isBufferWithFileSize(in);
     auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(&in);
 
-    // When the source is not seekable (or seekable_read is off), we cannot use
-    // RandomAccessFileFromSeekableReadBuffer / RandomAccessFileFromRandomAccessReadBuffer.
-    // We then load the entire file into memory and optionally log a warning for schema inference.
-    std::string fallback_reason;
-
     if (has_file_size && seekable_in && settings.seekable_read)
     {
         if (avoid_buffering && seekable_in->supportsReadAt())
@@ -342,30 +337,9 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
 
         if (seekable_in->checkIfActuallySeekable())
             return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*seekable_in, std::nullopt, avoid_buffering);
-
-        fallback_reason = "checkIfActuallySeekable() returned false";
-    }
-    else if (!settings.seekable_read)
-    {
-        fallback_reason = "seekable_read disabled in format settings";
-    }
-    else if (!has_file_size)
-    {
-        fallback_reason = "file size unavailable";
-    }
-    else
-    {
-        fallback_reason = "stream is not seekable";
     }
 
-    if (settings.log_full_buffer_fallback_during_schema_inference)
-    {
-        LOG_WARNING(
-            getLogger("ArrowBufferedInputStream"),
-            "Cannot read {} as seekable stream ({}), falling back to loading the entire file into memory",
-            format_name,
-            fallback_reason);
-    }
+    // fallback to loading the entire file in memory
     return asArrowFileLoadIntoMemory(in, is_cancelled, format_name, magic_bytes);
 }
 

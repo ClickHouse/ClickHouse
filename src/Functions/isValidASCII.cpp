@@ -32,7 +32,7 @@ UInt8 isValidASCII(const UInt8 * data, UInt64 len)
 
 }
 
-class FunctionIsValidASCII final : public IFunction
+class FunctionIsValidASCII : public IFunction
 {
 public:
     static constexpr auto name = "isValidASCII";
@@ -131,7 +131,6 @@ REGISTER_FUNCTION(IsValidASCII)
 {
     factory.registerFunction<DB::FunctionIsValidASCII>(DB::FunctionDocumentation{
         .description = R"(Returns 1 if the input String or FixedString contains only ASCII bytes (0x00–0x7F), otherwise 0. Optimized for the positive case (the input _is_ valid ASCII).)",
-        .syntax = "isValidASCII(str)",
         .examples = {{"isValidASCII", "SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii", ""}},
         .introduced_in = {25, 9},
         .category = DB::FunctionDocumentation::Category::String,

@@ -1,6 +1,5 @@
 #pragma once
 #include <memory>
-#include <Interpreters/Context_fwd.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
@@ -13,7 +12,7 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 /// Implements building a Bloom Filter from all values of the specified column. When building is finished the filter is saved into
 /// per-query filter map under the specified name. This allows to find the filter by name and use it in Expressions with the help of
 /// a special function 'filterContains'
-class BuildRuntimeFilterTransform final : public ISimpleTransform
+class BuildRuntimeFilterTransform : public ISimpleTransform
 {
 public:
     BuildRuntimeFilterTransform(
@@ -28,8 +27,7 @@ public:
         Float64 pass_ratio_threshold_for_disabling_,
         UInt64 blocks_to_skip_before_reenabling_,
         Float64 max_ratio_of_set_bits_in_bloom_filter_,
-        bool allow_to_use_not_exact_filter_,
-        ContextPtr query_context_);
+        bool allow_to_use_not_exact_filter_);
 
     String getName() const override { return "BuildRuntimeFilterTransform"; }
 
@@ -47,7 +45,6 @@ private:
     FunctionBasePtr cast_to_target_type;
 
     UniqueRuntimeFilterPtr built_filter;
-    ContextPtr query_context;
 
     void finish();
 };

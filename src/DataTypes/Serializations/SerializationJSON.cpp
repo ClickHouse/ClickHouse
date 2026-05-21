@@ -1,4 +1,3 @@
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -17,19 +16,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
 template <typename Parser>
 SerializationJSON<Parser>::SerializationJSON(
     const std::unordered_map<String, DataTypePtr> & typed_paths_types_,
-    const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_,
     const std::unordered_set<String> & paths_to_skip_,
     const std::vector<String> & path_regexps_to_skip_,
     const DataTypePtr & dynamic_type_,
-    const SerializationPtr & dynamic_serialization_,
     std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_)
-    : SerializationObject(typed_paths_types_, typed_paths_serializations_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, dynamic_serialization_)
+    : SerializationObject(typed_paths_types_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_)
     , json_extract_tree(std::move(json_extract_tree_))
 {
 }
@@ -234,9 +230,9 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
         if (path_info.type == ColumnObject::SortedPathsIterator::PathType::TYPED)
         {
             if (pretty)
-                typed_paths_serializations.at(String(path_info.path))->serializeTextJSONPretty(*path_info.column, path_info.row, ostr, settings, indent + current_prefix.size() + 1);
+                typed_paths_serializations.at(path_info.path)->serializeTextJSONPretty(*path_info.column, path_info.row, ostr, settings, indent + current_prefix.size() + 1);
             else
-                typed_paths_serializations.at(String(path_info.path))->serializeTextJSON(*path_info.column, path_info.row, ostr, settings);
+                typed_paths_serializations.at(path_info.path)->serializeTextJSON(*path_info.column, path_info.row, ostr, settings);
         }
         else
         {
@@ -321,20 +317,14 @@ void SerializationJSON<Parser>::serializeTextQuoted(const IColumn & column, size
 {
     WriteBufferFromOwnString buf;
     serializeTextImpl(column, row_num, buf, settings);
-    if (settings.values.escape_quote_with_quote)
-        writeQuotedStringPostgreSQL(buf.str(), ostr);
-    else
-        writeQuotedString(buf.str(), ostr);
+    writeQuotedString(buf.str(), ostr);
 }
 
 template <typename Parser>
 void SerializationJSON<Parser>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String object;
-    /// Use SQL-style quoted reader so we accept both `\'` and the SQL-standard `''` apostrophe escapes.
-    /// `serializeTextQuoted` above can emit either form depending on `output_format_values_escape_quote_with_quote`,
-    /// and a JSON column written by us via `Values` must be parseable back by the same path.
-    readQuotedStringWithSQLStyle(object, istr);
+    readQuotedString(object, istr);
     deserializeObject(column, object, settings);
 }
 
@@ -380,17 +370,6 @@ void SerializationJSON<Parser>::deserializeTextJSON(IColumn & column, ReadBuffer
     String object_buffer;
     auto object_view = readJSONObjectAsViewPossiblyInvalid(istr, object_buffer);
     deserializeObject(column, object_view, settings);
-}
-
-template <typename Parser>
-UInt128 SerializationJSON<Parser>::getHash(
-    const std::unordered_map<String, DataTypePtr> &,
-    const std::unordered_set<String> &,
-    const std::vector<String> &,
-    const DataTypePtr &)
-{
-    /// Check the comment in the ::create method.
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Method getHash is not implemented for SerializationJSON");
 }
 
 #if USE_SIMDJSON

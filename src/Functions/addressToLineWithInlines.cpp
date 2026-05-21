@@ -1,4 +1,4 @@
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
 
 #include <Common/Dwarf.h>
 #include <Columns/ColumnString.h>
@@ -21,7 +21,7 @@ namespace DB
 namespace
 {
 
-class FunctionAddressToLineWithInlines final : public FunctionAddressToLineBase<StringViews, Dwarf::LocationInfoMode::FULL_WITH_INLINE>
+class FunctionAddressToLineWithInlines: public FunctionAddressToLineBase<StringViews, Dwarf::LocationInfoMode::FULL_WITH_INLINE>
 {
 public:
     static constexpr auto name = "addressToLineWithInlines";

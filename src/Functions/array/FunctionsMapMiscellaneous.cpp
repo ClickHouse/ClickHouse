@@ -45,7 +45,7 @@ namespace ErrorCodes
   * from Map arguments and possibly modify other columns.
 */
 template <typename Impl, typename Adapter, typename Name>
-class FunctionMapToArrayAdapter final : public IFunction
+class FunctionMapToArrayAdapter : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -58,18 +58,6 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return impl.useDefaultImplementationForLowCardinalityColumns(); }
     bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants(); }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override  { return false; }
-
-    /// Reflect the SQL-level signature, not the internal `impl` plumbing.
-    /// An adapter may opt out via `Adapter::first_argument_is_lambda = false` when its
-    /// user-facing first argument is not a lambda (for example, `MapLikeAdapter` accepts
-    /// a Map and a string pattern, and synthesises the lambda internally).
-    bool isHigherOrderFunction() const override
-    {
-        if constexpr (requires { Adapter::first_argument_is_lambda; })
-            if (!Adapter::first_argument_is_lambda)
-                return false;
-        return impl.isHigherOrderFunction();
-    }
 
     void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
@@ -277,7 +265,7 @@ struct MapToSubcolumnAdapter
 /// A special function that works like the following:
 /// mapKeyLike(pattern, key, value) <=> key LIKE pattern
 /// It is used to mimic lambda: (key, value) -> key LIKE pattern.
-class FunctionMapKeyLike final : public IFunction
+class FunctionMapKeyLike : public IFunction
 {
 public:
     FunctionMapKeyLike() : impl(/*context*/ nullptr) {} /// nullptr because getting a context here is hard and FunctionLike doesn't need context
@@ -305,7 +293,7 @@ private:
 /// A special function that works like the following:
 /// mapValueLike(pattern, key, value) <=> value LIKE pattern
 /// It is used to mimic lambda: (key, value) -> value LIKE pattern.
-class FunctionMapValueLike final : public IFunction
+class FunctionMapValueLike : public IFunction
 {
 public:
 FunctionMapValueLike() : impl(/*context*/ nullptr) {} /// nullptr because getting a context here is hard and FunctionLike doesn't need context
@@ -339,10 +327,6 @@ template <typename Name, bool returns_map, size_t position>
 struct MapLikeAdapter
 {
     static_assert(position <= 1, "position of Map subcolumn must be 0 or 1");
-
-    /// The SQL-level signature is `(Map, String pattern)`; the lambda is constructed internally,
-    /// so the first user-facing argument is not a lambda.
-    static constexpr bool first_argument_is_lambda = false;
 
     static void checkTypes(const DataTypes & types)
     {
@@ -561,7 +545,7 @@ The query `SELECT mapValues(m) FROM table` is transformed to `SELECT m.values FR
     FunctionDocumentation::Description description_mapContainsKey = R"(
 Determines if a key is contained in a map.
 )";
-    FunctionDocumentation::Syntax syntax_mapContainsKey = "mapContainsKey(map, key)";
+    FunctionDocumentation::Syntax syntax_mapContainsKey = "mapContains(map, key)";
     FunctionDocumentation::Arguments arguments_mapContainsKey = {
         {"map", "Map to search in.", {"Map(K, V)"}},
         {"key", "Key to search for. Type must match the key type of the map.", {"Any"}}

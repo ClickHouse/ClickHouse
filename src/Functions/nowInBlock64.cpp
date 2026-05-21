@@ -21,7 +21,7 @@ namespace
 /** Returns current time at calculation of every block.
 * In contrast to 'now64' function, it's not a constant expression and is not a subject of constant folding.
 */
-class FunctionNowInBlock64 final : public IFunction
+class FunctionNowInBlock64 : public IFunction
 {
 public:
     static constexpr auto name = "nowInBlock64";
@@ -84,7 +84,7 @@ Returns the current date and time at the moment of processing of each block of d
 It makes sense to use this function to generate the current time in long-running INSERT SELECT queries.
     )";
     FunctionDocumentation::Syntax syntax = R"(
-nowInBlock64([scale[, timezone]])
+nowInBlock([scale[, timezone]])
     )";
     FunctionDocumentation::Arguments arguments = {
         {"scale", "Optional. Tick size (precision): 10^-precision seconds. Valid range: [0 : 9]. Typically, are used - 3 (default) (milliseconds), 6 (microseconds), 9 (nanoseconds).", {"UInt8"}},

@@ -19,52 +19,12 @@
 namespace BuzzHouse
 {
 
-static String escapeJSON(const String & s)
-{
-    String out;
-    out.reserve(s.size());
-    for (const unsigned char c : s)
-    {
-        switch (c)
-        {
-            case '"':
-                out += "\\\"";
-                break;
-            case '\\':
-                out += "\\\\";
-                break;
-            case '\b':
-                out += "\\b";
-                break;
-            case '\f':
-                out += "\\f";
-                break;
-            case '\n':
-                out += "\\n";
-                break;
-            case '\r':
-                out += "\\r";
-                break;
-            case '\t':
-                out += "\\t";
-                break;
-            default:
-                if (c < 0x20 || c >= 0x80)
-                    out += fmt::format("\\u{:04x}", c);
-                else
-                    out += static_cast<char>(c);
-                break;
-        }
-    }
-    return out;
-}
-
 bool ClickHouseIntegratedDatabase::performTableIntegration(
     RandomGenerator & rg, SQLTable & t, const bool can_shuffle, std::vector<ColumnPathChain> & entries)
 {
-    const String tname = getSQLQuotedTableName(t.db, t.getBaseName());
+    const String str_tname = getTableName(t.db, t.tname);
 
-    if (!performQuery(fmt::format("DROP TABLE IF EXISTS {};", tname)))
+    if (!performQuery(fmt::format("DROP TABLE IF EXISTS {};", str_tname)))
     {
         String buf;
         bool first = true;
@@ -80,12 +40,12 @@ bool ClickHouseIntegratedDatabase::performTableIntegration(
             buf += fmt::format(
                 "{}{} {} {}NULL",
                 first ? "" : ", ",
-                quoteIdentifier(entry.getBottomName()),
+                entry.getBottomName(),
                 columnTypeAsString(rg, t.is_deterministic, tp),
                 ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable>(false, false, false, tp)) ? "" : "NOT ");
             first = false;
         }
-        return !performQuery(fmt::format("CREATE TABLE {}({});", tname, buf));
+        return !performQuery(fmt::format("CREATE TABLE {}({});", str_tname, buf));
     }
     return false;
 }
@@ -93,23 +53,23 @@ bool ClickHouseIntegratedDatabase::performTableIntegration(
 bool ClickHouseIntegratedDatabase::dropPeerTableOnRemote(const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    return !performQuery(fmt::format("DROP TABLE IF EXISTS {};", getSQLQuotedTableName(t.db, t.getBaseName())));
+    return !performQuery(fmt::format("DROP TABLE IF EXISTS {};", getTableName(t.db, t.tname)));
 }
 
 void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, CreateTable & newt)
 {
-    TableEngine & te = *newt.mutable_engine();
+    TableEngine & te = const_cast<TableEngine &>(newt.engine());
     const auto & teng = te.engine();
 
     if (te.has_setting_values() && rg.nextSmallNumber() < 10)
     {
         /// Swap table settings
         const auto & allSettings = allTableSettings.at(teng);
-        auto * svs = te.mutable_setting_values();
+        const auto & svs = te.setting_values();
 
-        for (int i = 0; i < svs->other_values_size() + 1; i++)
+        for (int i = 0; i < svs.other_values_size() + 1; i++)
         {
-            SetValue & sv = *(i == 0 ? svs->mutable_set_value() : svs->mutable_other_values(i - 1));
+            SetValue & sv = const_cast<SetValue &>(i == 0 ? svs.set_value() : svs.other_values(i - 1));
 
             if (allSettings.contains(sv.property()))
             {
@@ -165,7 +125,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
             {
                 if (rg.nextSmallNumber() < 9)
                 {
-                    TableKeyExpr & tke = *te.mutable_order()->mutable_exprs(i);
+                    TableKeyExpr & tke = const_cast<TableKeyExpr &>(te.order().exprs(i));
 
                     tke.set_asc_desc((!tke.has_asc_desc() || tke.asc_desc() == AscDesc::ASC) ? AscDesc::DESC : AscDesc::ASC);
                 }
@@ -175,7 +135,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
     else if (teng >= TableEngineValues::StripeLog && teng <= TableEngineValues::TinyLog && rg.nextSmallNumber() < 5)
     {
         /// Swap engine if others are equivalent
-        static const std::vector<TableEngineValues> logEngines
+        static const std::vector<TableEngineValues> & logEngines
             = {TableEngineValues::StripeLog, TableEngineValues::Log, TableEngineValues::TinyLog};
 
         te.set_engine(rg.pickRandomly(logEngines));
@@ -183,16 +143,16 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
     if (newt.has_table_def())
     {
         std::vector<TableDefItem> items_to_keep;
-        TableDef & def = *newt.mutable_table_def();
+        TableDef & def = const_cast<TableDef &>(newt.table_def());
 
         for (int i = 0; i < def.table_defs_size(); i++)
         {
-            auto & next = *def.mutable_table_defs(i);
+            const auto & next = def.table_defs(i);
 
             if (next.has_col_def())
             {
-                ColumnDef & cdef = *next.mutable_col_def();
-                TopTypeName & ttn = *cdef.mutable_type()->mutable_type();
+                ColumnDef & cdef = const_cast<ColumnDef &>(next.col_def());
+                TopTypeName & ttn = const_cast<TopTypeName &>(cdef.type().type());
 
                 if (cdef.has_codecs() && rg.nextBool())
                 {
@@ -223,11 +183,11 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
                     else
                     {
                         const auto & allSettings = allTableSettings.at(teng);
-                        auto * svs = cdef.mutable_setting_values();
+                        const auto & svs = cdef.setting_values();
 
-                        for (int j = 0; j < svs->other_values_size() + 1; j++)
+                        for (int j = 0; j < svs.other_values_size() + 1; j++)
                         {
-                            SetValue & sv = *(j == 0 ? svs->mutable_set_value() : svs->mutable_other_values(j - 1));
+                            SetValue & sv = const_cast<SetValue &>(j == 0 ? svs.set_value() : svs.other_values(j - 1));
 
                             if (allSettings.contains(sv.property()))
                             {
@@ -301,7 +261,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             newt.CopyFrom(*ct);
 
             chassert(newt.has_est() && !newt.has_table_as());
-            ExprSchemaTable & est = *newt.mutable_est();
+            ExprSchemaTable & est = const_cast<ExprSchemaTable &>(newt.est());
             if (t.db)
             {
                 t.db->setName(est.mutable_database());
@@ -325,7 +285,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 bool ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    return !performQuery(fmt::format("{} {} SYNC;", truncateStatement(), getSQLQuotedTableName(t.db, t.getBaseName())));
+    return !performQuery(fmt::format("{} {} SYNC;", truncateStatement(), getTableName(t.db, t.tname)));
 }
 
 bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)
@@ -340,11 +300,6 @@ bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableD
         case PeerTableDatabase::None:
             return fc.processServerQuery(false, query);
     }
-}
-
-String ClickHouseIntegratedDatabase::quoteIdentifier(const String & name) const
-{
-    return "`" + escapeSQLString(name, '`') + "`";
 }
 
 #if defined USE_MYSQL && USE_MYSQL
@@ -402,7 +357,7 @@ void MySQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
     }
     te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
     te->add_params()->set_svalue(sc.database);
-    te->add_params()->set_svalue(t.getBaseName());
+    te->add_params()->set_svalue(t.getTableName());
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
     if (!t.isExternalDistributedEngine() && rg.nextBool())
@@ -411,12 +366,10 @@ void MySQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
     }
 }
 
-String MySQLIntegration::getSQLQuotedTableName(std::shared_ptr<SQLDatabase> db, const String & tname)
+String MySQLIntegration::getTableName(std::shared_ptr<SQLDatabase> db, const uint32_t tname)
 {
-    if (is_clickhouse)
-        return db ? ("`" + escapeSQLString(db->getName(), '`') + "`.`" + escapeSQLString(tname, '`') + "`")
-                  : ("`" + escapeSQLString(tname, '`') + "`");
-    return "`test`.`" + escapeSQLString(tname, '`') + "`";
+    const auto prefix = is_clickhouse ? (db ? fmt::format("d{}.", db->dname) : "") : "test.";
+    return fmt::format("{}t{}", prefix, tname);
 }
 
 String MySQLIntegration::truncateStatement()
@@ -430,10 +383,10 @@ bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const 
     if (is_clickhouse && t.isMergeTreeFamily())
     {
         /// Sometimes the optimize step doesn't have to do anything, then throws error. Ignore it
-        const String tname = getSQLQuotedTableName(t.db, t.getBaseName());
-        const auto u
-            = performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK SETTINGS mutations_sync = 2;", tname));
-        const auto v = performQueryOnServerOrRemote(pt, fmt::format("OPTIMIZE TABLE {}{};", tname, t.supportsFinal() ? " FINAL" : ""));
+        const auto u = performQueryOnServerOrRemote(
+            pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK SETTINGS mutations_sync = 2;", getTableName(t.db, t.tname)));
+        const auto v = performQueryOnServerOrRemote(
+            pt, fmt::format("OPTIMIZE TABLE {}{};", getTableName(t.db, t.tname), t.supportsFinal() ? " FINAL" : ""));
         UNUSED(u);
         UNUSED(v);
     }
@@ -457,12 +410,9 @@ int MySQLIntegration::performQuery(const String & query)
     {
         MYSQL_RES * result = mysql_store_result(mysql_connection.get());
 
-        if (result)
-        {
-            while (mysql_fetch_row(result))
-                ;
-            mysql_free_result(result);
-        }
+        while (mysql_fetch_row(result))
+            ;
+        mysql_free_result(result);
     }
     return 0;
 }
@@ -476,7 +426,7 @@ String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_
 
         if (nopt < 76)
         {
-            static const DB::Strings baseTypes
+            static const std::vector<String> & baseTypes
                 = {"TINYINT",
                    "SMALLINT",
                    "MEDIUMINT",
@@ -537,7 +487,7 @@ String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_
             std::uniform_int_distribution<uint32_t> precisions(0, 65);
             const uint32_t precision = precisions(rg.generator);
             std::uniform_int_distribution<uint32_t> scales(UINT32_C(0), std::min(UINT32_C(30), precision));
-            static const DB::Strings baseTypes = {"FIXED", "DEC", "DECIMAL", "NUMERIC"};
+            static const std::vector<String> & baseTypes = {"FIXED", "DEC", "DECIMAL", "NUMERIC"};
 
             return fmt::format("{}({},{})", rg.pickRandomly(baseTypes), precision, scales(rg.generator));
         }
@@ -545,7 +495,7 @@ String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_
         {
             /// Character types
             std::uniform_int_distribution<uint32_t> lengths(1, 65535);
-            static const DB::Strings baseTypes = {"CHAR", "VARCHAR", "BINARY", "VARBINARY"};
+            static const std::vector<String> & baseTypes = {"CHAR", "VARCHAR", "BINARY", "VARBINARY"};
 
             return fmt::format("{}({})", rg.pickRandomly(baseTypes), lengths(rg.generator));
         }
@@ -553,7 +503,7 @@ String MySQLIntegration::columnTypeAsString(RandomGenerator & rg, const bool is_
         {
             /// Date/time with precision
             std::uniform_int_distribution<uint32_t> precisions(0, 6);
-            static const DB::Strings baseTypes = {"TIME", "TIMESTAMP", "DATETIME"};
+            static const std::vector<String> & baseTypes = {"TIME", "TIMESTAMP", "DATETIME"};
 
             return fmt::format("{}({})", rg.pickRandomly(baseTypes), precisions(rg.generator));
         }
@@ -650,7 +600,7 @@ void PostgreSQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQ
     }
     te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_svalue(sc.database);
-    te->add_params()->set_svalue(t.getBaseName());
+    te->add_params()->set_svalue(t.getTableName());
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
     te->add_params()->set_svalue("test");
@@ -660,14 +610,9 @@ void PostgreSQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQ
     }
 }
 
-String PostgreSQLIntegration::quoteIdentifier(const String & name) const
+String PostgreSQLIntegration::getTableName(std::shared_ptr<SQLDatabase>, const uint32_t tname)
 {
-    return "\"" + escapeSQLString(name, '"') + "\"";
-}
-
-String PostgreSQLIntegration::getSQLQuotedTableName(std::shared_ptr<SQLDatabase>, const String & tname)
-{
-    return R"("test".")" + escapeSQLString(tname, '"') + "\"";
+    return "test.t" + std::to_string(tname);
 }
 
 String PostgreSQLIntegration::truncateStatement()
@@ -736,7 +681,7 @@ String PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, const boo
 
         if (nopt < 81)
         {
-            static const DB::Strings baseTypes
+            static const std::vector<String> & baseTypes
                 = {"SMALLINT",  "INTEGER",   "BIGINT",   "NUMERIC", "DECIMAL", "REAL",    "DOUBLE PRECISION", "SMALLSERIAL", "SERIAL",
                    "BIGSERIAL", "MONEY",     "TEXT",     "BPCHAR",  "BYTEA",   "TIME",    "TIMESTAMP",        "DATE",        "BOOLEAN",
                    "POINT",     "LINE",      "LSEG",     "BOX",     "PATH",    "POLYGON", "CIRCLE",           "CIDR",        "INET",
@@ -748,7 +693,7 @@ String PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, const boo
         {
             /// Character types
             std::uniform_int_distribution<uint32_t> lengths(1, 255);
-            static const DB::Strings prefixes = {"", "VAR", "BP"};
+            static const std::vector<String> & prefixes = {"", "VAR", "BP"};
 
             baseType = fmt::format("{}CHAR({})", rg.pickRandomly(prefixes), lengths(rg.generator));
         }
@@ -839,12 +784,12 @@ std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegratio
 void SQLiteIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable & t, TableEngine * te)
 {
     te->add_params()->set_svalue(sqlite_path.generic_string());
-    te->add_params()->set_svalue(t.getBaseName());
+    te->add_params()->set_svalue(t.getTableName());
 }
 
-String SQLiteIntegration::getSQLQuotedTableName(std::shared_ptr<SQLDatabase>, const String & tname)
+String SQLiteIntegration::getTableName(std::shared_ptr<SQLDatabase>, const uint32_t tname)
 {
-    return "`" + escapeSQLString(tname, '`') + "`";
+    return "t" + std::to_string(tname);
 }
 
 String SQLiteIntegration::truncateStatement()
@@ -863,7 +808,7 @@ int SQLiteIntegration::performQuery(const String & query)
         return 1;
     }
     out_file << query << std::endl;
-    if ((res = sqlite3_exec(sqlite_connection.get(), query.c_str(), nullptr, nullptr, &err_msg)) != SQLITE_OK)
+    if ((res = sqlite3_exec(sqlite_connection.get(), query.c_str(), nullptr, nullptr, &err_msg) != SQLITE_OK))
     {
         LOG_ERROR(fc.log, "SQLite query: {} Error: {}", query, err_msg);
         sqlite3_free(err_msg);
@@ -881,10 +826,11 @@ String SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, const bool is
 
         if (nopt < 91)
         {
-            static const DB::Strings baseTypes = {"TEXT",    "CLOB", "STRING",   "NUMERIC", "DECIMAL",          "MONEY",  "BOOLEAN",
-                                                  "TIME",    "DATE", "DATETIME", "INT",     "INTEGER",          "BIGINT", "SMALLINT",
-                                                  "TINYINT", "REAL", "DOUBLE",   "FLOAT",   "DOUBLE PRECISION", "BLOB",   "BINARY",
-                                                  "BYTEA"};
+            static const std::vector<String> & baseTypes
+                = {"TEXT",    "CLOB", "STRING",   "NUMERIC", "DECIMAL",          "MONEY",  "BOOLEAN",
+                   "TIME",    "DATE", "DATETIME", "INT",     "INTEGER",          "BIGINT", "SMALLINT",
+                   "TINYINT", "REAL", "DOUBLE",   "FLOAT",   "DOUBLE PRECISION", "BLOB",   "BINARY",
+                   "BYTEA"};
             return rg.pickRandomly(baseTypes);
         }
         else if (nopt < 96)
@@ -900,7 +846,7 @@ String SQLiteIntegration::columnTypeAsString(RandomGenerator & rg, const bool is
         {
             /// Character types
             std::uniform_int_distribution<uint32_t> lengths(1, 65535);
-            static const DB::Strings baseTypes = {"CHARACTER", "VARCHAR", "NCHAR"};
+            static const std::vector<String> & baseTypes = {"CHARACTER", "VARCHAR", "NCHAR"};
 
             return fmt::format("{}({})", rg.pickRandomly(baseTypes), lengths(rg.generator));
         }
@@ -988,7 +934,7 @@ void MongoDBIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable
 {
     te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_svalue(sc.database);
-    te->add_params()->set_svalue(t.getBaseName());
+    te->add_params()->set_svalue(t.getTableName());
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
 }
@@ -1287,7 +1233,7 @@ void MongoDBIntegration::documentAppendArray(
     const uint64_t limit = nested_rows_dist(rg.generator);
     /// Array
     auto array = document << cname << bsoncxx::builder::stream::open_array;
-    SQLType * tp = at->subtype.get();
+    SQLType * tp = at->subtype;
     Nullable * nl;
     VariantType * vtp;
     LowCardinality * lc;
@@ -1322,22 +1268,22 @@ void MongoDBIntegration::documentAppendArray(
             || dynamic_cast<EnumType *>(tp) || dynamic_cast<UUIDType *>(tp) || dynamic_cast<IPv4Type *>(tp) || dynamic_cast<IPv6Type *>(tp)
             || dynamic_cast<JSONType *>(tp) || dynamic_cast<GeoType *>(tp) || dynamic_cast<TimeType *>(tp))
         {
-            documentAppendBottomType<decltype(array)>(rg, "", array, at->subtype.get());
+            documentAppendBottomType<decltype(array)>(rg, "", array, at->subtype);
         }
         else if ((lc = dynamic_cast<LowCardinality *>(tp)))
         {
-            if ((nl = dynamic_cast<Nullable *>(lc->subtype.get())))
+            if ((nl = dynamic_cast<Nullable *>(lc->subtype)))
             {
-                documentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype.get());
+                documentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype);
             }
             else
             {
-                documentAppendBottomType<decltype(array)>(rg, "", array, lc->subtype.get());
+                documentAppendBottomType<decltype(array)>(rg, "", array, lc->subtype);
             }
         }
         else if ((nl = dynamic_cast<Nullable *>(tp)))
         {
-            documentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype.get());
+            documentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype);
         }
         else if (dynamic_cast<ArrayType *>(tp))
         {
@@ -1392,17 +1338,17 @@ void MongoDBIntegration::documentAppendAnyValue(
         dynamic_cast<IntType *>(tp) || dynamic_cast<FloatType *>(tp) || dynamic_cast<DateType *>(tp) || dynamic_cast<DateTimeType *>(tp)
         || dynamic_cast<DecimalType *>(tp) || dynamic_cast<StringType *>(tp) || dynamic_cast<const BoolType *>(tp)
         || dynamic_cast<EnumType *>(tp) || dynamic_cast<UUIDType *>(tp) || dynamic_cast<IPv4Type *>(tp) || dynamic_cast<IPv6Type *>(tp)
-        || dynamic_cast<JSONType *>(tp) || dynamic_cast<GeoType *>(tp) || dynamic_cast<TimeType *>(tp))
+        || dynamic_cast<JSONType *>(tp) || dynamic_cast<GeoType *>(tp))
     {
         documentAppendBottomType<bsoncxx::v_noabi::builder::stream::document>(rg, cname, document, tp);
     }
     else if ((lc = dynamic_cast<LowCardinality *>(tp)))
     {
-        documentAppendAnyValue(rg, cname, document, lc->subtype.get());
+        documentAppendAnyValue(rg, cname, document, lc->subtype);
     }
     else if ((nl = dynamic_cast<Nullable *>(tp)))
     {
-        documentAppendAnyValue(rg, cname, document, nl->subtype.get());
+        documentAppendAnyValue(rg, cname, document, nl->subtype);
     }
     else if ((at = dynamic_cast<ArrayType *>(tp)))
     {
@@ -1417,7 +1363,7 @@ void MongoDBIntegration::documentAppendAnyValue(
         }
         else
         {
-            documentAppendAnyValue(rg, cname, document, rg.pickRandomly(vtp->subtypes).get());
+            documentAppendAnyValue(rg, cname, document, rg.pickRandomly(vtp->subtypes));
         }
     }
     else
@@ -1435,8 +1381,8 @@ bool MongoDBIntegration::performTableIntegration(
         const bool permute = can_shuffle && rg.nextBool();
         const bool miss_cols = rg.nextBool();
         const uint32_t ndocuments = rg.nextMediumNumber();
-        const String & tname = t.getBaseName();
-        mongocxx::collection coll = database[tname];
+        const String & str_tname = t.getTableName();
+        mongocxx::collection coll = database[str_tname];
 
         for (uint32_t j = 0; j < ndocuments; j++)
         {
@@ -1448,16 +1394,17 @@ bool MongoDBIntegration::performTableIntegration(
             }
             for (const auto & entry : entries)
             {
-                if (!miss_cols || rg.nextSmallNumber() >= 4)
+                if (miss_cols && rg.nextSmallNumber() < 4)
                 {
                     /// Sometimes the column is missing
-                    documentAppendAnyValue(rg, entry.columnPathRef(""), document, entry.getBottomType());
+                    documentAppendAnyValue(rg, entry.getBottomName(), document, entry.getBottomType());
+                    chassert(entry.path.size() == 1);
                 }
             }
             documents.emplace_back(document << bsoncxx::builder::stream::finalize);
         }
         /// Collection name
-        out_file << tname << std::endl;
+        out_file << str_tname << std::endl;
         for (const auto & doc : documents)
         {
             /// Write each JSON document on a new line
@@ -1486,10 +1433,10 @@ void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &
     te->add_params()->set_rvalue(sc.named_collection);
 }
 
-void MinIOIntegration::setBackupDetails(const String & filename, BackupOut * bout)
+void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore * br)
 {
-    bout->add_out_params()->set_rvalue(sc.named_collection);
-    bout->add_out_params()->set_svalue(filename);
+    br->mutable_params()->add_out_params()->set_rvalue(sc.named_collection);
+    br->mutable_params()->add_out_params()->set_svalue(filename);
 }
 
 bool MinIOIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
@@ -1502,10 +1449,10 @@ void AzuriteIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable
     te->add_params()->set_rvalue(sc.named_collection);
 }
 
-void AzuriteIntegration::setBackupDetails(const String & filename, BackupOut * bout)
+void AzuriteIntegration::setBackupDetails(const String & filename, BackupRestore * br)
 {
-    bout->add_out_params()->set_rvalue(sc.named_collection);
-    bout->add_out_params()->set_svalue(filename);
+    br->mutable_params()->add_out_params()->set_rvalue(sc.named_collection);
+    br->mutable_params()->add_out_params()->set_svalue(filename);
 }
 
 bool AzuriteIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
@@ -1515,7 +1462,7 @@ bool AzuriteIntegration::performTableIntegration(RandomGenerator &, SQLTable &, 
 
 void HTTPIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
 {
-    te->add_params()->set_svalue(t.getTablePath(rg, false));
+    te->add_params()->set_svalue(t.getTablePath(rg, fc, false));
 }
 
 bool HTTPIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
@@ -1589,7 +1536,7 @@ bool DolorIntegration::performDatabaseIntegration(RandomGenerator & rg, SQLDatab
         rg.nextInFullRange(),
         d.getSparkCatalogName(),
         d.storage == LakeStorage::S3 ? "s3" : (d.storage == LakeStorage::Azure ? "azure" : "local"),
-        d.format == LakeFormat::DeltaLake ? "deltalake" : (d.format == LakeFormat::Paimon ? "paimon" : "iceberg"),
+        d.format == LakeFormat::DeltaLake ? "deltalake" : "iceberg",
         catalog);
     fc.outf << "--External database " << buf << std::endl;
     return httpPut("/sparkdatabase", buf);
@@ -1600,7 +1547,7 @@ bool DolorIntegration::reRunCreateDatabase(const String & body)
     return httpPut("/sparkdatabase", body);
 }
 
-static const DB::Strings catalogs = {"glue", "hive", "rest", "unity"};
+static const DB::Strings & catalogs = {"glue", "hive", "rest", "unity"};
 
 void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de)
 {
@@ -1665,47 +1612,48 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
         const uint32_t add_endpoint = 3 * static_cast<uint32_t>(fc.minio_server.has_value() && added_endpoint < toadd_endpoint);
         const uint32_t add_region = 3 * static_cast<uint32_t>(added_region < toadd_region);
         const uint32_t add_credentials = 3 * static_cast<uint32_t>(added_credentials < toadd_credentials);
+        const uint32_t prob_space = add_type + add_warehouse + add_endpoint + add_region + add_credentials;
+        std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+        const uint32_t nopt = next_dist(rg.generator);
 
-        rg.pickWeighted(
-            {{add_type,
-              [&]
-              {
-                  sv->set_property("catalog_type");
-                  sv->set_value("'" + catalog_str + "'");
-                  added_type++;
-              }},
-             {add_warehouse,
-              [&]
-              {
-                  sv->set_property("warehouse");
-                  sv->set_value("'" + escapeSQLString(d.getName()) + "'");
-                  added_warehouse++;
-              }},
-             {add_endpoint,
-              [&]
-              {
-                  const ServerCredentials & minio = fc.minio_server.value();
+        if (add_type && nopt < (add_type + 1))
+        {
+            sv->set_property("catalog_type");
+            sv->set_value("'" + catalog_str + "'");
+            added_type++;
+        }
+        else if (add_warehouse && nopt < (add_type + add_warehouse + 1))
+        {
+            sv->set_property("warehouse");
+            sv->set_value("'" + d.getName() + "'");
+            added_warehouse++;
+        }
+        else if (add_endpoint && nopt < (add_type + add_warehouse + add_endpoint + 1))
+        {
+            const ServerCredentials & minio = fc.minio_server.value();
 
-                  de->add_params()->set_svalue(minio.user);
-                  de->add_params()->set_svalue(minio.secret);
-                  sv->set_property("storage_endpoint");
-                  sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
-                  added_endpoint++;
-              }},
-             {add_region,
-              [&]
-              {
-                  sv->set_property("region");
-                  sv->set_value("'" + cat->region + "'");
-                  added_region++;
-              }},
-             {add_credentials,
-              [&]
-              {
-                  sv->set_property("vended_credentials");
-                  sv->set_value(rg.nextBool() ? "1" : "0");
-                  added_credentials++;
-              }}});
+            de->add_params()->set_svalue(minio.user);
+            de->add_params()->set_svalue(minio.secret);
+            sv->set_property("storage_endpoint");
+            sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
+            added_endpoint++;
+        }
+        else if (add_region && nopt < (add_type + add_warehouse + add_endpoint + add_region + 1))
+        {
+            sv->set_property("region");
+            sv->set_value("'" + cat->region + "'");
+            added_region++;
+        }
+        else if (add_credentials && nopt < (add_type + add_warehouse + add_endpoint + add_region + add_credentials + 1))
+        {
+            sv->set_property("vended_credentials");
+            sv->set_value(rg.nextBool() ? "1" : "0");
+            added_credentials++;
+        }
+        else
+        {
+            UNREACHABLE();
+        }
     }
 }
 
@@ -1717,42 +1665,38 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
     bool first = true;
     std::vector<ColumnPathChain> entries;
 
-    for (const auto & [_, val] : t.cols)
+    for (const auto & [key, val] : t.cols)
     {
         ColumnPathChain cpc(val.nullable, val.special, val.dmod, {});
 
-        collectColumnPaths(val.getColumnName(), val.tp.get(), 0, cpc, entries);
+        collectColumnPaths("c" + std::to_string(key), val.tp, 0, cpc, entries);
     }
     /// Common information
     buf += fmt::format(
         R"({{"seed":{},"database_name":"{}","table_name":"{}","format":"{}","deterministic":{},"columns":[)",
         rg.nextInFullRange(),
-        escapeJSON(t.getDatabaseName()),
-        escapeJSON(t.getBaseName(false)),
+        t.getDatabaseName(),
+        t.getTableName(false),
         t.file_format.has_value() ? InOutFormat_Name(t.file_format.value()).substr(6) : "any",
         t.is_deterministic ? "1" : "0");
     for (const auto & entry : entries)
     {
         buf += fmt::format(
-            R"({}{{"name":"{}","type":"{}"}})",
-            first ? "" : ",",
-            escapeJSON(entry.getBottomName()),
-            entry.getBottomType()->typeName(false, true));
+            R"({}{{"name":"{}","type":"{}"}})", first ? "" : ",", entry.getBottomName(), entry.getBottomType()->typeName(false, true));
         first = false;
     }
     buf += "]";
-    if (t.isAnyLakeEngine())
+    if (t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine())
     {
-        const char * engine = t.isAnyDeltaLakeEngine() ? "deltalake" : (t.isAnyPaimonEngine() ? "paimon" : "iceberg");
         buf += fmt::format(
             R"(,"engine":"{}","catalog_name":"{}","storage":"{}")",
-            engine,
-            escapeJSON(t.getSparkCatalogName()),
+            t.isAnyDeltaLakeEngine() ? "deltalake" : "iceberg",
+            t.getSparkCatalogName(),
             t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"));
     }
     else if (t.isKafkaEngine())
     {
-        buf += fmt::format(R"(,"engine":"kafka","topic":"{}","group":"{}")", escapeJSON(t.topic.value()), escapeJSON(t.group.value()));
+        buf += fmt::format(R"(,"engine":"kafka","topic":"{}","group":"{}")", t.topic.value(), t.group.value());
     }
     buf += "}";
     fc.outf << "--External table " << buf << std::endl;
@@ -1766,7 +1710,7 @@ bool DolorIntegration::reRunCreateTable(const String & body)
 
 void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
 {
-    if (t.isAnyLakeEngine())
+    if (t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine())
     {
         const LakeCatalog catalog = t.getLakeCatalog();
 
@@ -1841,57 +1785,58 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
                 const uint32_t add_endpoint = 3 * static_cast<uint32_t>(fc.minio_server.has_value() && added_endpoint < toadd_endpoint);
                 const uint32_t add_region = 3 * static_cast<uint32_t>(added_region < toadd_region);
                 const uint32_t add_url = 3 * static_cast<uint32_t>(added_url < toadd_url);
+                const uint32_t prob_space = add_sct + add_warehouse + add_endpoint + add_region + add_url;
+                std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+                const uint32_t nopt = next_dist(rg.generator);
 
-                rg.pickWeighted(
-                    {{add_sct,
-                      [&]
-                      {
-                          sv->set_property("storage_catalog_type");
-                          sv->set_value("'" + catalog_str + "'");
-                          added_sct++;
-                      }},
-                     {add_warehouse,
-                      [&]
-                      {
-                          sv->set_property("storage_warehouse");
-                          sv->set_value("'" + escapeSQLString(t.getDatabaseName()) + "'");
-                          added_warehouse++;
-                      }},
-                     {add_endpoint,
-                      [&]
-                      {
-                          /// The key-value format is not well supported for catalogs at the moment
-                          const ServerCredentials & minio = fc.minio_server.value();
+                if (add_sct && nopt < (add_sct + 1))
+                {
+                    sv->set_property("storage_catalog_type");
+                    sv->set_value("'" + catalog_str + "'");
+                    added_sct++;
+                }
+                else if (add_warehouse && nopt < (add_sct + add_warehouse + 1))
+                {
+                    sv->set_property("storage_warehouse");
+                    sv->set_value("'" + t.getDatabaseName() + "'");
+                    added_warehouse++;
+                }
+                else if (add_endpoint && nopt < (add_sct + add_warehouse + add_endpoint + 1))
+                {
+                    /// The key-value format is not well supported for catalogs at the moment
+                    const ServerCredentials & minio = fc.minio_server.value();
 
-                          te->add_params()->set_svalue(t.getTablePath());
-                          te->add_params()->set_svalue(minio.password);
-                          te->add_params()->set_svalue(minio.secret);
-                          if (t.isAnyIcebergEngine() && t.file_format.has_value() && rg.nextMediumNumber() < 96)
-                          {
-                              te->add_params()->set_svalue(InOutFormat_Name(t.file_format.value()).substr(6));
-                              if (t.file_comp.has_value() && rg.nextMediumNumber() < 96)
-                              {
-                                  te->add_params()->set_svalue(t.file_comp.value());
-                              }
-                          }
-                          sv->set_property("object_storage_endpoint");
-                          sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
-                          added_endpoint++;
-                      }},
-                     {add_region,
-                      [&]
-                      {
-                          sv->set_property("storage_region");
-                          sv->set_value("'" + cat->region + "'");
-                          added_region++;
-                      }},
-                     {add_url,
-                      [&]
-                      {
-                          sv->set_property("storage_catalog_url");
-                          sv->set_value("'" + catalog_url + "'");
-                          added_url++;
-                      }}});
+                    te->add_params()->set_svalue(t.getTablePath(fc));
+                    te->add_params()->set_svalue(minio.password);
+                    te->add_params()->set_svalue(minio.secret);
+                    if (t.isAnyIcebergEngine() && t.file_format.has_value() && rg.nextMediumNumber() < 96)
+                    {
+                        te->add_params()->set_svalue(InOutFormat_Name(t.file_format.value()).substr(6));
+                        if (t.file_comp.has_value() && rg.nextMediumNumber() < 96)
+                        {
+                            te->add_params()->set_svalue(t.file_comp.value());
+                        }
+                    }
+                    sv->set_property("object_storage_endpoint");
+                    sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
+                    added_endpoint++;
+                }
+                else if (add_region && nopt < (add_sct + add_warehouse + add_endpoint + add_region + 1))
+                {
+                    sv->set_property("storage_region");
+                    sv->set_value("'" + cat->region + "'");
+                    added_region++;
+                }
+                else if (add_url && nopt < (add_sct + add_warehouse + add_endpoint + add_region + add_url + 1))
+                {
+                    sv->set_property("storage_catalog_url");
+                    sv->set_value("'" + catalog_url + "'");
+                    added_url++;
+                }
+                else
+                {
+                    UNREACHABLE();
+                }
             }
         }
     }
@@ -2125,15 +2070,15 @@ void ExternalIntegrations::dropPeerTableOnRemote(const SQLTable & t)
     }
 }
 
-void ExternalIntegrations::setBackupDetails(const IntegrationCall dc, const String & filename, BackupOut * bout)
+void ExternalIntegrations::setBackupDetails(const IntegrationCall dc, const String & filename, BackupRestore * br)
 {
     switch (dc)
     {
         case IntegrationCall::MinIO:
-            minio->setBackupDetails(filename, bout);
+            minio->setBackupDetails(filename, br);
             break;
         case IntegrationCall::Azurite:
-            azurite->setBackupDetails(filename, bout);
+            azurite->setBackupDetails(filename, br);
             break;
         default:
             UNREACHABLE();
@@ -2150,20 +2095,23 @@ int ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String 
 std::filesystem::path ExternalIntegrations::getDatabaseDataDir(const PeerTableDatabase pt, const bool server) const
 {
     const ClickHouseIntegratedDatabase * next = getPeerPtr(pt);
-    const auto path = next ? next->sc.user_files_dir : (server ? fc.server_file_path : fc.client_file_path);
 
-    return path / "fuzz.data";
+    if (next)
+    {
+        return next->sc.user_files_dir / "fuzz.data";
+    }
+    return server ? fc.fuzz_server_out : fc.fuzz_client_out;
 }
 
 bool ExternalIntegrations::getPerformanceMetricsForLastQuery(const PeerTableDatabase pt, PerformanceResult & res)
 {
     String buf;
     std::error_code ec;
-    const std::filesystem::path client_out = this->getDatabaseDataDir(pt, false);
-    const std::filesystem::path server_out = this->getDatabaseDataDir(pt, true);
+    const std::filesystem::path client_out_path = this->getDatabaseDataDir(pt, false);
+    const std::filesystem::path server_out_path = this->getDatabaseDataDir(pt, true);
 
     res.metrics.clear();
-    if (!std::filesystem::remove(client_out, ec) && ec)
+    if (!std::filesystem::remove(client_out_path, ec) && ec)
     {
         LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         return false;
@@ -2175,9 +2123,9 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(const PeerTableData
                 "INSERT INTO TABLE FUNCTION file('{}', 'TabSeparated', 'c0 UInt64, c1 UInt64, c2 UInt64') SELECT query_duration_ms, "
                 "memory_usage, read_bytes FROM system.query_log WHERE log_comment = 'measure_performance' AND type = 'QueryFinish' ORDER "
                 "BY event_time_microseconds DESC LIMIT 1;",
-                server_out.generic_string())))
+                server_out_path.generic_string())))
     {
-        std::ifstream infile(client_out);
+        std::ifstream infile(client_out_path);
         if (std::getline(infile, buf) && buf.size() > 1)
         {
             if (buf[buf.size() - 1] == '\r')
@@ -2214,13 +2162,18 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
     String replaced;
     std::error_code ec;
 
+    if (!std::filesystem::remove(fc.fuzz_client_out, ec) && ec)
+    {
+        LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
+        return;
+    }
     if (fc.processServerQuery(
             false,
             fmt::format(
                 "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
-                fc.fuzzer_out_file.generic_string())))
+                fc.fuzz_server_out.generic_string())))
     {
-        std::ifstream infile(fc.fuzzer_out_file);
+        std::ifstream infile(fc.fuzz_client_out);
         while (std::getline(infile, buf) && buf.size() > 1)
         {
             if (buf[buf.size() - 1] == '\r')

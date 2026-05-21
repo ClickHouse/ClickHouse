@@ -7,6 +7,8 @@ title: 'Continuous Integration (CI)'
 doc_type: 'reference'
 ---
 
+# Continuous Integration (CI)
+
 When you submit a pull request, some automated checks are ran for your code by the ClickHouse [continuous integration (CI) system](tests.md#test-automation).
 This happens after a repository maintainer (someone from ClickHouse team) has screened your code and added the `can be tested` label to your pull request.
 The results of the checks are listed on the GitHub pull request page as described in the [GitHub checks documentation](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/about-status-checks).
@@ -17,6 +19,7 @@ If it looks like the check failure is not related to your changes, it may be som
 Push an empty commit to the pull request to restart the CI checks:
 
 ```shell
+git reset
 git commit --allow-empty
 git push
 ```
@@ -61,34 +64,19 @@ After all checks have been started, it changes status to 'success'.
 
 ## Style check {#style-check}
 
-Performs various style checks on the code base. Each sub-check below corresponds to a `testname` in [`ci/jobs/check_style.py`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/check_style.py) and can be run individually with `--test <name>` (see below).
+Performs various style checks on the code base.
+
+Basic checks in the Style Check job:
 
 ##### cpp {#cpp}
-Regex-based C++ style checks via [`check_cpp.sh`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/scripts/check_style/check_cpp.sh). If it fails, fix the issues according to the [code style guide](style.md).
+Performs simple regex-based code style checks using the [`ci/jobs/scripts/check_style/check_cpp.sh`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/scripts/check_style/check_cpp.sh) script (which can also be run locally).  
+If it fails, fix the style issues according to the [code style guide](style.md).
 
-##### whitespace_check {#whitespace-check}
-Flags double spaces after commas in C++ that are not part of column alignment.
+##### codespell, aspell {#codespell}
+Check for grammatical mistakes and typos.
 
-##### catch_all {#catch-all}
-Forbids `catch (...)` outside of destructors, `main`, and fuzzer entry points where swallowing an unknown exception is unsafe.
-
-##### yamllint {#yamllint}
-Lints YAML workflow files under `.github/` using `.yamllint`.
-
-##### xmllint {#xmllint}
-Validates XML files under `tests/` and `programs/`.
-
-##### functional_tests_check {#functional-tests-check}
-Checks stateless tests: queries filtering on `event_date` must use `>= yesterday()` rather than `today()` (to avoid flakiness around midnight), and test file names must not contain `fail`.
-
-##### test_numbers_check {#test-numbers-check}
-Flags large gaps in stateless test numbering (`tests/queries/0_stateless/<NNNNN>_*`).
-
-##### symlinks {#symlinks}
-Detects broken symlinks in the repository.
-
-##### various {#various}
-Miscellaneous repository checks via [`various_checks.sh`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/scripts/check_style/various_checks.sh): queries on `system.query_log` / `system.parts` / etc. must filter by `currentDatabase`, `Replicated*MergeTree` ZooKeeper paths must include a per-test prefix, integration test directories must have `__init__.py`, no UTF BOMs, no executable bits on source/data files, no `:latest` tags on third-party docker-compose images, and more.
+##### mypy {#mypy}
+Performs static type checking for Python code.
 
 ### Running the style check job locally {#running-style-check-locally}
 
@@ -106,61 +94,21 @@ python -m ci.praktika run "Style check" --test cpp
 These commands pull the `clickhouse/style-test` Docker image and run the job in a containerized environment.
 No dependencies other than Python 3 and Docker are required.
 
-## Running stateless tests {#running-stateless-tests}
+## Fast test {#fast-test}
 
-A locally installed ClickHouse with default settings may work for specific test cases, but cannot run all test queries correctly. In CI, each job installs a specific ClickHouse configuration (e.g., S3 storage, Parallel Replicas) which can be cumbersome to reproduce manually. To avoid this, you can reproduce any CI job locally using the same orchestration as CI — no manual configuration needed.
+Normally this is the first check that is run for a PR.
+It builds ClickHouse and runs most of [stateless functional tests](tests.md#functional-tests), omitting some.
+If it fails, further checks are not started until it is fixed.
+Look at the report to see which tests fail, then reproduce the failure locally as described [here](/development/tests#running-a-test-locally).
 
-#### Prerequisites {#ci-prerequisites}
-- Python 3 (standard library only)
-- Docker
+#### Running fast test locally: {#running-fast-test-locally}
 
-Install Docker on Ubuntu if needed and re-login:
 ```sh
-sudo apt-get update
-sudo apt-get install docker.io
-sudo usermod -aG docker "$USER"
-sudo tee /etc/docker/daemon.json <<'EOF'
-{
-  "ipv6": true,
-  "ip6tables": true
-}
-EOF
-sudo systemctl restart docker
+python -m ci.praktika run "Fast test" [--test some_test_name]
 ```
 
-#### Run a CI Job Locally {#run-ci-job-locally}
-Pick any job name from a CI report and run it locally:
-```bash
-python -m ci.praktika run "<JOB_NAME>"
-```
-- Always quote the job name exactly as it appears in the CI report (it may contain spaces and commas), e.g.: `"Stateless tests (amd_debug, parallel)"`. This sets up the same ClickHouse configuration and runs the same tests as in CI.
-- The architecture and build type in the job name (e.g., `amd_debug`) are CI-specific labels. When running locally, they have no effect — the job will use whatever binary you provide, on whatever architecture you are running. The job name only determines the ClickHouse configuration and the test set (unless overridden with `--test`).
-- In CI, functional tests are split into batches for better resource utilization. For example, `"Stateless tests (amd_debug, parallel)"` and `"Stateless tests (amd_debug, sequential)"` together cover the entire scope: parallel-safe tests run concurrently, and the rest run sequentially. The split reduces total CI time by maximizing parallelism where possible. To reproduce the full test scope locally, run both batches.
-- There is also a `"Fast test"` CI job that runs a limited scope of functional tests to verify basic ClickHouse functionality — it uses a build without all optional modules and is the quickest way to catch regressions. You can run it locally the same way. Place your ClickHouse binary in one of the default search paths (`./ci/tmp/clickhouse`, `./build/programs/clickhouse`, or `./clickhouse`) — otherwise the job will attempt to build ClickHouse first:
-  ```bash
-  python -m ci.praktika run "Fast test"
-  ```
-
-#### Run Specific Tests Within a CI Job {#run-specific-tests-within-ci-job}
-With `--test`, the job prepares an identical ClickHouse setup as used in CI but runs only the selected tests:
-```bash
-python -m ci.praktika run "Stateless tests (amd_debug, parallel)" \
-  --test 00001_select1
-```
-- You can pass multiple test names:
-  ```bash
-  python -m ci.praktika run "Stateless tests (amd_debug, parallel)" \
-    --test 00001_select1 00002_log_and_exception_messages_formatting
-  ```
-- Tip: If any ClickHouse configuration is acceptable and you just need to run specific tests, use the alias `functional` instead of the full job name:
-  ```bash
-  python -m ci.praktika run functional --test 00001_select1
-  ```
-
-#### Additional Customization Options {#additional-customization-options}
-- `--path PATH` — custom path to the ClickHouse binary. By default, the runner searches in order: `./ci/tmp/clickhouse`, `./build/programs/clickhouse`, `./clickhouse`.
-- `--count N` — repeat each test N times.
-- `--workers N` — override the automatic calculation of parallel workers derived from machine capacity.
+These commands pull the `clickhouse/fast-test` Docker image and run the job in a containerized environment.
+No dependencies other than Python 3 and Docker are required.
 
 ## Build check {#build-check}
 

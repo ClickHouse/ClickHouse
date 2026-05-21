@@ -1,9 +1,11 @@
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 
+#include <filesystem>
+#include <iomanip>
+
 #include <Core/Settings.h>
 #include <DataTypes/FieldToDataType.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/filesystemHelpers.h>
@@ -285,7 +287,7 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::get(const Stri
 
     if (CurrentThread::isInitialized())
     {
-        auto query_context = CurrentThread::get().tryGetQueryContext();
+        auto query_context = CurrentThread::get().getQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::ExecutableUserDefinedFunction, function_name);
     }
@@ -305,7 +307,7 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const S
 
         if (CurrentThread::isInitialized())
         {
-            auto query_context = CurrentThread::get().tryGetQueryContext();
+            auto query_context = CurrentThread::get().getQueryContext();
             if (query_context && query_context->getSettingsRef()[Setting::log_queries])
                 query_context->addQueryFactoriesInfo(Context::QueryLogFactories::ExecutableUserDefinedFunction, function_name);
         }

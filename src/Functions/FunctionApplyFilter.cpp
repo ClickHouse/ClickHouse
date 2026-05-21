@@ -28,7 +28,7 @@ namespace ErrorCodes
 /// - filter_name: Internal name of runtime filter. It is built by BuildRuntimeFilterStep. String
 /// - key: Value of any type that is checked to be present in the filter.
 /// Returns false if the key should be filtered
-class FunctionApplyFilter final : public IFunction
+class FunctionApplyFilter : public IFunction
 {
 public:
     static constexpr auto name = "__applyFilter";
@@ -86,9 +86,8 @@ public:
                     "First argument of function '{}' must be a String filter name",
                     getName());
 
-        auto query_context = CurrentThread::tryGetQueryContext();
-        if (!query_context)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context is not available for {}", getName());
+        /// Query context contains filter lookup where per-query filters are stored
+        auto query_context = CurrentThread::get().getQueryContext();
         auto filter_lookup = query_context->getRuntimeFilterLookup();
         if (!filter_lookup)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter lookup was not initialized");

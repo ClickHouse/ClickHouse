@@ -3,15 +3,16 @@
 #include <memory>
 #include <mutex>
 #include <type_traits>
+#include <variant>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 
 #include <Core/Block.h>
-#include <Processors/Chunk.h>
 #include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
 #include <Common/Logger.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
+#include <Common/filesystemHelpers.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
@@ -79,15 +80,6 @@ public:
     using AggregateColumnsData = std::vector<AggregateFunctionContainer *>;
     using AggregateColumnsConstData = std::vector<const AggregateFunctionContainer *>;
     using AggregateFunctionsPlainPtrs = std::vector<const IAggregateFunction *>;
-
-    /// Result of aggregation: columns with metadata, without Block overhead.
-    struct AggregatedChunk
-    {
-        Chunk chunk;
-        Int32 bucket_num = -1;
-        bool is_overflows = false;
-    };
-    using AggregatedChunks = std::list<AggregatedChunk>;
 
     struct Params
     {
@@ -183,17 +175,26 @@ public:
 
         Block getHeader(const Block & header_, bool final) const { return getHeader(header_, only_merge, keys, aggregates, final); }
 
+        /// Remember the columns we will work with
+        ColumnRawPtrs makeRawKeyColumns(const Block & block) const;
+        AggregateColumnsConstData makeAggregateColumnsData(const Block & block) const;
+
         /// Returns keys and aggregated for EXPLAIN query
-        void explain(ExplainFormatSettings & settings) const;
+        void explain(WriteBuffer & out, size_t indent) const;
         void explain(JSONBuilder::JSONMap & map) const;
     };
 
     explicit Aggregator(const Block & header_, const Params & params_);
-    ~Aggregator();
 
     const Params & getParams() const { return params; }
 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
+    bool executeOnBlock(const Block & block,
+        AggregatedDataVariants & result,
+        ColumnRawPtrs & key_columns,
+        AggregateColumns & aggregate_columns, /// Passed to not create them anew for each block
+        bool & no_more_keys) const;
+
     bool executeOnBlock(Columns columns,
         size_t row_begin, size_t row_end,
         AggregatedDataVariants & result,
@@ -236,7 +237,7 @@ public:
         AggregateFunctionInstruction * aggregate_instructions) const;
 
     /// Used for aggregate projection.
-    bool mergeOnBlock(Columns columns, size_t rows, bool is_overflows,
+    bool mergeOnBlock(Block block,
         AggregatedDataVariants & result,
         bool & no_more_keys,
         std::atomic<bool> & is_cancelled) const;
@@ -262,27 +263,24 @@ public:
       *  which can then be combined with other states (for distributed query processing).
       * If final = true, then columns with ready values are created as aggregate columns.
       */
-    AggregatedChunks convertToChunks(AggregatedDataVariants & data_variants, bool final) const;
+    BlocksList convertToBlocks(AggregatedDataVariants & data_variants, bool final) const;
 
     ManyAggregatedDataVariants prepareVariantsToMerge(ManyAggregatedDataVariants && data_variants) const;
 
-    using BucketToChunks = std::map<Int32, AggregatedChunks>;
-    /// Merge partially aggregated chunks separated to buckets into one data structure.
-    void mergeBlocks(BucketToChunks bucket_to_chunks, AggregatedDataVariants & result, std::atomic<bool> & is_cancelled);
+    using BucketToBlocks = std::map<Int32, BlocksList>;
+    /// Merge partially aggregated blocks separated to buckets into one data structure.
+    void mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVariants & result, std::atomic<bool> & is_cancelled);
 
-    /// Merge several partially aggregated chunks into one.
-    /// Precondition: for all chunks the is_overflows flag must be the same.
-    /// (either all chunks are from overflow data or none are).
-    AggregatedChunk mergeBlocks(
-        AggregatedChunks & chunks,
-        bool final,
-        std::atomic<bool> & is_cancelled,
-        const RuntimeDataflowStatisticsCacheUpdaterPtr & dataflow_cache_updater);
+    /// Merge several partially aggregated blocks into one.
+    /// Precondition: for all blocks block.info.is_overflows flag must be the same.
+    /// (either all blocks are from overflow data or none blocks are).
+    /// The resulting block has the same value of is_overflows flag.
+    Block mergeBlocks(BlocksList & blocks, bool final, std::atomic<bool> & is_cancelled);
 
     /** Split block with partially-aggregated data to many blocks, as if two-level method of aggregation was used.
       * This is needed to simplify merging of that data with other results, that are already two-level.
       */
-    std::vector<AggregatedChunk> convertBlockToTwoLevel(const Columns & columns, size_t rows) const;
+    std::vector<Block> convertBlockToTwoLevel(const Block & block) const;
 
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
@@ -291,11 +289,11 @@ public:
 
     std::list<TemporaryBlockStreamHolder> detachTemporaryData();
 
+    /// Get data structure of the result.
+    Block getHeader(bool final) const;
+
     /// Part of automatic parallel replicas implementation.
     size_t estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const;
-
-    const ColumnNumbers & getKeysPositions() const { return keys_positions; }
-    const DataTypes & getKeyTypes() const { return key_types; }
 
 private:
 
@@ -306,14 +304,10 @@ private:
     friend class ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap;
     friend class AggregatingInOrderTransform;
 
+    /// Data structure of source blocks.
+    Block header;
     /// Positions of aggregation key columns in the header.
     const ColumnNumbers keys_positions;
-    /// Positions of aggregate function argument columns in the header.
-    const std::vector<ColumnNumbers> aggregates_positions;
-    /// Types of key columns from the input header.
-    const DataTypes key_types;
-    /// Types of aggregate function states (DataTypeAggregateFunction), one per aggregate.
-    const DataTypes aggregate_state_types;
     Params params;
 
     AggregatedDataVariants::Type method_chosen;
@@ -360,11 +354,14 @@ private:
 
     std::vector<bool> is_aggregate_function_compiled;
 
-    mutable std::unique_ptr<ThreadPool> thread_pool;
+    mutable ThreadPool thread_pool;
 
     /** Try to compile aggregate functions.
       */
     void compileAggregateFunctionsIfNeeded();
+
+    /** Select the aggregation method based on the number and types of keys. */
+    AggregatedDataVariants::Type chooseAggregationMethod();
 
     /** Create states of aggregate functions for one key.
       */
@@ -519,8 +516,12 @@ private:
     /// Used for single level merge.
     void resetAggregatorExceptFirst(ManyAggregatedDataVariants & data_variants) const;
 
+    template <bool return_single_block>
+    using ConvertToBlockRes = std::conditional_t<return_single_block, Block, BlocksList>;
+    using ConvertToBlockResVariant = std::variant<Block, BlocksList>;
+
     template <typename Method, typename Table>
-    Chunks
+    ConvertToBlockResVariant
     convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const;
 
     template <typename Mapped>
@@ -529,7 +530,7 @@ private:
         MutableColumns & final_aggregate_columns,
         Arena * arena) const;
 
-    Chunk insertResultsIntoColumns(
+    Block insertResultsIntoColumns(
         PaddedPODArray<AggregateDataPtr> & places,
         OutputBlockColumns && out_cols,
         Arena * arena,
@@ -537,7 +538,7 @@ private:
         bool use_compiled_functions) const;
 
     template <typename Method, typename Table>
-    Chunks convertToBlockImplFinal(
+    ConvertToBlockResVariant convertToBlockImplFinal(
         Method & method,
         Table & data,
         Arena * arena,
@@ -546,20 +547,20 @@ private:
         bool return_single_block) const;
 
     template <typename Method, typename Table>
-    Chunks
+    ConvertToBlockResVariant
     convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows, bool return_single_block) const;
 
     template <typename Method>
-    AggregatedChunk convertOneBucketToChunk(
+    Block convertOneBucketToBlock(
         AggregatedDataVariants & data_variants,
         Method & method,
         Arena * arena,
         bool final,
         Int32 bucket) const;
 
-    AggregatedChunk convertOneBucketToChunk(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
+    Block convertOneBucketToBlock(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
 
-    AggregatedChunk mergeAndConvertOneBucketToChunk(
+    Block mergeAndConvertOneBucketToBlock(
         ManyAggregatedDataVariants & variants,
         Arena * arena,
         bool final,
@@ -567,15 +568,14 @@ private:
         std::atomic<bool> & is_cancelled,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater) const;
 
-    AggregatedChunk prepareChunkAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
-    AggregatedChunks prepareChunksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;
+    Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
+    BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;
 
     template <bool return_single_block>
-    std::conditional_t<return_single_block, AggregatedChunk, AggregatedChunks>
-    prepareChunkAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
+    ConvertToBlockRes<return_single_block> prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
 
     template <typename Method>
-    AggregatedChunks prepareChunksAndFillTwoLevelImpl(AggregatedDataVariants & data_variants, Method & method, bool final) const;
+    BlocksList prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants & data_variants, Method & method, bool final) const;
 
     template <typename State, typename Table>
     void mergeStreamsImplCase(
@@ -594,8 +594,7 @@ private:
     /// If not provided, aggregates_pool is used instead. Refer to mergeBlocks() for an usage example.
     template <typename Method, typename Table>
     void mergeStreamsImpl(
-        const Columns & columns,
-        size_t rows,
+        Block block,
         Arena * aggregates_pool,
         Method & method,
         Table & data,
@@ -621,8 +620,7 @@ private:
         Arena * arena_for_keys) const;
 
     void mergeBlockWithoutKeyStreamsImpl(
-        const Columns & columns,
-        size_t rows,
+        Block block,
         AggregatedDataVariants & result,
         std::atomic<bool> & is_cancelled) const;
 
@@ -642,9 +640,8 @@ private:
         Method & method,
         Arena * pool,
         ColumnRawPtrs & key_columns,
-        const Columns & source,
-        size_t rows,
-        std::vector<AggregatedChunk> & destinations) const;
+        const Block & source,
+        std::vector<Block> & destinations) const;
 
     template <typename Method, typename Table>
     void destroyImpl(Table & table) const;

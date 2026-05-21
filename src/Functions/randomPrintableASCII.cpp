@@ -12,6 +12,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
@@ -21,7 +23,7 @@ namespace
 /** Generate random string of specified length with printable ASCII characters, almost uniformly distributed.
   * First argument is length, other optional arguments are ignored and used to prevent common subexpression elimination to get different values.
   */
-class FunctionRandomPrintableASCII final : public IFunction
+class FunctionRandomPrintableASCII : public IFunction
 {
 public:
     static constexpr auto name = "randomPrintableASCII";
@@ -36,17 +38,19 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"length", &isNumber, nullptr, "(U)Int*"}
-        };
+        if (arguments.empty())
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires at least one argument: the size of resulting string", getName());
 
-        FunctionArgumentDescriptors optional_args{
-            {"x", nullptr, nullptr, "Any"}
-        };
+        if (arguments.size() > 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires at most two arguments: the size of resulting string and optional disambiguation tag", getName());
 
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        const IDataType & length_type = *arguments[0];
+        if (!isNumber(length_type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must have numeric type", getName());
 
         return std::make_shared<DataTypeString>();
     }

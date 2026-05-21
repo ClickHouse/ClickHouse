@@ -5,7 +5,6 @@
 #include <Core/ColumnNumbers.h>
 
 #if USE_EMBEDDED_COMPILER
-#include <llvm/IR/IRBuilder.h>
 #include <DataTypes/Native.h>
 #endif
 
@@ -16,7 +15,7 @@ namespace
 {
 
 /// If value is not Nullable or NULL, wraps it to Nullable.
-class FunctionToNullable final : public IFunction
+class FunctionToNullable : public IFunction
 {
 public:
     static constexpr auto name = "toNullable";

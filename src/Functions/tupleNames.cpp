@@ -20,7 +20,7 @@ namespace
 
 /** Transform a named tuple into names, which is a constant array of strings.
   */
-class ExecutableFunctionTupleNames final : public IExecutableFunction
+class ExecutableFunctionTupleNames : public IExecutableFunction
 {
 public:
     static constexpr auto name = "tupleNames";
@@ -40,7 +40,7 @@ private:
     Array name_fields;
 };
 
-class FunctionBaseTupleNames final : public IFunctionBase
+class FunctionBaseTupleNames : public IFunctionBase
 {
 public:
     static constexpr auto name = "tupleNames";
@@ -71,7 +71,7 @@ private:
     Array name_fields;
 };
 
-class TupleNamesOverloadResolver final : public IFunctionOverloadResolver
+class TupleNamesOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "tupleNames";
@@ -118,7 +118,6 @@ REGISTER_FUNCTION(TupleNames)
         .description = R"(
 Converts a tuple into an array of column names. For a tuple in the form `Tuple(a T, b T, ...)`, it returns an array of strings representing the named columns of the tuple. If the tuple elements do not have explicit names, their indices will be used as the column names instead.
 )",
-        .syntax = "tupleNames(tuple)",
         .examples{{"typical", "SELECT tupleNames(tuple(1 as a, 2 as b))", "['a','b']"}},
         .introduced_in = {24, 8},
         .category = FunctionDocumentation::Category::Tuple});

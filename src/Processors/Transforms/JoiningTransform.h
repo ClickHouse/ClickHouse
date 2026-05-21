@@ -38,7 +38,7 @@ using FinishCounterPtr = std::shared_ptr<FinishCounter>;
 /// First input is for data from left table.
 /// Second input has empty header and is connected with FillingRightJoinSide.
 /// We can process left table only when Join is filled. Second input is used to signal that FillingRightJoinSide is finished.
-class JoiningTransform final : public IProcessor
+class JoiningTransform : public IProcessor
 {
 public:
     JoiningTransform(
@@ -92,7 +92,7 @@ private:
 /// Fills Join with block from right table.
 /// Has single input and single output port.
 /// Output port has empty header. It is closed when all data is inserted in join.
-class FillingRightJoinSideTransform final : public IProcessor
+class FillingRightJoinSideTransform : public IProcessor
 {
 public:
     FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_);
@@ -113,7 +113,6 @@ private:
     bool stop_reading = false;
     bool for_totals = false;
     bool set_totals = false;
-    bool post_build_phase = false;
 };
 
 class DelayedBlocksTask : public ChunkInfoCloneable<DelayedBlocksTask>
@@ -135,7 +134,7 @@ using DelayedBlocksTaskPtr = std::shared_ptr<const DelayedBlocksTask>;
 
 
 /// Reads delayed joined blocks from Join
-class DelayedJoinedBlocksTransform final : public IProcessor
+class DelayedJoinedBlocksTransform : public IProcessor
 {
 public:
     explicit DelayedJoinedBlocksTransform(size_t num_streams, JoinPtr join_);
@@ -152,7 +151,7 @@ private:
     bool finished = false;
 };
 
-class DelayedJoinedBlocksWorkerTransform final : public IProcessor
+class DelayedJoinedBlocksWorkerTransform : public IProcessor
 {
 public:
     using NonJoinedStreamBuilder = std::function<IBlocksStreamPtr()>;
@@ -177,7 +176,7 @@ private:
 };
 
 /// Generates non-joined rows from the right table for a specific bucket partition
-class NonJoinedBlocksTransform final : public ISource
+class NonJoinedBlocksTransform : public ISource
 {
 public:
     NonJoinedBlocksTransform(
