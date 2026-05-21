@@ -718,7 +718,11 @@ async function chQuery(query) {
     const password = $('password').value;
     const params = new URLSearchParams();
     params.set('default_format', 'JSONCompactEachRowWithNamesAndTypes');
-    if (location.protocol === 'file:') params.set('add_http_cors_header', '1');
+    /// Always request CORS headers: covers both `file://` and the case where the
+    /// page is served from `/schema` but `URL` points to a different ClickHouse host.
+    /// The explicit `Authorization` header below triggers a preflight that would
+    /// otherwise fail without `Access-Control-Allow-*` on the response.
+    params.set('add_http_cors_header', '1');
     if (user) params.set('user', user);
     if (password) params.set('password', password);
 
