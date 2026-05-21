@@ -70,24 +70,19 @@ namespace DimensionalMetrics
         }
     }
 
-    std::shared_ptr<Metric> MetricFamily::getOrCreate(LabelValues label_values)
+    Metric & MetricFamily::withLabels(LabelValues label_values)
     {
         assert(label_values.size() == labels.size());
         {
             std::shared_lock lock(mutex);
             auto it = metrics.find(label_values);
             if (it != metrics.end())
-                return it->second;
+                return *it->second;
         }
 
         std::lock_guard lock(mutex);
-        auto [it, _] = metrics.try_emplace(std::move(label_values), std::make_shared<Metric>());
-        return it->second;
-    }
-
-    Metric & MetricFamily::withLabels(LabelValues label_values)
-    {
-        return *getOrCreate(std::move(label_values));
+        auto [it, _] = metrics.try_emplace(std::move(label_values), std::make_unique<Metric>());
+        return *it->second;
     }
 
     const Labels & MetricFamily::getLabels() const { return labels; }
@@ -96,17 +91,17 @@ namespace DimensionalMetrics
 
     void add(MetricFamily & metric, LabelValues labels, Value amount)
     {
-        metric.getOrCreate(std::move(labels))->increment(amount);
+        metric.withLabels(std::move(labels)).increment(amount);
     }
 
     void sub(MetricFamily & metric, LabelValues labels, Value amount)
     {
-        metric.getOrCreate(std::move(labels))->decrement(amount);
+        metric.withLabels(std::move(labels)).decrement(amount);
     }
 
     void set(MetricFamily & metric, LabelValues labels, Value value)
     {
-        metric.getOrCreate(std::move(labels))->set(value);
+        metric.withLabels(std::move(labels)).set(value);
     }
 
     Factory & Factory::instance()
