@@ -261,8 +261,12 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
         {
             for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
             {
-                const auto * raw_data = buffer->data() + chunk.value_offset(offset_i);
-                column_chars.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
+                const auto value_length = chunk.value_length(offset_i);
+                if (value_length > 0)
+                {
+                    const auto * raw_data = buffer->data() + chunk.value_offset(offset_i);
+                    column_chars.insert_assume_reserved(raw_data, raw_data + value_length);
+                }
                 column_offsets.emplace_back(column_chars.size());
             }
         }

@@ -104,3 +104,36 @@ EOF
 
 $CLICKHOUSE_LOCAL --query "SELECT x FROM file('${DATA_FILE_NULLABLE}', 'Arrow')" 2>&1 \
     | grep -oF 'INCORRECT_DATA' || echo 'FAIL: expected INCORRECT_DATA'
+
+# Write loop path: non-null empty strings with absent values buffer (IPC body offset=-1).
+# This exercises the null_count==0 write path when buffer->data() may be null.
+# The fixed build must read all rows as empty strings without crashing.
+DATA_FILE_EMPTY="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_empty.arrow"
+trap 'rm -f "$DATA_FILE" "$DATA_FILE_STREAM" "$DATA_FILE_NULLABLE" "$DATA_FILE_EMPTY"' EXIT
+python3 - "$DATA_FILE_EMPTY" <<'EOF'
+import struct
+import sys
+import pyarrow as pa
+import pyarrow.ipc as ipc
+
+path = sys.argv[1]
+
+arr = pa.array([b'', b'', b''], type=pa.binary())
+tbl = pa.Table.from_arrays([arr], names=['x'])
+with pa.OSFile(path, 'wb') as f:
+    w = ipc.new_file(f, tbl.schema)
+    w.write_table(tbl)
+    w.close()
+
+# Set values buffer entry offset to -1 to mark it as absent in the IPC body.
+# The buffer entry for values is {offset: int64, length: int64}; for 3 empty
+# strings the values buffer has length=0. Setting offset=-1 signals absence.
+data = bytearray(open(path, 'rb').read())
+target = struct.pack('<qq', 16, 0)   # values buffer: {offset=16, length=0}
+idx = data.find(target)
+assert idx >= 0, "could not locate values buffer entry"
+data[idx : idx + 8] = struct.pack('<q', -1)   # set offset=-1
+open(path, 'wb').write(bytes(data))
+EOF
+
+$CLICKHOUSE_LOCAL --query "SELECT count(), countIf(length(x) = 0) FROM file('${DATA_FILE_EMPTY}', 'Arrow')" 2>&1
