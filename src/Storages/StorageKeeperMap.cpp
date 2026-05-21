@@ -1,5 +1,4 @@
 #include <memory>
-#include <DataTypes/DataTypesNumber.h>
 #include <IO/copyData.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Storages/StorageKeeperMap.h>
@@ -13,7 +12,6 @@
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/DatabaseCatalog.h>
@@ -29,7 +27,6 @@
 #include <Parsers/ASTSelectQuery.h>
 
 #include <Processors/ISource.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/NullSource.h>
@@ -355,7 +352,7 @@ StorageKeeperMap::StorageKeeperMap(
     const std::string & zk_root_path_,
     UInt64 keys_limit_,
     bool override_metadata)
-    : StorageWithCommonVirtualColumns(table_id)
+    : IStorage(table_id)
     , WithContext(context_->getGlobalContext())
     , zk_root_path(zkutil::extractZooKeeperPath(zk_root_path_, false))
     , primary_key(primary_key_)
@@ -369,7 +366,12 @@ StorageKeeperMap::StorageKeeperMap(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "KeeperMap is disabled because 'keeper_map_path_prefix' config is not defined");
 
     verifyTableId(table_id);
-    setInMemoryMetadata(metadata.withVirtuals(createVirtuals()));
+
+    setInMemoryMetadata(metadata);
+
+    VirtualColumnsDescription virtuals;
+    virtuals.addEphemeral(String(version_column_name), std::make_shared<DataTypeInt32>(), "");
+    setVirtuals(std::move(virtuals));
 
     WriteBufferFromOwnString out;
     out << "KeeperMap metadata format version: 1\n"
@@ -523,11 +525,6 @@ StorageKeeperMap::StorageKeeperMap(
 
                     if (!drop_finished)
                     {
-                        /// Backward compatibility: tables created before 25.1 don't have
-                        /// the drop_lock_version node. Create it if missing so the set below
-                        /// doesn't fail with ZNONODE (same pattern as drop() uses).
-                        client->createIfNotExists(zk_dropped_lock_version_path, "");
-
                         Coordination::Requests drop_lock_requests{
                             zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral),
                             zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, -1),
@@ -557,13 +554,6 @@ StorageKeeperMap::StorageKeeperMap(
                                 return;
                         }
                     }
-                }
-
-                /// Root path may have been removed by dropTableData above.
-                if (zk_root_path != "/" && !client->exists(zk_root_path))
-                {
-                    client->createAncestors(zk_root_path);
-                    client->createIfNotExists(zk_root_path, "");
                 }
 
                 Coordination::Requests create_requests{
@@ -645,15 +635,6 @@ private:
     Strings getAllKeys() const;
 };
 
-VirtualColumnsDescription StorageKeeperMap::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral(String(version_column_name), std::make_shared<DataTypeInt32>(), "", VirtualsMaterializationPlace::Reader);
-    return desc;
-}
-
 bool StorageKeeperMap::isMetadataStringEqual(
     const std::string & zk_metadata_string,
     const std::string & local_metadata_string,
@@ -714,7 +695,7 @@ bool StorageKeeperMap::isMetadataStringEqual(
 }
 
 
-void StorageKeeperMap::readImpl(
+void StorageKeeperMap::read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -1462,7 +1443,7 @@ Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, const Nam
 Chunk StorageKeeperMap::getBySerializedKeys(
     const std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version, const ContextPtr & local_context) const
 {
-    Block sample_block = getInMemoryMetadataPtr(local_context, false)->getSampleBlock();
+    Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
     MutableColumns columns = sample_block.cloneEmptyColumns();
     MutableColumnPtr version_column = nullptr;
 
@@ -1540,7 +1521,7 @@ Chunk StorageKeeperMap::getBySerializedKeys(
 
 Block StorageKeeperMap::getSampleBlock(const Names &) const
 {
-    auto metadata = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata = getInMemoryMetadataPtr();
     return metadata->getSampleBlock();
 }
 
@@ -1580,12 +1561,9 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
 
     chassert(commands.size() == 1);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, local_context);
-
-    auto mutation_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
-    mutation_columns.push_back(String(version_column_name));
 
     if (commands.front().type == MutationCommand::Type::DELETE)
     {
@@ -1597,7 +1575,6 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
             storage_ptr,
             metadata_snapshot,
             commands,
-            mutation_columns,
             local_context,
             mutation_settings);
 
@@ -1689,7 +1666,6 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
         storage_ptr,
         metadata_snapshot,
         commands,
-        mutation_columns,
         local_context,
         settings);
 
@@ -1736,7 +1712,7 @@ StoragePtr create(const StorageFactory::Arguments & args)
     if (!args.storage_def->primary_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");
 
-    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, {}, args.getContext());
+    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
     auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
     if (primary_key_names.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");

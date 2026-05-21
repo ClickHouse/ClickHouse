@@ -1,5 +1,4 @@
 #include <Analyzer/Resolve/QueryAnalyzer.h>
-#include <DataTypes/DataTypeString.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <Analyzer/ConstantNode.h>
@@ -29,7 +28,6 @@
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/exists.h>
-#include <Columns/validateColumnType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/misc.h>
@@ -1195,13 +1193,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         AggregateFunctionProperties properties;
         auto aggregate_function
-            = AggregateFunctionFactory::instance().get(
-                aggregate_function_name,
-                action,
-                argument_types,
-                parameters,
-                properties,
-                AggregateFunctionStateVariant::Window);
+            = AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, parameters, properties);
 
         function_node.resolveAsWindowFunction(std::move(aggregate_function));
 
@@ -1559,13 +1551,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 column = function_base->getConstantResultForNonConstArguments(argument_columns, result_type);
             }
 
-            if (column && !columnMatchesType(*column, *result_type))
+            if (column && column->getDataType() != result_type->getColumnType())
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Unexpected return type from {}. Expected {}. Got {}",
                     function->getName(),
-                    result_type->getName(),
-                    column->getName());
+                    result_type->getColumnType(),
+                    column->getDataType());
 
             const bool is_deterministic = all_arguments_are_deterministic && function->isDeterministic();
 

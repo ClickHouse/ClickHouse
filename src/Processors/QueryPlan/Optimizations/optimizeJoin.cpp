@@ -1,5 +1,4 @@
 #include <Common/logger_useful.h>
-#include <Common/SipHash.h>
 #include <Common/safe_cast.h>
 
 #include <Core/Joins.h>
@@ -7,15 +6,17 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
+#include <Interpreters/IJoin.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
@@ -29,7 +30,12 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/SortingStep.h>
+
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
+
+#include <Storages/StorageMemory.h>
 
 #include <algorithm>
 #include <limits>
@@ -63,7 +69,6 @@ namespace Setting
 
 RelationStats getDummyStats(ContextPtr context, const String & table_name);
 RelationStats getDummyStats(const String & dummy_stats_str, const String & table_name);
-RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const String & table_name, const Block & header);
 
 namespace QueryPlanOptimizations
 {
@@ -155,21 +160,7 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
 
 struct RuntimeHashStatisticsContext
 {
-    /// `HashTablesStatistics` keys identify a specific hash table BUILT from a subtree AND
-    /// keyed by specific columns — both pieces are needed: the same right-side subtree
-    /// joined on `t2.a` and joined on `t2.b` produces two physically different hash tables
-    /// with different sizes/NDVs, so they must NOT share a cache entry. The key encoding is:
-    ///     cache_keys[N]  =  raw_hashes[N]  XOR  <per-side contribution of N's parent join>
-    /// where the contribution hashes the parent join's equi-key columns on the side N sits on.
-    /// Populated for every node by `calculateHashTableCacheKeys`; mutated during join reorder
-    /// to reflect the post-reorder parent of each node.
     std::unordered_map<const QueryPlan::Node *, UInt64> cache_keys;
-    /// Bottom-up hash of the subtree rooted at the node — does NOT include any parent-join
-    /// contribution, so it identifies "what data" but not "what hash table keyed how". Used
-    /// by join-reorder code in `chooseJoinOrder` to derive cache keys for sub-join nodes
-    /// built during reorder, where the post-reorder parent's contribution differs from
-    /// whatever was originally stamped into `cache_keys` during the pre-reorder walk.
-    std::unordered_map<const QueryPlan::Node *, UInt64> raw_hashes;
     StatsCollectingParams params;
 
     RuntimeHashStatisticsContext(const QueryPlanOptimizationSettings & optimization_settings, const QueryPlan::Node & root_node)
@@ -181,20 +172,13 @@ struct RuntimeHashStatisticsContext
     {
         if (optimization_settings.collect_hash_table_stats_during_joins)
         {
-            calculateHashTableCacheKeys(root_node, cache_keys, raw_hashes);
+            cache_keys = calculateHashTableCacheKeys(root_node);
         }
     }
 
     UInt64 getCachedKey(const QueryPlan::Node * node)
     {
         if (auto it = cache_keys.find(node); it != cache_keys.end())
-            return it->second;
-        return 0;
-    }
-
-    UInt64 getRawHash(const QueryPlan::Node * node) const
-    {
-        if (auto it = raw_hashes.find(node); it != raw_hashes.end())
             return it->second;
         return 0;
     }
@@ -208,49 +192,6 @@ struct RuntimeHashStatisticsContext
                 return hint->source_rows;
         }
         return {};
-    }
-
-    /// Mirror what `calculateHashTableCacheKeys` would have produced for an equivalent join in
-    /// the original tree, but for `new_node` that the join-reorder pass is emitting on top of
-    /// `left_child_node` and `right_child_node` (which can themselves be original leaves or
-    /// sub-joins built earlier in the same reorder loop). Returns the derived right-side key,
-    /// suitable for `JoinStepLogical::setRightHashTableCacheKey`.
-    ///
-    /// Each child's final cache key combines its parent-independent subtree hash with the
-    /// parent join's per-side contribution (see `cache_keys` doc above for why both are
-    /// needed). We start from `raw_hashes[child]` rather than the previously-xored value in
-    /// `cache_keys[child]`, because under reorder the new parent's contribution can differ
-    /// from the original tree's parent contribution that was stamped into `cache_keys`.
-    UInt64 deriveCacheKeysForNewJoin(
-        const QueryPlan::Node * left_child_node,
-        const QueryPlan::Node * right_child_node,
-        const QueryPlan::Node & new_node,
-        const JoinStepLogical & join_step)
-    {
-        if (cache_keys.empty())
-            return 0;
-
-        UInt64 raw_left = getRawHash(left_child_node);
-        UInt64 raw_right = getRawHash(right_child_node);
-        UInt64 left_key = raw_left ^ calculateJoinStepCacheKeyContribution(join_step, JoinTableSide::Left);
-        UInt64 right_key = raw_right ^ calculateJoinStepCacheKeyContribution(join_step, JoinTableSide::Right);
-
-        /// Update cache_keys to reflect the new parent for these children (in case any
-        /// downstream code reads them back via getCachedKey).
-        cache_keys[left_child_node] = left_key;
-        cache_keys[right_child_node] = right_key;
-
-        /// Record this join's own raw hash so any outer reorder iteration can derive its key
-        /// the same way; cache_keys gets the same value initially and may later be xored when
-        /// new_node becomes a child of yet another reorder-built join.
-        SipHash node_hash;
-        node_hash.update(left_key);
-        node_hash.update(right_key);
-        UInt64 raw_new = node_hash.get64();
-        raw_hashes[&new_node] = raw_new;
-        cache_keys[&new_node] = raw_new;
-
-        return right_key;
     }
 };
 
@@ -535,7 +476,6 @@ struct QueryGraphBuilder
         JoinSettings join_settings;
         SortingStep::Settings sorting_settings;
         String dummy_stats;
-        UInt64 effective_randomize_seed = 0;
 
         BuilderContext(
             const QueryPlanOptimizationSettings & optimization_settings_,
@@ -546,9 +486,7 @@ struct QueryGraphBuilder
             , statistics_context(optimization_settings_, root_node)
             , join_settings(join_settings_)
             , sorting_settings(sorting_settings_)
-            , effective_randomize_seed(optimization_settings_.query_plan_optimize_join_order_randomize)
-        {
-        }
+        {}
     };
 
     std::shared_ptr<BuilderContext> context;
@@ -645,13 +583,6 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
             auto child_join_kind = child_join_step->getJoinOperator().kind;
             bool allow_child_join_kind = isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind);
             allow_child_join_kind = allow_child_join_kind && child_join_step->getJoinOperator().strictness == JoinStrictness::All;
-            /// Do not flatten joins that have type-changing sides (e.g., LEFT JOIN
-            /// with `join_use_nulls` making right-side columns Nullable). Flattening
-            /// such joins allows the optimizer to reorder them, which can separate
-            /// a relation from the join that causes its type change, leading to
-            /// type changes being applied at the wrong step and the exception
-            /// "Cannot fold actions for projection".
-            allow_child_join_kind = allow_child_join_kind && child_join_step->typeChangingSides().empty();
             if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1 && allow_child_join_kind)
             {
                 QueryGraphBuilder child_graph(graph.context);
@@ -690,9 +621,6 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
 
     if (!label.empty())
         stats.table_name = label;
-
-    if (UInt64 seed = graph.context->effective_randomize_seed)
-        stats = getRandomizedStats(seed, graph.relation_stats.size(), stats.table_name, *node->step->getOutputHeader());
 
     LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
         num_rows_from_cache.has_value() ? " (from cache)" : "",
@@ -1224,13 +1152,11 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 
             join_step->setOptimized(entry->estimated_rows, lhs_estimation, rhs_estimation, entry->column_stats);
 
-            auto & new_node = nodes.emplace_back();
-
-            UInt64 right_table_key = query_graph_builder.context->statistics_context
-                .deriveCacheKeysForNewJoin(left_child_node, right_child_node, new_node, *join_step);
+            auto right_table_key = query_graph_builder.context->statistics_context.getCachedKey(right_child_node);
             if (right_table_key)
                 join_step->setRightHashTableCacheKey(right_table_key);
 
+            auto & new_node = nodes.emplace_back();
             new_node.step = std::move(join_step);
             new_node.children = {left_child_node, right_child_node};
             nodeStack.push(&new_node);
@@ -1282,28 +1208,6 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     {
         join_step->setOptimized();
         return;
-    }
-
-    /// Skip join order optimization if children's output headers have overlapping column names.
-    /// The `JoinExpressionActions` constructor used during join reconstruction requires unique column names
-    /// across left and right sides. Overlapping names can occur when scalar subquery results and join
-    /// table aliases collide (e.g. both sides produce `__table2`).
-    {
-        auto left_header = node.children[0]->step->getOutputHeader();
-        auto right_header = node.children[1]->step->getOutputHeader();
-
-        std::unordered_set<std::string_view> left_names;
-        for (const auto & col : *left_header)
-            left_names.insert(col.name);
-
-        for (const auto & col : *right_header)
-        {
-            if (left_names.contains(col.name))
-            {
-                join_step->setOptimized();
-                return;
-            }
-        }
     }
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
