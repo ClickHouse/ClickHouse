@@ -307,13 +307,14 @@ void UniqueKeyIndexCache::ApplyToAllEntries(
     const std::function<void(const ROCKSDB_NAMESPACE::Slice &, ObjectPtr, size_t, const CacheItemHelper *)> & /*callback*/,
     const ApplyToAllEntriesOptions & /*opts*/)
 {
-    /// Not exercised by RocksDB's `BlockBasedTable` against a user-provided
-    /// `block_cache`; the only consumers (`CacheDumperImpl`, statistics
-    /// walker) degrade to reporting nothing for this cache. We can't honor
-    /// the spec anyway: the backing is keyed by SipHash128 with no public
-    /// iteration API. `chassert` fires in debug builds if a future caller
-    /// shows up; release builds keep the silent no-op.
-    chassert(false && "UniqueKeyIndexCache::ApplyToAllEntries is not implemented");
+    /// Silent no-op. RocksDB calls this from periodic stats collection
+    /// (`CacheEntryStatsCollector::CollectStats` -> `InternalStats::Collect-
+    /// CacheEntryStats` -> `DBImpl::DumpStats`), so the surface must be
+    /// callable without side effects. We can't honor the spec: the backing
+    /// is keyed by SipHash128 with no public iteration API on `CacheBase`,
+    /// so we have neither the original keys nor a way to walk entries. The
+    /// stats walker degrades to reporting empty per-role buckets for this
+    /// cache; the BlockBasedTable hot paths don't depend on this surface.
 }
 
 void UniqueKeyIndexCache::ApplyToHandle(
