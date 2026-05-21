@@ -1,13 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-
-#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-
-#include <Interpreters/Cluster.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
-
-#include <Common/logger_useful.h>
-#include <Common/randomSeed.h>
 
 namespace DB
 {
@@ -46,11 +40,9 @@ namespace Setting
     extern const SettingsBool query_plan_merge_expressions;
     extern const SettingsBool query_plan_merge_filter_into_join_condition;
     extern const SettingsBool query_plan_merge_filters;
-    extern const SettingsBool query_plan_optimize_lazy_final;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool query_plan_optimize_prewhere;
     extern const SettingsBool query_plan_push_down_limit;
-    extern const SettingsBool query_plan_top_k_through_join;
     extern const SettingsBool query_plan_read_in_order_through_join;
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool query_plan_remove_redundant_distinct;
@@ -65,7 +57,6 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_top_k_dynamic_filtering;
-    extern const SettingsBool use_top_k_dynamic_filtering_for_variable_length_types;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsDecorrelationJoinKind correlated_subqueries_default_join_kind;
@@ -82,11 +73,8 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
-    extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
-    extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsUInt64 distributed_plan_default_reader_bucket_count;
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
-    extern const SettingsBool distributed_plan_prefer_replicas_over_workers;
     extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
     extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
     extern const SettingsUInt64 join_runtime_filter_blocks_to_skip_before_reenabling;
@@ -95,15 +83,10 @@ namespace Setting
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
-    extern const SettingsUInt64 max_bytes_for_lazy_final;
-    extern const SettingsFloat min_filtered_ratio_for_lazy_final;
-    extern const SettingsUInt64 max_rows_for_lazy_final;
     extern const SettingsUInt64 query_plan_max_limit_for_lazy_materialization;
     extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsUInt64 query_plan_optimize_join_order_limit;
-    extern const SettingsUInt64 query_plan_optimize_join_order_randomize;
-    extern const SettingsBool enable_join_transitive_predicates;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
     extern const SettingsBool parallel_replicas_filter_pushdown;
@@ -150,7 +133,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     merge_filter_into_join_condition = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filter_into_join_condition];
     convert_any_join_to_semi_or_anti_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_any_join_to_semi_or_anti_join];
     try_use_top_k_optimization = from[Setting::use_skip_indexes_for_top_k] || from[Setting::use_top_k_dynamic_filtering];
-    top_k_through_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_join];
 
     bool use_parallel_replicas = from[Setting::allow_experimental_parallel_reading_from_replicas] && from[Setting::max_parallel_replicas] > 1;
     query_plan_optimize_join_order_limit = use_parallel_replicas ? 0 : from[Setting::query_plan_optimize_join_order_limit];
@@ -158,16 +140,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "The value of the setting `query_plan_optimize_join_order_limit` is too large: {}, "
             "maximum allowed value is 64", query_plan_optimize_join_order_limit);
-    query_plan_optimize_join_order_randomize = from[Setting::query_plan_optimize_join_order_randomize];
-    if (query_plan_optimize_join_order_randomize == 1)
-    {
-        query_plan_optimize_join_order_randomize = randomSeed();
-    }
-    if (query_plan_optimize_join_order_randomize)
-    {
-        LOG_DEBUG(getLogger("QueryPlanOptimizationSettings"), "Using random seed {} for randomizing join order optimizations", query_plan_optimize_join_order_randomize);
-    }
-    enable_join_transitive_predicates = from[Setting::enable_join_transitive_predicates];
 
     join_swap_table = from[Setting::query_plan_join_swap_table].is_auto
         ? std::nullopt
@@ -182,7 +154,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
     optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
-    direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes];
+    direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes] && from[Setting::use_skip_indexes_on_data_read];
     enable_full_text_index = from[Setting::enable_full_text_index];
     read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
     correlated_subqueries_use_in_memory_buffer = from[Setting::correlated_subqueries_use_in_memory_buffer]
@@ -207,15 +179,9 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_plan_max_rows_to_broadcast = from[Setting::distributed_plan_max_rows_to_broadcast];
     distributed_plan_force_shuffle_aggregation = from[Setting::distributed_plan_force_shuffle_aggregation];
     distributed_aggregation_memory_efficient = from[Setting::distributed_aggregation_memory_efficient];
-    distributed_plan_prefer_replicas_over_workers = from[Setting::distributed_plan_prefer_replicas_over_workers];
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization] && from[Setting::allow_experimental_analyzer];
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
-
-    optimize_lazy_final = from[Setting::query_plan_optimize_lazy_final] && from[Setting::allow_experimental_analyzer];
-    max_rows_for_lazy_final = from[Setting::max_rows_for_lazy_final];
-    max_bytes_for_lazy_final = from[Setting::max_bytes_for_lazy_final];
-    min_filtered_ratio_for_lazy_final = from[Setting::min_filtered_ratio_for_lazy_final];
 
     max_limit_for_vector_search_queries = from[Setting::max_limit_for_vector_search_queries].value;
     vector_search_with_rescoring = from[Setting::vector_search_with_rescoring];
@@ -227,7 +193,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     use_index_for_in_with_subqueries_max_values = from[Setting::use_index_for_in_with_subqueries_max_values];
     use_skip_indexes_for_top_k = from[Setting::use_skip_indexes_for_top_k];
     use_top_k_dynamic_filtering = from[Setting::use_top_k_dynamic_filtering];
-    use_top_k_dynamic_filtering_for_variable_length_types = from[Setting::use_top_k_dynamic_filtering_for_variable_length_types];
     max_limit_for_top_k_optimization = from[Setting::query_plan_max_limit_for_top_k_optimization];
     use_skip_indexes_on_data_read = from[Setting::use_skip_indexes_on_data_read];
     prepared_sets_cache = std::move(prepared_sets_cache_);
@@ -257,11 +222,10 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     max_threads = from[Setting::max_threads];
 
+    parallel_replicas_enabled = from[Setting::allow_experimental_parallel_reading_from_replicas];
+    max_parallel_replicas = from[Setting::max_parallel_replicas];
     automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
-
-    // It doesn't have to be equal to this setting, it just appears to be a better value than hardcoded 2Mi
-    min_bytes_per_task_for_reading = from[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
 
     parallel_replicas_filter_pushdown = from[Setting::parallel_replicas_filter_pushdown];
 }
@@ -277,12 +241,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
             && from->getSettingsRef()[Setting::parallel_replicas_local_plan]
             && from->getSettingsRef()[Setting::parallel_replicas_support_projection])
 {
-    max_parallel_replicas = from->getSettingsRef()[Setting::max_parallel_replicas];
-    if (auto cluster_name = from->getSettingsRef()[Setting::cluster_for_parallel_replicas].value; !cluster_name.empty())
-    {
-        if (auto cluster = from->tryGetCluster(cluster_name))
-            if (auto nodes = cluster->getAnyShardInfo().getAllNodeCount())
-                max_parallel_replicas = std::min<size_t>(nodes, max_parallel_replicas);
-    }
 }
+
 }

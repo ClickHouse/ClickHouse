@@ -172,8 +172,8 @@ namespace
         addThrottler(read_settings.remote_throttler, context->getBackupsThrottler());
         addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = false;
-        read_settings.read_through_distributed_cache = false;
         read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
+        read_settings.read_through_distributed_cache = false;
         return read_settings;
     }
 
@@ -585,7 +585,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
                 {
                     starter->doBackup();
                 }
-                catch (const std::exception &)
+                catch (...)
                 {
                     starter->onException();
                 }
@@ -1010,7 +1010,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startRestoring(const A
                 {
                     starter->doRestore();
                 }
-                catch (const std::exception &)
+                catch (...)
                 {
                     starter->onException();
                 }

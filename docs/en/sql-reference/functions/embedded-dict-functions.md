@@ -6,13 +6,15 @@ title: 'Functions for Working with Embedded Dictionaries'
 doc_type: 'reference'
 ---
 
+# Functions for Working with Embedded Dictionaries
+
 :::note
 In order for the functions below to work, the server config must specify the paths and addresses for getting all the embedded dictionaries. The dictionaries are loaded at the first call of any of these functions. If the reference lists can't be loaded, an exception is thrown.
 
 As such, the examples shown in this section will throw an exception in [ClickHouse Fiddle](https://fiddle.clickhouse.com/) and in quick release and production deployments by default, unless first configured.
 :::
 
-For information about creating reference lists, see the section ["Dictionaries"](../statements/create/dictionary/embedded).
+For information about creating reference lists, see the section ["Dictionaries"](../statements/create/dictionary/embedded#embedded-dictionaries).
 
 ## Multiple Geobases {#multiple-geobases}
 
@@ -58,13 +60,15 @@ regionToName(id\[, lang\])
 
 **Example**
 
+Query:
 
-```sql title="Query"
+```sql
 SELECT regionToName(number::UInt32,'en') FROM numbers(0,5);
 ```
 
+Result:
 
-```text title="Response"
+```text
 ┌─regionToName(CAST(number, 'UInt32'), 'en')─┐
 │                                            │
 │ World                                      │
@@ -96,11 +100,15 @@ regionToCity(id [, geobase])
 
 **Example**
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT regionToName(number::UInt32, 'en'), regionToCity(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
 ```
 
-```response title="Response"
+Result:
+
+```response
 ┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(regionToCity(CAST(number, 'UInt32')), 'en')─┐
 │                                            │  0 │                                                          │
 │ World                                      │  0 │                                                          │
@@ -140,15 +148,17 @@ regionToArea(id [, geobase])
 
 **Example**
 
+Query:
 
-```sql title="Query"
+```sql
 SELECT DISTINCT regionToName(regionToArea(toUInt32(number), 'ua'))
 FROM system.numbers
 LIMIT 15
 ```
 
+Result:
 
-```text title="Response"
+```text
 ┌─regionToName(regionToArea(toUInt32(number), \'ua\'))─┐
 │                                                      │
 │ Moscow and Moscow region                             │
@@ -190,15 +200,17 @@ regionToDistrict(id [, geobase])
 
 **Example**
 
+Query:
 
-```sql title="Query"
+```sql
 SELECT DISTINCT regionToName(regionToDistrict(toUInt32(number), 'ua'))
 FROM system.numbers
 LIMIT 15
 ```
 
+Result:
 
-```text title="Response"
+```text
 ┌─regionToName(regionToDistrict(toUInt32(number), \'ua\'))─┐
 │                                                          │
 │ Central federal district                                 │
@@ -240,13 +252,15 @@ regionToCountry(id [, geobase])
 
 **Example**
 
+Query:
 
-```sql title="Query"
+```sql
 SELECT regionToName(number::UInt32, 'en'), regionToCountry(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
 ```
 
+Result:
 
-```text title="Response"
+```text
 ┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(regionToCountry(CAST(number, 'UInt32')), 'en')─┐
 │                                            │  0 │                                                             │
 │ World                                      │  0 │                                                             │
@@ -286,13 +300,15 @@ regionToContinent(id [, geobase])
 
 **Example**
 
+Query:
 
-```sql title="Query"
+```sql
 SELECT regionToName(number::UInt32, 'en'), regionToContinent(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
 ```
 
+Result:
 
-```text title="Response"
+```text
 ┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(regionToContinent(CAST(number, 'UInt32')), 'en')─┐
 │                                            │  0 │                                                               │
 │ World                                      │  0 │                                                               │
@@ -332,13 +348,15 @@ regionToTopContinent(id[, geobase])
 
 **Example**
 
+Query:
 
-```sql title="Query"
+```sql
 SELECT regionToName(number::UInt32, 'en'), regionToTopContinent(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
 ```
 
+Result:
 
-```text title="Response"
+```text
 ┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(regionToTopContinent(CAST(number, 'UInt32')), 'en')─┐
 │                                            │  0 │                                                                  │
 │ World                                      │  0 │                                                                  │
@@ -358,7 +376,7 @@ SELECT regionToName(number::UInt32, 'en'), regionToTopContinent(number::UInt32) 
 
 ### regionToPopulation {#regiontopopulation}
 
-Gets the population for a region. The population can be recorded in files with the geobase. See the section ["Dictionaries"](../statements/create/dictionary/embedded). If the population is not recorded for the region, it returns 0. In the geobase, the population might be recorded for child regions, but not for parent regions.
+Gets the population for a region. The population can be recorded in files with the geobase. See the section ["Dictionaries"](../statements/create/dictionary/embedded#embedded-dictionaries). If the population is not recorded for the region, it returns 0. In the geobase, the population might be recorded for child regions, but not for parent regions.
 
 **Syntax**
 
@@ -378,13 +396,15 @@ regionToPopulation(id[, geobase])
 
 **Example**
 
+Query:
 
-```sql title="Query"
+```sql
 SELECT regionToName(number::UInt32, 'en'), regionToPopulation(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
 ```
 
+Result:
 
-```text title="Response"
+```text
 ┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─population─┐
 │                                            │          0 │
 │ World                                      │ 4294967295 │
@@ -429,13 +449,15 @@ The relationship is reflexive – any region also belongs to itself.
 
 **Example**
 
+Query:
 
-```sql title="Query"
+```sql
 SELECT regionToName(n1.number::UInt32, 'en') || (regionIn(n1.number::UInt32, n2.number::UInt32) ? ' is in ' : ' is not in ') || regionToName(n2.number::UInt32, 'en') FROM numbers(1,2) AS n1 CROSS JOIN numbers(1,5) AS n2;
 ```
 
+Result:
 
-```text title="Response"
+```text
 World is in World
 World is not in USA
 World is not in Colorado
@@ -469,13 +491,15 @@ regionHierarchy(id\[, geobase\])
 
 **Example**
 
+Query:
 
-```sql title="Query"
+```sql
 SELECT regionHierarchy(number::UInt32) AS arr, arrayMap(id -> regionToName(id, 'en'), arr) FROM numbers(5);
 ```
 
+Result:
 
-```text title="Response"
+```text
 ┌─arr────────────┬─arrayMap(lambda(tuple(id), regionToName(id, 'en')), regionHierarchy(CAST(number, 'UInt32')))─┐
 │ []             │ []                                                                                           │
 │ [1]            │ ['World']                                                                                    │

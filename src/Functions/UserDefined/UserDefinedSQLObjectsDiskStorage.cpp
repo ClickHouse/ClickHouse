@@ -91,7 +91,6 @@ ASTPtr UserDefinedSQLObjectsDiskStorage::tryLoadObject(UserDefinedSQLObjectType 
         {
             case UserDefinedSQLObjectType::Function:
             {
-                auto context = getContext();
                 ParserCreateFunctionQuery parser;
                 ASTPtr ast = parseQuery(
                     parser,
@@ -99,8 +98,8 @@ ASTPtr UserDefinedSQLObjectsDiskStorage::tryLoadObject(UserDefinedSQLObjectType 
                     object_create_query.data() + object_create_query.size(),
                     "",
                     0,
-                    context->getSettingsRef()[Setting::max_parser_depth],
-                    context->getSettingsRef()[Setting::max_parser_backtracks]);
+                    global_context->getSettingsRef()[Setting::max_parser_depth],
+                    global_context->getSettingsRef()[Setting::max_parser_backtracks]);
                 return ast;
             }
         }
@@ -203,8 +202,7 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
     if (fs::exists(file_path))
     {
         if (throw_if_exists)
-            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "File {} for user-defined function '{}' already exists", file_path, object_name);
-
+            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User-defined function '{}' already exists", object_name);
         if (!replace_if_exists)
             return false;
     }

@@ -1,8 +1,5 @@
 #include <Interpreters/Context.h>
 #include <Common/tests/gtest_global_context.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
-#include <Core/Field.h>
 #include <gtest/gtest.h>
 #include <thread>
 #include <atomic>
@@ -97,7 +94,6 @@ TEST(Context, GetAccessRace)
     for (auto & t : readers)
         t.join();
 }
-
 /// Test for data race in `ContextData` copy constructor on `table_function_results`.
 ///
 /// The writer thread calls `Context::executeTableFunction`, which mutates
