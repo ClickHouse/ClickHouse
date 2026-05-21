@@ -141,6 +141,7 @@ public:
         dst_offsets.resize(input_rows_count);
 
         size_t current_offset = 0;
+        
 
         callOnGeometryDataType<SphericalPoint>(arguments[0].type, [&] (const auto & type)
         {
