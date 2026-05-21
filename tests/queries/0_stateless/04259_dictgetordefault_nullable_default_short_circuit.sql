@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: Dictionary source tables are not available on parallel-replica workers.
+
 -- https://github.com/ClickHouse/ClickHouse/issues/104511
 -- dictGetOrDefault should not throw CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN when
 -- the default argument is a Nullable expression and short-circuit evaluation is enabled.
