@@ -319,7 +319,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
             {"deduplicate_insert_select", "enable_even_for_bad_queries", "enable_even_for_bad_queries", "New setting, replace insert_select_deduplicate"},
-            {"input_format_parquet_spatial_filter_push_down", false, true, "New setting to enable GeoParquet spatial filter push-down at row group level"},
 
         });
         addSettingsChanges(settings_changes_history, "25.11",
