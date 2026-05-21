@@ -2,7 +2,7 @@
 # Tags: zookeeper, no-shared-merge-tree
 
 # Companion regression test for 04252. Covers the `NO_ACTIVE_REPLICAS`
-# (`Code: 279`) shape of the same race: `DatabaseReplicated::tryGetCluster`
+# (`Code: 254`) shape of the same race: `DatabaseReplicated::tryGetCluster`
 # /`tryGetAllGroupsCluster` reach `getClusterImpl`, which finds the
 # `/replicas` znode present but empty (the first replica is not fully
 # created yet or the last replica was just dropped) and throws
@@ -61,7 +61,7 @@ METADATA_FILE=$($CLICKHOUSE_CLIENT --query "SELECT metadata_path FROM system.dat
 # Force `getClusterImpl` to throw `NO_ACTIVE_REPLICAS` on the next call by
 # removing the replica child and leaving an empty `/replicas` znode.
 # `rmr ${ZK_PATH}/replicas` clears the subtree, then `touch` recreates
-# `/replicas` as an empty znode (`getChildren` -> empty -> throw 279).
+# `/replicas` as an empty znode (`getChildren` -> empty -> throw 254).
 $CLICKHOUSE_KEEPER_CLIENT --query "rmr ${ZK_PATH}/replicas"
 $CLICKHOUSE_KEEPER_CLIENT --query "touch ${ZK_PATH}/replicas"
 
