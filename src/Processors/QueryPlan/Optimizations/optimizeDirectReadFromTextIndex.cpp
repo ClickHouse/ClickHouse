@@ -578,10 +578,20 @@ private:
             new_children.push_back(&actions_dag.addColumn(std::move(arg)));
         }
 
-        if (needApplyPostprocessor(function_name) && postprocessor && postprocessor->hasActions() && !tokenizer->isArrayTokenizer())
+        /// For array tokenizer + postprocessor, apply the postprocessor element-wise to the haystack so
+        /// that the row-level function operates on normalized tokens, matching what the index stores.
+        /// This mirrors how the preprocessor rewrites the haystack for non-array tokenizers.
+        if (needApplyPostprocessor(function_name) && postprocessor && postprocessor->hasActions())
         {
-            /// The array tokenizer stores raw elements (index build skips postprocessor), so skip
-            /// postprocessing here too — mirrors MergeTreeIndexConditionText::traverseFunctionNode.
+            if (tokenizer->getType() == ITokenizer::Type::Array)
+            {
+                auto haystack_name = getNameWithoutAliases(new_children[0]);
+                ActionsDAG::NodeRawConstPtrs merged_outputs;
+                actions_dag.mergeNodes(postprocessor->getOriginalActionsDAG(haystack_name, new_children[0]->result_type).clone(), &merged_outputs);
+                chassert(merged_outputs.size() == 1);
+                new_children[0] = merged_outputs.front();
+            }
+
             if (needles_field.getType() == Field::Types::String)
             {
                 /// hasToken case: single token string. If the postprocessor drops the needle (stop-word

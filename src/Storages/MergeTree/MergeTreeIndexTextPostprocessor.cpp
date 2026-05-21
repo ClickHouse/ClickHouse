@@ -24,6 +24,7 @@ namespace
 
 /// Name of the placeholder column used when building the postprocessor ActionsDAG.
 constexpr char postprocessor_token_name[] = "__text_index_token";
+constexpr char postprocessor_lambda_arg[] = "__text_index_lambda_arg";
 
 }
 
@@ -35,10 +36,13 @@ MergeTreeIndexTextPostprocessor::MergeTreeIndexTextPostprocessor(ASTPtr expressi
 
     chassert(index_description.column_names.size() == 1);
 
+    original_expression_ast = expression_ast->clone();
+    index_column_name = index_description.column_names.front();
+
     /// Replace the index column name with the token placeholder.
     /// The postprocessor always operates on String tokens (not the original column type).
     ASTPtr transformed_ast = expression_ast->clone();
-    replaceExpressionToIdentifier(transformed_ast, index_description.column_names.front(), postprocessor_token_name);
+    replaceExpressionToIdentifier(transformed_ast, index_column_name, postprocessor_token_name);
 
     /// Build ActionsDAG treating the input as a plain String token.
     NamesAndTypesList source_columns{{postprocessor_token_name, string_type}};
@@ -125,5 +129,28 @@ ColumnPtr MergeTreeIndexTextPostprocessor::processTokensArrayBatch(const ColumnA
     }
 
     return ColumnArray::create(std::move(result_data), std::move(result_offsets_col));
+}
+
+ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(const String & col_name, const DataTypePtr & col_type) const
+{
+    chassert(actions);
+
+    ASTPtr expr = original_expression_ast->clone();
+
+    if (isArray(col_type))
+    {
+        /// Wrap element-wise: arrayMap(x -> postprocessor_expr(x), col_name).
+        /// Mirrors how MergeTreeIndexTextPreprocessor handles Array index columns.
+        replaceExpressionToIdentifier(expr, index_column_name, postprocessor_lambda_arg);
+        expr = makeASTFunction("arrayMap",
+            makeASTLambda({postprocessor_lambda_arg}, std::move(expr)),
+            make_intrusive<ASTIdentifier>(col_name));
+        NamesAndTypesList source_columns{{col_name, col_type}};
+        return buildActionsDAGFromAST(std::move(expr), source_columns);
+    }
+
+    replaceExpressionToIdentifier(expr, index_column_name, col_name);
+    NamesAndTypesList source_columns{{col_name, col_type}};
+    return buildActionsDAGFromAST(std::move(expr), source_columns);
 }
 }

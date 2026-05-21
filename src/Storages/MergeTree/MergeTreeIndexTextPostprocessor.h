@@ -4,6 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Core/NamesAndTypes.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/IAST_fwd.h>
@@ -44,8 +45,16 @@ public:
 
     bool hasActions() const { return actions.has_value(); }
 
+    /// Returns an ActionsDAG that applies the postprocessor to a column.
+    /// For Array(String) columns the expression is wrapped in arrayMap, mirroring
+    /// how MergeTreeIndexTextPreprocessor handles array index columns.
+    /// Only call when hasActions() is true.
+    ActionsDAG getOriginalActionsDAG(const String & col_name, const DataTypePtr & col_type) const;
+
 private:
     std::optional<ExpressionActions> actions;
+    ASTPtr original_expression_ast;   ///< original AST before token-placeholder substitution
+    String index_column_name;         ///< name of the index column in the original expression
     /// Cached to avoid repeated make_shared<DataTypeString>() allocations.
     DataTypePtr string_type;
 };
