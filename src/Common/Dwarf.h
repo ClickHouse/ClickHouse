@@ -30,6 +30,8 @@
 #include <variant>
 #include <vector>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 
 namespace DB
 {
@@ -176,7 +178,7 @@ public:
     /** Find the file and line number information corresponding to address.
       * The address must be physical - offset in object file without offset in virtual memory where the object is loaded.
       */
-    bool findAddress(uintptr_t address, LocationInfo & info, LocationInfoMode mode, std::vector<SymbolizedFrame> & inline_frames) const;
+    bool findAddress(uintptr_t address, LocationInfo & info, LocationInfoMode mode, VectorWithMemoryTracking<SymbolizedFrame> & inline_frames) const;
 
 private:
     static bool findDebugInfoOffset(uintptr_t address, std::string_view aranges, uint64_t & offset);
@@ -284,7 +286,7 @@ private:
 
         // Only the CompilationUnit that contains the caller functions needs this cache.
         // Indexed by (abbr.code - 1) if (abbr.code - 1) < abbrCache.size();
-        std::vector<DIEAbbreviation> abbr_cache;
+        VectorWithMemoryTracking<DIEAbbreviation> abbr_cache;
     };
 
     /** cu must exist during the life cycle of created Die. */
@@ -295,7 +297,7 @@ private:
         LocationInfoMode mode,
         CompilationUnit & cu,
         LocationInfo & info,
-        std::vector<SymbolizedFrame> & inline_frames,
+        VectorWithMemoryTracking<SymbolizedFrame> & inline_frames,
         bool assume_in_cu_range) const;
 
     /**
@@ -419,7 +421,7 @@ private:
         const LineNumberVM & line_vm,
         uint64_t address,
         std::optional<uint64_t> base_addr_cu,
-        std::vector<CallLocation> & locations,
+        VectorWithMemoryTracking<CallLocation> & locations,
         size_t max_size) const;
 
     // Read an abbreviation from a std::string_view, return true if at end; remove_prefix section
