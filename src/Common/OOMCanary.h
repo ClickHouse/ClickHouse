@@ -4,6 +4,7 @@
 
 #include <Interpreters/Context_fwd.h>  // ContextMutablePtr
 #include <Common/EventFD.h>
+#include <Common/Logger.h>
 #include <Common/ThreadPool.h>
 #include <base/strong_typedef.h>
 
