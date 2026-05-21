@@ -922,7 +922,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
                     ? this->nondet_funcs
                     : (rg.nextMediumNumber() < 10 && !common_funcs.empty() ? this->common_funcs : this->det_funcs));
 
-            has_lambda = (func.lambda_param && rg.nextBool()) ? 1 : 0;
+            has_lambda = func.lambda_param && rg.nextBool();
             if (rg.nextLargeNumber() < 21)
             {
                 /// Go random
@@ -1516,7 +1516,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             const bool use_simple = modifier < 2; /// ~20%: SimpleAggregateFunction
             const bool use_if = !use_simple && modifier < 5; /// ~30%: -If combinator
             const std::string aggr = use_simple ? rg.pickRandomly(simple_funcs) : rg.pickRandomly(aggr_funcs);
-            const String base_name = aggr;
+            const String & base_name = aggr;
             /// Dimension 3: mode
             String hex_bytes;
             const bool use_random_bytes = rg.nextBool();
