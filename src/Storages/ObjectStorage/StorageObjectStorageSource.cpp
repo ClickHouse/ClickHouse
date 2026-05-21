@@ -407,7 +407,9 @@ Chunk StorageObjectStorageSource::generate()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     read_from_format_info.hive_partition_columns_to_read_from_file_path,
-                    path);
+                    path,
+                    format_settings,
+                    read_context);
             }
 
             const String * iceberg_metadata_file_path = nullptr;

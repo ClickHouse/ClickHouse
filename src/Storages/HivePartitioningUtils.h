@@ -18,7 +18,9 @@ HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const std::stri
 void addPartitionColumnsToChunk(
     Chunk & chunk,
     const NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
-    const std::string & path);
+    const std::string & path,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context);
 
 NamesAndTypesList extractHivePartitionColumnsFromPath(
     const ColumnsDescription & storage_columns,

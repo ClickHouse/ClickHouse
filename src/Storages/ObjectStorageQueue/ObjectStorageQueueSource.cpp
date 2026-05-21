@@ -1277,7 +1277,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     read_from_format_info.hive_partition_columns_to_read_from_file_path,
-                    path);
+                    path,
+                    format_settings,
+                    getContext());
             }
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
