@@ -111,8 +111,10 @@ namespace Setting
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
     extern const SettingsBool enable_reads_from_query_cache;
+    extern const SettingsBool enable_reads_from_query_cache_disk;
     extern const SettingsBool query_cache_for_subqueries;
     extern const SettingsBool enable_writes_to_query_cache;
+    extern const SettingsBool enable_writes_to_query_cache_disk;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool exact_rows_before_limit;
@@ -2112,7 +2114,7 @@ void Planner::buildPlanForQueryNode()
     if (should_cache && settings[Setting::enable_reads_from_query_cache])
     {
         QueryResultCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true);
-        auto reader = std::make_shared<QueryResultCacheReader>(query_result_cache->createReader(key));
+        auto reader = std::make_shared<QueryResultCacheReader>(query_result_cache->createReader(key, settings[Setting::enable_reads_from_query_cache_disk]));
         if (reader->hasCacheEntryForKey())
         {
             addReadFromQueryResultCacheStep(query_plan, reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());
@@ -2660,7 +2662,8 @@ void Planner::buildPlanForQueryNode()
                                 settings[Setting::query_cache_squash_partial_results],
                                 settings[Setting::max_block_size],
                                 settings[Setting::query_cache_max_size_in_bytes],
-                                settings[Setting::query_cache_max_entries]));
+                                settings[Setting::query_cache_max_entries],
+                                settings[Setting::enable_writes_to_query_cache_disk]));
 
             auto stream_into_query_result_cache_step = std::make_unique<StreamInQueryResultCacheStep>(query_plan.getRootNode()->step->getOutputHeader(), query_result_cache_writer);
             query_plan.addStep(std::move(stream_into_query_result_cache_step));
