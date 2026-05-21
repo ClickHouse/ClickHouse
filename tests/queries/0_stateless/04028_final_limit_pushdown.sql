@@ -758,7 +758,8 @@ FROM (
     SETTINGS optimize_final_limit_pushdown = 1,
              optimize_read_in_order = 1,
              optimize_move_to_prewhere = 1,
-             optimize_move_to_prewhere_if_final = 1
+             optimize_move_to_prewhere_if_final = 1,
+             query_plan_optimize_prewhere = 1
 )
 WHERE explain LIKE '%Description: limit 5%';
 
