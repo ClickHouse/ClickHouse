@@ -50,9 +50,10 @@ endif()
 # this entirely by spawning a separate cmake invocation with only the toolchain
 # file and CMAKE_BUILD_TYPE=Release. Now that we build in-process, we have to
 # strip those flags explicitly. We keep only the toolchain bits added by
-# cmake/linux/toolchain-*.cmake (--gcc-toolchain, --no-default-config); the
-# --target= flag is applied automatically by cmake from CMAKE_<LANG>_COMPILER_TARGET.
-set(_compiler_rt_keep_re "(--gcc-toolchain=[^ ]+|--no-default-config)")
+# cmake/linux/toolchain-*.cmake (--gcc-toolchain, --no-default-config, and
+# -isystem header paths used by the USE_MUSL build); the --target= flag is
+# applied automatically by cmake from CMAKE_<LANG>_COMPILER_TARGET.
+set(_compiler_rt_keep_re "(--gcc-toolchain=[^ ]+|--no-default-config|-isystem +[^ ]+)")
 foreach (lang C CXX ASM)
     string(REGEX MATCHALL "${_compiler_rt_keep_re}" _kept "${CMAKE_${lang}_FLAGS}")
     string(JOIN " " CMAKE_${lang}_FLAGS ${_kept})
