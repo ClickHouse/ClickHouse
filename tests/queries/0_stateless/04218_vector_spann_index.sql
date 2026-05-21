@@ -8,13 +8,15 @@ SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10000;
 SET hnsw_candidate_list_size_for_search = 100;
 
+-- Tests 1-4 use centroid_ratio = 1.0 so every vector is a centroid and ANN matches brute force.
+
 -- Shared dataset for L2Distance tests (reference vector [0.0, 2.0]).
 -- Nearest by L2: ids 5, 6, 7.
 
-SELECT '1. L2Distance, 3-arg form';
+SELECT '1. L2Distance';
 DROP TABLE IF EXISTS tab_spann_l2_3;
 
-CREATE TABLE tab_spann_l2_3 (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_spann('spann', 'L2Distance', 2))
+CREATE TABLE tab_spann_l2_3 (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_spann('spann', 'L2Distance', 2, 'bf16', 32, 128, 1.0))
     ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
 
 INSERT INTO tab_spann_l2_3 VALUES
@@ -62,10 +64,10 @@ SELECT count() FROM (
 
 DROP TABLE tab_spann_l2_3;
 
-SELECT '2. L2Distance, 7-arg form';
+SELECT '2. L2Distance, bf16 quantization';
 DROP TABLE IF EXISTS tab_spann_l2_7;
 
-CREATE TABLE tab_spann_l2_7 (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_spann('spann', 'L2Distance', 2, 'bf16', 32, 128, 0.5))
+CREATE TABLE tab_spann_l2_7 (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_spann('spann', 'L2Distance', 2, 'bf16', 32, 128, 1.0))
     ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
 
 INSERT INTO tab_spann_l2_7 VALUES
@@ -118,7 +120,7 @@ DROP TABLE tab_spann_l2_7;
 SELECT '3. cosineDistance';
 DROP TABLE IF EXISTS tab_spann_cos;
 
-CREATE TABLE tab_spann_cos (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_spann('spann', 'cosineDistance', 2))
+CREATE TABLE tab_spann_cos (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_spann('spann', 'cosineDistance', 2, 'bf16', 32, 128, 1.0))
     ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
 
 INSERT INTO tab_spann_cos VALUES
@@ -169,7 +171,7 @@ DROP TABLE tab_spann_cos;
 SELECT '4. dotProduct';
 DROP TABLE IF EXISTS tab_spann_dot;
 
-CREATE TABLE tab_spann_dot (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_spann('spann', 'dotProduct', 2))
+CREATE TABLE tab_spann_dot (id Int32, vec Array(Float32), INDEX idx vec TYPE vector_spann('spann', 'dotProduct', 2, 'bf16', 32, 128, 1.0))
     ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;
 
 INSERT INTO tab_spann_dot VALUES

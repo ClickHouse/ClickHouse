@@ -461,16 +461,19 @@ std::pair<std::vector<SpannCentroidOffset>, std::vector<std::vector<SpannPosting
 
     std::vector<SpannCentroidOffset> offsets(k);
     UInt64 pos = 0;
+    const auto logger = getLogger("VectorSpannIndex");
     for (size_t i = 0; i < k; ++i)
     {
         offsets[i].offset = pos;
-        /// Skewed nearest-centroid assignment can make one list huge; raise centroid_ratio if this fails.
         if (postings_by_centroid[i].size() > vector_spann_max_entries_per_posting_list)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "vector_spann posting list for centroid {} has too many entries ({}), consider increasing centroid_ratio",
+            LOG_WARNING(
+                logger,
+                "vector_spann posting list for centroid {} in index {} has {} entries (soft threshold {}); "
+                "consider increasing centroid_ratio. Serialized size is still bounded by UInt32.",
                 i,
-                postings_by_centroid[i].size());
+                index_name,
+                postings_by_centroid[i].size(),
+                vector_spann_max_entries_per_posting_list);
         const size_t len = postingListSerializedBytes(postings_by_centroid[i].size(), params.dimensions);
         if (len > std::numeric_limits<UInt32>::max())
             throw Exception(ErrorCodes::INCORRECT_DATA, "vector_spann posting list for centroid {} is too large", i);

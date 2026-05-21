@@ -1,10 +1,10 @@
-1. L2Distance, 3-arg form
+1. L2Distance
 5	0
 6	0.09999990463256836
 7	0.20000004768371582
 0
 0
-2. L2Distance, 7-arg form
+2. L2Distance, bf16 quantization
 5	0
 6	0.09999990463256836
 7	0.20000004768371582
