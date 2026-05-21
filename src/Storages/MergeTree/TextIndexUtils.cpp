@@ -481,22 +481,23 @@ bool MergeTextIndexesTask::executeStep()
                         entry.value = new_value;
                     }
 
-#if 0
-                    /// Offset remapping can break sort order (e.g. ReplacingMergeTree
-                    /// or CollapsingMergeTree may reorder/remove rows). Re-sort and
-                    /// merge same-bucket entries after remapping.
+                    /// Offset remapping can break sort order (e.g. `ReplacingMergeTree`
+                    /// or `CollapsingMergeTree` may reorder/remove rows). `PositionListBuilder::mergeFrom`
+                    /// requires sorted inputs with merged same-bucket entries, so we
+                    /// normalize after remapping.
                     std::sort(position_entries.begin(), position_entries.end());
-                    size_t out_idx = 0;
-                    for (size_t idx = 1; idx < position_entries.size(); ++idx)
-                    {
-                        if (position_entries[out_idx].sameBucket(position_entries[idx]))
-                            position_entries[out_idx].mergeBitmap(position_entries[idx]);
-                        else
-                            position_entries[++out_idx] = position_entries[idx];
-                    }
                     if (!position_entries.empty())
+                    {
+                        size_t out_idx = 0;
+                        for (size_t idx = 1; idx < position_entries.size(); ++idx)
+                        {
+                            if (position_entries[out_idx].sameBucket(position_entries[idx]))
+                                position_entries[out_idx].mergeBitmap(position_entries[idx]);
+                            else
+                                position_entries[++out_idx] = position_entries[idx];
+                        }
                         position_entries.resize(out_idx + 1);
-#endif
+                    }
                 }
 
                 PositionListBuilder source;
