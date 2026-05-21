@@ -16,6 +16,7 @@
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Parsers/Lexer.h>
 #include <Parsers/QueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
@@ -619,16 +620,21 @@ void HTTPHandler::processQuery(
     /// request body stays intact for the input format. Only enable this when the URL query
     /// alone already begins with an `INSERT` statement, otherwise we would break the legacy
     /// behavior of splitting SQL text between the `query` parameter and the request body.
+    /// Leading whitespace and SQL comments are skipped so that forms like `/*trace*/ INSERT ...`
+    /// also take the streaming-safe parse path.
     auto url_query_starts_with_insert = [&query]()
     {
-        size_t i = 0;
-        while (i < query.size() && isWhitespaceASCII(query[i]))
-            ++i;
+        Lexer lexer(query.data(), query.data() + query.size());
+        Token token = lexer.nextToken();
+        while (!token.isSignificant() && !token.isEnd() && !token.isError())
+            token = lexer.nextToken();
+        if (token.type != TokenType::BareWord)
+            return false;
         static constexpr std::string_view kw = "INSERT";
-        if (query.size() - i < kw.size())
+        if (static_cast<size_t>(token.end - token.begin) != kw.size())
             return false;
         for (size_t j = 0; j < kw.size(); ++j)
-            if (toUpperIfAlphaASCII(query[i + j]) != kw[j])
+            if (toUpperIfAlphaASCII(token.begin[j]) != kw[j])
                 return false;
         return true;
     };
