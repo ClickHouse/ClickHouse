@@ -134,6 +134,7 @@ private:
     const size_t max_limit;
     const bool is_rescoring;
     const size_t max_posting_lists;
+    const size_t expansion_search;
 };
 
 class MergeTreeIndexVectorSpann final : public IMergeTreeIndex

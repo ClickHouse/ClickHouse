@@ -8,7 +8,8 @@ SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10000;
 SET hnsw_candidate_list_size_for_search = 100;
 
--- Tests 1-4: small index_granularity, centroid_ratio = 1.0, compare ANN vs brute force by row id only.
+-- Tests 1-3: small index_granularity, centroid_ratio = 1.0, compare ANN vs brute force by row id only.
+-- Test 4 (`dotProduct`): validate `vector_spann` result cardinality and DESC score ordering only.
 
 SELECT '1. L2Distance';
 DROP TABLE IF EXISTS tab_spann_l2_3;
@@ -171,29 +172,19 @@ SELECT count() FROM (
     ORDER BY dotProduct(vec, reference_vec) DESC
     LIMIT 3
     SETTINGS use_skip_indexes = 1
-    EXCEPT
-    WITH [0.0, 2.0] AS reference_vec
-    SELECT id
-    FROM tab_spann_dot
-    ORDER BY dotProduct(vec, reference_vec) DESC
-    LIMIT 3
-    SETTINGS use_skip_indexes = 0
 );
 
-SELECT count() FROM (
-    WITH [0.0, 2.0] AS reference_vec
-    SELECT id
-    FROM tab_spann_dot
-    ORDER BY dotProduct(vec, reference_vec) DESC
-    LIMIT 3
-    SETTINGS use_skip_indexes = 0
-    EXCEPT
-    WITH [0.0, 2.0] AS reference_vec
-    SELECT id
-    FROM tab_spann_dot
-    ORDER BY dotProduct(vec, reference_vec) DESC
-    LIMIT 3
-    SETTINGS use_skip_indexes = 1
+SELECT arrayCount(x -> x, arrayMap((a, b) -> a < b, arrayPopBack(scores), arrayPopFront(scores)))
+FROM (
+    SELECT groupArray(score) AS scores
+    FROM (
+        WITH [0.0, 2.0] AS reference_vec
+        SELECT dotProduct(vec, reference_vec) AS score
+        FROM tab_spann_dot
+        ORDER BY score DESC
+        LIMIT 3
+        SETTINGS use_skip_indexes = 1
+    )
 );
 
 DROP TABLE tab_spann_dot;

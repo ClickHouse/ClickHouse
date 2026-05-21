@@ -589,9 +589,9 @@ MergeTreeIndexConditionVectorSpann::MergeTreeIndexConditionVectorSpann(
     , max_limit(context->getSettingsRef()[Setting::max_limit_for_vector_search_queries])
     , is_rescoring(context->getSettingsRef()[Setting::vector_search_with_rescoring])
     , max_posting_lists(std::max<size_t>(1, context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search]))
+    , expansion_search(context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search])
 {
     static constexpr auto MAX_INDEX_FETCH_MULTIPLIER = 1000.0;
-    const auto expansion_search = context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search];
 
     if (expansion_search == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
@@ -653,7 +653,7 @@ NearestNeighbours MergeTreeIndexConditionVectorSpann::calculateApproximateNeares
         "reference vector in the SELECT query");
 
     auto search_centroids = centroid_index->search(
-        query_float.data(), max_posting_lists, unum::usearch::index_dense_t::any_thread(), false, default_expansion_search);
+        query_float.data(), max_posting_lists, unum::usearch::index_dense_t::any_thread(), false, expansion_search);
     if (!search_centroids)
         throw Exception(ErrorCodes::INCORRECT_DATA, "vector_spann centroid search failed: {}", search_centroids.error.release());
 
