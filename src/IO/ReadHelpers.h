@@ -173,8 +173,8 @@ inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
     buf.readStrict(reinterpret_cast<char*>(&ip.toUnderType()), size);
 }
 
-template <typename T, typename Alloc = std::allocator<T>>
-void readVectorBinary(std::vector<T, Alloc> & v, ReadBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+template <typename Vec>
+void readVectorBinary(Vec & v, ReadBuffer & buf)
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -1853,8 +1853,8 @@ inline bool tryReadCSV(UInt256 & x, ReadBuffer & buf) { return readCSVSimple<UIn
 inline void readCSV(Int256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline bool tryReadCSV(Int256 & x, ReadBuffer & buf) { return readCSVSimple<Int256, bool>(x, buf); }
 
-template <typename T, typename Alloc = std::allocator<T>>
-void readBinary(std::vector<T, Alloc> & x, ReadBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+template <typename Vec>
+void readBinary(Vec & x, ReadBuffer & buf)
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -1867,8 +1867,8 @@ void readBinary(std::vector<T, Alloc> & x, ReadBuffer & buf) // STYLE_CHECK_ALLO
         readBinary(x[i], buf);
 }
 
-template <typename T>
-void readQuoted(std::vector<T> & x, ReadBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+template <typename Vec>
+void readQuoted(Vec & x, ReadBuffer & buf)
 {
     bool first = true;
     assertChar('[', buf);
@@ -1884,14 +1884,14 @@ void readQuoted(std::vector<T> & x, ReadBuffer & buf) // STYLE_CHECK_ALLOW_STD_C
 
         first = false;
 
-        x.push_back(T());
+        x.emplace_back();
         readQuoted(x.back(), buf);
     }
     assertChar(']', buf);
 }
 
-template <typename T>
-void readDoubleQuoted(std::vector<T> & x, ReadBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+template <typename Vec>
+void readDoubleQuoted(Vec & x, ReadBuffer & buf)
 {
     bool first = true;
     assertChar('[', buf);
@@ -1907,14 +1907,14 @@ void readDoubleQuoted(std::vector<T> & x, ReadBuffer & buf) // STYLE_CHECK_ALLOW
 
         first = false;
 
-        x.push_back(T());
+        x.emplace_back();
         readDoubleQuoted(x.back(), buf);
     }
     assertChar(']', buf);
 }
 
-template <typename T>
-void readText(std::vector<T> & x, ReadBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+template <typename Vec>
+void readText(Vec & x, ReadBuffer & buf)
 {
     readQuoted(x, buf);
 }

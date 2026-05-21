@@ -105,8 +105,8 @@ inline void writeStringBinary(const char * s, WriteBuffer & buf)
 }
 
 
-template <typename T, typename Alloc = std::allocator<T>>
-void writeVectorBinary(const std::vector<T, Alloc> & v, WriteBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+template <typename Vec>
+void writeVectorBinary(const Vec & v, WriteBuffer & buf)
 {
     writeVarUInt(v.size(), buf);
 
@@ -1385,8 +1385,8 @@ inline void writeCSV(const UUID & x, WriteBuffer & buf) { writeDoubleQuoted(x, b
 inline void writeCSV(const IPv4 & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const IPv6 & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 
-template <typename T, typename Alloc = std::allocator<T>>
-void writeBinary(const std::vector<T, Alloc> & x, WriteBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+template <typename Vec>
+void writeBinary(const Vec & x, WriteBuffer & buf)
 {
     size_t size = x.size();
     writeVarUInt(size, buf);
@@ -1394,8 +1394,8 @@ void writeBinary(const std::vector<T, Alloc> & x, WriteBuffer & buf) // STYLE_CH
         writeBinary(x[i], buf);
 }
 
-template <typename T>
-void writeQuoted(const std::vector<T> & x, WriteBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+template <typename Vec>
+void writeQuoted(const Vec & x, WriteBuffer & buf)
 {
     writeChar('[', buf);
     for (size_t i = 0, size = x.size(); i < size; ++i)
@@ -1407,8 +1407,8 @@ void writeQuoted(const std::vector<T> & x, WriteBuffer & buf) // STYLE_CHECK_ALL
     writeChar(']', buf);
 }
 
-template <typename T>
-void writeDoubleQuoted(const std::vector<T> & x, WriteBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+template <typename Vec>
+void writeDoubleQuoted(const Vec & x, WriteBuffer & buf)
 {
     writeChar('[', buf);
     for (size_t i = 0, size = x.size(); i < size; ++i)
@@ -1420,8 +1420,8 @@ void writeDoubleQuoted(const std::vector<T> & x, WriteBuffer & buf) // STYLE_CHE
     writeChar(']', buf);
 }
 
-template <typename T>
-void writeText(const std::vector<T> & x, WriteBuffer & buf) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+template <typename Vec>
+void writeText(const Vec & x, WriteBuffer & buf)
 {
     writeQuoted(x, buf);
 }
@@ -1457,8 +1457,8 @@ inline String toString(const CityHash_v1_0_2::uint128 & hash)
     return buf.str();
 }
 
-template <typename T>
-inline String toStringWithFinalSeparator(const std::vector<T> & x, const String & final_sep) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+template <typename Vec>
+inline String toStringWithFinalSeparator(const Vec & x, const String & final_sep)
 {
     WriteBufferFromOwnString buf;
     for (auto it = x.begin(); it != x.end(); ++it)
