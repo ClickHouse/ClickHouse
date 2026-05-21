@@ -44,7 +44,9 @@
 #include <Columns/IColumn.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ThreadPool.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -204,7 +206,7 @@ VirtualColumnsDescription StorageBuffer::createVirtuals()
 }
 
 /// Reads from one buffer (from one block) under its mutex.
-class BufferSource : public ISource
+class BufferSource final : public ISource
 {
     ColumnPtr fillVirtualColumn(const String & name, const DataTypePtr & type, size_t num_rows) const
     {
@@ -701,7 +703,7 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
 }
 
 
-class BufferSink : public SinkToStorage, WithContext
+class BufferSink final : public SinkToStorage, WithContext
 {
 public:
     explicit BufferSink(
