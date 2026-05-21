@@ -38,7 +38,7 @@ struct PositionCaseSensitiveASCII
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<std::string_view> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const VectorWithMemoryTracking<std::string_view> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -75,7 +75,7 @@ struct PositionCaseInsensitiveASCII
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<std::string_view> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const VectorWithMemoryTracking<std::string_view> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -108,7 +108,7 @@ struct PositionCaseSensitiveUTF8
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<std::string_view> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const VectorWithMemoryTracking<std::string_view> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -156,7 +156,7 @@ struct PositionCaseInsensitiveUTF8
         return SearcherInSmallHaystack(reinterpret_cast<const UInt8 *>(needle_data), needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<std::string_view> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const VectorWithMemoryTracking<std::string_view> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }

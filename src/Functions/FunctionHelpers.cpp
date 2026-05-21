@@ -277,11 +277,16 @@ void validateNumberOfFunctionArguments(
         }
 }
 
-std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>
+std::pair<VectorWithMemoryTracking<const IColumn *>, const ColumnArray::Offset *>
 checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
 {
+<<<<<<< convert-asserts-to-chasserts
     chassert(num_arguments > 0);
     std::vector<const IColumn *> nested_columns(num_arguments);
+=======
+    assert(num_arguments > 0);
+    VectorWithMemoryTracking<const IColumn *> nested_columns(num_arguments);
+>>>>>>> master
     const ColumnArray::Offsets * offsets = nullptr;
     for (size_t i = 0; i < num_arguments; ++i)
     {
