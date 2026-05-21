@@ -273,10 +273,10 @@ SELECT count() FROM tab WHERE hasToken(val, 'world');  -- row 3, new part (index
 SYSTEM START MERGES tab;
 DROP TABLE tab;
 
-SELECT '11. Array tokenizer + postprocessor: has() / hasAll() / hasAny() bypass the postprocessor.';
--- The array tokenizer stores raw elements; the postprocessor is not applied to them.
--- has/hasAll/hasAny compare against the raw stored elements exactly.
--- The postprocessor is irrelevant for these functions.
+SELECT '11. Array tokenizer + postprocessor: has() / hasAll() / hasAny() use postprocessor via hint mode.';
+-- The index stores postprocessed (lower-cased) elements.
+-- has/hasAll/hasAny apply the postprocessor to the needle for the index lookup (hint mode),
+-- then re-evaluate the original predicate at row level.
 
 CREATE TABLE tab
 (
@@ -288,9 +288,9 @@ ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO tab VALUES (1, ['Foo']), (2, ['BAR']), (3, ['baz']);
 
-SELECT count() FROM tab WHERE has(val, 'Foo');   -- 1: exact match 'Foo'
-SELECT count() FROM tab WHERE has(val, 'BAR');   -- 1: exact match 'BAR'
-SELECT count() FROM tab WHERE has(val, 'foo');   -- 0: 'foo' ≠ 'Foo', postprocessor not applied
+SELECT count() FROM tab WHERE has(val, 'Foo');   -- 1: index finds 'foo', row-level has(['Foo'], 'Foo') → true
+SELECT count() FROM tab WHERE has(val, 'BAR');   -- 1: index finds 'bar', row-level has(['BAR'], 'BAR') → true
+SELECT count() FROM tab WHERE has(val, 'foo');   -- 0: index finds 'foo' (hint), row-level has(['Foo'], 'foo') → false
 SELECT count() FROM tab WHERE has(val, 'xyz');   -- 0
 
 DROP TABLE tab;
@@ -548,8 +548,8 @@ DROP TABLE tab;
 
 SELECT '21. Array tokenizer + postprocessor: rewrite path matches index for mixed parts.';
 
--- Index lookup (materialized) and rewrite-on-row-scan (non-materialized) must both
--- compare needles to raw elements when the tokenizer is 'array'.
+-- For indexed parts, index lookup uses postprocessed needle in hint mode, then row-level
+-- re-evaluates the original predicate. For non-indexed parts, row-level runs directly.
 
 CREATE TABLE tab (id UInt64, val Array(String)) ENGINE = MergeTree ORDER BY id;
 SYSTEM STOP MERGES tab;
@@ -560,11 +560,11 @@ ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'array', postprocessor 
 
 INSERT INTO tab VALUES (3, ['Foo']), (4, ['BAR']);  -- new parts: indexed
 
--- Raw-case needle matches in both old and new parts.
+-- The postprocessor is applied element-wise to the haystack and to the needle.
+-- Both 'Foo' and 'foo' normalize to 'foo', so they match the same rows.
 SELECT count() FROM tab WHERE hasAllTokens(val, ['Foo']);  -- 2
 SELECT count() FROM tab WHERE hasAnyTokens(val, ['BAR']);  -- 2
--- Lower-cased needle never matches: raw elements stay uppercase on both paths.
-SELECT count() FROM tab WHERE hasAllTokens(val, ['foo']);  -- 0
+SELECT count() FROM tab WHERE hasAllTokens(val, ['foo']);  -- 2
 
 SYSTEM START MERGES tab;
 DROP TABLE tab;
@@ -605,10 +605,9 @@ SELECT count() FROM tab WHERE mapContainsValueLike(val, '%FOO%');   -- 1
 
 DROP TABLE tab;
 
-SELECT '24. Map column + array tokenizer + postprocessor: mapContains* bypass postprocessor (raw key/value match).';
--- Mirrors test 11 (has/hasAll/hasAny + array tokenizer): the index build skips the postprocessor on
--- the array tokenizer, so the lookup must skip it too. Otherwise the postprocessed needle would never
--- match the raw stored key/value and matching granules would be falsely pruned.
+SELECT '24. Map column + array tokenizer + postprocessor: mapContains* use postprocessor via hint mode.';
+-- Index stores postprocessed (lower-cased) keys/values. Lookup applies postprocessor to the needle
+-- (hint mode) and re-evaluates the original predicate at row level.
 
 CREATE TABLE tab
 (
@@ -619,10 +618,10 @@ CREATE TABLE tab
 
 INSERT INTO tab VALUES (1, {'Foo': 'a'}), (2, {'BAR': 'b'});
 
--- Raw needle matches the literal stored key.
+-- Index finds 'foo'/'bar' (postprocessed needle); row-level checks literal key.
 SELECT count() FROM tab WHERE mapContainsKey(val, 'Foo');   -- 1
 SELECT count() FROM tab WHERE mapContainsKey(val, 'BAR');   -- 1
--- Lower-cased needle does not match: postprocessor is bypassed on both sides; stored key is 'Foo'.
+-- Index finds 'foo' (hint), but row-level mapContainsKey({'Foo': 'a'}, 'foo') → false.
 SELECT count() FROM tab WHERE mapContainsKey(val, 'foo');   -- 0
 
 DROP TABLE tab;
@@ -642,10 +641,9 @@ SELECT count() FROM tab WHERE mapContainsValue(val, 'foo');   -- 0
 
 DROP TABLE tab;
 
-SELECT '25. String column + array tokenizer + postprocessor: equals / hasAllTokens bypass postprocessor (raw match).';
--- With tokenizer=array the index build skips the postprocessor (stores raw values).
--- equals and hasAllTokens must also skip it on the lookup side; otherwise the postprocessed
--- needle would never match the raw stored value and matching granules would be falsely pruned.
+SELECT '25. String column + array tokenizer + postprocessor: equals / hasAllTokens use postprocessor via hint mode.';
+-- Index stores postprocessed (lower-cased) values. Lookup applies postprocessor to the needle
+-- (hint mode) and re-evaluates the original predicate at row level.
 
 CREATE TABLE tab
 (
@@ -656,16 +654,17 @@ CREATE TABLE tab
 
 INSERT INTO tab VALUES (1, 'Foo'), (2, 'BAR'), (3, 'baz');
 
--- Raw needle matches the literal stored value (postprocessor bypassed on both sides).
+-- equals uses hint mode: index postprocesses needle, row-level checks literal value.
 SELECT count() FROM tab WHERE val = 'Foo';                        -- 1
 SELECT count() FROM tab WHERE val = 'BAR';                        -- 1
 SELECT count() FROM tab WHERE val = 'baz';                        -- 1
--- Lower-cased needle does not match: postprocessor bypassed → stored value is 'Foo'.
+-- Index finds 'foo' (hint), but row-level val = 'foo' on val='Foo' → false.
 SELECT count() FROM tab WHERE val = 'foo';                        -- 0
+-- hasToken / hasAllTokens: postprocessor applied to both haystack and needle → case-insensitive match.
 SELECT count() FROM tab WHERE hasToken(val, 'Foo');               -- 1
-SELECT count() FROM tab WHERE hasToken(val, 'foo');               -- 0
+SELECT count() FROM tab WHERE hasToken(val, 'foo');               -- 1
 SELECT count() FROM tab WHERE hasAllTokens(val, 'Foo');           -- 1
-SELECT count() FROM tab WHERE hasAllTokens(val, 'foo');           -- 0
+SELECT count() FROM tab WHERE hasAllTokens(val, 'foo');           -- 1
 SELECT count() FROM tab WHERE val IN ('Foo', 'BAR');              -- 2
 SELECT count() FROM tab WHERE val IN ('foo', 'bar');              -- 0
 
@@ -812,9 +811,13 @@ ENGINE = MergeTree ORDER BY id;
 INSERT INTO tab VALUES (1, ['FOO', 'BAR']), (2, ['baz']);
 
 -- Index stores 'foo', 'bar' for row 1 and 'baz' for row 2.
--- Needle elements must be postprocessed: 'FOO' → 'foo', 'BAR' → 'bar'.
-SELECT count() FROM tab WHERE hasAll(val, ['FOO', 'BAR']);  -- 1
-SELECT count() FROM tab WHERE hasAny(val, ['FOO']);          -- 1
+-- The postprocessor normalises needle elements for index lookup (hint mode);
+-- row-level hasAll/hasAny still compares needle and haystack literally.
+SELECT count() FROM tab WHERE hasAll(val, ['FOO', 'BAR']);   -- 1: exact match at row level
+SELECT count() FROM tab WHERE hasAll(val, ['foo', 'bar']);   -- 0: row-level match fails
+SELECT count() FROM tab WHERE hasAll(val, ['Foo', 'Bar']);   -- 0: row-level match fails
+SELECT count() FROM tab WHERE hasAny(val, ['FOO']);          -- 1: exact match at row level
+SELECT count() FROM tab WHERE hasAny(val, ['Foo']);          -- 0: row-level match fails
 SELECT count() FROM tab WHERE hasAny(val, ['xyz']);          -- 0
 
 DROP TABLE tab;

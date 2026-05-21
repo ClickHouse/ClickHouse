@@ -72,7 +72,7 @@ started	1
 1
 1
 1
-11. Array tokenizer + postprocessor: has() / hasAll() / hasAny() bypass the postprocessor.
+11. Array tokenizer + postprocessor: has() / hasAll() / hasAny() use postprocessor via hint mode.
 1
 1
 0
@@ -129,7 +129,7 @@ started	1
 21. Array tokenizer + postprocessor: rewrite path matches index for mixed parts.
 2
 2
-0
+2
 22. Map column + postprocessor: mapContainsKey / mapContainsKeyLike normalize the needle.
 1
 0
@@ -138,22 +138,22 @@ started	1
 1
 0
 1
-24. Map column + array tokenizer + postprocessor: mapContains* bypass postprocessor (raw key/value match).
+24. Map column + array tokenizer + postprocessor: mapContains* use postprocessor via hint mode.
 1
 1
 0
 1
 1
 0
-25. String column + array tokenizer + postprocessor: equals / hasAllTokens bypass postprocessor (raw match).
+25. String column + array tokenizer + postprocessor: equals / hasAllTokens use postprocessor via hint mode.
 1
 1
 1
 0
 1
-0
 1
-0
+1
+1
 2
 0
 26. hasTokenOrNull: stop-word postprocessor is honored consistently across index and row-scan paths.
@@ -183,5 +183,8 @@ wo	1
 0
 29. hasAll / hasAny with non-array tokenizer + postprocessor: needle elements go through postprocessor.
 1
+0
+0
 1
+0
 0
