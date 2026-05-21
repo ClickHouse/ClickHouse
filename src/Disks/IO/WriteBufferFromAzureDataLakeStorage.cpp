@@ -169,6 +169,11 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(const std::function<voi
             backoff_ms = std::min(backoff_ms * 2, sdk_retry_max_backoff_ms);
         }
     }
+    throw Exception(
+        ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+        "ADLS Gen2 {} failed for `{}`",
+        what,
+        blob_path);
 }
 
 void WriteBufferFromAzureDataLakeStorage::ensureCreated()
@@ -213,6 +218,12 @@ void WriteBufferFromAzureDataLakeStorage::appendBufferedData()
 
 void WriteBufferFromAzureDataLakeStorage::nextImpl()
 {
+    if (is_prefinalized)
+        throw Exception(
+            ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+            "Cannot write to prefinalized buffer for ADLS Gen2, the file `{}` has already been flushed",
+            blob_path);
+
     appendBufferedData();
 }
 
