@@ -94,8 +94,18 @@ def read_test_results(results_path: Path, with_raw_logs: bool = True):
             # The value can be empty, but when it's not,
             # the 4th value is a pythonic list, e.g. ['file1', 'file2']
             if with_raw_logs:
-                # Python does not support TSV, so we unescape manually
-                result.set_info(line[3].replace("\\t", "\t").replace("\\n", "\n"))
+                # Python does not support TSV, so we unescape manually.
+                # The writer (`escape_tsv_info`) emits `\\r` for CR, so
+                # unescape it here too. Without this, dpkg/apt-get
+                # progress markers in the info field would leak the
+                # literal two-character `\r` sequence into the displayed
+                # log.
+                result.set_info(
+                    line[3]
+                    .replace("\\t", "\t")
+                    .replace("\\r", "\r")
+                    .replace("\\n", "\n")
+                )
             else:
                 result.set_info(line[3])
         results.append(result)

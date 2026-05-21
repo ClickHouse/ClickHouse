@@ -204,6 +204,23 @@ def test_invalid_status_row_is_collected_as_malformed(tmp_path):
     assert malformed[0][0] == 2
 
 
+def test_escape_tsv_info_roundtrips_cr_through_parser(tmp_path):
+    # The writer encodes CR as `\\r` rather than dropping it, so the
+    # parser's unescape pass must restore real CR in the info field.
+    # Otherwise the `\\r` would leak into the displayed log.
+    from ci.jobs.scripts.stress.stress import escape_tsv_info
+
+    info = "(Reading database ... 5%\r10%\r) done"
+    escaped = escape_tsv_info(info)
+    assert "\r" not in escaped
+    assert "\\r" in escaped
+    path = _write(tmp_path, f"row\tFAIL\t\\N\t{escaped}\n")
+    results, malformed = read_test_results(path)
+    assert malformed == []
+    assert len(results) == 1
+    assert results[0].info == info
+
+
 def test_dpkg_progress_in_info_does_not_split_row(tmp_path):
     """Exact failure pattern from PR #105243 Stress test (arm_debug):
     the `Hung check failed` info field contained dpkg progress
