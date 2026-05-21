@@ -30,7 +30,7 @@ namespace ErrorCodes
 namespace
 {
 
-static constexpr size_t ADLFS_MAX_RETRIES = 10;
+static constexpr size_t ADLFS_MAX_RETRIES = 10000;
 
 Azure::Storage::Files::DataLake::DataLakeClientOptions toDataLakeOptions(
     const Azure::Storage::Blobs::BlobClientOptions & blob_client_options)
