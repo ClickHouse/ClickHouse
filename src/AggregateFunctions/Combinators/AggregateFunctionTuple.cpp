@@ -4,6 +4,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
 #include <Common/memory.h>
 #include <Common/typeid_cast.h>
@@ -160,14 +161,11 @@ void AggregateFunctionTuple::add(AggregateDataPtr __restrict place, const IColum
 {
     /// Per-row fallback path: materialize sparse children defensively so callers that bypass
     /// our batch overrides (e.g. direct add() calls in tests or future code paths) stay correct.
-    /// The hot paths (addBatch/addBatchSinglePlace) materialize once up front and avoid this cost.
+    /// The hot paths (addBatch/addBatchSinglePlace) materialize once up front and use
+    /// addRowFromMaterialized to avoid paying this cost per row.
     ColumnPtr materialized = recursiveRemoveSparse(columns[0]->getPtr());
     const auto & tuple_column = assert_cast<const ColumnTuple &>(*materialized);
-    for (size_t i = 0; i < num_elements; ++i)
-    {
-        const IColumn * nested_col = &tuple_column.getColumn(i);
-        nested_functions[i]->add(place + state_offsets[i], &nested_col, row_num, arena);
-    }
+    addRowFromMaterialized(place, tuple_column, row_num, arena);
 }
 
 void AggregateFunctionTuple::addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const
@@ -188,13 +186,29 @@ void AggregateFunctionTuple::addBatch( /// NOLINT
 {
     /// MergeTree may store individual Tuple elements as ColumnSparse while the outer ColumnTuple is dense.
     /// Nested aggregate functions cast their column to its concrete type, so we materialize once per batch.
+    /// Note: we call addRowFromMaterialized directly in the row loop instead of delegating to
+    /// IAggregateFunctionHelper::addBatch, because that would route back through our add() override
+    /// and rerun recursiveRemoveSparse on every row.
     ColumnPtr materialized = recursiveRemoveSparse(columns[0]->getPtr());
-    const IColumn * full_columns[2] = {materialized.get(), nullptr};
+    const auto & tuple_column = assert_cast<const ColumnTuple &>(*materialized);
+
     if (if_argument_pos >= 0)
-        full_columns[1] = columns[if_argument_pos];
-    ssize_t mapped_if_pos = if_argument_pos >= 0 ? 1 : -1;
-    IAggregateFunctionHelper<AggregateFunctionTuple>::addBatch(
-        row_begin, row_end, places, place_offset, full_columns, arena, mapped_if_pos);
+    {
+        const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            if (flags[i] && places[i])
+                addRowFromMaterialized(places[i] + place_offset, tuple_column, i, arena);
+        }
+    }
+    else
+    {
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            if (places[i])
+                addRowFromMaterialized(places[i] + place_offset, tuple_column, i, arena);
+        }
+    }
 }
 
 void AggregateFunctionTuple::addBatchSinglePlace( /// NOLINT
@@ -206,12 +220,22 @@ void AggregateFunctionTuple::addBatchSinglePlace( /// NOLINT
     ssize_t if_argument_pos) const
 {
     ColumnPtr materialized = recursiveRemoveSparse(columns[0]->getPtr());
-    const IColumn * full_columns[2] = {materialized.get(), nullptr};
+    const auto & tuple_column = assert_cast<const ColumnTuple &>(*materialized);
+
     if (if_argument_pos >= 0)
-        full_columns[1] = columns[if_argument_pos];
-    ssize_t mapped_if_pos = if_argument_pos >= 0 ? 1 : -1;
-    IAggregateFunctionHelper<AggregateFunctionTuple>::addBatchSinglePlace(
-        row_begin, row_end, place, full_columns, arena, mapped_if_pos);
+    {
+        const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            if (flags[i])
+                addRowFromMaterialized(place, tuple_column, i, arena);
+        }
+    }
+    else
+    {
+        for (size_t i = row_begin; i < row_end; ++i)
+            addRowFromMaterialized(place, tuple_column, i, arena);
+    }
 }
 
 void AggregateFunctionTuple::merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const

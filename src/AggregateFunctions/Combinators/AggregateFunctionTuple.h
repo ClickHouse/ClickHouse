@@ -116,6 +116,17 @@ private:
                 nested_functions[i]->insertResultInto(place + state_offsets[i], tuple_to.getColumn(i), arena);
         }
     }
+
+    /// Per-row add that assumes the caller has already materialized the outer tuple (no sparse children).
+    /// Lets the hot batch paths run recursiveRemoveSparse exactly once per batch instead of per row.
+    void addRowFromMaterialized(AggregateDataPtr __restrict place, const ColumnTuple & tuple_column, size_t row_num, Arena * arena) const
+    {
+        for (size_t i = 0; i < num_elements; ++i)
+        {
+            const IColumn * nested_col = &tuple_column.getColumn(i);
+            nested_functions[i]->add(place + state_offsets[i], &nested_col, row_num, arena);
+        }
+    }
 };
 
 }
