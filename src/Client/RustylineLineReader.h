@@ -52,7 +52,6 @@ private:
     struct Impl;
     std::unique_ptr<Impl> impl;
 
-    int history_file_fd = -1;
     bool bracketed_paste_enabled = false;
 };
 

@@ -443,8 +443,6 @@ fn map_readline_error(e: ReadlineError) -> ReadResult {
 impl Editor {
     fn read_line(&mut self, prompt: &CxxString) -> Result<ReadResult, String> {
         let prompt_str = prompt.to_str().map_err(|e| format!("prompt utf-8: {e}"))?;
-        // Snapshot history for the skim handler before we hand the
-        // terminal over to rustyline's input loop.
         let snapshot = self.history_lines();
         HISTORY_SNAPSHOT.with(|h| *h.borrow_mut() = snapshot);
         let preload = self.preload.take();

@@ -57,39 +57,20 @@ RustylineLineReader::RustylineLineReader(Options && options)
 
     if (!history_file_path.empty())
     {
-        history_file_fd = open(history_file_path.c_str(), O_RDWR);
-        if (history_file_fd < 0)
+        try
         {
-            fmt::print(stderr, "Open of history file failed: {}\n", errnoToString());
+            /// rustyline's FileHistory takes an fd_lock RwLock internally,
+            /// so we don't need our own flock() coordination.
+            impl->editor->load_history(history_file_path);
         }
-        else
+        catch (const std::exception & e)
         {
-            if (flock(history_file_fd, LOCK_SH) == 0)
-            {
-                try
-                {
-                    /// cxx Result -> exception on failure; we just log.
-                    impl->editor->load_history(history_file_path);
-                }
-                catch (const std::exception & e)
-                {
-                    fmt::print(stderr, "Loading history failed: {}\n", e.what());
-                }
-                flock(history_file_fd, LOCK_UN);
-            }
-            else
-            {
-                fmt::print(stderr, "Shared lock of history file failed: {}\n", errnoToString());
-            }
+            fmt::print(stderr, "Loading history failed: {}\n", e.what());
         }
     }
 }
 
-RustylineLineReader::~RustylineLineReader()
-{
-    if (history_file_fd >= 0)
-        ::close(history_file_fd);
-}
+RustylineLineReader::~RustylineLineReader() = default;
 
 LineReader::InputStatus RustylineLineReader::readOneLine(const String & prompt)
 {
@@ -121,19 +102,9 @@ LineReader::InputStatus RustylineLineReader::readOneLine(const String & prompt)
 
 void RustylineLineReader::addToHistory(const String & line)
 {
-    bool locked = false;
-    if (history_file_fd >= 0)
-    {
-        if (flock(history_file_fd, LOCK_EX) == 0)
-            locked = true;
-        else
-            fmt::print(stderr, "Lock of history file failed: {}\n", errnoToString());
-    }
-
     try
     {
         impl->editor->add_history(line);
-
         if (!history_file_path.empty())
             impl->editor->save_history(history_file_path);
     }
@@ -141,9 +112,6 @@ void RustylineLineReader::addToHistory(const String & line)
     {
         fmt::print(stderr, "Saving history failed: {}\n", e.what());
     }
-
-    if (locked && flock(history_file_fd, LOCK_UN) != 0)
-        fmt::print(stderr, "Unlock of history file failed: {}\n", errnoToString());
 }
 
 void RustylineLineReader::enableBracketedPaste()
