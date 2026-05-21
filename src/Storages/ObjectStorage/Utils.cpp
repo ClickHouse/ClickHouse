@@ -293,7 +293,7 @@ void expandPaimonKeeperMacrosIfNeeded(
     auto replica_name = (*storage_settings)[DataLakeStorageSetting::paimon_replica_name].value;
 
     auto context = args.getContext();
-    const auto is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    const auto is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
     const auto is_replicated_database = is_on_cluster
         && DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
     /// Unlike ReplicatedMergeTree (which uses the stricter is_on_cluster || is_replicated_database ||

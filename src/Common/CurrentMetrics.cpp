@@ -213,6 +213,10 @@
     M(IcebergCatalogThreadsScheduled, "Number of queued or active jobs in the IcebergCatalog thread pool.") \
     M(IcebergSchedulePoolTask, "Number of tasks in the background schedule pool for Iceberg tables.") \
     M(IcebergSchedulePoolSize, "Limit on number of tasks in the background schedule pool for Iceberg tables.") \
+    M(IcebergCompactionThreads, "Number of threads in the IcebergCompaction thread pool.") \
+    M(IcebergCompactionThreadsActive, "Number of threads in the IcebergCompaction thread pool running a task.") \
+    M(IcebergCompactionThreadsScheduled, "Number of queued or active jobs in the IcebergCompaction thread pool.") \
+    M(IcebergCompactionSnapshots, "Number of iceberg compactions.") \
     M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryActiveThreads, "Number of active threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryScheduledThreads, "Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.") \
@@ -322,6 +326,7 @@
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
     M(FilesystemCacheKeys, "Number of keys in filesystem cache") \
+    M(FilesystemCacheOvercommitUsers, "Number of users tracked by the overcommit filesystem cache eviction policy") \
     M(FilesystemCacheReserveThreads, "Threads number trying to reserve space in cache") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(IcebergMetadataFilesCacheBytes, "Size of the Iceberg metadata cache in bytes") \
