@@ -1562,9 +1562,11 @@ String AggregateFunctionType::appendRandomRawValue(RandomGenerator & rg, Stateme
     String ret = aggregate;
 
     ret += "State(";
-    if (!subtypes.empty())
+    for (size_t i = 0; i < subtypes.size(); i++)
     {
-        ret += subtypes[0]->appendRandomRawValue(rg, gen);
+        if (i != 0)
+            ret += ",";
+        ret += subtypes[i]->appendRandomRawValue(rg, gen);
     }
     ret += ")";
     return ret;
@@ -1576,14 +1578,15 @@ String AggregateFunctionType::insertNumberEntry(
     String ret = aggregate;
 
     ret += "State(";
-    if (!subtypes.empty())
+    for (size_t i = 0; i < subtypes.size(); i++)
     {
-        ret += subtypes[0]->insertNumberEntry(rg, gen, max_strlen, max_nested_rows);
+        if (i != 0)
+            ret += ",";
+        ret += subtypes[i]->insertNumberEntry(rg, gen, max_strlen, max_nested_rows);
     }
     ret += ")";
     return ret;
 }
-
 
 String NestedType::typeName(const bool escape, const bool simplified) const
 {
@@ -1864,37 +1867,31 @@ StatementGenerator::randomDecimalType(RandomGenerator & rg, const uint64_t allow
 
 std::unique_ptr<SQLType> StatementGenerator::randomAggregateType(RandomGenerator & rg, const bool simple, BottomTypeName * tp)
 {
+    uint32_t nargs;
     uint32_t col_counter2 = 0;
+    std::string aggr;
     std::vector<std::unique_ptr<SQLType>> subtypes;
     AggregateFunction * af = tp ? tp->mutable_aggr() : nullptr;
-    static const std::vector<std::string> available_aggrs
-        = {"any",
-           "anyLast",
-           "avg",
-           "count",
-           "groupArrayArray",
-           "groupBitAnd",
-           "groupBitOr",
-           "groupBitXor",
-           "groupUniqArrayArray",
-           "groupUniqArrayArrayMap",
-           "max",
-           "maxMap",
-           "maxMappedArrays",
-           "min",
-           "minMap",
-           "minMappedArrays",
-           "sum",
-           "sumMap",
-           "sumMappedArrays",
-           "sumWithOverflow"};
-    std::string aggr = rg.pickRandomly(available_aggrs);
 
-    if (aggr == "count" && (simple || this->depth >= this->fc.max_depth))
+    if (!det_aggrs.empty())
+    {
+        const CHAggregate & agg = rg.pickRandomly(det_aggrs);
+        aggr = agg.fname;
+        nargs = agg.min_args == agg.max_args ? agg.min_args : rg.randomInt<uint32_t>(agg.min_args, agg.max_args);
+    }
+    else
+    {
+        static const std::vector<std::string> fallback_aggrs = {"any", "anyLast", "avg", "count", "max", "min", "sum", "sumWithOverflow"};
+        aggr = rg.pickRandomly(fallback_aggrs);
+        nargs = aggr == "count" ? 0 : 1;
+    }
+
+    if (nargs == 0 && (simple || this->depth >= this->fc.max_depth))
     {
         aggr = "any";
+        nargs = 1;
     }
-    if (aggr != "count")
+    for (uint32_t i = 0; i < nargs; i++)
     {
         this->depth++;
         subtypes.emplace_back(
