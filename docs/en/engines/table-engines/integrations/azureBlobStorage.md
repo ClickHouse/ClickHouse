@@ -105,7 +105,7 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 
 #### Partition strategy {#partition-strategy}
 
-`wildcard` (default): Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported.
+`wildcard`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported. Selected by default only under `compatibility` settings older than `26.5`; otherwise the default is `hive` (see the `file_like_engine_default_partition_strategy` setting).
 
 `hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
