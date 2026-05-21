@@ -210,12 +210,15 @@ public:
       */
     virtual int schedule();
 
-    /** This method is similar to schedule() but also returns epoll events mask
+    /** This method is similar to schedule() but also returns epoll events mask and an optional timeout.
       * Note that file descriptor returned by schedule() will be polled for read (EPOLLIN event) and errors
       * but for ISink implementations that write data to network or to files it is necessary to poll for write (EPOLLOUT) events as well.
+      *
+      * The third element is a timeout in milliseconds. If non-negative, the processor will be re-dispatched after
+      * the timeout even when the fd has not become readable. A value of -1 means "no timeout" (block until fd fires).
       */
 #ifdef OS_LINUX
-    virtual std::pair<int, uint32_t> scheduleForEvent();
+    virtual std::tuple<int, uint32_t, Int64> scheduleForEvent();
 #endif
 
     /* The method is called right after asynchronous job is done
