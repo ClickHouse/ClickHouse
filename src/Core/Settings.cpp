@@ -3368,10 +3368,11 @@ Defines what action ClickHouse performs when a join reaches any of the following
 - [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join)
 - [max_rows_in_join](/operations/settings/settings#max_rows_in_join)
 
-This setting applies only to
-[`join_algorithm`](/operations/settings/settings#join_algorithm) values that
-build an in-memory hash table (`hash`, `parallel_hash`). Other algorithms
-handle the limits internally - see
+This setting is honored only by the `hash` and `parallel_hash`
+[`join_algorithm`](/operations/settings/settings#join_algorithm) values. Other
+algorithms (for example, `partial_merge`, `grace_hash`, `auto`) handle the
+limits differently — by spilling to disk, re-partitioning, or switching
+strategy — see
 [`join_algorithm`](/operations/settings/settings#join_algorithm).
 
 Possible values:
