@@ -147,9 +147,9 @@ private:
     /// and there is a text index built on `mapValues(map_col)`.
     bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
 
-    std::vector<String> stringToTokens(const Field & field, bool apply_preprocessor, bool apply_postprocessor) const;
-    std::vector<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix, bool apply_preprocessor, bool apply_postprocessor) const;
-    std::vector<String> stringLikeToTokens(const Field & field, bool apply_preprocessor, bool apply_postprocessor) const;
+    std::vector<String> stringToTokens(const Field & field) const;
+    std::vector<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
+    std::vector<String> stringLikeToTokens(const Field & field) const;
     std::vector<OptimizedRegularExpression> stringLikeToPatterns(const Field & field, bool case_insensitive = false) const;
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
@@ -176,8 +176,10 @@ private:
     TextSearchMode global_search_mode = TextSearchMode::All;
     /// Reference preprocessor expression
     MergeTreeIndexTextPreprocessorPtr preprocessor;
+    bool has_preprocessor;
     /// Reference postprocessor expression (applied to tokens after tokenization)
     MergeTreeIndexTextPostprocessorPtr postprocessor;
+    bool has_postprocessor;
     /// Cache for tokens and their infos (cardinality, etc.)
     TextIndexTokensCachePtr tokens_cache;
     /// Cache for headers of the text index

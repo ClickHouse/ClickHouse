@@ -92,8 +92,6 @@ public:
     virtual void stringLikeToTokens(const char * data, size_t length, std::vector<String> & tokens) const = 0;
     virtual bool supportsStringLike() const = 0;
 
-    constexpr bool isArrayTokenizer() const { return type == Type::Array; }
-
 private:
     const Type type;
 };

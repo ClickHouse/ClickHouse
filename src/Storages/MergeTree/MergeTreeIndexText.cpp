@@ -1509,11 +1509,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     const auto & index_column = block.getByName(index_column_name);
     auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
 
-    /// has/hasAll/hasAny operate on array elements directly and bypass the postprocessor,
-    /// just as they bypass the tokenizer and preprocessor. The array tokenizer stores raw
-    /// elements; applying the postprocessor here would create a mismatch with query-side
-    /// lookups that also skip the postprocessor for these functions.
-    if (postprocessor->hasActions() && !tokenizer->isArrayTokenizer())
+    if (postprocessor->hasActions())
     {
         ColumnPtr tokenized = tokenizeToArray(*tokenizer, *preprocessed_column, offset, rows_read);
         ColumnPtr postprocessed = postprocessor->processTokensArrayBatch(assert_cast<const ColumnArray *>(tokenized.get()));
