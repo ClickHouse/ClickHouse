@@ -378,8 +378,7 @@ ASTPtr tryParseQuery(
                 scoped_parens.push_back(paren);
                 /// Extend `statement_end` to cover the paren itself: a multi-byte token
                 /// at the very boundary must not underflow `size_t` in the formatter.
-                if (paren.end > statement_end)
-                    statement_end = paren.end;
+                statement_end = std::max(paren.end, statement_end);
             }
         }
 
