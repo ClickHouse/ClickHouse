@@ -88,6 +88,29 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
     };
 
+    /// Helper: execute function, respecting throw_on_type_mismatch.
+    /// Some functions (e.g. comparisons) pass build() but throw during execute()
+    /// because executeGeneric calls getLeastSupertype which can throw NO_COMMON_TYPE.
+    /// Returns nullptr if execution fails with a type-related error and throwing is disabled.
+    auto try_execute = [&](const FunctionBasePtr & func_base, const ColumnsWithTypeAndName & args,
+                           const DataTypePtr & res_type, size_t rows, bool is_dry_run) -> ColumnPtr
+    {
+        if (throw_on_type_mismatch)
+            return func_base->execute(args, res_type, rows, is_dry_run);
+
+        try
+        {
+            return func_base->execute(args, res_type, rows, is_dry_run);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
+                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+                throw;
+            return nullptr;
+        }
+    };
+
     /// We use default implementation for Variant type only when default implementation for NULLs is used.
     /// If current column contains only NULLs, result column will also contain only NULLs.
     if (variant_column.hasOnlyNulls())
@@ -133,7 +156,14 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
             return res;
         }
         DataTypePtr nested_result_type = func_base->getResultType();
-        ColumnPtr nested_result = func_base->execute(new_arguments, nested_result_type, variant_column.size(), dry_run);
+        ColumnPtr nested_result = try_execute(func_base, new_arguments, nested_result_type, variant_column.size(), dry_run);
+        if (!nested_result)
+        {
+            /// execute() failed with a type-related error and throw_on_type_mismatch is false — return NULLs for all rows.
+            auto res = result_type->createColumn();
+            res->insertManyDefaults(variant_column.size());
+            return res;
+        }
         removeLowCardinalityFromResult(nested_result_type, nested_result);
 
         /// If result is Nullable(Nothing) or Nothing, just return column filled with NULLs/defaults.
@@ -251,8 +281,15 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
             return res;
         }
         DataTypePtr nested_result_type = func_base->getResultType();
-        ColumnPtr nested_result = func_base->execute(new_arguments, nested_result_type, new_arguments[0].column->size(), dry_run)
-                            ->convertToFullColumnIfConst();
+        ColumnPtr nested_result = try_execute(func_base, new_arguments, nested_result_type, new_arguments[0].column->size(), dry_run);
+        if (!nested_result)
+        {
+            /// execute() failed with a type-related error and throw_on_type_mismatch is false — return NULLs for all rows.
+            auto res = result_type->createColumn();
+            res->insertManyDefaults(variant_column.size());
+            return res;
+        }
+        nested_result = nested_result->convertToFullColumnIfConst();
         removeLowCardinalityFromResult(nested_result_type, nested_result);
 
         /// If result is Nullable(Nothing) or Nothing, just return column filled with NULLs/defaults.
@@ -445,8 +482,14 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         auto nested_result_type = func_base->getResultType();
         auto nested_result
-            = func_base->execute(variants_arguments[i], nested_result_type, variants_arguments[i][0].column->size(), dry_run)
-                  ->convertToFullColumnIfConst();
+            = try_execute(func_base, variants_arguments[i], nested_result_type, variants_arguments[i][0].column->size(), dry_run);
+        if (!nested_result)
+        {
+            /// execute() failed with a type-related error and throw_on_type_mismatch is false — treat as NULL result.
+            variants_results[i] = nullptr;
+            continue;
+        }
+        nested_result = nested_result->convertToFullColumnIfConst();
         removeLowCardinalityFromResult(nested_result_type, nested_result);
 
         variants_result_types[i] = nested_result_type;
