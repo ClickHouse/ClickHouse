@@ -673,7 +673,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 }
 
 
-bool StorageReplicatedMergeTree::checkFixedGranularityInZookeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info) const
+bool StorageReplicatedMergeTree::checkFixedGranularityInZookeeper(const ZooKeeperRetriesInfo & zookeeper_retries_info)
 {
     bool fixed_granularity = false;
 
@@ -688,7 +688,13 @@ bool StorageReplicatedMergeTree::checkFixedGranularityInZookeeper(const ZooKeepe
     if (zookeeper_retries_info.max_retries > 0)
     {
         ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::checkFixedGranularityInZookeeper", log.load(), zookeeper_retries_info};
-        retries_ctl.retryLoop([&] { check_fixed_granularity(); });
+        retries_ctl.retryLoop([&]
+        {
+            /// Refresh current_zookeeper on retry since it's not auto-updated during creation (RestartingThread not yet running).
+            if (retries_ctl.isRetry())
+                setZooKeeper();
+            check_fixed_granularity();
+        });
     }
     else
     {
@@ -881,12 +887,18 @@ std::vector<String> getAncestors(const String & path)
 
 }
 
-void StorageReplicatedMergeTree::createNewZooKeeperNodes(const ZooKeeperRetriesInfo & zookeeper_retries_info) const
+void StorageReplicatedMergeTree::createNewZooKeeperNodes(const ZooKeeperRetriesInfo & zookeeper_retries_info)
 {
     if (zookeeper_retries_info.max_retries > 0)
     {
         ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::createNewZooKeeperNodes", log.load(), zookeeper_retries_info};
-        retries_ctl.retryLoop([&] { createNewZooKeeperNodesAttempt(); });
+        retries_ctl.retryLoop([&]
+        {
+            /// Refresh current_zookeeper on retry since it's not auto-updated during creation (RestartingThread not yet running).
+            if (retries_ctl.isRetry())
+                setZooKeeper();
+            createNewZooKeeperNodesAttempt();
+        });
     }
     else
     {
@@ -965,13 +977,19 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodesAttempt() const
     }
 }
 
-bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot, const ZooKeeperRetriesInfo & zookeeper_retries_info) const
+bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot, const ZooKeeperRetriesInfo & zookeeper_retries_info)
 {
     bool table_created = false;
     if (zookeeper_retries_info.max_retries > 0)
     {
         ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::createTableIfNotExists", log.load(), zookeeper_retries_info};
-        retries_ctl.retryLoop([&] { table_created = createTableIfNotExistsAttempt(metadata_snapshot, zookeeper_retries_info.query_status); });
+        retries_ctl.retryLoop([&]
+        {
+            /// Refresh current_zookeeper on retry since it's not auto-updated during creation (RestartingThread not yet running).
+            if (retries_ctl.isRetry())
+                setZooKeeper();
+            table_created = createTableIfNotExistsAttempt(metadata_snapshot, zookeeper_retries_info.query_status);
+        });
     }
     else
     {
@@ -1131,12 +1149,18 @@ bool StorageReplicatedMergeTree::createTableIfNotExistsAttempt(const StorageMeta
                     "of wrong zookeeper_path or because of logical error");
 }
 
-void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metadata_snapshot, const ZooKeeperRetriesInfo & zookeeper_retries_info) const
+void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metadata_snapshot, const ZooKeeperRetriesInfo & zookeeper_retries_info)
 {
     if (zookeeper_retries_info.max_retries > 0)
     {
         ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::createReplica", log.load(), zookeeper_retries_info};
-        retries_ctl.retryLoop([&] { createReplicaAttempt(metadata_snapshot, zookeeper_retries_info.query_status); });
+        retries_ctl.retryLoop([&]
+        {
+            /// Refresh current_zookeeper on retry since it's not auto-updated during creation (RestartingThread not yet running).
+            if (retries_ctl.isRetry())
+                setZooKeeper();
+            createReplicaAttempt(metadata_snapshot, zookeeper_retries_info.query_status);
+        });
     }
     else
     {
@@ -1691,13 +1715,19 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
   */
 bool StorageReplicatedMergeTree::checkTableStructure(
     const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, int32_t * metadata_version, bool strict_check,
-    const ZooKeeperRetriesInfo & zookeeper_retries_info) const
+    const ZooKeeperRetriesInfo & zookeeper_retries_info)
 {
     bool same_structure = false;
     if (zookeeper_retries_info.max_retries > 0)
     {
         ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::checkTableStructure", log.load(), zookeeper_retries_info};
-        retries_ctl.retryLoop([&] { same_structure = checkTableStructureAttempt(zookeeper_prefix, metadata_snapshot, metadata_version, strict_check); });
+        retries_ctl.retryLoop([&]
+        {
+            /// Refresh current_zookeeper on retry since it's not auto-updated during creation (RestartingThread not yet running).
+            if (retries_ctl.isRetry())
+                setZooKeeper();
+            same_structure = checkTableStructureAttempt(zookeeper_prefix, metadata_snapshot, metadata_version, strict_check);
+        });
     }
     else
     {
@@ -2109,7 +2139,13 @@ void StorageReplicatedMergeTree::syncPinnedPartUUIDs(const ZooKeeperRetriesInfo 
     if (zookeeper_retries_info.max_retries > 0)
     {
         ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::syncPinnedPartUUIDs", log.load(), zookeeper_retries_info};
-        retries_ctl.retryLoop([&] { read_pinned_part_uuids(); });
+        retries_ctl.retryLoop([&]
+        {
+            /// Refresh current_zookeeper on retry since it's not auto-updated during creation (RestartingThread not yet running).
+            if (retries_ctl.isRetry())
+                setZooKeeper();
+            read_pinned_part_uuids();
+        });
     }
     else
     {
@@ -4899,7 +4935,13 @@ void StorageReplicatedMergeTree::startBeingLeader(const ZooKeeperRetriesInfo & z
     if (zookeeper_retries_info.max_retries > 0)
     {
         ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::startBeingLeader", log.load(), zookeeper_retries_info};
-        retries_ctl.retryLoop([&] { start_being_leader(); });
+        retries_ctl.retryLoop([&]
+        {
+            /// Refresh current_zookeeper on retry since it's not auto-updated during creation (RestartingThread not yet running).
+            if (retries_ctl.isRetry())
+                setZooKeeper();
+            start_being_leader();
+        });
     }
     else
     {
@@ -10181,7 +10223,7 @@ String StorageReplicatedMergeTree::getTableSharedID() const
     {
         /// Can happen if table was partially initialized before drop by DatabaseCatalog
         if (table_shared_id == UUIDHelpers::Nil)
-            createTableSharedID(/* zookeeper_retries_info = */ {});
+            createTableSharedIDAttempt();
     }
     else
     {
@@ -10196,12 +10238,18 @@ std::map<std::string, MutationCommands> StorageReplicatedMergeTree::getUnfinishe
     return queue.getUnfinishedMutations();
 }
 
-void StorageReplicatedMergeTree::createTableSharedID(const ZooKeeperRetriesInfo & zookeeper_retries_info) const
+void StorageReplicatedMergeTree::createTableSharedID(const ZooKeeperRetriesInfo & zookeeper_retries_info)
 {
     if (zookeeper_retries_info.max_retries > 0)
     {
         ZooKeeperRetriesControl retries_ctl{"StorageReplicatedMergeTree::createTableSharedID", log.load(), zookeeper_retries_info};
-        retries_ctl.retryLoop([&] { createTableSharedIDAttempt(); });
+        retries_ctl.retryLoop([&]
+        {
+            /// Refresh current_zookeeper on retry since it's not auto-updated during creation (RestartingThread not yet running).
+            if (retries_ctl.isRetry())
+                setZooKeeper();
+            createTableSharedIDAttempt();
+        });
     }
     else
     {
