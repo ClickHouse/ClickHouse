@@ -142,9 +142,6 @@ AzureBlobStorage::ConnectionParams getAzureConnectionParams(
 
         connection_params.endpoint.storage_account_url = connection_url;
         connection_params.endpoint.container_name = container_name;
-        connection_params.endpoint.account_name = account_name.value_or("");
-        connection_params.endpoint.account_key = account_key.value_or("");
-        connection_params.endpoint.add_account_name_to_url = false;
         connection_params.auth_method = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(*account_name, *account_key);
     }
 
@@ -327,12 +324,7 @@ bool AzureStorageParsedArguments::collectCredentials(
 
 void AzureStorageParsedArguments::fromDisk(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure)
 {
-    auto object_storage = disk->getObjectStorage();
-    /// Unwrap decorator object storages (e.g. `CachedObjectStorage`) before the cast.
-    /// See `S3StorageParsedArguments::fromDisk` and issue #89300 for the rationale.
-    while (auto inner = object_storage->getUnderlying())
-        object_storage = std::move(inner);
-    const auto & azure_object_storage = assert_cast<const AzureObjectStorage &>(*object_storage);
+    const auto & azure_object_storage = assert_cast<const AzureObjectStorage &>(*disk->getObjectStorage());
 
     connection_params = azure_object_storage.getConnectionParameters();
     ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
@@ -356,7 +348,7 @@ void AzureStorageParsedArguments::initializeForOneLake(ASTs & args, ContextPtr c
 
     fillBlobsFromURLCommon(connection_url, ".com", ".dfs.fabric.microsoft.com");
 
-    connection_params.endpoint.container_already_exists = true;
+    connection_params.endpoint.additional_params = "resource=REDACTED&directory=REDACTED&recursive=REDACTED";
 
     auto request_settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
     connection_params.client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *request_settings, /*for_disk=*/ false);
