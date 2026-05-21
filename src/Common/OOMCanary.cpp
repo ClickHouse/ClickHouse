@@ -231,6 +231,7 @@ void OOMCanary::monitorThread()
         /// Wait for either the canary to die or `stop()` to signal shutdown.
         epoll.add(pidfd, EPOLLIN);
         epoll_event events[2];
+        events[0].data.fd = events[1].data.fd = -1;
         const size_t n = epoll.getManyReady(2, events, -1);
 
         bool canary_died = false;
