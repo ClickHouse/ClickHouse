@@ -2085,6 +2085,7 @@ Chunk StorageFileSource::generate()
                 }
             }
 
+            bool current_file_is_remote = false;
             if (!read_buf)
             {
                 if (storage->user_files_volume)
@@ -2100,6 +2101,7 @@ Chunk StorageFileSource::generate()
 
                     current_file_size = disk->getFileSize(relative_path);
                     current_file_last_modified = disk->getLastModified(relative_path);
+                    current_file_is_remote = disk->isRemote();
 
                     if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && current_file_size == 0)
                         continue;
@@ -2179,7 +2181,7 @@ Chunk StorageFileSource::generate()
                     storage->format_settings,
                     parser_shared_resources,
                     format_filter_info,
-                    /*is_remote_fs=*/false,
+                    /*is_remote_fs=*/current_file_is_remote,
                     CompressionMethod::None,
                     need_only_count);
             }
@@ -2198,7 +2200,7 @@ Chunk StorageFileSource::generate()
                     storage->format_settings,
                     parser_shared_resources,
                     format_filter_info,
-                    /*is_remote_fs=*/false,
+                    /*is_remote_fs=*/current_file_is_remote,
                     CompressionMethod::None,
                     need_only_count);
             }
