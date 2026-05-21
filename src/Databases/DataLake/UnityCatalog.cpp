@@ -18,7 +18,6 @@ namespace DB::ErrorCodes
 {
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace
