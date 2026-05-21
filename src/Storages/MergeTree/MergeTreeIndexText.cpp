@@ -122,8 +122,9 @@ DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInf
 {
 }
 
-PostingsSerialization::PostingsSerialization(PostingListCodecPtr posting_list_codec_)
+PostingsSerialization::PostingsSerialization(PostingListCodecPtr posting_list_codec_, MergeTreeIndexVersion serialization_version_)
     : posting_list_codec(std::move(posting_list_codec_))
+    , serialization_version(serialization_version_)
     , raw_postings_buffer(MAX_CARDINALITY_FOR_RAW_POSTINGS)
 {
     chassert(posting_list_codec);
@@ -188,6 +189,16 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
     if (header & IsCompressed)
     {
         chassert(posting_list_codec);
+        static constexpr auto required_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec);
+
+        if (serialization_version < required_version)
+        {
+            /// Pre-WithCodec parts don't persist the codec type, but Bitpacking was the only
+            /// compression codec at the time, so an IsCompressed posting list must be Bitpacking.
+            if (posting_list_codec->getType() == IPostingListCodec::Type::None)
+                posting_list_codec = PostingListCodecFactory::createPostingListCodec(IPostingListCodec::Type::Bitpacking);
+        }
+
         chassert(posting_list_codec->getType() != IPostingListCodec::Type::None);
         auto postings = std::make_shared<PostingList>();
         posting_list_codec->decode(istr, *postings);
@@ -360,13 +371,16 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
 
     auto text_index_header = loadHeader(*index_stream, state);
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(text_index_header->codec_type);
-    auto postings_serialization = PostingsSerialization(std::move(postings_codec));
-    postings_codec_type = text_index_header->codec_type;
+    auto postings_serialization = PostingsSerialization(std::move(postings_codec), text_index_header->version);
     serialization_version = text_index_header->version;
 
     analyzeDictionaryForTokens(text_index_header->sparse_index, postings_serialization, *dictionary_stream, state);
     analyzeDictionaryForPatterns(text_index_header->sparse_index, postings_serialization, *dictionary_stream, state);
     readPostingsForRareTokens(postings_serialization, *postings_stream, state);
+
+    /// Capture the codec after the analysis — for Pre-WithCodec parts the
+    /// codec may have been lazily installed while decoding an IsCompressed posting list.
+    postings_codec_type = postings_serialization.getPostingListCodec()->getType();
 }
 
 void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
@@ -595,17 +609,7 @@ std::shared_ptr<TextIndexHeader> MergeTreeIndexGranuleText::loadHeader(MergeTree
     const auto load_header = [&]
     {
         header_stream.seekToStart();
-        auto header = std::make_shared<TextIndexHeader>(TextIndexSerialization::deserializeHeader(*header_stream.getDataBuffer()));
-
-        /// Pre-WithCodec parts don't persist the codec type. Take it from the index definition.
-        if (header->version < static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec))
-        {
-            const auto & text_index = assert_cast<const MergeTreeIndexText &>(state.index);
-            if (const auto * codec = text_index.getPostingListCodec())
-                header->codec_type = codec->getType();
-        }
-
-        return header;
+        return std::make_shared<TextIndexHeader>(TextIndexSerialization::deserializeHeader(*header_stream.getDataBuffer()));
     };
 
     auto header_hash = TextIndexHeaderCache::hash(index_id_for_caches);
@@ -1365,7 +1369,9 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 3 streams: index, dictionary, postings. One of the streams is missing");
 
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_type);
-    PostingsSerialization postings_serialization(std::move(postings_codec));
+    PostingsSerialization postings_serialization(
+        std::move(postings_codec),
+        static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
 
     auto sparse_index_block = serializeTokensAndPostings(
         tokens_and_postings,

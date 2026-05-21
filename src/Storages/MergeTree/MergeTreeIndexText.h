@@ -149,7 +149,7 @@ struct TokenPostingsInfo;
 
 struct PostingsSerialization
 {
-    explicit PostingsSerialization(PostingListCodecPtr posting_list_codec_);
+    PostingsSerialization(PostingListCodecPtr posting_list_codec_, MergeTreeIndexVersion serialization_version_);
 
     enum Flags : UInt64
     {
@@ -176,6 +176,7 @@ struct PostingsSerialization
 
 private:
     PostingListCodecPtr posting_list_codec;
+    MergeTreeIndexVersion serialization_version;
 
     /// Reusable buffers to avoid repeated heap allocations during deserialization.
     std::vector<UInt32> raw_postings_buffer;

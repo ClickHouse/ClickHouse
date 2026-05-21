@@ -300,10 +300,6 @@ TEST(PostingListCursorTest, LargeEmbeddedCursor)
     EXPECT_EQ(drained, docs);
 }
 
-/// Embedded posting lists used to be capped at MAX_EMBEDDED_POSTING_LIST_ROWS (6).
-/// Rare-token roaring bitmaps materialized through `makeLazyCursor` can hold
-/// arbitrary cardinalities; the cursor must handle lists larger than the legacy
-/// inline buffer (and larger than BLOCK_SIZE) without truncation.
 TEST(PostingListCursorTest, OversizedEmbeddedCursorExceedsBlockSize)
 {
     constexpr uint32_t count = 500; // > MAX_EMBEDDED_POSTING_LIST_ROWS and > BLOCK_SIZE
@@ -3626,15 +3622,10 @@ TEST(PostingListCursorTest, TextIndexHeaderInitialVersionDefaultsToNoneCodec)
     EXPECT_EQ(assert_cast<const ColumnUInt64 &>(*sparse_index_data.sparse_index.offsets_in_file).getData()[0], 7u);
 }
 
-// Section: row_offset beyond UInt32::max — must throw LOGICAL_ERROR.
-// Posting-list doc IDs are 32-bit, so a `row_offset` above `UInt32::max` cannot be a
-// legitimate input from the read pipeline. Without an explicit check, the
-// `out[values[i] - row_offset]` writers in `padColumn` and the leapfrog helpers
-// would underflow `size_t` and write OOB; silently swallowing the call would also
-// drop legitimate filter matches. The contract is to fail loudly.
-//
-// Skipped in debug and sanitizer builds: `DB::Exception` aborts on `LOGICAL_ERROR`
-// there (see `handle_error_code` in `Exception.cpp`), so `EXPECT_THROW` can't catch it.
+// Section: row_offset beyond UInt32::max must throw — doc IDs are 32-bit, and
+// `values[i] - row_offset` would otherwise underflow `size_t` and write OOB.
+// Skipped under debug/sanitizers: `LOGICAL_ERROR` aborts there, so `EXPECT_THROW`
+// can't catch it.
 #ifndef DEBUG_OR_SANITIZER_BUILD
 
 TEST(PostingListCursorTest, LinearOrRowOffsetAboveUInt32MaxThrows)
@@ -3701,15 +3692,8 @@ TEST(PostingListCursorTest, LazyIntersectRowOffsetAboveUInt32MaxThrows)
 
 #endif
 
-// Section: row range ending at UInt32::max — the matching last row must not be dropped.
-// `clampRowEnd` used to saturate the exclusive end to UInt32::max, which collided with a
-// real doc_id at the boundary and made `lower_bound`-based range search produce an empty
-// interval. `findRowRangeEnd` returns `end` directly when the exclusive bound exceeds
-// UInt32::max, preserving the match.
-//
-// Posting lists below are sparse on purpose (cardinality < range_span) so they bypass
-// the dense-memset fast path in `linearOr`/`linearAnd` and actually exercise the
-// `lower_bound + findRowRangeEnd` path that contained the off-by-one.
+// Regression guard for an off-by-one in `findRowRangeEnd` at the `UInt32::max`
+// boundary. Fixtures are sparse to dodge the dense-memset fast path.
 
 TEST(PostingListCursorTest, LinearOrIncludesRowAtUInt32Max)
 {

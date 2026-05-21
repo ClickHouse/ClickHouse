@@ -119,7 +119,7 @@ void MergeTreeReaderTextIndex::setIndexGranule(MergeTreeIndexGranulePtr index_gr
         && granule->getSerializationVersion() >= required_version
         && condition_text.getAllSearchPatterns().empty();
 
-    postings_serialization = PostingsSerialization(std::move(postings_codec));
+    postings_serialization = PostingsSerialization(std::move(postings_codec), granule->getSerializationVersion());
 }
 
 void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader * main_reader)

@@ -209,7 +209,11 @@ static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex &
 {
     const auto * codec = typeid_cast<const MergeTreeIndexText &>(index).getPostingListCodec();
     auto codec_type = codec ? codec->getType() : IPostingListCodec::Type::None;
-    return PostingsSerialization(PostingListCodecFactory::createPostingListCodec(codec_type));
+    /// The merge task always writes the current on-disk format, so the legacy lazy-codec fallback
+    /// doesn't apply — pass `WithCodec` to keep the codec fixed to the index definition.
+    return PostingsSerialization(
+        PostingListCodecFactory::createPostingListCodec(codec_type),
+        static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
 }
 
 MergeTextIndexesTask::MergeTextIndexesTask(
