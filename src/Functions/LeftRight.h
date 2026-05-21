@@ -58,14 +58,27 @@ public:
     bool canThrow(const DataTypesWithConstInfo & arguments) const override { return !arguments[1].is_const; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if ((is_utf8 && !isString(arguments[0])) || !isStringOrFixedString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
+        if ((is_utf8 && !isString(arguments[0].type)) || !isStringOrFixedString(arguments[0].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0].type->getName(), getName());
 
-        if (!isNativeNumber(arguments[1]))
+        if (!isNativeNumber(arguments[1].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
-                    arguments[1]->getName(), getName());
+                    arguments[1].type->getName(), getName());
+
+        /// right(s, INT64_MIN) overflows when negated.
+        if constexpr (direction == SubstringDirection::Right)
+        {
+            if (const auto * col_length_const = checkAndGetColumnConst<IColumn>(arguments[1].column.get()))
+            {
+                const Int64 length_value = col_length_const->getInt(0);
+                Int64 abs_length;
+                if (length_value < 0 && common::subOverflow(Int64(0), length_value, abs_length))
+                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                        "Argument of function {} is out of bound: {}", getName(), length_value);
+            }
+        }
 
         return std::make_shared<DataTypeString>();
     }

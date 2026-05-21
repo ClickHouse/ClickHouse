@@ -25,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -39,20 +40,29 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override { return !arguments[1].is_const; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isString(arguments[0]))
+        if (!isString(arguments[0].type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
+                "Illegal type {} of argument of function {}", arguments[0].type->getName(), getName());
 
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get());
+        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[1].type.get());
         if (!array_type || !checkAndGetDataType<DataTypeString>(array_type->getNestedType().get()))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}", arguments[1]->getName(), getName());
+                "Illegal type {} of argument of function {}", arguments[1].type->getName(), getName());
+
+        /// Validate the constant needles array size.
+        if (const auto * col_needles_const = checkAndGetColumnConst<ColumnArray>(arguments[1].column.get()))
+        {
+            const Array needles_arr = col_needles_const->getValue<Array>();
+            if (needles_arr.size() > std::numeric_limits<UInt8>::max())
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Number of needles for function {} ({}) exceeds the limit of 255", getName(), needles_arr.size());
+        }
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
