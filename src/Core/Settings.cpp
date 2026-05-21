@@ -3327,15 +3327,17 @@ When enabled, ClickHouse will provide exact value for rows_before_limit_at_least
 When enabled, ClickHouse will provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation
 )", 0) \
     DECLARE(UInt64, max_rows_in_join, 0, R"(
-Limits the number of rows in the hash table that is used when joining tables.
+Limits the number of rows in the right-side data structure (typically a hash
+table) used when joining tables.
 
-This settings applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
+This setting applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
 operations and the [Join](/engines/table-engines/special/join) table engine.
 
-If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
-
-ClickHouse can proceed with different actions when the limit is reached. Use the
-[`join_overflow_mode`](/operations/settings/settings#join_overflow_mode) setting to choose the action.
+If a query contains multiple joins, ClickHouse checks this setting for every
+intermediate result. When the limit is reached, the action depends on the
+chosen [`join_algorithm`](/operations/settings/settings#join_algorithm) — see
+that setting for the per-algorithm behavior (spill, re-partition, switch, or
+throw/break per [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode)).
 
 Possible values:
 
@@ -3343,16 +3345,17 @@ Possible values:
 - `0` — Unlimited number of rows.
 )", 0) \
     DECLARE(UInt64, max_bytes_in_join, 0, R"(
-The maximum size in bytes of the hash table used by JOIN execution.
+The maximum size in bytes of the right-side data structure (typically a hash
+table) used when joining tables.
 
 This setting applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
 operations and the [Join table engine](/engines/table-engines/special/join).
 
-For `SELECT ... JOIN`, this limit is used by join algorithms that build a hash
-table in memory (for example, `hash` and `parallel_hash`).
-
-If this limit is reached, ClickHouse follows
-[`join_overflow_mode`](/operations/settings/settings#join_overflow_mode).
+If a query contains multiple joins, ClickHouse checks this setting for every
+intermediate result. When the limit is reached, the action depends on the
+chosen [`join_algorithm`](/operations/settings/settings#join_algorithm) — see
+that setting for the per-algorithm behavior (spill, re-partition, switch, or
+throw/break per [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode)).
 
 Possible values:
 
@@ -3365,18 +3368,18 @@ Defines what action ClickHouse performs when a join reaches any of the following
 - [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join)
 - [max_rows_in_join](/operations/settings/settings#max_rows_in_join)
 
+This setting applies only to
+[`join_algorithm`](/operations/settings/settings#join_algorithm) values that
+build an in-memory hash table (`hash`, `parallel_hash`). Other algorithms
+handle the limits internally - see
+[`join_algorithm`](/operations/settings/settings#join_algorithm).
+
 Possible values:
 
 - `THROW` — ClickHouse throws an exception and stops the query.
 - `BREAK` — ClickHouse stops the query and does not throw an exception.
 
 Default value: `THROW`.
-
-This behavior is used with settings such as
-[`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join) and
-[`max_rows_in_join`](/operations/settings/settings#max_rows_in_join). The
-limits apply to join algorithms that build an in-memory hash table (for
-example, `hash` and `parallel_hash`).
 
 **See Also**
 
