@@ -5,6 +5,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNothing.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -54,7 +55,7 @@ TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & argumen
         return {};
 
     TokensWithPosition search_tokens;
-    std::vector<String> tokens_array;
+    VectorWithMemoryTracking<String> tokens_array;
 
     if (needles_field.getType() == Field::Types::String)
     {

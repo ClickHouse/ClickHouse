@@ -1,4 +1,5 @@
 #include <numeric>
+#include <thread>
 
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeDateTime.h>
