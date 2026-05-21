@@ -2113,6 +2113,15 @@ void TCPHandler::sendHello()
     {
         auto rules = server.context()->getAccessControl().getPasswordComplexityRules();
 
+        /// Mirror the client-side cap so a misconfiguration fails at the server's own
+        /// boundary with a message pointing at the config, rather than producing an
+        /// `UNEXPECTED_PACKET_FROM_SERVER` on the client.
+        if (rules.size() > DBMS_MAX_PASSWORD_COMPLEXITY_RULES)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Configured {} password-complexity rules, maximum allowed is {}. "
+                "Reduce the number of <password_complexity> entries in the server config.",
+                rules.size(), DBMS_MAX_PASSWORD_COMPLEXITY_RULES);
+
         writeVarUInt(rules.size(), *out);
         for (const auto & [original_pattern, exception_message] : rules)
         {

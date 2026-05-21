@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Client/sanitizeUntrustedServerString.h>
+#include <Core/ProtocolDefines.h>
 
 using namespace DB;
 
@@ -149,7 +150,8 @@ TEST(SanitizeUntrustedServerString, MaxPasswordComplexityRulesCapIsTight)
 {
     /// `rules_size` from the server feeds directly into `reserve`; without a cap
     /// a hostile server forces an arbitrarily large allocation. Real configurations
-    /// declare a handful of rules at most.
-    EXPECT_LE(MAX_PASSWORD_COMPLEXITY_RULES, 4096u);
-    EXPECT_GE(MAX_PASSWORD_COMPLEXITY_RULES, 16u);
+    /// declare a handful of rules at most. The constant is shared between server
+    /// (TCPHandler::sendHello) and client (Connection::receiveHello).
+    EXPECT_LE(DBMS_MAX_PASSWORD_COMPLEXITY_RULES, 4096u);
+    EXPECT_GE(DBMS_MAX_PASSWORD_COMPLEXITY_RULES, 16u);
 }

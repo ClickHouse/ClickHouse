@@ -84,6 +84,13 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRE
 
 static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PASSWORD_COMPLEXITY_RULES = 54461;
 
+/// Upper bound on the number of password-complexity rules carried in the server
+/// Hello packet. Real-world configurations declare a handful of rules at most.
+/// The server rejects configurations that exceed this when constructing its Hello
+/// so the operator sees the limit at its own boundary; the client enforces the
+/// same bound on receive so a hostile server cannot force a huge `reserve`.
+static constexpr auto DBMS_MAX_PASSWORD_COMPLEXITY_RULES = 256;
+
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2 = 54462;
 
 static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_TOTAL_BYTES_IN_PROGRESS = 54463;

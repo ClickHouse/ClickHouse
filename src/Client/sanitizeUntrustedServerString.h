@@ -15,12 +15,6 @@ namespace DB
 /// which is a denial-of-service vector against the connecting client).
 constexpr size_t MAX_SERVER_HELLO_STRING_SIZE = 4096;
 
-/// Cap on the number of password-complexity rules the server can declare. The
-/// rule count is server-supplied and used directly for a `reserve`, so without
-/// a cap a hostile server can force an arbitrarily large allocation. Real-world
-/// configurations have a handful of rules at most.
-constexpr size_t MAX_PASSWORD_COMPLEXITY_RULES = 256;
-
 /// Replace ASCII C0 control characters (0x00-0x1F), DEL (0x7F), and the UTF-8
 /// encoding of C1 controls (U+0080-U+009F, encoded as `0xC2 0x80..0x9F`) with '?'
 /// so a hostile server cannot inject terminal escape sequences via fields that the

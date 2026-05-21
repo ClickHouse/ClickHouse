@@ -611,11 +611,12 @@ void Connection::receiveHello()
             UInt64 rules_size;
             readVarUInt(rules_size, *in);
             /// `rules_size` is server-controlled and feeds a `reserve`; reject absurd
-            /// values so a hostile server cannot force a huge allocation.
-            if (rules_size > MAX_PASSWORD_COMPLEXITY_RULES)
+            /// values so a hostile server cannot force a huge allocation. The server
+            /// enforces the same cap at construction time (see TCPHandler::sendHello).
+            if (rules_size > DBMS_MAX_PASSWORD_COMPLEXITY_RULES)
                 throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
                     "Server declared {} password-complexity rules, maximum allowed is {}",
-                    rules_size, MAX_PASSWORD_COMPLEXITY_RULES);
+                    rules_size, DBMS_MAX_PASSWORD_COMPLEXITY_RULES);
             password_complexity_rules.reserve(rules_size);
 
             for (size_t i = 0; i < rules_size; ++i)
