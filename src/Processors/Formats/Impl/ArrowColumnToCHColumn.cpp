@@ -230,7 +230,7 @@ static ColumnWithTypeAndName readColumnWithStringData(const std::shared_ptr<arro
         {
             for (size_t i = 0; i < chunk_length; ++i)
             {
-                if (!chunk.IsNull(i) && buffer)
+                if (!chunk.IsNull(i))
                 {
                     const size_t safe_offset = static_cast<size_t>(chunk.value_offset(i));
                     const size_t safe_length = static_cast<size_t>(chunk.value_length(i));
