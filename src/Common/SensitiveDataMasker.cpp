@@ -251,12 +251,13 @@ size_t SensitiveDataMasker::rulesCount() const
 }
 
 
-std::string wipeSensitiveDataAndCutToLength(std::string str, size_t max_length)
+std::string wipeSensitiveDataAndCutToLength(std::string str, size_t max_length, bool wipe_sensitive)
 {
     std::string res = std::move(str);
 
-    if (auto masker = SensitiveDataMasker::getInstance())
-        masker->wipeSensitiveData(res);
+    if (wipe_sensitive)
+        if (auto masker = SensitiveDataMasker::getInstance())
+            masker->wipeSensitiveData(res);
 
     size_t length = res.length();
     if (max_length && (length > max_length))

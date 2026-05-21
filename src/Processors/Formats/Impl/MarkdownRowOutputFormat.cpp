@@ -59,14 +59,20 @@ void MarkdownRowOutputFormat::writeField(const IColumn & column, const ISerializ
 
 void registerOutputFormatMarkdown(FormatFactory & factory)
 {
-    factory.registerOutputFormat("Markdown", [](
-        WriteBuffer & buf,
-        const Block & sample,
-        const FormatSettings & settings,
-        FormatFilterInfoPtr /*format_filter_info*/)
+    auto registerWithName = [&](const auto & name)
     {
-        return std::make_shared<MarkdownRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
-    });
+        factory.registerOutputFormat(name, [](
+            WriteBuffer & buf,
+            const Block & sample,
+            const FormatSettings & settings,
+            FormatFilterInfoPtr /*format_filter_info*/)
+        {
+            return std::make_shared<MarkdownRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
+        });
+    };
+
+    registerWithName("Markdown");
+    registerWithName("MD");
 
     factory.markOutputFormatSupportsParallelFormatting("Markdown");
     factory.registerFileExtension("md", "Markdown");

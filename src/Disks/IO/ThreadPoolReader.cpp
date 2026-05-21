@@ -9,6 +9,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
@@ -38,6 +39,8 @@
         #define SYS_preadv2 286
     #elif defined(__loongarch64)
         #define SYS_preadv2 286
+    #elif defined(__e2k__)
+        #define SYS_preadv2 395
     #else
         #error "Unsupported architecture"
     #endif
@@ -56,7 +59,6 @@ namespace ProfileEvents
     extern const Event ThreadPoolReaderPageCacheMissElapsedMicroseconds;
     extern const Event AsynchronousReaderIgnoredBytes;
 
-    extern const Event ReadBufferFromFileDescriptorRead;
     extern const Event ReadBufferFromFileDescriptorReadFailed;
     extern const Event ReadBufferFromFileDescriptorReadBytes;
     extern const Event DiskReadElapsedMicroseconds;
@@ -77,7 +79,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
-
+    extern const int NOT_IMPLEMENTED;
 }
 
 #if defined(OS_LINUX)
@@ -119,8 +121,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
     {
         /// It reports real time spent including the time spent while thread was preempted doing nothing.
         /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
-        /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it
-        /// (NetlinkMetricsProvider has about 500K RPS).
+        /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it.
         Stopwatch watch(CLOCK_MONOTONIC);
 
         SCOPE_EXIT({
@@ -154,7 +155,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             if (!res)
             {
                 /// The file has ended.
-                promise.set_value({0, 0, nullptr});
+                promise.set_value({ .buf = nullptr, .size = 0, .offset = 0, .file_offset_of_buffer_end = request.offset });
                 return future;
             }
 
@@ -196,7 +197,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
             ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
 
-            promise.set_value({bytes_read, request.ignore, nullptr});
+            promise.set_value({ .buf = request.buf, .size = bytes_read, .offset = request.ignore, .file_offset_of_buffer_end = request.offset + bytes_read });
             return future;
         }
     }
@@ -245,8 +246,13 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
         ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
 
-        return Result{ .size = bytes_read, .offset = request.ignore };
+        return Result{ .buf = request.buf, .size = bytes_read, .offset = request.ignore, .file_offset_of_buffer_end = request.offset + bytes_read };
     }, request.priority);
+}
+
+IAsynchronousReader::Result ThreadPoolReader::execute(Request /* request */)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method `execute` not implemented for ThreadpoolReader");
 }
 
 void ThreadPoolReader::wait()

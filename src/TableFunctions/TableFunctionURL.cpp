@@ -1,8 +1,6 @@
 #include <TableFunctions/TableFunctionURL.h>
 
 #include <TableFunctions/registerTableFunctions.h>
-#include <Access/Common/AccessFlags.h>
-#include <Access/ContextAccess.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Core/Settings.h>
@@ -31,6 +29,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
+    extern const SettingsString url_base;
 }
 
 std::vector<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
@@ -68,8 +67,6 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         compression_method = configuration.compression_method;
 
         format = configuration.format;
-        if (format == "auto")
-            format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath()).value_or("auto");
 
         StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, context);
     }
@@ -90,32 +87,57 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         if (headers_ast)
             args.push_back(headers_ast);
     }
+
+    /// Resolve relative URLs against the url_base setting.
+    const auto & url_base = context->getSettingsRef()[Setting::url_base].value;
+    filename = StorageURL::resolveURLBase(filename, url_base);
+    configuration.url = filename;
+
+    /// Re-derive format from the resolved URL if still auto, because the original
+    /// filename may have been a relative reference (e.g. "?x=1") with no extension.
+    /// `resolveURLBase` tolerates malformed inputs via string manipulation, so the resolved URL
+    /// may contain characters that `Poco::URI` rejects. Fall back to "auto" instead of throwing.
+    if (format == "auto")
+    {
+        try
+        {
+            format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath()).value_or("auto");
+        }
+        catch (const Poco::Exception &) // NOLINT(bugprone-empty-catch)
+        {
+        }
+    }
 }
 
 StoragePtr TableFunctionURL::getStorage(
-    const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
+    const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr context,
     const std::string & table_name, const String & compression_method_, bool is_insert_query) const
 {
-    const auto & settings = global_context->getSettingsRef();
-    const auto is_secondary_query = global_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    const auto & settings = context->getSettingsRef();
+    const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
-    const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
+    const bool can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
         && settings[Setting::parallel_replicas_for_cluster_engines]
-        && global_context->canUseTaskBasedParallelReplicas()
-        && !global_context->isDistributed()
+        && context->canUseTaskBasedParallelReplicas()
+        && !context->isDistributed()
         && !is_secondary_query
         && !is_insert_query;
+
+    const auto & client_info = context->getClientInfo();
+    bool can_use_distributed_iterator =
+        client_info.collaborate_with_initiator &&
+        context->hasClusterFunctionReadTaskCallback();
 
     if (can_use_parallel_replicas)
     {
         return std::make_shared<StorageURLCluster>(
-            global_context,
+            context,
             parallel_replicas_cluster_name,
             source,
             format_,
             compression_method_,
             StorageID(getDatabaseName(), table_name),
-            getActualTableStructure(global_context, true),
+            getActualTableStructure(context, true),
             ConstraintsDescription{},
             configuration);
     }
@@ -128,12 +150,12 @@ StoragePtr TableFunctionURL::getStorage(
         columns,
         ConstraintsDescription{},
         String{},
-        global_context,
+        context,
         compression_method_,
         configuration.headers,
         configuration.http_method,
         nullptr,
-        /*distributed_processing=*/ is_secondary_query);
+        /*distributed_processing=*/can_use_distributed_iterator);
 }
 
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
@@ -142,8 +164,6 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
     {
         ColumnsDescription columns;
 
-        if (const auto access_object = getSourceAccessObject())
-            context->getAccess()->checkAccessWithFilter(AccessType::READ, toStringSource(*access_object), getFunctionURINormalized());
         if (format == "auto")
         {
             columns = StorageURL::getTableStructureAndFormatFromData(
@@ -183,6 +203,6 @@ std::optional<String> TableFunctionURL::tryGetFormatFromFirstArgument()
 
 void registerTableFunctionURL(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionURL>();
+    factory.registerFunction<TableFunctionURL>({});
 }
 }

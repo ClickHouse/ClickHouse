@@ -6,13 +6,15 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/Utils.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/convertFieldToType.h>
 
-#include <iostream>
 
 namespace DB
 {
@@ -164,8 +166,8 @@ bool isTwoArgumentsFromDifferentSides(const FunctionNode & node_function, const 
     if (argument_nodes.size() != 2)
         return false;
 
-    auto first_src = getExpressionSource(argument_nodes[0]);
-    auto second_src = getExpressionSource(argument_nodes[1]);
+    auto first_src = getExpressionSource(argument_nodes[0]).first;
+    auto second_src = getExpressionSource(argument_nodes[1]).first;
     if (!first_src || !second_src)
         return false;
 
@@ -487,14 +489,20 @@ void tryOptimizeCommonExpressionsInOr(QueryTreeNodePtr & node, const ContextPtr 
         if (result.new_node != nullptr)
             new_root_arguments.push_back(std::move(result.new_node));
 
-        if (new_root_arguments.size() == 1)
+        if (new_root_arguments.size() == 1 && new_root_arguments.front()->getResultType()->equals(*node->getResultType()))
         {
             new_root_node = std::move(new_root_arguments.front());
         }
         else
         {
-            // The OR expression must be replaced by and AND expression that will contain the common expressions
-            // and the new_node, if it is not nullptr.
+            /// If only one argument remains but its ResultType does not match the original `or`
+            /// (e.g. a `Float64` column), leaving it bare may trigger a lossy `_CAST(arg, UInt8)`
+            /// below that truncates values like `0.5` to `0` instead of performing `!= 0`. Wrap as
+            /// `and(arg, 1)`: `x AND 1` is the boolean identity (semantics preserved), and the AND
+            /// function performs the `!= 0` on `arg` internally.
+            if (new_root_arguments.size() == 1)
+                new_root_arguments.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1)));
+
             auto new_function_node = std::make_shared<FunctionNode>("and");
             new_function_node->markAsOperator();
             new_function_node->getArguments().getNodes() = std::move(new_root_arguments);
@@ -543,12 +551,29 @@ void tryOptimizeCommonExpressionsInAnd(QueryTreeNodePtr & node, const ContextPtr
     if (!extracted_something)
         return;
 
-    auto and_function_node = std::make_shared<FunctionNode>("and");
-    and_function_node->markAsOperator();
-    and_function_node->getArguments().getNodes() = std::move(new_top_level_arguments);
-    auto and_function_resolver = FunctionFactory::instance().get("and", context);
-    and_function_node->resolveAsFunction(and_function_resolver);
-    QueryTreeNodePtr new_root_node = and_function_node;
+    QueryTreeNodePtr new_root_node;
+
+    if (new_top_level_arguments.size() == 1 && new_top_level_arguments.front()->getResultType()->equals(*node->getResultType()))
+    {
+        new_root_node = std::move(new_top_level_arguments.front());
+    }
+    else
+    {
+        /// If only one argument remains but its ResultType does not match the original `and`
+        /// (e.g. a `Float64` column), leaving it bare may trigger a lossy `_CAST(arg, UInt8)`
+        /// below that truncates values like `0.5` to `0` instead of performing `!= 0`. Wrap as
+        /// `and(arg, 1)`: `x AND 1` is the boolean identity (semantics preserved), and the AND
+        /// function performs the `!= 0` on `arg` internally.
+        if (new_top_level_arguments.size() == 1)
+            new_top_level_arguments.push_back(std::make_shared<ConstantNode>(static_cast<UInt8>(1)));
+
+        auto and_function_node = std::make_shared<FunctionNode>("and");
+        and_function_node->markAsOperator();
+        and_function_node->getArguments().getNodes() = std::move(new_top_level_arguments);
+        auto and_function_resolver = FunctionFactory::instance().get("and", context);
+        and_function_node->resolveAsFunction(and_function_resolver);
+        new_root_node = std::move(and_function_node);
+    }
 
     if (!new_root_node->getResultType()->equals(*node->getResultType()))
         new_root_node = buildCastFunction(new_root_node, node->getResultType(), context);
@@ -931,12 +956,32 @@ private:
 
             if (function_name == "equals")
             {
+                /*
+                 * This function checks a pattern of `col = X and col = Y` such that if there are two different constant values are assigned for the same expression.
+                 * That pattern always yields to `FALSE`, except implicit conversion from a string to an integer / a boolean
+                 * which the pattern could be `col = X and col = 'X'`. In such cases, constant values are same.
+                 */
                 const auto has_and_with_different_constant = [&](const QueryTreeNodePtr & expression, const ConstantNode * constant)
                 {
+                    /// This is an implicit conversion from a string to the type of an constant node (`expected`).
+                    const auto convert_and_check_equals = [](const ConstantNode * string_value, const ConstantNode * expected)
+                    {
+                        Field converted = tryConvertFieldToType(string_value->getValue(), *expected->getResultType());
+                        if (!converted.isNull())
+                            return accurateEquals(converted, expected->getValue());
+                        return false;
+                    };
+
                     if (auto it = equals_node_to_constants.find(expression); it != equals_node_to_constants.end())
                     {
                         if (!it->second->isEqual(*constant))
+                        {
+                            if (it->second->getResultType()->equals(DataTypeString()) && convert_and_check_equals(it->second, constant))
+                                return false;
+                            else if (constant->getResultType()->equals(DataTypeString()) && convert_and_check_equals(constant, it->second))
+                                return false;
                             return true;
+                        }
                     }
                     else
                     {
@@ -1427,6 +1472,7 @@ private:
             return;
 
         auto function_node_type = function_node.getResultType();
+        auto original_node = node;
 
         // if we have something like `function = 0`, we need to add a `NOT` when dropping the `= 0`
         if (constant_value == 0)
@@ -1445,10 +1491,17 @@ private:
 
         if (!function_node_type->equals(*node->getResultType()))
         {
-            /// Result of replacement_function can be low cardinality, while redundant equal
+            /// Result of replacement_function can be low cardinality or nullable, while redundant equal
             /// returns UInt8, and this equal can be an argument of external function -
             /// so we want to convert replacement_function to the expected UInt8
-            chassert(function_node_type->equals(*removeLowCardinality(node->getResultType())));
+            /// An example when it can be Nullable - using GROUP BY with GROUPING SETS and group_by_use_nulls = true
+            if (!removeNullable(removeLowCardinality(function_node_type))->equals(*removeNullable(removeLowCardinality(node->getResultType()))))
+            {
+                /// Types differ beyond Nullable/LowCardinality wrappers (e.g. Variant types),
+                /// bail out and keep the original equals expression.
+                node = original_node;
+                return;
+            }
             node = createCastFunction(node, function_node_type, getContext());
         }
     }

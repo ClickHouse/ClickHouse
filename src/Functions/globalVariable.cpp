@@ -26,7 +26,7 @@ namespace
   *
   * Currently it's a stub, no variables are implemented. Feel free to add more variables.
   */
-class FunctionGlobalVariable : public IFunction
+class FunctionGlobalVariable final : public IFunction
 {
 public:
     static constexpr auto name = "globalVariable";
@@ -104,7 +104,7 @@ Takes a constant string argument and returns the value of the global variable wi
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionGlobalVariable>(documentation);
 }

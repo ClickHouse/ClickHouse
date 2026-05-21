@@ -1,3 +1,4 @@
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include "config.h"
 
 #if USE_SSL
@@ -39,18 +40,18 @@
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 
-#include <filesystem>
 #include <memory>
 #include <mutex>
 
 
+namespace DB
+{
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NO_ELEMENTS_IN_CONFIG;
 }
-
-namespace DB
-{
 
 namespace ACME
 {
@@ -84,11 +85,15 @@ std::optional<VersionedCertificate> Client::requestCertificate() const
         return std::nullopt;
     }
 
+    auto component_guard = Coordination::setCurrentComponent("ACME::Client::requestCertificate");
     auto context = Context::getGlobalContextInstance();
     auto zk = context->getZooKeeper();
 
     std::string pkey;
     std::string certificate;
+
+    if (domains.empty())
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "List of domains handled by ACME client is empty, please check configuration.");
 
     /// All domains have the same certificate
     std::string domain = domains.front();
@@ -118,6 +123,7 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
     if (!config.has("acme"))
         return;
 
+    auto component_guard = Coordination::setCurrentComponent("ACME::Client::initialize");
     terms_of_service_agreed = config.getBool("acme.terms_of_service_agreed");
     if (!terms_of_service_agreed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ACME certificate provisioning requires accepting the terms of service.");
@@ -144,11 +150,16 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
     for (const auto & key : domains_keys)
         served_domains.push_back(config.getString("acme.domains." + key));
 
-    chassert(!served_domains.empty());
+    if (served_domains.empty())
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "List of domains handled by ACME client is empty, please check configuration.");
 
     domains = served_domains;
-    refresh_certificates_task_interval = config.getInt("acme.refresh_certificates_task_interval", /* one hour */ 1000 * 60 * 60);
-    refresh_certificates_before = config.getInt("acme.refresh_certificates_before", /* one month */ 60 * 60 * 24 * 30);
+
+    auto default_refresh_certificates_task_interval = /* one hour, in seconds */ 60 * 60;
+    auto default_refresh_certificates_before = /* one month, in seconds */ 60 * 60 * 24 * 30;
+
+    refresh_certificates_task_interval_ms = config.getInt("acme.refresh_certificates_task_interval_seconds", default_refresh_certificates_task_interval) * 1000;
+    refresh_certificates_before_seconds = config.getInt("acme.refresh_certificates_before_seconds", default_refresh_certificates_before);
 
     acme_hostname = Poco::URI(directory_url).getHost();
     LOG_TEST(log, "ACME server hostname: {}", acme_hostname);
@@ -165,9 +176,9 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
 
     BackgroundSchedulePool & bgpool = Context::getGlobalContextInstance()->getSchedulePool();
 
-    refresh_certificates_task = bgpool.createTask("ACME::refreshCertificatesTask", [this, &config] { refreshCertificatesTask(config); });
-    authentication_task = bgpool.createTask("ACME::authenticationTask", [this] { authenticationTask(); });
-    refresh_key_task = bgpool.createTask("ACME::refreshKeyTask", [this] { refreshKeyTask(); });
+    refresh_certificates_task = bgpool.createTask(StorageID::createEmpty(), "ACME::refreshCertificatesTask", [this, &config] { refreshCertificatesTask(config); });
+    authentication_task = bgpool.createTask(StorageID::createEmpty(), "ACME::authenticationTask", [this] { authenticationTask(); });
+    refresh_key_task = bgpool.createTask(StorageID::createEmpty(), "ACME::refreshKeyTask", [this] { refreshKeyTask(); });
 
     {
         std::lock_guard key_lock(private_acme_key_mutex);
@@ -183,6 +194,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
     chassert(keys_initialized);
     chassert(api && api->isReady());
 
+    auto component_guard = Coordination::setCurrentComponent("ACME::Client::refreshCertificatesTask");
     try
     {
         auto context = Context::getGlobalContextInstance();
@@ -210,7 +222,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
 
             int tzd;
             auto expiration_date = Poco::DateTimeParser::parse("%y%m%d%H%M%S", x509_certificate.expiresOn(), tzd);
-            auto best_before = Poco::Timestamp() + Poco::Timespan(refresh_certificates_before * Poco::Timespan::SECONDS);
+            auto best_before = Poco::Timestamp() + Poco::Timespan(refresh_certificates_before_seconds * Poco::Timespan::SECONDS);
 
             if (expiration_date < best_before)
             {
@@ -226,7 +238,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
 
             CertificateReloader::instance().tryLoad(config);
 
-            refresh_certificates_task->scheduleAfter(refresh_certificates_task_interval);
+            refresh_certificates_task->scheduleAfter(refresh_certificates_task_interval_ms);
             return;
         }
 
@@ -237,9 +249,9 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
                 log,
                 "Certificate order lock {} is active; retrying after {}ms",
                 std::string(active_order_path),
-                REFRESH_TASK_AFTER_ERROR_MS
+                REFRESH_TASK_HAPPY_PATH_MS
             );
-            refresh_certificates_task->scheduleAfter(REFRESH_TASK_AFTER_ERROR_MS);
+            refresh_certificates_task->scheduleAfter(REFRESH_TASK_HAPPY_PATH_MS);
             return;
         }
 
@@ -253,9 +265,9 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
                     log,
                     "Certificate order lock {} is active; retrying after {}ms",
                     std::string(active_order_path),
-                    REFRESH_TASK_AFTER_ERROR_MS
+                    REFRESH_TASK_HAPPY_PATH_MS
                 );
-                refresh_certificates_task->scheduleAfter(REFRESH_TASK_AFTER_ERROR_MS);
+                refresh_certificates_task->scheduleAfter(REFRESH_TASK_HAPPY_PATH_MS);
                 return;
             }
 
@@ -278,9 +290,9 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
                 log,
                 "Certificate order lock {} is active; retrying after {}ms",
                 std::string(active_order_path),
-                REFRESH_TASK_AFTER_ERROR_MS
+                REFRESH_TASK_HAPPY_PATH_MS
             );
-            refresh_certificates_task->scheduleAfter(REFRESH_TASK_AFTER_ERROR_MS);
+            refresh_certificates_task->scheduleAfter(REFRESH_TASK_HAPPY_PATH_MS);
             return;
         }
 
@@ -314,7 +326,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
             LOG_DEBUG(log, "Finalizing order {}", order_url);
             api->finalizeOrder(order_data.finalize_url, domains, key);
 
-            refresh_certificates_task->scheduleAfter(REFRESH_TASK_HAPPY_PATH_MS);
+            refresh_certificates_task->scheduleAfter(REFRESH_TASK_IN_A_SECOND);
             return;
         }
 
@@ -322,7 +334,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
         {
             LOG_DEBUG(log, "Order {} is not ready yet (status: {}), retrying", order_url, order_data.status);
 
-            refresh_certificates_task->scheduleAfter(refresh_certificates_task_interval);
+            refresh_certificates_task->scheduleAfter(REFRESH_TASK_IN_A_SECOND);
             return;
         }
 
@@ -355,7 +367,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
         return;
     }
 
-    refresh_certificates_task->scheduleAfter(refresh_certificates_task_interval);
+    refresh_certificates_task->scheduleAfter(refresh_certificates_task_interval_ms);
 }
 
 void Client::authenticationTask()
@@ -414,6 +426,8 @@ void Client::refreshKeyTask()
         }
     }
 
+    auto component_guard = Coordination::setCurrentComponent("ACME::Client::refreshKeyTask");
+
     std::string private_key;
 
     try
@@ -429,7 +443,13 @@ void Client::refreshKeyTask()
             auto rsa_key = KeyPair::generateRSA(4096, RSA_F4);
             private_key = rsa_key.privateKey();
 
-            zk->createIfNotExists(fs::path(zookeeper_path) / acme_hostname / "account_private_key", private_key);
+            auto code = zk->tryCreate(fs::path(zookeeper_path) / acme_hostname / "account_private_key", private_key, zkutil::CreateMode::Persistent);
+            if (code == Coordination::Error::ZNODEEXISTS)
+            {
+                /// Another node has already created the key, use it instead.
+                private_key.clear();
+                zk->tryGet(fs::path(zookeeper_path) / acme_hostname / "account_private_key", private_key);
+            }
         }
     }
     catch (...)
@@ -459,6 +479,7 @@ std::string Client::requestChallenge(const std::string & uri)
 {
     LOG_TRACE(log, "Challenge requested for uri: {}", uri);
 
+    auto component_guard = Coordination::setCurrentComponent("ACME::Client::requestChallenge");
     /// We may be in a situation when cluster just started,
     /// order is already issued by one of replicas, but some have not loaded private key from Keeper yet.
     /// Routing challenge request to such replica will fail whole order.

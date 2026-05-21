@@ -1,11 +1,11 @@
+#include <Common/SipHash.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationString.h>
 
-#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationStringSize.h>
 #include <Formats/FormatSettings.h>
@@ -29,6 +29,19 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_STRING_SIZE;
+}
+
+UInt128 SerializationString::getHash(MergeTreeStringSerializationVersion version_)
+{
+    SipHash hash;
+    hash.update("String");
+    hash.update(static_cast<int>(version_));
+    return hash.get128();
+}
+
+SerializationPtr SerializationString::create(MergeTreeStringSerializationVersion version_)
+{
+    return ISerialization::pooled(getHash(version_), [=] { return new SerializationString(version_); });
 }
 
 void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -68,16 +81,16 @@ void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, co
 
 void SerializationString::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const StringRef & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
-    if (settings.binary.max_binary_string_size && s.size > settings.binary.max_binary_string_size)
+    const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
+    if (settings.binary.max_binary_string_size && s.size() > settings.binary.max_binary_string_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_STRING_SIZE,
             "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_string_size",
-            s.size,
+            s.size(),
             settings.binary.max_binary_string_size);
 
-    writeVarUInt(s.size, ostr);
+    writeVarUInt(s.size(), ostr);
     writeString(s, ostr);
 }
 
@@ -230,7 +243,7 @@ void SerializationString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
         avg_chars_size = (avg_value_size_hint - sizeof(offsets[0])) * avg_value_size_hint_reserve_multiplier;
     }
 
-    size_t size_to_reserve = data.size() + static_cast<size_t>(std::ceil(limit * avg_chars_size));
+    size_t size_to_reserve = data.size() + static_cast<size_t>(std::ceil(static_cast<double>(limit) * avg_chars_size));
 
     /// Never reserve for too big size.
     if (size_to_reserve < 256 * 1024 * 1024)
@@ -320,22 +333,28 @@ void SerializationString::enumerateStreamsWithoutSize(
     if (settings.enumerate_virtual_streams)
     {
         const auto * type_string = data.type ? &assert_cast<const DataTypeString &>(*data.type) : nullptr;
-        const auto * column_string = data.column ? &assert_cast<const ColumnString &>(*data.column) : nullptr;
-        ColumnPtr sizes_column;
-        if (column_string)
+
+        auto sizes_serialization = SerializationStringSize::create(version);
+
+        /// Inlined size stream. The column is not computed eagerly; instead a
+        /// lazy column creator is attached so that `createFromPath` can derive it
+        /// on demand when the `.size` subcolumn is actually requested.
+        settings.path.push_back(Substream::InlinedStringSizes);
+
+        auto substream_data = SubstreamData(sizes_serialization)
+                                  .withType(type_string ? std::make_shared<DataTypeUInt64>() : nullptr)
+                                  .withColumn(nullptr)
+                                  .withSerializationInfo(data.serialization_info);
+
+        if (data.column)
         {
-            /// TODO(ab): Will this unnecessarily create useless .size subcolumn?
-            sizes_column = column_string->createSizeSubcolumn();
+            substream_data.withLazyColumnCreator([parent_col = data.column]() -> ColumnPtr
+            {
+                return assert_cast<const ColumnString &>(*parent_col).createSizeSubcolumn();
+            });
         }
 
-        auto sizes_serialization = std::make_shared<SerializationStringSize>(version);
-
-        /// Inlined size stream
-        settings.path.push_back(Substream::InlinedStringSizes);
-        settings.path.back().data = SubstreamData(sizes_serialization)
-                                        .withType(type_string ? std::make_shared<DataTypeUInt64>() : nullptr)
-                                        .withColumn(std::move(sizes_column))
-                                        .withSerializationInfo(data.serialization_info);
+        settings.path.back().data = std::move(substream_data);
 
         callback(settings.path);
         settings.path.pop_back();
@@ -375,7 +394,7 @@ void SerializationString::serializeText(const IColumn & column, size_t row_num, 
 
 void SerializationString::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeEscapedString(assert_cast<const ColumnString &>(column).getDataAt(row_num).toView(), ostr);
+    writeEscapedString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
@@ -446,7 +465,7 @@ bool SerializationString::tryDeserializeTextEscaped(IColumn & column, ReadBuffer
 void SerializationString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (settings.values.escape_quote_with_quote)
-        writeQuotedStringPostgreSQL(assert_cast<const ColumnString &>(column).getDataAt(row_num).toView(), ostr);
+        writeQuotedStringPostgreSQL(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
     else
         writeQuotedString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
@@ -465,7 +484,7 @@ bool SerializationString::tryDeserializeTextQuoted(IColumn & column, ReadBuffer 
 
 void SerializationString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeJSONString(assert_cast<const ColumnString &>(column).getDataAt(row_num).toView(), ostr, settings);
+    writeJSONString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr, settings);
 }
 
 
@@ -561,7 +580,7 @@ bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
 
 void SerializationString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeXMLStringForTextElement(assert_cast<const ColumnString &>(column).getDataAt(row_num).toView(), ostr);
+    writeXMLStringForTextElement(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
@@ -585,7 +604,7 @@ void SerializationString::serializeTextMarkdown(
     const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (settings.markdown.escape_special_characters)
-        writeMarkdownEscapedString(assert_cast<const ColumnString &>(column).getDataAt(row_num).toView(), ostr);
+        writeMarkdownEscapedString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
     else
         serializeTextEscaped(column, row_num, ostr, settings);
 }
@@ -657,22 +676,26 @@ void SerializationString::enumerateStreamsWithSize(
     const SubstreamData & data) const
 {
     const auto * type_string = data.type ? &assert_cast<const DataTypeString &>(*data.type) : nullptr;
-    const auto * column_string = data.column ? &assert_cast<const ColumnString &>(*data.column) : nullptr;
-    ColumnPtr sizes_column;
-    if (column_string)
+
+    auto sizes_serialization = SerializationStringSize::create(version);
+
+    /// Size stream. Same lazy pattern as in `enumerateStreamsWithoutSize`.
+    settings.path.push_back(Substream::StringSizes);
+
+    auto substream_data = SubstreamData(sizes_serialization)
+                              .withType(type_string ? std::make_shared<DataTypeUInt64>() : nullptr)
+                              .withColumn(nullptr)
+                              .withSerializationInfo(data.serialization_info);
+
+    if (data.column)
     {
-        /// TODO(ab): Will this unnecessarily create useless .size subcolumn?
-        sizes_column = column_string->createSizeSubcolumn();
+        substream_data.withLazyColumnCreator([parent_col = data.column]() -> ColumnPtr
+        {
+            return assert_cast<const ColumnString &>(*parent_col).createSizeSubcolumn();
+        });
     }
 
-    auto sizes_serialization= std::make_shared<SerializationStringSize>(version);
-
-    /// Size stream
-    settings.path.push_back(Substream::StringSizes);
-    settings.path.back().data = SubstreamData(sizes_serialization)
-                                    .withType(type_string ? std::make_shared<DataTypeUInt64>() : nullptr)
-                                    .withColumn(std::move(sizes_column))
-                                    .withSerializationInfo(data.serialization_info);
+    settings.path.back().data = std::move(substream_data);
     callback(settings.path);
 
     /// Regular stream
@@ -768,7 +791,7 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    /// Check if the whole String column is already serialized and we have it in the cache.
+    /// Check if the whole String column is already deserialized and we have it in the cache.
     settings.path.push_back(Substream::Regular);
 
     if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
@@ -796,7 +819,7 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
             string_state->size_column = ColumnUInt64::create();
 
         size_t prev_size = string_state->size_column->size();
-        SerializationNumber<UInt64>().deserializeBinaryBulk(
+        SerializationNumber<UInt64>::create()->deserializeBinaryBulk(
             *string_state->size_column->assumeMutable(), *size_stream, 0, rows_offset + limit, 0);
         num_read_rows = string_state->size_column->size() - prev_size;
         /// We are not going to apply rows_offsets to sizes column here, so we can put it as is in the cache.

@@ -151,6 +151,7 @@ static IAggregateFunction * createWithNumericBasedType(const IDataType & argumen
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<UInt16>(args...);
     if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTemplate<UInt32>(args...);
+    if (which.idx == TypeIndex::Time) return new AggregateFunctionTemplate<Int32>(args...);
     if (which.idx == TypeIndex::UUID) return new AggregateFunctionTemplate<UUID>(args...);
     if (which.idx == TypeIndex::IPv4) return new AggregateFunctionTemplate<IPv4>(args...);
     if (which.idx == TypeIndex::IPv6) return new AggregateFunctionTemplate<IPv6>(args...);
@@ -166,7 +167,10 @@ static IAggregateFunction * createWithDecimalType(const IDataType & argument_typ
     if (which.idx == TypeIndex::Decimal128) return new AggregateFunctionTemplate<Decimal128>(args...);
     if (which.idx == TypeIndex::Decimal256) return new AggregateFunctionTemplate<Decimal256>(args...);
     if constexpr (AggregateFunctionTemplate<DateTime64>::DateTime64Supported)
+    {
         if (which.idx == TypeIndex::DateTime64) return new AggregateFunctionTemplate<DateTime64>(args...);
+        if (which.idx == TypeIndex::Time64) return new AggregateFunctionTemplate<Time64>(args...);
+    }
     return nullptr;
 }
 
@@ -179,7 +183,10 @@ static IAggregateFunction * createWithDecimalType(const IDataType & argument_typ
     if (which.idx == TypeIndex::Decimal128) return new AggregateFunctionTemplate<Decimal128, Data>(args...);
     if (which.idx == TypeIndex::Decimal256) return new AggregateFunctionTemplate<Decimal256, Data>(args...);
     if constexpr (AggregateFunctionTemplate<DateTime64, Data>::DateTime64Supported)
+    {
         if (which.idx == TypeIndex::DateTime64) return new AggregateFunctionTemplate<DateTime64, Data>(args...);
+        if (which.idx == TypeIndex::Time64) return new AggregateFunctionTemplate<Time64, Data>(args...);
+    }
     return nullptr;
 }
 

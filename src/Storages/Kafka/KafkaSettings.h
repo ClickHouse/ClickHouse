@@ -6,16 +6,21 @@
 #include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Common/SettingsChanges.h>
 
+#include <Interpreters/Context_fwd.h>
+
 namespace DB
 {
 class ASTStorage;
 struct KafkaSettingsImpl;
 
-const auto KAFKA_RESCHEDULE_MS = 500;
+// How often we check for expired consumers in the pool
+const auto KAFKA_CONSUMERS_CLEANUP_CHECK_INTERVAL_MS = 500;
 // once per minute leave do reschedule (we can't lock threads in pool forever)
 const auto KAFKA_MAX_THREAD_WORK_DURATION_MS = 60000;
 // 10min
 const auto KAFKA_CONSUMERS_POOL_TTL_MS_MAX = 600'000;
+// Timeout for waiting for consumers to be released during shutdown
+const auto KAFKA_CONSUMER_CLOSE_TIMEOUT_S = 60;
 
 /// List of available types supported in KafkaSettings object
 #define KAFKA_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
@@ -31,6 +36,7 @@ const auto KAFKA_CONSUMERS_POOL_TTL_MS_MAX = 600'000;
     M(CLASS_NAME, Float) \
     M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
+    M(CLASS_NAME, InputFormatColumnMatchingCaseSensitivity) \
     M(CLASS_NAME, Int64) \
     M(CLASS_NAME, IntervalOutputFormat) \
     M(CLASS_NAME, Milliseconds) \
@@ -65,7 +71,7 @@ struct KafkaSettings
 
     SettingsChanges getFormatSettings() const;
 
-    void sanityCheck() const;
+    void sanityCheck(ContextPtr global_context) const;
 
     static bool hasBuiltin(std::string_view name);
 

@@ -70,10 +70,14 @@ FROM numbers(3)
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionLength>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("OCTET_LENGTH", "length", FunctionFactory::Case::Insensitive);
+    /// `CARDINALITY` is a SQL-standard / PostgreSQL spelling for the array-length operator.
+    /// In ClickHouse it is a full alias of `length`, so it inherits `length`'s behavior for non-array arguments too
+    /// (e.g. it returns the byte length of strings); this is a ClickHouse extension beyond the standard.
+    factory.registerAlias("CARDINALITY", "length", FunctionFactory::Case::Insensitive);
 }
 
 }

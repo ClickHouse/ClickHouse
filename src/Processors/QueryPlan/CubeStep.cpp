@@ -1,8 +1,11 @@
+#include <Processors/QueryPlan/CubeStep.h>
+
+#include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/Transforms/CubeTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -45,14 +48,14 @@ ProcessorPtr addGroupingSetForTotals(SharedHeader header, const Names & keys, bo
         for (const auto & key : keys)
         {
             const auto * node = dag.getOutputs()[header->getPositionByName(key)];
-            if (node->result_type->canBeInsideNullable())
+            if (removeLowCardinality(node->result_type)->canBeInsideNullable())
             {
                 dag.addOrReplaceInOutputs(dag.addFunction(to_nullable, { node }, node->result_name));
             }
         }
     }
 
-    auto grouping_col = ColumnUInt64::create(1, grouping_set_number);
+    auto grouping_col = ColumnConst::create(ColumnUInt64::create(1, grouping_set_number), 1);
     const auto * grouping_node = &dag.addColumn(
         {ColumnPtr(std::move(grouping_col)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
 

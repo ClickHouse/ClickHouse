@@ -4,6 +4,7 @@
 
 #include <functional>
 
+
 namespace Coordination
 {
 
@@ -19,6 +20,9 @@ namespace DB
 
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
+
+bool isLocalDisk(const IDisk & disk);
+
 class KeeperContext;
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
 
@@ -56,7 +60,7 @@ struct KeeperRequestForSession
     int64_t time{0};
     Coordination::ZooKeeperRequestPtr request;
     int64_t zxid{0};
-    std::optional<KeeperDigest> digest;
+    std::optional<KeeperDigest> digest {};
     int64_t log_idx{0};
     bool use_xid_64{false};
 };

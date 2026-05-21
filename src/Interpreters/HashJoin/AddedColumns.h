@@ -125,6 +125,7 @@ public:
         , additional_filter_expression(additional_filter_expression_)
         , additional_filter_required_rhs_pos(additional_filter_required_rhs_pos_)
         , rows_to_add(left_block_.rows())
+        , enable_prefetch(join.enableSoftwarePrefetch())
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -232,6 +233,7 @@ public:
     size_t max_joined_block_rows = 0;
     size_t rows_to_add;
     bool need_filter = false;
+    bool enable_prefetch = true;
 
     MutableColumns columns;
     IColumn::Offsets offsets_to_replicate;
@@ -259,7 +261,7 @@ public:
 
         if (need_replicate)
             /// Reserve 10% more space for columns, because some rows can be repeated
-            reserve_size = static_cast<size_t>(1.1 * reserve_size);
+            reserve_size = static_cast<size_t>(1.1 * static_cast<double>(reserve_size));
 
         for (auto & column : columns)
             column->reserve(reserve_size);
@@ -315,16 +317,6 @@ private:
             columns.back()->reserve(rows_to_add);
         lazy_output.type_name.emplace_back(src_column.name, src_column.type);
     }
-};
-
-/// Adapter class to pass into addFoundRowAll
-/// In joinRightColumnsWithAdditionalFilter we don't want to add rows directly into AddedColumns,
-/// because they need to be filtered by additional_filter_expression.
-class PreSelectedRows : public std::vector<const RowRef *>
-{
-public:
-    void appendFromBlock(const RowRef * row_ref, bool /* has_default */) { this->emplace_back(row_ref); }
-    static constexpr bool isLazy() { return false; }
 };
 
 std::pair<const IColumn *, size_t> getBlockColumnAndRow(const RowRef * row_ref, size_t column_index);

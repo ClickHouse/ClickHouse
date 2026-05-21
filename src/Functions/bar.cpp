@@ -24,7 +24,7 @@ namespace
 /** bar(x, min, max, width) - draws a strip from the number of characters proportional to (x - min) and equal to width for x == max.
   * Returns a string with nice Unicode-art bar with resolution of 1/8 part of symbol.
   */
-class FunctionBar : public IFunction
+class FunctionBar final : public IFunction
 {
 public:
     static constexpr auto name = "bar";
@@ -191,7 +191,7 @@ ORDER BY h ASC
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionBar>(documentation);
 }
 

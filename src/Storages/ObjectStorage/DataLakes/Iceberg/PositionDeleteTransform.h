@@ -27,6 +27,7 @@ public:
         IcebergDataObjectInfoPtr iceberg_object_info_,
         ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
         ContextPtr context_)
         : ISimpleTransform(header_, header_, false)
         , header(header_)
@@ -34,6 +35,7 @@ public:
         , object_storage(object_storage_)
         , format_settings(format_settings_)
         , context(context_)
+        , parser_shared_resources(parser_shared_resources_)
     {
         initializeDeleteSources();
     }
@@ -52,22 +54,26 @@ protected:
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
     ContextPtr context;
+    FormatParserSharedResourcesPtr parser_shared_resources;
 
     /// We need to keep the read buffers alive since the delete_sources depends on them.
     std::vector<std::unique_ptr<ReadBuffer>> delete_read_buffers;
     std::vector<std::shared_ptr<IInputFormat>> delete_sources;
 };
 
-class IcebergBitmapPositionDeleteTransform : public IcebergPositionDeleteTransform
+class IcebergBitmapPositionDeleteTransform final : public IcebergPositionDeleteTransform
 {
 public:
+    using ExcludedRows = DB::DataLakeObjectMetadata::ExcludedRows;
+
     IcebergBitmapPositionDeleteTransform(
         const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
         ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
         ContextPtr context_)
-        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, context_)
+        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_)
     {
         initialize();
     }
@@ -78,12 +84,12 @@ public:
 
 private:
     void initialize();
-    RoaringBitmapWithSmallSet<size_t, 32> bitmap;
+    ExcludedRows bitmap;
 };
 
 
 /// Requires both the deletes and the input Chunk-s to arrive in order of increasing row number.
-class IcebergStreamingPositionDeleteTransform : public IcebergPositionDeleteTransform
+class IcebergStreamingPositionDeleteTransform final : public IcebergPositionDeleteTransform
 {
 public:
     IcebergStreamingPositionDeleteTransform(
@@ -91,8 +97,9 @@ public:
         IcebergDataObjectInfoPtr iceberg_object_info_,
         ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
         ContextPtr context_)
-        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, context_)
+        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_)
     {
         initialize();
     }

@@ -3,8 +3,8 @@
 #include <Core/LogsLevel.h>
 #include <IO/Progress.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/StringRef.h>
 #include <Common/IThrottler.h>
+#include <Common/Logger_fwd.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -15,15 +15,8 @@
 
 #include <atomic>
 #include <functional>
-#include <memory>
 #include <mutex>
 #include <unordered_set>
-
-
-namespace Poco
-{
-    class Logger;
-}
 
 
 template <class T>
@@ -43,7 +36,14 @@ struct PerfEventsCounters;
 class InternalTextLogsQueue;
 struct ViewRuntimeData;
 class QueryViewsLog;
+struct Settings;
 enum class ThreadName : uint8_t;
+
+/// Apply memory-profiler / fault-injection / soft-limit related query settings to a `MemoryTracker`.
+/// Query-level sample settings (`memory_profiler_*`) are pushed only when they were actually changed
+/// from their default — otherwise the tracker is left at `sample_probability == -1` so that
+/// `getResolvedSampleConfig` transparently falls through to `total_memory_tracker_sample_probability`.
+void configureMemoryTrackerFromSettings(bool has_trace_collector, MemoryTracker & memory_tracker, const Settings & settings);
 
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
@@ -69,8 +69,9 @@ class ThreadGroup
 {
 public:
     using FatalErrorCallback = std::function<void()>;
-    explicit ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
+    ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
     explicit ThreadGroup(ThreadGroupPtr parent);
+    ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent);
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -125,13 +126,14 @@ public:
     static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
+    static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
-    UInt64 getThreadsTotalElapsedMs() const;
+    UInt64 getGroupElapsedMs() const;
 
     void linkThread(UInt64 thread_id);
-    void unlinkThread(UInt64 elapsed_thread_counter_ms);
+    void unlinkThread();
 
 private:
     mutable std::mutex mutex;
@@ -148,7 +150,8 @@ private:
     /// Peak threads count in the group
     size_t peak_threads_usage TSA_GUARDED_BY(mutex) = 0;
 
-    UInt64 elapsed_total_threads_counter_ms TSA_GUARDED_BY(mutex) = 0;
+    Stopwatch effective_group_stopwatch TSA_GUARDED_BY(mutex) = Stopwatch(STOPWATCH_DEFAULT_CLOCK, 0, /* is running */ false);
+    UInt64 elapsed_group_ms TSA_GUARDED_BY(mutex) = 0;
 
     static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
 };
@@ -291,7 +294,7 @@ public:
     void clearQueryId() noexcept;
     const String & getQueryId() const;
 
-    ContextPtr getQueryContext() const;
+    ContextPtr tryGetQueryContext() const;
     ContextPtr getGlobalContext() const;
 
     /// Attaches slave thread to existing thread group
@@ -339,6 +342,17 @@ public:
     size_t getNextPlanStepIndex() const;
     size_t getNextPipelineProcessorIndex() const;
 
+    double getEffectiveSampleProbability(UInt64 size) const
+    {
+        if (sample_probability <= 0)
+            return 0;
+        if (sample_min_allocation_size && size < sample_min_allocation_size)
+            return 0;
+        if (sample_max_allocation_size && size > sample_max_allocation_size)
+            return 0;
+        return sample_probability;
+    }
+
 private:
     void applyGlobalSettings();
     void applyQuerySettings();
@@ -352,6 +366,11 @@ private:
     void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database);
 
     void attachToGroupImpl(const ThreadGroupPtr & thread_group_);
+
+    /// Cached sample probability resolved from MemoryTracker hierarchy to avoid parent traversal on every allocation
+    double sample_probability = 0;
+    UInt64 sample_min_allocation_size = 0;
+    UInt64 sample_max_allocation_size = 0;
 };
 
 /**

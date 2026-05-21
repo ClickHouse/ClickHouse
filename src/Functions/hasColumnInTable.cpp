@@ -27,7 +27,7 @@ namespace
 /** Usage:
  *  hasColumnInTable(['hostname'[, 'username'[, 'password']],] 'database', 'table', 'column')
  */
-class FunctionHasColumnInTable : public IFunction, WithContext
+class FunctionHasColumnInTable final : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "hasColumnInTable";
@@ -124,7 +124,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
         const StoragePtr & table = DatabaseCatalog::instance().getTable(
             {database_name, table_name},
             const_pointer_cast<Context>(getContext()));
-        auto table_metadata = table->getInMemoryMetadataPtr();
+        auto table_metadata = table->getInMemoryMetadataPtr(getContext(), false);
         has_column = table_metadata->getColumns().hasPhysical(column_name);
         has_alias_column = table_metadata->getColumns().hasAlias(column_name);
     }
@@ -203,7 +203,7 @@ SELECT hasColumnInTable('system','metrics','non-existing_column')
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionHasColumnInTable>(documentation);
 }

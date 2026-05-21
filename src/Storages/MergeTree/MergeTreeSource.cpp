@@ -1,9 +1,11 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/EventFD.h>
+#include <Common/setThreadName.h>
 
 namespace DB
 {
@@ -210,6 +212,7 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
 
             try
             {
+                Coordination::ComponentGuard component_guard = Coordination::setCurrentComponent("MergeTreeSource::tryGenerate");
                 OpenTelemetry::SpanHolder span{fmt::format("MergeTreeSource({})::tryGenerate", log_name)};
                 holder->setResult(processor->read());
             }
@@ -225,6 +228,7 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
     }
 #endif
 
+    Coordination::ComponentGuard component_guard = Coordination::setCurrentComponent("MergeTreeSource::tryGenerate");
     OpenTelemetry::SpanHolder span{fmt::format("MergeTreeSource({})::tryGenerate", log_name)};
     return processReadResult(processor->read());
 }

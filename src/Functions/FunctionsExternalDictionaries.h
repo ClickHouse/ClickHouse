@@ -19,7 +19,6 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
@@ -65,19 +64,18 @@ namespace ErrorCodes
   */
 
 
-class FunctionDictHelper : public WithContext
+class FunctionDictHelper
 {
 public:
-    explicit FunctionDictHelper(ContextPtr context_) : WithContext(context_) {}
+    explicit FunctionDictHelper(ContextPtr context_) : context(context_) {}
 
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
-        auto current_context = getContext();
-        auto dict = current_context->getExternalDictionariesLoader().getDictionary(dictionary_name, current_context);
+        auto dict = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
 
         if (!access_checked)
         {
-            current_context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
+            context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
             access_checked = true;
         }
 
@@ -94,7 +92,7 @@ public:
         return getDictionary(dict_name_col->getValue<String>());
     }
 
-    static const DictionaryAttribute & getDictionaryHierarchicalAttribute(const std::shared_ptr<const IDictionary> & dictionary)
+    static void checkDictionaryHierarchySupport(const std::shared_ptr<const IDictionary> & dictionary)
     {
         const auto & dictionary_structure = dictionary->getStructure();
         auto hierarchical_attribute_index_optional = dictionary_structure.hierarchical_attribute_index;
@@ -103,6 +101,14 @@ public:
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                 "Dictionary {} does not support hierarchy",
                 dictionary->getFullName());
+    }
+
+    static const DictionaryAttribute & getDictionaryHierarchicalAttribute(const std::shared_ptr<const IDictionary> & dictionary)
+    {
+        checkDictionaryHierarchySupport(dictionary);
+
+        const auto & dictionary_structure = dictionary->getStructure();
+        auto hierarchical_attribute_index_optional = dictionary_structure.hierarchical_attribute_index;
 
         size_t hierarchical_attribute_index = *hierarchical_attribute_index_optional;
         const auto & hierarchical_attribute = dictionary_structure.attributes[hierarchical_attribute_index];
@@ -135,8 +141,10 @@ public:
 
     DictionaryStructure getDictionaryStructure(const String & dictionary_name) const
     {
-        return getContext()->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, getContext());
+        return context->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, context);
     }
+
+    const ContextPtr context;
 
 private:
     /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
@@ -635,7 +643,7 @@ private:
         ColumnPtr mask_column,
         const DataTypePtr & result_type) const
     {
-        auto if_func = FunctionFactory::instance().get("if", helper.getContext());
+        auto if_func = FunctionFactory::instance().get("if", helper.context);
         ColumnsWithTypeAndName if_args =
         {
             {mask_column, std::make_shared<DataTypeUInt8>(), {}},
@@ -712,9 +720,9 @@ private:
                 result = dictionary->getColumn(attribute_names[0], attribute_type, key_columns, key_types, default_mask);
 
                 auto [defaults_column, mask_column] =
-                    getDefaultsShortCircuit(std::move(default_mask), result_type, last_argument);
+                    getDefaultsShortCircuit(std::move(default_mask), attribute_type, last_argument);
 
-                restoreShortCircuitColumn(result, defaults_column, mask_column, result_type);
+                restoreShortCircuitColumn(result, defaults_column, mask_column, attribute_type);
             }
             else
             {
@@ -1316,6 +1324,9 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
         auto dictionary = dictionary_helper->getDictionary(arguments[0].column);
+
+        FunctionDictHelper::checkDictionaryHierarchySupport(dictionary);
+
         auto hierarchical_parent_to_child_index = dictionary->getHierarchicalIndex();
 
         size_t level = Strategy::default_level;

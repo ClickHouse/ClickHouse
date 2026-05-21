@@ -24,7 +24,7 @@ extern const int ILLEGAL_COLUMN;
 }
 
 // Decompose time series data based on STL(Seasonal-Trend Decomposition Procedure Based on Loess)
-class FunctionSeriesDecomposeSTL : public IFunction
+class FunctionSeriesDecomposeSTL final : public IFunction
 {
 public:
     static constexpr auto name = "seriesDecomposeSTL";
@@ -219,7 +219,7 @@ Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Base
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionSeriesDecomposeSTL>(documentation);
 }

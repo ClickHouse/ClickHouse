@@ -16,7 +16,7 @@ String ASTCreateIndexQuery::getID(char delim) const
 
 ASTPtr ASTCreateIndexQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateIndexQuery>(*this);
+    auto res = make_intrusive<ASTCreateIndexQuery>(*this);
     res->children.clear();
 
     res->index_name = index_name->clone();
@@ -32,8 +32,6 @@ ASTPtr ASTCreateIndexQuery::clone() const
 
 void ASTCreateIndexQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
-
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
 
     ostr << indent_str;
@@ -63,13 +61,13 @@ void ASTCreateIndexQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettin
 
 ASTPtr ASTCreateIndexQuery::convertToASTAlterCommand() const
 {
-    auto command = std::make_shared<ASTAlterCommand>();
+    auto command = make_intrusive<ASTAlterCommand>();
 
     command->type = ASTAlterCommand::ADD_INDEX;
     command->if_not_exists = if_not_exists;
 
-    command->index = command->children.emplace_back(index_name).get();
-    command->index_decl = command->children.emplace_back(index_decl).get();
+    command->index_decl = command->children.emplace_back(index_decl->clone()).get();
+    command->index_decl->as<ASTIndexDeclaration &>().part_of_create_index_query = false;
 
     return command;
 }

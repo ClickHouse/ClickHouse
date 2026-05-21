@@ -21,6 +21,7 @@ namespace Setting
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool apply_mutations_on_fly;
+    extern const SettingsBool apply_patch_parts;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool parallel_replicas_local_plan;
@@ -103,10 +104,12 @@ PartitionIdToMaxBlockPtr getMaxAddedBlocks(ReadFromMergeTree * reading)
 
 void QueryDAG::appendExpression(const ActionsDAG & expression)
 {
+    auto cloned = expression.clone();
+
     if (dag)
-        dag->mergeInplace(expression.clone());
+        dag->mergeInplace(std::move(cloned));
     else
-        dag = expression.clone();
+        dag = std::move(cloned);
 }
 
 const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::string & name, bool remove)
@@ -246,6 +249,9 @@ bool QueryDAG::build(QueryPlan::Node & node)
         outputs.insert(outputs.begin(), filter_node);
     }
 
+    if (dag)
+        dag->removeTrivialWrappers();
+
     return true;
 }
 
@@ -312,7 +318,7 @@ bool analyzeProjectionCandidate(
     if (projection_parts.empty())
         return false;
 
-    auto projection_result_ptr = reader.estimateNumMarksToRead(
+    ReadFromMergeTree::AnalysisResultPtr projection_result_ptr = reader.estimateNumMarksToRead(
         std::move(projection_parts),
         empty_mutations_snapshot,
         required_column_names,
@@ -320,6 +326,10 @@ bool analyzeProjectionCandidate(
         projection_query_info,
         context,
         context->getSettingsRef()[Setting::max_threads]);
+
+    /// If projection analysis exceeded limits, skip this candidate
+    if (!projection_result_ptr->isUsable())
+        return false;
 
     std::unordered_set<const IMergeTreeDataPart *> valid_parts = candidate.parent_parts;
     for (auto & part : projection_result_ptr->parts_with_ranges)

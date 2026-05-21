@@ -2,8 +2,10 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/flattenTuple.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnNullable.h>
 
 namespace DB
 {
@@ -17,7 +19,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionFlattenTuple : public IFunction
+class FunctionFlattenTuple final : public IFunction
 {
 public:
     static constexpr auto name = "flattenTuple";
@@ -27,25 +29,46 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto & type = arguments[0];
-        const auto * type_tuple = checkAndGetDataType<DataTypeTuple>(type.get());
+        const auto * type_tuple = checkAndGetDataType<DataTypeTuple>(removeNullable(type).get());
+        if (!type_tuple)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Argument for function '{}' must be Tuple or Nullable(Tuple). Got '{}'",
+                getName(),
+                type->getName());
+
+        if (type_tuple->getElements().empty())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Tuple cannot be empty for function '{}'", getName());
+
         if (!type_tuple || !type_tuple->hasExplicitNames())
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Tuple argument for function '{}' must be named. Got '{}'",
                 getName(), type->getName());
 
-        return flattenTuple(type);
+        auto result_type = flattenTuple(type);
+        const auto * result_tuple = checkAndGetDataType<DataTypeTuple>(removeNullable(result_type).get());
+        if (!result_tuple || result_tuple->getElements().empty())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Argument for function '{}' has no scalar columns to flatten: '{}'. "
+                "Flattening produced an empty tuple because all leaf types are themselves empty tuples",
+                getName(),
+                type->getName());
+
+        return result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         auto column = arguments.at(0).column;
-        if (!checkAndGetColumn<ColumnTuple>(column.get()))
+        if (!checkAndGetColumn<ColumnTuple>(removeNullable(column).get()))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of first argument of function {}. Expected ColumnTuple",
+                "Illegal column {} of first argument of function {}. Expected ColumnTuple or Nullable(ColumnTuple)",
                 column->getName(), getName());
 
         return flattenTuple(column);
@@ -83,7 +106,7 @@ SELECT flattenTuple(t) FROM tab;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Tuple;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionFlattenTuple>(documentation);
 }

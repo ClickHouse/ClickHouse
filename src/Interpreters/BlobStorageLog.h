@@ -8,7 +8,6 @@
 #include <Common/setThreadName.h>
 #include <Common/SharedMutex.h>
 #include <Core/NamesAndAliases.h>
-#include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -25,6 +24,7 @@ struct BlobStorageLogElement
         MultiPartUploadWrite = 4,
         MultiPartUploadComplete = 5,
         MultiPartUploadAbort = 6,
+        Read = 7,
     };
 
     EventType event_type;
@@ -39,8 +39,9 @@ struct BlobStorageLogElement
     String local_path;
 
     size_t data_size;
+    size_t elapsed_microseconds;
 
-    Int32 error_code = -1; /// negative if no error
+    Int32 error_code = 0; /// 0 if no error
     String error_message;
 
     using EvenTime = std::chrono::time_point<std::chrono::system_clock>;

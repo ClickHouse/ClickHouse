@@ -1,9 +1,8 @@
 
-#include <Common/Exception.h>
-#include <TableFunctions/TableFunctionFactory.h>
 #include <Analyzer/TableFunctionNode.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -11,12 +10,15 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/parseQuery.h>
-#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/ExecutableSettings.h>
 #include <Storages/StorageExecutable.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <boost/algorithm/string.hpp>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <boost/program_options/parsers.hpp>
+#include <boost/token_functions.hpp>
+#include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -60,7 +62,7 @@ private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     String script_name;
-    std::vector<String> arguments;
+    VectorWithMemoryTracking<String> arguments;
     String format;
     String structure;
     std::vector<ASTPtr> input_queries;
@@ -122,12 +124,24 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
 
     auto script_name_with_arguments_value = checkAndGetLiteralArgument<String>(args[0], "script_name_with_arguments_value");
 
-    std::vector<String> script_name_with_arguments;
-    boost::split(script_name_with_arguments, script_name_with_arguments_value, [](char c){ return c == ' '; });
+    auto script_name_with_arguments = [&]()
+    {
+        try
+        {
+            return boost::program_options::split_unix(script_name_with_arguments_value);
+        }
+        catch (const boost::escaped_list_error & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse script name and arguments: {}", e.what());
+        }
+    }();
+
+    if (script_name_with_arguments.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Script name cannot be empty");
 
     script_name = std::move(script_name_with_arguments[0]);
     script_name_with_arguments.erase(script_name_with_arguments.begin());
-    arguments = std::move(script_name_with_arguments);
+    arguments.assign(script_name_with_arguments.begin(), script_name_with_arguments.end());
     format = checkAndGetLiteralArgument<String>(args[1], "format");
     structure = checkAndGetLiteralArgument<String>(args[2], "structure");
 
@@ -190,7 +204,7 @@ StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/,
 
 void registerTableFunctionExecutable(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionExecutable>();
+    factory.registerFunction<TableFunctionExecutable>({});
 }
 
 }

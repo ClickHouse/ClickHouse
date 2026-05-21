@@ -15,6 +15,7 @@ Expression ((Project names + Projection))
       Skip
         Name: idx1
         Description: set GRANULARITY 1
+        Condition: (x in [\'100\', \'100\'])
         Parts: 1/1
         Granules: 1/1000
       Ranges: 1
@@ -45,6 +46,7 @@ Expression ((Project names + Projection))
       Skip
         Name: idx1
         Description: minmax GRANULARITY 1
+        Condition: (x in [\'100\', \'100\'])
         Parts: 1/1
         Granules: 1/1000
       Ranges: 1

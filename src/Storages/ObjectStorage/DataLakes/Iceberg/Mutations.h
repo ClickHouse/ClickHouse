@@ -1,6 +1,9 @@
 #pragma once
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include "config.h"
+#include <optional>
+#include <vector>
 
 #if USE_AVRO
 
@@ -20,10 +23,12 @@ namespace DB::Iceberg
 void mutate(
     const MutationCommands & commands,
     ContextPtr context,
-    StorageMetadataPtr metadata,
+    StorageMetadataPtr storage_metadata,
     StorageID storage_id,
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
+    const DataLakeStorageSettings & data_lake_settings,
+    const PersistentTableComponents & persistent_table_components,
+    const String & write_format,
     const std::optional<FormatSettings> & format_settings,
     std::shared_ptr<DataLake::ICatalog> catalog);
 
@@ -31,8 +36,9 @@ void alter(
     const AlterCommands & params,
     ContextPtr context,
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration
-);
+    const DataLakeStorageSettings & data_lake_settings,
+    const PersistentTableComponents & persistent_table_components,
+    const String & write_format);
 
 }
 

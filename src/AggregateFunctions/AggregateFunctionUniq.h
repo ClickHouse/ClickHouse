@@ -8,8 +8,6 @@
 
 #include <base/bit_cast.h>
 
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -25,10 +23,14 @@
 #include <AggregateFunctions/UniqExactSet.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 #include <AggregateFunctions/UniquesHashSet.h>
+#include <Common/VectorWithMemoryTracking.h>
 
+namespace DB
+{
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+}
 }
 
 namespace DB
@@ -298,8 +300,8 @@ struct Adder
             const auto & column = *columns[0];
             if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
             {
-                StringRef value = column.getDataAt(row_num);
-                data.set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
+                auto value = column.getDataAt(row_num);
+                data.set.insert(CityHash_v1_0_2::CityHash64(value.data(), value.size()));
             }
             else
             {
@@ -313,10 +315,10 @@ struct Adder
             const auto & column = *columns[0];
             if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
             {
-                StringRef value = column.getDataAt(row_num);
+                auto value = column.getDataAt(row_num);
 
                 SipHash hash;
-                hash.update(value.data, value.size);
+                hash.update(value);
                 const auto key = hash.get128();
 
                 data.set.template insert<const UInt128 &, hint>(key);
@@ -369,8 +371,19 @@ private:
         {
             if (!null_map)
             {
-                for (size_t row = row_begin; row < row_end; ++row)
-                    add<hint>(data, columns, num_args, row);
+                if constexpr (std::is_same_v<Data, AggregateFunctionUniqUniquesHashSetData> &&
+                        !std::is_same_v<T, String> &&
+                        !std::is_same_v<T, IPv6>)
+                {
+                    const auto & column = *columns[0];
+                    data.set.template insertMany<T, AggregateFunctionUniqTraits<T>::hash>(
+                        assert_cast<const ColumnVector<T> &>(column).getData().data() + row_begin, row_end - row_begin);
+                }
+                else
+                {
+                    for (size_t row = row_begin; row < row_end; ++row)
+                        add<hint>(data, columns, num_args, row);
+                }
             }
             else
             {
@@ -470,13 +483,7 @@ public:
     {
         if constexpr (is_parallelize_merge_prepare_needed)
         {
-            std::vector<DataSet *> data_vec;
-            data_vec.resize(places.size());
-
-            for (size_t i = 0; i < data_vec.size(); ++i)
-                data_vec[i] = &this->data(places[i]).set;
-
-            DataSet::parallelizeMergePrepare(data_vec, thread_pool, is_cancelled);
+            DataSet::parallelizeMergePrepare(places, [this](AggregateDataPtr p) { return &this->data(p).set; }, thread_pool, is_cancelled);
         }
         else
         {
@@ -498,6 +505,18 @@ public:
             this->data(place).set.merge(this->data(rhs).set, &thread_pool, &is_cancelled);
         else
             this->data(place).set.merge(this->data(rhs).set);
+    }
+
+    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    {
+        if constexpr (is_able_to_parallelize_merge)
+        {
+            DataSet::parallelizeMergeMulti(places, [this](AggregateDataPtr p) { return &this->data(p).set; }, thread_pool, is_cancelled);
+        }
+        else
+        {
+            IAggregateFunction::parallelizeMergeMulti(places, thread_pool, is_cancelled, arena);
+        }
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -551,7 +570,7 @@ public:
         detail::Adder<T, Data>::add(this->data(place), columns, num_args, row_num);
     }
 
-    void addBatchSinglePlace(
+    ALWAYS_INLINE void addBatchSinglePlace(
         size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena *, ssize_t if_argument_pos)
         const override
     {
@@ -592,6 +611,19 @@ public:
             this->data(place).set.merge(this->data(rhs).set, &thread_pool, &is_cancelled);
         else
             this->data(place).set.merge(this->data(rhs).set);
+    }
+
+    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    {
+        if constexpr (is_able_to_parallelize_merge)
+        {
+            using DataSet = typename Data::Set;
+            DataSet::parallelizeMergeMulti(places, [this](AggregateDataPtr p) { return &this->data(p).set; }, thread_pool, is_cancelled);
+        }
+        else
+        {
+            IAggregateFunction::parallelizeMergeMulti(places, thread_pool, is_cancelled, arena);
+        }
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override

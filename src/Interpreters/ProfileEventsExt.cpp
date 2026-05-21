@@ -6,12 +6,15 @@
 #include <Core/Block.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 
 namespace DB::ErrorCodes
 {
@@ -29,13 +32,14 @@ std::shared_ptr<DB::DataTypeEnum8> TypeEnum = std::make_shared<DB::DataTypeEnum8
 /// Put implementation here to avoid extra linking dependencies for clickhouse_common_io
 void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, bool nonzero_only)
 {
-    auto * column_map = column ? &typeid_cast<DB::ColumnMap &>(*column) : nullptr;
-    if (!column_map)
+    if (!column)
         return;
 
-    auto & offsets = column_map->getNestedColumn().getOffsets();
-    auto & tuple_column = column_map->getNestedData();
-    auto & key_column = tuple_column.getColumn(0);
+    auto & column_map = typeid_cast<DB::ColumnMap &>(*column);
+
+    auto & offsets = column_map.getNestedColumn().getOffsets();
+    auto & tuple_column = column_map.getNestedData();
+    auto & key_column = typeid_cast<DB::ColumnLowCardinality &>(tuple_column.getColumn(0));
     auto & value_column = typeid_cast<DB::ColumnUInt64 &>(tuple_column.getColumn(1));
 
     size_t size = 0;
@@ -46,8 +50,8 @@ void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, 
         if (nonzero_only && 0 == value)
             continue;
 
-        const char * desc = getName(event);
-        key_column.insertData(desc, strlen(desc));
+        std::string_view desc = getName(event);
+        key_column.insertData(desc.data(), desc.size());
         value_column.getData().push_back(value);
         size++;
     }
@@ -68,8 +72,8 @@ static void dumpProfileEvents(ProfileEventsSnapshot const & snapshot, DB::Mutabl
         if (value == 0)
             continue;
 
-        const char * desc = getName(event);
-        name_column->insertData(desc, strlen(desc));
+        std::string_view desc = getName(event);
+        name_column->insertData(desc);
         value_column->insert(value);
         rows++;
     }
@@ -102,6 +106,17 @@ static void dumpMemoryTracker(ProfileEventsSnapshot const & snapshot, DB::Mutabl
     columns[i++]->insert(Type::GAUGE);
     columns[i++]->insertData(MemoryTracker::PEAK_USAGE_EVENT_NAME, strlen(MemoryTracker::PEAK_USAGE_EVENT_NAME));
     columns[i]->insert(snapshot.peak_memory_usage);
+}
+
+static void dumpTempDataOnDiskUsage(ProfileEventsSnapshot const & snapshot, DB::MutableColumns & columns, String const & host_name)
+{
+    size_t i = 0;
+    columns[i++]->insertData(host_name.data(), host_name.size());
+    columns[i++]->insert(static_cast<UInt64>(snapshot.current_time));
+    columns[i++]->insert(static_cast<UInt64>(snapshot.thread_id));
+    columns[i++]->insert(Type::GAUGE);
+    columns[i++]->insertData(DB::TemporaryDataOnDiskScope::USAGE_EVENT_NAME, strlen(DB::TemporaryDataOnDiskScope::USAGE_EVENT_NAME));
+    columns[i]->insert(snapshot.temp_data_on_disk_usage);
 }
 
 DB::Block getSampleBlock()
@@ -146,6 +161,15 @@ DB::Block getProfileEvents(
         group_snapshot.current_time = time(nullptr);
         group_snapshot.memory_usage = thread_group->memory_tracker.get();
         group_snapshot.peak_memory_usage = thread_group->memory_tracker.getPeak();
+        group_snapshot.temp_data_on_disk_usage = 0;
+        if (auto query_context = thread_group->query_context.lock())
+        {
+            /// Report only the per-query scope (not the root scope, which would aggregate across all queries).
+            auto temp_data_on_disk = query_context->getTempDataOnDisk();
+            auto shared_temp_data_on_disk = query_context->getSharedTempDataOnDisk();
+            if (temp_data_on_disk && temp_data_on_disk != shared_temp_data_on_disk)
+                group_snapshot.temp_data_on_disk_usage = static_cast<Int64>(temp_data_on_disk->currentCompressedSize());
+        }
         auto group_counters = thread_group->performance_counters.getPartiallyAtomicSnapshot();
         auto prev_group_snapshot = last_sent_snapshots.find(0);
         group_snapshot.counters =
@@ -161,10 +185,13 @@ DB::Block getProfileEvents(
 
     dumpProfileEvents(group_snapshot, columns, host_name);
     dumpMemoryTracker(group_snapshot, columns, host_name);
+    dumpTempDataOnDiskUsage(group_snapshot, columns, host_name);
 
     Block curr_block;
 
-    while (profile_queue->tryPop(curr_block))
+    /// profile_queue may be null if send_profile_events was enabled via SQL SETTINGS clause
+    /// after the queue creation decision was already made during connection setup.
+    while (profile_queue && profile_queue->tryPop(curr_block))
     {
         auto curr_columns = curr_block.getColumns();
         for (size_t j = 0; j < curr_columns.size(); ++j)

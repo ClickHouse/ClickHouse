@@ -2,7 +2,6 @@
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
@@ -69,7 +68,7 @@ class Context;
  *  4) repeat until it encounters unit that is marked as "past_the_end"
  * All threads must also check for cancel/eof/exception flags.
  */
-class ParallelParsingInputFormat : public IInputFormat
+class ParallelParsingInputFormat final : public IInputFormat
 {
 public:
     /* Used to recreate parser on every new data piece.*/
@@ -189,7 +188,7 @@ private:
 
                     case IProcessor::Status::NeedData: break;
                     case IProcessor::Status::Async: break;
-                    case IProcessor::Status::ExpandPipeline:
+                    case IProcessor::Status::UpdatePipeline:
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "One of the parsers returned status {} during parallel parsing",
                                              IProcessor::statusToName(status));
                 }
@@ -290,7 +289,7 @@ private:
 
     void scheduleParserThreadForUnitWithNumber(size_t ticket_number)
     {
-        runner([this, ticket_number]()
+        runner.enqueueAndKeepTrack([this, ticket_number]()
         {
             parserThreadFunction(ticket_number);
         });

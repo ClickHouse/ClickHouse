@@ -1,9 +1,6 @@
 #pragma once
 
-#include <deque>
-#include <functional>
 #include <mutex>
-#include <future>
 #include <condition_variable>
 #include <variant>
 #include <utility>
@@ -17,9 +14,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
-#include <Common/setThreadName.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
 
 namespace DB
@@ -34,6 +29,7 @@ struct TaskProfileEvents
     ProfileEvents::Event wait_ms = ProfileEvents::end();
 };
 using TaskRuntimeDataPtr = std::shared_ptr<TaskRuntimeData>;
+enum class ThreadName : uint8_t;
 
 /**
  * Has RAII class to determine how many tasks are waiting for the execution and executing at the moment.
@@ -42,7 +38,8 @@ using TaskRuntimeDataPtr = std::shared_ptr<TaskRuntimeData>;
 struct TaskRuntimeData
 {
     TaskRuntimeData(ExecutableTaskPtr && task_, CurrentMetrics::Metric metric_, TaskProfileEvents events_)
-        : task(std::move(task_))
+        : storage_id(task_->getStorageID())
+        , task(std::move(task_))
         , metric(metric_)
         , events(events_)
     {
@@ -84,6 +81,9 @@ struct TaskRuntimeData
             task.reset();
     }
 
+    /// Stored separately so that removeTasksCorrespondingToStorage can identify the task
+    /// even after resetTask() has nullified the task pointer.
+    StorageID storage_id;
     ExecutableTaskPtr task;
     CurrentMetrics::Metric metric;
     TaskProfileEvents events;
@@ -124,12 +124,12 @@ public:
         std::vector<TaskRuntimeDataPtr> res;
         for (auto & item : queue)
         {
-            if (item->task->getStorageID() == id)
+            if (item->storage_id == id)
                 res.push_back(item);
         }
 
         auto it = std::remove_if(queue.begin(), queue.end(),
-            [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
+            [&] (auto && item) -> bool { return item->storage_id == id; });
         queue.erase(it, queue.end());
         return res;
     }
@@ -169,11 +169,11 @@ public:
         std::vector<TaskRuntimeDataPtr> res;
         for (auto & item : buffer)
         {
-            if (item->task->getStorageID() == id)
+            if (item->storage_id == id)
                 res.push_back(item);
         }
 
-        std::erase_if(buffer, [&] (auto && item) -> bool { return item->task->getStorageID() == id; });
+        std::erase_if(buffer, [&] (auto && item) -> bool { return item->storage_id == id; });
         std::make_heap(buffer.begin(), buffer.end(), TaskRuntimeData::comparePtrByPriority);
         return res;
     }

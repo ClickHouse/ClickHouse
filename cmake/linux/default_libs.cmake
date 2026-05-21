@@ -3,29 +3,40 @@
 
 set (DEFAULT_LIBS "-nodefaultlibs")
 
-# We need builtins from Clang
-execute_process (COMMAND
-    ${CMAKE_CXX_COMPILER} --target=${CMAKE_CXX_COMPILER_TARGET} --print-libgcc-file-name --rtlib=compiler-rt
-    OUTPUT_VARIABLE BUILTINS_LIBRARY
-    COMMAND_ERROR_IS_FATAL ANY
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
+# Wire compiler-rt runtimes (builtins/sanitizers/XRay) into the link flags.
+include (cmake/compiler_rt_link.cmake)
 
-# Apparently, in clang-19, the UBSan support library for C++ was moved out into ubsan_standalone_cxx.a, so we have to include both.
-if (SANITIZE STREQUAL undefined)
-    string(REPLACE "builtins.a" "ubsan_standalone_cxx.a" EXTRA_BUILTINS_LIBRARY "${BUILTINS_LIBRARY}")
-endif ()
+option (ENABLE_LLVM_LIBC_MATH "Use math from llvm-libc instead of glibc" ON)
+if (NOT (ARCH_AMD64 OR ARCH_AARCH64))
+    set(ENABLE_LLVM_LIBC_MATH OFF)
+endif()
 
-if (NOT EXISTS "${BUILTINS_LIBRARY}")
-    set (BUILTINS_LIBRARY "-lgcc")
-endif ()
+if (ENABLE_LLVM_LIBC_MATH)
+    link_directories("${CMAKE_BINARY_DIR}/contrib/libllvmlibc-cmake")
+
+    if (ARCH_AMD64)
+        if (X86_ARCH_LEVEL VERSION_LESS 2)
+            # Compat mode: single library, no dispatch
+            target_link_libraries(global-libs INTERFACE libllvmlibc)
+            set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
+        else()
+            # Dispatch mode: v2/v3 variants with runtime CPU detection
+            target_link_libraries(global-libs INTERFACE llvmlibc_dispatch libllvmlibc_x86_64_v2 libllvmlibc_x86_64_v3)
+            set (DEFAULT_LIBS "${DEFAULT_LIBS} -lllvmlibc_dispatch -llibllvmlibc_x86_64_v2 -llibllvmlibc_x86_64_v3")
+        endif()
+    elseif (ARCH_AARCH64)
+        target_link_libraries(global-libs INTERFACE libllvmlibc)
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
+    endif()
+endif()
 
 if (OS_ANDROID)
     # pthread and rt are included in libc
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -ldl")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -ldl")
 elseif (USE_MUSL)
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -static -lc")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static -lc")
 else ()
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread -ldl")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
 endif ()
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
