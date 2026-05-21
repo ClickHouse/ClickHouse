@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: It can be slow
-
 -- Tests for lazy apply mode edge cases:
 -- 1. Multiple segments per token (small posting_list_block_size)
 -- 2. Seek across packed block boundaries (leapfrog intersection)

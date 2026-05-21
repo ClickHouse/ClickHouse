@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: requires experimental text index
-
 -- Regression for lazy ALL mode: `hasAllTokens(col, ['foo', 'foo'])` must behave like
 -- `hasAllTokens(col, ['foo'])` (semantically `A ∩ A == A`). The lazy-mode fast-path
 -- used to compare a token-keyed map size against `tokens.size()` and return all zeros

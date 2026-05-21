@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: It can be slow
-
 -- Tests for the linearOr/linearAnd block-level skip optimization.
 -- These verify that using packed_block_last_doc_ids[] to skip packed blocks
 -- during linear scans produces correct results, and that middle blocks

@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: It can be slow
-
 -- Tests for posting list format validation:
 -- 1. posting_list_block_size controls segment granularity (multi-segment after merge)
 -- 2. Invalid DDL parameter (unknown param) is rejected

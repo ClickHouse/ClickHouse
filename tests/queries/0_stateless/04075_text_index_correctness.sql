@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: It can be slow
-
 -- Equivalence test: lazy and materialize modes must produce identical query results.
 -- Each query is run with both modes; EXCEPT verifies the result sets are identical.
 -- If any EXCEPT returns rows, the modes disagree — that's a bug.

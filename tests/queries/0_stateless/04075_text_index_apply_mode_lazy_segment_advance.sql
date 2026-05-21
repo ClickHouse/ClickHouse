@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: It can be slow
-
 -- Tests for segment advancement in lazy apply mode.
 -- These tests specifically target the next()/seek() cross-segment behavior
 -- that was fixed: next() must auto-advance to the next segment when the
