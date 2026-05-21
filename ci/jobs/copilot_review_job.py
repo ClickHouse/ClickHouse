@@ -155,6 +155,12 @@ Procedure:
 8. For genuinely new issues that do not already have a thread, post individual inline comments on the
    relevant changed lines. For architectural issues that do not map cleanly to one line, post around
    the most relevant change in the diff.
+9. Do NOT post inline comments for issues that dedicated CI jobs already catch and report: build /
+   compilation failures (missing headers, undeclared symbols, type errors, link errors) and style
+   check failures (formatting, linters, `check_cpp.sh` / `check_style.sh` output). These are not
+   blockers in this review context: the build and Style Check jobs surface them with full toolchain
+   output, so a review comment is pure noise. If you want to mention them, include them only as
+   `💡 Nits` in the summary file, never as inline comments or as `❌ Blockers` / `⚠️ Majors`.
 """
 
 
