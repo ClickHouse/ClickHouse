@@ -220,31 +220,21 @@ bool UniqueKeyIndexCache::Release(Handle * handle, bool erase_if_last_ref)
     auto * pin = asPin(handle);
 
     /// Identity-aware "last reference" erase per the rocksdb::Cache::Release
-    /// contract. Predicate runs under CacheBase's bucket lock; same lock
-    /// taken by Lookup (`backing->get`) and Insert (`backing->set`), so
-    /// during this call no other thread can copy the table's shared_ptr or
-    /// insert a new HandlePin for this entry. Inside the lock the
-    /// contributors to `pinned.use_count()` are stable: the table holds one
-    /// strong ref, our HandlePin holds one, and any additional Lookup-issued
-    /// HandlePin contributes one more. So:
-    ///   - `use_count == 2` means we are the last external pin: erase.
-    ///   - `use_count > 2` means another live HandlePin exists: keep the
-    ///     entry resident so a fresh Lookup still hits.
-    ///   - `v != pinned` means the table resident has been replaced under
-    ///     the same key by a concurrent Insert: do not evict the replacement.
+    /// contract, via the O(1) `CacheBase::removeIfMatches` primitive:
+    ///   - `v != pin->entry` means the table resident was replaced under
+    ///     the same key by a concurrent Insert: refuse the erase.
+    ///   - `pin->entry.use_count() != 3` means there's another live
+    ///     external HandlePin: refuse the erase. (The `3` accounts for
+    ///     table + caller's HandlePin + `removeIfMatches`'s local copy.)
     bool erased = false;
     if (erase_if_last_ref)
     {
-        const auto & pinned = pin->entry;
-        using RemovePred = std::function<bool(const UInt128 &, const std::shared_ptr<UniqueKeyIndexCacheEntry> &)>;
-        RemovePred pred = [&](const UInt128 & k, const std::shared_ptr<UniqueKeyIndexCacheEntry> & v)
-        {
-            const bool matches = (k == pin->key && v == pinned && pinned.use_count() == 2);
-            if (matches)
-                erased = true;
-            return matches;
-        };
-        backing->remove(pred);
+        erased = backing->removeIfMatches(
+            pin->key,
+            [&](const std::shared_ptr<UniqueKeyIndexCacheEntry> & v)
+            {
+                return v == pin->entry && pin->entry.use_count() == 3;
+            });
     }
     delete pin;
     return erased;
@@ -317,12 +307,13 @@ void UniqueKeyIndexCache::ApplyToAllEntries(
     const std::function<void(const ROCKSDB_NAMESPACE::Slice &, ObjectPtr, size_t, const CacheItemHelper *)> & /*callback*/,
     const ApplyToAllEntriesOptions & /*opts*/)
 {
-    /// Known contract gap: rocksdb::Cache spec asks the callback to fire for
-    /// every entry, with the original key. The backing here is a CacheBase
-    /// keyed by SipHash128 with no public iteration API, so we can't replay
-    /// either the keys or the entries. Cache-dump (`CacheDumperImpl`) and the
-    /// statistics walker degrade to reporting nothing for this cache; the
-    /// BlockBasedTable hot paths don't depend on this surface.
+    /// Not exercised by RocksDB's `BlockBasedTable` against a user-provided
+    /// `block_cache`; the only consumers (`CacheDumperImpl`, statistics
+    /// walker) degrade to reporting nothing for this cache. We can't honor
+    /// the spec anyway: the backing is keyed by SipHash128 with no public
+    /// iteration API. `chassert` fires in debug builds if a future caller
+    /// shows up; release builds keep the silent no-op.
+    chassert(false && "UniqueKeyIndexCache::ApplyToAllEntries is not implemented");
 }
 
 void UniqueKeyIndexCache::ApplyToHandle(

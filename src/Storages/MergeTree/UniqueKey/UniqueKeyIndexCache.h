@@ -27,6 +27,40 @@ class UniqueKeyIndexCacheBacking;
 /// `system.caches` via `UniqueKeyIndexCacheBytes` /
 /// `UniqueKeyIndexCacheEntries` CurrentMetrics.
 ///
+/// Layering:
+///
+///   RocksDB BlockBasedTable
+///         │  (rocksdb::Cache::Handle*)
+///         ▼
+///   ┌──────────────────────────────────────────┐
+///   │  UniqueKeyIndexCache : rocksdb::Cache    │   public adapter
+///   │   backing ──────┐                        │
+///   └─────────────────│────────────────────────┘
+///                     │
+///                     ▼
+///   ┌──────────────────────────────────────────┐
+///   │  UniqueKeyIndexCacheBacking              │   private impl
+///   │  : CacheBase<UInt128, Entry, ...>        │   (.cpp only)
+///   │   hashmap<UInt128, shared_ptr<Entry>>    │
+///   │   SLRU eviction, byte accounting         │
+///   └──────────────────────────────────────────┘
+///         │ shared_ptr (table strong ref)
+///         ▼
+///   ┌──────────────────────────────────────────┐
+///   │  UniqueKeyIndexCacheEntry                │   one per cached object
+///   │   void *obj  ─> RocksDB Block (KB-scale) │
+///   │   helper, charge, allocator              │
+///   │   ~Entry() => helper->del_cb             │
+///   └──────────────────────────────────────────┘
+///         ▲
+///         │ shared_ptr (per outstanding Handle*)
+///         │
+///   ┌──────────────────────────────────────────┐
+///   │  HandlePin                               │   one per Insert/Lookup/
+///   │   shared_ptr<Entry> entry                │   CreateStandalone call;
+///   │   UInt128 key (SipHash128 of slice key)  │   reinterpret_cast'd to
+///   └──────────────────────────────────────────┘   rocksdb::Cache::Handle*
+///
 /// The adapter narrows several `rocksdb::Cache` surfaces to avoid shadow
 /// bookkeeping on top of `CacheBase`:
 ///   - `HasStrictCapacityLimit()` is hardcoded to false;
