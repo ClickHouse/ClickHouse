@@ -48,8 +48,6 @@ namespace HistogramMetrics
 
     public:
         MetricFamily(String name_, String documentation_, Buckets buckets_, Labels labels_);
-
-        /// Returns the metric for the given labels, creating it if absent.
         Metric & withLabels(LabelValues label_values);
 
         template <typename Func>

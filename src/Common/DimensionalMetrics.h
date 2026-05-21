@@ -46,8 +46,6 @@ namespace DimensionalMetrics
 
     public:
         MetricFamily(String name_, String documentation_, Labels labels_, std::vector<LabelValues> initial_label_values = {});
-
-        /// Returns the metric for the given labels, creating it if absent.
         Metric & withLabels(LabelValues label_values);
 
         template <typename Func>
