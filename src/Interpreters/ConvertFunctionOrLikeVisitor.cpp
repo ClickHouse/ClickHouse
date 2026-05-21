@@ -121,10 +121,22 @@ struct PatternInfo
         return result;
     }
 
+    /// Predicted size of `getCombinedRegexp()` without actually building the string:
+    /// `(p1)|(p2)|...` — 2 wrapper chars per pattern, plus `N - 1` separator chars.
+    size_t combinedRegexpSize() const
+    {
+        if (patterns.empty())
+            return 0;
+        size_t total = 0;
+        for (const auto & p : patterns)
+            total += p.regexp.size();
+        return total + 2 * patterns.size() + (patterns.size() - 1);
+    }
+
     /// Returns true if all per-pattern lengths and the total length fit within the hyperscan
     /// regexp size limits. A limit value of 0 means "unlimited".
-    /// Used both as a pre-check for `multiMatchAny` and as a guard against building an unbounded
-    /// combined `match` regexp in the fallback path.
+    /// Used as a pre-check for `multiMatchAny`; for the combined-`match` fallback, use
+    /// `combinedRegexpFitsHyperscanLimits` instead so the `(`/`)`/`|` overhead is included.
     bool fitsHyperscanLimits(size_t max_length, size_t max_total_length) const
     {
         if (max_length == 0 && max_total_length == 0)
@@ -138,6 +150,23 @@ struct PatternInfo
             total += p.regexp.size();
         }
         return max_total_length == 0 || total <= max_total_length;
+    }
+
+    /// Like `fitsHyperscanLimits`, but bounds the size of the alternation regexp that
+    /// `getCombinedRegexp` would build. The alternation adds `(`, `)` and `|` overhead per
+    /// branch, so the emitted `match` regexp can be substantially larger than the sum of raw
+    /// pattern sizes. Pre-checking the combined size lets the rewrite back off to the original
+    /// `OR LIKE` chain instead of emitting a `match` regexp that could blow up RE2 compile
+    /// limits.
+    bool combinedRegexpFitsHyperscanLimits(size_t max_length, size_t max_total_length) const
+    {
+        if (max_length == 0 && max_total_length == 0)
+            return true;
+
+        for (const auto & p : patterns)
+            if (max_length > 0 && p.regexp.size() > max_length)
+                return false;
+        return max_total_length == 0 || combinedRegexpSize() <= max_total_length;
     }
 
     /// Returns true if any pattern would be rejected at runtime by the `multiMatchAny` slow-regexp
@@ -321,13 +350,13 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/) 
                 }
                 else
                 {
+                    [[maybe_unused]] const bool fits_limits
+                        = info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
 #if USE_VECTORSCAN
-                    const bool fits_limits = info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
                     const bool can_use_multi_match = allow_hyperscan
                         && fits_limits
                         && !(reject_expensive_hyperscan_regexps && info.hasExpensiveRegexp());
 #else
-                    const bool fits_limits = info.fitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length);
                     constexpr bool can_use_multi_match = false;
 #endif
                     if (can_use_multi_match)
@@ -340,13 +369,14 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/) 
                         /// `BAD_ARGUMENTS` / `HYPERSCAN_CANNOT_SCAN_TEXT` failure by this rewrite.
                         match_fn = makeASTFunction("multiMatchAny", key_data.identifier, make_intrusive<ASTLiteral>(Field{info.getRegexps()}));
                     }
-                    else if (fits_limits)
+                    else if (info.combinedRegexpFitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length))
                     {
                         /// Fall back to `match` with combined alternation when Vectorscan is not
                         /// compiled in, `allow_hyperscan` is off, or the patterns would be rejected
-                        /// as expensive. The combined regexp size is bounded by
-                        /// `max_hyperscan_regexp_total_length` (verified above), so we cannot blow
-                        /// up RE2 compile limits here.
+                        /// as expensive. `combinedRegexpFitsHyperscanLimits` accounts for the `(`,
+                        /// `)` and `|` overhead added by `getCombinedRegexp`, so
+                        /// `max_hyperscan_regexp_total_length` is a strict upper bound on the
+                        /// emitted regexp and we cannot blow up RE2 compile limits here.
                         match_fn = makeASTFunction("match", key_data.identifier, make_intrusive<ASTLiteral>(Field{info.getCombinedRegexp()}));
                     }
                     else

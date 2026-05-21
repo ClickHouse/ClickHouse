@@ -145,6 +145,18 @@ struct PatternInfo
         return result;
     }
 
+    /// Predicted size of `getCombinedRegexp()` without actually building the string:
+    /// `(p1)|(p2)|...` — 2 wrapper chars per pattern, plus `N - 1` separator chars.
+    size_t combinedRegexpSize() const
+    {
+        if (patterns.empty())
+            return 0;
+        size_t total = 0;
+        for (const auto & p : patterns)
+            total += p.regexp.size();
+        return total + 2 * patterns.size() + (patterns.size() - 1);
+    }
+
     /// Returns true if all per-pattern lengths and the total length fit within the hyperscan
     /// regexp size limits. A limit value of 0 means "unlimited".
     bool fitsHyperscanLimits(size_t max_length, size_t max_total_length) const
@@ -160,6 +172,23 @@ struct PatternInfo
             total += p.regexp.size();
         }
         return max_total_length == 0 || total <= max_total_length;
+    }
+
+    /// Like `fitsHyperscanLimits`, but bounds the size of the alternation regexp that
+    /// `getCombinedRegexp` would build (the `match` fallback when Vectorscan is unavailable
+    /// or disallowed). The alternation adds `(`, `)` and `|` overhead per branch, so the
+    /// final regexp can be substantially larger than the sum of raw pattern sizes. Pre-checking
+    /// the combined size lets the rewrite back off to the original `OR LIKE` chain instead of
+    /// emitting a `match` regexp that could blow up RE2 compile limits.
+    bool combinedRegexpFitsHyperscanLimits(size_t max_length, size_t max_total_length) const
+    {
+        if (max_length == 0 && max_total_length == 0)
+            return true;
+
+        for (const auto & p : patterns)
+            if (max_length > 0 && p.regexp.size() > max_length)
+                return false;
+        return max_total_length == 0 || combinedRegexpSize() <= max_total_length;
     }
 
     /// Returns true if any pattern would be rejected at runtime by the `multiMatchAny` slow-regexp
@@ -399,12 +428,13 @@ public:
                     auto resolver = FunctionFactory::instance().get("multiMatchAny", context);
                     match_function->resolveAsFunction(resolver);
                 }
-                else
+                else if (info.combinedRegexpFitsHyperscanLimits(max_hyperscan_regexp_length, max_hyperscan_regexp_total_length))
                 {
                     /// Fall back to `match` with combined alternation when Hyperscan is disabled or the
-                    /// patterns would be rejected as expensive. The combined regexp size is bounded
-                    /// by `max_hyperscan_regexp_total_length` (verified above), so we cannot blow up
-                    /// RE2 compile limits here.
+                    /// patterns would be rejected as expensive. `combinedRegexpFitsHyperscanLimits`
+                    /// accounts for the `(`, `)` and `|` overhead added by `getCombinedRegexp` so
+                    /// `max_hyperscan_regexp_total_length` is a strict upper bound on the emitted
+                    /// regexp, and we cannot blow up RE2 compile limits here.
                     match_function = std::make_shared<FunctionNode>("match");
                     match_function->getArguments().getNodes().push_back(key_data.key);
                     match_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{info.getCombinedRegexp()}));
