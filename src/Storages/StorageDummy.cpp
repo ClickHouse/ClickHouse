@@ -23,8 +23,8 @@ StorageDummy::StorageDummy(
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 QueryProcessingStage::Enum StorageDummy::getQueryProcessingStage(

@@ -22,7 +22,7 @@ namespace ErrorCodes
 /**
  * arrayFold( acc,a1,...,aN->expr, arr1, ..., arrN, acc_initial)
  */
-class FunctionArrayFold : public IFunction
+class FunctionArrayFold final : public IFunction
 {
 public:
     static constexpr auto name = "arrayFold";
@@ -31,6 +31,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isHigherOrderFunction() const override { return true; }
 
     /// Avoid the default adaptors since they modify the inputs and that makes knowing the lambda argument types
     /// (getLambdaArgumentTypes) more complex, as it requires knowing what the adaptors will do

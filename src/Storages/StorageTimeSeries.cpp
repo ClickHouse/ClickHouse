@@ -152,8 +152,8 @@ StorageTimeSeries::StorageTimeSeries(
     storage_metadata.setColumns(columns);
     if (!comment.empty())
         storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 
     has_inner_tables = false;
 
@@ -165,14 +165,20 @@ StorageTimeSeries::StorageTimeSeries(
         target.table_id = initTarget(target_kind, target_info, local_context, getStorageID(), columns, *storage_settings, mode);
         target.is_inner_table = target_info && target_info->table_id.empty();
 
-        if (target_kind == ViewTarget::Metrics && !target.is_inner_table)
+        /// Validate the external metrics table only at CREATE time, mirroring the
+        /// `validator.validateColumns` gating above. During `ATTACH`/server startup the
+        /// target table may not be loaded yet, and re-validating then would make the
+        /// outcome attach-order dependent. At CREATE time `initTarget` has already
+        /// resolved the same table via `DatabaseCatalog::getTable`, so we use the
+        /// throwing `getTable` here too to keep the validation fail-close.
+        if (target_kind == ViewTarget::Metrics && !target.is_inner_table && mode < LoadingStrictnessLevel::ATTACH)
         {
-            auto table = DatabaseCatalog::instance().tryGetTable(target.table_id, getContext());
+            auto table = DatabaseCatalog::instance().getTable(target.table_id, getContext());
             auto metadata = table->getInMemoryMetadataPtr(getContext(), false);
 
             for (const auto & column : metadata->columns)
                 if (column.type->lowCardinality())
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "External metrics table cannot have LowCardnality columns for now.");
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "External metrics table cannot have LowCardinality columns for now.");
         }
 
         has_inner_tables |= target.is_inner_table;

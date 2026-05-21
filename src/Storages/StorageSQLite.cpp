@@ -74,9 +74,9 @@ StorageSQLite::StorageSQLite(
         storage_metadata.setColumns(columns_);
 
     storage_metadata.setConstraints(constraints_);
-    setInMemoryMetadata(storage_metadata);
     storage_metadata.setComment(comment);
-    setVirtuals(createVirtuals());
+    storage_metadata.setVirtuals(createVirtuals());
+    setInMemoryMetadata(storage_metadata);
 }
 
 VirtualColumnsDescription StorageSQLite::createVirtuals()
@@ -137,7 +137,7 @@ Pipe StorageSQLite::read(
 }
 
 
-class SQLiteSink : public SinkToStorage
+class SQLiteSink final : public SinkToStorage
 {
 public:
     explicit SQLiteSink(

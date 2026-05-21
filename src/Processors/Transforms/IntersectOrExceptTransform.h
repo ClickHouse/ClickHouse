@@ -12,7 +12,7 @@ namespace DB
 
 class Block;
 
-class IntersectOrExceptTransform : public IProcessor
+class IntersectOrExceptTransform final : public IProcessor
 {
 using Operator = ASTSelectIntersectExceptQuery::Operator;
 

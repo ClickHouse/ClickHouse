@@ -84,7 +84,7 @@ enum class HaystackNeedleOrderIsConfigurable : uint8_t
 template <typename Impl,
          ExecutionErrorPolicy execution_error_policy = ExecutionErrorPolicy::Throw,
          HaystackNeedleOrderIsConfigurable haystack_needle_order_is_configurable = HaystackNeedleOrderIsConfigurable::No>
-class FunctionsStringSearch : public IFunction
+class FunctionsStringSearch final : public IFunction
 {
 private:
     enum class ArgumentOrder : uint8_t
@@ -144,13 +144,13 @@ public:
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
+                haystack_type->getName(), getName());
 
         if (!isString(needle_type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}",
-                arguments[1]->getName(), getName());
+                needle_type->getName(), getName());
 
         if (arguments.size() >= 3)
         {

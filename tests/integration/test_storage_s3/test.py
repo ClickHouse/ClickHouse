@@ -2690,7 +2690,11 @@ def test_archive(started_cluster):
     node = started_cluster.instances["dummy"]
     node2 = started_cluster.instances["dummy2"]
     node_old = started_cluster.instances["dummy_old"]
-    if "25.3" not in node_old.query("SELECT version()"):
+    try:
+        need_restart = "25.3" not in node_old.query("SELECT version()")
+    except Exception:
+        need_restart = True
+    if need_restart:
         node_old.restart_with_original_version(clear_data_dir=True)
 
     assert (
@@ -2822,7 +2826,7 @@ def test_key_value_args(started_cluster):
     )
 
     # Check structure
-    assert "Cannot parse DateTime" in node.query_and_get_error(
+    assert "CANNOT_PARSE_DATETIME" in node.query_and_get_error(
         f"select a from s3('{url}', format = TSVRaw, access_key_id = 'minio', secret_access_key = '{minio_secret_key}', structure = 'a Int32, b DateTime') where b = '2'"
     )
 
@@ -3000,7 +3004,11 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
 
     query_id = f"{table_name}_query_6"
     node_old = started_cluster.instances["dummy_old"]
-    if "25.3" not in node_old.query("SELECT version()"):
+    try:
+        need_restart = "25.3" not in node_old.query("SELECT version()")
+    except Exception:
+        need_restart = True
+    if need_restart:
         node_old.restart_with_original_version(clear_data_dir=True)
 
     node_old.query(
@@ -3174,7 +3182,11 @@ def test_file_pruning_with_hive_style_partitioning_2(started_cluster):
         )
 
     node_old = started_cluster.instances["dummy_old"]
-    if "25.3" not in node_old.query("SELECT version()"):
+    try:
+        need_restart = "25.3" not in node_old.query("SELECT version()")
+    except Exception:
+        need_restart = True
+    if need_restart:
         node_old.restart_with_original_version(clear_data_dir=True)
 
     node_old.query(
@@ -3255,3 +3267,97 @@ def test_gcs_decompressive_transcoding(started_cluster):
         "'http://resolver:8084/bucket/data.jsonl', NOSIGN, 'LineAsString', 'line String')"
     )
     assert result.strip() == '{"id":1}\n{"id":2}\n{"id":3}'
+
+def test_query_condition_cache(started_cluster):
+    instance = started_cluster.instances["dummy"]
+    bucket = started_cluster.minio_bucket
+    table_name = f"test_qcc_{generate_random_string()}"
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}.parquet"
+
+    instance.query(
+        f"""
+        CREATE TABLE {table_name} (id Int64, val String)
+        ENGINE = S3('{url}', 'minio', '{minio_secret_key}', 'Parquet')
+        SETTINGS output_format_parquet_row_group_size = 1
+        """
+    )
+
+    instance.query(
+        f"""
+        INSERT INTO {table_name}
+        SELECT number AS id, toString(number) AS val
+        FROM numbers(1000)
+        """
+    )
+
+    instance.query("SYSTEM DROP QUERY CONDITION CACHE")
+
+    select_query = f"SELECT * FROM {table_name} WHERE id < 100 ORDER BY id"
+    settings = {
+        "use_query_condition_cache": 1,
+        "allow_experimental_analyzer": 1,
+    }
+
+    query_id_first = f"qcc_s3_first_{generate_random_string()}"
+    result_first = instance.query(select_query, query_id=query_id_first, settings=settings)
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    misses_first = int(
+        instance.query(
+            f"SELECT ProfileEvents['QueryConditionCacheMisses'] "
+            f"FROM system.query_log "
+            f"WHERE query_id = '{query_id_first}' AND type = 'QueryFinish'"
+        )
+    )
+    hits_first = int(
+        instance.query(
+            f"SELECT ProfileEvents['QueryConditionCacheHits'] "
+            f"FROM system.query_log "
+            f"WHERE query_id = '{query_id_first}' AND type = 'QueryFinish'"
+        )
+    )
+    assert misses_first > 0, f"Expected cache misses on first run, got {misses_first}"
+    assert hits_first == 0, f"Expected no cache hits on first run, got {hits_first}"
+
+    query_id_second = f"qcc_s3_second_{generate_random_string()}"
+    result_second = instance.query(select_query, query_id=query_id_second, settings=settings)
+    assert result_second == result_first
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    hits_second = int(
+        instance.query(
+            f"SELECT ProfileEvents['QueryConditionCacheHits'] "
+            f"FROM system.query_log "
+            f"WHERE query_id = '{query_id_second}' AND type = 'QueryFinish'"
+        )
+    )
+    assert hits_second > 0, f"Expected cache hits on second run, got {hits_second}"
+
+    instance.query("SYSTEM DROP QUERY CONDITION CACHE")
+
+    query_id_after_drop = f"qcc_s3_after_drop_{generate_random_string()}"
+    instance.query(select_query, query_id=query_id_after_drop, settings=settings)
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    misses_after_drop = int(
+        instance.query(
+            f"SELECT ProfileEvents['QueryConditionCacheMisses'] "
+            f"FROM system.query_log "
+            f"WHERE query_id = '{query_id_after_drop}' AND type = 'QueryFinish'"
+        )
+    )
+    hits_after_drop = int(
+        instance.query(
+            f"SELECT ProfileEvents['QueryConditionCacheHits'] "
+            f"FROM system.query_log "
+            f"WHERE query_id = '{query_id_after_drop}' AND type = 'QueryFinish'"
+        )
+    )
+    assert misses_after_drop > 0, f"Expected cache misses after drop, got {misses_after_drop}"
+    assert hits_after_drop == 0, f"Expected no hits after drop, got {hits_after_drop}"
+
+    instance.query(f"DROP TABLE {table_name}")
+

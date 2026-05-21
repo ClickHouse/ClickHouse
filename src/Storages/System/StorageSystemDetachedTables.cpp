@@ -28,7 +28,7 @@ namespace DB
 namespace
 {
 
-class DetachedTablesBlockSource : public ISource
+class DetachedTablesBlockSource final : public ISource
 {
 public:
     DetachedTablesBlockSource(
@@ -185,8 +185,8 @@ StorageSystemDetachedTables::StorageSystemDetachedTables(const StorageID & table
 
     storage_metadata.setColumns(std::move(description));
 
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemDetachedTables::createVirtuals()

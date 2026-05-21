@@ -1,5 +1,6 @@
 -- Tags: no-replicated-database, no-parallel-replicas
--- no-parallel, no-parallel-replicas: Dictionary is not created in parallel replicas.
+-- no-replicated-database: EXPLAIN output differs for replicated database.
+-- no-parallel-replicas: Dictionary is not available on parallel-replica workers.
 
 SET enable_analyzer = 1;
 SET optimize_inverse_dictionary_lookup = 1;
@@ -156,6 +157,12 @@ SELECT k1, k2, payload
 FROM f
 WHERE dictGet('dict_prices_ckh', 'tag', (k1, k2)) = 'pro'
 ORDER BY k1, k2, payload;
+SELECT 'ComplexKeyHashed, opt off';
+SELECT k1, k2, payload
+FROM f
+WHERE dictGet('dict_prices_ckh', 'tag', (k1, k2)) = 'pro'
+ORDER BY k1, k2, payload
+SETTINGS optimize_inverse_dictionary_lookup = 0;
 
 SELECT 'ComplexHashedArray - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
@@ -169,6 +176,12 @@ SELECT k1, k2, payload
 FROM f
 WHERE dictGet('dict_prices_ch_array', 'tag', (k1, k2)) = 'pro'
 ORDER BY k1, k2, payload;
+SELECT 'ComplexHashedArray, opt off';
+SELECT k1, k2, payload
+FROM f
+WHERE dictGet('dict_prices_ch_array', 'tag', (k1, k2)) = 'pro'
+ORDER BY k1, k2, payload
+SETTINGS optimize_inverse_dictionary_lookup = 0;
 
 SELECT 'ComplexKeySparseHashed - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
@@ -181,6 +194,12 @@ SELECT k1, k2, payload
 FROM f
 WHERE dictGet('dict_prices_ck_sparse_hashed', 'tag', (k1, k2)) = 'pro'
 ORDER BY k1, k2, payload;
+SELECT 'ComplexKeySparseHashed, opt off';
+SELECT k1, k2, payload
+FROM f
+WHERE dictGet('dict_prices_ck_sparse_hashed', 'tag', (k1, k2)) = 'pro'
+ORDER BY k1, k2, payload
+SETTINGS optimize_inverse_dictionary_lookup = 0;
 
 SELECT 'Flat - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
@@ -194,6 +213,12 @@ SELECT id, payload
 FROM f
 WHERE dictGet('dict_items_flat', 'name', id) = 'alpha'
 ORDER BY id, payload;
+SELECT 'Flat, opt off';
+SELECT id, payload
+FROM f
+WHERE dictGet('dict_items_flat', 'name', id) = 'alpha'
+ORDER BY id, payload
+SETTINGS optimize_inverse_dictionary_lookup = 0;
 
 SELECT 'Hashed - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
@@ -207,6 +232,12 @@ SELECT id, payload
 FROM f
 WHERE dictGet('dict_items_hashed', 'name', id) = 'alpha'
 ORDER BY id, payload;
+SELECT 'Hashed, opt off';
+SELECT id, payload
+FROM f
+WHERE dictGet('dict_items_hashed', 'name', id) = 'alpha'
+ORDER BY id, payload
+SETTINGS optimize_inverse_dictionary_lookup = 0;
 
 SELECT 'HashedArray - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
@@ -220,6 +251,12 @@ SELECT id, payload
 FROM f
 WHERE dictGet('dict_items_hashed_array', 'name', id) = 'alpha'
 ORDER BY id, payload;
+SELECT 'HashedArray, opt off';
+SELECT id, payload
+FROM f
+WHERE dictGet('dict_items_hashed_array', 'name', id) = 'alpha'
+ORDER BY id, payload
+SETTINGS optimize_inverse_dictionary_lookup = 0;
 
 SELECT 'SparseHashed - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
@@ -233,3 +270,9 @@ SELECT id, payload
 FROM f
 WHERE dictGet('dict_items_sparse_hashed', 'name', id) = 'alpha'
 ORDER BY id, payload;
+SELECT 'SparseHashed, opt off';
+SELECT id, payload
+FROM f
+WHERE dictGet('dict_items_sparse_hashed', 'name', id) = 'alpha'
+ORDER BY id, payload
+SETTINGS optimize_inverse_dictionary_lookup = 0;

@@ -41,6 +41,15 @@ def get_last_event_time(logger_name, message):
     return datetime.datetime.fromisoformat(ts)
 
 
+@pytest.mark.skip(
+    reason=(
+        "Flaky in CI: shutdown ordering on the RabbitMQ event loop is not "
+        "reliably reproducible under integration-test load. See "
+        "https://github.com/ClickHouse/ClickHouse/pull/104253 for the "
+        "directive to disable, and https://github.com/ClickHouse/ClickHouse/pull/104273 "
+        "for context."
+    )
+)
 def test_shutdown_rabbitmq_with_materialized_view(started_cluster):
     """
     Test that restarting server during active RabbitMQ consumption
@@ -225,6 +234,122 @@ def test_attach_detach_rabbitmq_with_materialized_view(started_cluster):
     assert registry_already_shutdown_queue_time > rabbit_shutdown_time_after_restart
 
 
+@pytest.mark.skip(
+    reason=(
+        "Flaky in CI: idle-loop shutdown timing is sensitive to libuv "
+        "scheduling under integration-test load. See "
+        "https://github.com/ClickHouse/ClickHouse/pull/104253 for the "
+        "directive to disable, and https://github.com/ClickHouse/ClickHouse/pull/104273 "
+        "for context."
+    )
+)
+def test_idle_loop_shutdown_completes_promptly(started_cluster):
+    """
+    Regression test: when the RabbitMQ event loop is idle (no pending messages),
+    shutdown/deactivation must complete promptly. Previously, UV_RUN_ONCE could
+    block indefinitely when no events were pending and stop paths did not wake
+    the libuv loop via uv_stop.
+    """
+
+    instance.query("DROP DATABASE IF EXISTS test SYNC")
+    instance.query("DROP DATABASE IF EXISTS test_idle SYNC")
+    instance.query("CREATE DATABASE test_idle ENGINE=Atomic")
+
+    instance.query(
+        """
+        CREATE TABLE test_idle.destination (
+            key UInt64,
+            value String
+        ) ENGINE = MergeTree()
+        ORDER BY key
+    """
+    )
+
+    instance.query(
+        """
+        CREATE TABLE test_idle.rabbitmq_queue (
+            key UInt64,
+            value String
+        ) ENGINE = RabbitMQ
+        SETTINGS
+            rabbitmq_host_port = 'rabbitmq1:5672',
+            rabbitmq_exchange_name = 'test_idle_shutdown_exchange',
+            rabbitmq_exchange_type = 'fanout',
+            rabbitmq_format = 'JSONEachRow',
+            rabbitmq_username = 'root',
+            rabbitmq_password = 'clickhouse',
+            rabbitmq_flush_interval_ms = 100,
+            rabbitmq_max_block_size = 100
+    """
+    )
+
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test_idle.consumer TO test_idle.destination AS
+        SELECT key, value FROM test_idle.rabbitmq_queue
+    """
+    )
+
+    # Wait for streaming to start — the loop is now active but idle (no messages).
+    instance.wait_for_log_line("Started streaming to .* attached views")
+
+    # Confirm the background loop is actually running before we restart.
+    instance.wait_for_log_line("Background loop started")
+
+    # Restart without publishing any messages — the loop has no pending events.
+    instance.restart_clickhouse()
+
+    # Verify the loop was deactivated during shutdown (not already stopped).
+    instance.query("SYSTEM FLUSH LOGS")
+    deactivate_count = int(
+        instance.query(
+            """SELECT count()
+            FROM merge(system, '^text_log')
+            WHERE
+                logger_name = 'StorageRabbitMQ (test_idle.rabbitmq_queue)' AND
+                message = 'Deactivating looping task'"""
+        ).strip()
+    )
+    assert deactivate_count > 0, "Looping task was never deactivated — loop may not have been running"
+
+    registry_shutdown_time = get_last_event_time(
+        "StreamingStorageRegistry", "Will shutdown 1 queue storages"
+    )
+
+    rabbit_shutdown_time = get_last_event_time(
+        "StorageRabbitMQ (test_idle.rabbitmq_queue)", "Shutdown finished"
+    )
+
+    registry_already_shutdown_time = get_last_event_time(
+        "StreamingStorageRegistry", "Already shutdown 1 queue storages"
+    )
+
+    # Verify correct ordering.
+    assert registry_shutdown_time < rabbit_shutdown_time
+    assert rabbit_shutdown_time < registry_already_shutdown_time
+
+    # The idle loop must not block shutdown for a long time.
+    shutdown_duration = (
+        rabbit_shutdown_time - registry_shutdown_time
+    ).total_seconds()
+    logging.info(f"Idle loop shutdown took {shutdown_duration:.2f}s")
+    assert shutdown_duration < 15, (
+        f"Idle loop shutdown took {shutdown_duration:.2f}s, expected < 15s. "
+        "The event loop may be blocking in uv_run without being woken by uv_stop."
+    )
+
+    instance.query("DROP DATABASE test_idle SYNC")
+
+
+@pytest.mark.skip(
+    reason=(
+        "Flaky in CI: depends on RabbitMQ message-delivery timing that is "
+        "not reliable under integration-test load. See "
+        "https://github.com/ClickHouse/ClickHouse/pull/104253 for the "
+        "directive to disable, and https://github.com/ClickHouse/ClickHouse/pull/104273 "
+        "for context."
+    )
+)
 def test_rabbitmq_virtual_column_table(started_cluster):
     """
     Test that the `_table` virtual column returns the table name

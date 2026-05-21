@@ -7,6 +7,7 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
@@ -19,8 +20,8 @@
 #include <Common/escapeForFileName.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
-#include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
+#include <Common/typeid_cast.h>
 
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
@@ -51,6 +52,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DDLTask.h>
@@ -299,7 +301,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     }
     else
     {
-        bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+        bool is_on_cluster = getContext()->isDDLOrOnClusterInternal();
         if (create.uuid != UUIDHelpers::Nil && !is_on_cluster && !internal)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Ordinary database engine does not support UUID");
 
@@ -330,7 +332,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
-    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext());
+    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext(), mode);
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -782,7 +784,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
-                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, nullptr, getContext());
+                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, nullptr, getContext(), mode);
                 properties.projections.add(std::move(projection));
             }
 
@@ -1283,7 +1285,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             }
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Storage should not be created yet, it's a bug.");
-            create.as_table_function = nullptr;
+            create.reset(create.as_table_function);
             setNullTableEngine(*create.storage);
         }
         return;
@@ -1427,7 +1429,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     const auto * kind_upper = create.is_dictionary ? "DICTIONARY" : "TABLE";
     bool is_replicated_database_internal = database->getEngineName() == "Replicated" && getContext()->getClientInfo().is_replicated_database_internal;
     bool from_path = create.has_attach_from_path;
-    bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    bool is_on_cluster = getContext()->isDDLOrOnClusterInternal();
 
     if (database->getEngineName() == "Replicated" && create.uuid != UUIDHelpers::Nil && !is_replicated_database_internal && !internal && !is_on_cluster && !create.attach)
     {
@@ -1641,7 +1643,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         fs::path user_files = fs::path(getContext()->getUserFilesPath()).lexically_normal();
         fs::path root_path = fs::path(getContext()->getPath()).lexically_normal();
 
-        if (getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+        if (!getContext()->isDDLOrOnClusterInternal())
         {
             fs::path data_path = fs::path(create.attach_from_path).lexically_normal();
             if (data_path.is_relative())
@@ -1661,7 +1663,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                                 "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
         }
     }
-    else if (create.attach && !create.attach_short_syntax && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+    else if (create.attach && !create.attach_short_syntax && !getContext()->isDDLOrOnClusterInternal())
     {
         auto log = getLogger("InterpreterCreateQuery");
         LOG_WARNING(log, "ATTACH TABLE query with full table definition is not recommended: "
@@ -1821,10 +1823,10 @@ void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode,
 
 void validateVirtualColumns(IStorage & storage, ContextPtr context)
 {
-    auto virtual_columns = storage.getVirtualsPtr();
-    for (const auto & storage_column : storage.getInMemoryMetadataPtr(context, false)->getColumns())
+    const auto metadata = storage.getInMemoryMetadataPtr(context, false);
+    for (const auto & storage_column : metadata->columns)
     {
-        if (virtual_columns->tryGet(storage_column.name, VirtualsKind::Persistent, VirtualsMaterializationPlace::All))
+        if (metadata->virtuals.tryGet(storage_column.name, VirtualsKind::Persistent, VirtualsMaterializationPlace::All))
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Cannot create table with column '{}' for {} engines because it is reserved for persistent virtual column",
@@ -1835,8 +1837,7 @@ void validateVirtualColumns(IStorage & storage, ContextPtr context)
         /// so it cannot properly shadow a virtual column of the same name.
         /// This leads to a type mismatch: the Block header uses the user column's type
         /// while the data comes from the virtual column (which may have a different type).
-        if (storage_column.default_desc.kind == ColumnDefaultKind::Ephemeral
-            && virtual_columns->tryGet(storage_column.name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::All))
+        if (storage_column.default_desc.kind == ColumnDefaultKind::Ephemeral && metadata->virtuals.tryGet(storage_column.name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::All))
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Cannot create table with ephemeral column '{}' for {} engines "
@@ -2018,7 +2019,14 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// so we allow waiting here. If database_atomic_wait_for_drop_and_detach_synchronously is disabled
         /// and old storage instance still exists it will throw exception.
         if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
-            database->waitDetachedTableNotInUse(create.uuid);
+        {
+            QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
+            database->waitDetachedTableNotInUse(create.uuid, [&]()
+            {
+                if (query_status)
+                    query_status->throwIfKilled();
+            });
+        }
         else
             database->checkDetachedTableNotInUse(create.uuid);
     }
@@ -2039,9 +2047,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// Before actually creating the table, check if it will lead to cyclic dependencies.
     checkTableCanBeAddedWithNoCyclicDependencies(create, query_ptr, getContext());
 
-    /// Initial queries in Replicated database at this point have query_kind = ClientInfo::QueryKind::SECONNDARY_QUERY,
+    /// Initial queries in Replicated database at this point have is_ddl_or_on_cluster_internal = true,
     /// so we need to check whether the query is initial through getZooKeeperMetadataTransaction()->isInitialQuery()
-    bool is_initial_query = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY ||
+    bool is_initial_query = !getContext()->isDDLOrOnClusterInternal() ||
                             (getContext()->getZooKeeperMetadataTransaction() && getContext()->getZooKeeperMetadataTransaction()->isInitialQuery());
     bool is_predefined_database = DatabaseCatalog::isPredefinedDatabase(create.getDatabase());
     if (!internal && is_initial_query && !is_predefined_database)
@@ -2193,7 +2201,10 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         if (database->getUUID() == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "{} query is supported only for Atomic databases",
-                            create.create_or_replace ? "CREATE OR REPLACE TABLE" : "REPLACE TABLE");
+                            create.create_or_replace
+                ? (create.is_materialized_view ? "CREATE OR REPLACE MATERIALIZED VIEW"
+                    : (create.isView() ? "CREATE OR REPLACE VIEW" : "CREATE OR REPLACE TABLE"))
+                : "REPLACE TABLE");
 
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(table_to_replace_name);
@@ -2319,6 +2330,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
     String temporary_table_name = create.getTable();
+
     auto creator = [&](const StorageID & table_id)
     {
         auto res = StorageFactory::instance().get(create,
@@ -2334,9 +2346,13 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
     };
 
     auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
-    /// addOrUpdateExternalTable will replace existing temporary table with the same name.
-    /// It is thread-safe because of internal locking in Context class.
-    getContext()->getSessionContext()->addOrUpdateExternalTable(temporary_table_name, std::move(temporary_table));
+    /// Bare `REPLACE` requires the target to exist (`updateExternalTable` throws `UNKNOWN_TABLE`);
+    /// `CREATE OR REPLACE` accepts either state. Both calls are thread-safe.
+    auto session_context = getContext()->getSessionContext();
+    if (create.create_or_replace)
+        session_context->addOrUpdateExternalTable(temporary_table_name, std::move(temporary_table));
+    else
+        session_context->updateExternalTable(temporary_table_name, std::move(temporary_table));
     /// Note, until BlockIO will be "executed" - the table is empty, so it is not atomic, but this is OK, since concurrent access from the same session to a temporary table is not possible
     return fillTableIfNeeded(create);
 }
@@ -2388,8 +2404,8 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         command_list->children.push_back(command);
 
         auto query = make_intrusive<ASTAlterQuery>();
-        query->database = create.database;
-        query->table = create.table;
+        query->setDatabase(create.getDatabase());
+        query->setTable(create.getTable());
         query->uuid = create.uuid;
         auto * alter = query->as<ASTAlterQuery>();
 
@@ -2688,7 +2704,14 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     if (create.uuid != UUIDHelpers::Nil)
     {
         if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
-            database->waitDetachedTableNotInUse(create.uuid);
+        {
+            QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
+            database->waitDetachedTableNotInUse(create.uuid, [&]()
+            {
+                if (query_status)
+                    query_status->throwIfKilled();
+            });
+        }
         else
             database->checkDetachedTableNotInUse(create.uuid);
     }
@@ -2743,7 +2766,7 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
                     continue;
 
                 /// Try to remove txn_version.txt file
-                String txn_file = fs::path(part_path) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME;
+                String txn_file = fs::path(part_path) / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME;
                 if (disk->existsFile(txn_file))
                 {
                     disk->removeFile(txn_file);
