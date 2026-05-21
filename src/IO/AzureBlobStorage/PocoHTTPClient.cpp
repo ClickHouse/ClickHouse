@@ -7,6 +7,7 @@
 #include <IO/HTTPCommon.h>  // Add this include at the top
 #include <Common/NetException.h>
 #include <Common/Throttler.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -383,7 +384,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
             body_stream->Rewind();
 
             /// Manual copy
-            std::vector<uint8_t> buffer(8192); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+            VectorWithMemoryTracking<uint8_t> buffer(8192);
             while (auto read = body_stream->Read(buffer.data(), 8192))
             {
                 if (read > 0)
