@@ -5,8 +5,6 @@
 
 -- The real example with metric_log with 1200+ columns!
 SET optimize_trivial_insert_select = 0;
--- Pin to one writer thread to avoid the per-thread, per-column buffer footprint that exceeds the memory limit after #102961 made plain INSERTs fan out across `max_insert_threads`.
-SET max_insert_threads = 1;
 
 system flush logs system.metric_log;
 
@@ -27,10 +25,13 @@ settings
     max_merge_delayed_streams_for_parallel_write = 100,
     -- avoid superfluous merges
     merge_selector_base = 1000,
-    min_columns_to_activate_adaptive_write_buffer = 0,
+    -- Adaptive write buffer ON during INSERT keeps each column stream's compressor at ~16 KiB. Flipped to 0 right before OPTIMIZE so merges still exercise the per-stream ~1 MiB allocation that `max_merge_delayed_streams_for_parallel_write` bounds.
+    min_columns_to_activate_adaptive_write_buffer = 100,
     auto_statistics_types = '';
 
 insert into metric_log select * from generateRandom() limit 10;
+
+alter table metric_log modify setting min_columns_to_activate_adaptive_write_buffer = 0;
 
 optimize table metric_log final;
 system flush logs part_log;
