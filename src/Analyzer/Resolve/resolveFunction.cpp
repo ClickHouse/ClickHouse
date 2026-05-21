@@ -1093,9 +1093,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// from `IN (col)` where the parentheses were stripped by the parser), wrap it in tuple()
             /// so it can be handled by the tuple/array → has() rewrite below.
             bool expand_single_tuple_value = false;
+            bool wrapped_column_rhs = false;
             if (in_second_argument->as<ColumnNode>())
             {
-                expand_single_tuple_value = true;
+                const bool left_is_tuple = isTuple(removeNullable(in_first_argument->getResultType()));
+                const bool right_is_tuple = isTuple(removeNullable(in_second_argument->getResultType()));
+                expand_single_tuple_value = !left_is_tuple && right_is_tuple;
+                wrapped_column_rhs = true;
                 auto tuple_function = std::make_shared<FunctionNode>("tuple");
                 tuple_function->getArguments().getNodes().push_back(std::move(in_second_argument));
                 in_second_argument = std::move(tuple_function);
@@ -1120,6 +1124,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 bool is_not_array_or_tuple_type = non_const_set_candidate->isResolved() &&
                     !isArray(non_const_set_candidate->getResultType()) &&
                     !isTuple(non_const_set_candidate->getResultType());
+                if (!is_tuple_function
+                    && is_tuple_type
+                    && !isTuple(removeNullable(in_first_argument->getResultType())))
+                    expand_single_tuple_value = true;
 
                 /// Case 1: array(..) or any function returning Array type -> rewrite to has()
                 if (is_array_type)
@@ -1136,7 +1144,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     {
                         const bool left_is_tuple = isTuple(removeNullable(in_first_argument->getResultType()));
                         const auto & candidate_arguments = non_const_set_candidate->getArguments().getNodes();
-                        const bool tuple_function_is_set = !left_is_tuple || std::any_of(candidate_arguments.begin(), candidate_arguments.end(),
+                        const bool tuple_function_is_set = wrapped_column_rhs || !left_is_tuple || std::any_of(candidate_arguments.begin(), candidate_arguments.end(),
                             [](const auto & arg) { return isTuple(removeNullable(arg->getResultType())); });
 
                         if (tuple_function_is_set)
