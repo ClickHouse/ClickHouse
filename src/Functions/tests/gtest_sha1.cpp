@@ -1,20 +1,22 @@
-#include "config.h"
+#include <Common/TargetSpecific.h>
 
-#if USE_SSL
+#if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
+#    include "config.h"
+#    if USE_SSL
 
-#include <gtest/gtest.h>
+#        include <gtest/gtest.h>
 
-#include <cstring>
-#include <iomanip>
-#include <random>
-#include <sstream>
-#include <string>
-#include <vector>
+#        include <cstring>
+#        include <iomanip>
+#        include <random>
+#        include <sstream>
+#        include <string>
+#        include <vector>
 
-#include <openssl/evp.h>
+#        include <openssl/evp.h>
 
-#define SHA1_GTEST_UNIT_TEST
-#include "Functions/FunctionSHA1.cpp" // NOLINT(bugprone-suspicious-include)
+#        define SHA1_GTEST_UNIT_TEST
+#        include "Functions/FunctionSHA1.cpp" // NOLINT(bugprone-suspicious-include)
 
 namespace
 {
@@ -116,21 +118,6 @@ TEST(SHA1Helpers, PadFinalBlocks)
 // Trait structs: pair Ops with the correct namespace
 // ============================================================
 
-struct ScalarSHA1Trait
-{
-    using Ops = DB::TargetSpecific::Default::ScalarSHA1Ops;
-    static constexpr size_t lanes = Ops::lanes;
-
-    static void skipIfUnsupported() { }
-
-    static void compute(const uint8_t * const inputs[], const size_t lengths[], uint8_t * output, size_t actual_count)
-    {
-        DB::TargetSpecific::Default::sha1MultiBufCompute<Ops>(inputs, lengths, output, actual_count);
-    }
-};
-
-#    if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
-
 struct AVX2SHA1Trait
 {
     using Ops = DB::TargetSpecific::x86_64_v3::AVX2SHA1Ops;
@@ -165,8 +152,6 @@ struct AVX512SHA1Trait
     }
 };
 
-#    endif
-
 
 // ============================================================
 // Typed test suite
@@ -179,14 +164,7 @@ protected:
     void SetUp() override { T::skipIfUnsupported(); }
 };
 
-using SHA1Implementations = ::testing::Types<
-    ScalarSHA1Trait
-#    if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
-    ,
-    AVX2SHA1Trait,
-    AVX512SHA1Trait
-#    endif
-    >;
+using SHA1Implementations = ::testing::Types<AVX2SHA1Trait, AVX512SHA1Trait>;
 
 TYPED_TEST_SUITE(SHA1MultiBufTest, SHA1Implementations);
 
@@ -387,4 +365,6 @@ TYPED_TEST(SHA1MultiBufTest, StressRandom)
 
 } // anonymous namespace
 
-#endif // USE_SSL
+#    endif // USE_SSL
+
+#endif // USE_MULTITARGET_CODE && x86_64

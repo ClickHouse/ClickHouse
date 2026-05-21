@@ -2,8 +2,8 @@
 ///
 /// Processes multiple independent SHA-1 digests in parallel using SIMD.
 /// On x86-64 with AVX2 or AVX-512, computes 8 or 16 digests simultaneously.
-/// On other architectures, uses a scalar multi-buffer approach with 2
-/// independent dependency chains.
+/// On other architectures, falls back to OpenSSL (which uses hardware
+/// SHA-1 instructions: SHA-NI on x86, ARM CE on ARM).
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -14,6 +14,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/PerformanceAdaptors.h>
 #include <base/IPv4andIPv6.h>
+#include <base/defines.h>
 #include <base/unaligned.h>
 
 #include <Common/TargetSpecific.h>
@@ -22,6 +23,8 @@
 
 #if USE_SSL
 #    include <Common/Crypto/OpenSSLInitializer.h>
+#    include <Common/OpenSSLHelpers.h>
+#    include <openssl/evp.h>
 #endif
 
 #if USE_MULTITARGET_CODE && (defined(__x86_64__) || defined(_M_X64))
@@ -55,7 +58,7 @@ constexpr uint8_t sha1_dummy_lane_byte = 0;
 
 /// Pad a message per SHA-1 spec. Writes the final 1-2 blocks into `out`.
 /// Returns the number of final blocks written (1 or 2).
-size_t sha1PadFinalBlocks(const uint8_t * data, size_t len, uint8_t * out)
+[[maybe_unused]] size_t sha1PadFinalBlocks(const uint8_t * data, size_t len, uint8_t * out)
 {
     size_t full_blocks = len / 64;
     size_t tail = len % 64;
@@ -117,7 +120,7 @@ public:
 ///
 /// Template functions go inside DECLARE_MULTITARGET_CODE so each
 /// target-specific copy is compiled with the correct ISA flags.
-/// The Ops structs (ScalarSHA1Ops, AVX2SHA1Ops, AVX512SHA1Ops) are
+/// The Ops structs (AVX2SHA1Ops, AVX512SHA1Ops) are
 /// in their own DECLARE blocks and found via same-namespace lookup.
 /// ============================================================
 
@@ -153,13 +156,13 @@ DECLARE_MULTITARGET_CODE(
 
     /// Process one 64-byte block for a single group of N lanes.
     template <typename Ops>
-    inline SHA1State<Ops> sha1MultiBufferBlock(
+    ALWAYS_INLINE SHA1State<Ops> sha1MultiBufferBlock(
         typename Ops::Vec a,
         typename Ops::Vec b,
         typename Ops::Vec c,
         typename Ops::Vec d,
         typename Ops::Vec e,
-        const typename Ops::Vec msg[16])
+        typename Ops::Vec w[16])
     {
         using Vec = typename Ops::Vec;
         Vec aa = a;
@@ -167,11 +170,6 @@ DECLARE_MULTITARGET_CODE(
         Vec cc = c;
         Vec dd = d;
         Vec ee = e;
-
-        /// Copy message words into circular buffer for schedule expansion.
-        Vec w[16];
-        for (int i = 0; i < 16; ++i)
-            w[i] = msg[i];
 
         /// Rounds 0-15: use message words directly (already in w).
         /// Register rotation pattern for 5-word state: (a,b,c,d,e) -> (e,a,b,c,d) -> ...
@@ -272,10 +270,7 @@ DECLARE_MULTITARGET_CODE(
     template <typename Ops>
     inline uint32_t extractLane(typename Ops::Vec v, size_t j)
     {
-        constexpr size_t N = Ops::lanes;
-        alignas(64) uint32_t tmp[N];
-        Ops::storeu(tmp, v);
-        return tmp[j];
+        return Ops::extract(v, j);
     }
 
 
@@ -472,88 +467,116 @@ DECLARE_MULTITARGET_CODE(
 #undef SHA1_ROUND
 
 
-/// Scalar (2 lanes = 2 digests per iteration).
+/// Default path: use OpenSSL for hardware-accelerated SHA-1
+/// (SHA-NI on x86, ARM Crypto Extensions on ARM, etc.)
+#if USE_SSL
+
 DECLARE_DEFAULT_CODE(
-
-struct ScalarSHA1Ops
-{
-    struct Vec
-    {
-        uint32_t v[2];
-    };
-    static constexpr size_t lanes = 2;
-
-    static inline Vec add(Vec a, Vec b)
-    {
-        return {a.v[0] + b.v[0], a.v[1] + b.v[1]};
-    }
-    static inline Vec set1(uint32_t val)
-    {
-        return {val, val};
-    }
-    static inline Vec loadu(const void * p)
-    {
-        Vec r;
-        std::memcpy(r.v, p, sizeof(r.v));
-        return r;
-    }
-    static inline void storeu(void * p, Vec val)
-    {
-        std::memcpy(p, val.v, sizeof(val.v));
-    }
-
-    template <int N>
-    static inline Vec rotl(Vec x)
-    {
-        return {(x.v[0] << N) | (x.v[0] >> (32 - N)), (x.v[1] << N) | (x.v[1] >> (32 - N))};
-    }
-
-    static inline Vec xor_(Vec a, Vec b)
-    {
-        return {a.v[0] ^ b.v[0], a.v[1] ^ b.v[1]};
-    }
-
-    /// Ch(b, c, d) = d ^ (b & (c ^ d))
-    static inline Vec F1(Vec b, Vec c, Vec d)
-    {
-        return {d.v[0] ^ (b.v[0] & (c.v[0] ^ d.v[0])), d.v[1] ^ (b.v[1] & (c.v[1] ^ d.v[1]))};
-    }
-    /// Parity(b, c, d) = b ^ c ^ d
-    static inline Vec F2(Vec b, Vec c, Vec d)
-    {
-        return {b.v[0] ^ c.v[0] ^ d.v[0], b.v[1] ^ c.v[1] ^ d.v[1]};
-    }
-    /// Maj(b, c, d) = (b & c) | (d & (b | c))
-    static inline Vec F3(Vec b, Vec c, Vec d)
-    {
-        return {(b.v[0] & c.v[0]) | (d.v[0] & (b.v[0] | c.v[0])), (b.v[1] & c.v[1]) | (d.v[1] & (b.v[1] | c.v[1]))};
-    }
-    /// Parity(b, c, d) = b ^ c ^ d (same as F2)
-    static inline Vec F4(Vec b, Vec c, Vec d)
-    {
-        return {b.v[0] ^ c.v[0] ^ d.v[0], b.v[1] ^ c.v[1] ^ d.v[1]};
-    }
-
-    static inline void gatherAllMessageWords(const uint8_t * const block_ptrs[], Vec msg[16])
-    {
-        for (int i = 0; i < 16; ++i)
-        {
-            msg[i].v[0] = unalignedLoadBigEndian<uint32_t>(block_ptrs[0] + i * 4);
-            msg[i].v[1] = unalignedLoadBigEndian<uint32_t>(block_ptrs[1] + i * 4);
-        }
-    }
-};
 
 class FunctionSHA1Impl : public FunctionSHA1Base
 {
 public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        return executeSHA1Batch<ScalarSHA1Ops>(arguments, input_rows_count);
+        using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
+
+        /// Initialize a template context once. For each row we copy it via
+        /// EVP_MD_CTX_copy_ex, which is much faster than EVP_DigestInit_ex
+        /// per row (OpenSSL 3.x init goes through the provider layer).
+        EVP_MD_CTX_ptr ctx_template(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
+        if (!ctx_template)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
+        EVP_DigestInit_ex(ctx_template.get(), EVP_sha1(), nullptr);
+
+        EVP_MD_CTX_ptr ctx(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
+
+        auto hash_one = [&](const uint8_t * data, size_t len, uint8_t * out)
+        {
+            EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get());
+            EVP_DigestUpdate(ctx.get(), data, len);
+            EVP_DigestFinal_ex(ctx.get(), out, nullptr);
+        };
+
+        if (const auto * col_from = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
+        {
+            auto col_to = ColumnFixedString::create(SHA1_DIGEST_LEN);
+            auto & chars_to = col_to->getChars();
+            chars_to.resize(input_rows_count * SHA1_DIGEST_LEN);
+
+            const auto & data = col_from->getChars();
+            const auto & offsets = col_from->getOffsets();
+            ColumnString::Offset current_offset = 0;
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                hash_one(
+                    reinterpret_cast<const uint8_t *>(&data[current_offset]),
+                    offsets[i] - current_offset,
+                    reinterpret_cast<uint8_t *>(&chars_to[i * SHA1_DIGEST_LEN]));
+                current_offset = offsets[i];
+            }
+            return col_to;
+        }
+
+        if (const auto * col_from_fix = checkAndGetColumn<ColumnFixedString>(arguments[0].column.get()))
+        {
+            auto col_to = ColumnFixedString::create(SHA1_DIGEST_LEN);
+            auto & chars_to = col_to->getChars();
+            chars_to.resize(input_rows_count * SHA1_DIGEST_LEN);
+
+            const auto & data = col_from_fix->getChars();
+            size_t row_len = col_from_fix->getN();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                hash_one(
+                    reinterpret_cast<const uint8_t *>(&data[i * row_len]),
+                    row_len,
+                    reinterpret_cast<uint8_t *>(&chars_to[i * SHA1_DIGEST_LEN]));
+            }
+            return col_to;
+        }
+
+        if (const auto * col_from_ip = checkAndGetColumn<ColumnIPv6>(arguments[0].column.get()))
+        {
+            auto col_to = ColumnFixedString::create(SHA1_DIGEST_LEN);
+            auto & chars_to = col_to->getChars();
+            chars_to.resize(input_rows_count * SHA1_DIGEST_LEN);
+
+            const auto & ip_data = col_from_ip->getData();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                hash_one(
+                    reinterpret_cast<const uint8_t *>(&ip_data[i]),
+                    sizeof(IPv6::UnderlyingType),
+                    reinterpret_cast<uint8_t *>(&chars_to[i * SHA1_DIGEST_LEN]));
+            }
+            return col_to;
+        }
+
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function SHA1", arguments[0].column->getName());
     }
 };
 
 ) // DECLARE_DEFAULT_CODE
+
+#else
+
+DECLARE_DEFAULT_CODE(
+
+class FunctionSHA1Impl : public FunctionSHA1Base
+{
+public:
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t) const override
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Function {} requires OpenSSL", name);
+    }
+};
+
+) // DECLARE_DEFAULT_CODE
+
+#endif
 
 
 /// AVX2 (8 lanes = 8 parallel digests)
@@ -611,6 +634,14 @@ struct AVX2SHA1Ops
     static inline Vec F4(Vec b, Vec c, Vec d)
     {
         return _mm256_xor_si256(b, _mm256_xor_si256(c, d));
+    }
+
+    /// Extract lane `j` from a 256-bit vector using cross-lane permute
+    /// (vpermd), avoiding the store-to-memory + scalar load round-trip.
+    static inline uint32_t extract(Vec v, size_t j)
+    {
+        __m256i idx = _mm256_castsi128_si256(_mm_cvtsi32_si128(static_cast<int>(j)));
+        return static_cast<uint32_t>(_mm256_cvtsi256_si32(_mm256_permutevar8x32_epi32(v, idx)));
     }
 
     /// Byte-swap mask: reverse bytes within each 32-bit word for big-endian conversion.
@@ -735,6 +766,14 @@ struct AVX512SHA1Ops
     static inline Vec F4(Vec b, Vec c, Vec d)
     {
         return _mm512_ternarylogic_epi32(b, c, d, 0x96);
+    }
+
+    /// Extract lane `j` from a 512-bit vector using cross-lane permute
+    /// (vpermd), avoiding the store-to-memory + scalar load round-trip.
+    static inline uint32_t extract(Vec v, size_t j)
+    {
+        __m512i idx = _mm512_castsi128_si512(_mm_cvtsi32_si128(static_cast<int>(j)));
+        return static_cast<uint32_t>(_mm512_cvtsi512_si32(_mm512_permutexvar_epi32(idx, v)));
     }
 
     /// Byte-swap mask for big-endian conversion within 32-bit words.
