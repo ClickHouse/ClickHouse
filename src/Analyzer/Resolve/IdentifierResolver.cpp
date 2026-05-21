@@ -1237,6 +1237,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
             const auto & ambiguity_path_start = identifier_lookup.identifier.front();
             auto column_source_matches_path_start = [&](const QueryTreeNodePtr & resolved) -> bool
             {
+                if (identifier_lookup.identifier.getPartsSize() < 2)
+                    return false;
                 const auto * column = resolved->as<ColumnNode>();
                 if (!column)
                     return false;
