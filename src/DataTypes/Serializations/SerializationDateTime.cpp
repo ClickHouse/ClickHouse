@@ -56,13 +56,13 @@ readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const D
             break;
     }
 
-    x = std::max<time_t>(0, x);
+    x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
 }
 
 inline void readAsIntText(time_t & x, ReadBuffer & istr)
 {
     readIntText(x, istr);
-    x = std::max<time_t>(0, x);
+    x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
 }
 
 inline bool tryReadText(
@@ -82,7 +82,7 @@ inline bool tryReadText(
             break;
     }
 
-    x = std::max<time_t>(0, x);
+    x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
     return res;
 }
 
@@ -90,7 +90,7 @@ inline bool tryReadAsIntText(time_t & x, ReadBuffer & istr)
 {
     if (!tryReadIntText(x, istr))
         return false;
-    x = std::max<time_t>(0, x);
+    x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
     return true;
 }
 

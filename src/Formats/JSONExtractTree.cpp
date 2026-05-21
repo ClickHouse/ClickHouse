@@ -729,7 +729,7 @@ public:
             return false;
         }
 
-        assert_cast<ColumnDateTime &>(column).insert(value);
+        assert_cast<ColumnDateTime &>(column).insert(std::clamp<time_t>(value, 0, static_cast<time_t>(0xFFFFFFFF)));
         return true;
     }
 
