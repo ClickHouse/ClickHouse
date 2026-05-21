@@ -1,5 +1,6 @@
 #include <Common/QueryFuzzer.h>
 
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -1722,6 +1723,90 @@ void QueryFuzzer::fuzzProjectionDeclaration(ASTProjectionDeclaration & projectio
     fuzzProjectionWithSettings(projection);
 }
 
+static const std::map<size_t, Strings> swapAggrs
+    = {{1,
+        {"any",
+         "anyHeavy",
+         "anyLast",
+         "anyRespectNulls",
+         "avg",
+         "count",
+         "deltaSum",
+         "entropy",
+         "first_value",
+         "groupArray",
+         "groupBitAnd",
+         "groupBitOr",
+         "groupBitXor",
+         "groupUniqArray",
+         "kurtPop",
+         "kurtSamp",
+         "last_value",
+         "max",
+         "median",
+         "min",
+         "singleValueOrNull",
+         "skewPop",
+         "skewSamp",
+         "stddevPop",
+         "stddevPopStable",
+         "stddevSamp",
+         "stddevSampStable",
+         "sum",
+         "sumCount",
+         "sumKahan",
+         "sumWithOverflow",
+         "topK",
+         "uniq",
+         "uniqCombined",
+         "uniqCombined64",
+         "uniqExact",
+         "uniqHLL12",
+         "uniqTheta",
+         "varPop",
+         "varPopStable",
+         "varSamp",
+         "varSampStable",
+         "groupArrayIntersect",
+         "groupBitmapAnd",
+         "groupBitmapOr",
+         "groupBitmapXor",
+         "quantile",
+         "groupArrayMovingAvg",
+         "groupArrayMovingSum",
+         "groupArraySorted",
+         "aggThrow"}},
+       {2,
+        {"argMax",
+         "argMin",
+         "avgWeighted",
+         "boundingRatio",
+         "contingency",
+         "corr",
+         "corrStable",
+         "covarPop",
+         "covarPopStable",
+         "covarSamp",
+         "covarSampStable",
+         "cramersV",
+         "cramersVBiasCorrected",
+         "deltaSumTimestamp",
+         "kolmogorovSmirnovTest",
+         "mannWhitneyUTest",
+         "maxIntersections",
+         "maxIntersectionsPosition",
+         "quantileWeighted",
+         "rankCorr",
+         "studentTTest",
+         "theilsU",
+         "topKWeighted",
+         "uniq",
+         "welchTTest",
+         "simpleLinearRegression",
+         "largestTriangleThreeBuckets",
+         "analysisOfVariance",
+         "intervalLengthSum"}}};
+
 DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 {
     checkIterationLimit();
@@ -1873,6 +1958,33 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 #undef FUZZ_DECIMAL
     /// NOLINTEND(bugprone-macro-parentheses)
 
+    const auto * type_aggr = typeid_cast<const DataTypeAggregateFunction *>(type.get());
+    if (type_aggr && fuzz_rand() % 4 != 0)
+    {
+        const auto nargs = type_aggr->getArgumentsDataTypes().size();
+        if (nargs > 0 && nargs < 3 && swapAggrs.contains(nargs))
+        {
+            const String & old_name = type_aggr->getFunctionName();
+            const Strings & candidates = swapAggrs.at(nargs);
+            const String & new_name = pickRandomly(fuzz_rand, candidates);
+
+            if (new_name != old_name)
+            {
+                try
+                {
+                    AggregateFunctionProperties properties;
+                    auto new_func = AggregateFunctionFactory::instance().get(
+                        new_name, NullsAction::EMPTY, type_aggr->getArgumentsDataTypes(), type_aggr->getParameters(), properties);
+                    return std::make_shared<DataTypeAggregateFunction>(
+                        new_func, type_aggr->getArgumentsDataTypes(), type_aggr->getParameters());
+                }
+                catch (...)
+                {
+                }
+            }
+        }
+    }
+
     size_t tmp = fuzz_rand() % 8;
     if (tmp == 0)
         return std::make_shared<DataTypeArray>(type);
@@ -1893,16 +2005,20 @@ DataTypePtr QueryFuzzer::getRandomType()
 {
     checkIterationLimit();
 
-    static const std::vector<TypeIndex> random_types
-        = {TypeIndex::UInt8,       TypeIndex::UInt16,         TypeIndex::UInt32,   TypeIndex::UInt64,     TypeIndex::UInt128,
-           TypeIndex::UInt256,     TypeIndex::Int8,           TypeIndex::Int16,    TypeIndex::Int32,      TypeIndex::Int64,
-           TypeIndex::Int128,      TypeIndex::Int256,         TypeIndex::BFloat16, TypeIndex::Float32,    TypeIndex::Float64,
-           TypeIndex::Date,        TypeIndex::Date32,         TypeIndex::DateTime, TypeIndex::DateTime64, TypeIndex::String,
-           TypeIndex::FixedString, TypeIndex::Enum8,          TypeIndex::Enum16,   TypeIndex::Decimal32,  TypeIndex::Decimal64,
-           TypeIndex::Decimal128,  TypeIndex::Decimal256,     TypeIndex::UUID,     TypeIndex::Array,      TypeIndex::Tuple,
-           TypeIndex::Nullable,    TypeIndex::LowCardinality, TypeIndex::Map,      TypeIndex::IPv4,       TypeIndex::IPv6,
-           TypeIndex::Variant,     TypeIndex::Dynamic,        TypeIndex::Time,     TypeIndex::Time64,     TypeIndex::Object,
-           TypeIndex::QBit};
+    static const std::vector<TypeIndex> random_types = {TypeIndex::UInt8,      TypeIndex::UInt16,         TypeIndex::UInt32,
+                                                        TypeIndex::UInt64,     TypeIndex::UInt128,        TypeIndex::UInt256,
+                                                        TypeIndex::Int8,       TypeIndex::Int16,          TypeIndex::Int32,
+                                                        TypeIndex::Int64,      TypeIndex::Int128,         TypeIndex::Int256,
+                                                        TypeIndex::BFloat16,   TypeIndex::Float32,        TypeIndex::Float64,
+                                                        TypeIndex::Date,       TypeIndex::Date32,         TypeIndex::DateTime,
+                                                        TypeIndex::DateTime64, TypeIndex::String,         TypeIndex::FixedString,
+                                                        TypeIndex::Enum8,      TypeIndex::Enum16,         TypeIndex::Decimal32,
+                                                        TypeIndex::Decimal64,  TypeIndex::Decimal128,     TypeIndex::Decimal256,
+                                                        TypeIndex::UUID,       TypeIndex::Array,          TypeIndex::Tuple,
+                                                        TypeIndex::Nullable,   TypeIndex::LowCardinality, TypeIndex::Map,
+                                                        TypeIndex::IPv4,       TypeIndex::IPv6,           TypeIndex::Variant,
+                                                        TypeIndex::Dynamic,    TypeIndex::Time,           TypeIndex::Time64,
+                                                        TypeIndex::Object,     TypeIndex::QBit,           TypeIndex::AggregateFunction};
 
     /// Geo types (Point, Ring, Polygon, MultiPolygon) are custom-named Array aliases with no TypeIndex
     /// of their own, so they are appended after the TypeIndex vector in a unified selection.
@@ -1995,12 +2111,35 @@ DataTypePtr QueryFuzzer::getRandomType()
             const size_t dimension = fuzz_rand() % 128 + 1;
             return std::make_shared<DataTypeQBit>(qbit_element_types[fuzz_rand() % std::size(qbit_element_types)], dimension);
         }
+        case TypeIndex::AggregateFunction: {
+            const size_t nargs = fuzz_rand() % 3;
+            String name = "count";
+            DataTypes arg_types;
+            if (nargs > 0 && swapAggrs.contains(nargs))
+            {
+                name = pickRandomly(fuzz_rand, swapAggrs.at(nargs));
+                for (size_t i = 0; i < nargs; ++i)
+                    arg_types.push_back(getRandomType());
+            }
+            try
+            {
+                AggregateFunctionProperties properties;
+                auto func = AggregateFunctionFactory::instance().get(name, NullsAction::EMPTY, arg_types, {}, properties);
+                return std::make_shared<DataTypeAggregateFunction>(func, arg_types, Array{});
+            }
+            catch (...)
+            {
+            }
+            break;
+        }
         default:
-            return DataTypeFactory::instance().get(String(magic_enum::enum_name(type_id)));
+            break;
     }
 
 #undef DISPATCH
     /// NOLINTEND(bugprone-macro-parentheses)
+
+    return DataTypeFactory::instance().get(String(magic_enum::enum_name(type_id)));
 }
 
 void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
@@ -3033,90 +3172,6 @@ ASTPtr QueryFuzzer::addArrayJoinClause()
     }
     return nullptr;
 }
-
-static const std::map<size_t, Strings> swapAggrs
-    = {{1,
-        {"any",
-         "anyHeavy",
-         "anyLast",
-         "anyRespectNulls",
-         "avg",
-         "count",
-         "deltaSum",
-         "entropy",
-         "first_value",
-         "groupArray",
-         "groupBitAnd",
-         "groupBitOr",
-         "groupBitXor",
-         "groupUniqArray",
-         "kurtPop",
-         "kurtSamp",
-         "last_value",
-         "max",
-         "median",
-         "min",
-         "singleValueOrNull",
-         "skewPop",
-         "skewSamp",
-         "stddevPop",
-         "stddevPopStable",
-         "stddevSamp",
-         "stddevSampStable",
-         "sum",
-         "sumCount",
-         "sumKahan",
-         "sumWithOverflow",
-         "topK",
-         "uniq",
-         "uniqCombined",
-         "uniqCombined64",
-         "uniqExact",
-         "uniqHLL12",
-         "uniqTheta",
-         "varPop",
-         "varPopStable",
-         "varSamp",
-         "varSampStable",
-         "groupArrayIntersect",
-         "groupBitmapAnd",
-         "groupBitmapOr",
-         "groupBitmapXor",
-         "quantile",
-         "groupArrayMovingAvg",
-         "groupArrayMovingSum",
-         "groupArraySorted",
-         "aggThrow"}},
-       {2,
-        {"argMax",
-         "argMin",
-         "avgWeighted",
-         "boundingRatio",
-         "contingency",
-         "corr",
-         "corrStable",
-         "covarPop",
-         "covarPopStable",
-         "covarSamp",
-         "covarSampStable",
-         "cramersV",
-         "cramersVBiasCorrected",
-         "deltaSumTimestamp",
-         "kolmogorovSmirnovTest",
-         "mannWhitneyUTest",
-         "maxIntersections",
-         "maxIntersectionsPosition",
-         "quantileWeighted",
-         "rankCorr",
-         "studentTTest",
-         "theilsU",
-         "topKWeighted",
-         "uniq",
-         "welchTTest",
-         "simpleLinearRegression",
-         "largestTriangleThreeBuckets",
-         "analysisOfVariance",
-         "intervalLengthSum"}}};
 
 /// Higher-order array functions that accept a lambda or function name as first argument.
 /// Shared between swapFuncs and the HOF fuzzing logic below.
