@@ -277,7 +277,6 @@ void registerGCSObjectStorage(ObjectStorageFactory & factory)
     factory.registerObjectStorageType("gcs", createGCSObjectStorage);
 }
 
-
 void registerObjectStorages()
 {
     auto & factory = ObjectStorageFactory::instance();

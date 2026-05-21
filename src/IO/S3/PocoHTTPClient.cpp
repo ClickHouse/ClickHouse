@@ -57,7 +57,6 @@ namespace ProfileEvents
     extern const Event S3WriteRequestsThrottling;
     extern const Event S3WriteRequestsRedirects;
 
-
     extern const Event DiskS3ReadMicroseconds;
     extern const Event DiskS3ReadRequestsCount;
     extern const Event DiskS3ReadRequestsErrors;
@@ -69,7 +68,6 @@ namespace ProfileEvents
     extern const Event DiskS3WriteRequestsErrors;
     extern const Event DiskS3WriteRequestsThrottling;
     extern const Event DiskS3WriteRequestsRedirects;
-
 
     extern const Event DiskS3GetRequestThrottlerCount;
     extern const Event DiskS3GetRequestThrottlerBlocked;
@@ -221,7 +219,8 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_config
     , for_disk_s3(client_configuration.for_disk_s3)
     , request_throttler(client_configuration.request_throttler)
     , extra_headers(client_configuration.extra_headers)
-{}
+{
+}
 
 PocoHTTPClient::PocoHTTPClient(const Aws::Client::ClientConfiguration & client_configuration)
     : timeouts(ConnectionTimeouts()
