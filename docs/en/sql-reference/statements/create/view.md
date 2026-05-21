@@ -66,7 +66,23 @@ INSERT INTO v_positive VALUES (3, 'ok');     -- succeeds
 INSERT INTO v_positive VALUES (-1, 'fail');  -- VIOLATED_CONSTRAINT
 ```
 
-`ORDER BY` is allowed in the view and ignored for inserts. Views containing `JOIN`, `GROUP BY`, `HAVING`, `LIMIT`, `DISTINCT`, `UNION`, or non-trivial expressions in the `SELECT` list are not insertable and raise `NOT_IMPLEMENTED`. Inserting into a view combined with `SQL SECURITY DEFINER` lets the view act as a writable alias of the underlying table without granting the caller direct access to it.
+`ORDER BY` is allowed in the view and ignored for inserts. Views containing `JOIN`, `GROUP BY`, `HAVING`, `LIMIT`, `DISTINCT`, `UNION`, or non-trivial expressions in the `SELECT` list are not insertable and raise `NOT_IMPLEMENTED`.
+
+Combined with `SQL SECURITY DEFINER`, a writable view can act as a permissioned alias of an underlying table: the view's owner grants read/write through the view while the caller is not granted any direct access to the target. This is convenient for renaming or restricting columns without exposing the base table.
+
+```sql
+CREATE TABLE accounts_raw (id Int64, owner String, balance Decimal(18, 2)) ENGINE = MergeTree ORDER BY id;
+
+-- Expose only the columns the caller is allowed to write, and remap them.
+CREATE VIEW accounts
+    DEFINER = admin SQL SECURITY DEFINER
+    AS SELECT id AS account_id, balance AS amount FROM accounts_raw;
+
+GRANT INSERT, SELECT ON accounts TO reporting_user;
+-- `reporting_user` does NOT need any privilege on `accounts_raw`.
+
+INSERT INTO accounts (account_id, amount) VALUES (1, 100.0);
+```
 
 ## Parameterized View {#parameterized-view}
 

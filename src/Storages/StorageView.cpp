@@ -47,7 +47,9 @@
 
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/processColumnTransformers.h>
 #include <Parsers/QueryParameterVisitor.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
@@ -353,21 +355,32 @@ public:
         auto insert_query = make_intrusive<ASTInsertQuery>();
         insert_query->table_id = target_table_->getStorageID();
 
-        /// Determine which view columns to forward to the underlying table.
-        /// If the user wrote `INSERT INTO view (col1, col2) ...`, only those columns
-        /// are forwarded so that any other column gets the *target table's* default
-        /// rather than the view-schema default that `InsertDependenciesBuilder::createPreSink`
-        /// would otherwise fill in.
+        /// All view columns are always forwarded to the underlying table.
+        /// For a partial `INSERT INTO view (subset) ...`, the omitted view columns are
+        /// pre-computed in `consume` (see `omitted_view_columns_` and `materializeTargetDefaults`)
+        /// with the target table's own DEFAULT values. That way the inner `INSERT` pipeline
+        /// receives full rows and does not re-evaluate any non-deterministic DEFAULT
+        /// expression a second time after the view's `WHERE` predicate has already validated it.
         Names forwarded_view_columns;
-        if (!user_specified_columns_.empty())
+        forwarded_view_columns.reserve(getHeader().columns());
+        for (const auto & col : getHeader().getColumnsWithTypeAndName())
+            forwarded_view_columns.push_back(col.name);
+
+        const NameSet user_set(user_specified_columns_.begin(), user_specified_columns_.end());
+        if (!user_set.empty())
         {
-            forwarded_view_columns = user_specified_columns_;
-        }
-        else
-        {
-            forwarded_view_columns.reserve(getHeader().columns());
-            for (const auto & col : getHeader().getColumnsWithTypeAndName())
-                forwarded_view_columns.push_back(col.name);
+            const auto target_metadata = target_table_->getInMemoryMetadataPtr(context_, false);
+            const auto & target_cols = target_metadata->getColumns();
+            for (const auto & view_name : forwarded_view_columns)
+            {
+                if (user_set.contains(view_name))
+                    continue;
+                auto it = column_mapping_.find(view_name);
+                const String target_name = (it != column_mapping_.end()) ? it->second : view_name;
+                if (!target_cols.has(target_name))
+                    continue;
+                omitted_view_columns_.push_back(view_name);
+            }
         }
 
         /// Set column list: view columns mapped to target column names.
@@ -440,20 +453,20 @@ public:
     {
         auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
+        /// For a partial `INSERT INTO view (subset) ...`, columns omitted by the user have been
+        /// filled with view-schema *type* defaults (e.g. `0`, `''`) by `InsertDependenciesBuilder::createPreSink`.
+        /// Replace them in place with the target table's own DEFAULT values. This serves two purposes:
+        ///   1. The view's `WHERE` predicate is evaluated against the values that will actually be stored.
+        ///   2. The inner `INSERT` pipeline receives the materialized values and does not re-evaluate
+        ///      the DEFAULT a second time — important for non-deterministic defaults such as
+        ///      `DEFAULT now64()` or `DEFAULT rand()`, where the two evaluations would otherwise diverge.
+        if (!omitted_view_columns_.empty())
+            materializeTargetDefaults(block);
+
         /// Check the `WHERE` constraint: every inserted row must satisfy the view's condition.
         if (where_actions_)
         {
             Block check_block(block);
-
-            /// For a partial `INSERT INTO view (subset) ...`, columns omitted by the user
-            /// have been filled with view-schema *type* defaults (e.g. `0`, `''`) by
-            /// `InsertDependenciesBuilder::createPreSink`. Those values do not match what
-            /// the target table will ultimately store, because the inner INSERT pipeline
-            /// will overwrite them with the target column's own DEFAULT. Materialize the
-            /// target defaults here so the `WHERE` predicate is evaluated against the
-            /// values that will actually land in the target table.
-            if (!user_specified_columns_.empty())
-                materializeTargetDefaults(check_block);
 
             for (const auto & [view_name, target_name] : column_mapping_)
             {
@@ -479,23 +492,12 @@ public:
             }
         }
 
-        /// If the user listed an explicit subset of view columns in the INSERT,
-        /// drop the other columns from the block before forwarding so that the
-        /// target table applies its own defaults to them.
-        if (!user_specified_columns_.empty())
-        {
-            Block forwarded_block;
-            for (const auto & view_name : user_specified_columns_)
-                forwarded_block.insert(block.getByName(view_name));
-            block = std::move(forwarded_block);
-        }
-
         /// Rename view columns to target table columns.
         for (const auto & [view_name, target_name] : column_mapping_)
             if (block.has(view_name))
                 block.getByName(view_name).name = target_name;
 
-        /// Push to the inner `INSERT` pipeline which handles defaults, constraints, and writing.
+        /// Push to the inner `INSERT` pipeline which handles constraints and writing.
         executor_->push(std::move(block));
     }
 
@@ -506,19 +508,18 @@ public:
 
 private:
     /// Replace the type-default values of omitted view columns with the target table's
-    /// own DEFAULT expressions, so the view's `WHERE` predicate sees the same values
-    /// that will eventually be written to the target table.
-    void materializeTargetDefaults(Block & check_block)
+    /// own DEFAULT expressions, evaluated exactly once. The materialized values are
+    /// written back in the *view's* column type so the same block can be used both for
+    /// the view's `WHERE` predicate and for the inner `INSERT` pipeline.
+    void materializeTargetDefaults(Block & block)
     {
-        const NameSet user_set(user_specified_columns_.begin(), user_specified_columns_.end());
-
         const auto target_metadata = target_table_->getInMemoryMetadataPtr(context_, false);
         const auto & target_cols = target_metadata->getColumns();
 
         Block target_named;
         for (const auto & view_name : user_specified_columns_)
         {
-            auto col = check_block.getByName(view_name);
+            auto col = block.getByName(view_name);
             auto it = column_mapping_.find(view_name);
             if (it != column_mapping_.end())
                 col.name = it->second;
@@ -529,26 +530,17 @@ private:
         {
             String view_name;
             String target_name;
-            DataTypePtr type;
+            DataTypePtr view_type;
         };
         std::vector<OmittedColumn> omitted;
-        omitted.reserve(check_block.columns());
-        for (const auto & col : check_block.getColumnsWithTypeAndName())
+        omitted.reserve(omitted_view_columns_.size());
+        for (const auto & view_name : omitted_view_columns_)
         {
-            if (user_set.contains(col.name))
-                continue;
-
-            String target_name = col.name;
-            auto it = column_mapping_.find(col.name);
-            if (it != column_mapping_.end())
-                target_name = it->second;
-
-            if (!target_cols.has(target_name))
-                continue;
+            auto it = column_mapping_.find(view_name);
+            const String target_name = (it != column_mapping_.end()) ? it->second : view_name;
             if (target_named.has(target_name))
                 continue;
-
-            omitted.push_back({col.name, target_name, col.type});
+            omitted.push_back({view_name, target_name, block.getByName(view_name).type});
         }
 
         if (omitted.empty())
@@ -560,24 +552,28 @@ private:
 
         auto dag = evaluateMissingDefaults(target_named, required_target_columns, target_cols, context_);
         if (dag)
-        {
             ExpressionActions(std::move(*dag)).execute(target_named);
-        }
 
         for (const auto & o : omitted)
         {
             if (!target_named.has(o.target_name))
                 continue;
             auto materialized = target_named.getByName(o.target_name);
+            if (!materialized.type->equals(*o.view_type))
+            {
+                materialized.column = castColumn(materialized, o.view_type);
+                materialized.type = o.view_type;
+            }
             materialized.name = o.view_name;
-            check_block.erase(o.view_name);
-            check_block.insert(std::move(materialized));
+            block.erase(o.view_name);
+            block.insert(std::move(materialized));
         }
     }
 
     StoragePtr target_table_;
     std::unordered_map<String, String> column_mapping_;
     Names user_specified_columns_;
+    Names omitted_view_columns_;
     StorageID view_id_;
     ContextPtr context_;
 
@@ -883,19 +879,23 @@ SinkToStoragePtr StorageView::write(
     /// Honor an explicit column list in `INSERT INTO view (col1, col2) ...`.
     /// Without this, omitted view columns would receive the *view-schema* default
     /// (filled in by `InsertDependenciesBuilder::createPreSink`) instead of the
-    /// target table's own default.
+    /// target table's own default. The column list is expanded through the same
+    /// transformer path used by `InterpreterInsertQuery::getSampleBlock`, so
+    /// asterisks and `EXCEPT(...)` / `APPLY(...)` modifiers are handled correctly.
     Names user_specified_columns;
     if (const auto * insert_query = query ? query->as<ASTInsertQuery>() : nullptr; insert_query && insert_query->columns)
     {
         const auto & view_sample = metadata_snapshot->getSampleBlockNonMaterialized();
-        for (const auto & child : insert_query->columns->children)
+        const auto columns_ast = processColumnTransformers(
+            context->getCurrentDatabase(),
+            getStorageID(),
+            metadata_snapshot->getColumns(),
+            insert_query->columns);
+        for (const auto & child : columns_ast->children)
         {
-            if (const auto * id = child->as<ASTIdentifier>())
-            {
-                const String name = id->shortName();
-                if (view_sample.has(name))
-                    user_specified_columns.push_back(name);
-            }
+            const String name = child->getColumnName();
+            if (view_sample.has(name))
+                user_specified_columns.push_back(name);
         }
     }
 
