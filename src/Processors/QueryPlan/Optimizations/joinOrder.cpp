@@ -360,6 +360,11 @@ private:
     std::vector<Hyperedge> hyperedges;
     std::vector<std::vector<size_t>> node_to_edge_ids; /// node index -> hyperedge indices
 
+    /// Set by `tryJoin` when it encounters a single-table or constant predicate inside the join edges
+    /// that `dphyp` does not yet know how to attach. `solveDPhyp` returns `nullptr` so the fallback
+    /// algorithm chain (e.g. `dphyp,greedy`) can produce a valid plan.
+    bool dphyp_unsupported_predicate = false;
+
     const std::vector<JoinOrderAlgorithm> enabled_algorithms;
     LoggerPtr log = getLogger("JoinOrderOptimizer");
 
@@ -842,13 +847,18 @@ void JoinOrderOptimizer::tryJoin(const BitSet & left_rels, const BitSet & right_
         }
 
         /// Predicates spanning 2+ relations were already applied in a sub-join.
-        /// Safety check that single-table or constant predicates are not silently lost.
+        /// Single-table or constant predicates (e.g. moved into `ON` by
+        /// `query_plan_merge_filter_into_join_condition`) are not handled by `dphyp` here;
+        /// `dpsize` attaches them at the smallest containing join, but `dphyp` would need
+        /// extra bookkeeping to avoid double-application. For now, mark the query as
+        /// unsupported and let `solveDPhyp` return `nullptr` so the fallback chain runs.
         if (predicate->getSourceRelations().count() < 2)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Single-table predicate in DPhyp join edges would be lost: {} (sources: {{ {} }}) "
-                "for join between {{ {} }} and {{ {} }}",
-                predicate->dump(), fmt::join(predicate->getSourceRelations(), ","),
-                fmt::join(left_rels, ","), fmt::join(right_rels, ","));
+        {
+            LOG_TRACE(log, "DPhyp cannot attach non-connecting predicate {} (sources: {{ {} }}), falling back",
+                predicate->dump(), fmt::join(predicate->getSourceRelations(), ","));
+            dphyp_unsupported_predicate = true;
+            return;
+        }
     }
 
     /// When no explicit predicate connects the two sides, check transitive connectivity
@@ -1090,6 +1100,8 @@ static void forEachNonEmptySubset(const BitSet & mask, F && func)
 /// Evaluate a csg-cmp pair for plan construction.
 void JoinOrderOptimizer::emitCsgCmp(const BitSet & left_csg, const BitSet & right_csg)
 {
+    if (dphyp_unsupported_predicate)
+        return;
     LOG_TEST(log, "DPhyp: emitCsgCmp({{ {} }}, {{ {} }})",
         fmt::join(left_csg, ","), fmt::join(right_csg, ","));
     tryJoin(left_csg, right_csg);
@@ -1099,6 +1111,8 @@ void JoinOrderOptimizer::emitCsgCmp(const BitSet & left_csg, const BitSet & righ
 /// `exclusion` (paper: X) prevents revisiting already-processed nodes.
 void JoinOrderOptimizer::enumerateCmpRec(const BitSet & csg, const BitSet & complement, const BitSet & exclusion)
 {
+    if (dphyp_unsupported_predicate)
+        return;
     checkLimits();
 
     LOG_TEST(log, "DPhyp: enumerateCmpRec(csg={{ {} }}, cmp={{ {} }}, excl={{ {} }})",
@@ -1138,6 +1152,8 @@ void JoinOrderOptimizer::enumerateCmpRec(const BitSet & csg, const BitSet & comp
 /// the complement can only contain relations ordered after the CSG's minimum.
 void JoinOrderOptimizer::emitCsg(const BitSet & csg)
 {
+    if (dphyp_unsupported_predicate)
+        return;
     LOG_TEST(log, "DPhyp: emitCsg({{ {} }})", fmt::join(csg, ","));
 
     BitSet exclusion = csg | BitSet::allSet(*csg.begin());
@@ -1167,6 +1183,8 @@ void JoinOrderOptimizer::emitCsg(const BitSet & csg)
 /// For each connected extension found in dp_table, calls `emitCsg` to generate complements.
 void JoinOrderOptimizer::enumerateCsgRec(const BitSet & csg, const BitSet & exclusion)
 {
+    if (dphyp_unsupported_predicate)
+        return;
     checkLimits();
 
     LOG_TEST(log, "DPhyp: enumerateCsgRec(csg={{ {} }}, excl={{ {} }})",
@@ -1207,6 +1225,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPhyp()
         return nullptr;
     }
 
+    dphyp_unsupported_predicate = false;
+
     /// Initialize dp_table with a leaf entry for each base relation.
     dp_table.clear();
     for (size_t i = 0; i < num_relations; ++i)
@@ -1239,6 +1259,12 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPhyp()
         emitCsg(seed);
         exclusion.set(i, false);
         enumerateCsgRec(seed, exclusion);
+    }
+
+    if (dphyp_unsupported_predicate)
+    {
+        LOG_TRACE(log, "DPhyp encountered an unsupported predicate, falling back");
+        return nullptr;
     }
 
     auto best = dp_table.find(BitSet::allSet(num_relations));
