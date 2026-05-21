@@ -524,6 +524,17 @@ if not args.use_existing_tables:
         stripped = re.sub(r"\s*\bSETTINGS\s*(;|$)", r"\1", stripped, flags=re.IGNORECASE)
         return stripped
 
+    # Settings allowed to be silently stripped from a CREATE TABLE on an
+    # older baseline server that does not yet know them. Keep this list
+    # intentionally short: every entry is a setting that the PR introduces
+    # and that the baseline server is expected to default to a value
+    # compatible with the perf comparison. Adding an entry here is a
+    # deliberate decision; misspelled or unrelated settings should still
+    # fail fast.
+    strippable_unknown_settings = {
+        "optimize_row_order_if_no_order_by",
+    }
+
     def do_create(connection, index, queries):
         for q in queries:
             current_query = q
@@ -535,24 +546,36 @@ if not args.use_existing_tables:
                     )
                     break
                 except clickhouse_driver.errors.ServerException as e:
-                    # If the query uses a MergeTree setting that the server
-                    # does not know (e.g. a newly added setting present only
-                    # in the PR build), strip the setting and retry. The
-                    # server falls back to its own default, which matches the
-                    # intent on the old side of an A/B perf comparison.
-                    if e.code == 115:  # UNKNOWN_SETTING
+                    # If a CREATE TABLE uses a MergeTree setting that the
+                    # server does not know (e.g. a newly added setting
+                    # present only in the PR build) AND that setting is on
+                    # the explicit allowlist, strip the setting and retry.
+                    # The server falls back to its own default, which
+                    # matches the intent on the old side of an A/B perf
+                    # comparison.
+                    #
+                    # Scope this to `CREATE TABLE` only and to the
+                    # allowlist so that misspelled settings or unknown
+                    # settings on `fill_query` / other statements still
+                    # surface as failures instead of silently producing
+                    # different datasets on the two sides.
+                    if (
+                        e.code == 115  # UNKNOWN_SETTING
+                        and first_keyword(current_query) == "CREATE"
+                    ):
                         m = re.search(r"Unknown setting '([^']+)'", e.message)
                         if m:
                             unknown_setting = m.group(1)
-                            new_query = strip_setting_from_query(current_query, unknown_setting)
-                            if new_query != current_query:
-                                print(
-                                    f"warning\t{index}\tstripped unknown setting "
-                                    f"'{unknown_setting}' from create query",
-                                    file=sys.stderr,
-                                )
-                                current_query = new_query
-                                continue
+                            if unknown_setting in strippable_unknown_settings:
+                                new_query = strip_setting_from_query(current_query, unknown_setting)
+                                if new_query != current_query:
+                                    print(
+                                        f"warning\t{index}\tstripped unknown setting "
+                                        f"'{unknown_setting}' from create query",
+                                        file=sys.stderr,
+                                    )
+                                    current_query = new_query
+                                    continue
                     raise
 
     threads = [
