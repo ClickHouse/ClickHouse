@@ -204,7 +204,6 @@ namespace ProfileEvents
     extern const Event CommonBackgroundExecutorTaskCancelMicroseconds;
     extern const Event CommonBackgroundExecutorTaskResetMicroseconds;
     extern const Event CommonBackgroundExecutorWaitMicroseconds;
-    extern const Event QueryPrivilegesInfoUpdates;
 }
 
 namespace CurrentMetrics
@@ -2723,7 +2722,6 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
 
 void Context::addQueryPrivilegesInfo(const String & privilege, bool granted) const
 {
-    ProfileEvents::increment(ProfileEvents::QueryPrivilegesInfoUpdates);
     std::lock_guard lock(query_privileges_info->mutex);
     if (granted)
         query_privileges_info->used_privileges.emplace(privilege);

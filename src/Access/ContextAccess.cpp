@@ -14,7 +14,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
 #include <Core/Settings.h>
@@ -26,11 +25,6 @@
 #include <cassert>
 #include <unordered_set>
 
-
-namespace ProfileEvents
-{
-    extern const Event QueryPrivilegesInfoUpdatesLegacy;
-}
 
 namespace DB
 {
@@ -687,8 +681,6 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
         /// (`checkAccess` / `checkGrantOption`) or the non-throwing one (`isGranted`, used internally by
         /// `checkAccessWithFilter`). Without this, an `isGranted`-driven success leaves no trace in
         /// system.query_log.used_privileges even though the privilege was effectively required by the query.
-        if constexpr (throw_if_denied)
-            ProfileEvents::increment(ProfileEvents::QueryPrivilegesInfoUpdatesLegacy);
         context->addQueryPrivilegesInfo(AccessRightsElement{flags, args...}.toStringWithoutOptions(), true);
         return true;
     };
@@ -699,7 +691,6 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
     {
         if constexpr (throw_if_denied)
         {
-            ProfileEvents::increment(ProfileEvents::QueryPrivilegesInfoUpdatesLegacy);
             context->addQueryPrivilegesInfo(AccessRightsElement{flags, args...}.toStringWithoutOptions(), false);
             throw Exception(error_code, std::move(fmt_string), getUserName(), std::forward<FmtArgs>(fmt_args)...);
         }
