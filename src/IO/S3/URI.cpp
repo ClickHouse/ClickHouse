@@ -17,7 +17,7 @@ namespace DB
 
 struct URIConverter
 {
-    static void modifyURI(Poco::URI & uri, std::unordered_map<std::string, std::string> mapper) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    static void modifyURI(Poco::URI & uri, NameToNameMap mapper)
     {
         Macros macros({{"bucket", uri.getHost()}});
         uri = macros.expand(mapper[uri.getScheme()]).empty() ? uri : Poco::URI(macros.expand(mapper[uri.getScheme()]) + uri.getPathAndQuery());
@@ -71,7 +71,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
     if (!keep_presigned_query_parameters && looks_like_presigned)
         looks_like_presigned = false;
 
-    std::unordered_map<std::string, std::string> mapper; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    NameToNameMap mapper;
     auto context = Context::getGlobalContextInstance();
     if (context)
     {

@@ -7,6 +7,7 @@
 #include <Common/FunctionDocumentation.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Core/Names.h>
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <memory>
@@ -76,7 +77,7 @@ public:
     /// It returns possible virtual column names of corresponding storage. If select query contains
     /// one of these columns, the structure from insertion table won't be used as a structure hint,
     /// because we cannot determine which column from table correspond to this virtual column.
-    virtual std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const { return {}; } // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    virtual NameSet getVirtualsToCheckBeforeUsingStructureHint() const { return {}; }
 
     virtual bool supportsReadingSubsetOfColumns(const ContextPtr &) { return true; }
 

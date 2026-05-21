@@ -48,7 +48,7 @@ public:
         return configuration->format != "auto" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context);
     }
 
-    std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const override // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    NameSet getVirtualsToCheckBeforeUsingStructureHint() const override
     {
         return VirtualColumnUtils::getVirtualNamesForFileLikeStorage();
     }
