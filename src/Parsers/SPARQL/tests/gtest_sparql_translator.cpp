@@ -300,3 +300,78 @@ TEST(SparqlTranslator, OnlySelectSupported)
 {
     EXPECT_THROW(translateSparql("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }"), std::runtime_error);
 }
+
+TEST(SparqlTranslator, UnboundVariableCleanName)
+{
+    auto sql = translateSparql("SELECT ?name ?email WHERE { ?p <:name> ?name }");
+    EXPECT_NE(sql.find("NULL AS email"), std::string::npos);
+    EXPECT_EQ(sql.find("NULL AS ?email"), std::string::npos);
+}
+
+TEST(SparqlTranslator, ChainJoinObjectToSubject)
+{
+    auto sql = translateSparql(
+        "SELECT ?name ?dept WHERE { ?p <:name> ?name . ?p <:worksAt> ?d . ?d <:deptName> ?dept }");
+    EXPECT_NE(sql.find("t3.subject = t2.object"), std::string::npos);
+    EXPECT_NE(sql.find("t3.predicate = ':deptName'"), std::string::npos);
+}
+
+TEST(SparqlParser, PrefixMultiple)
+{
+    auto ast = parseSparql(
+        "PREFIX ex: <http://example.org/> "
+        "PREFIX foaf: <http://xmlns.com/foaf/0.1/> "
+        "SELECT ?n WHERE { ?p foaf:name ?n . ?p ex:age ?a }");
+    ASSERT_EQ(ast->where_clause->triples.size(), 2);
+    EXPECT_EQ(ast->where_clause->triples[0].predicate.value, "http://xmlns.com/foaf/0.1/name");
+    EXPECT_EQ(ast->where_clause->triples[1].predicate.value, "http://example.org/age");
+}
+
+TEST(SparqlTranslator, FilterInsideOptionalGoesToOn)
+{
+    auto sql = translateSparql(
+        "SELECT ?name ?age WHERE { ?p <:name> ?name . OPTIONAL { ?p <:age> ?age . FILTER(?age > 25) } }");
+    auto left_join_pos = sql.find("LEFT JOIN");
+    auto on_pos = sql.find(" ON ", left_join_pos);
+    ASSERT_NE(left_join_pos, std::string::npos);
+    ASSERT_NE(on_pos, std::string::npos);
+    auto on_clause = sql.substr(on_pos);
+    auto where_pos = on_clause.find("\nWHERE");
+    auto filter_pos = on_clause.find("toInt64OrNull");
+    EXPECT_NE(filter_pos, std::string::npos);
+    if (where_pos != std::string::npos)
+        EXPECT_LT(filter_pos, where_pos);
+}
+
+TEST(SparqlTranslator, EmptyResultNoJoins)
+{
+    auto sql = translateSparql("SELECT ?s WHERE { ?s <rdf:type> <:Animal> }");
+    EXPECT_NE(sql.find("FROM rdf_triples AS t1"), std::string::npos);
+    EXPECT_EQ(sql.find("JOIN"), std::string::npos);
+}
+
+TEST(SparqlTranslator, PrewhereMultipleConditions)
+{
+    auto sql = translateSparql("SELECT ?o WHERE { ?s <rdf:type> <:Person> }");
+    auto prewhere_pos = sql.find("PREWHERE");
+    ASSERT_NE(prewhere_pos, std::string::npos);
+    auto prewhere_block = sql.substr(prewhere_pos);
+    EXPECT_NE(prewhere_block.find("t1.predicate = 'rdf:type'"), std::string::npos);
+    EXPECT_NE(prewhere_block.find("t1.object = ':Person'"), std::string::npos);
+}
+
+TEST(SparqlTranslator, RegexFilter)
+{
+    auto sql = translateSparql(
+        "SELECT ?name WHERE { ?p <:name> ?name . FILTER regex(?name, \"Alice\") }");
+    EXPECT_NE(sql.find("match(t1.object, 'Alice')"), std::string::npos);
+}
+
+TEST(SparqlTranslator, FourWayJoin)
+{
+    auto sql = translateSparql(
+        "SELECT ?name ?age ?email WHERE { "
+        "?p <rdf:type> <:Person> . ?p <:name> ?name . ?p <:age> ?age . ?p <:email> ?email }");
+    EXPECT_NE(sql.find("JOIN rdf_triples AS t4 ON"), std::string::npos);
+    EXPECT_NE(sql.find("t4.subject = t1.subject"), std::string::npos);
+}

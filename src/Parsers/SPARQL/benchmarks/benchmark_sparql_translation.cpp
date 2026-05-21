@@ -223,4 +223,72 @@ static void BM_TranslateComplexQuery(benchmark::State & state)
 }
 BENCHMARK(BM_TranslateComplexQuery);
 
+static void BM_TranslateWithPrefix(benchmark::State & state)
+{
+    std::string sparql =
+        "PREFIX foaf: <http://xmlns.com/foaf/0.1/> "
+        "PREFIX ex: <http://example.org/> "
+        "SELECT ?name ?age WHERE { ?p foaf:name ?name . ?p ex:age ?age }";
+    for (auto _ : state)
+    {
+        SparqlQueryParser parser;
+        auto ast = parser.parse(sparql);
+        SparqlToSqlTranslator translator;
+        auto sql = translator.translate(*ast);
+        benchmark::DoNotOptimize(sql);
+    }
+}
+BENCHMARK(BM_TranslateWithPrefix);
+
+static void BM_TranslateChainJoin(benchmark::State & state)
+{
+    std::string sparql =
+        "SELECT ?name ?dept WHERE { "
+        "?p <:name> ?name . ?p <:worksAt> ?d . ?d <:deptName> ?dept }";
+    for (auto _ : state)
+    {
+        SparqlQueryParser parser;
+        auto ast = parser.parse(sparql);
+        SparqlToSqlTranslator translator;
+        auto sql = translator.translate(*ast);
+        benchmark::DoNotOptimize(sql);
+    }
+}
+BENCHMARK(BM_TranslateChainJoin);
+
+static void BM_TranslateSnowflake(benchmark::State & state)
+{
+    std::string sparql =
+        "SELECT ?prodName ?retailerName ?price WHERE { "
+        "?o <:forProduct> ?p . ?p <:name> ?prodName . "
+        "?o <:offeredBy> ?r . ?r <:name> ?retailerName . "
+        "?o <:price> ?price }";
+    for (auto _ : state)
+    {
+        SparqlQueryParser parser;
+        auto ast = parser.parse(sparql);
+        SparqlToSqlTranslator translator;
+        auto sql = translator.translate(*ast);
+        benchmark::DoNotOptimize(sql);
+    }
+}
+BENCHMARK(BM_TranslateSnowflake);
+
+static void BM_TranslateRegexFilter(benchmark::State & state)
+{
+    std::string sparql =
+        "SELECT ?name WHERE { "
+        "?p <rdf:type> <:Person> . ?p <:name> ?name . "
+        "FILTER regex(?name, \"Person_1..\") }";
+    for (auto _ : state)
+    {
+        SparqlQueryParser parser;
+        auto ast = parser.parse(sparql);
+        SparqlToSqlTranslator translator;
+        auto sql = translator.translate(*ast);
+        benchmark::DoNotOptimize(sql);
+    }
+}
+BENCHMARK(BM_TranslateRegexFilter);
+
 BENCHMARK_MAIN();

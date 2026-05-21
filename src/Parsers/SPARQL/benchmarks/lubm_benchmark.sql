@@ -43,7 +43,9 @@ INSERT INTO rdf_triples SELECT concat(':dept', toString(number)), ':subOrganizat
 INSERT INTO rdf_triples SELECT concat(':prof', toString(number)), ':worksFor', concat(':dept', toString(number % 100)) FROM numbers(1000);
 INSERT INTO rdf_triples SELECT concat(':prof', toString(number)), ':name', concat('Professor_', toString(number)) FROM numbers(1000);
 INSERT INTO rdf_triples SELECT concat(':prof', toString(number)), ':email', concat('prof', toString(number), '@univ.edu') FROM numbers(1000);
+INSERT INTO rdf_triples SELECT concat(':prof', toString(number)), ':age', toString(35 + number % 30) FROM numbers(1000);
 INSERT INTO rdf_triples SELECT concat(':student', toString(number)), ':memberOf', concat(':dept', toString(number % 100)) FROM numbers(10000);
+INSERT INTO rdf_triples SELECT concat(':student', toString(number)), ':age', toString(18 + number % 10) FROM numbers(10000);
 INSERT INTO rdf_triples SELECT concat(':student', toString(number)), ':name', concat('Student_', toString(number)) FROM numbers(10000);
 INSERT INTO rdf_triples SELECT concat(':student', toString(number)), ':email', concat('student', toString(number), '@univ.edu') FROM numbers(5000);
 INSERT INTO rdf_triples SELECT concat(':student', toString(number)), ':takesCourse', concat(':course', toString(number % 500)) FROM numbers(10000);
@@ -132,6 +134,83 @@ JOIN rdf_triples AS t3 ON t3.subject = t1.subject
 PREWHERE t1.predicate = 'rdf:type'
 WHERE t1.object = ':Student' AND t2.predicate = ':name' AND t3.predicate = ':age'
 ORDER BY age LIMIT 10;
+
+-- Q16: Hand-written SQL baseline for Q2 (three-way join)
+SELECT 'Q16: Baseline SQL for Q2';
+SELECT count()
+FROM rdf_triples AS t1
+JOIN rdf_triples AS t2 ON t2.subject = t1.subject
+JOIN rdf_triples AS t3 ON t3.subject = t2.object
+PREWHERE t1.predicate = 'rdf:type'
+WHERE t1.object = ':Student'
+  AND t2.predicate = ':memberOf'
+  AND t3.predicate = ':subOrganizationOf';
+
+-- Q17: Hand-written SQL baseline for Q4 (professors with name+email)
+SELECT 'Q17: Baseline SQL for Q4';
+SELECT count()
+FROM rdf_triples AS t1
+JOIN rdf_triples AS t2 ON t2.subject = t1.subject
+JOIN rdf_triples AS t3 ON t3.subject = t1.subject
+PREWHERE t1.predicate = 'rdf:type'
+WHERE t1.object = ':Professor' AND t2.predicate = ':name' AND t3.predicate = ':email';
+
+-- Q18: Hand-written SQL baseline for Q7 (OPTIONAL = LEFT JOIN)
+SELECT 'Q18: Baseline SQL for Q7';
+SELECT count()
+FROM rdf_triples AS t1
+JOIN rdf_triples AS t2 ON t2.subject = t1.subject
+JOIN rdf_triples AS t3 ON t3.subject = t1.subject
+LEFT JOIN rdf_triples AS t4 ON t4.subject = t1.subject AND t4.predicate = ':email'
+PREWHERE t1.predicate = 'rdf:type'
+WHERE t1.object = ':Student' AND t2.predicate = ':name' AND t3.predicate = ':takesCourse';
+
+-- Q19: Hand-written SQL baseline for Q8 (UNION)
+SELECT 'Q19: Baseline SQL for Q8';
+SELECT count() FROM (
+    SELECT t2.object AS name
+    FROM rdf_triples AS t1
+    JOIN rdf_triples AS t2 ON t2.subject = t1.subject
+    PREWHERE t1.predicate = 'rdf:type'
+    WHERE t1.object = ':Professor' AND t2.predicate = ':name'
+    UNION ALL
+    SELECT t2.object AS name
+    FROM rdf_triples AS t1
+    JOIN rdf_triples AS t2 ON t2.subject = t1.subject
+    PREWHERE t1.predicate = 'rdf:type'
+    WHERE t1.object = ':Student' AND t2.predicate = ':name'
+);
+
+-- Q20: Four-way join — students with name, course, and department
+SELECT 'Q20: Four-way join (student details)';
+SELECT count() FROM sparql('SELECT ?name ?course ?dept WHERE { ?s <rdf:type> <:Student> . ?s <:name> ?name . ?s <:takesCourse> ?course . ?s <:memberOf> ?dept }');
+
+-- Q21: Hand-written SQL baseline for Q20
+SELECT 'Q21: Baseline SQL for Q20';
+SELECT count()
+FROM rdf_triples AS t1
+JOIN rdf_triples AS t2 ON t2.subject = t1.subject
+JOIN rdf_triples AS t3 ON t3.subject = t1.subject
+JOIN rdf_triples AS t4 ON t4.subject = t1.subject
+PREWHERE t1.predicate = 'rdf:type'
+WHERE t1.object = ':Student' AND t2.predicate = ':name'
+  AND t3.predicate = ':takesCourse' AND t4.predicate = ':memberOf';
+
+-- Q22: High-selectivity FILTER (regex on name)
+SELECT 'Q22: Regex filter on student name';
+SELECT count() FROM sparql('SELECT ?name WHERE { ?s <rdf:type> <:Student> . ?s <:name> ?name . FILTER regex(?name, "Student_1..") }');
+
+-- Q23: DISTINCT + ORDER BY + LIMIT over large set
+SELECT 'Q23: Distinct courses ordered with limit';
+SELECT count() FROM sparql('SELECT DISTINCT ?course WHERE { ?s <:takesCourse> ?course } ORDER BY ?course LIMIT 20');
+
+-- Q24: OPTIONAL + FILTER combined
+SELECT 'Q24: Students with optional email, filtered by age';
+SELECT count() FROM sparql('SELECT ?name ?email WHERE { ?s <rdf:type> <:Student> . ?s <:name> ?name . ?s <:age> ?age . OPTIONAL { ?s <:email> ?email } . FILTER(?age > 25) }');
+
+SELECT '';
+SELECT '--- Summary ---';
+SELECT concat('Total triples: ', toString(count())) FROM rdf_triples;
 
 DROP VIEW mv_types;
 DROP TABLE rdf_triples;

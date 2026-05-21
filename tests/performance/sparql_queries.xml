@@ -97,6 +97,32 @@
         FORMAT Null
     </query>
 
+    <!-- Hand-written SQL equivalent of the three-way join (baseline comparison) -->
+    <query>
+        SELECT t2.object AS name, t3.object AS age
+        FROM rdf_triples AS t1
+        JOIN rdf_triples AS t2 ON t2.subject = t1.subject
+        JOIN rdf_triples AS t3 ON t3.subject = t1.subject
+        WHERE t1.predicate = 'rdf:type' AND t1.object = ':Person' AND t2.predicate = ':name' AND t3.predicate = ':age'
+        FORMAT Null
+    </query>
+
+    <!-- Hand-written SQL equivalent of the OPTIONAL query (baseline comparison) -->
+    <query>
+        SELECT t2.object AS name, t3.object AS email
+        FROM rdf_triples AS t1
+        JOIN rdf_triples AS t2 ON t2.subject = t1.subject
+        LEFT JOIN rdf_triples AS t3 ON t3.subject = t1.subject AND t3.predicate = ':email'
+        WHERE t1.predicate = 'rdf:type' AND t1.object = ':Person' AND t2.predicate = ':name'
+        FORMAT Null
+    </query>
+
+    <!-- FILTER with regex (exercises match() translation) -->
+    <query>SELECT * FROM sparql('SELECT ?name WHERE { ?p &lt;rdf:type&gt; &lt;:Person&gt; . ?p &lt;:name&gt; ?name . FILTER regex(?name, "Person_1..") }') FORMAT Null</query>
+
+    <!-- FILTER with range (exercises toInt64OrNull) -->
+    <query>SELECT * FROM sparql('SELECT ?name ?age WHERE { ?p &lt;:name&gt; ?name . ?p &lt;:age&gt; ?age . FILTER (?age &gt; 40 &amp;&amp; ?age &lt; 50) }') FORMAT Null</query>
+
     <drop_query>DROP VIEW IF EXISTS mv_types</drop_query>
     <drop_query>DROP TABLE IF EXISTS rdf_triples</drop_query>
 </test>

@@ -149,7 +149,10 @@ std::string SparqlToSqlTranslator::buildProjection(const std::vector<std::string
         }
         else
         {
-            out << "NULL AS " << var;
+            std::string clean_name = var;
+            if (!clean_name.empty() && (clean_name[0] == '?' || clean_name[0] == '$'))
+                clean_name = clean_name.substr(1);
+            out << "NULL AS " << clean_name;
         }
     }
     return out.str();
