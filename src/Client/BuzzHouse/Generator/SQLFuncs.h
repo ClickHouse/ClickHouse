@@ -44,18 +44,24 @@ public:
     }
 };
 
+enum class LambdaKind : uint8_t
+{
+    None = 0,
+    Optional = 1,
+    Required = 2,
+};
 
 class CHFunction
 {
 public:
     const std::string fname;
-    const bool lambda_param;
+    const LambdaKind lambda_kind;
     const uint32_t min_args;
     const uint32_t max_args;
 
-    CHFunction(std::string f, const bool lamb_p, const uint32_t min_a, const uint32_t m_args)
+    CHFunction(std::string f, const LambdaKind lk, const uint32_t min_a, const uint32_t m_args)
         : fname(std::move(f))
-        , lambda_param(lamb_p)
+        , lambda_kind(lk)
         , min_args(min_a)
         , max_args(m_args)
     {

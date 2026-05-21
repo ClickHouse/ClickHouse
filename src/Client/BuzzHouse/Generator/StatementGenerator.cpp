@@ -181,14 +181,14 @@ StatementGenerator::StatementGenerator(
     /// Add single argument functions for non sargable predicates
     for (const auto & entry : det_funcs)
     {
-        if (!entry.lambda_param && entry.min_args == 1)
+        if (entry.lambda_kind == LambdaKind::None && entry.min_args == 1)
         {
             one_arg_funcs.push_back(entry);
         }
     }
     for (const auto & entry : common_funcs)
     {
-        if (!entry.lambda_param && entry.min_args == 1)
+        if (entry.lambda_kind == LambdaKind::None && entry.min_args == 1)
         {
             one_arg_funcs.push_back(entry);
         }

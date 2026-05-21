@@ -922,7 +922,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
                     ? this->nondet_funcs
                     : (rg.nextMediumNumber() < 10 && !common_funcs.empty() ? this->common_funcs : this->det_funcs));
 
-            has_lambda = func.lambda_param && rg.nextBool();
+            has_lambda = func.lambda_kind == LambdaKind::Required || (func.lambda_kind == LambdaKind::Optional && rg.nextBool());
             if (rg.nextLargeNumber() < 21)
             {
                 /// Go random
@@ -942,7 +942,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
             sfn->set_catalog_func(func.fname);
         }
 
-        if (has_lambda > 0)
+        if (has_lambda)
         {
             if (rg.nextBool())
             {

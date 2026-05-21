@@ -579,14 +579,16 @@ args_by_function AS
     SELECT
         name,
         min(args_min) AS min_arguments,
-        if (max(args_variadic) = 1, NULL, max(args_max)) AS max_arguments
+        if (max(args_variadic) = 1, NULL, max(args_max)) AS max_arguments,
+        max(lambda_syntax) AS lambda_syntax
     FROM
     (
         SELECT
             name,
             syntax_line,
-            replaceRegexpOne(syntax_line, '^[^\\(]*\\((.*)\\)\\s*$', '\\1') AS args_raw,
+            replaceRegexpOne(syntax_line, '^[^\\(]*\\((.*)\\)[^)]*$', '\\1') AS args_raw,
             match(args_raw, '(\\.\\.\\.|…)') AS args_variadic,
+            multiIf(match(trim(args_raw), '^\\['), 1, match(trim(args_raw), '^(func|λ)'), 2, 0) AS lambda_syntax,
             replaceRegexpAll(args_raw, '\\[[^\\]]*\\]', '') AS args_required_raw,
             replaceRegexpAll(args_raw, '[\\[\\]]', '') AS args_all_raw,
             if (
@@ -652,7 +654,11 @@ SELECT
     f.name,
     f.is_aggregate,
     f.deterministic,
-    f.higher_order,
+    multiIf(
+        coalesce(a.lambda_syntax, pa.lambda_syntax, 0) = 2, 2,
+        coalesce(a.lambda_syntax, pa.lambda_syntax, 0) = 1, 1,
+        f.higher_order = 1, 1,
+        0) AS lambda_kind,
     coalesce(a.min_arguments, pa.min_arguments, 0),
     coalesce(a.max_arguments, pa.max_arguments),
     coalesce(p.min_parameters, pp.min_parameters, 0),
@@ -741,7 +747,7 @@ ORDER BY f.name)sql";
             if (buf.empty())
                 break;
 
-            /// Parse tab-separated fields: name, is_aggregate, deterministic, higher_order,
+            /// Parse tab-separated fields: name, is_aggregate, deterministic, lambda_kind,
             /// min_args, max_args, min_params, max_params
             const auto tab1 = buf.find('\t');
             if (tab1 == String::npos)
@@ -777,7 +783,8 @@ ORDER BY f.name)sql";
             found++;
 
             const bool is_deterministic = (det_str != "0");
-            const bool is_higher_order = (ho_str != "\\N" && ho_str == "1");
+            const uint8_t lk_val = (ho_str != "\\N") ? static_cast<uint8_t>(std::stoul(ho_str)) : 0;
+            const LambdaKind lambda_kind = lk_val <= 2 ? static_cast<LambdaKind>(lk_val) : LambdaKind::None;
             const uint32_t min_args = min_args_str == "\\N" ? 0 : static_cast<uint32_t>(std::stoul(min_args_str));
             const uint32_t max_args = max_args_str == "\\N" ? ulimited_params : static_cast<uint32_t>(std::stoul(max_args_str));
             const uint32_t min_params = min_params_str == "\\N" ? 0 : static_cast<uint32_t>(std::stoul(min_params_str));
@@ -805,7 +812,7 @@ ORDER BY f.name)sql";
             }
             else
             {
-                CHFunction func(name, is_higher_order, min_args, max_args);
+                CHFunction func(name, lambda_kind, min_args, max_args);
                 /// arrayJoin may not be deterministic
                 if (common_func_names.contains(name))
                     common_funcs.push_back(func);
@@ -839,8 +846,8 @@ ORDER BY f.name)sql";
     }
     if (det_funcs.empty())
     {
-        det_funcs.emplace_back("abs", false, 1, 1);
-        det_funcs.emplace_back("plus", false, 2, 2);
+        det_funcs.emplace_back("abs", LambdaKind::None, 1, 1);
+        det_funcs.emplace_back("plus", LambdaKind::None, 2, 2);
     }
     if (det_aggrs.empty())
         det_aggrs.emplace_back("count", 0, 0, 0, 1, false);
