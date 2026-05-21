@@ -495,7 +495,7 @@ public:
 }
 
 template <typename ConcreteAction, typename Name>
-class FunctionArrayIndex : public IFunction
+class FunctionArrayIndex final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
