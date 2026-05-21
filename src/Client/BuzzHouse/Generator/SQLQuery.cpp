@@ -2605,7 +2605,7 @@ void StatementGenerator::generateSelect(
     /// This doesn't work: SELECT 1 FROM ((SELECT 1) UNION (SELECT 1) SETTINGS page_cache_inject_eviction = 1) x;
     if (this->allow_not_deterministic && !this->inside_projection && (top || sel->has_select_core()) && rg.nextMediumNumber() < 35)
     {
-        generateSettingValues(rg, serverSettings, sel->mutable_setting_values());
+        generateSettingValues(rg, fc.allow_query_oracles ? serverSettings : formatSettings, sel->mutable_setting_values());
     }
     this->levels.erase(this->current_level);
     this->ctes.erase(this->current_level);

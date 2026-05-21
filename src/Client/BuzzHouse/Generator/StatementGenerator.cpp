@@ -3353,7 +3353,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
             generateAlter(rg, in_parallel, sq->mutable_alter());
             break;
         case SQLOp::SetValues:
-            generateSettingValues(rg, formatSettings, sq->mutable_setting_values());
+            generateSettingValues(rg, fc.allow_query_oracles ? serverSettings : formatSettings, sq->mutable_setting_values());
             break;
         case SQLOp::Attach:
             generateAttach(rg, sq->mutable_attach());
