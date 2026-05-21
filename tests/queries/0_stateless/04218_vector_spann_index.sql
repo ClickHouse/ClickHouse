@@ -20,6 +20,18 @@ INSERT INTO tab_spann_l2_3 VALUES
     (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]),
     (5, [0.0, 2.0]), (6, [0.0, 2.1]), (7, [0.0, 2.2]), (8, [0.0, 2.3]), (9, [0.0, 2.4]);
 
+SELECT trimLeft(explain) FROM (
+    EXPLAIN indexes = 1
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id
+    FROM tab_spann_l2_3
+    ORDER BY L2Distance(vec, reference_vec) ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 1
+)
+WHERE explain LIKE '%Name: idx%'
+    OR explain LIKE '%Description: vector_spann%';
+
 SELECT count() FROM (
     WITH [0.0, 2.0] AS reference_vec
     SELECT id

@@ -1,4 +1,6 @@
 1. L2Distance
+Name: idx
+Description: vector_spann GRANULARITY 100000000
 0
 0
 2. L2Distance, bf16 quantization
