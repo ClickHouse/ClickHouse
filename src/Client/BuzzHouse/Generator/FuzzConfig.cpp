@@ -838,7 +838,10 @@ ORDER BY f.name)sql";
         LOG_WARNING(log, "Failed to load functions from system.functions, keeping previous catalog");
     }
     if (det_funcs.empty())
+    {
+        det_funcs.emplace_back("abs", false, 1, 1);
         det_funcs.emplace_back("plus", false, 2, 2);
+    }
     if (det_aggrs.empty())
         det_aggrs.emplace_back("count", 0, 0, 0, 1, false);
 }
