@@ -2957,7 +2957,9 @@ public:
 
     bool canThrow(const DataTypesWithConstInfo & arguments) const override
     {
-        return !IsDataTypeStringOrFixedString<ToDataType> && isStringOrFixedString(*arguments[0].type);
+        return !std::is_same_v<ToDataType, DataTypeString>
+            && !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type)
+            && settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

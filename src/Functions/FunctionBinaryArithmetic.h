@@ -2032,9 +2032,14 @@ public:
 
     bool canThrow(const DataTypesWithConstInfo & arguments) const override
     {
-        return ((IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo) && !arguments[1].is_const)
-            || (IsOperation<Op>::div_floating
-                && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type)));
+        if constexpr (requires { Op<UInt8, UInt8>::can_throw; })
+            if constexpr (Op<UInt8, UInt8>::can_throw)
+                return true;
+
+        const bool is_decimal = isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type);
+        return ((is_int_div || is_modulo || is_positive_modulo))
+            || (IsOperation<Op>::div_floating && is_decimal)
+            || ((is_plus || is_minus || is_multiply) && is_decimal && check_decimal_overflow);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -3212,6 +3217,19 @@ public:
             return Base::executeImpl(columns_with_constant, result_type, input_rows_count);
         }
         return Base::executeImpl(arguments, result_type, input_rows_count);
+    }
+
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        /// Check for the case of division by a constant 0.
+        if constexpr (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo)
+        {
+            if (right.column)
+                if (const auto * col_const = checkAndGetColumn<ColumnConst>(right.column.get()))
+                    return col_const->isDefaultAt(0);
+        }
+
+        return Base::canThrow(arguments);
     }
 
     bool hasInformationAboutMonotonicity() const override

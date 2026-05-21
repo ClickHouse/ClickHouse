@@ -120,6 +120,7 @@ class FunctionCoverageDiag : public IFunction
 public:
     String getName() const override { return "coverageDiag"; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    bool canThrow(const DataTypesWithConstInfo &) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isDeterministic() const override { return false; }
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override

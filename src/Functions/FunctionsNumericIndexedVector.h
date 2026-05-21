@@ -139,7 +139,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+        bool canThrow(const DataTypesWithConstInfo & arguments) const override { return !WhichDataType(arguments[1].type).isAggregateFunction(); }
 
     size_t getNumberOfArguments() const override { return 2; }
 

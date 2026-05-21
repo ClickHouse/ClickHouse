@@ -30,6 +30,8 @@ struct FunctionStringDistanceImpl
 {
     using ResultType = typename Op::ResultType;
 
+    static constexpr bool can_throw = Op::can_throw;
+
     static void constantConstant(const String & haystack, const String & needle, ResultType & res)
     {
         res = Op::process(haystack.data(), haystack.size(), needle.data(), needle.size());
@@ -87,6 +89,9 @@ struct FunctionStringDistanceImpl
 struct ByteHammingDistanceImpl
 {
     using ResultType = UInt64;
+
+    static constexpr bool can_throw = false;
+
     static ResultType process(
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
     {
@@ -171,6 +176,10 @@ struct ByteJaccardIndexImpl
     using ScratchType = std::conditional_t<is_utf8, ScratchUTF8, ScratchASCII>;
 
     using ResultType = Float64;
+
+    /// `parseUTF8String` raises BAD_ARGUMENTS on invalid sequences.
+    static constexpr bool can_throw = is_utf8;
+
     static ResultType process(
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
     {
@@ -605,6 +614,8 @@ struct ByteEditDistanceImpl
     using WorkingType = UInt32;
     using SymbolT = std::conditional_t<is_utf8, UInt32, UInt8>;
 
+    static constexpr bool can_throw = true;
+
     static ResultType process(const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
     {
         if (haystack_size == 0 || needle_size == 0)
@@ -694,6 +705,8 @@ struct ByteDamerauLevenshteinDistanceImpl
 {
     using ResultType = UInt64;
 
+    static constexpr bool can_throw = true;
+
     static ResultType process(
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
     {
@@ -757,6 +770,8 @@ struct ByteDamerauLevenshteinDistanceImpl
 struct ByteJaroSimilarityImpl
 {
     using ResultType = Float64;
+
+    static constexpr bool can_throw = true;
 
     static ResultType process(
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
@@ -833,6 +848,8 @@ struct ByteJaroSimilarityImpl
 struct ByteJaroWinklerSimilarityImpl
 {
     using ResultType = Float64;
+
+    static constexpr bool can_throw = true;
 
     static ResultType process(
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)

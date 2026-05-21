@@ -41,7 +41,14 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        if constexpr (has_max_string_size<Impl>)
+            if (arguments[0].is_const || arguments[1].is_const)
+                return true;
+
+        return Impl::can_throw;
+    }
 
     size_t getNumberOfArguments() const override { return 2; }
 

@@ -57,6 +57,8 @@ struct NgramDistanceImpl
     /// Max codepoints to store at once. 16 is for batching usage and PODArray has this padding.
     static constexpr size_t simultaneously_codepoints_num = default_padding + N - 1;
 
+    static constexpr bool can_throw = false;
+
     /** map_size of this fits mostly in L2 cache all the time.
       * Actually use UInt16 as addings and subtractions do not UB overflow. But think of it as a signed
       * integer array.

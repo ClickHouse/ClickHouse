@@ -56,6 +56,7 @@ template <typename Name, ReplaceRegexpTraits replace>
 struct ReplaceRegexpImpl
 {
     static constexpr auto name = Name::name;
+    static constexpr bool can_throw = true;
 
     struct Instruction
     {
