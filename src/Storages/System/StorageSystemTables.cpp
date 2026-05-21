@@ -1,9 +1,6 @@
 #include <Storages/System/StorageSystemTables.h>
 
 #include <Access/ContextAccess.h>
-#if CLICKHOUSE_CLOUD
-#include <Backups/BackupsHelper.h>
-#endif
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -95,7 +92,7 @@ ColumnPtr getFilteredTables(
                 filter_by_uuid = true;
         }
 
-        if (filter_by_engine && !is_detached)
+        if (filter_by_engine)
             engine_column = ColumnString::create();
 
         if (filter_by_uuid)
@@ -115,8 +112,6 @@ ColumnPtr getFilteredTables(
             for (; table_it->isValid(); table_it->next())
             {
                 table_column->insert(table_it->table());
-                if (uuid_column)
-                    uuid_column->insert(table_it->uuid());
             }
         }
         else
@@ -193,7 +188,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"sorting_key", std::make_shared<DataTypeString>(), "The sorting key expression specified in the table."},
         {"primary_key", std::make_shared<DataTypeString>(), "The primary key expression specified in the table."},
         {"sampling_key", std::make_shared<DataTypeString>(), "The sampling key expression specified in the table."},
-        {"unique_key", std::make_shared<DataTypeString>(), "The unique key expression specified in the table (UNIQUE KEY clause)."},
         {"storage_policy", std::make_shared<DataTypeString>(), "The storage policy. Relevant for tables using MergeTree and Distributed engines."},
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise NULL (including underlying Buffer table)."
@@ -257,7 +251,7 @@ VirtualColumnsDescription StorageSystemTables::createVirtuals()
     return desc;
 }
 
-class TablesBlockSource final : public ISource
+class TablesBlockSource : public ISource
 {
 public:
     TablesBlockSource(
@@ -317,8 +311,6 @@ protected:
     }
 
 
-    /// The caller has already verified `SHOW_TABLES` for this database,
-    /// so no per-table access check is needed.
     size_t fillTableNamesOnly(MutableColumns & res_columns)
     {
         auto table_details = database->getLightweightTablesIterator(context,
@@ -327,6 +319,7 @@ protected:
 
         size_t count = 0;
 
+        const auto access = context->getAccess();
         for (const auto & table_detail: table_details)
         {
             if (!tables.contains(table_detail.name))
@@ -334,6 +327,9 @@ protected:
 
             size_t src_index = 0;
             size_t res_index = 0;
+
+            if (!access->isGranted(AccessType::SHOW_TABLES, database_name, table_detail.name))
+                continue;
 
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(database_name);
@@ -457,7 +453,7 @@ protected:
                                 // parameterized view parameters
                                 fillParametralizedViewData(res_columns, table.second, res_index);
                             }
-                            else if (src_index == 21 && columns_mask[src_index])
+                            else if (src_index == 20 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -475,7 +471,7 @@ protected:
                                 ++res_index;
                             }
                             // total_bytes
-                            else if (src_index == 22 && columns_mask[src_index])
+                            else if (src_index == 21 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -706,14 +702,6 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSamplingKeyAST()))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
-
-                if (columns_mask[src_index++])
-                {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getUniqueKeyAST()))
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();
