@@ -4573,6 +4573,17 @@ void Context::setQueryResultCache(const Poco::Util::AbstractConfiguration & conf
     shared->query_result_cache = QueryResultCacheFactory::instance().create(type, config);
 }
 
+void Context::setNoOpQueryResultCache()
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->query_result_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache has been already created.");
+
+    /// A zero-sized in-process cache acts as a no-op; bypass the factory and any remote backend.
+    shared->query_result_cache = std::make_shared<LocalQueryResultCache>(0, 0, 0, 0);
+}
+
 void Context::updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
 {
     std::lock_guard lock(shared->mutex);

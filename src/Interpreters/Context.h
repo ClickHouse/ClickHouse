@@ -1450,6 +1450,8 @@ public:
     void clearMMappedFileCache() const;
 
     void setQueryResultCache(const Poco::Util::AbstractConfiguration & config);
+    /// Install a no-op zero-sized local query result cache (used by `clickhouse-local`).
+    void setNoOpQueryResultCache();
     void updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<IQueryResultCache> getQueryResultCache() const;
     void clearQueryResultCache(const std::optional<String> & tag) const;
