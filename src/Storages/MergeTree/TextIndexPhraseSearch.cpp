@@ -134,6 +134,27 @@ std::vector<RoaringishEntry> TextIndexPhraseSearch::intersect(
         ++i;
     }
 
+    /// Phase 1 and Phase 2 of the same iteration can both emit at the same key
+    /// (e.g. the within-group match at group `g+1` and the boundary match coming
+    /// from group `g`), and the result is not guaranteed to be sorted because
+    /// boundary results carry `group + 1`. Sort and merge same-bucket entries so
+    /// that the next chained `intersect` call sees one entry per key — otherwise
+    /// the pointer advancement in the next pass can skip a duplicate and produce
+    /// false negatives for 3+ term phrases.
+    if (result.size() > 1)
+    {
+        std::sort(result.begin(), result.end());
+        size_t out_idx = 0;
+        for (size_t idx = 1; idx < result.size(); ++idx)
+        {
+            if (result[out_idx].sameBucket(result[idx]))
+                result[out_idx].mergeBitmap(result[idx]);
+            else
+                result[++out_idx] = result[idx];
+        }
+        result.resize(out_idx + 1);
+    }
+
     return result;
 }
 
