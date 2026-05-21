@@ -283,8 +283,6 @@ const std::unordered_set<std::string_view> excluded_functions = {
     "generateSerialID",
     "zookeeperSessionUptime",
     "lemmatize",
-    /// `detectLanguageMixed` currently trips MSan inside `CLD2`, see #103765.
-    "detectLanguageMixed",
 
     /// These need custom TLD list config.
     "cutToFirstSignificantSubdomainCustom",
