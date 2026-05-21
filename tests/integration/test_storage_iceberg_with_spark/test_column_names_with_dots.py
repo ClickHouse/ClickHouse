@@ -216,3 +216,101 @@ def test_deeply_nested_struct_with_dotted_names(started_cluster_iceberg_with_spa
     ).strip()
     expected = "deep_value1\ndeep_value2\ndeep_value3"
     assert result == expected, f"Expected:\n{expected}\nGot:\n{result}"
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_dotted_array_column(started_cluster_iceberg_with_spark, storage_type):
+    """
+    Regression test for issue #90731.
+    A top-level ARRAY column whose name literally contains a dot (e.g. `a.b`)
+    must be returned with its actual values, not as an empty array.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_dotted_array_column_" + storage_type + "_" + get_uuid_str()
+
+    from pyspark.sql.types import ArrayType
+
+    data = [(["a", "b", "c"],)]
+    schema = StructType([
+        StructField("a.b", ArrayType(StringType())),
+    ])
+    df = spark.createDataFrame(data=data, schema=schema)
+
+    write_iceberg_from_df(spark, df, TABLE_NAME, mode="overwrite", format_version="2")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    # Test via table function
+    table_function_expr = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=True
+    )
+
+    result = instance.query(
+        f"SELECT `a.b` FROM {table_function_expr}"
+    ).strip()
+    assert result == "['a','b','c']", f"Expected ['a','b','c'], got: {result}"
+
+    # Test via table engine
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    result = instance.query(
+        f"SELECT `a.b` FROM {TABLE_NAME}"
+    ).strip()
+    assert result == "['a','b','c']", f"Expected ['a','b','c'], got: {result}"
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_dotted_array_alongside_real_nested(started_cluster_iceberg_with_spark, storage_type):
+    """
+    Regression guard: a lone dotted Array column (`a.b`) must not interfere with
+    a genuine flat-Nested group (`c.x`, `c.y`) that shares a different prefix.
+    All three columns must round-trip correctly.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_dotted_array_alongside_real_nested_" + storage_type + "_" + get_uuid_str()
+
+    from pyspark.sql.types import ArrayType, IntegerType as SparkIntegerType
+
+    data = [(["a", "b", "c"], [1, 2], ["p", "q"])]
+    schema = StructType([
+        StructField("a.b", ArrayType(StringType())),
+        StructField("c.x", ArrayType(SparkIntegerType())),
+        StructField("c.y", ArrayType(StringType())),
+    ])
+    df = spark.createDataFrame(data=data, schema=schema)
+
+    write_iceberg_from_df(spark, df, TABLE_NAME, mode="overwrite", format_version="2")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    # Test via table function
+    table_function_expr = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=True
+    )
+
+    result = instance.query(
+        f"SELECT `a.b`, `c.x`, `c.y` FROM {table_function_expr}"
+    ).strip()
+    assert result == "['a','b','c']\t[1,2]\t['p','q']", \
+        f"Unexpected result via table function: {result}"
+
+    # Test via table engine
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    result = instance.query(
+        f"SELECT `a.b`, `c.x`, `c.y` FROM {TABLE_NAME}"
+    ).strip()
+    assert result == "['a','b','c']\t[1,2]\t['p','q']", \
+        f"Unexpected result via table engine: {result}"

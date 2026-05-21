@@ -285,21 +285,37 @@ using NameToDataType = std::map<String, DataTypePtr>;
 
 NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
 {
-    std::unordered_map<String, NamesAndTypesList> nested;
+    /// Pass 1: count how many Array(T) columns share each dotted prefix.
+    /// A lone column like `a.b Array(T)` must not be collapsed into a synthetic
+    /// Nested parent — only genuine flat-Nested groups (n.x, n.y, ...) qualify.
+    std::unordered_map<String, size_t> prefix_count;
     for (const auto & name_type : names_and_types)
     {
         /// Skip subcolumns (e.g. `c0.c2.null` derived from `c0.c2 Array(Nullable(Tuple()))`).
-        /// They are not real flat-nested columns like `n.a Array(T)`, `n.b Array(T)`.
         if (name_type.isSubcolumn())
             continue;
 
         const auto * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get());
-
-        /// Ignore true Nested type, but try to unite flatten arrays to Nested type.
         if (!isNested(name_type.type) && type_arr)
         {
             auto split = splitName(name_type.name);
             if (!split.second.empty())
+                ++prefix_count[split.first];
+        }
+    }
+
+    /// Pass 2: build Nested only for prefixes shared by at least two columns.
+    std::unordered_map<String, NamesAndTypesList> nested;
+    for (const auto & name_type : names_and_types)
+    {
+        if (name_type.isSubcolumn())
+            continue;
+
+        const auto * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get());
+        if (!isNested(name_type.type) && type_arr)
+        {
+            auto split = splitName(name_type.name);
+            if (!split.second.empty() && prefix_count[split.first] >= 2)
                 nested[split.first].emplace_back(split.second, type_arr->getNestedType());
         }
     }
