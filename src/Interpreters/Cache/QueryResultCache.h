@@ -21,11 +21,13 @@ namespace DB
 
 struct Settings;
 
-/// Does AST contain non-deterministic functions like rand() and now()?
-bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
-
-/// Does AST contain system tables like "system.processes"?
-bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
+/// Checks that query cache can be used for query.
+/// Only use the query cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
+/// Throws if ast contains non-deterministic functions or system tables and appropriate handling setting is set to throw.
+/// When skip_context_check is true, the context's canUseQueryResultCache flag is not checked.
+/// This is used for explicit per-subquery opt-in where the subquery has SETTINGS use_query_cache = true
+/// but the outer query context may not have the flag set.
+bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check = false);
 
 class QueryResultCacheWriter;
 class QueryResultCacheReader;
@@ -104,6 +106,9 @@ public:
         /// compute the tag from the query AST.
         String tag;
 
+        /// Is it subquery entry? Displayed in SYSTEM.QUERY_CACHE.
+        const bool is_subquery;
+
         /// Ctor to construct a Key for writing into query result cache.
         Key(ASTPtr ast_,
             const String & current_database,
@@ -114,14 +119,16 @@ public:
             bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> created_at_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
-            bool is_compressed);
+            bool is_compressed,
+            bool is_subquery_);
 
         /// Ctor to construct a Key for reading from query result cache (this operation only needs the AST + user name).
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
             const String & query_id_,
-            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
+            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+            bool is_subquery_);
 
         explicit Key(IASTHash ast_hash_);
 
@@ -314,7 +321,7 @@ private:
     const bool enable_writes_to_query_cache_disk;
     std::shared_ptr<QueryResultCache::Entry> query_result TSA_GUARDED_BY(mutex) = std::make_shared<QueryResultCache::Entry>();
     std::atomic<bool> skip_insert = false;
-    bool was_finalized = false;
+    std::atomic<bool> was_finalized = false;
     LoggerPtr logger = getLogger("QueryResultCache");
 
     QueryResultCacheWriter(
