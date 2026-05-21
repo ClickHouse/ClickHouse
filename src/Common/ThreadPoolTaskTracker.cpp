@@ -103,6 +103,11 @@ void TaskTracker::waitIfAny()
 
 void TaskTracker::add(Callback && func)
 {
+    {
+        std::lock_guard lock(mutex);
+        chassert(!final_task && "add must not be called after addFinal");
+    }
+
     /// All this fuzz is about 2 things. This is the most critical place of TaskTracker.
     /// The first is not to fail insertion in the list `futures`.
     /// In order to face it, the element is allocated at the end of the list `futures` in advance.
@@ -134,7 +139,15 @@ void TaskTracker::add(Callback && func)
             }
             if (maybe_final_task)
             {
-                scheduler([pt = std::move(maybe_final_task)]() mutable { (*pt)(); }, Priority{});
+                try
+                {
+                    scheduler([pt = std::move(maybe_final_task)]() mutable { (*pt)(); }, Priority{});
+                }
+                catch (...)
+                {
+                    /// SCOPE_EXIT is noexcept; let the final task's future report broken_promise.
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                }
             }
         });
 
@@ -170,7 +183,6 @@ void TaskTracker::addFinal(Callback && func)
     if (run_final_task_now)
     {
         scheduler([p = std::move(pt)]() mutable { (*p)(); }, Priority{});
-        waitTilInflightShrink();
     }
 }
 
