@@ -759,34 +759,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             return {};
     }
 
-    /** For subqueries (including expanded CTEs), output columns whose names contain dots
-      * (e.g. produced by asterisk expansion of a join: `SELECT * FROM a JOIN b` yields columns
-      * `id`, `b.id`) can be mistaken for qualified `b.id` references from the outer scope.
-      * If the first part of the identifier is also the alias of a different table expression
-      * in the same scope, refuse the match here so the resolution finds the sibling table
-      * instead. This blocks inner CTE/subquery table aliases from leaking into the outer
-      * scope while still allowing legitimate access to dotted column names (Nested columns
-      * exported by an inner subquery, e.g. `SELECT fields.name FROM (SELECT fields.name FROM t)`).
-      */
-    const bool is_subquery_table_expression = table_expression_node_type == QueryTreeNodeType::QUERY
-        || table_expression_node_type == QueryTreeNodeType::UNION;
-    if (is_subquery_table_expression && identifier.getPartsSize() > 1)
-    {
-        for (const auto & [other_node, other_data] : scope.table_expression_node_to_data)
-        {
-            if (other_node.get() == table_expression_node.get())
-                continue;
-            /// User-facing name for the sibling: the explicit alias if set, otherwise the
-            /// table/CTE name. An aliased reference (e.g. `LEFT JOIN a AS a1`) shadows
-            /// the CTE name, so we only consider one of them.
-            const auto & sibling_name = !other_data.table_expression_name.empty()
-                ? other_data.table_expression_name
-                : other_data.table_name;
-            if (!sibling_name.empty() && sibling_name == path_start)
-                return {};
-        }
-    }
-
      /** If identifier first part binds to some column start or table has full identifier name. Then we can try to find whole identifier in table.
        * 1. Try to bind identifier first part to column in table, if true get full identifier from table or throw exception.
        * 2. Try to bind identifier first part to table name or storage alias, if true remove first part and try to get full identifier from table or throw exception.
@@ -1243,11 +1215,47 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         }
         else
         {
-            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                "JOIN {} ambiguous identifier '{}'. In scope {}",
-                table_expression_node->formatASTForErrorMessage(),
-                identifier_lookup.identifier.getFullName(),
-                scope.scope_node->formatASTForErrorMessage());
+            /** Asterisk expansion of a join can produce subquery output columns whose names
+              * contain dots (e.g. `SELECT * FROM a JOIN b ...` yields columns `id`, `b.id`).
+              * A multi-part identifier like `b.id` then matches both this synthetic dotted
+              * name in one side and the real `b.id` in the other side, raising a spurious
+              * ambiguity. Prefer the side that resolved by stripping the alias prefix
+              * (its column name is a suffix of the identifier) over the side that matched
+              * the whole identifier as a literal dotted column name in a subquery output.
+              */
+            auto is_dotted_subquery_column_match = [&](const QueryTreeNodePtr & resolved) -> bool
+            {
+                const auto * column = resolved->as<ColumnNode>();
+                if (!column)
+                    return false;
+                const auto & source = column->getColumnSource();
+                if (!source)
+                    return false;
+                auto source_type = source->getNodeType();
+                if (source_type != QueryTreeNodeType::QUERY && source_type != QueryTreeNodeType::UNION)
+                    return false;
+                return column->getColumnName() == identifier_lookup.identifier.getFullName();
+            };
+            const bool left_is_dotted = is_dotted_subquery_column_match(left_resolved_identifier);
+            const bool right_is_dotted = is_dotted_subquery_column_match(right_resolved_identifier);
+            if (left_is_dotted && !right_is_dotted)
+            {
+                resolved_side = JoinTableSide::Right;
+                resolved_identifier = right_resolved_identifier;
+            }
+            else if (!left_is_dotted && right_is_dotted)
+            {
+                resolved_side = JoinTableSide::Left;
+                resolved_identifier = left_resolved_identifier;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                    "JOIN {} ambiguous identifier '{}'. In scope {}",
+                    table_expression_node->formatASTForErrorMessage(),
+                    identifier_lookup.identifier.getFullName(),
+                    scope.scope_node->formatASTForErrorMessage());
+            }
         }
     }
     else if (left_resolved_identifier)
