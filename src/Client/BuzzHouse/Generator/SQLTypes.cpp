@@ -1872,20 +1872,10 @@ std::unique_ptr<SQLType> StatementGenerator::randomAggregateType(RandomGenerator
     std::string aggr;
     std::vector<std::unique_ptr<SQLType>> subtypes;
     AggregateFunction * af = tp ? tp->mutable_aggr() : nullptr;
+    const CHAggregate & agg = rg.pickRandomly(det_aggrs);
 
-    if (!det_aggrs.empty())
-    {
-        const CHAggregate & agg = rg.pickRandomly(det_aggrs);
-        aggr = agg.fname;
-        nargs = agg.min_args == agg.max_args ? agg.min_args : rg.randomInt<uint32_t>(agg.min_args, agg.max_args);
-    }
-    else
-    {
-        static const std::vector<std::string> fallback_aggrs = {"any", "anyLast", "avg", "count", "max", "min", "sum", "sumWithOverflow"};
-        aggr = rg.pickRandomly(fallback_aggrs);
-        nargs = aggr == "count" ? 0 : 1;
-    }
-
+    aggr = agg.fname;
+    nargs = agg.min_args == agg.max_args ? agg.min_args : rg.randomInt<uint32_t>(agg.min_args, agg.max_args);
     if (nargs == 0 && (simple || this->depth >= this->fc.max_depth))
     {
         aggr = "any";

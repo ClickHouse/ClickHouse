@@ -2144,8 +2144,10 @@ DataTypePtr QueryFuzzer::getRandomType()
             }
             catch (...) // Ok: aggregate may reject random argument types
             {
+                AggregateFunctionProperties properties;
+                auto func = AggregateFunctionFactory::instance().get("count", NullsAction::EMPTY, {}, {}, properties);
+                return std::make_shared<DataTypeAggregateFunction>(func, DataTypes{}, Array{});
             }
-            break;
         }
         default:
             break;

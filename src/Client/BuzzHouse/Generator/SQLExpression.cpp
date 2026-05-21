@@ -762,7 +762,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
     const uint32_t avail_width = this->width < this->fc.max_width ? this->fc.max_width - this->width : 0;
 
     chassert(nallow_funcs || allow_aggr);
-    if (!nallow_funcs || rg.nextSmallNumber() < 7)
+    if (allow_aggr && (!nallow_funcs || rg.nextSmallNumber() < 7))
     {
         /// Aggregate
         const CHAggregate & agg = rg.pickRandomly(

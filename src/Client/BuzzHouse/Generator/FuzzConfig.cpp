@@ -723,119 +723,124 @@ ORDER BY f.name)sql";
            "topKWeighted",
            "welchTTest"};
 
-    det_funcs.clear();
-    nondet_funcs.clear();
-    common_funcs.clear();
-    det_aggrs.clear();
-    nondet_aggrs.clear();
-    if (!processServerQuery(
+    if (processServerQuery(
             false, fmt::format(R"({} INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)", query, fuzzer_out_file.generic_string())))
     {
-        LOG_WARNING(log, "Failed to load functions from system.functions, falling back to hardcoded catalog");
-        return;
-    }
+        std::ifstream infile(fuzzer_out_file);
+        uint64_t found = 0;
 
-    std::ifstream infile(fuzzer_out_file);
-    uint64_t found = 0;
-
-    while (std::getline(infile, buf))
-    {
-        if (!buf.empty() && buf.back() == '\r')
-            buf.pop_back();
-        if (buf.empty())
-            break;
-
-        /// Parse tab-separated fields: name, is_aggregate, deterministic, higher_order,
-        /// min_args, max_args, min_params, max_params
-        const auto tab1 = buf.find('\t');
-        if (tab1 == String::npos)
-            continue;
-        const auto tab2 = buf.find('\t', tab1 + 1);
-        if (tab2 == String::npos)
-            continue;
-        const auto tab3 = buf.find('\t', tab2 + 1);
-        if (tab3 == String::npos)
-            continue;
-        const auto tab4 = buf.find('\t', tab3 + 1);
-        if (tab4 == String::npos)
-            continue;
-        const auto tab5 = buf.find('\t', tab4 + 1);
-        if (tab5 == String::npos)
-            continue;
-        const auto tab6 = buf.find('\t', tab5 + 1);
-        if (tab6 == String::npos)
-            continue;
-        const auto tab7 = buf.find('\t', tab6 + 1);
-        if (tab7 == String::npos)
-            continue;
-
-        const String name = buf.substr(0, tab1);
-        const bool is_aggregate = buf.substr(tab1 + 1, tab2 - tab1 - 1) == "1";
-        const String det_str = buf.substr(tab2 + 1, tab3 - tab2 - 1);
-        const String ho_str = buf.substr(tab3 + 1, tab4 - tab3 - 1);
-        const String min_args_str = buf.substr(tab4 + 1, tab5 - tab4 - 1);
-        const String max_args_str = buf.substr(tab5 + 1, tab6 - tab5 - 1);
-        const String min_params_str = buf.substr(tab6 + 1, tab7 - tab6 - 1);
-        const String max_params_str = buf.substr(tab7 + 1);
-
-        found++;
-
-        const bool is_deterministic = (det_str != "0");
-        const bool is_higher_order = (ho_str != "\\N" && ho_str == "1");
-        const uint32_t min_args = min_args_str == "\\N" ? 0 : static_cast<uint32_t>(std::stoul(min_args_str));
-        const uint32_t max_args = max_args_str == "\\N" ? ulimited_params : static_cast<uint32_t>(std::stoul(max_args_str));
-        const uint32_t min_params = min_params_str == "\\N" ? 0 : static_cast<uint32_t>(std::stoul(min_params_str));
-        const uint32_t max_params = max_params_str == "\\N" ? ulimited_params : static_cast<uint32_t>(std::stoul(max_params_str));
-
-        if (is_aggregate)
+        det_funcs.clear();
+        nondet_funcs.clear();
+        common_funcs.clear();
+        det_aggrs.clear();
+        nondet_aggrs.clear();
+        while (std::getline(infile, buf))
         {
-            const bool snc = nulls_clause_funcs.contains(name);
-            uint32_t aggr_min_args = 1;
-            uint32_t aggr_max_args = 1;
-            if (name == "count")
+            if (!buf.empty() && buf.back() == '\r')
+                buf.pop_back();
+            if (buf.empty())
+                break;
+
+            /// Parse tab-separated fields: name, is_aggregate, deterministic, higher_order,
+            /// min_args, max_args, min_params, max_params
+            const auto tab1 = buf.find('\t');
+            if (tab1 == String::npos)
+                continue;
+            const auto tab2 = buf.find('\t', tab1 + 1);
+            if (tab2 == String::npos)
+                continue;
+            const auto tab3 = buf.find('\t', tab2 + 1);
+            if (tab3 == String::npos)
+                continue;
+            const auto tab4 = buf.find('\t', tab3 + 1);
+            if (tab4 == String::npos)
+                continue;
+            const auto tab5 = buf.find('\t', tab4 + 1);
+            if (tab5 == String::npos)
+                continue;
+            const auto tab6 = buf.find('\t', tab5 + 1);
+            if (tab6 == String::npos)
+                continue;
+            const auto tab7 = buf.find('\t', tab6 + 1);
+            if (tab7 == String::npos)
+                continue;
+
+            const String name = buf.substr(0, tab1);
+            const bool is_aggregate = buf.substr(tab1 + 1, tab2 - tab1 - 1) == "1";
+            const String det_str = buf.substr(tab2 + 1, tab3 - tab2 - 1);
+            const String ho_str = buf.substr(tab3 + 1, tab4 - tab3 - 1);
+            const String min_args_str = buf.substr(tab4 + 1, tab5 - tab4 - 1);
+            const String max_args_str = buf.substr(tab5 + 1, tab6 - tab5 - 1);
+            const String min_params_str = buf.substr(tab6 + 1, tab7 - tab6 - 1);
+            const String max_params_str = buf.substr(tab7 + 1);
+
+            found++;
+
+            const bool is_deterministic = (det_str != "0");
+            const bool is_higher_order = (ho_str != "\\N" && ho_str == "1");
+            const uint32_t min_args = min_args_str == "\\N" ? 0 : static_cast<uint32_t>(std::stoul(min_args_str));
+            const uint32_t max_args = max_args_str == "\\N" ? ulimited_params : static_cast<uint32_t>(std::stoul(max_args_str));
+            const uint32_t min_params = min_params_str == "\\N" ? 0 : static_cast<uint32_t>(std::stoul(min_params_str));
+            const uint32_t max_params = max_params_str == "\\N" ? ulimited_params : static_cast<uint32_t>(std::stoul(max_params_str));
+
+            if (is_aggregate)
             {
-                aggr_min_args = 0;
+                const bool snc = nulls_clause_funcs.contains(name);
+                uint32_t aggr_min_args = 1;
+                uint32_t aggr_max_args = 1;
+                if (name == "count")
+                {
+                    aggr_min_args = 0;
+                }
+                else if (two_arg_aggrs.contains(name))
+                {
+                    aggr_min_args = 2;
+                    aggr_max_args = 2;
+                }
+                CHAggregate agg(name, min_params, max_params, aggr_min_args, aggr_max_args, snc);
+                if (is_deterministic)
+                    det_aggrs.push_back(agg);
+                else
+                    nondet_aggrs.push_back(agg);
             }
-            else if (two_arg_aggrs.contains(name))
-            {
-                aggr_min_args = 2;
-                aggr_max_args = 2;
-            }
-            CHAggregate agg(name, min_params, max_params, aggr_min_args, aggr_max_args, snc);
-            if (is_deterministic)
-                det_aggrs.push_back(agg);
             else
-                nondet_aggrs.push_back(agg);
+            {
+                CHFunction func(name, is_higher_order, min_args, max_args);
+                /// arrayJoin may not be deterministic
+                if (common_func_names.contains(name))
+                    common_funcs.push_back(func);
+                if (is_deterministic)
+                    det_funcs.push_back(func);
+                else
+                    nondet_funcs.push_back(func);
+            }
+        }
+
+        if (found > 0)
+        {
+            LOG_INFO(
+                log,
+                "Loaded {} functions from system.functions: {} det funcs, {} nondet funcs, {} common funcs, {} det aggrs, {} nondet aggrs",
+                found,
+                det_funcs.size(),
+                nondet_funcs.size(),
+                common_funcs.size(),
+                det_aggrs.size(),
+                nondet_aggrs.size());
         }
         else
         {
-            CHFunction func(name, is_higher_order, min_args, max_args);
-            /// arrayJoin may not be deterministic
-            if (common_func_names.contains(name))
-                common_funcs.push_back(func);
-            if (is_deterministic)
-                det_funcs.push_back(func);
-            else
-                nondet_funcs.push_back(func);
+            LOG_WARNING(log, "No functions loaded from system.functions out of {} found", found);
         }
-    }
-
-    if (found > 0)
-    {
-        LOG_INFO(
-            log,
-            "Loaded {} functions from system.functions: {} det funcs, {} nondet funcs, {} common funcs, {} det aggrs, {} nondet aggrs",
-            found,
-            det_funcs.size(),
-            nondet_funcs.size(),
-            common_funcs.size(),
-            det_aggrs.size(),
-            nondet_aggrs.size());
     }
     else
     {
-        LOG_WARNING(log, "No functions loaded from system.functions out of {} found", found);
+        LOG_WARNING(log, "Failed to load functions from system.functions, keeping previous catalog");
     }
+    if (det_funcs.empty())
+        det_funcs.emplace_back("plus", false, 2, 2);
+    if (det_aggrs.empty())
+        det_aggrs.emplace_back("count", 0, 0, 0, 1, false);
 }
 
 void FuzzConfig::loadServerConfigurations()
