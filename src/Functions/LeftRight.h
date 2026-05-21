@@ -34,7 +34,7 @@ enum class SubstringDirection : uint8_t
 };
 
 template <bool is_utf8, SubstringDirection direction>
-class FunctionLeftRight final : public IFunction
+class FunctionLeftRight : public IFunction
 {
 public:
     static constexpr auto name = direction == SubstringDirection::Left

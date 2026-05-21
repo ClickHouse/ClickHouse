@@ -8,7 +8,6 @@
 
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 
 #include <Parsers/ParserDataType.h>
 #include <Parsers/parseQuery.h>

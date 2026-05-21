@@ -36,7 +36,7 @@ namespace DB
  *     }
  * }
  */
-class JSONColumnsWithMetadataBlockOutputFormat final : public JSONColumnsBlockOutputFormat
+class JSONColumnsWithMetadataBlockOutputFormat : public JSONColumnsBlockOutputFormat
 {
 public:
     JSONColumnsWithMetadataBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
