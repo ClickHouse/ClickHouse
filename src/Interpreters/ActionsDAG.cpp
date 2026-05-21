@@ -88,7 +88,12 @@ std::pair<ColumnsWithTypeAndName, bool> getFunctionArguments(const ActionsDAG::N
         argument.type = child.result_type;
         argument.name = child.result_name;
 
-        if (!argument.column || !isColumnConst(*argument.column))
+        /// PLACEHOLDER carries a synthetic default-valued ColumnConst so that the DAG
+        /// invariant (Node::column is always ColumnConst) holds, but its value is not
+        /// the runtime value of the correlated column. Never treat it as a constant
+        /// argument, otherwise constant folding evaluates functions over the default
+        /// value (e.g. 0 for UInt64, NULL for Nullable) and bakes the wrong result in.
+        if (child.type == ActionsDAG::ActionType::PLACEHOLDER || !argument.column || !isColumnConst(*argument.column))
         {
             all_const = false;
         }
@@ -521,8 +526,13 @@ const ActionsDAG::Node & ActionsDAG::addPlaceholder(std::string name, DataTypePt
     node.type = ActionType::PLACEHOLDER;
     node.result_type = std::move(type);
     node.result_name = std::move(name);
-    node.column = node.result_type->createColumnConstWithDefaultValue(0);
-
+    /// Do NOT set node.column. PLACEHOLDER is a marker for a correlated column that will be
+    /// rewritten to an INPUT by decorrelate(); its value is unknown at DAG construction time.
+    /// Setting a synthetic default-valued ColumnConst would make functions over the
+    /// placeholder eligible for constant folding (via getConstantResultForNonConstArguments
+    /// and the all-arguments-constant path in evaluatePartialResult / updateHeader), baking
+    /// the placeholder's default value (0 for UInt64, NULL for Nullable, ...) into headers
+    /// and ActionsDAG nodes — silently producing wrong results for correlated subqueries.
     return addNode(std::move(node));
 }
 
@@ -1129,9 +1139,15 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
 
                     if (node->type == ActionsDAG::ActionType::PLACEHOLDER)
                     {
-                        /// Maybe move to executeActionForPartialResult
+                        /// PLACEHOLDER has no column (it stands for an unknown correlated value);
+                        /// produce a non-const empty/default column of the right type so that
+                        /// header computation can proceed, but downstream functions will not
+                        /// constant-fold against it (the column is not a ColumnConst).
+                        auto column = node->result_type->createColumn();
+                        if (input_rows_count != 0)
+                            column = column->cloneResized(input_rows_count);
                         node_to_column[node] = ColumnWithTypeAndName(
-                            node->column->cloneResized(input_rows_count),
+                            std::move(column),
                             node->result_type,
                             node->result_name);
                         continue;

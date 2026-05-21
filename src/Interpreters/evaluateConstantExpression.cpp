@@ -545,7 +545,11 @@ namespace
         {
             if (const auto * node = findMatch(key, matches))
             {
-                ColumnPtr column = col->getPtr();
+                /// ActionsDAG::addColumn normalizes ColumnConst to size 0; expand to size 1
+                /// because the conjunction map is consumed by evaluatePartialResult with
+                /// input_rows_count == 1, and downstream consumers (e.g. createBlockSelector)
+                /// rely on the column's row count.
+                ColumnPtr column = ColumnConst::create(col->getDataColumnPtr(), 1);
                 if (!value->result_type->equals(*node->result_type))
                 {
                     auto inner = tryCastColumn(col->getDataColumnPtr(), value->result_type, node->result_type);

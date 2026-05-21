@@ -431,7 +431,7 @@ void buildExistsResultExpression(
 {
     ActionsDAG dag(query_plan.getCurrentHeader()->getNamesAndTypesList());
     auto result_type = std::make_shared<DataTypeUInt8>();
-    auto column = assert_cast<const ColumnConst &>(*result_type->createColumnConst(0, 1)).getPtr();
+    auto column = result_type->createColumnConst(0, 1);
     const auto * exists_result = &dag.materializeNode(dag.addColumn(std::move(column), result_type, correlated_subquery.action_node_name));
 
     if (project_only_correlated_columns)
