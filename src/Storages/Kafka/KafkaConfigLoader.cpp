@@ -9,9 +9,10 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/QueryProfiler.h>
-#include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
 #include <IO/S3/getAvailabilityZone.h>
