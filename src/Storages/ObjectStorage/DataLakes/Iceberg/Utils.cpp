@@ -171,23 +171,18 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
             path);
     }
     String version_str;
+    /// `vN.metadata.json` or `vN-<uuid>.metadata.json` (the latter is what
+    /// `apache/iceberg-rest-fixture` and other iceberg-java REST catalogs
+    /// write when committing a new metadata file).
     if (file_name.starts_with('v'))
     {
-        /// Formats: v<V>.metadata.json  or  v<V>-<uuid>.metadata.json
-        /// The 'v' prefix is followed by a version number, then either '.' or '-'.
-        auto after_v = file_name.begin() + 1;
-        auto end_of_version = std::find_if(after_v, file_name.end(), [](char c) { return c == '.' || c == '-'; });
-        if (end_of_version == file_name.end())
+        auto end_pos = file_name.find_first_of(".-");
+        if (end_pos == String::npos || end_pos <= 1)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `vN-<uuid>.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
                 file_name);
-        if (end_of_version == after_v)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `vN-<uuid>.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
-                file_name);
-        version_str = String(after_v, end_of_version);
+        version_str = String(file_name.begin() + 1, file_name.begin() + end_pos);
     }
     /// <V>-<random-uuid>.metadata.json
     else
@@ -1437,7 +1432,8 @@ void forEachAvroEntry(
     auto manifest_list_buf = createReadBuffer(relative_path_with_metadata, object_storage, context, getLogger(logger_name));
 
     auto input_stream = std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf);
-    avro::DataFileReader<avro::GenericDatum> reader(std::move(input_stream));
+    auto reader_base = std::make_unique<avro::DataFileReaderBase>(std::move(input_stream), MAX_AVRO_SCHEMA_DEPTH);
+    avro::DataFileReader<avro::GenericDatum> reader(std::move(reader_base));
 
     avro::GenericDatum datum(reader.readerSchema());
     while (reader.read(datum))
