@@ -122,6 +122,22 @@ SELECT 'JOIN result count:', count() FROM (
     SELECT v.id FROM test_view_04241 v INNER JOIN test_join_04241 j ON v.id = j.id ORDER BY v.ts DESC LIMIT 10
 );
 
+-- Outer WHERE: pushdown must be disabled. `query_info.filter_actions_dag` is
+-- only used for analysis (e.g. skip-unused-shards), not as a runtime filter
+-- inside the view, so pushing LIMIT would truncate rows before WHERE is
+-- applied and could return fewer rows than expected. The result-count check
+-- uses a filter `id > 50` combined with `ORDER BY ts DESC` (where `ts` is
+-- monotonically decreasing in `id`) so that with buggy pushdown the inner
+-- top-10 by `ts` would contain only `id <= 9` and the outer filter would
+-- drop them all (0 rows) — the correct behavior must return 10 rows.
+SELECT 'WHERE disables pushdown:',
+    (SELECT count() = 0 FROM (EXPLAIN SELECT id FROM test_view_04241 WHERE id > 50 ORDER BY ts DESC LIMIT 10)
+     WHERE explain LIKE '%Merge sorted streams%') AS no_merge_sort;
+
+SELECT 'WHERE result count:', count() FROM (
+    SELECT id FROM test_view_04241 WHERE id > 50 ORDER BY ts DESC LIMIT 10
+);
+
 DROP TABLE test_join_04241;
 DROP VIEW test_view_04241;
 DROP TABLE test_distributed_04241;

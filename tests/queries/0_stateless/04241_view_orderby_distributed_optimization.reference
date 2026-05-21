@@ -15,3 +15,5 @@ LIMIT BY disables pushdown:	1
 LIMIT BY result count:	10
 JOIN disables pushdown:	1
 JOIN result count:	10
+WHERE disables pushdown:	1
+WHERE result count:	10

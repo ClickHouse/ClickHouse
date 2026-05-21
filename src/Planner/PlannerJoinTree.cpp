@@ -818,6 +818,15 @@ void pushOrderByIntoView(
     if (!outer->hasLimit())
         return;
 
+    /// Skip when the outer query has filtration: `WHERE`, `PREWHERE`, or
+    /// `QUALIFY`. The outer filter is materialized as a separate filter step
+    /// above the view subquery, while `query_info.filter_actions_dag` is only
+    /// used for analysis (e.g. skip-unused-shards), not as a runtime guarantee
+    /// inside the view. Pushing `LIMIT` into the view would then truncate rows
+    /// before the outer filter, potentially returning fewer rows than expected.
+    if (outer->hasWhere() || outer->hasPrewhere() || outer->hasQualify())
+        return;
+
     /// Outer query must be a transparent SELECT — pushing ORDER BY through
     /// aggregation, DISTINCT or window functions changes semantics and can
     /// disable downstream optimizations (e.g. matching aggregate projections).
