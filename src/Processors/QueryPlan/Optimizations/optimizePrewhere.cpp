@@ -240,27 +240,22 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         const auto * and_node = &combined.addFunction(func_builder_and, {existing_filter_node, new_filter_node}, {});
 
         auto & outputs = combined.getOutputs();
-        std::unordered_set<const ActionsDAG::Node *> existing_outputs(outputs.begin(), outputs.end());
         for (const auto * node : new_outputs_in_combined)
-        {
-            if (node == new_filter_node)
-                continue;
-            if (existing_outputs.insert(node).second)
+            if (std::ranges::find(outputs, node) == outputs.end())
                 outputs.push_back(node);
-        }
 
-        if (existing_removable)
+        const bool same_filter = existing_filter_node == new_filter_node;
+        if (existing_removable && (!same_filter || new_removable))
             std::erase(outputs, existing_filter_node);
-
-        if (!new_removable && std::find(outputs.begin(), outputs.end(), new_filter_node) == outputs.end())
-            outputs.push_back(new_filter_node);
+        if (new_removable && !same_filter)
+            std::erase(outputs, new_filter_node);
 
         outputs.push_back(and_node);
 
         prewhere_info->prewhere_actions = std::move(combined);
         prewhere_info->prewhere_column_name = and_node->result_name;
         prewhere_info->remove_prewhere_column = true;
-        prewhere_info->need_filter = true;
+        prewhere_info->need_filter = existing_prewhere_info->need_filter || prewhere_info->need_filter;
     }
 
     source_step_with_filter->updatePrewhereInfo(prewhere_info);
