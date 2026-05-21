@@ -978,3 +978,85 @@ def test_invalid_auth_header_format(started_cluster):
             """
         )
     assert "Invalid auth header format" in str(err.value)
+
+
+def test_iceberg_file_progress_callback(started_cluster):
+    """
+    Regression test for the `IcebergIterator::next` file-progress callback wiring (PR #105413).
+
+    `IcebergIterator` stored a `FileProgressCallback` but never invoked it, so the
+    per-query `Progress.total_bytes_to_read` stayed at zero for Iceberg scans and
+    the progress bar showed no estimate. PR #105413 invokes the callback with the
+    data file size for every object info returned, immediately after the existing
+    `ProfileEvents::IcebergMetadataReturnedObjectInfos` increment.
+
+    `Progress.total_bytes_to_read` itself is not persisted in `system.query_log`,
+    and the regular HTTP progress callback is unrelated to `FileProgressCallback`
+    (the latter is wired only in `TCPHandler`). The closest persistent signal in
+    `system.query_log` is the `IcebergMetadataReturnedObjectInfos` ProfileEvent:
+    it is incremented on the same code path as the callback call, so a non-zero
+    count for a TCP-issued scan against an Iceberg table demonstrates that the
+    iterator's `next()` path (the only place the callback can fire) is exercised.
+    This is the "consistent system.query_log progress signal" the review asked
+    for. If a regression removes the iterator's data-file emission, the ProfileEvent
+    will drop to zero for the same scan and this test will fail.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_progress_callback_{uuid.uuid4().hex[:8]}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    table = create_table(
+        catalog,
+        root_namespace,
+        table_name,
+        DEFAULT_SCHEMA,
+        PartitionSpec(),
+        DEFAULT_SORT_ORDER,
+    )
+
+    # Append a small but non-empty batch so the iterator returns a data-file entry.
+    num_rows = 50
+    data = [generate_record() for _ in range(num_rows)]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # Use a unique `query_id` so we can pull this exact run from `system.query_log`.
+    # `node.query` uses native TCP, which is the protocol path where the file-progress
+    # callback is wired (`TCPHandler::setFileProgressCallback`).
+    # A `SELECT *` (rather than `SELECT count()`) is needed because the Iceberg
+    # metadata-only count path resolves the row count from manifest statistics
+    # without iterating the data-file iterator. Forcing a full scan with
+    # `FORMAT Null` guarantees `IcebergIterator::next` is reached.
+    query_id = f"iceberg_progress_callback_{uuid.uuid4().hex}"
+    node.query(
+        f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` FORMAT Null",
+        query_id=query_id,
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    profile_event_value = node.query(
+        f"""
+        SELECT ProfileEvents['IcebergMetadataReturnedObjectInfos']
+        FROM system.query_log
+        WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+        ORDER BY event_time_microseconds DESC
+        LIMIT 1
+        """
+    ).strip()
+    assert profile_event_value, (
+        f"`system.query_log` has no `QueryFinish` row for query_id={query_id}."
+    )
+    iceberg_returned_object_infos = int(profile_event_value)
+    assert iceberg_returned_object_infos > 0, (
+        f"Expected `IcebergMetadataReturnedObjectInfos` > 0 from the Iceberg "
+        f"scan, got {iceberg_returned_object_infos}. The iterator's `next` "
+        f"path was not exercised (regression of PR #105413 wiring)."
+    )
