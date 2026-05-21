@@ -899,8 +899,9 @@ clickhouse-client --query "SELECT count() FROM test.visits"
     def _collect_diagnostic_reports() -> List[str]:
         # macOS writes .ips crash reports to /Library/Logs/DiagnosticReports as
         # root. Grant read access so the runner can list and read the files
-        # in place; the darwin fast-test post-hook wipes the directory under
-        # sudo afterwards, so anything we see here belongs to the current run.
+        # in place; the darwin fast-test pre-hook wipes the directory under
+        # sudo before the run, so anything we see here belongs to the current
+        # run even if the previous runner was terminated unexpectedly.
         if platform.system() != "Darwin":
             return []
         reports_dir = Path("/Library/Logs/DiagnosticReports")
