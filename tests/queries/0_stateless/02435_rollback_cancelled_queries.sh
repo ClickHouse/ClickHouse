@@ -9,9 +9,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# The test SIGKILLs clickhouse-client mid-execution, so LSan's at-exit
-# stop-the-world (`ptrace`) is racy here and emits a fatal stderr warning
-# when `ptrace` is sandboxed (e.g. arm_asan_ubsan runner under seccomp).
+# This test spawns many short-lived `clickhouse-client` subprocesses (the
+# setup queries, the verification SELECTs in `thread_select`, the final
+# SELECT at the end). When they exit cleanly, LSan's at-exit leak scan
+# runs, forking a `ptrace` tracer to stop the world. On runners where
+# `ptrace` is sandboxed by seccomp (e.g. arm_asan_ubsan), the tracer
+# prints a fatal-looking stderr warning. Skip the scan; this test does
+# not check for leaks.
 export LSAN_OPTIONS="${LSAN_OPTIONS:+$LSAN_OPTIONS:}detect_leaks=0"
 
 export DATA_FILE="$CLICKHOUSE_TMP/deduptest.tsv"
