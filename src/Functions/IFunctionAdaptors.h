@@ -27,8 +27,7 @@ protected:
     bool useDefaultImplementationForSparseColumns() const final { return function->useDefaultImplementationForSparseColumns(); }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return function->getArgumentsThatAreAlwaysConstant(); }
     bool canBeExecutedOnDefaultArguments() const override { return function->canBeExecutedOnDefaultArguments(); }
-    /// TODO: replace isSuitableForShortCircuitArgumentsExecution with a dedicated canThrow interface on functions.
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override { return function->isSuitableForShortCircuitArgumentsExecution(arguments); }
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override { return function->canThrow(arguments); }
 
 private:
     std::shared_ptr<IFunction> function;
