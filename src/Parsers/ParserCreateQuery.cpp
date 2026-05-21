@@ -1272,6 +1272,8 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     query->database = table_id->getDatabase();
     query->table = table_id->getTable();
     query->uuid = table_id->uuid;
+    query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
+    query->has_uuid_clause = table_id->has_uuid;
     query->cluster = cluster_str;
 
     if (query->database)
@@ -1760,6 +1762,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->database = table_id->getDatabase();
     query->table = table_id->getTable();
     query->uuid = table_id->uuid;
+    query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
+    query->has_uuid_clause = table_id->has_uuid;
     query->cluster = cluster_str;
 
     if (query->database)
@@ -1993,6 +1997,8 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->database = dict_id->getDatabase();
     query->table = dict_id->getTable();
     query->uuid = dict_id->uuid;
+    query->has_uuid = dict_id->uuid != UUIDHelpers::Nil;
+    query->has_uuid_clause = dict_id->has_uuid;
 
     if (query->database)
         query->children.push_back(query->database);

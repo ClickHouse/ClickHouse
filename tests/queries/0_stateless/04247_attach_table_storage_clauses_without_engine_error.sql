@@ -110,6 +110,28 @@ ATTACH TABLE t_104791 TO INNER UUID '00000000-0000-0000-0000-000000000000'; -- {
 ATTACH TABLE t_104791;
 DROP TABLE t_104791;
 
+-- Dictionary cases. `ParserCreateDictionaryQuery::parseImpl` previously copied
+-- `dict_id->uuid` to `query->uuid` but did not propagate `dict_id->has_uuid` to
+-- `query->has_uuid_clause`. With the switch from the value-based check to
+-- `has_uuid_clause`, that left the dictionary path bypassing the guard. The
+-- fix propagates both flags in the dictionary parser.
+DROP DICTIONARY IF EXISTS d_104791;
+CREATE DICTIONARY d_104791 (id UInt32, value String) PRIMARY KEY id
+    SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0);
+DETACH DICTIONARY d_104791;
+
+-- 16. `ATTACH DICTIONARY d UUID '...'` with a non-`Nil` UUID: silently dropped
+--     before this patch via the parser-propagation gap described above.
+ATTACH DICTIONARY d_104791 UUID '00000000-0000-0000-0000-000000000001'; -- { serverError BAD_ARGUMENTS }
+
+-- 17. `ATTACH DICTIONARY d UUID '...'` with an explicit `Nil` UUID: same gap,
+--     same fix.
+ATTACH DICTIONARY d_104791 UUID '00000000-0000-0000-0000-000000000000'; -- { serverError BAD_ARGUMENTS }
+
+-- Plain short `ATTACH DICTIONARY` still works.
+ATTACH DICTIONARY d_104791;
+DROP DICTIONARY d_104791;
+
 -- Materialized view cases. The parser accepts `ATTACH MATERIALIZED VIEW t ...`
 -- with REFRESH, TO target, and AS SELECT clauses; before this patch all of
 -- them were silently dropped by the short-ATTACH path. The guard now rejects
@@ -124,14 +146,14 @@ CREATE TABLE t_mv_104791_other_target (id UInt32, x UInt32) ENGINE = MergeTree O
 CREATE MATERIALIZED VIEW t_mv_104791 REFRESH EVERY 1 HOUR TO t_mv_104791_target AS SELECT 1 AS id, 2 AS x;
 DETACH TABLE t_mv_104791;
 
--- 16. ATTACH MV with a different REFRESH schedule: silently dropped before this
+-- 18. ATTACH MV with a different REFRESH schedule: silently dropped before this
 --     patch (the stored REFRESH EVERY 1 HOUR replaced the user's EVERY 1 YEAR).
 ATTACH MATERIALIZED VIEW t_mv_104791 REFRESH EVERY 1 YEAR TO t_mv_104791_target AS SELECT 5 AS id, 6 AS x; -- { serverError BAD_ARGUMENTS }
 
--- 17. ATTACH MV with a different TO target: silently dropped before this patch.
+-- 19. ATTACH MV with a different TO target: silently dropped before this patch.
 ATTACH MATERIALIZED VIEW t_mv_104791 TO t_mv_104791_other_target AS SELECT 5 AS id, 6 AS x; -- { serverError BAD_ARGUMENTS }
 
--- 18. ATTACH MV with a different AS SELECT: silently dropped before this patch.
+-- 20. ATTACH MV with a different AS SELECT: silently dropped before this patch.
 ATTACH MATERIALIZED VIEW t_mv_104791 TO t_mv_104791_target AS SELECT 5 AS id, 6 AS x; -- { serverError BAD_ARGUMENTS }
 
 -- Restore the MV so cleanup works.
