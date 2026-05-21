@@ -4,6 +4,8 @@
 #include <IO/S3/Credentials.h>
 #include <IO/S3/getAvailabilityZone.h>
 #include <Common/Exception.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <base/EnumReflection.h>
 #include <boost/algorithm/string/join.hpp>
 #include <Server/CloudPlacementInfo.h>
@@ -236,11 +238,11 @@ private:
         CredentialsProviderPtr credentials;
     };
 
-    using CredentialsLRUQueue = std::list<CacheValue>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    using CredentialsLRUQueue = ListWithMemoryTracking<CacheValue>;
 
     std::atomic<size_t> max_credentials;
     std::mutex mutex;
-    std::unordered_map<CredentialsProviderKey, typename CredentialsLRUQueue::iterator, CredentialsKeyHash> cached_credentials; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    UnorderedMapWithMemoryTracking<CredentialsProviderKey, typename CredentialsLRUQueue::iterator, CredentialsKeyHash> cached_credentials;
     CredentialsLRUQueue credentials_lru;
 };
 

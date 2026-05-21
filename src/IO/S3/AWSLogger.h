@@ -5,8 +5,8 @@
 #if USE_AWS_S3
 #include <aws/core/utils/logging/LogSystemInterface.h>
 #include <base/types.h>
-#include <unordered_map>
 #include <Common/Logger.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace Poco { class Logger; }
 
@@ -34,7 +34,7 @@ public:
 private:
     LoggerPtr default_logger;
     bool enable_s3_requests_logging;
-    std::unordered_map<String, LoggerPtr> tag_loggers; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    UnorderedMapWithMemoryTracking<String, LoggerPtr> tag_loggers;
 };
 
 }

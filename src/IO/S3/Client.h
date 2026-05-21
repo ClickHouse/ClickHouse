@@ -25,6 +25,7 @@ struct ServerSideEncryptionKMSConfig
 #if USE_AWS_S3
 
 #include <Common/assert_cast.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <base/scope_guard.h>
 
 #include <IO/S3/URI.h>
@@ -62,7 +63,7 @@ struct ClientCache
     NameToNameMap region_for_bucket_cache TSA_GUARDED_BY(region_cache_mutex);
 
     mutable std::mutex uri_cache_mutex;
-    std::unordered_map<std::string, URI> uri_for_bucket_cache TSA_GUARDED_BY(uri_cache_mutex); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    UnorderedMapWithMemoryTracking<std::string, URI> uri_for_bucket_cache TSA_GUARDED_BY(uri_cache_mutex);
 };
 
 class ClientCacheRegistry
@@ -81,7 +82,7 @@ private:
     ClientCacheRegistry() = default;
 
     std::mutex clients_mutex;
-    std::unordered_map<ClientCache *, std::weak_ptr<ClientCache>> client_caches TSA_GUARDED_BY(clients_mutex); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    UnorderedMapWithMemoryTracking<ClientCache *, std::weak_ptr<ClientCache>> client_caches TSA_GUARDED_BY(clients_mutex);
 };
 
 bool isS3ExpressEndpoint(const std::string & endpoint);

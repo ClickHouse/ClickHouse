@@ -3,6 +3,7 @@
 #if USE_AWS_S3
 
 #include <Common/logger_useful.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Requests.h>
 #include <Common/BlobStorageLogWriter.h>
@@ -187,7 +188,7 @@ void deleteFilesFromS3(
                 {
                     /// Mixed success/error response - some objects were removed, and some were not.
                     /// We need to extract more detailed information from the outcome.
-                    std::unordered_set<std::string_view> removed_keys{keys.begin(), keys.end()}; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+                    UnorderedSetWithMemoryTracking<std::string_view> removed_keys{keys.begin(), keys.end()};
                     String not_found_keys;
                     std::exception_ptr other_error;
 
