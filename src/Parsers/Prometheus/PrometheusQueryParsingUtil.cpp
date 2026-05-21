@@ -4,7 +4,6 @@
 #include <Common/quoteString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <IO/readDecimalText.h>
 #include <IO/readIntText.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -15,21 +14,6 @@ namespace DB
 
 namespace
 {
-    void replaceAll(String & str, std::string_view from, std::string_view to)
-    {
-        size_t pos = 0;
-        while ((pos = str.find(from, pos)) != String::npos)
-        {
-            str.replace(pos, from.size(), to);
-            pos += to.size();
-        }
-    }
-
-    String timestampToPromQLLiteral(DateTime64 timestamp, UInt32 timestamp_scale)
-    {
-        return DB::toString(Decimal64{timestamp}, timestamp_scale);
-    }
-
     template<class... Types>
     void setErrorMessage(String * error_message, fmt::format_string<Types...> format, Types&&... args)
     {
@@ -216,24 +200,6 @@ namespace
         }
         return true;
     }
-}
-
-String PrometheusQueryParsingUtil::replaceStartEndTimestampModifiers(
-    std::string_view input,
-    TimestampType start_time,
-    TimestampType end_time,
-    UInt32 timestamp_scale)
-{
-    String res{input};
-    const String start_timestamp = timestampToPromQLLiteral(start_time, timestamp_scale);
-    const String end_timestamp = timestampToPromQLLiteral(end_time, timestamp_scale);
-
-    replaceAll(res, "@ start()", "@ " + start_timestamp);
-    replaceAll(res, "@start()", "@ " + start_timestamp);
-    replaceAll(res, "@ end()", "@ " + end_timestamp);
-    replaceAll(res, "@end()", "@ " + end_timestamp);
-
-    return res;
 }
 
 /// Converts a quoted string literal to its unquoted version.
