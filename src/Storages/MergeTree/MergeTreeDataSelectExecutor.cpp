@@ -2167,7 +2167,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
                     /// We need to sort the result ranges ascendingly while preserving row/distance pairs.
                     sortNearestNeighboursByRow(read_hints.vector_search_results.value());
-                    const auto & rows = read_hints.vector_search_results.value().rows;
+                    auto rows = read_hints.vector_search_results.value().rows;
 #ifndef NDEBUG
                     /// Duplicates should in theory not be possible but better be safe than sorry ...
                     const bool has_duplicates = std::adjacent_find(rows.begin(), rows.end()) != rows.end();

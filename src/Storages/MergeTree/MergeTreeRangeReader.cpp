@@ -1320,10 +1320,17 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
     const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
     const auto & offsets_and_distances = read_hints.vector_search_results.value();
     const auto & row_offsets_from_index = offsets_and_distances.rows;
-    chassert(offsets_and_distances.distances.has_value());
+    if (!offsets_and_distances.distances.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector search read hints must contain distances");
     const auto & distances_from_index = offsets_and_distances.distances.value();
-    chassert(row_offsets_from_index.size() == distances_from_index.size());
-    chassert(std::is_sorted(row_offsets_from_index.begin(), row_offsets_from_index.end()));
+    if (row_offsets_from_index.size() != distances_from_index.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Vector search read hints size mismatch: {} row offsets and {} distances",
+            row_offsets_from_index.size(),
+            distances_from_index.size());
+    if (!std::is_sorted(row_offsets_from_index.begin(), row_offsets_from_index.end()))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector search read hints must be sorted by row offset");
 
     const auto & offsets  = typeid_cast<const ColumnUInt64&>(*part_offsets_auto_column).getData();
     size_t j = 0;

@@ -464,7 +464,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     size_t replica_number)
 {
     const bool enable_parallel_reading = true;
-    return std::make_unique<ReadFromMergeTree>(
+    auto reading_step = std::make_unique<ReadFromMergeTree>(
         /// Optimized version of getParts() to avoid extra copy
         analyzed_result_ptr ? std::make_shared<RangesInDataParts>(analyzed_result_ptr->parts_with_ranges) : prepared_parts,
         mutations_snapshot,
@@ -483,6 +483,8 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         all_ranges_callback_,
         read_task_callback_,
         replica_number);
+    reading_step->fused_rescore_vector_column = fused_rescore_vector_column;
+    return reading_step;
 }
 
 Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
@@ -3220,6 +3222,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->enable_remove_parts_from_snapshot_optimization = enable_remove_parts_from_snapshot_optimization;
+    cloned_step->fused_rescore_vector_column = fused_rescore_vector_column;
     return cloned_step;
 }
 
