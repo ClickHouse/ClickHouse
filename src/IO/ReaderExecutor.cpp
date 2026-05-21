@@ -171,6 +171,24 @@ void ReaderExecutor::initDecryption()
     if (decryption_initialized || decryption_layers.empty())
         return;
 
+    size_t total_source_size = offset_map.totalSize();
+
+    /// An empty underlying source (e.g. DiskObjectStorage's empty-file
+    /// fallback for paths with no storage objects) has no encryption header.
+    /// Skip — subsequent reads will return 0 bytes, matching the contract of
+    /// reading an empty file on an unencrypted disk.
+    if (total_source_size == 0)
+    {
+        LOG_DEBUG(log, "initDecryption: source is empty, skipping");
+        return;
+    }
+
+    /// Source exists but is smaller than the header(s) — file is corrupted.
+    if (total_source_size < data_start_offset)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Encrypted source has {} bytes, less than header size {}",
+            total_source_size, data_start_offset);
+
     LOG_DEBUG(log, "initDecryption: reading {} headers ({} bytes)",
         decryption_layers.size(), data_start_offset);
 
