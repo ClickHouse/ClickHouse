@@ -1,6 +1,9 @@
 <test>
   <settings>
     <max_memory_usage>100000000000</max_memory_usage>
+
+    <!-- Disable aggregation optimization to avoid skipping test payload. -->
+    <enable_group_by_top_k_optimization>0</enable_group_by_top_k_optimization>
   </settings>
 
   <query>select number, uniq(number) from numbers_mt(1e7) group by number limit 100 format Null</query>
