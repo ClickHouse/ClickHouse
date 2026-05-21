@@ -41,13 +41,13 @@ VersionMetadataOnDisk::VersionMetadataOnDisk(IMergeTreeDataPart * merge_tree_dat
 {
     log = ::getLogger("VersionMetadataOnDisk");
     is_persist_deferrable = !merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME);
-    LOG_DEBUG(
+    LOG_TEST(
         log, "Object {}, can_write_metadata {}, is_persist_deferrable {}", getObjectName(), can_write_metadata, is_persist_deferrable);
 }
 
 VersionInfo VersionMetadataOnDisk::loadMetadata()
 {
-    LOG_DEBUG(log, "Object {}, loading metadata", getObjectName());
+    LOG_TRACE(log, "Object {}, loading metadata", getObjectName());
     std::optional<VersionInfo> loading_info = std::nullopt;
     bool has_tmp_metadata_file = false;
     auto & data_part_storage = merge_tree_data_part->getDataPartStorage();
@@ -65,7 +65,7 @@ VersionInfo VersionMetadataOnDisk::loadMetadata()
         return *loading_info;
     }
 
-    LOG_DEBUG(log, "Object {}, no metadata", getObjectName());
+    LOG_TEST(log, "Object {}, no metadata", getObjectName());
 
     /// Four (?) cases are possible:
     /// 1. Part was created without transactions.
@@ -106,7 +106,7 @@ void VersionMetadataOnDisk::setAndStoreNonTransactionalRemovalTID(const Transact
 
 bool VersionMetadataOnDisk::tryLockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context, TIDHash * locked_by_id)
 {
-    LOG_DEBUG(
+    LOG_TEST(
         log,
         "Object {}, tryLockRemovalTID by {}, table: {}, part: {}",
         getObjectName(),
@@ -140,7 +140,7 @@ bool VersionMetadataOnDisk::tryLockRemovalTID(const TransactionID & tid, const T
 
 void VersionMetadataOnDisk::unlockRemovalTID(const TransactionID & tid, const TransactionInfoContext & context)
 {
-    LOG_DEBUG(
+    LOG_TEST(
         log,
         "Object {}, unlockRemovalTID by {}, table: {}, part: {}",
         getObjectName(),
@@ -185,7 +185,7 @@ bool VersionMetadataOnDisk::hasPersistedMetadata() const
 
 std::expected<Int32, StaleVersion> VersionMetadataOnDisk::storeInfoUnlocked(VersionInfo new_info)
 {
-    LOG_DEBUG(log, "Object {}, storeInfoUnlocked {}", getObjectName(), new_info.toString(/*one_line=*/true));
+    LOG_TEST(log, "Object {}, storeInfoUnlocked {}", getObjectName(), new_info.toString(/*one_line=*/true));
 
     bool involved_in_transaction = new_info.wasInvolvedInTransaction();
     if (!can_write_metadata)
@@ -204,7 +204,7 @@ std::expected<Int32, StaleVersion> VersionMetadataOnDisk::storeInfoUnlocked(Vers
 
     if (!involved_in_transaction && is_persist_deferrable)
     {
-        LOG_DEBUG(log, "Object {}, pending store metadata", getObjectName());
+        LOG_TEST(log, "Object {}, pending store metadata", getObjectName());
         deferred_persist_info = new_info;
         return ++(*deferred_persist_info).storing_version;
     }
