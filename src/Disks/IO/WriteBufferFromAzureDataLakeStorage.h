@@ -22,11 +22,12 @@ class WriteBufferFromAzureDataLakeStorage : public WriteBufferFromFileBase
 {
 public:
     WriteBufferFromAzureDataLakeStorage(
-        const String & file_url_,
+        const AzureBlobStorage::Endpoint & endpoint_,
         const AzureBlobStorage::AuthMethod & auth_method_,
         const Azure::Storage::Blobs::BlobClientOptions & blob_client_options_,
         const String & blob_path_,
         size_t buf_size_,
+        const WriteSettings & write_settings_,
         std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
         const String & container_for_logging_ = {},
         BlobStorageLogWriterPtr blob_log_ = {});
@@ -44,15 +45,11 @@ private:
     void appendBufferedData();
     void runWithRetries(const std::function<void()> & op, const char * what);
 
-    Azure::Storage::Files::DataLake::DataLakeFileClient buildClient(
-        const String & file_url,
-        const AzureBlobStorage::AuthMethod & auth_method,
-        const Azure::Storage::Blobs::BlobClientOptions & blob_client_options);
-
     LoggerPtr log;
 
     Azure::Storage::Files::DataLake::DataLakeFileClient file_client;
     const std::string blob_path;
+    const WriteSettings write_settings;
     const size_t max_unexpected_write_error_retries;
     const size_t sdk_retry_initial_backoff_ms;
     const size_t sdk_retry_max_backoff_ms;
@@ -64,6 +61,14 @@ private:
     String container_for_logging;
     BlobStorageLogWriterPtr blob_log;
 };
+
+Azure::Storage::Files::DataLake::DataLakeFileClient makeAdlsGen2FileClient(
+    const AzureBlobStorage::Endpoint & endpoint,
+    const AzureBlobStorage::AuthMethod & auth_method,
+    const Azure::Storage::Blobs::BlobClientOptions & blob_client_options,
+    const String & blob_path);
+
+bool isAdlsGen2Endpoint(const String & storage_account_url);
 
 }
 

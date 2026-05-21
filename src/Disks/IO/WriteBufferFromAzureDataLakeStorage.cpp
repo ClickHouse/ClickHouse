@@ -4,6 +4,7 @@
 
 #include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <IO/AzureBlobStorage/isRetryableAzureException.h>
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
 
@@ -29,6 +30,8 @@ namespace ErrorCodes
 namespace
 {
 
+static constexpr size_t ADLFS_MAX_RETRIES = 10;
+
 Azure::Storage::Files::DataLake::DataLakeClientOptions toDataLakeOptions(
     const Azure::Storage::Blobs::BlobClientOptions & blob_client_options)
 {
@@ -38,12 +41,46 @@ Azure::Storage::Files::DataLake::DataLakeClientOptions toDataLakeOptions(
     return out;
 }
 
+String prefixedBlobPath(const AzureBlobStorage::Endpoint & endpoint, const String & blob_path_)
+{
+    String full = endpoint.prefix;
+    if (!full.empty() && !full.ends_with('/'))
+        full += '/';
+    full += blob_path_;
+    return full;
 }
 
-Azure::Storage::Files::DataLake::DataLakeFileClient WriteBufferFromAzureDataLakeStorage::buildClient(
-    const String & file_url,
+String buildAdlsGen2FileUrl(const AzureBlobStorage::Endpoint & endpoint, const String & blob_path_)
+{
+    String prefixed = prefixedBlobPath(endpoint, blob_path_);
+    String url = endpoint.getContainerEndpoint();
+    auto query_pos = url.find('?');
+    if (query_pos == String::npos)
+    {
+        if (!url.empty() && url.back() != '/')
+            url += '/';
+        return url + prefixed;
+    }
+
+    String path_part = url.substr(0, query_pos);
+    String query_part = url.substr(query_pos);
+    if (!path_part.empty() && path_part.back() != '/')
+        path_part += '/';
+    return path_part + prefixed + query_part;
+}
+
+}
+
+bool isAdlsGen2Endpoint(const String & storage_account_url)
+{
+    return storage_account_url.find("fabric.microsoft.com") != String::npos;
+}
+
+Azure::Storage::Files::DataLake::DataLakeFileClient makeAdlsGen2FileClient(
+    const AzureBlobStorage::Endpoint & endpoint,
     const AzureBlobStorage::AuthMethod & auth_method,
-    const Azure::Storage::Blobs::BlobClientOptions & blob_client_options)
+    const Azure::Storage::Blobs::BlobClientOptions & blob_client_options,
+    const String & blob_path)
 {
     using namespace Azure::Storage::Files::DataLake;
     auto datalake_options = toDataLakeOptions(blob_client_options);
@@ -52,26 +89,36 @@ Azure::Storage::Files::DataLake::DataLakeFileClient WriteBufferFromAzureDataLake
         [&]<typename T>(const T & auth) -> DataLakeFileClient
         {
             if constexpr (std::is_same_v<T, AzureBlobStorage::ConnectionString>)
-                return DataLakeFileClient(file_url, datalake_options);
+            {
+                return DataLakeFileClient::CreateFromConnectionString(
+                    auth.toUnderType(),
+                    endpoint.container_name,
+                    prefixedBlobPath(endpoint, blob_path),
+                    datalake_options);
+            }
             else
-                return DataLakeFileClient(file_url, auth, datalake_options);
+            {
+                return DataLakeFileClient(buildAdlsGen2FileUrl(endpoint, blob_path), auth, datalake_options);
+            }
         },
         auth_method);
 }
 
 WriteBufferFromAzureDataLakeStorage::WriteBufferFromAzureDataLakeStorage(
-    const String & file_url_,
+    const AzureBlobStorage::Endpoint & endpoint_,
     const AzureBlobStorage::AuthMethod & auth_method_,
     const Azure::Storage::Blobs::BlobClientOptions & blob_client_options_,
     const String & blob_path_,
     size_t buf_size_,
+    const WriteSettings & write_settings_,
     std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
     const String & container_for_logging_,
     BlobStorageLogWriterPtr blob_log_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , log(getLogger("WriteBufferFromAzureDataLakeStorage"))
-    , file_client(buildClient(file_url_, auth_method_, blob_client_options_))
+    , file_client(makeAdlsGen2FileClient(endpoint_, auth_method_, blob_client_options_, blob_path_))
     , blob_path(blob_path_)
+    , write_settings(write_settings_)
     , max_unexpected_write_error_retries(settings_->max_unexpected_write_error_retries)
     , sdk_retry_initial_backoff_ms(settings_->sdk_retry_initial_backoff_ms)
     , sdk_retry_max_backoff_ms(settings_->sdk_retry_max_backoff_ms)
@@ -101,7 +148,7 @@ WriteBufferFromAzureDataLakeStorage::~WriteBufferFromAzureDataLakeStorage()
 void WriteBufferFromAzureDataLakeStorage::runWithRetries(const std::function<void()> & op, const char * what)
 {
     size_t backoff_ms = sdk_retry_initial_backoff_ms;
-    for (size_t attempt = 1;; ++attempt)
+    for (size_t attempt = 1; attempt < ADLFS_MAX_RETRIES; ++attempt)
     {
         try
         {
@@ -110,7 +157,8 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(const std::function<voi
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            if (attempt >= max_unexpected_write_error_retries)
+            const bool retryable = isRetryableAzureException(e, write_settings.is_initial_access_check);
+            if (!retryable || attempt >= max_unexpected_write_error_retries)
             {
                 throw Exception(
                     ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
@@ -135,7 +183,13 @@ void WriteBufferFromAzureDataLakeStorage::ensureCreated()
     if (file_created)
         return;
 
-    runWithRetries([&]() { file_client.Create(); }, "Create");
+    Azure::Storage::Files::DataLake::CreateFileOptions create_options;
+    if (!write_settings.object_storage_write_if_none_match.empty())
+        create_options.AccessConditions.IfNoneMatch = Azure::ETag(write_settings.object_storage_write_if_none_match);
+    if (!write_settings.object_storage_write_if_match.empty())
+        create_options.AccessConditions.IfMatch = Azure::ETag(write_settings.object_storage_write_if_match);
+
+    runWithRetries([&]() { file_client.Create(create_options); }, "Create");
     file_created = true;
     LOG_TRACE(log, "Created ADLS Gen2 file `{}`", blob_path);
 }

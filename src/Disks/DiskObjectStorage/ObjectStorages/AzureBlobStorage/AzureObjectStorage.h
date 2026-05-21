@@ -147,7 +147,6 @@ private:
     AzureBlobStorage::AuthMethod auth_method;
     /// client used to access the files in the Blob Storage cloud
     MultiVersion<AzureBlobStorage::ContainerClient> client;
-    MultiVersion<Azure::Storage::Files::DataLake::DataLakeFileClient> datalake_client;
     MultiVersion<AzureBlobStorage::RequestSettings> settings;
     const String object_namespace; /// container + prefix
 
