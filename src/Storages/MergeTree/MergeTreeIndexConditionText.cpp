@@ -45,7 +45,7 @@ namespace Setting
     extern const SettingsUInt64 text_index_like_min_pattern_length;
 }
 
-TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, std::vector<String> tokens_, std::vector<OptimizedRegularExpression> patterns_)
+TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, VectorWithMemoryTracking<String> tokens_, std::vector<OptimizedRegularExpression> patterns_)
     : function_name(std::move(function_name_))
     , search_mode(search_mode_)
     , direct_read_mode(direct_read_mode_)
@@ -521,9 +521,9 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
     return false;
 }
 
-std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & field) const
+VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToTokens(const Field & field) const
 {
-    std::vector<String> tokens;
+    VectorWithMemoryTracking<String> tokens;
     const String & raw = field.safeGet<String>();
     if (has_preprocessor)
     {
@@ -538,9 +538,9 @@ std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & fi
     return has_postprocessor ? postprocessor->processTokens(std::move(tokens)) : tokens;
 }
 
-std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const
+VectorWithMemoryTracking<String> MergeTreeIndexConditionText::substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const
 {
-    std::vector<String> tokens;
+    VectorWithMemoryTracking<String> tokens;
     const String & raw = field.safeGet<String>();
     if (has_preprocessor)
     {
@@ -555,9 +555,9 @@ std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field &
     return has_postprocessor ? postprocessor->processTokens(std::move(tokens)) : tokens;
 }
 
-std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field & field) const
+VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field & field) const
 {
-    std::vector<String> tokens;
+    VectorWithMemoryTracking<String> tokens;
     const String & raw = field.safeGet<String>();
     if (has_preprocessor)
     {
@@ -760,7 +760,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasAnyTokens" || function_name == "hasAllTokens")
     {
-        std::vector<String> search_tokens;
+        VectorWithMemoryTracking<String> search_tokens;
 
         // hasAny/AllTokens funcs accept either string which will be tokenized or array of strings to be used as-is
         if (value_data_type.isString())
@@ -810,8 +810,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if ((is_array_tokenizer && !has_preprocessor && !has_postprocessor) || function_name == "hasAll")
         {
             /// Fold all needle elements into a single TextSearchQuery.
-            /// This unlocks exact direct read for hasAny/hasAll with array tokenizer (no pre/postprocessor).
-            std::vector<String> tokens;
+            /// This unlocks exact direct read optimizations for hasAny and hasAll.
+            VectorWithMemoryTracking<String> tokens;
             tokens.reserve(elements.size());
 
             for (const auto & element : elements)
@@ -948,7 +948,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 out.function = RPNElement::FUNCTION_LIKE;
                 out.text_search_queries.emplace_back(
                     std::make_shared<TextSearchQuery>(
-                        function_name, TextSearchMode::All, TextIndexDirectReadMode::Exact, std::vector<String>(), std::move(patterns)));
+                        function_name, TextSearchMode::All, TextIndexDirectReadMode::Exact, VectorWithMemoryTracking<String>(), std::move(patterns)));
                 return true;
             }
         }
@@ -957,7 +957,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!tokenizer->supportsStringLike())
             return false;
 
-        std::vector<String> exact_tokens = stringLikeToTokens(value_field);
+        VectorWithMemoryTracking<String> exact_tokens = stringLikeToTokens(value_field);
 
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(exact_tokens)));
@@ -977,7 +977,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             out.function = RPNElement::FUNCTION_LIKE;
             out.text_search_queries.emplace_back(
                 std::make_shared<TextSearchQuery>(
-                    function_name, TextSearchMode::All, TextIndexDirectReadMode::Exact, std::vector<String>(), std::move(patterns)));
+                    function_name, TextSearchMode::All, TextIndexDirectReadMode::Exact, VectorWithMemoryTracking<String>(), std::move(patterns)));
             return true;
         }
         return false;
@@ -1313,7 +1313,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// Apply preprocessor + tokenizer + postprocessor so set elements use the same
         /// tokens that were stored in the index. Skipping the postprocessor here would
         /// produce false negatives for postprocessors like lower(), stem(), etc.
-        auto tokens = stringToTokens(Field(String(ref)));
+        VectorWithMemoryTracking<String> tokens = stringToTokens(Field(String(ref)));
 
         /// An element that tokenizes to nothing cannot be proven present by the index.
         /// Bail out to keep the original predicate.

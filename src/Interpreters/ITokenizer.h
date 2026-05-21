@@ -3,6 +3,7 @@
 #include <Common/assert_cast.h>
 #include <Common/StringUtils.h>
 #include <Columns/IColumn_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Functions/sparseGramsImpl.h>
 #include <Interpreters/BloomFilter.h>
 #include <base/FnTraits.h>
@@ -61,7 +62,7 @@ public:
 
     /// Filters out tokens excessive for search.
     /// This method is inefficient and should be used only for constants.
-    virtual std::vector<String> compactTokens(const std::vector<String> & tokens) const = 0;
+    virtual VectorWithMemoryTracking<String> compactTokens(const VectorWithMemoryTracking<String> & tokens) const = 0;
 
     /// Updates Bloom filter from substring-match string filter value.
     /// An `ITokenizer` implementation may decide to skip certain
@@ -76,7 +77,7 @@ public:
     virtual void stringLikeToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const = 0;
 
     /// Collects copy of tokens into vector. This method is inefficient and should be used only for constants.
-    virtual void stringToTokens(const char * data, size_t length, std::vector<String> & tokens) const = 0;
+    virtual void stringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const = 0;
 
     /// Collects copy of tokens into vector from substring-match string filter value.
     /// An `ITokenizer` implementation may decide to skip certain
@@ -85,11 +86,11 @@ public:
     virtual void substringToTokens(
         const char * data,
         size_t length,
-        std::vector<String> & tokens,
+        VectorWithMemoryTracking<String> & tokens,
         bool is_prefix,
         bool is_suffix) const = 0;
 
-    virtual void stringLikeToTokens(const char * data, size_t length, std::vector<String> & tokens) const = 0;
+    virtual void stringLikeToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const = 0;
     virtual bool supportsStringLike() const = 0;
 
 private:
@@ -131,7 +132,7 @@ protected:
             bloom_filter.add(token.c_str(), token.size());
     }
 
-    void stringToTokens(const char * data, size_t length, std::vector<String> & tokens) const override
+    void stringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const override
     {
         size_t cur = 0;
         size_t token_start = 0;
@@ -141,7 +142,7 @@ protected:
             tokens.push_back({data + token_start, token_len});
     }
 
-    void stringLikeToTokens(const char * data, size_t length, std::vector<String> & tokens) const override
+    void stringLikeToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const override
     {
         size_t cur = 0;
         String token;
@@ -150,10 +151,10 @@ protected:
             tokens.push_back(token);
     }
 
-    std::vector<String> compactTokens(const std::vector<String> & tokens) const override
+    VectorWithMemoryTracking<String> compactTokens(const VectorWithMemoryTracking<String> & tokens) const override
     {
         std::unordered_set<String> unique_tokens(tokens.begin(), tokens.end());
-        return std::vector<String>(unique_tokens.begin(), unique_tokens.end());
+        return VectorWithMemoryTracking<String>(unique_tokens.begin(), unique_tokens.end());
     }
 };
 
@@ -173,7 +174,7 @@ struct NgramsTokenizer final : public ITokenizerHelper<NgramsTokenizer>
 
     bool supportsStringLike() const override { return true; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
 private:
     size_t n;
@@ -191,7 +192,7 @@ struct SplitByNonAlphaTokenizer final : public ITokenizerHelper<SplitByNonAlphaT
     bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & __restrict pos, String & token) const override;
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
     bool supportsStringLike() const override { return true; }
 
@@ -312,7 +313,7 @@ struct SplitByStringTokenizer final : public ITokenizerHelper<SplitByStringToken
 
     bool supportsStringLike() const override { return false; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 private:
     std::vector<String> separators;
 };
@@ -331,7 +332,7 @@ struct ArrayTokenizer final : public ITokenizerHelper<ArrayTokenizer>
 
     bool supportsStringLike() const override { return false; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 };
 
 /// Parser extracting sparse grams (the same as function sparseGrams).
@@ -346,13 +347,12 @@ struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer
 
     String getDescription() const override;
     bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
-    std::vector<String> compactTokens(const std::vector<String> & tokens) const override;
+    VectorWithMemoryTracking<String> compactTokens(const VectorWithMemoryTracking<String> & tokens) const override;
 
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
     bool supportsStringLike() const override { return true; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
-
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 private:
     size_t min_gram_length;
     size_t max_gram_length;
@@ -428,7 +428,7 @@ struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
 
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
 
-    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
     bool supportsStringLike() const override { return true; }
 };

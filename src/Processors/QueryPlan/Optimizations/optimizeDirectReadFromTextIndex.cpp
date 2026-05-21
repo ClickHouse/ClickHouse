@@ -562,7 +562,7 @@ private:
             const bool convert_needle_to_array = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
             if (convert_needle_to_array && needles_field.getType() == Field::Types::String)
             {
-                std::vector<String> needles_array;
+                VectorWithMemoryTracking<String> needles_array;
                 const auto & needles_string = needles_field.safeGet<String>();
                 tokenizer->stringToTokens(needles_string.data(), needles_string.size(), needles_array);
                 needles_array = tokenizer->compactTokens(needles_array);
