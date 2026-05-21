@@ -96,7 +96,7 @@ std::unique_ptr<ITokenizer> createTokenizer(const ColumnsWithTypeAndName & argum
 }
 
 template <typename TokensTraits>
-class ExecutableFunctionTokens : public IExecutableFunction
+class ExecutableFunctionTokens final : public IExecutableFunction
 {
 public:
     static constexpr auto name = TokensTraits::name;
@@ -195,7 +195,7 @@ private:
 };
 
 template <typename TokensTraits>
-class FunctionBaseTokens : public IFunctionBase
+class FunctionBaseTokens final : public IFunctionBase
 {
 public:
     static constexpr auto name = TokensTraits::name;
@@ -224,7 +224,7 @@ private:
 };
 
 template <typename TokensTraits>
-class FunctionTokensOverloadResolver : public IFunctionOverloadResolver
+class FunctionTokensOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = TokensTraits::name;

@@ -1790,6 +1790,9 @@ class ClickHouseCluster:
     def setup_hms_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_hms_catalog = True
         env_variables["HMS_CATALOG_PORT"] = str(self.hms_catalog_port)
+        env_variables["ICEBERG_HMS_CORE_SITE"] = p.join(
+            docker_compose_yml_dir, "hms_core_site_minio1.xml"
+        )
         self.base_cmd.extend(
             [
                 "--file",
@@ -1815,7 +1818,6 @@ class ClickHouseCluster:
         if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
             file_name = extra_parameters["docker_compose_file_name"]
         env_variables["ICEBERG_REST_CATALOG_PORT"] = str(self.iceberg_rest_catalog_port)
-        env_variables["ICEBERG_MINIO_PORT"] = str(self.iceberg_minio_port)
         self.base_cmd.extend(
             [
                 "--file",
@@ -2379,6 +2381,10 @@ class ClickHouseCluster:
             cmds.append(
                 self.setup_redis_cmd(instance, env_variables, docker_compose_yml_dir)
             )
+
+        # Iceberg/Glue/HMS catalogs use the standard MinIO (minio1) for S3 storage.
+        if with_iceberg_catalog or with_glue_catalog or with_hms_catalog:
+            with_minio = True
 
         if with_minio and not self.with_minio:
             cmds.append(
@@ -3261,6 +3267,48 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Minio to start")
 
+    def create_minio_buckets(self, buckets, set_public_policy=False):
+        """Create additional buckets on the standard MinIO (minio1).
+
+        Must be called after wait_minio_to_start() which sets self.minio_client.
+        """
+        assert self.minio_client is not None, (
+            "create_minio_buckets called before wait_minio_to_start"
+        )
+        for bucket in buckets:
+            if self.minio_client.bucket_exists(bucket):
+                delete_object_list = map(
+                    lambda x: x.object_name,
+                    self.minio_client.list_objects_v2(bucket, recursive=True),
+                )
+                errors = self.minio_client.remove_objects(bucket, delete_object_list)
+                for error in errors:
+                    logging.error(f"Error occurred when deleting object {error}")
+                self.minio_client.remove_bucket(bucket)
+            self.minio_client.make_bucket(bucket)
+            logging.info("S3 bucket '%s' created on standard MinIO", bucket)
+
+        if set_public_policy:
+            for bucket in buckets:
+                policy = json.dumps(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Principal": {"AWS": "*"},
+                                "Action": ["s3:*"],
+                                "Resource": [
+                                    f"arn:aws:s3:::{bucket}",
+                                    f"arn:aws:s3:::{bucket}/*",
+                                ],
+                            }
+                        ],
+                    }
+                )
+                self.minio_client.set_bucket_policy(bucket, policy)
+                logging.info("Public policy set on S3 bucket '%s'", bucket)
+
     def wait_azurite_to_start(self, timeout=180):
         from azure.storage.blob import BlobServiceClient
 
@@ -3880,23 +3928,44 @@ class ClickHouseCluster:
                 logging.info("Trying to connect to Minio...")
                 self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
 
+            # Catalogs use the standard MinIO (minio1). Create their
+            # buckets on it before starting the catalog services.
+            if self.with_glue_catalog or self.with_hms_catalog or self.with_iceberg_catalog:
+                catalog_buckets = []
+                if self.with_glue_catalog:
+                    catalog_buckets.append("warehouse-glue")
+                if self.with_hms_catalog:
+                    catalog_buckets.append("warehouse-hms")
+                if self.with_iceberg_catalog:
+                    catalog_buckets.extend(["warehouse-rest", "iceberg-data"])
+                self.create_minio_buckets(catalog_buckets, set_public_policy=True)
+
+                # Some catalogs (Nessie) vend an S3 endpoint to clients via the
+                # REST `loadTable` response. The hostname `minio1` is only
+                # resolvable inside the Docker network, so the host-side
+                # `pyiceberg` client cannot reach it. Re-export the env file
+                # with `MINIO_IP` set to the standard MinIO container's IP
+                # (resolvable from both the host and from other containers in
+                # the same Docker bridge network) so catalog compose files can
+                # vend a host-reachable URL.
+                if self.minio_ip:
+                    self.env_variables["MINIO_IP"] = self.minio_ip
+                    _create_env_file(self.env_file, self.env_variables)
+
             if self.with_glue_catalog and self.base_glue_catalog_cmd:
-                logging.info("Trying to connect to Minio for glue catalog...")
+                logging.info("Starting Glue catalog...")
                 subprocess_check_call(self.base_glue_catalog_cmd + common_opts)
                 self.up_called = True
-                self.wait_custom_minio_to_start(["warehouse-glue"], "minio", 9000)
 
             if self.with_hms_catalog and self.base_iceberg_hms_cmd:
-                logging.info("Trying to connect to Minio for hms catalog...")
+                logging.info("Starting HMS catalog...")
                 subprocess_check_call(self.base_iceberg_hms_cmd + common_opts)
                 self.up_called = True
-                self.wait_custom_minio_to_start(["warehouse-hms"], "minio", 9000)
 
             if self.with_iceberg_catalog and self.base_iceberg_catalog_cmd:
-                logging.info("Trying to connect to Minio for Iceberg catalog...")
+                logging.info("Starting Iceberg catalog...")
                 subprocess_check_call(self.base_iceberg_catalog_cmd + common_opts)
                 self.up_called = True
-                self.wait_custom_minio_to_start(["warehouse-rest"], "minio", 9000)
 
             if self.with_azurite and self.base_azurite_cmd:
                 azurite_start_cmd = self.base_azurite_cmd + common_opts
