@@ -6,6 +6,7 @@
 //! history, and key-binding plumbing.
 
 mod fuzzy;
+mod history_migrate;
 
 use cxx::CxxString;
 use std::borrow::Cow;
@@ -470,6 +471,12 @@ impl Editor {
 
     fn load_history(&mut self, path: &CxxString) -> Result<(), String> {
         let p = path.to_str().map_err(|e| format!("utf-8: {e}"))?;
+        // One-shot migration: if the file is in the old replxx
+        // `### YYYY-…` marker format, rewrite it as rustyline V2 first so
+        // the marker lines don't surface as bogus history entries (and
+        // pollute Ctrl-R skim results).
+        history_migrate::migrate(p)
+            .map_err(|e| format!("history migrate: {e}"))?;
         self.inner
             .load_history(p)
             .map_err(|e| format!("load history: {e}"))
