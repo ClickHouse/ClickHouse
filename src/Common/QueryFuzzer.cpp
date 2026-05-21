@@ -1962,27 +1962,42 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
     if (type_aggr && fuzz_rand() % 4 != 0)
     {
         const auto nargs = type_aggr->getArgumentsDataTypes().size();
-        if (nargs > 0 && nargs < 3 && swapAggrs.contains(nargs))
-        {
-            const String & old_name = type_aggr->getFunctionName();
-            const Strings & candidates = swapAggrs.at(nargs);
-            const String & new_name = pickRandomly(fuzz_rand, candidates);
+        String new_name = type_aggr->getFunctionName();
+        DataTypes new_arg_types = type_aggr->getArgumentsDataTypes();
+        bool changed = false;
 
-            if (new_name != old_name)
+        if (nargs > 0 && nargs < 3 && swapAggrs.contains(nargs) && fuzz_rand() % 3 == 0)
+        {
+            String candidate = pickRandomly(fuzz_rand, swapAggrs.at(nargs));
+            if (candidate != new_name)
             {
-                try
-                {
-                    AggregateFunctionProperties properties;
-                    auto new_func = AggregateFunctionFactory::instance().get(
-                        new_name, NullsAction::EMPTY, type_aggr->getArgumentsDataTypes(), type_aggr->getParameters(), properties);
-                    return std::make_shared<DataTypeAggregateFunction>(
-                        new_func, type_aggr->getArgumentsDataTypes(), type_aggr->getParameters());
-                }
-                catch (...)
-                {
-                }
+                new_name = std::move(candidate);
+                changed = true;
             }
         }
+        for (auto & arg_type : new_arg_types)
+        {
+            auto fuzzed = fuzzDataType(arg_type);
+            if (fuzzed != arg_type)
+            {
+                arg_type = fuzzed;
+                changed = true;
+            }
+        }
+        if (changed)
+        {
+            try
+            {
+                AggregateFunctionProperties properties;
+                auto new_func = AggregateFunctionFactory::instance().get(
+                    new_name, NullsAction::EMPTY, new_arg_types, type_aggr->getParameters(), properties);
+                return std::make_shared<DataTypeAggregateFunction>(new_func, new_arg_types, type_aggr->getParameters());
+            }
+            catch (...)
+            {
+            }
+        }
+        return type;
     }
 
     size_t tmp = fuzz_rand() % 8;
