@@ -204,7 +204,7 @@ VirtualColumnsDescription StorageBuffer::createVirtuals()
 }
 
 /// Reads from one buffer (from one block) under its mutex.
-class BufferSource : public ISource
+class BufferSource final : public ISource
 {
     ColumnPtr fillVirtualColumn(const String & name, const DataTypePtr & type, size_t num_rows) const
     {
@@ -223,6 +223,7 @@ public:
         : ISource(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names_)))
         , buffer(buffer_)
         , storage_id(storage_id_)
+        , metadata(storage_snapshot->metadata)
         , metadata_version(storage_snapshot->metadata->metadata_version) {}
 
     String getName() const override { return "Buffer"; }
@@ -247,10 +248,12 @@ protected:
         {
             const auto & [name, type] = packed;
 
-            if (buffer.data.has(name))
-                columns.emplace_back(getColumnFromBlock(buffer.data, packed));
+            if (metadata->isVirtualColumn(name))
+                columns.push_back(fillVirtualColumn(name, type, buffer.data.rows()));
+            else if (auto physical_column = tryGetColumnFromBlock(buffer.data, metadata->columns.getColumnOrSubcolumn(GetColumnsOptions::All, name)))
+                columns.push_back(std::move(physical_column));
             else
-                columns.emplace_back(fillVirtualColumn(name, type, buffer.data.rows()));
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column or subcolumn '{}' not found in Buffer table", name);
         }
 
         res.setColumns(std::move(columns), buffer.data.rows());
@@ -260,6 +263,7 @@ protected:
 private:
     StorageBuffer::Buffer & buffer;
     StorageID storage_id;
+    StorageMetadataPtr metadata;
     int32_t metadata_version;
     bool has_been_read = false;
 };
@@ -697,7 +701,7 @@ static void appendBlock(LoggerPtr log, const Block & from, Block & to)
 }
 
 
-class BufferSink : public SinkToStorage, WithContext
+class BufferSink final : public SinkToStorage, WithContext
 {
 public:
     explicit BufferSink(
