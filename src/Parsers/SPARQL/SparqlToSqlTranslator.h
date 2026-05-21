@@ -39,11 +39,13 @@ private:
     void processTriple(const TriplePattern & tp, bool is_optional);
     void processTermBinding(const Term & term, const std::string & alias, const std::string & column);
 
-    std::string buildProjection(const std::vector<std::string> & vars);
+    std::string buildProjection(const std::vector<std::string> & vars, bool distinct = false);
     std::string buildFromAndJoins();
+    std::string buildPrewhereClause();
     std::string buildWhereClause();
+    std::string buildSolutionModifiers(const SelectQuery & query);
     std::string translateFilterExpr(const FilterExpr & expr);
-    std::string translateBranch(const GroupGraphPattern & ggp, const std::vector<std::string> & projection_vars);
+    std::string translateBranch(const GroupGraphPattern & ggp, const std::vector<std::string> & projection_vars, bool distinct = false);
     std::string buildUnionQuery(const Union & u, const std::vector<std::string> & projection_vars);
 
     void reset();

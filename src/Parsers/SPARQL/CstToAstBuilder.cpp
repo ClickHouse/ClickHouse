@@ -60,6 +60,9 @@ std::unique_ptr<SelectQuery> CstToAstBuilder::buildSelectQuery(antlr4_grammars::
     auto query = std::make_unique<SelectQuery>();
     query->prefixes = prefixes_;
 
+    if (ctx->DISTINCT())
+        query->distinct = true;
+
     for (auto * var : ctx->var_())
         query->projection.push_back(var->getText());
 
@@ -68,6 +71,42 @@ std::unique_ptr<SelectQuery> CstToAstBuilder::buildSelectQuery(antlr4_grammars::
         throw std::runtime_error("Missing WHERE clause");
 
     query->where_clause = buildGroupGraphPattern(where_ctx->groupGraphPattern());
+
+    if (auto * sol = ctx->solutionModifier())
+    {
+        if (auto * order = sol->orderClause())
+        {
+            for (auto * cond : order->orderCondition())
+            {
+                OrderCondition oc;
+                if (cond->var_())
+                {
+                    oc.expr = std::make_unique<FilterExpr>();
+                    oc.expr->op = FilterExpr::VarRef;
+                    oc.expr->value = cond->var_()->getText();
+                }
+                else if (cond->brackettedExpression())
+                {
+                    oc.expr = buildFilterExpr(cond->brackettedExpression()->expression());
+                }
+                else if (cond->constraint())
+                {
+                    if (auto * builtin = cond->constraint()->builtInCall())
+                        oc.expr = buildBuiltInCall(builtin);
+                }
+                oc.descending = (cond->DESC() != nullptr);
+                query->order_by.push_back(std::move(oc));
+            }
+        }
+        if (auto * lim = sol->limitOffsetClauses())
+        {
+            if (auto * limit_clause = lim->limitClause())
+                query->limit = std::stoll(limit_clause->INTEGER()->getText());
+            if (auto * offset_clause = lim->offsetClause())
+                query->offset = std::stoll(offset_clause->INTEGER()->getText());
+        }
+    }
+
     return query;
 }
 

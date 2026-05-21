@@ -1,0 +1,74 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE rdf_triples
+        (
+            subject String,
+            predicate LowCardinality(String),
+            object String,
+            INDEX idx_subject subject TYPE bloom_filter GRANULARITY 4,
+            INDEX idx_object object TYPE bloom_filter GRANULARITY 4
+        )
+        ENGINE = MergeTree
+        ORDER BY (predicate, subject, object)
+    </create_query>
+
+    <!-- 500K persons with name, age, score, email (2M+ triples total) -->
+    <fill_query>
+        INSERT INTO rdf_triples
+        SELECT concat(':p', toString(number)), 'rdf:type', ':Person' FROM numbers(500000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO rdf_triples
+        SELECT concat(':p', toString(number)), ':name', concat('Person_', toString(number)) FROM numbers(500000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO rdf_triples
+        SELECT concat(':p', toString(number)), ':age', toString(18 + number % 60) FROM numbers(500000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO rdf_triples
+        SELECT concat(':p', toString(number)), ':score', toString(number % 100) FROM numbers(500000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO rdf_triples
+        SELECT concat(':p', toString(number)), ':email', concat('p', toString(number), '@example.com') FROM numbers(250000)
+    </fill_query>
+
+    <!-- ORDER BY + LIMIT: top-10 query (exercises early termination) -->
+    <query>SELECT * FROM sparql('SELECT ?name ?age WHERE { ?p &lt;:name&gt; ?name . ?p &lt;:age&gt; ?age } ORDER BY ?age LIMIT 10') FORMAT Null</query>
+
+    <!-- Hand-written SQL baseline for top-10 -->
+    <query>
+        SELECT t1.object AS name, t2.object AS age
+        FROM rdf_triples AS t1
+        PREWHERE t1.predicate = ':name'
+        JOIN rdf_triples AS t2 ON t2.subject = t1.subject
+        WHERE t2.predicate = ':age'
+        ORDER BY age LIMIT 10
+        FORMAT Null
+    </query>
+
+    <!-- DISTINCT on high-cardinality column -->
+    <query>SELECT * FROM sparql('SELECT DISTINCT ?age WHERE { ?p &lt;:age&gt; ?age }') FORMAT Null</query>
+
+    <!-- DISTINCT on low-cardinality column with LIMIT -->
+    <query>SELECT * FROM sparql('SELECT DISTINCT ?age WHERE { ?p &lt;:age&gt; ?age } ORDER BY ?age LIMIT 10') FORMAT Null</query>
+
+    <!-- OPTIONAL with ORDER BY + LIMIT (combined modifiers) -->
+    <query>SELECT * FROM sparql('SELECT ?name ?email WHERE { ?p &lt;:name&gt; ?name . OPTIONAL { ?p &lt;:email&gt; ?email } } ORDER BY ?name LIMIT 100') FORMAT Null</query>
+
+    <!-- FILTER + ORDER BY + LIMIT: selective top-K -->
+    <query>SELECT * FROM sparql('SELECT ?name ?score WHERE { ?p &lt;:name&gt; ?name . ?p &lt;:score&gt; ?score . FILTER (?score &gt; 90) } ORDER BY ?name LIMIT 50') FORMAT Null</query>
+
+    <!-- Full scan baseline: no modifiers -->
+    <query>SELECT * FROM sparql('SELECT ?name ?age WHERE { ?p &lt;:name&gt; ?name . ?p &lt;:age&gt; ?age }') FORMAT Null</query>
+
+    <!-- Same query with LIMIT (should be faster due to early termination) -->
+    <query>SELECT * FROM sparql('SELECT ?name ?age WHERE { ?p &lt;:name&gt; ?name . ?p &lt;:age&gt; ?age } LIMIT 1000') FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS rdf_triples</drop_query>
+</test>

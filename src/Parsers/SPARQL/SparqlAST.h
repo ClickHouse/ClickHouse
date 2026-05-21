@@ -75,11 +75,21 @@ struct PrefixDecl
     std::string uri;
 };
 
+struct OrderCondition
+{
+    FilterExprPtr expr;
+    bool descending = false;
+};
+
 struct SelectQuery
 {
     std::vector<std::string> projection;
+    bool distinct = false;
     GroupGraphPatternPtr where_clause;
     std::vector<PrefixDecl> prefixes;
+    std::vector<OrderCondition> order_by;
+    int64_t limit = -1;
+    int64_t offset = -1;
 };
 
 }

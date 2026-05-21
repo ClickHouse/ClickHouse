@@ -232,6 +232,65 @@ TEST(SparqlTranslator, ThreeWayJoin)
     EXPECT_NE(sql.find("t3.subject = t1.subject"), std::string::npos);
 }
 
+TEST(SparqlTranslator, PrewhereForFirstTable)
+{
+    auto sql = translateSparql("SELECT ?name WHERE { ?p <rdf:type> <:Person> . ?p <:name> ?name }");
+    EXPECT_NE(sql.find("PREWHERE"), std::string::npos);
+    EXPECT_NE(sql.find("t1.predicate = 'rdf:type'"), std::string::npos);
+}
+
+TEST(SparqlTranslator, PrewhereNotInWhere)
+{
+    auto sql = translateSparql("SELECT ?name WHERE { ?p <rdf:type> <:Person> . ?p <:name> ?name }");
+    auto prewhere_pos = sql.find("PREWHERE");
+    EXPECT_NE(prewhere_pos, std::string::npos);
+    auto where_pos = sql.find("\nWHERE", prewhere_pos);
+    EXPECT_NE(where_pos, std::string::npos);
+    auto where_block = sql.substr(where_pos);
+    EXPECT_EQ(where_block.find("t1.predicate"), std::string::npos);
+}
+
+TEST(SparqlTranslator, LimitClause)
+{
+    auto sql = translateSparql("SELECT ?s WHERE { ?s ?p ?o } LIMIT 10");
+    EXPECT_NE(sql.find("LIMIT 10"), std::string::npos);
+}
+
+TEST(SparqlTranslator, OffsetClause)
+{
+    auto sql = translateSparql("SELECT ?s WHERE { ?s ?p ?o } LIMIT 10 OFFSET 5");
+    EXPECT_NE(sql.find("LIMIT 10"), std::string::npos);
+    EXPECT_NE(sql.find("OFFSET 5"), std::string::npos);
+}
+
+TEST(SparqlTranslator, OrderByVariable)
+{
+    auto sql = translateSparql("SELECT ?name WHERE { ?p <:name> ?name } ORDER BY ?name");
+    EXPECT_NE(sql.find("ORDER BY"), std::string::npos);
+    EXPECT_NE(sql.find("t1.object"), std::string::npos);
+}
+
+TEST(SparqlTranslator, OrderByDesc)
+{
+    auto sql = translateSparql("SELECT ?name WHERE { ?p <:name> ?name } ORDER BY DESC(?name)");
+    EXPECT_NE(sql.find("ORDER BY"), std::string::npos);
+    EXPECT_NE(sql.find("DESC"), std::string::npos);
+}
+
+TEST(SparqlTranslator, SelectDistinct)
+{
+    auto sql = translateSparql("SELECT DISTINCT ?name WHERE { ?p <:name> ?name }");
+    EXPECT_NE(sql.find("SELECT DISTINCT"), std::string::npos);
+}
+
+TEST(SparqlTranslator, CombinedModifiers)
+{
+    auto sql = translateSparql("SELECT ?name WHERE { ?p <:name> ?name } ORDER BY ?name LIMIT 100 OFFSET 20");
+    EXPECT_NE(sql.find("ORDER BY"), std::string::npos);
+    EXPECT_NE(sql.find("LIMIT 100"), std::string::npos);
+    EXPECT_NE(sql.find("OFFSET 20"), std::string::npos);
+}
+
 TEST(SparqlTranslator, SyntaxError)
 {
     EXPECT_THROW(translateSparql("NOT SPARQL AT ALL"), std::runtime_error);

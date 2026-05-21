@@ -20,10 +20,40 @@ std::string SparqlToSqlTranslator::newAlias()
     return "t" + std::to_string(++alias_counter);
 }
 
+std::string SparqlToSqlTranslator::buildSolutionModifiers(const SelectQuery & query)
+{
+    std::ostringstream out;
+
+    if (!query.order_by.empty())
+    {
+        out << "\nORDER BY ";
+        bool first = true;
+        for (const auto & oc : query.order_by)
+        {
+            if (!first)
+                out << ", ";
+            first = false;
+            if (oc.expr)
+                out << translateFilterExpr(*oc.expr);
+            if (oc.descending)
+                out << " DESC";
+        }
+    }
+
+    if (query.limit >= 0)
+        out << "\nLIMIT " << query.limit;
+    if (query.offset >= 0)
+        out << "\nOFFSET " << query.offset;
+
+    return out.str();
+}
+
 std::string SparqlToSqlTranslator::translate(const SelectQuery & query)
 {
     if (!query.where_clause)
         throw std::runtime_error("Missing WHERE clause");
+
+    std::string body;
 
     if (!query.where_clause->unions.empty())
     {
@@ -36,10 +66,18 @@ std::string SparqlToSqlTranslator::translate(const SelectQuery & query)
             first = false;
             out << buildUnionQuery(u, query.projection);
         }
-        return out.str();
+        body = out.str();
+    }
+    else
+    {
+        body = translateBranch(*query.where_clause, query.projection, query.distinct);
     }
 
-    return translateBranch(*query.where_clause, query.projection);
+    std::string modifiers = buildSolutionModifiers(query);
+    if (modifiers.empty())
+        return body;
+
+    return body + modifiers;
 }
 
 void SparqlToSqlTranslator::processTermBinding(
@@ -88,10 +126,12 @@ void SparqlToSqlTranslator::processTriple(const TriplePattern & tp, bool is_opti
     processTermBinding(tp.object, alias, "object");
 }
 
-std::string SparqlToSqlTranslator::buildProjection(const std::vector<std::string> & vars)
+std::string SparqlToSqlTranslator::buildProjection(const std::vector<std::string> & vars, bool distinct)
 {
     std::ostringstream out;
     out << "SELECT ";
+    if (distinct)
+        out << "DISTINCT ";
     bool first = true;
     for (const auto & var : vars)
     {
@@ -160,6 +200,28 @@ std::string SparqlToSqlTranslator::buildFromAndJoins()
     return out.str();
 }
 
+std::string SparqlToSqlTranslator::buildPrewhereClause()
+{
+    if (joins.empty())
+        return "";
+
+    const auto & first = joins[0];
+    if (first.const_conditions.empty())
+        return "";
+
+    std::ostringstream out;
+    out << "\nPREWHERE ";
+    bool is_first = true;
+    for (const auto & c : first.const_conditions)
+    {
+        if (!is_first)
+            out << " AND ";
+        is_first = false;
+        out << c;
+    }
+    return out.str();
+}
+
 std::string SparqlToSqlTranslator::buildWhereClause()
 {
     std::vector<std::string> conditions;
@@ -170,8 +232,6 @@ std::string SparqlToSqlTranslator::buildWhereClause()
         if (i == 0)
         {
             for (const auto & c : j.on_conditions)
-                conditions.push_back(c);
-            for (const auto & c : j.const_conditions)
                 conditions.push_back(c);
         }
         else if (!j.is_left_join)
@@ -305,7 +365,7 @@ std::string SparqlToSqlTranslator::translateFilterExpr(const FilterExpr & expr)
 }
 
 std::string SparqlToSqlTranslator::translateBranch(
-    const GroupGraphPattern & ggp, const std::vector<std::string> & projection_vars)
+    const GroupGraphPattern & ggp, const std::vector<std::string> & projection_vars, bool distinct)
 {
     reset();
 
@@ -329,8 +389,9 @@ std::string SparqlToSqlTranslator::translateBranch(
     }
 
     std::ostringstream out;
-    out << buildProjection(projection_vars);
+    out << buildProjection(projection_vars, distinct);
     out << buildFromAndJoins();
+    out << buildPrewhereClause();
 
     std::string where = buildWhereClause();
     out << where;

@@ -176,4 +176,51 @@ static void BM_Translate_vs_TripleCount(benchmark::State & state)
 }
 BENCHMARK(BM_Translate_vs_TripleCount)->RangeMultiplier(2)->Range(1, 32);
 
+static void BM_TranslateWithOrderByLimit(benchmark::State & state)
+{
+    std::string sparql = "SELECT ?name ?age WHERE { ?p <:name> ?name . ?p <:age> ?age } ORDER BY ?name LIMIT 100 OFFSET 10";
+    for (auto _ : state)
+    {
+        SparqlQueryParser parser;
+        auto ast = parser.parse(sparql);
+        SparqlToSqlTranslator translator;
+        auto sql = translator.translate(*ast);
+        benchmark::DoNotOptimize(sql);
+    }
+}
+BENCHMARK(BM_TranslateWithOrderByLimit);
+
+static void BM_TranslateDistinct(benchmark::State & state)
+{
+    std::string sparql = "SELECT DISTINCT ?name WHERE { ?p <rdf:type> <:Person> . ?p <:name> ?name }";
+    for (auto _ : state)
+    {
+        SparqlQueryParser parser;
+        auto ast = parser.parse(sparql);
+        SparqlToSqlTranslator translator;
+        auto sql = translator.translate(*ast);
+        benchmark::DoNotOptimize(sql);
+    }
+}
+BENCHMARK(BM_TranslateDistinct);
+
+static void BM_TranslateComplexQuery(benchmark::State & state)
+{
+    std::string sparql =
+        "SELECT DISTINCT ?name ?email WHERE { "
+        "?p <rdf:type> <:Person> . ?p <:name> ?name . "
+        "OPTIONAL { ?p <:email> ?email } . "
+        "?p <:age> ?age . FILTER(?age > 25) "
+        "} ORDER BY ?name LIMIT 50";
+    for (auto _ : state)
+    {
+        SparqlQueryParser parser;
+        auto ast = parser.parse(sparql);
+        SparqlToSqlTranslator translator;
+        auto sql = translator.translate(*ast);
+        benchmark::DoNotOptimize(sql);
+    }
+}
+BENCHMARK(BM_TranslateComplexQuery);
+
 BENCHMARK_MAIN();

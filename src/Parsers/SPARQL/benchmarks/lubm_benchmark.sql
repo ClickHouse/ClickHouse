@@ -107,5 +107,31 @@ JOIN rdf_triples AS t2 ON t2.subject = t1.subject
 WHERE t1.predicate = 'rdf:type' AND t1.object = ':Student'
   AND t2.predicate = ':takesCourse' AND t2.object = ':course0';
 
+-- Q11: Top-10 youngest students (ORDER BY + LIMIT)
+SELECT 'Q11: Top-10 youngest students';
+SELECT * FROM sparql('SELECT ?name ?age WHERE { ?s <rdf:type> <:Student> . ?s <:name> ?name . ?s <:age> ?age } ORDER BY ?age LIMIT 10');
+
+-- Q12: Distinct departments
+SELECT 'Q12: Distinct departments';
+SELECT count() FROM sparql('SELECT DISTINCT ?dept WHERE { ?p <:worksFor> ?dept }');
+
+-- Q13: Students with email, ordered, top-50 (combined modifiers)
+SELECT 'Q13: Students with email, ordered, limit 50';
+SELECT count() FROM sparql('SELECT ?name ?email WHERE { ?s <rdf:type> <:Student> . ?s <:name> ?name . ?s <:email> ?email } ORDER BY ?name LIMIT 50');
+
+-- Q14: Professors older than 45, ordered descending (FILTER + ORDER BY DESC)
+SELECT 'Q14: Professors age > 45, ordered desc';
+SELECT count() FROM sparql('SELECT ?name ?age WHERE { ?p <rdf:type> <:Professor> . ?p <:name> ?name . ?p <:age> ?age . FILTER(?age > 45) } ORDER BY DESC(?age) LIMIT 20');
+
+-- Q15: Hand-written SQL baseline for Q11 (comparison for ORDER BY + LIMIT)
+SELECT 'Q15: Baseline SQL for Q11';
+SELECT t2.object AS name, t3.object AS age
+FROM rdf_triples AS t1
+JOIN rdf_triples AS t2 ON t2.subject = t1.subject
+JOIN rdf_triples AS t3 ON t3.subject = t1.subject
+PREWHERE t1.predicate = 'rdf:type'
+WHERE t1.object = ':Student' AND t2.predicate = ':name' AND t3.predicate = ':age'
+ORDER BY age LIMIT 10;
+
 DROP VIEW mv_types;
 DROP TABLE rdf_triples;
