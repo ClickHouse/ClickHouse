@@ -21,6 +21,7 @@
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 
 
@@ -784,7 +785,7 @@ template <> struct ResultDataTypeMap<Int8>             { using ResultDataType = 
 }
 
 template <typename Transform>
-class FunctionDateOrDateTimeAddInterval final : public IFunction
+class FunctionDateOrDateTimeAddInterval : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;

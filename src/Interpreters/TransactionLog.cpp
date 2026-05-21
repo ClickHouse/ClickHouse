@@ -5,12 +5,10 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionVersionMetadata.h>
 #include <Interpreters/TransactionsInfoLog.h>
-#include <base/defines.h>
 #include <base/sort.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
-#include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
@@ -27,11 +25,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_STATUS_OF_TRANSACTION;
-}
-
-namespace FailPoints
-{
-    extern const char transaction_force_unknown_state_after_commit[];
 }
 
 static void tryWriteEventToSystemLog(LoggerPtr log, ContextPtr context,
@@ -66,7 +59,7 @@ TransactionLog::TransactionLog()
     auto compoment_guard = Coordination::setCurrentComponent("TransactionLog::TransactionLog");
     loadLogFromZooKeeper();
 
-    updating_thread = std::make_unique<ThreadFromGlobalPool>(&TransactionLog::runUpdatingThread, this);
+    updating_thread = ThreadFromGlobalPool(&TransactionLog::runUpdatingThread, this);
 }
 
 TransactionLog::~TransactionLog()
@@ -80,8 +73,7 @@ void TransactionLog::shutdown()
         return;
     log_updated_event->set();
     latest_snapshot.notify_all();
-    if (updating_thread)
-        updating_thread->join();
+    updating_thread.join();
 
     std::lock_guard lock{mutex};
     /// This is required to... you'll never guess - avoid race condition inside Poco::Logger (Coordination::ZooKeeper::log)
@@ -420,10 +412,8 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
     auto state_guard = txn->beforeCommit();
 
     CSN allocated_csn = Tx::UnknownCSN;
-    auto requests = txn->getRequestsOnCommit();
     if (txn->isReadOnly())
     {
-        chassert(requests.empty());
         /// Don't need to allocate CSN in ZK for readonly transactions, it's safe to use snapshot/start_csn as "commit" timestamp
         LOG_TEST(log, "Closing readonly transaction {}", txn->tid);
     }
@@ -437,21 +427,13 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
         {
             Coordination::SimpleFaultInjection fault(fault_probability_before_commit, fault_probability_after_commit, "commit");
 
+            Coordination::Requests requests;
             requests.push_back(zkutil::makeCreateRequest(zookeeper_path_log + "/csn-", serializeTID(txn->tid), zkutil::CreateMode::PersistentSequential));
 
             /// Commit point
             auto res = current_zookeeper->multi(requests, /* check_session_valid */ true);
 
             csn_path_created = dynamic_cast<const Coordination::CreateResponse *>(res.back().get())->path_created;
-
-            fiu_do_on(FailPoints::transaction_force_unknown_state_after_commit,
-            {
-                /// CSN znode is already created in ZK; simulate the response being lost.
-                /// The catch block below will postpone finalization to runUpdatingThread,
-                /// reproducing the fault_probability_after_commit code path deterministically.
-                throw Coordination::Exception::fromMessage(Coordination::Error::ZOPERATIONTIMEOUT,
-                    "Fault injected: forced unknown state after commit");
-            });
         }
         catch (const Coordination::Exception & e)
         {
@@ -548,33 +530,6 @@ void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn) no
     }
 
     {
-        auto requests = txn->getRequestsOnRollback();
-        if (!requests.empty())
-        {
-            Coordination::Responses responses;
-            auto code = getZooKeeper()->tryMulti(requests, responses);
-            if (code == Coordination::Error::ZOK)
-            {
-                LOG_INFO(log, "Processed requests on rollback {}", requests.size());
-            }
-            else
-            {
-                zkutil::KeeperMultiException exception(code, requests, responses);
-                if (Coordination::isHardwareError(code))
-                    LOG_WARNING(
-                        log, "Failed to process requests on rollback {} because of {}", requests.size(), Coordination::toString(code));
-                else
-                    LOG_WARNING(
-                        log,
-                        "Failed to process requests on rollback {} because of {} on path {}",
-                        requests.size(),
-                        Coordination::toString(code),
-                        exception.getPathForFirstFailedOp());
-            }
-        }
-    }
-
-    {
         std::lock_guard lock{running_list_mutex};
         bool removed = running_list.erase(txn->tid.getHash());
         if (!removed)
@@ -598,16 +553,16 @@ MergeTreeTransactionPtr TransactionLog::tryGetRunningTransaction(const TIDHash &
 CSN TransactionLog::getCSN(const TransactionID & tid, const std::atomic<CSN> * failback_with_strict_load_csn)
 {
     /// Avoid creation of the instance if transactions are not actually involved
-    if (tid == Tx::NonTransactionalTID)
-        return Tx::NonTransactionalCSN;
+    if (tid == Tx::PrehistoricTID)
+        return Tx::PrehistoricCSN;
     return instance().getCSNImpl(tid.getHash(), failback_with_strict_load_csn);
 }
 
 CSN TransactionLog::getCSN(const TIDHash & tid, const std::atomic<CSN> * failback_with_strict_load_csn)
 {
     /// Avoid creation of the instance if transactions are not actually involved
-    if (tid == Tx::NonTransactionalTID.getHash())
-        return Tx::NonTransactionalCSN;
+    if (tid == Tx::PrehistoricTID.getHash())
+        return Tx::PrehistoricCSN;
     return instance().getCSNImpl(tid, failback_with_strict_load_csn);
 }
 
@@ -654,7 +609,7 @@ CSN TransactionLog::getCSNAndAssert(const TransactionID & tid, std::atomic<CSN> 
 
 void TransactionLog::assertTIDIsNotOutdated(const TransactionID & tid, const std::atomic<CSN> * failback_with_strict_load_csn)
 {
-    if (tid == Tx::NonTransactionalTID)
+    if (tid == Tx::PrehistoricTID)
         return;
 
     /// Ensure that we are not trying to get CSN for TID that was already removed from the log
