@@ -2334,10 +2334,14 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
         /// an empty right side) closes its inputs early, DelayedPortsProcessor may terminate
         /// the set-building pipeline before the set is ready.
         /// Building sets synchronously here eliminates this race condition entirely.
+        ///
+        /// Use the ordered variant so the Set is built with explicit elements: skip-index
+        /// and KeyCondition analysis below will call buildOrderedSetInplace and would
+        /// otherwise get nullptr from a set that was already built non-ordered.
         if (query_info.prewhere_info)
-            VirtualColumnUtils::buildSetsForDAG(query_info.prewhere_info->prewhere_actions, context);
+            VirtualColumnUtils::buildOrderedSetsForDAG(query_info.prewhere_info->prewhere_actions, context);
         if (query_info.row_level_filter)
-            VirtualColumnUtils::buildSetsForDAG(query_info.row_level_filter->actions, context);
+            VirtualColumnUtils::buildOrderedSetsForDAG(query_info.row_level_filter->actions, context);
 
         buildIndexes(
             indexes,
