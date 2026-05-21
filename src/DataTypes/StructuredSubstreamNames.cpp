@@ -5,8 +5,10 @@
 #include <Common/escapeForFileName.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
@@ -254,6 +256,21 @@ bool needsStructuredSubstreamNames(const IDataType & type)
         for (const auto & element : tuple->getElements())
         {
             if (needsStructuredSubstreamNames(*element))
+                return true;
+        }
+    }
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
+    {
+        if (needsStructuredSubstreamNames(*map->getKeyType()) || needsStructuredSubstreamNames(*map->getValueType()))
+            return true;
+    }
+
+    if (const auto * variant = typeid_cast<const DataTypeVariant *>(&type))
+    {
+        for (const auto & alternative : variant->getVariants())
+        {
+            if (needsStructuredSubstreamNames(*alternative))
                 return true;
         }
     }

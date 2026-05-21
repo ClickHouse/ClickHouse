@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/StructuredSubstreamNames.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Common/escapeForFileName.h>
@@ -95,6 +96,46 @@ ISerialization::SubstreamPath makeNestedArrayNullableArrayOuterArraySizesPath()
 {
     ISerialization::SubstreamPath path;
     path.push_back({ISerialization::Substream::ArraySizes});
+    return path;
+}
+
+ISerialization::SubstreamPath makeMapValuesBranchNullMapPath(bool inner_element_null_map)
+{
+    ISerialization::SubstreamPath path;
+
+    path.push_back({ISerialization::Substream::ArrayElements});
+
+    ISerialization::Substream values_element(ISerialization::Substream::TupleElement);
+    values_element.name_of_substream = "values";
+    path.push_back(values_element);
+
+    if (inner_element_null_map)
+    {
+        path.push_back({ISerialization::Substream::NullableElements});
+        path.push_back({ISerialization::Substream::ArrayElements});
+    }
+
+    path.push_back({ISerialization::Substream::NullMap});
+    return path;
+}
+
+ISerialization::SubstreamPath makeVariantAlternativeNullMapPath(const String & variant_element_name, bool inner_element_null_map)
+{
+    ISerialization::SubstreamPath path;
+
+    path.push_back({ISerialization::Substream::VariantElements});
+
+    ISerialization::Substream variant_element(ISerialization::Substream::VariantElement);
+    variant_element.variant_element_name = variant_element_name;
+    path.push_back(variant_element);
+
+    if (inner_element_null_map)
+    {
+        path.push_back({ISerialization::Substream::NullableElements});
+        path.push_back({ISerialization::Substream::ArrayElements});
+    }
+
+    path.push_back({ISerialization::Substream::NullMap});
     return path;
 }
 
@@ -310,6 +351,55 @@ TEST(StructuredSubstreamNames, SubstreamCacheKeysAreUniqueForNestedArrayNullable
     EXPECT_NE(
         ISerialization::getSubstreamCacheKey(outer_null_map_path, false, type.get()),
         ISerialization::getSubstreamCacheKey(inner_null_map_path, false, type.get()));
+}
+
+TEST(StructuredSubstreamNames, NeedsStructuredForMapNullableArray)
+{
+    auto type = DataTypeFactory::instance().get("Map(String, Nullable(Array(Nullable(UInt32))))");
+    EXPECT_TRUE(needsStructuredSubstreamNames(*type));
+}
+
+TEST(StructuredSubstreamNames, NeedsStructuredForVariantWithNestedNullableArray)
+{
+    auto type = DataTypeFactory::instance().get("Variant(Array(Nullable(Array(Nullable(UInt32)))), UInt8)");
+    EXPECT_TRUE(needsStructuredSubstreamNames(*type));
+}
+
+TEST(StructuredSubstreamNames, MapValuesBranchNullMapSuffixesAreUnique)
+{
+    auto type = DataTypeFactory::instance().get("Map(String, Nullable(Array(Nullable(UInt32))))");
+
+    const auto outer_path = makeMapValuesBranchNullMapPath(false);
+    const auto inner_path = makeMapValuesBranchNullMapPath(true);
+
+    ISerialization::StreamFileNameSettings settings;
+    settings.column_type = type.get();
+
+    const auto outer_suffix = getStructuredSubstreamNameSuffix(outer_path);
+    const auto inner_suffix = getStructuredSubstreamNameSuffix(inner_path);
+
+    EXPECT_NE(outer_suffix, inner_suffix);
+    EXPECT_NE(
+        ISerialization::getFileNameForStream("c", outer_path, settings),
+        ISerialization::getFileNameForStream("c", inner_path, settings));
+}
+
+TEST(StructuredSubstreamNames, VariantNestedNullableArrayNullMapSuffixesAreUnique)
+{
+    auto type = DataTypeFactory::instance().get("Variant(Array(Nullable(Array(Nullable(UInt32)))), UInt8)");
+    const auto * variant_type = assert_cast<const DataTypeVariant *>(type.get());
+    const String & variant_element_name = variant_type->getVariant(0)->getName();
+
+    const auto outer_path = makeVariantAlternativeNullMapPath(variant_element_name, false);
+    const auto inner_path = makeVariantAlternativeNullMapPath(variant_element_name, true);
+
+    ISerialization::StreamFileNameSettings settings;
+    settings.column_type = type.get();
+
+    EXPECT_NE(getStructuredSubstreamNameSuffix(outer_path), getStructuredSubstreamNameSuffix(inner_path));
+    EXPECT_NE(
+        ISerialization::getFileNameForStream("c", outer_path, settings),
+        ISerialization::getFileNameForStream("c", inner_path, settings));
 }
 
 TEST(StructuredSubstreamNames, UsesLegacyWithoutColumnType)
