@@ -744,3 +744,322 @@ TEST(ReaderExecutor, LiveBufferClosedOnSeek)
     EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferHits), 0);      /// Seek broke the chain.
     EXPECT_EQ(tg.get(ProfileEvents::LiveSourceBufferFallbacks), 0); /// Slots were available.
 }
+
+namespace
+{
+
+/// Mock cache that reports hits/misses at FULL block granularity, matching the
+/// production behaviour of PageCacheHandle and DiskCacheHandle. The existing
+/// MockCacheHandle clips ranges to the request which hides the cache-vs-cache
+/// overlap problem these tests target.
+///
+/// `put` records its arguments in `put_log` and refuses non-disjoint ropes
+/// (totalBytes != range.size) — production caches assume disjoint coverage,
+/// and DiskCacheHandle::put's flat_buf memcpy would overflow otherwise.
+class WideGranularityMockCacheHandle : public ICacheHandle
+{
+public:
+    WideGranularityMockCacheHandle(
+        ByteRange requested_,
+        std::unordered_map<size_t, String> & storage_,
+        std::vector<std::pair<ByteRange, size_t>> & put_log_,
+        size_t block_size_)
+        : storage(storage_), put_log(put_log_), block_size(block_size_)
+    {
+        size_t start_block = requested_.offset / block_size;
+        size_t end_block = (requested_.end() + block_size - 1) / block_size;
+        for (size_t b = start_block; b < end_block; ++b)
+        {
+            /// FULL block, NOT clipped to requested_.
+            ByteRange block_range{b * block_size, block_size};
+            if (storage.contains(b))
+                result.hit_ranges.push_back(block_range);
+            else
+                result.miss_ranges.push_back(block_range);
+        }
+    }
+
+    CacheLookupResult status() const override { return result; }
+
+    Rope get(ByteRange range) override
+    {
+        Rope rope;
+        size_t start_block = range.offset / block_size;
+        size_t end_block = (range.end() + block_size - 1) / block_size;
+        for (size_t b = start_block; b < end_block; ++b)
+        {
+            auto it = storage.find(b);
+            if (it == storage.end())
+                continue;
+            const auto & data = it->second;
+            auto buf = std::make_shared<OwnedRopeBuffer>(data.size());
+            std::memcpy(buf->data(), data.data(), data.size());
+            rope.append(RopeNode{buf, 0, data.size(), b * block_size});
+        }
+        return rope.slice(range);
+    }
+
+    bool put(ByteRange range, Rope data) override
+    {
+        put_log.emplace_back(range, data.totalBytes());
+
+        /// Production caches assume disjoint coverage. If totalBytes doesn't
+        /// match range.size, the chain handed us duplicate coverage — refuse.
+        if (data.totalBytes() != range.size)
+            return false;
+
+        size_t start_block = range.offset / block_size;
+        size_t end_block = (range.end() + block_size - 1) / block_size;
+        for (size_t b = start_block; b < end_block; ++b)
+        {
+            if (storage.contains(b))
+                continue;
+            ByteRange block_range{b * block_size, block_size};
+            Rope slice = data.slice(block_range);
+            String content;
+            content.resize(slice.totalBytes());
+            size_t pos = 0;
+            for (const auto & node : slice.getNodes())
+            {
+                std::memcpy(content.data() + pos, node.data(), node.size);
+                pos += node.size;
+            }
+            storage[b] = std::move(content);
+        }
+        return true;
+    }
+
+private:
+    std::unordered_map<size_t, String> & storage;
+    std::vector<std::pair<ByteRange, size_t>> & put_log;
+    size_t block_size;
+    CacheLookupResult result;
+};
+
+class WideGranularityMockCache : public ICacheProvider
+{
+public:
+    WideGranularityMockCache(size_t block_size_, String name_)
+        : block_size(block_size_), provider_name(std::move(name_)) {}
+
+    std::unique_ptr<ICacheHandle> lookup(CacheKey, ByteRange range) override
+    {
+        return std::make_unique<WideGranularityMockCacheHandle>(
+            range, storage, put_log, block_size);
+    }
+
+    String name() const override { return provider_name; }
+
+    bool hasBlock(size_t block_index) const { return storage.contains(block_index); }
+
+    /// (range argument to put, totalBytes of rope argument to put)
+    const std::vector<std::pair<ByteRange, size_t>> & putLog() const { return put_log; }
+
+    /// Pre-fill a block; used to seed cache state before a test.
+    void seedBlock(size_t block_index, char fill)
+    {
+        storage[block_index] = String(block_size, fill);
+    }
+
+private:
+    std::unordered_map<size_t, String> storage;
+    std::vector<std::pair<ByteRange, size_t>> put_log;
+    size_t block_size;
+    String provider_name;
+};
+
+}
+
+/// Sanity: two caches with the SAME granularity, complementary hits. No
+/// overlap by construction. Expected to pass even pre-fix.
+TEST(ReaderExecutor, ChainTwoTierDisjointHits)
+{
+    auto src = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", String(128 * 1024, 'S')}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 128 * 1024);
+
+    auto page_cache = std::make_shared<WideGranularityMockCache>(64 * 1024, "PageMock");
+    auto disk_cache = std::make_shared<WideGranularityMockCache>(64 * 1024, "DiskMock");
+    page_cache->seedBlock(0, 'P');
+    disk_cache->seedBlock(1, 'D');
+
+    ReaderExecutor executor(src, objects, {page_cache, disk_cache},
+                             /*window_size=*/128 * 1024,
+                             /*min_bytes_for_seek=*/0);
+
+    auto rope = executor.readNextWindow();
+    EXPECT_EQ(rope.range().size, 128u * 1024u);
+    EXPECT_EQ(rope.totalBytes(), 128u * 1024u);
+}
+
+/// THE BUG: PageCache (64K blocks) hits block 0, misses block 1. DiskCache
+/// (4M blocks) holds the whole 4M segment, so for the chain's lookup of
+/// [64K, 128K) it reports a hit at [0, 4M) — covering bytes already in
+/// PageCache. Returned rope today has duplicate coverage.
+TEST(ReaderExecutor, ChainLowerCacheHitCoversUpperHit)
+{
+    auto src = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", String(4 * 1024 * 1024, 'S')}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 4 * 1024 * 1024);
+
+    auto page_cache = std::make_shared<WideGranularityMockCache>(64 * 1024, "PageMock");
+    auto disk_cache = std::make_shared<WideGranularityMockCache>(4 * 1024 * 1024, "DiskMock");
+    page_cache->seedBlock(0, 'P');
+    disk_cache->seedBlock(0, 'D');
+
+    ReaderExecutor executor(src, objects, {page_cache, disk_cache},
+                             /*window_size=*/128 * 1024,
+                             /*min_bytes_for_seek=*/0);
+
+    auto rope = executor.readNextWindow();
+    EXPECT_EQ(rope.range().size, 128u * 1024u);
+    EXPECT_EQ(rope.totalBytes(), 128u * 1024u)
+        << "Returned rope must not contain duplicate coverage from cache-vs-cache overlap";
+}
+
+/// Three caches with 64K / 1M / 4M granularities. PageCache hits, MidCache
+/// hit covers PageCache, DiskCache not reached. Returned rope must be
+/// disjoint and equal to window size.
+TEST(ReaderExecutor, ChainThreeTierCascading)
+{
+    auto src = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", String(4 * 1024 * 1024, 'S')}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 4 * 1024 * 1024);
+
+    auto page_cache = std::make_shared<WideGranularityMockCache>(64 * 1024, "PageMock");
+    auto mid_cache  = std::make_shared<WideGranularityMockCache>(1024 * 1024, "MidMock");
+    auto disk_cache = std::make_shared<WideGranularityMockCache>(4 * 1024 * 1024, "DiskMock");
+    page_cache->seedBlock(0, 'P');
+    mid_cache->seedBlock(0, 'M');
+    disk_cache->seedBlock(0, 'D');
+
+    ReaderExecutor executor(src, objects, {page_cache, mid_cache, disk_cache},
+                             /*window_size=*/128 * 1024,
+                             /*min_bytes_for_seek=*/0);
+
+    auto rope = executor.readNextWindow();
+    EXPECT_EQ(rope.range().size, 128u * 1024u);
+    EXPECT_EQ(rope.totalBytes(), 128u * 1024u);
+}
+
+/// After a read where PageCache hits but DiskCache is cold, the DiskCache
+/// must be filled with its full segment range (cached hit bytes + source
+/// bytes combined into one disjoint rope for the put).
+TEST(ReaderExecutor, ChainLowerCacheFilledFullyAfterRead)
+{
+    auto src = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", String(4 * 1024 * 1024, 'S')}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 4 * 1024 * 1024);
+
+    auto page_cache = std::make_shared<WideGranularityMockCache>(64 * 1024, "PageMock");
+    auto disk_cache = std::make_shared<WideGranularityMockCache>(4 * 1024 * 1024, "DiskMock");
+    page_cache->seedBlock(0, 'P');
+
+    ReaderExecutor executor(src, objects, {page_cache, disk_cache},
+                             /*window_size=*/128 * 1024,
+                             /*min_bytes_for_seek=*/0);
+
+    auto rope = executor.readNextWindow();
+    EXPECT_EQ(rope.totalBytes(), 128u * 1024u);
+    EXPECT_TRUE(disk_cache->hasBlock(0))
+        << "DiskCache must be filled with the full segment after the read";
+}
+
+/// Every put across the chain must receive a rope with disjoint coverage —
+/// totalBytes == range.size. A rope with duplicate nodes would overflow
+/// DiskCacheHandle::put's flat_buf.
+TEST(ReaderExecutor, ChainPutReceivesDisjointRope)
+{
+    auto src = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", String(4 * 1024 * 1024, 'S')}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 4 * 1024 * 1024);
+
+    auto page_cache = std::make_shared<WideGranularityMockCache>(64 * 1024, "PageMock");
+    auto disk_cache = std::make_shared<WideGranularityMockCache>(4 * 1024 * 1024, "DiskMock");
+    page_cache->seedBlock(0, 'P');
+
+    ReaderExecutor executor(src, objects, {page_cache, disk_cache},
+                             /*window_size=*/128 * 1024,
+                             /*min_bytes_for_seek=*/0);
+
+    executor.readNextWindow();
+
+    ASSERT_FALSE(disk_cache->putLog().empty()) << "DiskCache put must be called";
+    for (const auto & [range, total] : disk_cache->putLog())
+        EXPECT_EQ(total, range.size)
+            << "put received non-disjoint rope: range=[" << range.offset
+            << ", " << range.end() << "), totalBytes=" << total;
+}
+
+/// Cache block extends past the window's tail. Returned rope must end at
+/// the window boundary, not at the block boundary.
+TEST(ReaderExecutor, ChainHitExtendsBeyondWindowEnd)
+{
+    auto src = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", String(128 * 1024, 'S')}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 128 * 1024);
+
+    auto page_cache = std::make_shared<WideGranularityMockCache>(64 * 1024, "PageMock");
+    page_cache->seedBlock(0, 'P');
+
+    ReaderExecutor executor(src, objects, {page_cache},
+                             /*window_size=*/50 * 1024,
+                             /*min_bytes_for_seek=*/0);
+
+    auto rope = executor.readNextWindow();
+    EXPECT_EQ(rope.range().offset, 0u);
+    EXPECT_EQ(rope.range().size, 50u * 1024u);
+    EXPECT_EQ(rope.totalBytes(), 50u * 1024u);
+}
+
+/// Window starts inside a cache block. Bytes before window.offset must not
+/// appear in the returned rope.
+TEST(ReaderExecutor, ChainHitExtendsBeforeWindowStart)
+{
+    auto src = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", String(128 * 1024, 'S')}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 128 * 1024);
+
+    auto page_cache = std::make_shared<WideGranularityMockCache>(64 * 1024, "PageMock");
+    page_cache->seedBlock(0, 'P');
+
+    ReaderExecutor executor(src, objects, {page_cache},
+                             /*window_size=*/40 * 1024,
+                             /*min_bytes_for_seek=*/0);
+
+    executor.seek(10 * 1024);
+    auto rope = executor.readNextWindow();
+    EXPECT_EQ(rope.range().offset, 10u * 1024u);
+    EXPECT_EQ(rope.range().size, 40u * 1024u);
+    EXPECT_EQ(rope.totalBytes(), 40u * 1024u);
+}
+
+/// Cache miss range extends past the window end (cache block is larger than
+/// the window's tail). Source fetch goes past the window to fill the block;
+/// cache stores the full block; user rope is exactly window size.
+TEST(ReaderExecutor, ChainWindowEndCacheMissExtendsPast)
+{
+    auto src = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", String(128 * 1024, 'S')}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 128 * 1024);
+
+    auto disk_cache = std::make_shared<WideGranularityMockCache>(64 * 1024, "DiskMock");
+
+    ReaderExecutor executor(src, objects, {disk_cache},
+                             /*window_size=*/50 * 1024,
+                             /*min_bytes_for_seek=*/0);
+
+    auto rope = executor.readNextWindow();
+    EXPECT_EQ(rope.range().size, 50u * 1024u);
+    EXPECT_EQ(rope.totalBytes(), 50u * 1024u);
+    EXPECT_TRUE(disk_cache->hasBlock(0))
+        << "Cache block must be filled past the window end (intentional read-ahead)";
+}

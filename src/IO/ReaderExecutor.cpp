@@ -32,6 +32,74 @@ namespace DB::ErrorCodes
 namespace DB
 {
 
+namespace
+{
+
+/// Disjoint, sorted set of ByteRanges. Used by readPhysicalWindow to track
+/// which logical bytes are already in `result` so that:
+///   - cache hits are appended only for not-yet-covered subranges,
+///   - source-fetched bytes are appended only for not-yet-covered subranges.
+/// This makes `result` always disjoint by construction, so any `slice` over
+/// it is also disjoint — which is what `cache->put` requires.
+class IntervalSet
+{
+public:
+    void add(ByteRange r)
+    {
+        if (r.size == 0)
+            return;
+
+        size_t new_start = r.offset;
+        size_t new_end = r.end();
+
+        auto erase_from = intervals.begin();
+        while (erase_from != intervals.end() && erase_from->end() < new_start)
+            ++erase_from;
+
+        auto it = erase_from;
+        while (it != intervals.end() && it->offset <= new_end)
+        {
+            new_start = std::min(new_start, it->offset);
+            new_end = std::max(new_end, it->end());
+            ++it;
+        }
+
+        auto insert_pos = intervals.erase(erase_from, it);
+        intervals.insert(insert_pos, ByteRange{new_start, new_end - new_start});
+    }
+
+    /// Returns r minus all intervals in the set, as a list of disjoint
+    /// sub-ranges in increasing-offset order.
+    std::vector<ByteRange> subtract(ByteRange r) const
+    {
+        std::vector<ByteRange> out;
+        if (r.size == 0)
+            return out;
+        size_t cur = r.offset;
+        size_t end = r.end();
+        for (const auto & i : intervals)
+        {
+            if (i.end() <= cur)
+                continue;
+            if (i.offset >= end)
+                break;
+            if (i.offset > cur)
+                out.push_back({cur, i.offset - cur});
+            cur = std::max(cur, i.end());
+            if (cur >= end)
+                break;
+        }
+        if (cur < end)
+            out.push_back({cur, end - cur});
+        return out;
+    }
+
+private:
+    std::vector<ByteRange> intervals;
+};
+
+}
+
 ReaderExecutor::ReaderExecutor(
     std::shared_ptr<ISourceReader> source_,
     const StoredObjects & objects,
@@ -526,12 +594,15 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
     LOG_TRACE(log, "readPhysicalWindow [{}, {})", physical_window.offset, physical_window.end());
 
     Rope result;
-    std::vector<ByteRange> remaining = {physical_window};
-
-    /// Handles with misses — kept alive for put after source fetch.
+    IntervalSet covered;   /// disjoint logical bytes already materialised in `result`
     std::vector<std::unique_ptr<ICacheHandle>> miss_handles;
 
-    /// Walk the cache chain
+    /// Walk the cache chain. Each cache reports hits/misses at its own
+    /// granularity (which may extend beyond the requested range). Hits are
+    /// appended to `result` only for the not-yet-covered subranges so that
+    /// `result` stays disjoint even when a lower cache's hit overlaps a
+    /// higher cache's hit. Misses propagate to the next cache.
+    std::vector<ByteRange> remaining = {physical_window};
     for (auto & cache : caches)
     {
         std::vector<ByteRange> still_missing;
@@ -543,15 +614,26 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
 
             for (const auto & hit : status.hit_ranges)
             {
-                LOG_TRACE(log, "readPhysicalWindow: cache {} hit [{}, {})", cache->name(), hit.offset, hit.end());
-                auto slice = handle->get(hit);
-                for (const auto & node : slice.getNodes())
-                    result.append(RopeNode{node.buffer, node.buffer_offset, node.size, node.logical_offset});
+                LOG_TRACE(log, "readPhysicalWindow: cache {} hit [{}, {})",
+                    cache->name(), hit.offset, hit.end());
+
+                auto useful = covered.subtract(hit);
+                if (useful.empty())
+                    continue;
+                Rope hit_rope = handle->get(hit);
+                for (const auto & sub : useful)
+                {
+                    Rope sub_slice = hit_rope.slice(sub);
+                    for (const auto & node : sub_slice.getNodes())
+                        result.append(RopeNode{node.buffer, node.buffer_offset, node.size, node.logical_offset});
+                    covered.add(sub);
+                }
             }
 
             for (const auto & miss : status.miss_ranges)
             {
-                LOG_TRACE(log, "readPhysicalWindow: cache {} miss [{}, {})", cache->name(), miss.offset, miss.end());
+                LOG_TRACE(log, "readPhysicalWindow: cache {} miss [{}, {})",
+                    cache->name(), miss.offset, miss.end());
                 still_missing.push_back(miss);
             }
 
@@ -564,37 +646,23 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
             break;
     }
 
-    /// Merge close-together ranges to reduce source request count.
+    /// Merge close-together miss ranges into fewer source requests. The merge
+    /// may bridge across already-covered hits — the latency saving outweighs
+    /// the small extra bandwidth, and the overlap is dropped below when only
+    /// the uncovered portion of each source range is appended to `result`.
     auto fetch_ranges = mergeRanges(remaining, min_bytes_for_seek);
 
     if (fetch_ranges.size() < remaining.size())
         LOG_TRACE(log, "readPhysicalWindow: merged {} miss ranges into {} fetch ranges (min_gap={})",
             remaining.size(), fetch_ranges.size(), min_bytes_for_seek);
 
-    /// If merging extended a miss range across a cached hit, the source will
-    /// fetch the whole merged range — including the bytes already in `result`
-    /// from the cache hit. Drop those cached nodes so we don't end up with
-    /// duplicate coverage for the same logical offsets.
-    if (fetch_ranges.size() < remaining.size())
+    /// Fetch from source. Allocate destination blocks before opening
+    /// connections; try the live buffer for sequential reads and fall back
+    /// to stateless reads otherwise.
+    for (const auto & fr : fetch_ranges)
     {
-        auto & nodes = result.getNodes();
-        auto inside_fetch_range = [&fetch_ranges](const RopeNode & node)
-        {
-            for (const auto & fr : fetch_ranges)
-                if (node.logical_offset >= fr.offset
-                    && node.logical_offset + node.size <= fr.end())
-                    return true;
-            return false;
-        };
-        nodes.erase(std::remove_if(nodes.begin(), nodes.end(), inside_fetch_range), nodes.end());
-    }
-
-    /// Fetch from source — allocate destination blocks (≤ ROPE_BLOCK_SIZE each) before
-    /// opening connections, then try live buffer for sequential reads, fall back to stateless.
-    for (const auto & miss_range : fetch_ranges)
-    {
-        auto physical_ranges = offset_map.map(miss_range);
-        size_t logical_pos = miss_range.offset;
+        auto physical_ranges = offset_map.map(fr);
+        size_t logical_pos = fr.offset;
 
         for (const auto & pr : physical_ranges)
         {
@@ -615,12 +683,26 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
                     "ReaderExecutor: short read from {} at offset {}: requested {} bytes, got {}",
                     pr.object.remote_path, pr.object_offset, pr.size, actual);
+
+            /// Append only the parts of source_rope not already in `result`.
+            ByteRange pr_range{logical_pos, pr.size};
+            auto uncovered = covered.subtract(pr_range);
+            for (const auto & sub : uncovered)
+            {
+                Rope sub_slice = source_rope.slice(sub);
+                for (const auto & node : sub_slice.getNodes())
+                    result.append(RopeNode{node.buffer, node.buffer_offset, node.size, node.logical_offset});
+                covered.add(sub);
+            }
+
             logical_pos += pr.size;
-            result.append(std::move(source_rope));
         }
     }
 
-    /// Fill caches with fetched data using the saved handles.
+    /// Fill caches with disjoint slices of `result`. `result.slice(miss)` is
+    /// disjoint by construction (every byte was appended via the covered
+    /// guard), so `put` always receives a rope whose totalBytes == miss.size
+    /// when the source covered the whole miss range, or less at EOF.
     for (auto & handle : miss_handles)
     {
         auto status = handle->status();
@@ -632,7 +714,7 @@ Rope ReaderExecutor::readPhysicalWindow(ByteRange physical_window)
         }
     }
 
-    /// Sort nodes by logical offset
+    /// Sort nodes by logical offset for predictable iteration.
     auto & nodes = result.getNodes();
     std::sort(nodes.begin(), nodes.end(),
         [](const RopeNode & a, const RopeNode & b)
