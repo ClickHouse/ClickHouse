@@ -67,9 +67,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
         }
         current_thread->untracked_memory_blocker_level = blocker_level;
 
-        Int64 previous_untracked_memory = current_thread->untracked_memory.load();
-        Int64 new_untracked_memory = previous_untracked_memory + size;
-        current_thread->untracked_memory.store(new_untracked_memory);
+        Int64 new_untracked_memory = current_thread->untracked_memory.add(size);
         if (new_untracked_memory > current_thread->untracked_memory_limit)
         {
             current_thread->untracked_memory.store(0);
@@ -80,8 +78,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
             }
             catch (...)
             {
-                current_thread->untracked_memory.store(
-                    current_thread->untracked_memory.load() + previous_untracked_memory);
+                current_thread->untracked_memory.add(new_untracked_memory - size);
                 throw;
             }
         }
@@ -124,8 +121,7 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
         }
         current_thread->untracked_memory_blocker_level = blocker_level;
 
-        Int64 new_untracked_memory = current_thread->untracked_memory.load() - size;
-        current_thread->untracked_memory.store(new_untracked_memory);
+        Int64 new_untracked_memory = current_thread->untracked_memory.add(-size);
         if (new_untracked_memory < -current_thread->untracked_memory_limit)
         {
             current_thread->untracked_memory.store(0);

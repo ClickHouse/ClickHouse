@@ -24,6 +24,15 @@ public:
     Int64 load() const noexcept { return value.load(std::memory_order_relaxed); }
     void store(Int64 v) noexcept { value.store(v, std::memory_order_relaxed); }
 
+    Int64 add(Int64 delta) noexcept
+    {
+        /// Not a real atomic RMW for performance considerations.
+        /// All writes (add, store) come from a single thread, so this is fine.
+        const Int64 new_value = value.load(std::memory_order_relaxed) + delta;
+        value.store(new_value, std::memory_order_relaxed);
+        return new_value;
+    }
+
 private:
     std::atomic<Int64> value{0};
 };
