@@ -131,6 +131,7 @@ private:
             std::inplace_merge(points, points + sorted_prefix, points + size, cmp);
         }
         sorted_prefix = size;
+        last_inserted = (size ? points[size - 1].mean : std::numeric_limits<Mean>::lowest());
 
         if (size <= max_bins)
             return;
