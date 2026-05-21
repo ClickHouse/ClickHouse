@@ -169,9 +169,20 @@ void ASTIdentifier::restoreTable()
 
 boost::intrusive_ptr<ASTTableIdentifier> ASTIdentifier::createTable() const
 {
-    if (name_parts.size() == 1) return make_intrusive<ASTTableIdentifier>(name_parts[0]);
-    if (name_parts.size() == 2) return make_intrusive<ASTTableIdentifier>(name_parts[0], name_parts[1]);
-    return nullptr;
+    boost::intrusive_ptr<ASTTableIdentifier> result;
+    if (name_parts.size() == 1)
+        result = make_intrusive<ASTTableIdentifier>(name_parts[0]);
+    else if (name_parts.size() == 2)
+        result = make_intrusive<ASTTableIdentifier>(name_parts[0], name_parts[1]);
+    else
+        return nullptr;
+
+    /// Preserve per-part quote styles so downstream resolution (e.g. case-insensitive lookup
+    /// in `standard` mode for `joinGet("Db"."Table", ...)`) can still see which parts were quoted.
+    if (!quote_styles.empty())
+        result->setQuoteStyles(quote_styles);
+
+    return result;
 }
 
 void ASTIdentifier::resetFullName()
