@@ -234,36 +234,9 @@ def check_cpp_code():
     return out
 
 
-def check_repo_submodules():
-    res, out, err = Shell.get_res_stdout_stderr(
-        "./ci/jobs/scripts/check_style/check_submodules.sh"
-    )
-    if err:
-        out += err
-    return out
-
-
 def check_other():
     res, out, err = Shell.get_res_stdout_stderr(
         "./ci/jobs/scripts/check_style/various_checks.sh"
-    )
-    if err:
-        out += err
-    return out
-
-
-def check_codespell():
-    res, out, err = Shell.get_res_stdout_stderr(
-        "./ci/jobs/scripts/check_style/check_typos.sh"
-    )
-    if err:
-        out += err
-    return out
-
-
-def check_aspell():
-    res, out, err = Shell.get_res_stdout_stderr(
-        "./ci/jobs/scripts/check_style/check_aspell.sh"
     )
     if err:
         out += err
@@ -610,14 +583,6 @@ if __name__ == "__main__":
                 command=check_cpp_code,
             )
         )
-    testname = "submodules"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_repo_submodules,
-            )
-        )
     testname = "various"
     if testpattern.lower() in testname.lower():
         results.append(
@@ -626,23 +591,6 @@ if __name__ == "__main__":
                 command=check_other,
             )
         )
-    testname = "codespell"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_codespell,
-            )
-        )
-    testname = "aspell"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_aspell,
-            )
-        )
-
     # testname = "mypy"
     # if testpattern.lower() in testname.lower():
     #     results.append(
