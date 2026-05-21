@@ -3,7 +3,6 @@
 #include <memory>
 #include <mutex>
 #include <type_traits>
-#include <variant>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 
@@ -12,7 +11,7 @@
 #include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
 #include <Common/Logger.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
@@ -190,6 +189,7 @@ public:
     };
 
     explicit Aggregator(const Block & header_, const Params & params_);
+    ~Aggregator();
 
     const Params & getParams() const { return params; }
 
@@ -360,7 +360,7 @@ private:
 
     std::vector<bool> is_aggregate_function_compiled;
 
-    mutable ThreadPool thread_pool;
+    mutable std::unique_ptr<ThreadPool> thread_pool;
 
     /** Try to compile aggregate functions.
       */

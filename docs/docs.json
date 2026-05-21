@@ -1,0 +1,54 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "maple",
+  "name": "ClickHouse Documentation",
+  "colors": {
+    "primary": "#1c1c1c",
+    "light": "#333431",
+    "dark": "#fdff75"
+  },
+  "background": {
+    "color": {
+      "dark": "#1D1D1D",
+      "light": "#FFFFFF"
+    }
+  },
+  "styling": {
+    "eyebrows": "breadcrumbs"
+  },
+  "interaction": {
+    "drilldown": false
+  },
+  "favicon": "/assets/favicon.svg",
+  "banner": {
+    "content": "Introducing Managed ClickStack: Observability for OpenTelemetry at scale [Read more \u2192](https://clickhouse.com/blog)",
+    "dismissible": true
+  },
+  "scripts": [],
+  "navigation": {
+    "pages": [
+      "index"
+    ]
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "fonts": {
+    "family": "Inter"
+  },
+  "navbar": {},
+  "redirects": [],
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "perplexity",
+      "mcp",
+      "cursor",
+      "vscode"
+    ]
+  }
+}
