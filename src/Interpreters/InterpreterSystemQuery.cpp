@@ -82,6 +82,7 @@
 #include <Common/ShellCommand.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/ThreadPool.h>
+#include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -1740,7 +1741,7 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
     {
         auto query_context = Context::createCopy(getContext());
         query_context->makeQueryContext();
-        query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+        query_context->setDDLOrOnClusterInternal(true);
         query_context->setCurrentDatabase(restoring_database_name);
         query_context->setCurrentQueryId("");
 

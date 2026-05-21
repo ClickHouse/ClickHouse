@@ -31,7 +31,7 @@ namespace ErrorCodes
 /// arrayLevenshteinDistance([1,2,3,4], [1,3,2,4]) = 2
 /// arrayLevenshteinDistanceWeighted([1,2,3,4], [1,3,2,4]) = 2
 template <typename T>
-class FunctionArrayLevenshtein : public IFunction
+class FunctionArrayLevenshtein final : public IFunction
 {
 public:
     static constexpr auto name = T::name;

@@ -37,6 +37,7 @@
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -1759,6 +1760,8 @@ Chunk StorageFileSource::generate()
 
     return {};
 }
+
+void StorageFileSource::onFinish() { parser_shared_resources->finishStream(); }
 
 void StorageFileSource::addNumRowsToCache(const String & path, size_t num_rows) const
 {

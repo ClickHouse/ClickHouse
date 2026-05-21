@@ -23,7 +23,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionToDecimalString : public IFunction
+class FunctionToDecimalString final : public IFunction
 {
 public:
     static constexpr auto name = "toDecimalString";
