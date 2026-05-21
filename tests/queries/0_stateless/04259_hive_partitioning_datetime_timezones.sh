@@ -23,19 +23,21 @@ echo -e "id\n3" > "$DATA_DIR/ts=2026-05-07T22:15:15Z/data.csv"
 echo -e "id\n4" > "$DATA_DIR/ts=2026-05-07T22:15:15/data.csv"
 
 # Inferred type case: schema does not declare `ts`, so it is inferred from the path.
+# `session_timezone` is pinned so the displayed value does not depend on the
+# server's default timezone.
 $CLICKHOUSE_LOCAL -q "
 SELECT id, ts, toTypeName(ts)
 FROM file('$DATA_DIR/ts=*/data.csv')
 ORDER BY id
-SETTINGS use_hive_partitioning = 1;
+SETTINGS use_hive_partitioning = 1, session_timezone = 'UTC';
 "
 
-# Schema-declared type case: `ts` is declared as DateTime64.
+# Schema-declared type case: `ts` is declared as DateTime64 in UTC.
 $CLICKHOUSE_LOCAL -q "
 SELECT id, ts, toTypeName(ts)
 FROM file('$DATA_DIR/ts=*/data.csv', 'CSV', 'id UInt64, ts DateTime64(0, ''UTC'')')
 ORDER BY id
-SETTINGS use_hive_partitioning = 1;
+SETTINGS use_hive_partitioning = 1, session_timezone = 'UTC';
 "
 
 # Same as above but with cast_string_to_date_time_mode = 'best_effort' set explicitly.
@@ -43,7 +45,7 @@ $CLICKHOUSE_LOCAL -q "
 SELECT id, ts
 FROM file('$DATA_DIR/ts=*/data.csv', 'CSV', 'id UInt64, ts DateTime64(0, ''UTC'')')
 ORDER BY id
-SETTINGS use_hive_partitioning = 1, cast_string_to_date_time_mode = 'best_effort';
+SETTINGS use_hive_partitioning = 1, cast_string_to_date_time_mode = 'best_effort', session_timezone = 'UTC';
 "
 
 # If the user explicitly opts into the strict parser, parsing of timezone
@@ -53,7 +55,7 @@ SELECT id, ts FROM file(
     '$DATA_DIR/ts=2026-05-07T22:15:15+0000/data.csv',
     'CSV',
     'id UInt64, ts DateTime64(0, ''UTC'')')
-SETTINGS use_hive_partitioning = 1, cast_string_to_date_time_mode = 'basic';
+SETTINGS use_hive_partitioning = 1, cast_string_to_date_time_mode = 'basic', session_timezone = 'UTC';
 " 2>&1 | grep -c "TYPE_MISMATCH"
 
 rm -rf "$DATA_DIR"
