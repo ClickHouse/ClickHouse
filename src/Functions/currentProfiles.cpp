@@ -33,7 +33,7 @@ namespace
         }
     }
 
-    class FunctionProfiles : public IFunction
+    class FunctionProfiles final : public IFunction
     {
     public:
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override

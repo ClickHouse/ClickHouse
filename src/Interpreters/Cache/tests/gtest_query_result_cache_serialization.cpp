@@ -56,7 +56,8 @@ QueryResultCache::Key makeKey(
         is_shared,
         now,
         expires,
-        is_compressed);
+        is_compressed,
+        /*is_subquery_=*/ false);
 }
 
 /// Create a SharedHeader (Block wrapped in shared_ptr) with two columns: UInt64 + String.
