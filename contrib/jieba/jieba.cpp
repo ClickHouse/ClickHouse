@@ -130,7 +130,11 @@ std::vector<std::string_view> convertRangesToWords(std::string_view sentence, co
     return words;
 }
 
-const absl::flat_hash_set<Rune> separators = {' ', '\t', '\n', 0xFF0C, 0x3002};
+/// The runes here use the post-decode encoding produced by `decodeUTF8Rune` (jieba_common.h):
+/// ASCII characters U+00xx (high byte 0x00) are remapped into U+F0xx so that trie keys
+/// never contain 0x00 bytes. Compare against the remapped values, not raw ASCII, otherwise
+/// space/tab/newline would not be recognized as separators in the input stream.
+const absl::flat_hash_set<Rune> separators = {0xF020, 0xF009, 0xF00A, 0xFF0C, 0x3002};
 
 class PreFilter
 {
