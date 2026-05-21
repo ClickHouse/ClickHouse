@@ -349,6 +349,10 @@ CLICKHOUSE_PROMQL_REGRESSION_CASES = [
     ]),
 
     *_with_risk(RISK_TIMESTAMP_MODIFIERS, [
+        ("demo_memory_usage_bytes @ start()", [], False),
+        ("demo_memory_usage_bytes @ end()", [], False),
+        ("demo_memory_usage_bytes @ start() offset 1m", [], False),
+        ("last_over_time(demo_memory_usage_bytes[5m] @ start())", [], False),
         ("last_over_time(demo_memory_usage_bytes[5m] offset 1m)", [], False),
     ]),
 
