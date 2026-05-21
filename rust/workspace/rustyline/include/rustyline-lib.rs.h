@@ -37,7 +37,6 @@ struct EditorOptions final
     bool ignore_shell_suspend;
     bool embedded_mode;
     bool interactive_history_legacy_keymap;
-    bool enable_skim;
     bool enable_highlight;
     bool multiline;
     ::rust::String word_break_characters;

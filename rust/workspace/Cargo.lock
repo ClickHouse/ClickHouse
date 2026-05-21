@@ -22,19 +22,11 @@ dependencies = [
 name = "_ch_rust_rustyline"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "cxx",
  "cxx-build",
  "libc",
  "rustyline",
-]
-
-[[package]]
-name = "_ch_rust_skim_rust"
-version = "0.1.0"
-dependencies = [
- "clap",
- "cxx",
- "cxx-build",
  "skim",
  "term 1.2.1",
 ]

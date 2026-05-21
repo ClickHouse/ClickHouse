@@ -5,7 +5,9 @@
 //! highlighting, suggestion lookup); this crate only handles terminal IO,
 //! history, and key-binding plumbing.
 
-use cxx::{CxxString, CxxVector};
+mod fuzzy;
+
+use cxx::CxxString;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -44,7 +46,6 @@ mod ffi {
         ignore_shell_suspend: bool,
         embedded_mode: bool,
         interactive_history_legacy_keymap: bool,
-        enable_skim: bool,
         enable_highlight: bool,
         multiline: bool,
         word_break_characters: String,
@@ -86,15 +87,11 @@ mod ffi {
         /// Open `$EDITOR` with `buf` preloaded. Returns the edited buffer.
         /// `format_query` requests SQL pretty-printing before editing.
         fn cb_open_editor(buf: &CxxString, format_query: bool) -> String;
-
-        /// Invoke skim with `prefix` and history `words`. Returns the
-        /// selected entry (or empty on abort). Throws on error.
-        fn cb_skim(prefix: &CxxString, words: &CxxVector<CxxString>) -> Result<String>;
     }
 }
 
 use ffi::{
-    cb_complete_candidates, cb_complete_start, cb_highlight, cb_open_editor, cb_skim,
+    cb_complete_candidates, cb_complete_start, cb_highlight, cb_open_editor,
     EditorOptions, ReadResult, ReadStatus,
 };
 
@@ -105,6 +102,13 @@ static LAST_IS_DELIMITER: AtomicBool = AtomicBool::new(false);
 
 fn set_last_is_delimiter(flag: bool) {
     LAST_IS_DELIMITER.store(flag, Ordering::Relaxed);
+}
+
+thread_local! {
+    /// Snapshot of history entries refreshed at the top of each `read_line`
+    /// call. The skim handler reads from here because rustyline's
+    /// `EventContext` doesn't expose a `&History`.
+    static HISTORY_SNAPSHOT: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
 /// The shared helper held inside the rustyline Editor. Owns the configured
@@ -260,6 +264,26 @@ impl ConditionalEventHandler for InsertCommentHandler {
     }
 }
 
+/// Handler for Ctrl-R / Ctrl-T (skim): fuzzy-search the history snapshot
+/// taken at the start of the current `read_line` call.
+struct SkimHistoryHandler;
+impl ConditionalEventHandler for SkimHistoryHandler {
+    fn handle(
+        &self,
+        _evt: &Event,
+        _n: RepeatCount,
+        _positive: bool,
+        ctx: &EventContext<'_>,
+    ) -> Option<Cmd> {
+        let prefix = ctx.line().to_string();
+        let selection = HISTORY_SNAPSHOT.with(|h| fuzzy::run(&prefix, &h.borrow()));
+        match selection {
+            Ok(s) if !s.is_empty() => Some(Cmd::Replace(Movement::WholeBuffer, Some(s))),
+            _ => None,
+        }
+    }
+}
+
 /// Handler for Alt-E / Alt-F: open external editor with current buffer.
 struct OpenEditorHandler {
     format_query: bool,
@@ -281,35 +305,9 @@ impl ConditionalEventHandler for OpenEditorHandler {
     }
 }
 
-/// Handler for Ctrl-R/T when skim is enabled: fuzzy-search history.
-struct SkimSearchHandler;
-impl ConditionalEventHandler for SkimSearchHandler {
-    fn handle(
-        &self,
-        _evt: &Event,
-        _n: RepeatCount,
-        _positive: bool,
-        ctx: &EventContext<'_>,
-    ) -> Option<Cmd> {
-        let words: cxx::UniquePtr<cxx::CxxVector<CxxString>> = cxx::CxxVector::new();
-        // We don't have direct read access to history here — the C++ side
-        // owns history retrieval through the editor handle. Instead, the
-        // skim integration is done end-to-end in a Cmd::ReverseSearchHistory
-        // path: see editor construction. This handler is kept as a stub
-        // because rustyline's EventContext can't borrow history mutably.
-        let _ = words;
-        cxx::let_cxx_string!(prefix = ctx.line());
-        // Fall back to rustyline's reverse-search if skim is not wired.
-        // The real skim path is plugged in via a custom Cmd in C++.
-        let _ = prefix;
-        Some(Cmd::ReverseSearchHistory)
-    }
-}
-
 /// The opaque type exposed to C++.
 pub struct Editor {
     inner: RlEditor<Helper, FileHistory>,
-    enable_skim: bool,
     /// Text to preload at the next `read_line` call.
     preload: Option<String>,
 }
@@ -400,23 +398,19 @@ fn new_editor(opts: &EditorOptions) -> Result<Box<Editor>, String> {
         EventHandler::Conditional(Box::new(InsertCommentHandler)),
     );
 
-    // Ctrl-R / Ctrl-T: incremental search (regular) and skim fuzzy search.
-    // We use C++ to dispatch skim because EventContext can't yield history.
-    let (key_fuzzy, key_regular) = if opts.interactive_history_legacy_keymap {
+    // Ctrl-R / Ctrl-T: one runs skim (fuzzy), the other runs rustyline's
+    // built-in incremental reverse-search. The legacy keymap swaps them.
+    let (fuzzy_key, regular_key) = if opts.interactive_history_legacy_keymap {
         ('T', 'R')
     } else {
         ('R', 'T')
     };
-    let _ = (key_fuzzy, key_regular, opts.enable_skim);
-    // For now, both bind to rustyline's reverse search. The skim path is
-    // exposed via a separate API entry (`run_skim_over_history`) that the
-    // C++ wrapper can invoke if it intercepts the key first.
     ed.bind_sequence(
-        Event::KeySeq(vec![K::new('R', m_ctrl)]),
-        EventHandler::Simple(Cmd::ReverseSearchHistory),
+        Event::KeySeq(vec![K::new(fuzzy_key, m_ctrl)]),
+        EventHandler::Conditional(Box::new(SkimHistoryHandler)),
     );
     ed.bind_sequence(
-        Event::KeySeq(vec![K::new('T', m_ctrl)]),
+        Event::KeySeq(vec![K::new(regular_key, m_ctrl)]),
         EventHandler::Simple(Cmd::ReverseSearchHistory),
     );
 
@@ -425,7 +419,6 @@ fn new_editor(opts: &EditorOptions) -> Result<Box<Editor>, String> {
 
     Ok(Box::new(Editor {
         inner: ed,
-        enable_skim: opts.enable_skim,
         preload: None,
     }))
 }
@@ -450,6 +443,10 @@ fn map_readline_error(e: ReadlineError) -> ReadResult {
 impl Editor {
     fn read_line(&mut self, prompt: &CxxString) -> Result<ReadResult, String> {
         let prompt_str = prompt.to_str().map_err(|e| format!("prompt utf-8: {e}"))?;
+        // Snapshot history for the skim handler before we hand the
+        // terminal over to rustyline's input loop.
+        let snapshot = self.history_lines();
+        HISTORY_SNAPSHOT.with(|h| *h.borrow_mut() = snapshot);
         let preload = self.preload.take();
         let res = if let Some(text) = preload {
             self.inner.readline_with_initial(prompt_str, (&text, ""))
@@ -508,6 +505,5 @@ impl Editor {
 
     fn enable_bracketed_paste(&mut self, on: bool) {
         self.inner.enable_bracketed_paste(on);
-        let _ = self.enable_skim; // silence unused for now
     }
 }

@@ -3,6 +3,7 @@
 #include <Client/RustylineLineReader.h>
 #include <Client/ClientBaseHelpers.h>
 #include <Common/UTF8Helpers.h>
+#include "config.h"
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
@@ -23,12 +24,6 @@
 #include <stdexcept>
 #include <sys/wait.h>
 #include <unistd.h>
-
-#include "config.h"  // USE_SKIM
-
-#if USE_SKIM
-#   include <skim.h>
-#endif
 
 namespace DB::rustyline
 {
@@ -261,19 +256,6 @@ static ::std::size_t completionStart(const ::std::string & line, ::std::size_t p
     {
         return ::rust::String(buf);
     }
-}
-
-::rust::String cb_skim(const std::string & prefix, const ::std::vector<::std::string> & words)
-{
-#if USE_SKIM
-    /// Reuse the skim crate already in the build.
-    /// (`skim()` is defined in rust/workspace/skim/include/skim.h)
-    return ::skim(prefix, words);
-#else
-    (void)prefix;
-    (void)words;
-    throw std::runtime_error("skim is not enabled in this build");
-#endif
 }
 
 }

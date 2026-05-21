@@ -1,7 +1,6 @@
 #include <Client/RustylineLineReader.h>
 #include <Client/RustylineCallbacks.h>
 #include <Client/ClientBaseHelpers.h>
-#include "config.h"  // USE_SKIM
 
 #include <base/errnoToString.h>
 #include <fmt/format.h>
@@ -51,10 +50,6 @@ RustylineLineReader::RustylineLineReader(Options && options)
     opts.interactive_history_legacy_keymap = options.interactive_history_legacy_keymap;
     opts.enable_highlight = options.enable_highlight;
     opts.multiline = options.multiline;
-    opts.enable_skim = false;  // Real value resolved at build time via USE_SKIM
-#if USE_SKIM
-    opts.enable_skim = !options.embedded_mode;
-#endif
     opts.word_break_characters = ::rust::String(options.word_break_characters.data(),
                                                 options.word_break_characters.size());
 

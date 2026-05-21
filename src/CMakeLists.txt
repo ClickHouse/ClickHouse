@@ -779,11 +779,6 @@ if (TARGET ch_contrib::prometheus_protobufs)
     target_link_libraries(dbms PUBLIC ch_contrib::prometheus_protobufs)
 endif()
 
-if (TARGET ch_rust::skim)
-    target_include_directories(dbms PRIVATE $<TARGET_PROPERTY:ch_rust::skim,INTERFACE_INCLUDE_DIRECTORIES>)
-    target_link_libraries(dbms PUBLIC ch_rust::skim)
-endif()
-
 if (TARGET ch_rust::rustyline)
     target_include_directories(dbms PRIVATE $<TARGET_PROPERTY:ch_rust::rustyline,INTERFACE_INCLUDE_DIRECTORIES>)
     target_link_libraries(dbms PUBLIC ch_rust::rustyline)

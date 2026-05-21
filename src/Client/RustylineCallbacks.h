@@ -28,6 +28,5 @@ namespace DB::rustyline
 ::rust::Vec<::rust::String> cb_complete_candidates(const ::std::string & line, ::std::size_t pos);
 
 ::rust::String cb_open_editor(const ::std::string & buf, bool format_query);
-::rust::String cb_skim(const ::std::string & prefix, const ::std::vector<::std::string> & words);
 
 }

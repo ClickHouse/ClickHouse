@@ -16,13 +16,10 @@ if (OS_FREEBSD)
 endif()
 
 option (ENABLE_PRQL "Enable prql" ${ENABLE_LIBRARIES})
-option (ENABLE_SKIM "Enable skim" ${ENABLE_LIBRARIES})
 option (ENABLE_POLYGLOT "Enable polyglot SQL transpiler" ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM AND NOT ENABLE_POLYGLOT)
-    message(STATUS "prql, skim, and polyglot are disabled")
-    return()
-endif()
+# `_ch_rust_rustyline` is always built (mandatory line editor for the
+# client). `prql` and `polyglot` remain optional.
 
 clickhouse_import_crate(MANIFEST_PATH Cargo.toml)
 
@@ -82,15 +79,10 @@ if (ENABLE_POLYGLOT)
     endif ()
 endif()
 
-if (ENABLE_SKIM)
-    clickhouse_config_crate_flags(_ch_rust_skim_rust)
-    target_include_directories(_ch_rust_skim_rust INTERFACE skim/include)
-    add_library(ch_rust::skim ALIAS _ch_rust_skim_rust)
-endif()
-
 # Rustyline-backed line editor — always built (unless this whole subdir is
 # disabled e.g. on FreeBSD), since ClickHouse's interactive client depends
-# on it. The cxx-generated header is exposed via `rustyline/include`; we
+# on it. Also bundles the skim fuzzy-finder (callable from Rust via
+# `crate::fuzzy::run`); skim is no longer a separate workspace member. The cxx-generated header is exposed via `rustyline/include`; we
 # also point consumers at the vendored cxx crate so `<rust/cxx.h>` resolves.
 clickhouse_config_crate_flags(_ch_rust_rustyline)
 target_include_directories(_ch_rust_rustyline INTERFACE rustyline/include)
