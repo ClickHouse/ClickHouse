@@ -761,25 +761,24 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
 
     /** For subqueries (including expanded CTEs), output columns whose names contain dots
       * (e.g. produced by asterisk expansion of a join: `SELECT * FROM a JOIN b` yields columns
-      * `id`, `b.id`) must not be reachable as qualified identifiers from the outer scope.
-      * Otherwise the inner table aliases leak out of the subquery and clash with sibling
-      * tables in the outer join tree. Require that a multi-part identifier be qualified with
-      * the subquery's own alias or table name; lookups by literal dotted column name still
-      * work via a single (quoted) identifier part.
+      * `id`, `b.id`) can be mistaken for qualified `b.id` references from the outer scope.
+      * If the first part of the identifier is also the alias of a different table expression
+      * in the same scope, refuse the match here so the resolution finds the sibling table
+      * instead. This blocks inner CTE/subquery table aliases from leaking into the outer
+      * scope while still allowing legitimate access to dotted column names (Nested columns
+      * exported by an inner subquery, e.g. `SELECT fields.name FROM (SELECT fields.name FROM t)`).
       */
     const bool is_subquery_table_expression = table_expression_node_type == QueryTreeNodeType::QUERY
         || table_expression_node_type == QueryTreeNodeType::UNION;
     if (is_subquery_table_expression && identifier.getPartsSize() > 1)
     {
-        const auto & table_name = table_expression_data.table_name;
-        const bool prefix_matches_table_name = !table_name.empty() && path_start == table_name;
-        const bool prefix_matches_alias
-            = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
-        if (!prefix_matches_table_name && !prefix_matches_alias)
+        for (const auto & [other_node, other_data] : scope.table_expression_node_to_data)
         {
-            const auto & database_name = table_expression_data.database_name;
-            const bool prefix_matches_database = !database_name.empty() && path_start == database_name;
-            if (!prefix_matches_database)
+            if (other_node.get() == table_expression_node.get())
+                continue;
+            if (!other_data.table_name.empty() && other_data.table_name == path_start)
+                return {};
+            if (!other_data.table_expression_name.empty() && other_data.table_expression_name == path_start)
                 return {};
         }
     }
