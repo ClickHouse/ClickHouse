@@ -49,6 +49,7 @@ namespace HistogramMetrics
 
     public:
         MetricFamily(String name_, String documentation_, Buckets buckets_, Labels labels_);
+
         Metric & withLabels(LabelValues label_values);
 
         template <typename Func>
