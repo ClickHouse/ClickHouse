@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -477,6 +478,55 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
         case TypeIndex::Decimal64:  decimal(8, getDecimalPrecision(*type), getDecimalScale(*type)); break;
         case TypeIndex::Decimal128: decimal(16, getDecimalPrecision(*type), getDecimalScale(*type)); break;
         case TypeIndex::Decimal256: decimal(32, getDecimalPrecision(*type), getDecimalScale(*type)); break;
+
+        case TypeIndex::Time:
+        {
+            parq::TimeUnit unit;
+            unit.__set_MICROS({});
+
+            parq::TimeType tt;
+            tt.__set_isAdjustedToUTC(false);
+            tt.__set_unit(unit);
+
+            parq::LogicalType t;
+            t.__set_TIME(tt);
+            types(T::INT64, parq::ConvertedType::TIME_MICROS, t);
+            state.datetime_multiplier = 1'000'000;
+            break;
+        }
+
+        case TypeIndex::Time64:
+        {
+            std::optional<parq::ConvertedType::type> converted;
+            parq::TimeUnit unit;
+            const auto & dt = assert_cast<const DataTypeTime64 &>(*type);
+            UInt32 scale = dt.getScale();
+            UInt32 converted_scale;
+            if (scale <= 6)
+            {
+                converted = parq::ConvertedType::TIME_MICROS;
+                unit.__set_MICROS({});
+                converted_scale = 6;
+            }
+            else if (scale <= 9)
+            {
+                unit.__set_NANOS({});
+                converted_scale = 9;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected Time64 scale: {}", scale);
+            }
+
+            parq::TimeType tt;
+            tt.__set_isAdjustedToUTC(false);
+            tt.__set_unit(unit);
+            parq::LogicalType t;
+            t.__set_TIME(tt);
+            types(T::INT64, converted, t);
+            state.datetime_multiplier = DataTypeTime64::getScaleMultiplier(converted_scale - scale);
+            break;
+        }
 
         default:
             throw Exception(ErrorCodes::UNKNOWN_TYPE, "Internal type '{}' of column '{}' is not supported for conversion into Parquet data format.", type->getFamilyName(), name);

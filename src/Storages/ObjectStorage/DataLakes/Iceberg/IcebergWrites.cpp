@@ -12,6 +12,7 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Databases/DataLake/Common.h>
@@ -129,6 +130,8 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
         case TypeIndex::Date32:
         case TypeIndex::Int64:
         case TypeIndex::DateTime64:
+        case TypeIndex::Time:
+        case TypeIndex::Time64:
         case TypeIndex::String:
             return true;
         default:
@@ -144,6 +147,46 @@ std::vector<uint8_t> dumpValue(T value)
     return bytes;
 }
 
+DataTypePtr getTimeTypeOrNull(DataTypePtr type)
+{
+    if (type->isNullable())
+        return getTimeTypeOrNull(assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
+
+    const WhichDataType which(type);
+    if (which.isTime() || which.isTime64())
+        return type;
+
+    return nullptr;
+}
+
+Int64 getTimeValueInMicroseconds(const Field & field, DataTypePtr type)
+{
+    if (type->isNullable())
+        return getTimeValueInMicroseconds(field, assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
+
+    const WhichDataType which(type);
+    if (which.isTime())
+    {
+        if (field.getType() == Field::Types::Int64)
+            return field.safeGet<Int64>() * 1'000'000;
+        if (field.getType() == Field::Types::UInt64)
+            return static_cast<Int64>(field.safeGet<UInt64>()) * 1'000'000;
+        return static_cast<Int64>(field.safeGet<Int32>()) * 1'000'000;
+    }
+
+    if (which.isTime64())
+    {
+        const auto scale = getDecimalScale(*type);
+        if (scale > 6)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+
+        const auto value = field.safeGet<Decimal64>().getValue().value;
+        return value * DataTypeTime64::getScaleMultiplier(6 - scale).value;
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Time or Time64, got {}", type->getName());
+}
+
 std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
 {
     switch (type->getTypeId())
@@ -154,8 +197,12 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
         case TypeIndex::Date:
         case TypeIndex::Date32:
             return dumpValue(field.safeGet<Int32>());
+        case TypeIndex::Time:
+            return dumpValue(getTimeValueInMicroseconds(field, type));
         case TypeIndex::Int64:
             return dumpValue(field.safeGet<Int64>());
+        case TypeIndex::Time64:
+            return dumpValue(getTimeValueInMicroseconds(field, type));
         case TypeIndex::DateTime64:
             return dumpValue(field.safeGet<Decimal64>().getValue().value);
         case TypeIndex::String:
@@ -230,7 +277,16 @@ static void extendSchemaForPartitions(
         Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
         field->set(Iceberg::f_field_id, 1000 + i);
         field->set(Iceberg::f_name, partition_columns[i]);
-        field->set(Iceberg::f_type, getAvroType(partition_types[i]));
+        auto logical_type = getAvroLogicalType(partition_types[i]);
+        if (!logical_type.isEmpty())
+        {
+            Poco::JSON::Object::Ptr type_field = new Poco::JSON::Object;
+            type_field->set(Iceberg::f_type, getAvroType(partition_types[i]));
+            type_field->set(Iceberg::f_logicalType, logical_type);
+            field->set(Iceberg::f_type, type_field);
+        }
+        else
+            field->set(Iceberg::f_type, getAvroType(partition_types[i]));
         partition_fields->add(field);
     }
 
@@ -390,9 +446,21 @@ void generateManifestFile(
         avro::GenericRecord & partition_record = data_file.field("partition").value<avro::GenericRecord>();
         for (size_t i = 0; i < partition_columns.size(); ++i)
         {
+<<<<<<< HEAD
             /// Build the Avro datum that holds the actual partition value (without
             /// the surrounding union). Throws on an unsupported value type.
             auto make_value_datum = [&]() -> avro::GenericDatum
+=======
+            auto partition_time_type = getTimeTypeOrNull(partition_types[i]);
+            if (!partition_values[i].isNull() && partition_time_type)
+            {
+                partition_record.field(partition_columns[i]) =
+                    avro::GenericDatum(getTimeValueInMicroseconds(partition_values[i], partition_types[i]));
+                continue;
+            }
+
+            switch (partition_values[i].getType())
+>>>>>>> b51229ea981 (Merge pull request #1761 from Altinity/bugfix/antalya-26.3/1535_time_type_write_support)
             {
                 switch (partition_values[i].getType())
                 {
@@ -418,6 +486,7 @@ void generateManifestFile(
             const bool is_nullable_partition = partition_types[i]->isNullable();
             const bool is_null_value = partition_values[i].getType() == Field::Types::Null;
 
+<<<<<<< HEAD
             if (is_nullable_partition)
             {
                 /// Nullable partition columns are encoded as Avro `["null", T]`
@@ -426,6 +495,26 @@ void generateManifestFile(
                 /// silently written as 0 because the schema was non-nullable.
                 size_t field_index = 0;
                 if (!partition_record.schema()->nameIndex(partition_columns[i], field_index))
+=======
+                case Field::Types::Float64:
+                    partition_record.field(partition_columns[i]) =
+                        avro::GenericDatum(partition_values[i].safeGet<Float64>());
+                    break;
+
+                case Field::Types::Decimal32:
+                    partition_record.field(partition_columns[i]) =
+                        avro::GenericDatum(partition_values[i].safeGet<Decimal32>().getValue());
+                    break;
+
+                case Field::Types::Decimal64:
+                    partition_record.field(partition_columns[i]) =
+                        avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
+                    break;
+                case Field::Types::Null:
+                    break;
+
+                default:
+>>>>>>> b51229ea981 (Merge pull request #1761 from Altinity/bugfix/antalya-26.3/1535_time_type_write_support)
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Partition field {} not found in manifest schema",
