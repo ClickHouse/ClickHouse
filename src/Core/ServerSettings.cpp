@@ -1797,7 +1797,8 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 
             {"allow_feature_tier",
                 {std::to_string(context->getAccessControl().getAllowTierSettings()), ChangeableWithoutRestart::Yes}},
-            {"s3queue_disable_streaming", {"0", ChangeableWithoutRestart::Yes}},
+            {"s3queue_disable_streaming",
+             {std::to_string(context->getServerSettings().get("s3queue_disable_streaming").safeGet<bool>()), ChangeableWithoutRestart::Yes}},
 
             {"max_remote_read_network_bandwidth_for_server",
              {context->getRemoteReadThrottler() ? std::to_string(context->getRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
