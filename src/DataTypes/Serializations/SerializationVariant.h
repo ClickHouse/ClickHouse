@@ -48,7 +48,7 @@ namespace ErrorCodes
 /// and use them to calculate the limit for each variant. Each variant is deserialized from
 /// corresponding stream using calculated limit. Offsets column is not deserialized and constructed
 /// according to discriminators.
-class SerializationVariant : public ISerialization
+class SerializationVariant final : public ISerialization
 {
 public:
     struct DiscriminatorsSerializationMode

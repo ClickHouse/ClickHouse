@@ -19,7 +19,7 @@ namespace DB
 
 struct ObjectMetadata;
 
-class ObjectStorageQueueSource : public ISource, WithContext
+class ObjectStorageQueueSource final : public ISource, WithContext
 {
 public:
     using Storage = StorageObjectStorage;
@@ -193,7 +193,7 @@ public:
 
     Chunk generate() override;
 
-    void onFinish() override { parser_shared_resources->finishStream(); }
+    void onFinish() override;
 
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.

@@ -19,7 +19,7 @@ extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
   * formatReadableQuantity - prints the quantity in form of 123 million.
   */
 
-class FunctionFormatReadable : public IFunction
+class FunctionFormatReadable final : public IFunction
 {
 public:
     static constexpr UInt8 DEFAULT_PRECISION = 2;
