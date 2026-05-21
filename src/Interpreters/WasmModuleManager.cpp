@@ -21,6 +21,7 @@
 #include <Common/UniqueLock.h>
 #include <Common/SharedLockGuard.h>
 
+#include <algorithm>
 #include <ranges>
 #include <expected>
 
@@ -30,6 +31,7 @@ namespace DB
 using WebAssembly::WasmModule;
 using WebAssembly::WasmTimeRuntime;
 using WebAssembly::WasmEdgeRuntime;
+using WebAssembly::FuelMode;
 
 namespace ErrorCodes
 {
@@ -39,9 +41,16 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_DATA;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int CONCURRENT_ACCESS_NOT_SUPPORTED;
+    extern const int LOGICAL_ERROR;
 }
 
 constexpr auto FILE_EXTENSION = ".wasm";
+
+static size_t fuelModeIndex(FuelMode fuel_mode)
+{
+    return fuel_mode == FuelMode::Enabled ? 0 : 1;
+}
 
 template <typename... Args>
 auto formatUnexpected(FormatStringHelper<Args...> fmt, Args && ...args)
@@ -159,42 +168,86 @@ void WasmModuleManager::saveModule(std::string_view module_name, std::string_vie
             "Hash mismatch for WebAssembly module '{}', expected {}, got {}",
             module_name, hashToHex(expected_hash), hashToHex(actual_hash));
 
+    const String module_name_key(module_name);
+
     {
         UniqueLock lock(modules_mutex);
-        auto [existing_module, inserted] = modules.insert({std::string(module_name), ModuleRef{std::weak_ptr<WasmModule>{}, actual_hash}});
-        if (!inserted)
+        auto it = modules.find(module_name);
+        if (it != modules.end())
         {
-            UInt256 existing_hash = existing_module->second.hash;
-            if (!existing_hash)
+            if (it->second.is_transient_load_reservation && !it->second.hash)
             {
-                existing_hash = calculateHash(loadModuleImpl(module_name));
-                existing_module->second.hash = existing_hash;
+                if (it->second.loads_in_progress != 0)
+                    throw Exception(
+                        ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED,
+                        "Cannot save WebAssembly module '{}' while it is being loaded",
+                        module_name);
+                modules.erase(it);
             }
-            if (!actual_hash)
-                actual_hash = calculateHash(wasm_code);
+            else
+            {
+                if (it->second.writes_in_progress != 0)
+                    throw Exception(
+                        ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED,
+                        "Cannot save WebAssembly module '{}' while it is already being saved",
+                        module_name);
 
-            if (existing_hash == actual_hash)
-            {
-                LOG_DEBUG(log, "WebAssembly module '{}' with the same hash already exists, skipping saving", module_name);
-                return;
+                UInt256 existing_hash = it->second.hash;
+                if (!existing_hash)
+                {
+                    existing_hash = calculateHash(loadModuleImpl(module_name));
+                    it->second.hash = existing_hash;
+                }
+
+                if (existing_hash == actual_hash)
+                {
+                    LOG_DEBUG(log, "WebAssembly module '{}' with the same hash already exists, skipping saving", module_name);
+                    return;
+                }
+                throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "WebAssembly module '{}' already exists", module_name);
             }
-            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "WebAssembly module '{}' already exists", module_name);
         }
+
+        auto [reserved_it, inserted] = modules.emplace(module_name_key, ModuleRef{});
+        if (!inserted)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected WebAssembly module '{}' reservation collision", module_name);
+        reserved_it->second.writes_in_progress = 1;
     }
 
-    bool is_written = false;
+    bool is_published = false;
     SCOPE_EXIT_SAFE({
-        if (is_written)
+        if (is_published)
             return;
         UniqueLock lock(modules_mutex);
-        if (auto it = modules.find(module_name); it != modules.end())
-            modules.erase(it);
+        if (auto it = modules.find(module_name_key); it != modules.end())
+        {
+            if (it->second.writes_in_progress > 0)
+                --it->second.writes_in_progress;
+            if (!it->second.hash
+                && it->second.writes_in_progress == 0
+                && it->second.loads_in_progress == 0
+                && std::ranges::all_of(it->second.ptrs, [](const auto & ptr) { return ptr.expired(); }))
+            {
+                modules.erase(it);
+            }
+        }
     });
 
     auto out_buf = user_scripts_disk->writeFile(getFilePath(module_name), DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
     out_buf->write(wasm_code.data(), wasm_code.size());
     out_buf->finalize();
-    is_written = true;
+
+    {
+        UniqueLock lock(modules_mutex);
+        auto it = modules.find(module_name_key);
+        if (it == modules.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "WebAssembly module '{}' save reservation was removed before publish", module_name);
+        if (it->second.writes_in_progress == 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "WebAssembly module '{}' save reservation has no active writer", module_name);
+        --it->second.writes_in_progress;
+        it->second.hash = actual_hash;
+    }
+    is_published = true;
 }
 
 
@@ -223,34 +276,171 @@ std::string WasmModuleManager::loadModuleImpl(std::string_view module_name)
     return wasm_code;
 }
 
-std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std::string_view module_name)
+std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std::string_view module_name, FuelMode fuel_mode)
 {
+    const String module_name_key(module_name);
+    const size_t requested_idx = fuelModeIndex(fuel_mode);
+    const size_t other_idx = requested_idx == 0 ? 1 : 0;
+
     {
         SharedLockGuard lock(modules_mutex);
 
         auto it = modules.find(module_name);
-        if (it == modules.end())
+        if (it != modules.end())
         {
-            auto module_path = getFilePath(module_name);
-            if (!user_scripts_disk->existsFile(module_path))
-                throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "WebAssembly module '{}' not found", module_name);
-            if (auto res = validateModuleFile(user_scripts_disk, module_path); !res)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot load WebAssembly module '{}': {}", module_name, res.error().text);
-            /// If file exists on disk but is not registered yet, we proceed to load it below
-        } else if (auto module = it->second.ptr.lock())
-            return {module, it->second.hash};
+            if (auto module = it->second.ptrs[requested_idx].lock())
+                return {module, it->second.hash};
+        }
     }
 
-    UniqueLock write_lock(modules_mutex);
+    if (!engine->requiresFuelSpecialization())
+    {
+        std::shared_ptr<WasmModule> other_module;
+        {
+            SharedLockGuard lock(modules_mutex);
+            auto it = modules.find(module_name);
+            if (it != modules.end())
+            {
+                if (auto module = it->second.ptrs[requested_idx].lock())
+                    return {module, it->second.hash};
+                other_module = it->second.ptrs[other_idx].lock();
+            }
+        }
+
+        if (other_module)
+        {
+            UniqueLock lock(modules_mutex);
+            auto it = modules.find(module_name);
+            if (it != modules.end())
+            {
+                if (auto module = it->second.ptrs[requested_idx].lock())
+                    return {module, it->second.hash};
+                it->second.ptrs[requested_idx] = other_module;
+                return {other_module, it->second.hash};
+            }
+        }
+    }
+
+    {
+        UniqueLock lock(modules_mutex);
+        auto it = modules.find(module_name);
+        if (it == modules.end())
+        {
+            auto [inserted_it, _] = modules.emplace(module_name_key, ModuleRef{});
+            it = inserted_it;
+            it->second.is_transient_load_reservation = true;
+        }
+        else
+        {
+            if (it->second.writes_in_progress != 0)
+                throw Exception(
+                    ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED,
+                    "Cannot load WebAssembly module '{}' while it is being saved",
+                    module_name);
+
+            if (auto module = it->second.ptrs[requested_idx].lock())
+                return {module, it->second.hash};
+
+            if (!engine->requiresFuelSpecialization())
+            {
+                if (auto module = it->second.ptrs[other_idx].lock())
+                {
+                    it->second.ptrs[requested_idx] = module;
+                    return {module, it->second.hash};
+                }
+            }
+        }
+
+        ++it->second.loads_in_progress;
+    }
+
+    SCOPE_EXIT_SAFE({
+        UniqueLock lock(modules_mutex);
+        auto it = modules.find(module_name_key);
+        if (it == modules.end())
+            return;
+
+        if (it->second.loads_in_progress > 0)
+            --it->second.loads_in_progress;
+
+        if (it->second.is_transient_load_reservation
+            && it->second.loads_in_progress == 0
+            && it->second.writes_in_progress == 0
+            && !it->second.hash
+            && std::ranges::all_of(it->second.ptrs, [](const auto & ptr) { return ptr.expired(); }))
+        {
+            modules.erase(it);
+        }
+    });
+
+    auto module_path = getFilePath(module_name);
+    if (!user_scripts_disk->existsFile(module_path))
+        throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "WebAssembly module '{}' not found", module_name);
+    if (auto res = validateModuleFile(user_scripts_disk, module_path); !res)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot load WebAssembly module '{}': {}", module_name, res.error().text);
 
     auto wasm_code = loadModuleImpl(module_name);
-    std::shared_ptr<WasmModule> module = engine->compileModule(module_name, wasm_code);
-    UInt256 module_hash = calculateHash(wasm_code);
+    UInt256 local_hash = calculateHash(wasm_code);
+    std::shared_ptr<WasmModule> local_module = engine->compileModule(module_name, wasm_code, fuel_mode);
+    linkHostFunctions(*local_module);
 
-    modules[std::string(module_name)] = {module, module_hash};
-    linkHostFunctions(*module);
+    UniqueLock lock(modules_mutex);
 
-    return {module, module_hash};
+    auto publish_module = [&](ModuleRef & module_ref)
+    {
+        module_ref.ptrs[requested_idx] = local_module;
+        if (!engine->requiresFuelSpecialization())
+            module_ref.ptrs[other_idx] = local_module;
+    };
+
+    auto it = modules.find(module_name);
+    if (it == modules.end())
+    {
+        auto [inserted_it, _] = modules.emplace(module_name_key, ModuleRef{{}, local_hash});
+        publish_module(inserted_it->second);
+        return {local_module, inserted_it->second.hash};
+    }
+
+    auto & module_ref = it->second;
+    if (!module_ref.hash)
+    {
+        module_ref.hash = local_hash;
+        module_ref.is_transient_load_reservation = false;
+        if (auto module = module_ref.ptrs[requested_idx].lock())
+            return {module, module_ref.hash};
+        if (!engine->requiresFuelSpecialization())
+        {
+            if (auto module = module_ref.ptrs[other_idx].lock())
+            {
+                module_ref.ptrs[requested_idx] = module;
+                return {module, module_ref.hash};
+            }
+        }
+        publish_module(module_ref);
+        return {local_module, module_ref.hash};
+    }
+
+    if (local_hash != module_ref.hash)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Hash mismatch for WebAssembly module '{}', expected {}, got {}",
+            module_name,
+            hashToHex(module_ref.hash),
+            hashToHex(local_hash));
+
+    if (auto module = module_ref.ptrs[requested_idx].lock())
+        return {module, module_ref.hash};
+    if (!engine->requiresFuelSpecialization())
+    {
+        if (auto module = module_ref.ptrs[other_idx].lock())
+        {
+            module_ref.ptrs[requested_idx] = module;
+            return {module, module_ref.hash};
+        }
+    }
+
+    publish_module(module_ref);
+    return {local_module, module_ref.hash};
 }
 
 void WasmModuleManager::deleteModuleIfExists(std::function<bool(std::string_view)> name_match)
@@ -265,7 +455,9 @@ void WasmModuleManager::deleteModuleIfExists(std::function<bool(std::string_view
             continue;
         }
 
-        if (!it->second.ptr.expired())
+        if (it->second.loads_in_progress != 0
+            || it->second.writes_in_progress != 0
+            || std::ranges::any_of(it->second.ptrs, [](const auto & ptr) { return !ptr.expired(); }))
             throw Exception(
                 ErrorCodes::CANNOT_DROP_FUNCTION,
                 "Cannot delete WebAssembly module '{}' while it is in use. "
@@ -284,7 +476,9 @@ void WasmModuleManager::deleteModuleIfExists(std::string_view module_name)
     if (it == modules.end())
         return;
 
-    if (!it->second.ptr.expired())
+    if (it->second.loads_in_progress != 0
+        || it->second.writes_in_progress != 0
+        || std::ranges::any_of(it->second.ptrs, [](const auto & ptr) { return !ptr.expired(); }))
         throw Exception(
             ErrorCodes::CANNOT_DROP_FUNCTION,
             "Cannot delete WebAssembly module '{}' while it is in use. "
@@ -335,7 +529,11 @@ std::vector<std::pair<std::string, UInt256>> WasmModuleManager::getModulesList()
     std::vector<std::pair<std::string, UInt256>> result;
     result.reserve(modules.size());
     for (const auto & [name, module] : modules)
+    {
+        if (!module.hash && (module.is_transient_load_reservation || module.writes_in_progress != 0))
+            continue;
         result.push_back({name, module.hash});
+    }
     return result;
 }
 
