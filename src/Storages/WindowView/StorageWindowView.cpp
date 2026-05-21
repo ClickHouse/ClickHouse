@@ -327,7 +327,7 @@ namespace
         }
     }
 
-    class AddingAggregatedChunkInfoTransform : public ISimpleTransform
+    class AddingAggregatedChunkInfoTransform final : public ISimpleTransform
     {
     public:
         explicit AddingAggregatedChunkInfoTransform(SharedHeader header) : ISimpleTransform(header, header, false) { }
