@@ -173,7 +173,7 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
 
         if (input.empty())
         {
-            if (!line.empty() && !multiline && !hasInputData())
+            if (!line.empty() && !multiline)
                 break;
             continue;
         }
@@ -198,7 +198,16 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
             }
         }
 
-        need_next_line = has_extender || (multiline && !has_delimiter) || hasInputData();
+        /// Note: `hasInputData()` (a `select()` on stdin) used to trigger
+        /// extra accumulation here for pasted multi-line queries. With
+        /// rustyline's bracketed-paste mode enabled, the whole paste is
+        /// already delivered as a single readline return — and worse,
+        /// rustyline's cursor-position-query response sometimes lingers
+        /// in stdin across calls, which made the poll mistakenly stitch
+        /// the next user-typed query onto the previous one (and corrupt
+        /// the saved history entry). Trust extenders / multiline mode
+        /// instead.
+        need_next_line = has_extender || (multiline && !has_delimiter);
 
         if (has_extender)
         {

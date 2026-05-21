@@ -6,7 +6,6 @@
 //! history, and key-binding plumbing.
 
 mod fuzzy;
-mod history_migrate;
 
 use cxx::CxxString;
 use std::borrow::Cow;
@@ -110,6 +109,15 @@ thread_local! {
     /// call. The skim handler reads from here because rustyline's
     /// `EventContext` doesn't expose a `&History`.
     static HISTORY_SNAPSHOT: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+/// `### YYYY-MM-DD HH:MM:SS.SSS` — the entry-separator lines replxx
+/// writes between history items. rustyline doesn't recognize them, so
+/// they end up as bogus history entries; we filter them on read.
+fn is_replxx_marker(s: &str) -> bool {
+    s.len() == 27
+        && s.starts_with("### ")
+        && s.as_bytes()[4].is_ascii_digit()
 }
 
 /// The shared helper held inside the rustyline Editor. Owns the configured
@@ -280,7 +288,12 @@ impl ConditionalEventHandler for SkimHistoryHandler {
         let selection = HISTORY_SNAPSHOT.with(|h| fuzzy::run(&prefix, &h.borrow()));
         match selection {
             Ok(s) if !s.is_empty() => Some(Cmd::Replace(Movement::WholeBuffer, Some(s))),
-            _ => None,
+            // Returning None here would let rustyline fall back to the
+            // default Ctrl-R binding (reverse-i-search), which is
+            // jarring — we just opened skim, presumably the user picked
+            // nothing on purpose. Swallow the event with a repaint
+            // instead.
+            _ => Some(Cmd::Repaint),
         }
     }
 }
@@ -471,12 +484,6 @@ impl Editor {
 
     fn load_history(&mut self, path: &CxxString) -> Result<(), String> {
         let p = path.to_str().map_err(|e| format!("utf-8: {e}"))?;
-        // One-shot migration: if the file is in the old replxx
-        // `### YYYY-…` marker format, rewrite it as rustyline V2 first so
-        // the marker lines don't surface as bogus history entries (and
-        // pollute Ctrl-R skim results).
-        history_migrate::migrate(p)
-            .map_err(|e| format!("history migrate: {e}"))?;
         self.inner
             .load_history(p)
             .map_err(|e| format!("load history: {e}"))
@@ -495,7 +502,19 @@ impl Editor {
         let mut out = Vec::with_capacity(n);
         for i in 0..n {
             if let Ok(Some(sr)) = hist.get(i, SearchDirection::Forward) {
-                out.push(sr.entry.into_owned());
+                let entry = sr.entry.into_owned();
+                // Drop replxx-format timestamp marker lines. rustyline's
+                // `FileHistory` loads any line that isn't escaped V2 as
+                // its own entry, so a pre-existing history file written
+                // by replxx (`### YYYY-MM-DD HH:MM:SS.SSS`) ends up
+                // littered with these markers — they shouldn't surface
+                // in skim or up/down navigation. We DON'T rewrite the
+                // file: replxx-format entries continue to round-trip
+                // through rustyline's load/save unchanged.
+                if is_replxx_marker(&entry) {
+                    continue;
+                }
+                out.push(entry);
             }
         }
         out
