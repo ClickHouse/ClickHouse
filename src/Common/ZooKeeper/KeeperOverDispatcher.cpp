@@ -271,6 +271,53 @@ void KeeperOverDispatcher::sync(
     });
 }
 
+void KeeperOverDispatcher::addWatch(
+    const String & path,
+    AddWatchRequest::AddWatchMode mode,
+    AddWatchCallback callback,
+    WatchCallbackPtrOrEventPtr watch)
+{
+    const auto request = std::make_shared<ZooKeeperAddWatchRequest>();
+    request->path = path;
+    request->mode = mode;
+    request->watch_callback = watch;
+
+    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
+    {
+        callback(dynamic_cast<const AddWatchResponse &>(*response));
+    });
+}
+
+void KeeperOverDispatcher::removeWatches(
+    const String & path,
+    RemoveWatchRequest::WatchType type,
+    RemoveWatchCallback callback)
+{
+    const auto request = std::make_shared<ZooKeeperRemoveWatchRequest>();
+    request->path = path;
+    request->type = type;
+
+    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
+    {
+        callback(dynamic_cast<const RemoveWatchResponse &>(*response));
+    });
+}
+
+void KeeperOverDispatcher::checkWatches(
+    const String & path,
+    CheckWatchRequest::CheckWatchType type,
+    CheckWatchCallback callback)
+{
+    const auto request = std::make_shared<ZooKeeperCheckWatchRequest>();
+    request->path = path;
+    request->type = type;
+
+    pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
+    {
+        callback(dynamic_cast<const CheckWatchResponse &>(*response));
+    });
+}
+
 void KeeperOverDispatcher::reconfig(
     std::string_view joining,
     std::string_view leaving,

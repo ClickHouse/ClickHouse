@@ -95,6 +95,22 @@ public:
         const String & path,
         SyncCallback callback) override;
 
+    void addWatch(
+        const String & path,
+        AddWatchRequest::AddWatchMode mode,
+        AddWatchCallback callback,
+        WatchCallbackPtrOrEventPtr watch) override;
+
+    void removeWatches(
+        const String & path,
+        RemoveWatchRequest::WatchType type,
+        RemoveWatchCallback callback) override;
+
+    void checkWatches(
+        const String & path,
+        CheckWatchRequest::CheckWatchType type,
+        CheckWatchCallback callback) override;
+
     void reconfig(
         std::string_view joining,
         std::string_view leaving,

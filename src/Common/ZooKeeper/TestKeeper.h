@@ -59,6 +59,23 @@ public:
             int32_t version,
             RemoveCallback callback) override;
 
+    void addWatch(
+        const String & path,
+        AddWatchRequest::AddWatchMode mode,
+        AddWatchCallback callback,
+        WatchCallbackPtrOrEventPtr watch) override;
+
+    void removeWatches(
+        const String & path,
+        RemoveWatchRequest::WatchType type,
+        RemoveWatchCallback callback) override;
+
+    void checkWatches(
+        const String & path,
+        CheckWatchRequest::CheckWatchType type,
+        CheckWatchCallback callback) override;
+
+
     void removeRecursive(
         const String & path,
         uint32_t remove_nodes_limit,
@@ -156,6 +173,8 @@ private:
 
     Watches watches;
     Watches list_watches; /// Watches for 'list' request (watches on children).
+    Watches persistent_watches;
+    Watches persistent_recursive_watches;
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
     RequestsQueue requests_queue{1};

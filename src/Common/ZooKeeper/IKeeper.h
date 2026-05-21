@@ -694,6 +694,9 @@ using ReconfigCallback = std::function<void(const ReconfigResponse &)>;
 using MultiCallback = std::function<void(const MultiResponse &)>;
 using GetACLCallback = std::function<void(const GetACLResponse &)>;
 using ListRecursiveCallback = std::function<void(const ListRecursiveResponse &)>;
+using AddWatchCallback = std::function<void(const AddWatchResponse &)>;
+using RemoveWatchCallback = std::function<void(const RemoveWatchResponse &)>;
+using CheckWatchCallback = std::function<void(const CheckWatchResponse &)>;
 
 /// For watches.
 enum State
@@ -842,6 +845,22 @@ public:
     virtual void sync(
         const String & path,
         SyncCallback callback) = 0;
+
+    virtual void addWatch(
+        const String & path,
+        AddWatchRequest::AddWatchMode mode,
+        AddWatchCallback callback,
+        WatchCallbackPtrOrEventPtr watch) = 0;
+
+    virtual void removeWatches(
+        const String & path,
+        RemoveWatchRequest::WatchType type,
+        RemoveWatchCallback callback) = 0;
+
+    virtual void checkWatches(
+        const String & path,
+        CheckWatchRequest::CheckWatchType type,
+        CheckWatchCallback callback) = 0;
 
     virtual void reconfig(
         std::string_view joining,

@@ -33,47 +33,86 @@ struct TestKeeperRequest : virtual Request
 {
     virtual ResponsePtr createResponse() const = 0;
     virtual std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const = 0;
-    virtual void processWatches(TestKeeper::Watches & /*watches*/, TestKeeper::Watches & /*list_watches*/) const {}
+    virtual void processWatches(
+        TestKeeper::Watches & /*watches*/,
+        TestKeeper::Watches & /*list_watches*/,
+        TestKeeper::Watches & /*persistent_watches*/,
+        TestKeeper::Watches & /*persistent_recursive_watches*/) const {}
 
-    static void processWatchesImpl(const String & path, TestKeeper::Watches & watches, TestKeeper::Watches & list_watches);
+    static void processWatchesImpl(
+        const String & path,
+        TestKeeper::Watches & watches,
+        TestKeeper::Watches & list_watches,
+        TestKeeper::Watches & persistent_watches,
+        TestKeeper::Watches & persistent_recursive_watches);
 };
 
 
-void TestKeeperRequest::processWatchesImpl(const String & path, TestKeeper::Watches & watches, TestKeeper::Watches & list_watches)
+void TestKeeperRequest::processWatchesImpl(
+    const String & path,
+    TestKeeper::Watches & watches,
+    TestKeeper::Watches & list_watches,
+    TestKeeper::Watches & persistent_watches,
+    TestKeeper::Watches & persistent_recursive_watches)
 {
+    auto fire_and_erase = [](const String & match_path, TestKeeper::Watches & container)
     {
-        WatchResponse watch_response;
-        watch_response.path = path;
+        WatchResponse response;
+        response.path = match_path;
 
-        auto it = watches.find(watch_response.path);
-        if (it != watches.end())
+        auto it = container.find(match_path);
+        if (it == container.end())
+            return;
+
+        for (const auto & event_or_callback : it->second)
         {
-            for (const auto & event_or_callback : it->second)
+            if (event_or_callback)
+                event_or_callback(response);
+        }
+        container.erase(it);
+    };
+
+    auto fire_persistent = [](const String & match_path, TestKeeper::Watches & container)
+    {
+        WatchResponse response;
+        response.path = match_path;
+
+        auto it = container.find(match_path);
+        if (it == container.end())
+            return;
+
+        for (const auto & event_or_callback : it->second)
+        {
+            if (event_or_callback)
+                event_or_callback(response);
+        }
+        /// Persistent watches stay registered after firing.
+    };
+
+    auto fire_persistent_recursive = [](const String & event_path, TestKeeper::Watches & container)
+    {
+        for (auto & [prefix, callbacks] : container)
+        {
+            if (event_path != prefix
+                && !(event_path.size() > prefix.size()
+                     && event_path.starts_with(prefix)
+                     && (prefix == "/" || event_path[prefix.size()] == '/')))
+                continue;
+
+            WatchResponse response;
+            response.path = event_path;
+            for (const auto & event_or_callback : callbacks)
             {
                 if (event_or_callback)
-                    event_or_callback(watch_response);
+                    event_or_callback(response);
             }
-
-            watches.erase(it);
         }
-    }
+    };
 
-    {
-        WatchResponse watch_list_response;
-        watch_list_response.path = parentPath(path);
-
-        auto it = list_watches.find(watch_list_response.path);
-        if (it != list_watches.end())
-        {
-            for (const auto & event_or_callback : it->second)
-            {
-                if (event_or_callback)
-                    event_or_callback(watch_list_response);
-            }
-
-            list_watches.erase(it);
-        }
-    }
+    fire_and_erase(path, watches);
+    fire_and_erase(parentPath(path), list_watches);
+    fire_persistent(path, persistent_watches);
+    fire_persistent_recursive(path, persistent_recursive_watches);
 }
 
 
@@ -84,9 +123,13 @@ struct TestKeeperCreateRequest final : CreateRequest, TestKeeperRequest
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
-    void processWatches(TestKeeper::Watches & node_watches, TestKeeper::Watches & list_watches) const override
+    void processWatches(
+        TestKeeper::Watches & node_watches,
+        TestKeeper::Watches & list_watches,
+        TestKeeper::Watches & persistent_watches,
+        TestKeeper::Watches & persistent_recursive_watches) const override
     {
-        processWatchesImpl(getPath(), node_watches, list_watches);
+        processWatchesImpl(getPath(), node_watches, list_watches, persistent_watches, persistent_recursive_watches);
     }
 };
 
@@ -97,9 +140,13 @@ struct TestKeeperRemoveRequest final : RemoveRequest, TestKeeperRequest
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
-    void processWatches(TestKeeper::Watches & node_watches, TestKeeper::Watches & list_watches) const override
+    void processWatches(
+        TestKeeper::Watches & node_watches,
+        TestKeeper::Watches & list_watches,
+        TestKeeper::Watches & persistent_watches,
+        TestKeeper::Watches & persistent_recursive_watches) const override
     {
-        processWatchesImpl(getPath(), node_watches, list_watches);
+        processWatchesImpl(getPath(), node_watches, list_watches, persistent_watches, persistent_recursive_watches);
     }
 };
 
@@ -110,7 +157,11 @@ struct TestKeeperRemoveRecursiveRequest final : RemoveRecursiveRequest, TestKeep
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
-    void processWatches(TestKeeper::Watches & node_watches, TestKeeper::Watches & list_watches) const override
+    void processWatches(
+        TestKeeper::Watches & node_watches,
+        TestKeeper::Watches & list_watches,
+        TestKeeper::Watches & persistent_watches,
+        TestKeeper::Watches & persistent_recursive_watches) const override
     {
         std::vector<std::pair<String, size_t>> deleted;
 
@@ -129,7 +180,7 @@ struct TestKeeperRemoveRecursiveRequest final : RemoveRecursiveRequest, TestKeep
         });
 
         for (const auto & [watch_path, _] : deleted)
-            processWatchesImpl(watch_path, node_watches, list_watches);
+            processWatchesImpl(watch_path, node_watches, list_watches, persistent_watches, persistent_recursive_watches);
     }
 };
 
@@ -164,9 +215,13 @@ struct TestKeeperSetRequest final : SetRequest, TestKeeperRequest
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
-    void processWatches(TestKeeper::Watches & node_watches, TestKeeper::Watches & list_watches) const override
+    void processWatches(
+        TestKeeper::Watches & node_watches,
+        TestKeeper::Watches & list_watches,
+        TestKeeper::Watches & persistent_watches,
+        TestKeeper::Watches & persistent_recursive_watches) const override
     {
-        processWatchesImpl(getPath(), node_watches, list_watches);
+        processWatchesImpl(getPath(), node_watches, list_watches, persistent_watches, persistent_recursive_watches);
     }
 };
 
@@ -225,6 +280,30 @@ struct TestKeeperGetACLRequest final : GetACLRequest, TestKeeperRequest
 {
     TestKeeperGetACLRequest() = default;
     explicit TestKeeperGetACLRequest(const GetACLRequest & base) : GetACLRequest(base) {}
+    ResponsePtr createResponse() const override;
+    std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+};
+
+struct TestKeeperAddWatchRequest final : AddWatchRequest, TestKeeperRequest
+{
+    TestKeeperAddWatchRequest() = default;
+    explicit TestKeeperAddWatchRequest(const AddWatchRequest & base) : AddWatchRequest(base) {}
+    ResponsePtr createResponse() const override;
+    std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+};
+
+struct TestKeeperRemoveWatchRequest final : RemoveWatchRequest, TestKeeperRequest
+{
+    TestKeeperRemoveWatchRequest() = default;
+    explicit TestKeeperRemoveWatchRequest(const RemoveWatchRequest & base) : RemoveWatchRequest(base) {}
+    ResponsePtr createResponse() const override;
+    std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
+};
+
+struct TestKeeperCheckWatchRequest final : CheckWatchRequest, TestKeeperRequest
+{
+    TestKeeperCheckWatchRequest() = default;
+    explicit TestKeeperCheckWatchRequest(const CheckWatchRequest & base) : CheckWatchRequest(base) {}
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 };
@@ -305,10 +384,15 @@ struct TestKeeperMultiRequest final : MultiRequest<RequestPtr>, TestKeeperReques
         }
     }
 
-    void processWatches(TestKeeper::Watches & node_watches, TestKeeper::Watches & list_watches) const override
+    void processWatches(
+        TestKeeper::Watches & node_watches,
+        TestKeeper::Watches & list_watches,
+        TestKeeper::Watches & persistent_watches,
+        TestKeeper::Watches & persistent_recursive_watches) const override
     {
         for (const auto & generic_request : requests)
-            dynamic_cast<const TestKeeperRequest &>(*generic_request).processWatches(node_watches, list_watches);
+            dynamic_cast<const TestKeeperRequest &>(*generic_request).processWatches(
+                node_watches, list_watches, persistent_watches, persistent_recursive_watches);
     }
 
     ResponsePtr createResponse() const override;
@@ -731,6 +815,30 @@ std::pair<ResponsePtr, Undo> TestKeeperGetACLRequest::process(TestKeeper::Contai
     return { std::make_shared<GetACLResponse>(std::move(response)), {} };
 }
 
+std::pair<ResponsePtr, Undo> TestKeeperAddWatchRequest::process(TestKeeper::Container & container, int64_t zxid) const
+{
+    AddWatchResponse response;
+    response.zxid = zxid;
+    response.error = container.contains(path) ? Error::ZOK : Error::ZNONODE;
+    return { std::make_shared<AddWatchResponse>(std::move(response)), {} };
+}
+
+std::pair<ResponsePtr, Undo> TestKeeperRemoveWatchRequest::process(TestKeeper::Container & /*container*/, int64_t zxid) const
+{
+    RemoveWatchResponse response;
+    response.zxid = zxid;
+    response.error = Error::ZOK;
+    return { std::make_shared<RemoveWatchResponse>(std::move(response)), {} };
+}
+
+std::pair<ResponsePtr, Undo> TestKeeperCheckWatchRequest::process(TestKeeper::Container & /*container*/, int64_t zxid) const
+{
+    CheckWatchResponse response;
+    response.zxid = zxid;
+    response.error = Error::ZOK;
+    return { std::make_shared<CheckWatchResponse>(std::move(response)), {} };
+}
+
 std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Container & container, int64_t zxid) const
 {
     if (is_multi_read.has_value() && is_multi_read.value())
@@ -826,6 +934,9 @@ ResponsePtr TestKeeperReconfigRequest::createResponse() const { return std::make
 ResponsePtr TestKeeperGetACLRequest::createResponse() const { return std::make_shared<GetACLResponse>(); }
 ResponsePtr TestKeeperMultiRequest::createResponse() const { return std::make_shared<MultiResponse>(); }
 ResponsePtr TestKeeperListRecursiveRequest::createResponse() const { return std::make_shared<ListRecursiveResponse>(); }
+ResponsePtr TestKeeperAddWatchRequest::createResponse() const { return std::make_shared<AddWatchResponse>(); }
+ResponsePtr TestKeeperRemoveWatchRequest::createResponse() const { return std::make_shared<RemoveWatchResponse>(); }
+ResponsePtr TestKeeperCheckWatchRequest::createResponse() const { return std::make_shared<CheckWatchResponse>(); }
 
 
 TestKeeper::TestKeeper(const zkutil::ZooKeeperArgs & args_)
@@ -895,7 +1006,15 @@ void TestKeeper::processingThread()
                 {
                     /// To be compatible with real ZooKeeper we add watch if request was successful (i.e. node exists)
                     /// or if it was exists request which allows to add watches for non existing nodes.
-                    if (response->error == Error::ZOK)
+                    if (const auto * add_watch_request = dynamic_cast<const AddWatchRequest *>(info.request.get());
+                        add_watch_request && response->error == Error::ZOK)
+                    {
+                        auto & target = add_watch_request->mode == AddWatchRequest::AddWatchMode::PERSISTENT_RECURSIVE
+                            ? persistent_recursive_watches
+                            : persistent_watches;
+                        target[info.request->getPath()].insert(info.watch);
+                    }
+                    else if (response->error == Error::ZOK)
                     {
                         auto & watches_type = dynamic_cast<const ListRequest *>(info.request.get())
                             ? list_watches
@@ -909,8 +1028,73 @@ void TestKeeper::processingThread()
                     }
                 }
 
+                if (const auto * remove_watch_request = dynamic_cast<const RemoveWatchRequest *>(info.request.get()))
+                {
+                    const auto & rm_path = info.request->getPath();
+                    auto erase_from = [&](TestKeeper::Watches & target)
+                    {
+                        auto it = target.find(rm_path);
+                        if (it == target.end())
+                            return false;
+                        target.erase(it);
+                        return true;
+                    };
+                    bool removed = false;
+                    switch (remove_watch_request->type)
+                    {
+                        case RemoveWatchRequest::WatchType::DATA:
+                            removed = erase_from(watches);
+                            break;
+                        case RemoveWatchRequest::WatchType::CHILDREN:
+                            removed = erase_from(list_watches);
+                            break;
+                        case RemoveWatchRequest::WatchType::PERSISTENT:
+                            removed = erase_from(persistent_watches);
+                            break;
+                        case RemoveWatchRequest::WatchType::PERSISTENTRECURSIVE:
+                            removed = erase_from(persistent_recursive_watches);
+                            break;
+                        case RemoveWatchRequest::WatchType::ANY:
+                            removed |= erase_from(watches);
+                            removed |= erase_from(list_watches);
+                            removed |= erase_from(persistent_watches);
+                            removed |= erase_from(persistent_recursive_watches);
+                            break;
+                    }
+                    if (!removed)
+                        response->error = Error::ZNOWATCHER;
+                }
+
+                if (const auto * check_watch_request = dynamic_cast<const CheckWatchRequest *>(info.request.get()))
+                {
+                    const auto & ck_path = info.request->getPath();
+                    auto present_in = [&](const TestKeeper::Watches & target) { return target.contains(ck_path); };
+                    bool found = false;
+                    switch (check_watch_request->type)
+                    {
+                        case CheckWatchRequest::CheckWatchType::DATA:
+                            found = present_in(watches);
+                            break;
+                        case CheckWatchRequest::CheckWatchType::CHILDREN:
+                            found = present_in(list_watches);
+                            break;
+                        case CheckWatchRequest::CheckWatchType::PERSISTENT:
+                            found = present_in(persistent_watches);
+                            break;
+                        case CheckWatchRequest::CheckWatchType::PERSISTENT_RECURSIVE:
+                            found = present_in(persistent_recursive_watches);
+                            break;
+                        case CheckWatchRequest::CheckWatchType::ANY:
+                            found = present_in(watches) || present_in(list_watches)
+                                || present_in(persistent_watches) || present_in(persistent_recursive_watches);
+                            break;
+                    }
+                    if (!found)
+                        response->error = Error::ZNOWATCHER;
+                }
+
                 if (response->error == Error::ZOK)
-                    info.request->processWatches(watches, list_watches);
+                    info.request->processWatches(watches, list_watches, persistent_watches, persistent_recursive_watches);
 
                 response->removeRootPath(args.chroot);
                 if (info.callback)
@@ -975,30 +1159,37 @@ void TestKeeper::finalize(const String &)
     try
     {
         {
-            for (auto & path_watch : watches)
+            auto fire_session_expired = [&](Watches & target)
             {
-                WatchResponse response;
-                response.type = SESSION;
-                response.state = EXPIRED_SESSION;
-                response.error = Error::ZSESSIONEXPIRED;
-
-                for (const auto & event_or_callback : path_watch.second)
+                for (auto & path_watch : target)
                 {
-                    if (event_or_callback)
+                    WatchResponse response;
+                    response.type = SESSION;
+                    response.state = EXPIRED_SESSION;
+                    response.error = Error::ZSESSIONEXPIRED;
+
+                    for (const auto & event_or_callback : path_watch.second)
                     {
-                        try
+                        if (event_or_callback)
                         {
-                            event_or_callback(response);
-                        }
-                        catch (...)
-                        {
-                            tryLogCurrentException(__PRETTY_FUNCTION__);
+                            try
+                            {
+                                event_or_callback(response);
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(__PRETTY_FUNCTION__);
+                            }
                         }
                     }
                 }
-            }
+                target.clear();
+            };
 
-            watches.clear();
+            fire_session_expired(watches);
+            fire_session_expired(list_watches);
+            fire_session_expired(persistent_watches);
+            fire_session_expired(persistent_recursive_watches);
         }
 
         RequestInfo info;
@@ -1072,6 +1263,57 @@ void TestKeeper::remove(
     request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const RemoveResponse &>(response)); };
     pushRequest(std::move(request_info));
 }
+
+void TestKeeper::addWatch(
+    const String & path,
+    AddWatchRequest::AddWatchMode mode,
+    AddWatchCallback callback,
+    WatchCallbackPtrOrEventPtr watch)
+{
+    if (!watch)
+        throw Exception::fromMessage(Error::ZBADARGUMENTS, "addWatch requires a non-empty watch callback");
+
+    auto request = std::make_shared<TestKeeperAddWatchRequest>();
+    request->path = path;
+    request->mode = mode;
+
+    RequestInfo request_info;
+    request_info.request = std::move(request);
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const AddWatchResponse &>(response)); };
+    request_info.watch = std::move(watch);
+    pushRequest(std::move(request_info));
+}
+
+void TestKeeper::removeWatches(
+    const String & path,
+    RemoveWatchRequest::WatchType type,
+    RemoveWatchCallback callback)
+{
+    auto request = std::make_shared<TestKeeperRemoveWatchRequest>();
+    request->path = path;
+    request->type = type;
+
+    RequestInfo request_info;
+    request_info.request = std::move(request);
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const RemoveWatchResponse &>(response)); };
+    pushRequest(std::move(request_info));
+}
+
+void TestKeeper::checkWatches(
+    const String & path,
+    CheckWatchRequest::CheckWatchType type,
+    CheckWatchCallback callback)
+{
+    auto request = std::make_shared<TestKeeperCheckWatchRequest>();
+    request->path = path;
+    request->type = type;
+
+    RequestInfo request_info;
+    request_info.request = std::move(request);
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const CheckWatchResponse &>(response)); };
+    pushRequest(std::move(request_info));
+}
+
 
 void TestKeeper::removeRecursive(
     const String & path,

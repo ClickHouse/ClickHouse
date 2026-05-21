@@ -75,6 +75,9 @@ namespace ProfileEvents
     extern const Event ZooKeeperBytesSent;
     extern const Event ZooKeeperBytesReceived;
     extern const Event ZooKeeperWatchResponse;
+    extern const Event ZooKeeperAddWatch;
+    extern const Event ZooKeeperCheckWatch;
+    extern const Event ZooKeeperRemoveWatch;
 }
 
 namespace CurrentMetrics
@@ -1075,6 +1078,37 @@ void ZooKeeper::receiveEvent()
                 watches_container.erase(it);
             };
 
+            auto trigger_persistent_watches = [&watch_response](auto & watches_container)
+            {
+                auto it = watches_container.find(watch_response.path);
+                if (it == watches_container.end())
+                    return;
+
+                for (const auto & [event_or_callback, _] : it->second)
+                {
+                    if (event_or_callback)
+                        event_or_callback(watch_response);
+                }
+            };
+
+            auto trigger_persistent_recursive_watches = [&watch_response](auto & watches_container)
+            {
+                for (auto & [prefix, callbacks] : watches_container)
+                {
+                    if (watch_response.path != prefix
+                        && !(watch_response.path.size() > prefix.size()
+                             && watch_response.path.starts_with(prefix)
+                             && (prefix == "/" || watch_response.path[prefix.size()] == '/')))
+                        continue;
+
+                    for (const auto & [event_or_callback, _] : callbacks)
+                    {
+                        if (event_or_callback)
+                            event_or_callback(watch_response);
+                    }
+                }
+            };
+
             std::lock_guard lock(watches_mutex);
 
             switch (event_type)
@@ -1082,15 +1116,21 @@ void ZooKeeper::receiveEvent()
                 case Coordination::Event::CREATED:
                 case Coordination::Event::CHANGED:
                     trigger_watches(watches);
+                    trigger_persistent_watches(persistent_watches);
+                    trigger_persistent_recursive_watches(persistent_recursive_watches);
                     break;
                 case Coordination::Event::DELETED:
                 case Coordination::Event::SESSION:
                     /// client will handle disconnection but lets trigger callbacks as soon as possible
                     trigger_watches(watches);
                     trigger_watches(list_watches);
+                    trigger_persistent_watches(persistent_watches);
+                    trigger_persistent_recursive_watches(persistent_recursive_watches);
                     break;
                 case Coordination::Event::CHILD:
                     trigger_watches(list_watches);
+                    trigger_persistent_watches(persistent_watches);
+                    trigger_persistent_recursive_watches(persistent_recursive_watches);
                     break;
                 default:
                     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected watch event type {}", event_type);
@@ -1160,6 +1200,24 @@ void ZooKeeper::receiveEvent()
 
             if (!add_watch || !watch)
                 return;
+
+            if (op_num == OpNum::AddWatch)
+            {
+                const auto * add_watch_request = dynamic_cast<const Coordination::ZooKeeperAddWatchRequest *>(req.get());
+                chassert(add_watch_request != nullptr);
+
+                String req_path = req->getPath();
+                removeRootPath(req_path, args.chroot);
+
+                std::lock_guard lock(watches_mutex);
+                auto & target = add_watch_request->mode == Coordination::AddWatchRequest::AddWatchMode::PERSISTENT_RECURSIVE
+                    ? persistent_recursive_watches[req_path]
+                    : persistent_watches[req_path];
+
+                if (target.emplace(watch, WatchCreateInfo{std::chrono::system_clock::now(), req->xid, op_num}).second)
+                    CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
+                return;
+            }
 
             bool is_list_request = false;
 
@@ -1437,10 +1495,14 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
 
             auto watch_callback_count = trigger_watches(watches);
             watch_callback_count += trigger_watches(list_watches);
+            watch_callback_count += trigger_watches(persistent_watches);
+            watch_callback_count += trigger_watches(persistent_recursive_watches);
 
             CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, watch_callback_count);
             watches.clear();
             list_watches.clear();
+            persistent_watches.clear();
+            persistent_recursive_watches.clear();
         }
 
         /// Drain queue
@@ -1864,6 +1926,96 @@ void ZooKeeper::list(
     ProfileEvents::increment(ProfileEvents::ZooKeeperList);
 }
 
+void ZooKeeper::addWatch(
+    const String & path,
+    AddWatchRequest::AddWatchMode mode,
+    AddWatchCallback callback,
+    WatchCallbackPtrOrEventPtr watch)
+{
+    if (!watch)
+        throw Exception::fromMessage(Error::ZBADARGUMENTS, "addWatch requires a non-empty watch callback");
+
+    ZooKeeperAddWatchRequest request;
+    request.path = path;
+    request.mode = mode;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<ZooKeeperAddWatchRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const AddWatchResponse &>(response)); };
+    request_info.watch = std::move(watch);
+    pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperAddWatch);
+}
+
+void ZooKeeper::removeWatches(
+    const String & path,
+    RemoveWatchRequest::WatchType type,
+    RemoveWatchCallback callback)
+{
+    {
+        String local_path = path;
+        removeRootPath(local_path, args.chroot);
+        std::lock_guard lock(watches_mutex);
+
+        auto erase_from = [&](auto & container)
+        {
+            auto it = container.find(local_path);
+            if (it == container.end())
+                return;
+            CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, it->second.size());
+            container.erase(it);
+        };
+
+        switch (type)
+        {
+            case RemoveWatchRequest::WatchType::DATA:
+                erase_from(watches);
+                break;
+            case RemoveWatchRequest::WatchType::CHILDREN:
+                erase_from(list_watches);
+                break;
+            case RemoveWatchRequest::WatchType::PERSISTENT:
+                erase_from(persistent_watches);
+                break;
+            case RemoveWatchRequest::WatchType::PERSISTENTRECURSIVE:
+                erase_from(persistent_recursive_watches);
+                break;
+            case RemoveWatchRequest::WatchType::ANY:
+                erase_from(watches);
+                erase_from(list_watches);
+                erase_from(persistent_watches);
+                erase_from(persistent_recursive_watches);
+                break;
+        }
+    }
+
+    ZooKeeperRemoveWatchRequest request;
+    request.path = path;
+    request.type = type;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<ZooKeeperRemoveWatchRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const RemoveWatchResponse &>(response)); };
+    pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperRemoveWatch);
+}
+
+void ZooKeeper::checkWatches(
+    const String & path,
+    CheckWatchRequest::CheckWatchType type,
+    CheckWatchCallback callback)
+{
+    ZooKeeperCheckWatchRequest request;
+    request.path = path;
+    request.type = type;
+
+    RequestInfo request_info;
+    request_info.request = std::make_shared<ZooKeeperCheckWatchRequest>(std::move(request));
+    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const CheckWatchResponse &>(response)); };
+    pushRequest(std::move(request_info));
+    ProfileEvents::increment(ProfileEvents::ZooKeeperCheckWatch);
+}
+
 
 void ZooKeeper::check(
     const String & path,
@@ -2243,6 +2395,14 @@ ZooKeeper::WatchesSnapshot ZooKeeper::getWatchesSnapshot() const
             result[path].push_back(create_info);
 
     for (const auto & [path, callbacks] : list_watches)
+        for (const auto & [_, create_info] : callbacks)
+            result[path].push_back(create_info);
+
+    for (const auto & [path, callbacks] : persistent_watches)
+        for (const auto & [_, create_info] : callbacks)
+            result[path].push_back(create_info);
+
+    for (const auto & [path, callbacks] : persistent_recursive_watches)
         for (const auto & [_, create_info] : callbacks)
             result[path].push_back(create_info);
 
