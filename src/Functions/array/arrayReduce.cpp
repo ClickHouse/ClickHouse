@@ -140,7 +140,7 @@ ColumnPtr wrapNullableArrayReduceResult(ColumnPtr result, const ColumnPtr & arra
         nested_result = nullable_result->getNestedColumnPtr();
     }
 
-    return ColumnNullable::create(nested_result, std::move(null_map));
+    return ColumnNullable::create(nested_result, null_map);
 }
 
 ColumnPtr unwrapNullableArrayColumn(
