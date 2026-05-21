@@ -38,6 +38,7 @@ EXCLUDE=(
     03600_geoparquet_multi_geometry_empty_types.parquet
     03600_geoparquet_multi_geometry_explicit_types.parquet
     04059_geo_spatial_pruning.parquet
+    04060_geo_page_pruning.parquet
     # Intentionally non-compliant files for testing DELTA_BINARY_PACKED padding tolerance.
     04045_delta_no_padding_3vals.parquet
     04045_delta_no_padding_5vals.parquet
