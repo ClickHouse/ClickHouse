@@ -2166,26 +2166,23 @@ private:
                     }
                 }
 
-                if (format_settings.try_infer_datetimes)
+                if (auto it = variant_info.variant_name_to_discriminator.find("DateTime"); it != variant_info.variant_name_to_discriminator.end())
                 {
-                    if (auto it = variant_info.variant_name_to_discriminator.find("DateTime"); it != variant_info.variant_name_to_discriminator.end())
+                    time_t value;
+                    if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
                     {
-                        time_t value;
-                        if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
-                        {
-                            insertValueIntoNumericVariant<ColumnDateTime, UInt32>(variant_info, variant_column, static_cast<UInt32>(value), "DateTime");
-                            return true;
-                        }
+                        insertValueIntoNumericVariant<ColumnDateTime, UInt32>(variant_info, variant_column, static_cast<UInt32>(value), "DateTime");
+                        return true;
                     }
+                }
 
-                    if (auto it = variant_info.variant_name_to_discriminator.find("DateTime64(9)"); it != variant_info.variant_name_to_discriminator.end())
+                if (auto it = variant_info.variant_name_to_discriminator.find("DateTime64(9)"); it != variant_info.variant_name_to_discriminator.end())
+                {
+                    DateTime64 value;
+                    if (tryInferDateTime64FromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
                     {
-                        DateTime64 value;
-                        if (tryInferDateTime64FromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
-                        {
-                            insertValueIntoNumericVariant<ColumnDateTime64, DateTime64>(variant_info, variant_column, value, "DateTime64(9)");
-                            return true;
-                        }
+                        insertValueIntoNumericVariant<ColumnDateTime64, DateTime64>(variant_info, variant_column, value, "DateTime64(9)");
+                        return true;
                     }
                 }
 
