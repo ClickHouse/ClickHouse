@@ -776,9 +776,13 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         {
             if (other_node.get() == table_expression_node.get())
                 continue;
-            if (!other_data.table_name.empty() && other_data.table_name == path_start)
-                return {};
-            if (!other_data.table_expression_name.empty() && other_data.table_expression_name == path_start)
+            /// User-facing name for the sibling: the explicit alias if set, otherwise the
+            /// table/CTE name. An aliased reference (e.g. `LEFT JOIN a AS a1`) shadows
+            /// the CTE name, so we only consider one of them.
+            const auto & sibling_name = !other_data.table_expression_name.empty()
+                ? other_data.table_expression_name
+                : other_data.table_name;
+            if (!sibling_name.empty() && sibling_name == path_start)
                 return {};
         }
     }
