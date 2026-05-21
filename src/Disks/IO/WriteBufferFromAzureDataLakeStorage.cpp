@@ -29,8 +29,6 @@ namespace ErrorCodes
 namespace
 {
 
-static constexpr size_t ADLFS_MAX_RETRIES = 10000;
-
 Azure::Storage::Files::DataLake::DataLakeClientOptions toDataLakeOptions(
     const Azure::Storage::Blobs::BlobClientOptions & blob_client_options)
 {
@@ -69,6 +67,8 @@ String buildAdlsGen2FileUrl(const AzureBlobStorage::Endpoint & endpoint, const S
 }
 
 }
+
+constexpr size_t ADLFS_MAX_RETRIES = 10000;
 
 bool isAdlsGen2Endpoint(const String & storage_account_url)
 {
@@ -195,7 +195,7 @@ void WriteBufferFromAzureDataLakeStorage::appendBufferedData()
 
     ensureCreated();
 
-    auto * data_ptr = reinterpret_cast<const uint8_t *>(working_buffer.begin());
+    const auto * data_ptr = reinterpret_cast<const uint8_t *>(working_buffer.begin());
     const int64_t offset_for_append = bytes_appended;
 
     ProfileEvents::increment(ProfileEvents::AzureUpload);
