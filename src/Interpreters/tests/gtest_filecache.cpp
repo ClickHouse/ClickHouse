@@ -2238,7 +2238,7 @@ TEST_F(FileCacheTest, ExposeEvictionMetrics)
     EXPECT_GT(sum_dim("filesystem_cache_evictions_by_client_total") - by_client_pre_pc, 0.0);
 }
 
-TEST_F(FileCacheTest, ExposeEvictionMetrics_SLRUPromotionInducedEviction)
+TEST_F(FileCacheTest, ExposeEvictionMetricsSLRUPromotionInducedEviction)
 {
     /// Regression: SLRUFileCachePriority::tryIncreasePriority creates its
     /// own EvictionCandidates for promotion-induced downgrade. Without
