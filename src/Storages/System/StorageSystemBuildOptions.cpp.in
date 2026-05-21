@@ -53,7 +53,7 @@ const char * auto_config_build[]
     "USE_ROCKSDB", "@USE_ROCKSDB@",
     "USE_NURAFT", "@USE_NURAFT@",
     "USE_NLP", "@USE_NLP@",
-    "WITH_LIBSTEMMER", "@WITH_LIBSTEMMER@",
+    "USE_LIBSTEMMER", "@USE_LIBSTEMMER@",
     "USE_LIBURING", "@USE_LIBURING@",
     "USE_SQLITE", "@USE_SQLITE@",
     "USE_LIBPQXX", "@USE_LIBPQXX@",

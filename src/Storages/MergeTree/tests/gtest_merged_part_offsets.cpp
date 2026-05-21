@@ -282,29 +282,6 @@ TEST(PackedPartOffsetsTest, VeryLargeValues)
     }
 }
 
-// Test with all identical values (should fail assertion)
-TEST(PackedPartOffsetsTest, DISABLED_AllIdenticalValues)
-{
-    // Note: This test is disabled because it should trigger an assertion failure
-    // Enable with caution for debugging
-    PackedPartOffsets offsets;
-
-    offsets.insert(100);
-    offsets.insert(100); // This should trigger assertion
-}
-
-// Test with non-monotonic values (should fail assertion)
-TEST(PackedPartOffsetsTest, DISABLED_NonMonotonicValues)
-{
-    // Note: This test is disabled because it should trigger an assertion failure
-    // Enable with caution for debugging
-    PackedPartOffsets offsets;
-
-    offsets.insert(100);
-    offsets.insert(200);
-    offsets.insert(150); // This should trigger assertion
-}
-
 // Test memory allocation
 TEST(PackedPartOffsetsTest, MemoryAllocation)
 {

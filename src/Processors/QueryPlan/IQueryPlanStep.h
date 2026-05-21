@@ -6,7 +6,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <string_view>
 #include <variant>
-
+#include <list>
 
 namespace DB
 {
@@ -17,7 +17,7 @@ using QueryPipelineBuilders = std::vector<QueryPipelineBuilderPtr>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::vector<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>;
 
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
@@ -119,6 +119,13 @@ public:
     void updateInputHeaders(SharedHeaders input_headers_);
     void updateInputHeader(SharedHeader input_header, size_t idx = 0);
 
+    /// Returns true if this step's expressions contain correlated columns (`PLACEHOLDER` action nodes).
+    /// Such plans cannot be executed standalone and require decorrelation first.
+    /// The default returns false; every subclass that stores an `ActionsDAG` (or any
+    /// other container of expression actions that may hold `PLACEHOLDER` nodes) MUST
+    /// override this to check its expressions. Otherwise correlated subqueries may
+    /// silently bypass the guards in `FutureSetFromSubquery::buildSetInplace` and
+    /// `buildOrderedSetInplace`, and trigger `Trying to execute PLACEHOLDER action`.
     virtual bool hasCorrelatedExpressions() const;
 
     virtual bool supportsDataflowStatisticsCollection() const { return false; }

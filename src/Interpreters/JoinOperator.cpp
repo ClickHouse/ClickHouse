@@ -2,6 +2,9 @@
 #include <Interpreters/JoinOperator.h>
 
 #include <Columns/IColumn.h>
+#include <Common/MemoryTrackerUtils.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
 #include <IO/WriteBufferFromString.h>
@@ -21,6 +24,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace Setting
@@ -65,7 +69,10 @@ namespace Setting
     extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool enable_lazy_columns_replication;
+    extern const SettingsBool enable_software_prefetch_in_join;
     extern const SettingsBool use_hash_table_stats_for_join_reordering;
+    extern const SettingsUInt64 max_bytes_before_external_join;
+    extern const SettingsDouble max_bytes_ratio_before_external_join;
 
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
 }
@@ -86,6 +93,9 @@ namespace QueryPlanSerializationSetting
 
     extern const QueryPlanSerializationSettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 grace_hash_join_max_buckets;
+
+    extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_join;
+    extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_join;
 
     extern const QueryPlanSerializationSettingsUInt64 max_rows_in_set_to_optimize_join;
 
@@ -111,6 +121,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool allow_dynamic_type_in_join_keys;
     extern const QueryPlanSerializationSettingsBool use_join_disjunctions_push_down;
     extern const QueryPlanSerializationSettingsBool enable_lazy_columns_replication;
+    extern const QueryPlanSerializationSettingsBool enable_software_prefetch_in_join;
     extern const QueryPlanSerializationSettingsBool use_hash_table_stats_for_join_reordering;
 
     extern const QueryPlanSerializationSettingsBool enable_join_fixed_hash_table_conversion;
@@ -146,6 +157,9 @@ JoinSettings::JoinSettings(const Settings & query_settings)
     grace_hash_join_initial_buckets = query_settings[Setting::grace_hash_join_initial_buckets];
     grace_hash_join_max_buckets = query_settings[Setting::grace_hash_join_max_buckets];
 
+    max_bytes_before_external_join = query_settings[Setting::max_bytes_before_external_join];
+    max_bytes_ratio_before_external_join = query_settings[Setting::max_bytes_ratio_before_external_join];
+
     max_rows_in_set_to_optimize_join = query_settings[Setting::max_rows_in_set_to_optimize_join];
 
     collect_hash_table_stats_during_joins = query_settings[Setting::collect_hash_table_stats_during_joins];
@@ -162,6 +176,7 @@ JoinSettings::JoinSettings(const Settings & query_settings)
     allow_dynamic_type_in_join_keys = query_settings[Setting::allow_dynamic_type_in_join_keys];
     use_join_disjunctions_push_down = query_settings[Setting::use_join_disjunctions_push_down];
     enable_lazy_columns_replication = query_settings[Setting::enable_lazy_columns_replication];
+    enable_software_prefetch_in_join = query_settings[Setting::enable_software_prefetch_in_join];
 
     if (temporary_files_buffer_size > 1_GiB)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Too large `temporary_files_buffer_size`, maximum 1 GiB");
@@ -191,6 +206,9 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     grace_hash_join_initial_buckets = settings[QueryPlanSerializationSetting::grace_hash_join_initial_buckets];
     grace_hash_join_max_buckets = settings[QueryPlanSerializationSetting::grace_hash_join_max_buckets];
 
+    max_bytes_before_external_join = settings[QueryPlanSerializationSetting::max_bytes_before_external_join];
+    max_bytes_ratio_before_external_join = settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_join];
+
     max_rows_in_set_to_optimize_join = settings[QueryPlanSerializationSetting::max_rows_in_set_to_optimize_join];
 
     collect_hash_table_stats_during_joins = settings[QueryPlanSerializationSetting::collect_hash_table_stats_during_joins];
@@ -215,6 +233,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     allow_dynamic_type_in_join_keys = settings[QueryPlanSerializationSetting::allow_dynamic_type_in_join_keys];
     use_join_disjunctions_push_down = settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down];
     enable_lazy_columns_replication = settings[QueryPlanSerializationSetting::enable_lazy_columns_replication];
+    enable_software_prefetch_in_join = settings[QueryPlanSerializationSetting::enable_software_prefetch_in_join];
     use_hash_table_stats_for_join_reordering = settings[QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering];
 
     enable_join_fixed_hash_table_conversion = settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion];
@@ -241,6 +260,9 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::grace_hash_join_initial_buckets] = grace_hash_join_initial_buckets;
     settings[QueryPlanSerializationSetting::grace_hash_join_max_buckets] = grace_hash_join_max_buckets;
 
+    settings[QueryPlanSerializationSetting::max_bytes_before_external_join] = max_bytes_before_external_join;
+    settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_join] = max_bytes_ratio_before_external_join;
+
     settings[QueryPlanSerializationSetting::max_rows_in_set_to_optimize_join] = max_rows_in_set_to_optimize_join;
 
     settings[QueryPlanSerializationSetting::collect_hash_table_stats_during_joins] = collect_hash_table_stats_during_joins;
@@ -265,9 +287,45 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::allow_dynamic_type_in_join_keys] = allow_dynamic_type_in_join_keys;
     settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down] = use_join_disjunctions_push_down;
     settings[QueryPlanSerializationSetting::enable_lazy_columns_replication] = enable_lazy_columns_replication;
+    settings[QueryPlanSerializationSetting::enable_software_prefetch_in_join] = enable_software_prefetch_in_join;
     settings[QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering] = use_hash_table_stats_for_join_reordering;
 
     settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion] = enable_join_fixed_hash_table_conversion;
+}
+
+UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join)
+{
+    std::optional<UInt64> threshold;
+    if (max_bytes_before_external_join != 0)
+        threshold = max_bytes_before_external_join;
+
+    if (max_bytes_ratio_before_external_join != 0.)
+    {
+        double ratio = max_bytes_ratio_before_external_join;
+        if (ratio < 0 || ratio >= 1.)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_join should be >= 0 and < 1 ({})", ratio);
+
+        auto available_system_memory = getMostStrictAvailableSystemMemory();
+        if (available_system_memory.has_value())
+        {
+            UInt64 ratio_in_bytes = static_cast<UInt64>(static_cast<double>(*available_system_memory) * ratio);
+            if (threshold)
+                threshold = std::min(threshold.value(), ratio_in_bytes);
+            else
+                threshold = ratio_in_bytes;
+
+            LOG_TRACE(getLogger("JoinSettings"), "Adjusting memory limit before external join with {} (ratio: {}, available system memory: {})",
+                formatReadableSizeWithBinarySuffix(ratio_in_bytes),
+                ratio,
+                formatReadableSizeWithBinarySuffix(*available_system_memory));
+        }
+        else
+        {
+            LOG_TRACE(getLogger("JoinSettings"), "No system memory limits configured. Ignoring max_bytes_ratio_before_external_join");
+        }
+    }
+
+    return threshold.value_or(0);
 }
 
 String toString(const JoinActionRef & node)

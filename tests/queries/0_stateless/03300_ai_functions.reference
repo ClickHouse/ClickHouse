@@ -1,14 +1,14 @@
 -- Disabled by default
 -- Enabled after setting
-aiGenerateContent
--- aiGenerateContent: too few arguments
--- aiGenerateContent: too many arguments
+aiGenerate
+-- aiGenerate: too few arguments
+-- aiGenerate: too many arguments
 -- Named collection missing provider
 -- Named collection missing endpoint
 -- Named collection missing model
 -- Named collection missing api_key
 -- Nonexistent named collection
--- aiGenerateContent return type
+-- aiGenerate return type
 result	String
 -- NULL input returns NULL
 1
@@ -43,4 +43,42 @@ ai_function_retry_initial_delay_ms	1000
 ai_function_throw_on_error	1
 ai_function_throw_on_quota_exceeded	1
 allow_experimental_ai_functions	0
+-- aiClassify: registered
+aiClassify
+-- aiClassify: too few arguments
+-- aiClassify: too many arguments
+-- aiClassify: non-constant categories
+-- aiClassify: wrong type for categories (not array)
+-- aiClassify: wrong type for categories (Array of non-String)
+-- aiClassify: empty categories array
+-- aiClassify: return type
+result	String
+-- aiClassify: empty input executes
+0
+-- aiClassify: with temperature
+0
+-- aiExtract: registered
+aiExtract
+-- aiExtract: too few arguments
+-- aiExtract: too many arguments
+-- aiExtract: non-constant instruction
+-- aiExtract: return type
+result	String
+-- aiExtract: JSON schema mode accepted
+0
+-- aiExtract: malformed JSON schema
+-- aiExtract: JSON schema with non-string value
+-- aiExtract: schema mode detection ignores leading whitespace
+-- aiExtract: with temperature
+0
+-- aiTranslate: registered
+aiTranslate
+-- aiTranslate: too few arguments
+-- aiTranslate: too many arguments
+-- aiTranslate: non-constant target language
+-- aiTranslate: empty target language
+-- aiTranslate: return type
+result	String
+-- aiTranslate: with instructions and temperature
+0
 -- Re-disabled blocks function
