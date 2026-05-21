@@ -1,4 +1,6 @@
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
+#include <Functions/UserDefined/UserDefinedWebAssemblyScriptAbi.h>
+#include <Functions/UserDefined/UserDefinedWebAssemblyTypeHelpers.h>
 
 #include <ranges>
 #include <base/hex.h>
@@ -96,73 +98,6 @@ UserDefinedWebAssemblyFunction::UserDefinedWebAssemblyFunction(
     , is_deterministic(is_deterministic_)
 {
 }
-
-/// Maps ClickHouse numeric types to their WASM storage type.
-/// Small integer types (Int8, UInt8, Int16, UInt16) are widened to uint32_t (i32).
-/// All other supported types map 1:1 via NativeToWasmType.
-template <typename T>
-struct WasmStorageType
-{
-    using Type = typename NativeToWasmType<T>::Type;
-};
-
-template <> struct WasmStorageType<Int8>   { using Type = uint32_t; };
-template <> struct WasmStorageType<UInt8>  { using Type = uint32_t; };
-template <> struct WasmStorageType<Int16>  { using Type = uint32_t; };
-template <> struct WasmStorageType<UInt16> { using Type = uint32_t; };
-
-template <typename T>
-constexpr WasmValKind wasmKindFor()
-{
-    return WasmValTypeToKind<typename WasmStorageType<T>::Type>::value;
-}
-
-template <typename Callable, typename... Args>
-static bool tryExecuteForNumericTypes(Callable && callable, Args &&... args)
-{
-    return (
-        callable.template operator()<Int8>(args...)
-        || callable.template operator()<UInt8>(args...)
-        || callable.template operator()<Int16>(args...)
-        || callable.template operator()<UInt16>(args...)
-        || callable.template operator()<Int32>(args...)
-        || callable.template operator()<UInt32>(args...)
-        || callable.template operator()<Int64>(args...)
-        || callable.template operator()<UInt64>(args...)
-        || callable.template operator()<Float32>(args...)
-        || callable.template operator()<Float64>(args...)
-        || callable.template operator()<Int128>(args...)
-        || callable.template operator()<UInt128>(args...)
-    );
-}
-
-static std::optional<WasmValKind> wasmKindForDataType(const IDataType * type)
-{
-    std::optional<WasmValKind> kind;
-    tryExecuteForNumericTypes([type, &kind]<typename T>()
-    {
-        if (typeid_cast<const DataTypeNumber<T> *>(type))
-        {
-            kind = wasmKindFor<T>();
-            return true;
-        }
-        return false;
-    });
-    return kind;
-}
-
-/// Returns true when `from` can be implicitly coerced to `to`.
-/// Allowed: same kind; i32→i64; any int→any float; f32→f64.
-static bool canCoerce(WasmValKind from, WasmValKind to)
-{
-    if (from == to) return true;
-    if (from == WasmValKind::I32 && to == WasmValKind::I64) return true;
-    if (from == WasmValKind::F32 && to == WasmValKind::F64) return true;
-    const bool from_int = from == WasmValKind::I32 || from == WasmValKind::I64;
-    if (from_int && (to == WasmValKind::F32 || to == WasmValKind::F64)) return true;
-    return false;
-}
-
 
 class UserDefinedWebAssemblyFunctionSimple : public UserDefinedWebAssemblyFunction
 {
@@ -300,17 +235,9 @@ public:
 
         auto raw_buffer_span = compartment->getMemory(handle, sizeof(WasmBuffer));
         const auto * raw_buffer_ptr = raw_buffer_span.data();
-        WasmBuffer buffer;
-        if (reinterpret_cast<uintptr_t>(raw_buffer_ptr) % alignof(WasmBuffer) != 0)
-        {
-            std::memcpy(&buffer, raw_buffer_ptr, sizeof(WasmBuffer));
-        }
-        else
-        {
-            buffer = *reinterpret_cast<const WasmBuffer *>(raw_buffer_ptr);
-        }
-
-        return compartment->getMemory(buffer.ptr, buffer.size);
+        auto ptr = loadFromWasmMemory<WasmPtr>(raw_buffer_ptr);
+        auto size = loadFromWasmMemory<WasmSizeT>(raw_buffer_ptr + sizeof(WasmPtr));
+        return compartment->getMemory(ptr, size);
     }
 
 private:
@@ -449,6 +376,9 @@ std::unique_ptr<UserDefinedWebAssemblyFunction> UserDefinedWebAssemblyFunction::
         case WasmAbiVersion::BufferedV1:
             return std::make_unique<UserDefinedWebAssemblyFunctionBufferedV1>(
                 wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings), is_deterministic_);
+        case WasmAbiVersion::AssemblyScript:
+            return createUserDefinedWebAssemblyFunctionAssemblyScript(
+                wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings), is_deterministic_);
     }
     throw Exception(
         ErrorCodes::LOGICAL_ERROR, "Unknown WebAssembly ABI version: {}", std::to_underlying(abi_type));
@@ -462,6 +392,8 @@ String toString(WasmAbiVersion abi_type)
             return "ROW_DIRECT";
         case WasmAbiVersion::BufferedV1:
             return "BUFFERED_V1";
+        case WasmAbiVersion::AssemblyScript:
+            return "ASSEMBLYSCRIPT";
     }
     throw Exception(
         ErrorCodes::LOGICAL_ERROR, "Unknown WebAssembly ABI version: {}", std::to_underlying(abi_type));
@@ -469,7 +401,7 @@ String toString(WasmAbiVersion abi_type)
 
 WasmAbiVersion getWasmAbiFromString(const String & str)
 {
-    for (auto abi_type : {WasmAbiVersion::RowDirect, WasmAbiVersion::BufferedV1})
+    for (auto abi_type : {WasmAbiVersion::RowDirect, WasmAbiVersion::BufferedV1, WasmAbiVersion::AssemblyScript})
         if (Poco::toUpper(str) == toString(abi_type))
             return abi_type;
 
@@ -484,10 +416,14 @@ public:
     using ObjectPtr = Base::ObjectPtr;
 
     explicit WasmCompartmentPool(
-        unsigned limit, std::shared_ptr<WebAssembly::WasmModule> wasm_module_, WebAssembly::WasmModule::Config module_cfg_)
+        unsigned limit,
+        std::shared_ptr<WebAssembly::WasmModule> wasm_module_,
+        WebAssembly::WasmModule::Config module_cfg_,
+        StopToken stop_token_)
         : Base(limit, getLogger("WasmCompartmentPool"))
         , wasm_module(std::move(wasm_module_))
         , module_cfg(std::move(module_cfg_))
+        , stop_token(std::move(stop_token_))
     {
         LOG_DEBUG(log, "WasmCompartmentPool created with limit: {}", limit);
     }
@@ -498,12 +434,15 @@ protected:
     ObjectPtr allocObject() override
     {
         LOG_DEBUG(log, "Allocating new WasmCompartment");
-        return wasm_module->instantiate(module_cfg);
+        return wasm_module->instantiate(module_cfg, stop_token);
     }
 
 private:
     std::shared_ptr<WebAssembly::WasmModule> wasm_module;
     WebAssembly::WasmModule::Config module_cfg;
+
+    std::mutex acquire_mutex;
+    StopToken stop_token;
 };
 
 
@@ -520,7 +459,7 @@ WebAssembly::WasmModule::Config getWasmModuleConfig(ContextPtr context)
     return cfg;
 }
 
-class FunctionUserDefinedWasm : public IFunction
+class FunctionUserDefinedWasm final : public IFunction
 {
 public:
     FunctionUserDefinedWasm(String function_name_, std::shared_ptr<UserDefinedWebAssemblyFunction> udf_, ContextPtr context_)
@@ -529,10 +468,12 @@ public:
         , function_name(std::move(function_name_))
         , argument_names(user_defined_function->getArgumentNames())
         , context(std::move(context_))
+        , interrupt_source()
         , compartment_pool(
               static_cast<UInt32>(context->getSettingsRef()[Setting::webassembly_udf_max_instances]),
               wasm_module,
-              getWasmModuleConfig(context))
+              getWasmModuleConfig(context),
+              interrupt_source.get_token())
     {
     }
 
@@ -588,7 +529,17 @@ public:
     {
         auto compartment_entry = compartment_pool.acquire();
         auto * compartment_ptr = &(*compartment_entry);
-        return execute(compartment_ptr, arguments, input_rows_count);
+        try
+        {
+            return execute(compartment_ptr, arguments, input_rows_count);
+        }
+        catch (...)
+        {
+            /// A trapped/faulted compartment may have leftovers, half-allocated buffers,
+            /// or otherwise inconsistent guest state. Drop it so the pool recreates it.
+            compartment_entry.expire();
+            throw;
+        }
     }
 
     ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -732,6 +683,21 @@ FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::get(const Str
                 function_name,
                 fmt::join(registry | std::views::transform([](const auto & pair) { return pair.first; }), ", "));
         }
+        wasm_func = it->second.function;
+    }
+
+    auto executable_function = std::make_shared<FunctionUserDefinedWasm>(function_name, std::move(wasm_func), std::move(context));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(executable_function));
+}
+
+FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::tryGet(const String & function_name, ContextPtr context)
+{
+    std::shared_ptr<UserDefinedWebAssemblyFunction> wasm_func = nullptr;
+    {
+        std::shared_lock lock(registry_mutex);
+        auto it = registry.find(function_name);
+        if (it == registry.end())
+            return nullptr;
         wasm_func = it->second.function;
     }
 
