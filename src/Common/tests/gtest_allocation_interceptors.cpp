@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 #include <limits>
 
 namespace DB::ErrorCodes
