@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
 -- no-parallel-replicas: If parallel replicas are on, the optimization (no rescoring) may not work.
 

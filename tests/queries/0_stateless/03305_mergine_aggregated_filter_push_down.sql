@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-random-merge-tree-settings
 -- add_minmax_index_for_numeric_columns=0: Different plan (would use the index on x)
 

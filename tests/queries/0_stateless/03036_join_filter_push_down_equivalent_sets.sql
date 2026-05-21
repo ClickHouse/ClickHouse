@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 0;
 SET query_plan_convert_outer_join_to_inner_join = 0;

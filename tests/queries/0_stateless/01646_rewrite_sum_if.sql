@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 SET optimize_rewrite_sum_if_to_count_if = 0;
 
 SELECT sumIf(1, number % 2 > 2) FROM numbers(100);

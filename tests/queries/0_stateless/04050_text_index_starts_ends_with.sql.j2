@@ -1,7 +1,7 @@
 -- Tags: no-parallel-replicas
 
 {% for tokenizer in ['array', 'splitByString', 'ngrams(3)', 'splitByNonAlpha'] -%}
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 SET query_plan_merge_expressions = 1;

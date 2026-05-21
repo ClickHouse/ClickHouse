@@ -5,7 +5,7 @@
 SET parallel_replicas_local_plan = 1;
 -- disable statistics-based part pruning to keep EXPLAIN output stable
 SET use_statistics_for_part_pruning = 0;
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 
 -- Test for issue #75523
 

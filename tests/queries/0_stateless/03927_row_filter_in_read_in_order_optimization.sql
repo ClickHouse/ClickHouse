@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 SET enable_parallel_replicas = 0;
 SET optimize_read_in_order = 1;
 DROP TABLE IF EXISTS t_row_policy_rio;

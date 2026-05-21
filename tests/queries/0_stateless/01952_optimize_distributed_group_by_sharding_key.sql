@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: distributed
 
 set optimize_skip_unused_shards=1;

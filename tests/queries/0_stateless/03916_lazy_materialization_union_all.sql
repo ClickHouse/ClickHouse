@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Test that lazy materialization is applied to all branches of a UNION ALL query
 -- Tags: no-random-settings
 

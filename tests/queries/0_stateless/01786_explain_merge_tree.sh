@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default="legacy""
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default='legacy'"
 for i in $(seq 0 1)
 do
     # Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.

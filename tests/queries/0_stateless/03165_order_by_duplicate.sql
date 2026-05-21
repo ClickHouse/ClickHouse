@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 CREATE TABLE test
 ENGINE = ReplacingMergeTree
 PRIMARY KEY id

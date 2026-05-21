@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 set enable_analyzer=1, prefer_localhost_replica=1, enable_parallel_blocks_marshalling = 1;
 
 set serialize_query_plan=0;

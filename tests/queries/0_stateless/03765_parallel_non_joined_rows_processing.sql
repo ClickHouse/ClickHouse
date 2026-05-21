@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-random-settings
 
 SET enable_analyzer = 1, query_plan_join_swap_table = 0;

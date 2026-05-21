@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 SET single_join_prefer_left_table = 0;
 
 DROP TABLE IF EXISTS test;

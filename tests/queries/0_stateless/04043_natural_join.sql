@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tests for NATURAL JOIN syntax.
 -- NATURAL JOIN automatically joins on all columns with matching names,
 -- equivalent to JOIN ... USING (col1, col2, ...) for all common column names.

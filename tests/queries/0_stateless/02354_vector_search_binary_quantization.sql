@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
 -- no-parallel-replicas: The test really wants lower quality result to be returned from the index
 --                       with rescoring=OFF. That is required to confirm binary quantization works

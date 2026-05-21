@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tests that text indexes on mapKeys(m) and mapValues(m) cooperate to skip granules with IN on large data.
 --
 -- Data layout (200000 rows, 25 granules with index_granularity=8192):

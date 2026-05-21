@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Test: Map subcolumns in PREWHERE when the whole map is also read.
 -- Verifies via EXPLAIN that FunctionToSubcolumnsPass rewrites m['key'] to m.key_<key>
 -- in PREWHERE, while the full map is still read for SELECT. Also checks correctness.

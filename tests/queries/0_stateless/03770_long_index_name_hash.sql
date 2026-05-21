@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-random-merge-tree-settings, no-parallel-replicas
 -- Remove random settings since we want to test specific settings, different parts, hashing, etc.
 -- no-parallel-replicas: EXPLAIN output differs with parallel replicas

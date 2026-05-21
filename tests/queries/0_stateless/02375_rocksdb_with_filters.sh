@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
-CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default="legacy""
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default='legacy'"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS rocksdb_with_filter;"
 
 $CLICKHOUSE_CLIENT --query="CREATE TABLE rocksdb_with_filter (key String, value String) ENGINE=EmbeddedRocksDB PRIMARY KEY key;"

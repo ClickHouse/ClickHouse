@@ -3,7 +3,7 @@
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 -- add_minmax_index_for_numeric_columns=0: Different plan
 
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 
 -- { echo }
 

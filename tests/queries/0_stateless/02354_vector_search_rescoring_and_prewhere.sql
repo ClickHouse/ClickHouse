@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
 
 -- Test for setting 'vector_search_with_rescoring' with filters.

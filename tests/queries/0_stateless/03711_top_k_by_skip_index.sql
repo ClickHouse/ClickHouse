@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Test for verifying TopN optimizations
 -- Tags: no-parallel-replicas
 

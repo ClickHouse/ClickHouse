@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: zookeeper, no-encrypted-storage
 -- https://github.com/ClickHouse/ClickHouse/issues/72887
 DROP TABLE IF EXISTS t0;

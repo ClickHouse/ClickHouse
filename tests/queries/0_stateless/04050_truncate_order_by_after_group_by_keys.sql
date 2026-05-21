@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-fasttest
 -- When there is GROUP BY and ORDER BY, trailing ORDER BY elements after
 -- all GROUP BY keys are covered are removed as an optimization.

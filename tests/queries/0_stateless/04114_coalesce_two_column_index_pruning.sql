@@ -3,7 +3,7 @@
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 -- See `src/Storages/MergeTree/KeyCondition.cpp::tryRewriteCoalesceComparison`.
 
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 SET parallel_replicas_local_plan = 1;
 SET use_query_condition_cache = 0;
 SET use_skip_indexes_on_data_read = 0;

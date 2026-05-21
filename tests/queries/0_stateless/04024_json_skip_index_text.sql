@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-fasttest, no-parallel-replicas
 -- Test: text (inverted/GIN) skip index support for JSONAllPaths on JSON data type
 --

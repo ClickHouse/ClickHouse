@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS t_length_1;
 DROP TABLE IF EXISTS t_length_2;
 

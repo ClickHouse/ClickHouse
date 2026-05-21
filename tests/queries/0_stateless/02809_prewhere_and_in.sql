@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS t_02809;
 
 CREATE TABLE t_02809(a Int64, b Int64, s String)

@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Regression test: TopK dynamic filtering must be disabled when read-in-order
 -- optimization applies on a MergeTree sorting-key prefix.
 -- Otherwise the prewhere filter rejects all rows past the threshold in sorted

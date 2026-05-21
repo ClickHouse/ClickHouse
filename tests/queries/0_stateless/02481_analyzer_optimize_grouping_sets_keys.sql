@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 set enable_analyzer = 1;
 set optimize_syntax_fuse_functions = 0;
 SET optimize_group_by_constant_keys = 1, optimize_group_by_function_keys = 1;

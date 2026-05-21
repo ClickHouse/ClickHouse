@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Verify that the optimized trivial count path produces correct argument types
 -- in the AggregateFunction type. Previously, it used storage column types instead
 -- of the aggregate function's actual argument types.

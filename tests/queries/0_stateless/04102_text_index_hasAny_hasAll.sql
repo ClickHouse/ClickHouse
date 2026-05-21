@@ -1,6 +1,6 @@
 -- Tests that the text index is used for `hasAny` and `hasAll` predicates.
 
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;

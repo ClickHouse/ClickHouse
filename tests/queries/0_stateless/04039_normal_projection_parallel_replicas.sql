@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-random-settings
 
 -- Regression test for normal projections with parallel replicas.

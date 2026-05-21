@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Verify that EXPLAIN with UNION and trailing SETTINGS round-trips correctly through formatting.
 -- The bug: SETTINGS on the EXPLAIN was consumed by the last SELECT during re-parse
 -- because the last SELECT in the UNION chain was not parenthesized.

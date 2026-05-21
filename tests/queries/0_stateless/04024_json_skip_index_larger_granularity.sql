@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-fasttest, no-parallel-replicas
 -- Test: JSON skip index with larger granularity and multi-row granules
 --

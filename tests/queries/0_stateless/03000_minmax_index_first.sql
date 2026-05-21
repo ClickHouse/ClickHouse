@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 SET use_statistics_for_part_pruning = 0; -- Prevent auto_statistics_types from affecting skip index usage
 
 DROP TABLE IF EXISTS skip_table;

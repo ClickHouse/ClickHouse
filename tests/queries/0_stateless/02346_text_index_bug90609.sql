@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Test for Bug 90609
 
 DROP TABLE IF EXISTS tab;

@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Edge case tests for transitive predicate inference.
 
 SET allow_experimental_analyzer = 1;

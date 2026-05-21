@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-random-merge-tree-settings
 
 SET optimize_move_to_prewhere = 1;

@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel-replicas
 -- Test that virtual columns are available when reading from normal projections.
 

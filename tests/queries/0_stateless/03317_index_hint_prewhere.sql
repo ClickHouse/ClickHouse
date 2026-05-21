@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel-replicas
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 

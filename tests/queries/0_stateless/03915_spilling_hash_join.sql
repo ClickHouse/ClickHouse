@@ -1,6 +1,6 @@
 -- Test SpillingHashJoin: automatic spilling of hash joins to disk.
 
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 SET max_bytes_before_external_join = 1000000000;
 SET grace_hash_join_initial_buckets = 1;
 

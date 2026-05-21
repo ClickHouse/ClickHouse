@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS regression_for_in_operator_view;
 DROP TABLE IF EXISTS regression_for_in_operator;
 set allow_deprecated_syntax_for_merge_tree=1;

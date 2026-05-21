@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- add_minmax_index_for_numeric_columns=0: Changes the plan FOR b
 DROP TABLE IF EXISTS t_skip_index_insert;
 

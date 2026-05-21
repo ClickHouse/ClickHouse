@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: long, no-sanitizers, no-s3-storage, no-azure-blob-storage
 -- long: times out in private
 -- no-sanitizers: sometimes times out in private :(

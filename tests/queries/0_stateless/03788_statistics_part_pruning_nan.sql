@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- This test validates NaN comparison behavior in query execution.
 -- Since 323299fe, KeyCondition folds `x = NaN` to ALWAYS_FALSE and `x <> NaN` to ALWAYS_TRUE,
 -- so `= NaN` queries short-circuit before partition/statistics pruning (no Indexes in EXPLAIN),

@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- In order version of LIMIT BY works only if analyzer enabled
 SET enable_analyzer = 1;
 

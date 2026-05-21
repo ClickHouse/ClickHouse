@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer=0;
 
 EXPLAIN SELECT * FROM numbers(100) ORDER BY number LIMIT 10 OFFSET 90;

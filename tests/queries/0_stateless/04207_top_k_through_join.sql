@@ -1,7 +1,7 @@
 -- Verify the topKThroughJoin optimization: ORDER BY + LIMIT pushed past a join
 -- when the sort key only references columns from the side preserved by the join.
 
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_l;
 DROP TABLE IF EXISTS t_r;

@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1, optimize_injective_functions_inside_uniq = 1;
 
 -- Simple test

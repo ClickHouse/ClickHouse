@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tests merge tree 'setting' materialize_skip_indexes_on_merge
 -- add_minmax_index_for_numeric_columns=0: Different indices and plans on b
 

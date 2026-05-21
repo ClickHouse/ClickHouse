@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-random-merge-tree-settings
 SET optimize_use_projections = 1;
 SET query_plan_optimize_lazy_materialization = 1;

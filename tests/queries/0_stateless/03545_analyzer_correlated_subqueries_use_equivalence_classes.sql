@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 SET query_plan_join_swap_table = 0; -- Changes query plan

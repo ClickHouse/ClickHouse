@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-random-merge-tree-settings
 -- add_minmax_index_for_numeric_columns=0: Would use the index and not the projection that we want to test (id2 = 3)
 SET optimize_use_projections = 1;

@@ -4,7 +4,7 @@
 --   3. Non-SK row policy keeps PREWHERE deferred even when PREWHERE is
 --      itself SK-only — otherwise `throwIf` leak hidden rows
 
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 
 SELECT '= non-deterministic row policy that structurally only uses SK columns must remain deferred =';

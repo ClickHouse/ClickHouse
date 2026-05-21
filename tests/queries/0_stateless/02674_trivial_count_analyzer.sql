@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 drop table if exists m3;
 drop table if exists replacing_m3;
 

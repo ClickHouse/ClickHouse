@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 CREATE TABLE t1 (n UInt64) ENGINE = MergeTree() SETTINGS auto_statistics_types='uniq';
 CREATE TABLE t2 (key1 UInt64, key2 UInt64, key3 UInt64, value UInt64) ENGINE = MergeTree() SETTINGS auto_statistics_types='uniq';
 

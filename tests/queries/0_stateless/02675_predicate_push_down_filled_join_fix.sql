@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET single_join_prefer_left_table = 0;
 SET optimize_move_to_prewhere = 0;

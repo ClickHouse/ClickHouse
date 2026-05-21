@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- {echoOn}
 
 SET use_query_condition_cache = 0;

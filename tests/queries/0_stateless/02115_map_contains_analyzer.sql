@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS t_map_contains;
 
 CREATE TABLE t_map_contains (m Map(String, UInt32)) ENGINE = Memory;

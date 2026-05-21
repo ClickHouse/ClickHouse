@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 SET allow_experimental_statistics = 1;
 
 DROP TABLE IF EXISTS test_sales;

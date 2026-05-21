@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 set enable_analyzer = 1;
 
 EXPLAIN QUERY TREE dump_ast = 1

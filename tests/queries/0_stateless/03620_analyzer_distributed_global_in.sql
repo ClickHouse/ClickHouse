@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- add_minmax_index_for_numeric_columns=0: Different plan
 set serialize_query_plan = 0;
 set enable_analyzer=1;

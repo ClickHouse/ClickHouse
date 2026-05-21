@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Test for issue https://github.com/ClickHouse/ClickHouse/issues/97792
 
 SET parallel_replicas_local_plan = 1;

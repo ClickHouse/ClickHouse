@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS t_func_to_subcolumns_variant;
 
 SET allow_experimental_variant_type = 1;

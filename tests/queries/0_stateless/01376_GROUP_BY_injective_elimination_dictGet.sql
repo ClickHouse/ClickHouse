@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel, no-flaky-check
 
 SET optimize_injective_functions_in_group_by = 1;

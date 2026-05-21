@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-fasttest, no-ordinary-database
 
 SET enable_analyzer = 1; -- analyzer vs. non-analyzer produce slightly different EXPLAIN

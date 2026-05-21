@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel
 -- Tag no-parallel: failpoint is used which can force DelayedSource on other tests
 

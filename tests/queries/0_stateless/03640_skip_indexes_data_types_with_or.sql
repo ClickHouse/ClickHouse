@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: funny EXPLAIN PLAN output
 -- add_minmax_index_for_numeric_columns=0: Different plan

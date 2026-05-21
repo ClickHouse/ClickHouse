@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = false;
 SET enable_join_runtime_filters = 0;

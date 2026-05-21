@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: EXPLAIN QUERY TREE node IDs are not stable with parallel replicas
 

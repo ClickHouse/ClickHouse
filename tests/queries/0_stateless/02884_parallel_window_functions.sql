@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tags: long, no-tsan, no-asan, no-ubsan, no-msan, no-debug
 
 -- Randomized max_insert_threads can create multiple parts, causing

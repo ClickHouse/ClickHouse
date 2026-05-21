@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS test_lc_pk;
 CREATE TABLE test_lc_pk (s String) engine = MergeTree ORDER BY s;
 

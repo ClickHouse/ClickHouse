@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 SET optimize_aggregators_of_group_by_keys = 1;
 SET optimize_read_in_order = 1;
 SET optimize_sorting_by_input_stream_properties = 1;

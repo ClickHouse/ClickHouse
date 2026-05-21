@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 #!/usr/bin/env -S ${HOME}/clickhouse-client --queries-file
 
 DROP TABLE IF EXISTS t1;

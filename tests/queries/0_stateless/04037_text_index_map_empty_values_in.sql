@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tests that text indexes on mapKeys(m) and mapValues(m) handle empty string values
 -- correctly with IN operator. When a map key does not exist, map['key'] returns ''
 -- (the default value). The index must not incorrectly skip granules in this case.

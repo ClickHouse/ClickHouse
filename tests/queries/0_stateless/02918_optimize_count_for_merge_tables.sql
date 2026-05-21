@@ -1,4 +1,4 @@
-SET explain_query_plan_default = "legacy";
+SET explain_query_plan_default = 'legacy';
 -- Tests that Merge-engine (not: MergeTree!) tables support the trivial count
 -- optimization if all underlying tables support it
 
