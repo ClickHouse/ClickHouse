@@ -614,6 +614,18 @@ struct Data
 
 void addNewPoint(IPolygonDictionary::Coord x, IPolygonDictionary::Coord y, Data & data, Offset & offset)
 {
+    /// Reject non-finite polygon vertices at load time. `SlabsPolygonIndex` relies on `::sort` and
+    /// `std::unique` over the x-coordinates; both are undefined when the input contains a `NaN`,
+    /// and a downstream invariant check would then fire as `LOGICAL_ERROR`. Mirrors the existing
+    /// query-side validation in `IPolygonDictionary::extractPoints`.
+    if (isNaN(x) || isNaN(y))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "PolygonDictionary input polygon vertex component must not be NaN");
+
+    if (std::isinf(x) || std::isinf(y))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "PolygonDictionary input polygon vertex component must not be infinite");
+
     if (offset.atLastPointOfRing())
     {
         if (offset.atLastRingOfPolygon())
