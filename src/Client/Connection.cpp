@@ -43,7 +43,6 @@
 #include <Core/Types.h>
 #include "config.h"
 
-#include <base/scope_guard.h>
 #include <fmt/ranges.h>
 
 #if USE_SSL
@@ -1118,7 +1117,7 @@ void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTa
 void Connection::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
 {
     writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
-    response.serialize(*out, server_parallel_replicas_protocol_version, server_revision);
+    response.serialize(*out, server_parallel_replicas_protocol_version);
     out->finishChunk();
     out->next();
 }
