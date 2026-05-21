@@ -8162,7 +8162,7 @@ This limit is only enforced for providers that report a `usage` object in their 
     DECLARE(UInt64, ai_function_max_output_tokens_per_query, 500000, R"(
 Maximum total output (completion) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by one call's worth of output tokens, since the number of output tokens of a call are not known in advance. Set to 0 to disable.
 
-This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to embedding functions, which never produce output tokens.
+This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to embedding functions (notably aiEmbed), which never produce output tokens.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_max_api_calls_per_query, 0, R"(
 Maximum number of HTTP requests that AI functions may dispatch per query. Set to 0 to disable.

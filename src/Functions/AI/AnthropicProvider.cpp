@@ -15,6 +15,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+    extern const int MALFORMED_AI_PROVIDER_RESPONSE;
 }
 
 namespace
@@ -151,14 +152,14 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
 
     auto content = json_obj->getArray("content");
     if (!content)
-        throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+        throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
             "Anthropic response is missing 'content' array");
 
     for (unsigned i = 0; i < content->size(); ++i)
     {
         auto block = content->getObject(i);
         if (!block)
-            throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
                 "Anthropic response 'content' does not contain output");
         String type = block->optValue<String>("type", "");
         if (type == "text")
@@ -170,7 +171,7 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
         {
             auto input = block->getObject("input");
             if (!input)
-                throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+                throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
                     "Anthropic response output is missing for tool_use block");
             std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
             input->stringify(ss);

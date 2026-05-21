@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+    extern const int MALFORMED_AI_PROVIDER_RESPONSE;
 }
 
 namespace
@@ -125,17 +126,17 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
 
     auto choices = json_obj->getArray("choices");
     if (!choices || choices->size() == 0)
-        throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+        throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
             "AI chat response is missing or has empty 'choices' array");
 
     auto choice = choices->getObject(0);
     if (!choice)
-        throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+        throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
             "AI chat response is improperly formatted, JSON does not contain a response.");
 
     auto message = choice->getObject("message");
     if (!message)
-        throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+        throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
             "AI chat response is missing output message");
 
     ai_response.result = message->optValue<String>("content", "");
@@ -208,10 +209,10 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
 
     auto data_arr = json_obj->getArray("data");
     if (!data_arr)
-        throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER, "AI embedding response is missing 'data' array");
+        throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE, "AI embedding response is missing 'data' array");
 
     if (data_arr->size() != ai_embedding_request.inputs.size())
-        throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+        throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
             "AI embedding response 'data' has {} entries but {} were requested",
             data_arr->size(), ai_embedding_request.inputs.size());
 
@@ -224,26 +225,25 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
     {
         auto item = data_arr->getObject(i);
         if (!item)
-            throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
                 "AI embedding response 'data[{}]' is not an object", i);
 
         /// `index` tells us which input this embedding corresponds to. Defaults to `i` when missing (TEI).
         UInt64 idx = item->optValue<UInt64>("index", i);
         if (idx >= ai_embedding_response.embeddings.size())
-            throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
                 "AI embedding response 'data[{}].index' = {} is out of range (expected < {})",
                 i, idx, ai_embedding_response.embeddings.size());
         if (seen[idx])
-            throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
                 "AI embedding response 'data[{}].index' = {} duplicates an earlier entry", i, idx);
         seen[idx] = true;
 
         auto embedding_arr = item->getArray("embedding");
         if (!embedding_arr)
-            throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
+            throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
                 "AI embedding response 'data[{}].embedding' is missing or not an array", i);
 
-        ai_embedding_response.embeddings[idx].reserve(embedding_arr->size());
         for (unsigned j = 0; j < embedding_arr->size(); ++j)
             ai_embedding_response.embeddings[idx].push_back(static_cast<Float32>(embedding_arr->getElement<double>(j)));
     }
