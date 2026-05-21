@@ -77,7 +77,9 @@ namespace DimensionalMetrics
             std::shared_lock lock(mutex);
             auto it = metrics.find(label_values);
             if (it != metrics.end())
+            {
                 return *it->second;
+            }
         }
 
         std::lock_guard lock(mutex);

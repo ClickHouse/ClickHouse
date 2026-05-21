@@ -235,7 +235,9 @@ namespace HistogramMetrics
         {
             std::shared_lock lock(mutex);
             if (auto it = metrics.find(label_values); it != metrics.end())
+            {
                 return *it->second;
+            }
         }
 
         std::lock_guard lock(mutex);
