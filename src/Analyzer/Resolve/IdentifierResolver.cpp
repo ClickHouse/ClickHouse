@@ -759,6 +759,31 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             return {};
     }
 
+    /** For subqueries (including expanded CTEs), output columns whose names contain dots
+      * (e.g. produced by asterisk expansion of a join: `SELECT * FROM a JOIN b` yields columns
+      * `id`, `b.id`) must not be reachable as qualified identifiers from the outer scope.
+      * Otherwise the inner table aliases leak out of the subquery and clash with sibling
+      * tables in the outer join tree. Require that a multi-part identifier be qualified with
+      * the subquery's own alias or table name; lookups by literal dotted column name still
+      * work via a single (quoted) identifier part.
+      */
+    const bool is_subquery_table_expression = table_expression_node_type == QueryTreeNodeType::QUERY
+        || table_expression_node_type == QueryTreeNodeType::UNION;
+    if (is_subquery_table_expression && identifier.getPartsSize() > 1)
+    {
+        const auto & table_name = table_expression_data.table_name;
+        const bool prefix_matches_table_name = !table_name.empty() && path_start == table_name;
+        const bool prefix_matches_alias
+            = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
+        if (!prefix_matches_table_name && !prefix_matches_alias)
+        {
+            const auto & database_name = table_expression_data.database_name;
+            const bool prefix_matches_database = !database_name.empty() && path_start == database_name;
+            if (!prefix_matches_database)
+                return {};
+        }
+    }
+
      /** If identifier first part binds to some column start or table has full identifier name. Then we can try to find whole identifier in table.
        * 1. Try to bind identifier first part to column in table, if true get full identifier from table or throw exception.
        * 2. Try to bind identifier first part to table name or storage alias, if true remove first part and try to get full identifier from table or throw exception.
