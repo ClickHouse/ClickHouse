@@ -41,7 +41,15 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool isVariadic() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
+        if (!dt64)
+            return true;
+        return dt64->getScale() < target_scale;
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
