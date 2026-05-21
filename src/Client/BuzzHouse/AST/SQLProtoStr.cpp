@@ -86,6 +86,14 @@ CONV_FN(SQLIdentifier, ident)
     ret += "`";
 }
 
+void AggregateParamToString(String & ret, const AggregateParam & p)
+{
+    if (p.has_float_param())
+        ret += std::to_string(p.float_param());
+    else
+        ret += std::to_string(p.int_param());
+}
+
 void ClusterToString(String & ret, const bool clause, const Cluster & cl)
 {
     if (cl.has_cluster())
@@ -1002,6 +1010,17 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
             ret += af.simple() ? "Simple" : "";
             ret += "AggregateFunction(";
             ret += af.aggr();
+            if (af.params_size() > 0)
+            {
+                ret += "(";
+                for (int i = 0; i < af.params_size(); i++)
+                {
+                    if (i != 0)
+                        ret += ", ";
+                    AggregateParamToString(ret, af.params(i));
+                }
+                ret += ")";
+            }
             for (int i = 0; i < af.types_size(); i++)
             {
                 ret += ", ";

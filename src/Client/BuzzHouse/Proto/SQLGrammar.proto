@@ -1508,10 +1508,18 @@ message QBit {
     required uint32 dimension = 2;
 }
 
+message AggregateParam {
+    oneof value {
+        uint64 int_param = 1;
+        double float_param = 2;
+    }
+}
+
 message AggregateFunction {
     required bool simple = 1;
     required string aggr = 2;
-    repeated TopTypeName types = 3;
+    repeated AggregateParam params = 3;
+    repeated TopTypeName types = 4;
 }
 
 enum GeoTypes {

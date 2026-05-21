@@ -588,11 +588,13 @@ class AggregateFunctionType : public SQLType
 public:
     const bool simple;
     const std::string aggregate;
+    std::vector<AggregateParam> params;
     std::vector<std::unique_ptr<SQLType>> subtypes;
 
-    AggregateFunctionType(const bool s, std::string aggr, std::vector<std::unique_ptr<SQLType>> subs)
+    AggregateFunctionType(const bool s, std::string aggr, std::vector<AggregateParam> p, std::vector<std::unique_ptr<SQLType>> subs)
         : simple(s)
         , aggregate(std::move(aggr))
+        , params(std::move(p))
         , subtypes(std::move(subs))
     {
     }
