@@ -667,6 +667,9 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
             nested_types = map_type->getKeyValueTypes();
         }
 
+        if (nested_types.size() != type_info.nested_types.size())
+            return false;
+
         for (size_t i = 0; i < nested_types.size(); ++i)
         {
             const auto & [nested_field_type, is_nullable] = type_info.nested_types[i];
