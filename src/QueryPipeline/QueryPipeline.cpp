@@ -1,8 +1,8 @@
 #include <QueryPipeline/QueryPipeline.h>
 
 #include <iterator>
-#include <queue>
 #include <Common/MapWithMemoryTracking.h>
+#include <Common/QueueWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
@@ -170,7 +170,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         ssize_t limit_input_port;
     };
 
-    std::queue<QueuedEntry> queue; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    QueueWithMemoryTracking<QueuedEntry> queue;
 
     queue.push({ output_format, nullptr, -1 });
     visited.emplace(output_format);
