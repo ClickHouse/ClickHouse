@@ -121,10 +121,6 @@ namespace
         return user;
     }
 
-    /// `filesystem_cache_*` eviction + promotion metric families. Registered
-    /// unconditionally; emission is gated per-cache by
-    /// `FileCacheSettings::filesystem_cache_expose_prometheus_eviction_metrics`
-    /// (aggregate families) and ::..._per_client (the `_by_client` variants).
     const HistogramMetrics::Buckets hits_buckets = {0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 1024, 8192};
     const HistogramMetrics::Buckets size_buckets = {4_KiB, 16_KiB, 64_KiB, 256_KiB, 1_MiB, 4_MiB, 16_MiB, 64_MiB};
 
@@ -379,8 +375,6 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     }
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
 
-    /// Install eviction/promotion metric callbacks only when the feature is
-    /// enabled, so the disabled path stays free of std::function dispatch.
     if (expose_eviction_metrics)
     {
         main_priority->setOnEvictCallback([this](const FileSegment & segment, FileCacheQueueEntryType queue_type, const String & user_id)
