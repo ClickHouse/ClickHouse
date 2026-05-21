@@ -949,7 +949,9 @@ void NO_INLINE Aggregator::executeImpl(
     if (!no_more_keys)
     {
         /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
-        const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
+        /// Enable prefetch for all key types including strings — the adaptive PrefetchingHelper
+        /// handles variable hash computation cost by measuring actual iteration latency.
+        const bool prefetch = params.enable_prefetch
             && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
 #if USE_EMBEDDED_COMPILER
@@ -3020,7 +3022,9 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
     AggregatedDataVariantsPtr & res = non_empty_data[0];
     bool no_more_keys = false;
 
-    const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
+    /// Enable prefetch for all key types including strings — the adaptive PrefetchingHelper
+    /// handles variable hash computation cost by measuring actual iteration latency.
+    const bool prefetch = params.enable_prefetch
         && (getDataVariant<Method>(*res).data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
     /// We merge all aggregation results to the first, need to ensure non_empty_data size is greater than 1.
@@ -3105,7 +3109,9 @@ void NO_INLINE Aggregator::mergeBucketImpl(
     /// We merge all aggregation results to the first.
     AggregatedDataVariantsPtr & res = data[0];
 
-    const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
+    /// Enable prefetch for all key types including strings — the adaptive PrefetchingHelper
+    /// handles variable hash computation cost by measuring actual iteration latency.
+    const bool prefetch = params.enable_prefetch
         && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes() > min_bytes_for_prefetch);
 
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
