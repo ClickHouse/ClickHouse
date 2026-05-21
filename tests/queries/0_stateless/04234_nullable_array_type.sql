@@ -2,7 +2,10 @@
 
 DROP TABLE IF EXISTS nullable_array_type;
 
-CREATE TABLE nullable_array_type_bad (a Nullable(Array(Int32))) ENGINE = Memory; -- {serverError ILLEGAL_COLUMN}
+CREATE TABLE nullable_array_type_bad (a Nullable(Array(Int32))) ENGINE = Memory; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+
+CREATE TABLE ctas_nullable_array_bad ENGINE = Memory AS SELECT CAST([1, 2] AS Nullable(Array(Int32))) AS a; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+CREATE TABLE ctas_nullable_array_bad2 ENGINE = Memory AS SELECT CAST(NULL AS Nullable(Array(Int32))) AS a; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
 SET allow_experimental_nullable_array_type = 1;
 
