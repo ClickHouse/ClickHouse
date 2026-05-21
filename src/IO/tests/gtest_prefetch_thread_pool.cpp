@@ -2,11 +2,15 @@
 #include <IO/Rope.h>
 
 #include <gtest/gtest.h>
-#include <stdexcept>
 #include <atomic>
 #include <chrono>
-#include <mutex>
 #include <condition_variable>
+#include <cstring>
+#include <memory>
+#include <mutex>
+#include <stdexcept>
+#include <thread>
+#include <tuple>
 
 using namespace DB;
 

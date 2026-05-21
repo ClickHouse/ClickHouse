@@ -18,7 +18,10 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <memory>
+#include <optional>
 #include <unordered_map>
+#include <vector>
 
 namespace DB::ErrorCodes
 {
