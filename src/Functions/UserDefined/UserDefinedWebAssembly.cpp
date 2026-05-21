@@ -484,7 +484,7 @@ public:
     {
         auto val = user_defined_function->getSettings().getValue("is_spatial_predicate");
         if (val.getType() == Field::Types::Bool)
-            return static_cast<bool>(val);
+            return val.safeGet<bool>();
         return val.safeGet<UInt64>() != 0;
     }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /* arguments */) const override { return false; }
