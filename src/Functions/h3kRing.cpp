@@ -2,7 +2,6 @@
 
 #if USE_H3
 
-#include <vector>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -11,7 +10,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-#include <Common/AllocatorWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/castColumn.h>
 
 
@@ -126,7 +125,7 @@ public:
             int64_t disk_size = 0;
             maxGridDiskSize(k, &disk_size);
             const auto vec_size = static_cast<size_t>(disk_size);
-            std::vector<H3Index, AllocatorWithMemoryTracking<H3Index>> hindex_vec;
+            VectorWithMemoryTracking<H3Index> hindex_vec;
             hindex_vec.resize(vec_size);
             gridDisk(origin_hindex, k, hindex_vec.data());
 

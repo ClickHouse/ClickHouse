@@ -206,7 +206,7 @@ public:
         return memory_span.subspan(ptr, size);
     }
 
-    std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params, StopToken stop_token) override
+    VectorWithMemoryTracking<WasmVal> invokeImpl(std::string_view function_name, const VectorWithMemoryTracking<WasmVal> & params, StopToken stop_token) override
     {
         {
             auto result = store.context().set_fuel(cfg.fuel_limit ? cfg.fuel_limit : std::numeric_limits<uint64_t>::max());
@@ -264,7 +264,7 @@ public:
         }
 
         __msan_unpoison(returns_values.data(), returns_values.size() * sizeof(wasmtime::Val));
-        return std::ranges::to<std::vector>(returns_values | std::views::transform(fromWasmTimeValue));
+        return std::ranges::to<VectorWithMemoryTracking<WasmVal>>(returns_values | std::views::transform(fromWasmTimeValue));
     }
 
     wasmtime::Memory getMemory()
@@ -312,7 +312,7 @@ wasmtime::Result<std::monostate, wasmtime::Trap> callHostFunction(
                 params.size(),
                 argument_types.size());
         }
-        std::vector<WasmVal> args(argument_types.size());
+        VectorWithMemoryTracking<WasmVal> args(argument_types.size());
         for (size_t i = 0; i < params.size(); ++i)
         {
             if (fromWasmTimeValKind(params[i].kind()) != argument_types[i])
@@ -467,9 +467,9 @@ public:
     }
 
 
-    std::vector<WasmFunctionDeclaration> getImports() const override
+    VectorWithMemoryTracking<WasmFunctionDeclaration> getImports() const override
     {
-        std::vector<WasmFunctionDeclaration> result;
+        VectorWithMemoryTracking<WasmFunctionDeclaration> result;
 
         for (auto import_type : all_imports_list)
         {

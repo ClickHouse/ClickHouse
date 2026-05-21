@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -19,7 +20,7 @@ namespace ErrorCodes
 
 namespace
 {
-    const std::unordered_map<std::string_view, Float64> time_unit_to_float =
+    const UnorderedMapWithMemoryTracking<std::string_view, Float64> time_unit_to_float =
     {
         {"years", 365 * 24 * 3600},
         {"year", 365 * 24 * 3600},

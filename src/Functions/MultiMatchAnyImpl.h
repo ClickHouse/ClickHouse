@@ -87,7 +87,7 @@ struct MultiMatchAnyImpl
         if (!allow_hyperscan)
             throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED, "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0");
 
-        std::vector<std::string_view> needles;
+        VectorWithMemoryTracking<std::string_view> needles;
         needles.reserve(needles_arr.size());
         for (const auto & needle : needles_arr)
             needles.emplace_back(needle.safeGet<String>());
@@ -201,7 +201,7 @@ struct MultiMatchAnyImpl
 
         const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(needles_data);
 
-        std::vector<std::string_view> needles;
+        VectorWithMemoryTracking<std::string_view> needles;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {

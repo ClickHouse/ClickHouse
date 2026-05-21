@@ -71,11 +71,11 @@ public:
 
         auto col_res = ColumnString::create();
 
-        std::vector<const ColumnString::Chars *> data(arguments.size() - 1);
-        std::vector<const ColumnString::Offsets *> offsets(arguments.size() - 1);
-        std::vector<size_t> fixed_string_sizes(arguments.size() - 1);
-        std::vector<std::optional<String>> constant_strings(arguments.size() - 1);
-        std::vector<ColumnString::MutablePtr> converted_col_ptrs(arguments.size() - 1);
+        VectorWithMemoryTracking<const ColumnString::Chars *> data(arguments.size() - 1);
+        VectorWithMemoryTracking<const ColumnString::Offsets *> offsets(arguments.size() - 1);
+        VectorWithMemoryTracking<size_t> fixed_string_sizes(arguments.size() - 1);
+        VectorWithMemoryTracking<std::optional<String>> constant_strings(arguments.size() - 1);
+        VectorWithMemoryTracking<ColumnString::MutablePtr> converted_col_ptrs(arguments.size() - 1);
 
         bool has_column_string = false;
         bool has_column_fixed_string = false;

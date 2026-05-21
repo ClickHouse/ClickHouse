@@ -11,6 +11,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/scope_guard_safe.h>
 
@@ -57,8 +58,8 @@ public:
 
         const size_t num_arguments_columns = arguments.size() - 1;
 
-        std::vector<ColumnPtr> materialized_columns(num_arguments_columns);
-        std::vector<const IColumn *> aggregate_arguments_vec(num_arguments_columns);
+        VectorWithMemoryTracking<ColumnPtr> materialized_columns(num_arguments_columns);
+        VectorWithMemoryTracking<const IColumn *> aggregate_arguments_vec(num_arguments_columns);
 
         for (size_t i = 0; i < num_arguments_columns; ++i)
         {

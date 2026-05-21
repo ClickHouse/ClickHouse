@@ -4,6 +4,7 @@
 
 #include <Common/TargetSpecific.h>
 #include <Common/Stopwatch.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -134,7 +135,7 @@ namespace detail
             }
         };
 
-        std::vector<Element> data;
+        VectorWithMemoryTracking<Element> data;
         std::mutex lock;
         /// It's Ok that generator is not seeded.
         pcg64 rng;
@@ -267,7 +268,7 @@ public:
 
 private:
     const std::string function_implementation;
-    std::vector<ImplementationPtr> implementations;
+    VectorWithMemoryTracking<ImplementationPtr> implementations;
     mutable detail::PerformanceStatistics statistics; /// It is protected by internal mutex.
 };
 

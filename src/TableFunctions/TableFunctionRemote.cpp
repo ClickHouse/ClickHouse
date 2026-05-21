@@ -281,7 +281,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         size_t max_addresses = context->getSettingsRef()[Setting::table_function_remote_max_addresses];
         std::vector<String> shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
 
-        std::vector<std::vector<String>> names;
+        HostsByShard names;
         names.reserve(shards.size());
         for (const auto & shard : shards)
         {

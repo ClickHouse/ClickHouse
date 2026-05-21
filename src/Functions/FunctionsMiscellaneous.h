@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <IO/Operators.h>
@@ -259,7 +260,7 @@ public:
         if (actions_dag.hasArrayJoin())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression with arrayJoin or other unusual action cannot be captured");
 
-        std::unordered_map<std::string, DataTypePtr> arguments_map;
+        UnorderedMapWithMemoryTracking<std::string, DataTypePtr> arguments_map;
 
         for (const auto * input : actions_dag.getInputs())
             arguments_map[input->result_name] = input->result_type;

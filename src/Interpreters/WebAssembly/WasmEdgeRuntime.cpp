@@ -301,7 +301,7 @@ public:
 
     std::span<uint8_t> getMemory(WasmPtr ptr, WasmSizeT size) override;
 
-    std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params, StopToken stop_token) override;
+    VectorWithMemoryTracking<WasmVal> invokeImpl(std::string_view function_name, const VectorWithMemoryTracking<WasmVal> & params, StopToken stop_token) override;
 
     void loadModuleFromAst(const WasmEdge_ASTModuleContext * ast_module, StopToken stop_token);
 
@@ -344,7 +344,7 @@ WasmEdge_Result HostFunctionAdapter::callFunction(
     try
     {
         const auto & argument_types = func_decl.getArgumentTypes();
-        std::vector<WasmVal> args(argument_types.size());
+        VectorWithMemoryTracking<WasmVal> args(argument_types.size());
         for (size_t i = 0; i < argument_types.size(); ++i)
         {
             args[i] = fromWasmEdgeValue(in[i]);
@@ -426,7 +426,7 @@ std::span<uint8_t> WasmEdgeCompartment::getMemory(WasmPtr ptr, WasmSizeT size)
     return {data, static_cast<size_t>(size)};
 }
 
-std::vector<WasmVal> WasmEdgeCompartment::invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params, StopToken stop_token)
+VectorWithMemoryTracking<WasmVal> WasmEdgeCompartment::invokeImpl(std::string_view function_name, const VectorWithMemoryTracking<WasmVal> & params, StopToken stop_token)
 {
     auto func_it = imported_functions.find(function_name);
     if (func_it == imported_functions.end())
@@ -473,7 +473,7 @@ std::vector<WasmVal> WasmEdgeCompartment::invokeImpl(std::string_view function_n
         wasmedgeCheckResult(result, fmt::format("error while executing function '{}'", function_name));
     }
 
-    return std::ranges::to<std::vector>(returns_values | std::views::transform(fromWasmEdgeValue));
+    return std::ranges::to<VectorWithMemoryTracking<WasmVal>>(returns_values | std::views::transform(fromWasmEdgeValue));
 }
 
 
@@ -510,13 +510,13 @@ public:
         return compartment;
     }
 
-    std::vector<WasmFunctionDeclaration> getImports() const override
+    VectorWithMemoryTracking<WasmFunctionDeclaration> getImports() const override
     {
         auto imports_length = WasmEdge_ASTModuleListImportsLength(ast_module.get());
         std::vector<const WasmEdge_ImportTypeContext *> imports(imports_length);
         WasmEdge_ASTModuleListImports(ast_module.get(), imports.data(), imports_length);
 
-        std::vector<WasmFunctionDeclaration> result;
+        VectorWithMemoryTracking<WasmFunctionDeclaration> result;
 
         for (const auto * import_ctx : imports)
         {

@@ -29,7 +29,7 @@ constexpr size_t max_address_len = 90;
 constexpr size_t max_data_len = 55;
 constexpr size_t max_human_readable_part_len = 83; // Note: if we only support segwit addresses, this can be changed to 2
 
-using bech32_data = std::vector<uint8_t>;
+using bech32_data = std::vector<uint8_t>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// -------------------------------------------------------------------------------------------------------
 /// Function copied from contrib/bech32/ref/c++/segwit_addr.cpp
