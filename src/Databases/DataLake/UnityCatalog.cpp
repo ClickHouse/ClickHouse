@@ -1,4 +1,5 @@
 #include <Databases/DataLake/UnityCatalog.h>
+#include <Interpreters/StorageID.h>
 
 #if USE_PARQUET
 
@@ -18,6 +19,7 @@ namespace DB::ErrorCodes
 {
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -97,7 +99,7 @@ void UnityCatalog::getTableMetadata(
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No response from unity catalog");
 }
 
-Poco::JSON::Object::Ptr UnityCatalog::requestReadCredentials(const DB::StorageID & table_id) const
+Poco::JSON::Object::Ptr UnityCatalog::requestReadCredentials(const String & table_id) const
 {
     Poco::JSON::Object request_body;
     request_body.set("table_id", table_id);
@@ -130,7 +132,7 @@ std::shared_ptr<IStorageCredentials> UnityCatalog::parseAzureCredentials(const P
         creds_object->get("sas_token").extract<String>());
 }
 
-void UnityCatalog::getCredentials(const std::string & table_id, TableMetadata & metadata) const
+void UnityCatalog::getCredentials(const String & table_id, TableMetadata & metadata) const
 {
     LOG_DEBUG(log, "Getting credentials for table {}", table_id);
     auto storage_type = parseStorageTypeFromLocation(metadata.getLocation());
@@ -445,8 +447,15 @@ UnityCatalog::UnityCatalog(
 /// getCredentialsConfigurationCallback method is supported only for S3 storage
 ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCallback(const DB::StorageID & table_id)
 {
-    return [this, unity_table_id = table_id] () -> std::shared_ptr<IStorageCredentials>
-    {
+    if (!table_id.hasUUID())
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Cannot build a Unity credentials refresh callback for `{}`: StorageID has no UUID",
+            table_id.getNameForLogs());
+
+    const String unity_table_id = toString(table_id.uuid);
+
+    return [this, unity_table_id] () -> std::shared_ptr<IStorageCredentials>    {
         LOG_DEBUG(log, "Update credentials in the catalog");
 
         return parseS3Credentials(requestReadCredentials(unity_table_id));
