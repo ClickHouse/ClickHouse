@@ -65,6 +65,30 @@ void mergeRowNullMap(ColumnPtr & accumulated, const ColumnPtr & new_null_map, si
     accumulated = std::move(mutable_accumulated);
 }
 
+ColumnPtr wrapNullableFoldResult(ColumnPtr result, const ColumnPtr & array_null_map)
+{
+    const size_t num_rows = result->size();
+
+    ColumnPtr null_map = array_null_map;
+    if (!null_map)
+    {
+        auto null_map_mut = ColumnUInt8::create();
+        null_map_mut->getData().resize_fill(num_rows, 0);
+        null_map = std::move(null_map_mut);
+    }
+    else
+        null_map = materializeNullMapToRowCount(null_map, num_rows);
+
+    ColumnPtr nested_result = result;
+    if (const auto * nullable_result = checkAndGetColumn<ColumnNullable>(result.get()))
+    {
+        mergeRowNullMap(null_map, nullable_result->getNullMapColumnPtr(), num_rows);
+        nested_result = nullable_result->getNestedColumnPtr();
+    }
+
+    return ColumnNullable::create(nested_result, std::move(null_map));
+}
+
 }
 
 /**
@@ -371,15 +395,7 @@ public:
         auto result = result_col->permute(perm, 0);
 
         if (result_type->isNullable())
-        {
-            if (!array_null_map)
-            {
-                auto null_map = ColumnUInt8::create();
-                null_map->getData().resize_fill(result->size(), 0);
-                array_null_map = std::move(null_map);
-            }
-            return ColumnNullable::create(result, array_null_map);
-        }
+            return wrapNullableFoldResult(std::move(result), array_null_map);
 
         return result;
     }

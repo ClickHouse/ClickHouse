@@ -121,6 +121,28 @@ void mergeRowNullMap(ColumnPtr & accumulated, const ColumnPtr & new_null_map, si
     accumulated = std::move(mutable_accumulated);
 }
 
+ColumnPtr wrapNullableArrayReduceResult(ColumnPtr result, const ColumnPtr & array_null_map, size_t num_rows)
+{
+    ColumnPtr null_map = array_null_map;
+    if (!null_map)
+    {
+        auto null_map_mut = ColumnUInt8::create();
+        null_map_mut->getData().resize_fill(num_rows, 0);
+        null_map = std::move(null_map_mut);
+    }
+    else
+        null_map = materializeNullMapToRowCount(null_map, num_rows);
+
+    ColumnPtr nested_result = result;
+    if (const auto * nullable_result = checkAndGetColumn<ColumnNullable>(result.get()))
+    {
+        mergeRowNullMap(null_map, nullable_result->getNullMapColumnPtr(), num_rows);
+        nested_result = nullable_result->getNestedColumnPtr();
+    }
+
+    return ColumnNullable::create(nested_result, std::move(null_map));
+}
+
 ColumnPtr unwrapNullableArrayColumn(
     const ColumnPtr & column,
     const DataTypePtr & type,
@@ -211,8 +233,10 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
     }
     const IColumn ** aggregate_arguments = aggregate_arguments_vec.data();
 
-    const auto nested_result_type = removeNullable(result_type);
-    MutableColumnPtr result_holder = nested_result_type->createColumn();
+    /// Use the aggregate function's own result type for the destination column (*OrNull combinators
+    /// require ColumnNullable). Outer nullability from Nullable(Array) arguments is applied below.
+    const auto & aggregate_result_type = aggregate_function->getResultType();
+    MutableColumnPtr result_holder = aggregate_result_type->createColumn();
     IColumn & res_col = *result_holder;
 
     PODArray<AggregateDataPtr> places(input_rows_count);
@@ -259,15 +283,7 @@ ColumnPtr FunctionArrayReduce::executeImpl(const ColumnsWithTypeAndName & argume
     }
 
     if (result_type->isNullable())
-    {
-        if (!array_null_map)
-        {
-            auto null_map = ColumnUInt8::create();
-            null_map->getData().resize_fill(input_rows_count, 0);
-            array_null_map = std::move(null_map);
-        }
-        return ColumnNullable::create(std::move(result_holder), array_null_map);
-    }
+        return wrapNullableArrayReduceResult(std::move(result_holder), array_null_map, input_rows_count);
 
     return result_holder;
 }
