@@ -143,6 +143,12 @@ workflow = Workflow.Config(
             job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
+        # ClickBench runs on PRs only when files in its digest change
+        # (see `clickbench_jobs.digest_config`), so the cost is bounded.
+        *[
+            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.clickbench_jobs
+        ],
         JobConfigs.llvm_coverage_job,
         JobConfigs.sqllogic_test_master_job.set_run_after(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES

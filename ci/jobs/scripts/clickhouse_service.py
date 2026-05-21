@@ -22,6 +22,7 @@ class ClickHouseService:
         ch_var_lib_dir: str = f"{temp_dir}/var/lib/clickhouse",
         run_path: str = f"{temp_dir}/run",
         results: list = None,
+        config_ignore_patterns: list = None,
     ):
         self.ch_config_dir = ch_config_dir
         self.ch_var_lib_dir = ch_var_lib_dir
@@ -30,6 +31,7 @@ class ClickHouseService:
         self.pid_file = f"{ch_config_dir}/clickhouse-server.pid"
         self.log_dir = f"{temp_dir}/var/log/clickhouse-server"
         self.user_files_path = f"{run_path}/user_files"
+        self.config_ignore_patterns = list(config_ignore_patterns or [])
         self._results = results
         self._proc = None
 
@@ -55,12 +57,23 @@ class ClickHouseService:
                 src_dir = Path("./programs/server")
                 for name in ("config.xml", "users.xml"):
                     shutil.copy(src_dir / name, config_dir / name)
+                copy_kwargs = {}
+                if self.config_ignore_patterns:
+                    copy_kwargs["ignore"] = shutil.ignore_patterns(
+                        *self.config_ignore_patterns
+                    )
                 shutil.copytree(
                     src_dir / "config.d",
                     config_dir / "config.d",
                     symlinks=False,
                     dirs_exist_ok=True,
+                    **copy_kwargs,
                 )
+                # REMOVEME: verify the requested ignores actually took effect.
+                for pattern in self.config_ignore_patterns:
+                    leaked = list((config_dir / "config.d").glob(pattern))
+                    assert not leaked, \
+                        f"config_ignore_patterns leaked into {config_dir / 'config.d'}: {leaked}"
 
             # Recreate data directory so it is owned by the current process user.
             # If the directory was created on the host by a different UID (e.g. 501

@@ -1323,7 +1323,7 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ]
     )
-    clickbench_master_jobs = Job.Config(
+    clickbench_jobs = Job.Config(
         name=JobNames.CLICKBENCH,
         runs_on=RunnerLabels.FUNC_TESTER_AMD,
         command="python3 ./ci/jobs/clickbench.py",

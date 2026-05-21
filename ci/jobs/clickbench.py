@@ -1,7 +1,6 @@
 import os
 import sys
 import traceback
-from pathlib import Path
 
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
@@ -15,7 +14,6 @@ temp_dir = f"{Utils.cwd()}/ci/tmp"
 def install_clickbench_config():
     config_dir = f"{temp_dir}/etc/clickhouse-server"
     users_d = f"{config_dir}/users.d"
-    config_d = Path(config_dir) / "config.d"
     os.makedirs(users_d, exist_ok=True)
     content = """
 profiles:
@@ -25,16 +23,6 @@ profiles:
     file_path = f"{users_d}/allow_introspection_functions.yaml"
     with open(file_path, "w") as file:
         file.write(content)
-    # `programs/server/config.d/storage_conf_local.xml` is a symlink to
-    # the test-only config that defines pre-configured `local_cache*`
-    # disks with `max_size = 22548578304` (~21 GiB) under relative path
-    # `local_cache/`. With our `filesystem_caches_path` override the
-    # cache base path becomes `/dev/shm/clickhouse/local_cache/`, but
-    # the ClickBench container runs with `--shm-size=16g`, so the
-    # capacity check in `FileCache::initialize` rejects the disk and
-    # the server fails to start. ClickBench doesn't use these test
-    # disks, so drop the config.
-    (config_d / "storage_conf_local.xml").unlink(missing_ok=True)
     return True
 
 
@@ -55,7 +43,19 @@ def main():
         results.append(r := Result.from_commands_run(name="Install ClickHouse", command=install))
         r.raise_if_failed()
 
-        with ClickHouseService(results=results) as service:
+        # `programs/server/config.d/storage_conf_local.xml` is a symlink to
+        # the test-only config that defines pre-configured `local_cache*`
+        # disks with `max_size = 22548578304` (~21 GiB) under relative path
+        # `local_cache/`. With our `filesystem_caches_path` override the
+        # cache base path becomes `/dev/shm/clickhouse/local_cache/`, but
+        # the ClickBench container runs with `--shm-size=16g`, so the
+        # capacity check in `FileCache::initialize` rejects the disk and
+        # the server fails to start. ClickBench doesn't use these test
+        # disks, so skip the file at copy time.
+        with ClickHouseService(
+            results=results,
+            config_ignore_patterns=["storage_conf_local.xml"],
+        ) as service:
             if not info.is_local_run:
                 if not ch.start_log_exports(check_start_time=stop_watch.start_time):
                     print("WARNING: Failed to start log export")
