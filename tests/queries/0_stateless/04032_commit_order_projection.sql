@@ -9,11 +9,11 @@ CREATE TABLE mt_with_commit_order(
     projection _commit_order (
         select *, _block_number, _block_offset
         order by _block_number, _block_offset
-    )
+    ) WITH SETTINGS (add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_block_number_column = 0, add_minmax_index_for_block_offset_column = 0)
 )
 ENGINE = MergeTree
 ORDER BY a
-settings enable_block_number_column=1, enable_block_offset_column=1, allow_commit_order_projection=1, index_granularity=1;
+settings enable_block_number_column=1, enable_block_offset_column=1, allow_commit_order_projection=1, index_granularity=1, add_minmax_index_for_numeric_columns=0, add_minmax_index_for_block_number_column=0, add_minmax_index_for_block_offset_column=0;
 
 insert into mt_with_commit_order(a) values (8) (5) (2);   -- all_1_1_0
 insert into mt_with_commit_order(a) values (10) (7) (9);  -- all_2_2_0

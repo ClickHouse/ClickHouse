@@ -7,7 +7,7 @@ CREATE TABLE test_proj_virtuals
 (
     a UInt32,
     b UInt32,
-    PROJECTION p (SELECT a, b ORDER BY b)
+    PROJECTION p (SELECT a, b ORDER BY b) WITH SETTINGS (add_minmax_index_for_numeric_columns = 0)
 )
 ENGINE = MergeTree
 PARTITION BY a % 3

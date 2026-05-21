@@ -7,11 +7,11 @@ drop table if exists mt_commit_order_idx sync;
 CREATE TABLE mt_commit_order_idx(
     a UInt64,
     b UInt64,
-    projection commit_order index b type commit_order
+    projection commit_order index b type commit_order WITH SETTINGS (add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_block_number_column = 0, add_minmax_index_for_block_offset_column = 0)
 )
 ENGINE = MergeTree
 ORDER BY a
-settings enable_block_number_column=1, enable_block_offset_column=1, allow_commit_order_projection=1, index_granularity=1;
+settings enable_block_number_column=1, enable_block_offset_column=1, allow_commit_order_projection=1, index_granularity=1, add_minmax_index_for_numeric_columns=0, add_minmax_index_for_block_number_column=0, add_minmax_index_for_block_offset_column=0;
 
 insert into mt_commit_order_idx select rand(), rand() from numbers(10);
 insert into mt_commit_order_idx select rand(), rand() from numbers(10);

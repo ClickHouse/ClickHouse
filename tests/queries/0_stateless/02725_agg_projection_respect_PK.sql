@@ -18,7 +18,7 @@ CREATE TABLE t0
         GROUP BY
             c2,
             c1
-    )
+    ) WITH SETTINGS (add_minmax_index_for_numeric_columns = 0)
 )
 ENGINE = MergeTree ORDER BY (c1, c2) settings min_bytes_for_wide_part = 10485760, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns=0;
 
