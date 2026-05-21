@@ -336,15 +336,13 @@ SharedFixedHashTableRuntimeFilter::SharedFixedHashTableRuntimeFilter(
     const DataTypePtr & filter_column_target_type_,
     Float64 pass_ratio_threshold_for_disabling_,
     UInt64 blocks_to_skip_before_reenabling_,
-    ProbeFn probe_fn_,
-    std::shared_ptr<void> data_holder_)
+    ProbeFn probe_fn_)
     : IRuntimeFilter(
         /*filters_to_merge_=*/0,
         filter_column_target_type_,
         pass_ratio_threshold_for_disabling_,
         blocks_to_skip_before_reenabling_)
     , probe_fn(std::move(probe_fn_))
-    , data_holder(std::move(data_holder_))
 {
     /// Build was already done elsewhere; nothing left to insert.
     inserts_are_finished = true;
@@ -377,7 +375,7 @@ public:
         filter->finishInsert();
     }
 
-    void addOrReplace(const String & name, UniqueRuntimeFilterPtr runtime_filter) override
+    void replace(const String & name, UniqueRuntimeFilterPtr runtime_filter) override
     {
         std::lock_guard g(rw_lock);
         auto & filter = filters_by_name[name];

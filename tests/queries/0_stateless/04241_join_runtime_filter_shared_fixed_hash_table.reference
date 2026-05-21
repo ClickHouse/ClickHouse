@@ -4,5 +4,27 @@ inner_size1	80
 inner_size1	80
 left_dense	20000	400	0
 left_dense	20000	400	0
+left_semi	7840
+left_semi	7840
+left_anti	12160	400
+left_anti	12160	400
+multi_cond	1000
+multi_cond	1000
+signed_neg	10000
+signed_neg	10000
+null_in_build	9333
+null_in_build	9333
+key8	1000
+key8	1000
+key16	10000
+key16	10000
+key8_signed	10000
+key8_signed	10000
 inner_wide_range	50
 inner_wide_range	50
+cross_uint8_int32	50
+cross_uint8_int32	50
+cross_int8_int64	100
+cross_int8_int64	100
+cross_int32_int128	100
+cross_int32_int128	100
