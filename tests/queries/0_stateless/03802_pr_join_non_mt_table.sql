@@ -1,4 +1,3 @@
-SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas=1,
     max_parallel_replicas=3,
     parallel_replicas_for_non_replicated_merge_tree = 1,

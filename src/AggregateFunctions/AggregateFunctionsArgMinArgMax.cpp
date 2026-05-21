@@ -506,7 +506,7 @@ SELECT argMin(a, (b, a)), min(tuple(b, a)) FROM test;
         "argMin",
         {[](const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
          { return createAggregateFunctionArgMinMax<true>(name, argument_types, params, settings, false); },
-         documentation_argMin, properties});
+         properties, documentation_argMin});
 
     FunctionDocumentation::Description description_argMax = R"(
 Calculates the `arg` value for a maximum `val` value. If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic.
@@ -577,7 +577,7 @@ SELECT argMax(a, (b,a)) FROM test;
         "argMax",
         {[](const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
          { return createAggregateFunctionArgMinMax<false>(name, argument_types, params, settings, false); },
-         documentation_argMax, properties});
+         properties, documentation_argMax});
 
     FunctionDocumentation::Description description_argAndMin = R"(
 Calculates the `arg` and `val` value for a minimum `val` value.
@@ -654,7 +654,7 @@ SELECT argAndMin(a, (b, a)), min(tuple(b, a)) FROM test;
         "argAndMin",
         {[](const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
          { return createAggregateFunctionArgMinMax<true>(name, argument_types, params, settings, true); },
-         documentation_argAndMin, properties});
+         properties, documentation_argAndMin});
 
     FunctionDocumentation::Description description_argAndMax = R"(
 Calculates the `arg` and `val` value for a maximum `val` value.
@@ -731,7 +731,7 @@ SELECT argAndMax(a, (b,a)) FROM test;
         "argAndMax",
         {[](const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
          { return createAggregateFunctionArgMinMax<false>(name, argument_types, params, settings, true); },
-         documentation_argAndMax, properties});
+         properties, documentation_argAndMax});
 }
 
 }

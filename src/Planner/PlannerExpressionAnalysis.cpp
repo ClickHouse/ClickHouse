@@ -195,8 +195,8 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
                         if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
                             continue;
 
-                        auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                        auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->column) : expression_dag_node->column;
+                        auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
+                        auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableSafe(expression_dag_node->column) : expression_dag_node->column;
                         available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
                         aggregation_keys.push_back(expression_dag_node->result_name);
                         before_aggregation_actions->dag.getOutputs().push_back(expression_dag_node);
@@ -247,8 +247,8 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
                     if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
                         continue;
 
-                    auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                    auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->column) : expression_dag_node->column;
+                    auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
+                    auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableSafe(expression_dag_node->column) : expression_dag_node->column;
 
                     available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
                     aggregation_keys.push_back(expression_dag_node->result_name);
@@ -748,17 +748,9 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
           * Example: SELECT 1 FROM remote('127.0.0.{2,3}', system.one) ORDER BY dummy LIMIT 1 BY 1;
           * In this example, LIMIT BY actions does not need `dummy` column, but we must preserve it, because
           * otherwise coordinator does not find it in block.
-          *
-          * Similarly, when ORDER BY has WITH FILL, we must preserve the ORDER BY columns because
-          * the filling step added later requires them in the block header.
-          *
-          * Example: SELECT 1 ORDER BY toDateTime(0) WITH FILL LIMIT 1 BY 1;
           */
         NameSet required_output_nodes_names;
-        if (sort_analysis_result_optional.has_value()
-            && (sort_analysis_result_optional->has_with_fill
-                || (planner_query_processing_info.isFirstStage()
-                    && planner_query_processing_info.getToStage() != QueryProcessingStage::Complete)))
+        if (sort_analysis_result_optional.has_value() && planner_query_processing_info.isFirstStage() && planner_query_processing_info.getToStage() != QueryProcessingStage::Complete)
         {
             const auto & before_order_by_actions = sort_analysis_result_optional->before_order_by_actions;
             for (const auto & output_node : before_order_by_actions->dag.getOutputs())

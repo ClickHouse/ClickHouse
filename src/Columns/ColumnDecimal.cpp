@@ -21,6 +21,7 @@
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
 
+#include <DataTypes/FieldToDataType.h>
 
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
@@ -75,55 +76,6 @@ int ColumnDecimal<T>::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int)
     if (scale == other.scale)
         return a > b ? 1 : (a < b ? -1 : 0);
     return decimalLess<T>(b, a, other.scale, scale) ? 1 : (decimalLess<T>(a, b, scale, other.scale) ? -1 : 0);
-}
-
-template <is_decimal T>
-[[nodiscard]] Int64 ColumnDecimal<T>::compareTrackAt(size_t n, size_t m, const IColumn & rhs, int) const
-{
-    auto & other = assert_cast<const Self &>(rhs);
-    const T * pa = &data[n];
-    const T * pb = &other.data[m];
-
-    if (scale == other.scale)
-    {
-        Int64 res = (*pa) > (*pb) ? 1 : ((*pa) < (*pb) ? -1 : 0);
-
-        if (res < 0)
-        {
-            const T * pa_end = data.data() + size();
-            ++pa;
-            for (; pa < pa_end && (*pa) < (*pb); ++pa)
-                --res;
-        }
-        else if (res > 0)
-        {
-            const T * pb_end = other.data.data() + other.size();
-            ++pb;
-            for (; pb < pb_end && (*pb) < (*pa); ++pb)
-                ++res;
-        }
-        return res;
-    }
-    else
-    {
-        Int64 res = decimalLess<T>(*pb, *pa, other.scale, scale) ? 1 : (decimalLess<T>(*pa, *pb, scale, other.scale) ? -1 : 0);
-
-        if (res < 0)
-        {
-            const T * pa_end = data.data() + size();
-            ++pa;
-            for (; pa < pa_end && decimalLess<T>(*pa, *pb, scale, other.scale); ++pa)
-                --res;
-        }
-        else if (res > 0)
-        {
-            const T * pb_end = other.data.data() + other.size();
-            ++pb;
-            for (; pb < pb_end && decimalLess<T>(*pb, *pa, other.scale, scale); ++pb)
-                ++res;
-        }
-        return res;
-    }
 }
 
 template <is_decimal T>
@@ -378,10 +330,11 @@ size_t ColumnDecimal<T>::estimateCardinalityInPermutedRange(const IColumn::Permu
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const
+DataTypePtr ColumnDecimal<T>::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const
 {
     if (options.notFull(name_buf))
         name_buf << FieldVisitorToString()(data[n], scale);
+    return FieldToDataType()(data[n], scale);
 }
 
 template <is_decimal T>

@@ -8,6 +8,8 @@ keywords: ['cache']
 doc_type: 'reference'
 ---
 
+# Cache types
+
 When performing queries, ClickHouse uses different caches to speed up queries
 and reduce the need to read from or write to disk.
 
@@ -25,7 +27,7 @@ There are also a host of additional cache types:
 - [Vector similarity index](../engines/table-engines/mergetree-family/annindexes.md) cache.
 - [Text index](../engines/table-engines/mergetree-family/textindexes.md#caching) cache.
 - [Avro format](/interfaces/formats/Avro) schemas cache.
-- [Dictionaries](../sql-reference/statements/create/dictionary/overview.md) data cache.
+- [Dictionaries](../sql-reference/statements/create/dictionary/index.md) data cache.
 - Schema inference cache.
 - [Filesystem cache](storing-data.md) over S3, Azure, Local and other disks.
 - [Userspace page cache](/operations/userspace-page-cache)

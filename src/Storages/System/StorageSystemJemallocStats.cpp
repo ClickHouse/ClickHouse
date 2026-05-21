@@ -31,7 +31,7 @@ void StorageSystemJemallocStats::fillData(
     };
 
     std::string stats;
-    je_malloc_stats_print(print_to_string, &stats, nullptr);
+    malloc_stats_print(print_to_string, &stats, nullptr);
 
     res_columns[0]->insert(stats);
 #else
