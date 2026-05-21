@@ -1506,3 +1506,100 @@ def test_export_partition_resumes_after_stop_moves_during_export(cluster):
 
     row_count = int(node.query(f"SELECT count() FROM {s3_table} WHERE year = 2020").strip())
     assert row_count == 3, f"Expected 3 rows in S3 after export completed, got {row_count}"
+
+
+def test_export_partition_all(cluster):
+    """Happy path for `ALTER TABLE ... EXPORT PARTITION ALL TO TABLE ...`.
+
+    Schedules one export task per active partition in a single ALTER, then
+    verifies every partition lands in the destination S3 table.
+    """
+    node = cluster.instances["replica1"]
+
+    uid = str(uuid.uuid4()).replace("-", "_")
+    mt_table = f"export_all_mt_{uid}"
+    s3_table = f"export_all_s3_{uid}"
+
+    node.query(
+        f"CREATE TABLE {mt_table} (id UInt64, year UInt16)"
+        f" ENGINE = ReplicatedMergeTree('/clickhouse/tables/{mt_table}', 'replica1')"
+        f" PARTITION BY year ORDER BY tuple()"
+    )
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020), (2, 2021), (3, 2022)")
+    create_s3_table(node, s3_table)
+
+    node.query(f"ALTER TABLE {mt_table} EXPORT PARTITION ALL TO TABLE {s3_table}")
+
+    for partition_id in ("2020", "2021", "2022"):
+        wait_for_export_status(node, mt_table, s3_table, partition_id, "COMPLETED", timeout=60)
+
+    row_count = int(node.query(f"SELECT count() FROM {s3_table}").strip())
+    assert row_count == 3, f"Expected 3 rows in S3 after EXPORT PARTITION ALL, got {row_count}"
+
+
+def test_export_partition_all_failure_modes(cluster):
+    """Cover the three values of `export_merge_tree_partition_all_on_error`.
+
+    Set up an already-fully-exported source table, then re-run EXPORT PARTITION ALL
+    with each failure mode and assert the documented behavior.
+    """
+    node = cluster.instances["replica1"]
+
+    uid = str(uuid.uuid4()).replace("-", "_")
+    mt_table = f"export_all_modes_mt_{uid}"
+    s3_table = f"export_all_modes_s3_{uid}"
+    empty_mt = f"export_all_empty_mt_{uid}"
+
+    node.query(
+        f"CREATE TABLE {mt_table} (id UInt64, year UInt16)"
+        f" ENGINE = ReplicatedMergeTree('/clickhouse/tables/{mt_table}', 'replica1')"
+        f" PARTITION BY year ORDER BY tuple()"
+    )
+    node.query(f"INSERT INTO {mt_table} VALUES (1, 2020), (2, 2021), (3, 2022)")
+    create_s3_table(node, s3_table)
+
+    # First run: schedule + wait for all partitions to complete.
+    node.query(f"ALTER TABLE {mt_table} EXPORT PARTITION ALL TO TABLE {s3_table}")
+    for partition_id in ("2020", "2021", "2022"):
+        wait_for_export_status(node, mt_table, s3_table, partition_id, "COMPLETED", timeout=60)
+
+    # Empty table: throws BAD_ARGUMENTS (no active partitions).
+    node.query(
+        f"CREATE TABLE {empty_mt} (id UInt64, year UInt16)"
+        f" ENGINE = ReplicatedMergeTree('/clickhouse/tables/{empty_mt}', 'replica1')"
+        f" PARTITION BY year ORDER BY tuple()"
+    )
+    error = node.query_and_get_error(
+        f"ALTER TABLE {empty_mt} EXPORT PARTITION ALL TO TABLE {s3_table}"
+    )
+    assert "no active partitions to export" in error, (
+        f"Expected 'no active partitions' error, got: {error}"
+    )
+
+    # throw_first (default): re-run aborts on the first conflicting partition.
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ALL TO TABLE {s3_table}"
+        f" SETTINGS export_merge_tree_partition_all_on_error = 'throw_first'"
+    )
+    assert "EXPORT_PARTITION_ALREADY_EXPORTED" in error, (
+        f"Expected EXPORT_PARTITION_ALREADY_EXPORTED in error, got: {error}"
+    )
+
+    # collect: aggregated PARTITION_EXPORT_FAILED message lists every conflicting partition.
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ALL TO TABLE {s3_table}"
+        f" SETTINGS export_merge_tree_partition_all_on_error = 'collect'"
+    )
+    assert "PARTITION_EXPORT_FAILED" in error, (
+        f"Expected PARTITION_EXPORT_FAILED in error, got: {error}"
+    )
+    for partition_id in ("2020", "2021", "2022"):
+        assert partition_id in error, (
+            f"Expected aggregated error to mention partition {partition_id}, got: {error}"
+        )
+
+    # skip_conflicts: succeeds silently because every partition conflicts and is skipped.
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ALL TO TABLE {s3_table}"
+        f" SETTINGS export_merge_tree_partition_all_on_error = 'skip_conflicts'"
+    )

@@ -495,6 +495,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"export_merge_tree_part_max_bytes_per_file", 0, 0, "New setting."},
             {"export_merge_tree_part_max_rows_per_file", 0, 0, "New setting."},
             {"export_merge_tree_partition_system_table_prefer_remote_information", true, true, "New setting."},
+            {"export_merge_tree_partition_all_on_error", "throw_first", "throw_first", "New setting."},
             {"export_merge_tree_part_throw_on_pending_mutations", true, true, "New setting."},
             {"export_merge_tree_part_throw_on_pending_patch_parts", true, true, "New setting."},
             {"object_storage_cluster", "", "", "Antalya: New setting"},

@@ -235,6 +235,7 @@ namespace Setting
     extern const SettingsUInt64 export_merge_tree_part_max_rows_per_file;
     extern const SettingsBool export_merge_tree_part_throw_on_pending_mutations;
     extern const SettingsBool export_merge_tree_part_throw_on_pending_patch_parts;
+    extern const SettingsExportPartitionAllOnError export_merge_tree_partition_all_on_error;
     extern const SettingsString export_merge_tree_part_filename_pattern;
     extern const SettingsBool write_full_path_in_iceberg_metadata;
     extern const SettingsBool allow_insert_into_iceberg;
@@ -355,6 +356,8 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int INVALID_SETTING_VALUE;
     extern const int PENDING_MUTATIONS_NOT_ALLOWED;
+    extern const int EXPORT_PARTITION_ALREADY_EXPORTED;
+    extern const int PARTITION_EXPORT_FAILED;
 }
 
 namespace ServerSetting
@@ -8504,6 +8507,82 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
             "If you are exporting to an Apache Iceberg table, you also need to enable the setting `allow_experimental_insert_into_iceberg` on all replicas. The same goes for `allow_experimental_export_merge_tree_part`");
     }
 
+    /// EXPORT PARTITION ALL: expand into one sub-call per active partition id.
+    /// Failure handling is controlled by `export_merge_tree_partition_all_on_error`.
+    if (const auto * partition_ast = command.partition->as<ASTPartition>(); partition_ast && partition_ast->all)
+    {
+        auto partition_id_set = getAllPartitionIds();
+        if (partition_id_set.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Table {} has no active partitions to export",
+                            getStorageID().getNameForLogs());
+
+        /// Sort for deterministic ordering (so failure messages and tests are stable).
+        std::vector<String> partition_ids(partition_id_set.begin(), partition_id_set.end());
+        std::sort(partition_ids.begin(), partition_ids.end());
+
+        const auto & on_error_setting = query_context->getSettingsRef()[Setting::export_merge_tree_partition_all_on_error];
+        const ExportPartitionAllOnError on_error = on_error_setting.value;
+
+        LOG_INFO(log, "EXPORT PARTITION ALL: scheduling export for {} partitions, on_error={}",
+                 partition_ids.size(), on_error_setting.toString());
+
+        std::vector<std::pair<String, String>> failures; /// (partition_id, message)
+        size_t skipped_conflicts = 0;
+
+        for (const auto & partition_id : partition_ids)
+        {
+            PartitionCommand sub = command;
+            auto synthetic = make_intrusive<ASTPartition>();
+            synthetic->setPartitionID(make_intrusive<ASTLiteral>(partition_id));
+            sub.partition = synthetic;
+
+            try
+            {
+                exportPartitionToTable(sub, query_context);
+            }
+            catch (const Exception & e)
+            {
+                switch (on_error)
+                {
+                    case ExportPartitionAllOnError::throw_first:
+                        throw;
+                    case ExportPartitionAllOnError::skip_conflicts:
+                        if (e.code() == ErrorCodes::EXPORT_PARTITION_ALREADY_EXPORTED)
+                        {
+                            ++skipped_conflicts;
+                            LOG_INFO(log,
+                                     "EXPORT PARTITION ALL: skipping partition {} (already exported / concurrent): {}",
+                                     partition_id, e.message());
+                            break;
+                        }
+                        throw;
+                    case ExportPartitionAllOnError::collect:
+                        LOG_WARNING(log, "EXPORT PARTITION ALL: partition {} failed: {}",
+                                    partition_id, e.message());
+                        failures.emplace_back(partition_id, e.message());
+                        break;
+                }
+            }
+        }
+
+        if (!failures.empty())
+        {
+            String aggregated = fmt::format(
+                "EXPORT PARTITION ALL: {}/{} partitions failed to schedule. Per-partition errors:",
+                failures.size(), partition_ids.size());
+            for (const auto & [pid, msg] : failures)
+                aggregated += fmt::format("\n  {}: {}", pid, msg);
+            throw Exception(ErrorCodes::PARTITION_EXPORT_FAILED, "{}", aggregated);
+        }
+
+        if (skipped_conflicts > 0)
+            LOG_INFO(log, "EXPORT PARTITION ALL: skipped {} partitions due to existing exports",
+                     skipped_conflicts);
+
+        return;
+    }
+
     const auto dest_database = query_context->resolveDatabase(command.to_database);
     const auto dest_table = command.to_table;
     const auto dest_storage_id = StorageID(dest_database, dest_table);
@@ -8583,7 +8662,7 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
 
         if (!has_expired && !query_context->getSettingsRef()[Setting::export_merge_tree_partition_force_export])
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Export with key {} already exported or it is being exported, and it has not expired. Set `export_merge_tree_partition_force_export` to overwrite it.", export_key);
+            throw Exception(ErrorCodes::EXPORT_PARTITION_ALREADY_EXPORTED, "Export with key {} already exported or it is being exported, and it has not expired. Set `export_merge_tree_partition_force_export` to overwrite it.", export_key);
         }
 
         LOG_INFO(log, "Overwriting export with key {}", export_key);
@@ -8780,7 +8859,7 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
         {
             /// Lost the race on the root export node. Current code already
             /// validated (exists / expired / force) — so this is *always* a race.
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::EXPORT_PARTITION_ALREADY_EXPORTED,
                 "Export with key {} was created concurrently by another replica. Retry if needed",
                 export_key);
         }

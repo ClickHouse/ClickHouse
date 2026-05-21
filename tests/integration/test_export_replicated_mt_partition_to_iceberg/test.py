@@ -196,6 +196,32 @@ def test_export_two_partitions_to_iceberg(cluster):
     assert count_2021 == 1, f"Expected 1 row for year=2021, got {count_2021}"
 
 
+def test_export_partition_all_to_iceberg(cluster):
+    """
+    `ALTER TABLE ... EXPORT PARTITION ALL TO TABLE ...` schedules every active partition
+    in one statement and exercises the Iceberg-specific destination compatibility checks
+    (which are repeated per sub-call inside the loop).
+    """
+    node = cluster.instances["replica1"]
+
+    uid = unique_suffix()
+    mt_table = f"mt_{uid}"
+    iceberg_table = f"iceberg_{uid}"
+
+    setup_tables(cluster, mt_table, iceberg_table, nodes=["replica1"])
+
+    node.query(f"ALTER TABLE {mt_table} EXPORT PARTITION ALL TO TABLE {iceberg_table}")
+
+    wait_for_export_status(node, mt_table, iceberg_table, "2020", "COMPLETED")
+    wait_for_export_status(node, mt_table, iceberg_table, "2021", "COMPLETED")
+
+    count_2020 = int(node.query(f"SELECT count() FROM {iceberg_table} WHERE year = 2020").strip())
+    count_2021 = int(node.query(f"SELECT count() FROM {iceberg_table} WHERE year = 2021").strip())
+
+    assert count_2020 == 3, f"Expected 3 rows for year=2020, got {count_2020}"
+    assert count_2021 == 1, f"Expected 1 row for year=2021, got {count_2021}"
+
+
 def test_failure_is_logged_in_system_table(cluster):
     """
     When S3 is unreachable the export must be marked FAILED in

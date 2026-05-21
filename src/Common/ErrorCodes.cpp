@@ -672,11 +672,17 @@
     M(1002, UNKNOWN_EXCEPTION) \
     M(1003, SSH_EXCEPTION) \
     M(1004, STARTUP_SCRIPTS_ERROR) \
+<<<<<<< HEAD
     M(1005, STALE_VERSION) \
     M(1006, INVALID_CURSOR_LOOKUP) \
     M(1007, ILLEGAL_STREAM) \
     M(1008, TEMPORARY_DATA_NOT_IN_CACHE) \
     M(1009, PENDING_MUTATIONS_NOT_ALLOWED) \
+=======
+    M(1005, PENDING_MUTATIONS_NOT_ALLOWED) \
+    M(1006, EXPORT_PARTITION_ALREADY_EXPORTED) \
+    M(1007, PARTITION_EXPORT_FAILED) \
+>>>>>>> 12992af66fa (Merge pull request #1741 from Altinity/export_partition_all)
     /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
@@ -693,7 +699,11 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
+<<<<<<< HEAD
     constexpr ErrorCode END = 1009;
+=======
+    constexpr ErrorCode END = 1007;
+>>>>>>> 12992af66fa (Merge pull request #1741 from Altinity/export_partition_all)
     ErrorPairHolder values[END + 1]{};
 
     struct ErrorCodesNames
