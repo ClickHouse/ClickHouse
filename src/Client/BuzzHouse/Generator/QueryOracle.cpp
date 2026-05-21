@@ -35,147 +35,6 @@ static void finishSettings(SettingValues * svs)
     }
 }
 
-void QueryOracle::reattachSteps(
-    RandomGenerator & rg,
-    StatementGenerator & gen,
-    const SQLBase & obj,
-    const SQLObject sobject,
-    std::vector<SQLQuery> & intermediate_queries)
-{
-    SQLQuery next;
-    SQLQuery next2;
-    const std::optional<String> & cluster = obj.getCluster();
-    Detach * det = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_detach();
-    Attach * att = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_attach();
-
-    det->set_sobject(sobject);
-    att->set_sobject(sobject);
-    obj.setName(det->mutable_object()->mutable_est(), false);
-    obj.setName(att->mutable_object()->mutable_est(), false);
-
-    det->set_permanently(rg.nextBool());
-    det->set_sync(true);
-    if (cluster.has_value())
-    {
-        det->mutable_cluster()->set_cluster(cluster.value());
-        att->mutable_cluster()->set_cluster(cluster.value());
-    }
-    if (rg.nextSmallNumber() < 4)
-    {
-        gen.generateSettingValues(rg, formatSettings, det->mutable_setting_values());
-    }
-    if (rg.nextSmallNumber() < 4)
-    {
-        gen.generateSettingValues(rg, formatSettings, att->mutable_setting_values());
-    }
-    intermediate_queries.emplace_back(next);
-    intermediate_queries.emplace_back(next2);
-}
-
-void QueryOracle::backupRestoreSteps(
-    RandomGenerator & rg,
-    StatementGenerator & gen,
-    FuzzConfig & fc,
-    const SQLBase & obj,
-    const SQLObject sobject,
-    std::vector<SQLQuery> & intermediate_queries)
-{
-    SQLQuery next;
-    SQLQuery next3;
-    const std::optional<String> & cluster = obj.getCluster();
-    std::optional<String> bcluster;
-    BackupRestore * bac = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
-    BackupRestore * res = next3.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
-    SettingValues * bsett = nullptr;
-    SettingValues * rsett = nullptr;
-    BackupRestoreObject * baco = bac->mutable_backup_element()->mutable_bobject();
-    const String dname = obj.getDatabaseName();
-    const String tname = obj.getBaseName();
-    const bool has_partitions = obj.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname);
-
-    bac->set_command(BackupRestore_BackupCommand_BACKUP);
-    res->set_command(BackupRestore_BackupCommand_RESTORE);
-
-    obj.setName(baco->mutable_object()->mutable_est(), false);
-    bcluster = gen.backupOrRestoreObject(baco, sobject, obj);
-    if (bcluster.has_value())
-    {
-        bac->mutable_cluster()->set_cluster(bcluster.value());
-        res->mutable_cluster()->set_cluster(bcluster.value());
-    }
-    if (has_partitions && rg.nextSmallNumber() < 4)
-    {
-        baco->add_partitions()->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
-    }
-
-    gen.setBackupOut(rg, bac->mutable_out());
-    res->mutable_out()->CopyFrom(bac->out());
-    res->mutable_backup_element()->mutable_bobject()->CopyFrom(bac->backup_element().bobject());
-
-    bac->set_sync(BackupRestore_SyncOrAsync_SYNC);
-    res->set_sync(BackupRestore_SyncOrAsync_SYNC);
-    if (rg.nextSmallNumber() < 4)
-    {
-        bsett = bac->mutable_setting_values();
-        gen.generateSettingValues(rg, backupSettings, bsett);
-        SetValue * sv = bsett->has_set_value() ? bsett->add_other_values() : bsett->mutable_set_value();
-
-        sv->set_property("structure_only");
-        sv->set_value("0");
-    }
-    if (rg.nextSmallNumber() < 4)
-    {
-        bsett = bsett ? bsett : bac->mutable_setting_values();
-        gen.generateSettingValues(rg, formatSettings, bsett);
-    }
-    if (rg.nextSmallNumber() < 4)
-    {
-        rsett = res->mutable_setting_values();
-        gen.generateSettingValues(rg, restoreSettings, rsett);
-        SetValue * sv = rsett->has_set_value() ? rsett->add_other_values() : rsett->mutable_set_value();
-
-        sv->set_property("structure_only");
-        sv->set_value("0");
-    }
-    if (rg.nextSmallNumber() < 4)
-    {
-        rsett = rsett ? rsett : res->mutable_setting_values();
-        gen.generateSettingValues(rg, formatSettings, rsett);
-    }
-
-    intermediate_queries.emplace_back(next);
-    if (sobject == SQLObject::TABLE)
-    {
-        if (baco->partitions_size() == 0)
-        {
-            SQLQuery next2;
-            Truncate * trunc = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_trunc();
-
-            obj.setName(trunc->mutable_est(), false);
-            if (cluster.has_value())
-            {
-                trunc->mutable_cluster()->set_cluster(cluster.value());
-            }
-            intermediate_queries.emplace_back(next2);
-        }
-    }
-    else
-    {
-        SQLQuery next2;
-        Drop * drp = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_drop();
-
-        drp->set_sobject(sobject);
-        obj.setName(drp->mutable_object()->mutable_est(), false);
-        drp->set_sync(true);
-        if (cluster.has_value())
-        {
-            drp->mutable_cluster()->set_cluster(cluster.value());
-        }
-        intermediate_queries.emplace_back(next2);
-    }
-    intermediate_queries.emplace_back(next3);
-}
-
 /// Correctness query oracle
 /// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
 /// (GROUP BY / HAVING variant is TODO — see `combination` below)
@@ -475,8 +334,7 @@ void QueryOracle::generateRowPolicyOracleQueries(RandomGenerator & rg, Statement
     // FROM db.t [FINAL]
     JoinedTableOrFunction * jtf2 = ssc2->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
     /// Pick an existing row policy with a USING predicate on a suitable table
-    const SQLPolicy & policy
-        = rg.pickRandomly(gen.filterCollection<SQLPolicy>([&gen](const SQLPolicy & p) { return gen.rowPolicyForOracle(p); }));
+    const SQLPolicy & policy = rg.pickRandomly(gen.filterCollection<SQLPolicy>(gen.row_policies_for_oracle));
     if (gen.hasTable(policy.table_key))
     {
         const SQLTable & t = gen.lookupTable(policy.table_key);
@@ -908,12 +766,116 @@ void QueryOracle::dumpOracleIntermediateSteps(
             intermediate_queries.emplace_back(next);
         }
         break;
-        case DumpOracleStrategy::REATTACH:
-            reattachSteps(rg, gen, t, SQLObject::TABLE, intermediate_queries);
-            break;
-        case DumpOracleStrategy::BACKUP_RESTORE:
-            backupRestoreSteps(rg, gen, fc, t, SQLObject::TABLE, intermediate_queries);
-            break;
+        case DumpOracleStrategy::REATTACH: {
+            SQLQuery next2;
+            Detach * det = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_detach();
+            Attach * att = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_attach();
+
+            det->set_sobject(SQLObject::TABLE);
+            att->set_sobject(SQLObject::TABLE);
+            t.setName(det->mutable_object()->mutable_est(), false);
+            t.setName(att->mutable_object()->mutable_est(), false);
+
+            det->set_permanently(rg.nextBool());
+            det->set_sync(true);
+            if (cluster.has_value())
+            {
+                det->mutable_cluster()->set_cluster(cluster.value());
+                att->mutable_cluster()->set_cluster(cluster.value());
+            }
+            if (rg.nextSmallNumber() < 4)
+            {
+                gen.generateSettingValues(rg, formatSettings, det->mutable_setting_values());
+            }
+            if (rg.nextSmallNumber() < 4)
+            {
+                gen.generateSettingValues(rg, formatSettings, att->mutable_setting_values());
+            }
+            intermediate_queries.emplace_back(next);
+            intermediate_queries.emplace_back(next2);
+        }
+        break;
+        case DumpOracleStrategy::BACKUP_RESTORE: {
+            SQLQuery next3;
+            std::optional<String> bcluster;
+            BackupRestore * bac = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
+            BackupRestore * res = next3.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
+            SettingValues * bsett = nullptr;
+            SettingValues * rsett = nullptr;
+            BackupRestoreObject * baco = bac->mutable_backup_element()->mutable_bobject();
+            const String dname = t.getDatabaseName();
+            const String tname = t.getBaseName();
+            const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname);
+
+            bac->set_command(BackupRestore_BackupCommand_BACKUP);
+            res->set_command(BackupRestore_BackupCommand_RESTORE);
+
+            t.setName(baco->mutable_object()->mutable_est(), false);
+            bcluster = gen.backupOrRestoreObject(baco, SQLObject::TABLE, t);
+            if (bcluster.has_value())
+            {
+                bac->mutable_cluster()->set_cluster(bcluster.value());
+                res->mutable_cluster()->set_cluster(bcluster.value());
+            }
+            if (table_has_partitions && rg.nextSmallNumber() < 4)
+            {
+                baco->add_partitions()->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
+            }
+
+            gen.setBackupOut(rg, bac->mutable_out());
+            res->mutable_out()->CopyFrom(bac->out());
+            res->mutable_backup_element()->mutable_bobject()->CopyFrom(bac->backup_element().bobject());
+
+            bac->set_sync(BackupRestore_SyncOrAsync_SYNC);
+            res->set_sync(BackupRestore_SyncOrAsync_SYNC);
+            if (rg.nextSmallNumber() < 4)
+            {
+                bsett = bac->mutable_setting_values();
+                gen.generateSettingValues(rg, backupSettings, bsett);
+                SetValue * sv = bsett->has_set_value() ? bsett->add_other_values() : bsett->mutable_set_value();
+
+                /// Make sure to backup everything
+                sv->set_property("structure_only");
+                sv->set_value("0");
+            }
+            if (rg.nextSmallNumber() < 4)
+            {
+                bsett = bsett ? bsett : bac->mutable_setting_values();
+                gen.generateSettingValues(rg, formatSettings, bsett);
+            }
+            if (rg.nextSmallNumber() < 4)
+            {
+                rsett = res->mutable_setting_values();
+                gen.generateSettingValues(rg, restoreSettings, rsett);
+                SetValue * sv = rsett->has_set_value() ? rsett->add_other_values() : rsett->mutable_set_value();
+
+                /// Make sure to recover everything
+                sv->set_property("structure_only");
+                sv->set_value("0");
+            }
+            if (rg.nextSmallNumber() < 4)
+            {
+                rsett = rsett ? rsett : res->mutable_setting_values();
+                gen.generateSettingValues(rg, formatSettings, rsett);
+            }
+
+            intermediate_queries.emplace_back(next);
+            if (baco->partitions_size() == 0)
+            {
+                /// Truncate table, so it is restored into an empty one
+                SQLQuery next2;
+                Truncate * trunc = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_trunc();
+
+                t.setName(trunc->mutable_est(), false);
+                if (cluster.has_value())
+                {
+                    trunc->mutable_cluster()->set_cluster(cluster.value());
+                }
+                intermediate_queries.emplace_back(next2);
+            }
+            intermediate_queries.emplace_back(next3);
+        }
+        break;
         case DumpOracleStrategy::ALTER_UPDATE: {
             if (!t.areInsertsAppends() || rg.nextBool())
             {
@@ -954,119 +916,6 @@ void QueryOracle::dumpOracleIntermediateSteps(
     gen.setAllowNotDetermistic(true);
 }
 
-/// Dictionary oracle: dump all columns, compare full content
-void QueryOracle::dumpDictionaryContent(
-    RandomGenerator & rg, StatementGenerator & gen, const SQLDictionary & d, SQLQuery & sq1, SQLQuery & sq2)
-{
-    TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
-    SelectIntoFile * sif = ts->mutable_intofile();
-    Select * sel = ts->mutable_sel();
-    SelectStatementCore * ssc = sel->mutable_select_core();
-    JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
-
-    d.setName(jtf->mutable_tof()->mutable_est(), false);
-    jtf->set_final(d.supportsFinal());
-
-    bool first = true;
-    OrderByList * obs = ssc->mutable_orderby()->mutable_olist();
-
-    gen.flatTableColumnPath(0, d.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
-    for (const auto & entry : gen.entries)
-    {
-        ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
-
-        gen.columnPathRef(entry, ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
-        gen.columnPathRef(entry, eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path());
-        if (rg.nextBool())
-        {
-            eot->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
-        }
-        if (rg.nextBool())
-        {
-            eot->set_nulls_order(
-                rg.nextBool() ? ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_FIRST
-                              : ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_LAST);
-        }
-        first = false;
-    }
-    gen.entries.clear();
-
-    finishSettings(sel->mutable_setting_values());
-    ts->set_format(rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats)));
-    const auto err = std::filesystem::remove(qcfile);
-    UNUSED(err);
-    sif->set_path(qcfile.generic_string());
-    sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
-    sq2.CopyFrom(sq1);
-}
-
-void QueryOracle::dumpObjectIntermediateSteps(
-    RandomGenerator & rg,
-    StatementGenerator & gen,
-    const SQLBase & obj,
-    const SQLObject sobject,
-    const DumpOracleStrategy strategy,
-    std::vector<SQLQuery> & intermediate_queries)
-{
-    intermediate_queries.clear();
-    gen.setAllowNotDetermistic(false);
-    switch (strategy)
-    {
-        case DumpOracleStrategy::REATTACH:
-            reattachSteps(rg, gen, obj, sobject, intermediate_queries);
-            break;
-        case DumpOracleStrategy::BACKUP_RESTORE:
-            backupRestoreSteps(rg, gen, fc, obj, sobject, intermediate_queries);
-            break;
-        default:
-            UNREACHABLE();
-    }
-    gen.setAllowNotDetermistic(true);
-}
-
-/// View oracle: dump all columns with explicit ORDER BY
-void QueryOracle::dumpViewContent(RandomGenerator & rg, const SQLView & v, SQLQuery & sq1, SQLQuery & sq2)
-{
-    TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
-    SelectIntoFile * sif = ts->mutable_intofile();
-    Select * sel = ts->mutable_sel();
-    SelectStatementCore * ssc = sel->mutable_select_core();
-    JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
-
-    v.setName(jtf->mutable_tof()->mutable_est(), false);
-    jtf->set_final(v.supportsFinal());
-
-    bool first = true;
-    OrderByList * obs = ssc->mutable_orderby()->mutable_olist();
-
-    for (const auto & col : v.cols)
-    {
-        ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
-
-        ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path()->mutable_col()->set_column(col);
-        eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(col);
-        if (rg.nextBool())
-        {
-            eot->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
-        }
-        if (rg.nextBool())
-        {
-            eot->set_nulls_order(
-                rg.nextBool() ? ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_FIRST
-                              : ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_LAST);
-        }
-        first = false;
-    }
-
-    finishSettings(sel->mutable_setting_values());
-    ts->set_format(rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats)));
-    const auto err = std::filesystem::remove(qcfile);
-    UNUSED(err);
-    sif->set_path(qcfile.generic_string());
-    sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
-    sq2.CopyFrom(sq1);
-}
-
 void QueryOracle::generateImportQuery(
     RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const
 {
@@ -1074,9 +923,8 @@ void QueryOracle::generateImportQuery(
     InsertFromFile * iff = nins->mutable_insert_file();
     const Insert & oins = sq2.single_query().explain().inner_query().insert();
     const FileFunc & ff = oins.tof().tfunc().file();
-    const InFormat & inf = !outIn.contains(ff.outformat()) || (!can_test_oracle_result && rg.nextSmallNumber() < 4)
-        ? rg.pickValueRandomlyFromMap(outIn)
-        : outIn.at(ff.outformat());
+    const InFormat & inf
+        = (!can_test_oracle_result && rg.nextSmallNumber() < 4) ? rg.pickValueRandomlyFromMap(outIn) : outIn.at(ff.outformat());
 
     insertOnTableOrCluster(rg, gen, t, false, nins->mutable_tof());
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
@@ -1129,7 +977,7 @@ bool QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
     /// Most of the times use SET command, other times SYSTEM
     if (use_settings)
     {
-        std::uniform_int_distribution<uint32_t> settings_range(1, 40);
+        std::uniform_int_distribution<uint32_t> settings_range(1, 20);
         const uint32_t nsets = settings_range(rg.generator);
         SettingValues * sv = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_setting_values();
 

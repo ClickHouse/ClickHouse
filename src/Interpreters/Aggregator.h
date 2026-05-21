@@ -3,6 +3,7 @@
 #include <memory>
 #include <mutex>
 #include <type_traits>
+#include <variant>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 
@@ -11,7 +12,7 @@
 #include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
 #include <Common/Logger.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/ThreadPool.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
@@ -189,7 +190,6 @@ public:
     };
 
     explicit Aggregator(const Block & header_, const Params & params_);
-    ~Aggregator();
 
     const Params & getParams() const { return params; }
 
@@ -273,11 +273,7 @@ public:
     /// Merge several partially aggregated chunks into one.
     /// Precondition: for all chunks the is_overflows flag must be the same.
     /// (either all chunks are from overflow data or none are).
-    AggregatedChunk mergeBlocks(
-        AggregatedChunks & chunks,
-        bool final,
-        std::atomic<bool> & is_cancelled,
-        const RuntimeDataflowStatisticsCacheUpdaterPtr & dataflow_cache_updater);
+    AggregatedChunk mergeBlocks(AggregatedChunks & chunks, bool final, std::atomic<bool> & is_cancelled);
 
     /** Split block with partially-aggregated data to many blocks, as if two-level method of aggregation was used.
       * This is needed to simplify merging of that data with other results, that are already two-level.
@@ -360,11 +356,14 @@ private:
 
     std::vector<bool> is_aggregate_function_compiled;
 
-    mutable std::unique_ptr<ThreadPool> thread_pool;
+    mutable ThreadPool thread_pool;
 
     /** Try to compile aggregate functions.
       */
     void compileAggregateFunctionsIfNeeded();
+
+    /** Select the aggregation method based on the number and types of keys. */
+    AggregatedDataVariants::Type chooseAggregationMethod(const Block & header);
 
     /** Create states of aggregate functions for one key.
       */
