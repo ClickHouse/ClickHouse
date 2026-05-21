@@ -855,6 +855,16 @@ def install_and_start_clickhouse():
 # Array of (dataset, test_params)
 TESTS_TO_RUN = [
     (
+        "Test using the laion dataset",
+        dataset_laion_5b_mini_for_quick_test,
+        test_params_laion_5b_1m,
+    ),
+    (
+        "Test using the hackernews dataset",
+        dataset_hackernews_openai,
+        test_params_hackernews_10m,
+    ),
+    (
         "Test using the cohere wiki dataset",
         dataset_cohere_wiki_20m,
         test_params_cohere_wiki_20m,
