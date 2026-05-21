@@ -183,22 +183,28 @@ inline ColumnPtr wrapNullableArrayResultIfNeeded(
         return ColumnNullable::create(std::move(mutable_result), std::move(null_map_col));
     }
 
-    auto mutable_result = IColumn::mutate(result->convertToFullColumnIfConst());
-    const size_t num_rows = mutable_result->size();
+    const size_t num_rows = result->size();
 
-    MutableColumnPtr null_map_col = ColumnUInt8::create();
-    auto & null_map_data = assert_cast<ColumnUInt8 &>(*null_map_col).getData();
-
+    ColumnPtr null_map_col;
     if (array_null_map)
+        null_map_col = materializeNullMapToRowCount(array_null_map, num_rows);
+    else
     {
-        const auto & source_null_map = assert_cast<const ColumnUInt8 &>(
-            *materializeNullMapToRowCount(array_null_map, num_rows));
-        null_map_data.assign(source_null_map.getData().begin(), source_null_map.getData().end());
+        auto null_map_mut = ColumnUInt8::create();
+        assert_cast<ColumnUInt8 &>(*null_map_mut).getData().resize_fill(num_rows, 0);
+        null_map_col = std::move(null_map_mut);
+    }
+
+    ColumnPtr nested_result = result;
+    if (const auto * nullable_result = checkAndGetColumn<ColumnNullable>(result.get()))
+    {
+        mergeRowNullMap(null_map_col, nullable_result->getNullMapColumnPtr(), num_rows);
+        nested_result = nullable_result->getNestedColumnPtr();
     }
     else
-        null_map_data.resize_fill(num_rows, 0);
+        nested_result = IColumn::mutate(result->convertToFullColumnIfConst());
 
-    return ColumnNullable::create(std::move(mutable_result), std::move(null_map_col));
+    return ColumnNullable::create(nested_result, null_map_col);
 }
 
 }
