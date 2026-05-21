@@ -580,7 +580,7 @@ enum class ExplainQueryPlanDefault : uint8_t
 {
     LEGACY,
     PRETTY,
-}
+};
 
 DECLARE_SETTING_ENUM(ExplainQueryPlanDefault)
 

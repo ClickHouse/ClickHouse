@@ -47,7 +47,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsUInt64 query_plan_max_step_description_length;
-    extern const SettingFieldExplainQueryPlanDefault explain_query_plan_default;
+    extern const SettingsExplainQueryPlanDefault explain_query_plan_default;
 }
 
 namespace ErrorCodes
