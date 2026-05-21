@@ -78,7 +78,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
         const auto *config = &context->getConfigRef();
         if (config->has("url_scheme_mappers"))
         {
-            std::vector<String> config_keys; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+            Strings config_keys;
             config->keys("url_scheme_mappers", config_keys);
             for (const std::string & config_key : config_keys)
                 mapper[config_key] = config->getString("url_scheme_mappers." + config_key + ".to");

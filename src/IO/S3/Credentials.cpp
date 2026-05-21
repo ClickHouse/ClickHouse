@@ -282,7 +282,7 @@ Aws::String AWSEC2MetadataClient::getDefaultCredentials() const
     if (trimmed_credentials_string.empty())
         return {};
 
-    std::vector<String> security_credentials = Aws::Utils::StringUtils::Split(trimmed_credentials_string, '\n'); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    Strings security_credentials = Aws::Utils::StringUtils::Split(trimmed_credentials_string, '\n');
 
     LOG_DEBUG(logger, "Calling EC2MetadataService resource, {} returned credential string {}.",
             EC2_SECURITY_CREDENTIALS_RESOURCE, trimmed_credentials_string);
@@ -337,7 +337,7 @@ Aws::String AWSEC2MetadataClient::getDefaultCredentialsSecurely() const
     String profile_string = GetResourceWithAWSWebServiceResult(profile_request).GetPayload();
 
     String trimmed_profile_string = Aws::Utils::StringUtils::Trim(profile_string.c_str());
-    std::vector<String> security_credentials = Aws::Utils::StringUtils::Split(trimmed_profile_string, '\n'); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    Strings security_credentials = Aws::Utils::StringUtils::Split(trimmed_profile_string, '\n');
 
     LOG_DEBUG(logger, "Calling EC2MetadataService resource, {} with token returned profile string {}.",
             EC2_SECURITY_CREDENTIALS_RESOURCE, trimmed_profile_string);
@@ -536,7 +536,7 @@ String getRunningAvailabilityZone(AZFacilities az_facility)
 
     if (az_facility == AZFacilities::AWS_ZONE_NAME_THEN_GCP_ZONE)
     {
-        std::vector<std::string> ex_msgs; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        Strings ex_msgs;
 
         /// it is expected that some facilities do not work, we are prepared for exceptions
         for (auto & getter : az_getters)
@@ -789,7 +789,7 @@ AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdent
     aws_client_configuration.scheme = Aws::Http::Scheme::HTTPS;
     aws_client_configuration.region = std::move(tmp_region);
 
-    std::vector<String> retryable_errors; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    Strings retryable_errors;
     retryable_errors.push_back("IDPCommunicationError");
     retryable_errors.push_back("InvalidIdentityToken");
 
