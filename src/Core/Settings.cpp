@@ -322,7 +322,7 @@ Without SMT (e.g. Intel HyperThreading), this corresponds to the number of CPU c
 For ClickHouse Cloud users, the default value will display as `auto(N)` where N matches the vCPU size of your service e.g. 2vCPU/8GiB, 4vCPU/16GiB etc.
 See the settings tab in the Cloud console for a list of all service sizes.
 )", 0) \
-    DECLARE(UInt64, max_threads_min_free_memory_per_thread, 1_GiB, R"(
+    DECLARE(UInt64, max_threads_min_free_memory_per_thread, 100_MiB, R"(
 Lowers `max_threads` when the server is under memory pressure, to avoid starting highly-parallel queries that are likely to hit the memory limit.
 
 Free memory is computed as the server's `max_server_memory_usage` minus the memory currently tracked by the global memory tracker. If that free memory is less than `max_threads` multiplied by this value, `max_threads` is reduced to the largest N such that `N * value <= free_memory`, with a minimum of `1`.
@@ -333,7 +333,7 @@ For example, with the default of 1 GiB and 32 GiB of free memory, `max_threads` 
 
 This setting applies to read-side parallelism (`SELECT`, `UNION`, `INTERSECT`/`EXCEPT`, and the `SELECT` side of `INSERT ... SELECT`). For the write side, see `max_insert_threads_min_free_memory_per_thread`.
 )", 0) \
-    DECLARE(UInt64, max_insert_threads_min_free_memory_per_thread, 4_GiB, R"(
+    DECLARE(UInt64, max_insert_threads_min_free_memory_per_thread, 400_MiB, R"(
 Same as `max_threads_min_free_memory_per_thread`, but applied to `max_insert_threads` instead of `max_threads`. The default is higher because insert pipelines typically hold larger per-thread buffers (merge tree parts, compression blocks) than read pipelines.
 
 If the amount of free memory is less than `max_insert_threads` multiplied by this value, `max_insert_threads` is reduced to fit, down to a minimum of `1`.
