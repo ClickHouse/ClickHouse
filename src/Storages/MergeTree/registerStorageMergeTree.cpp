@@ -263,7 +263,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
 
     if (has_valid_arguments)
     {
-        bool is_replicated_database = local_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
+        bool is_replicated_database = local_context->isDDLOrOnClusterInternal() &&
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->getEngineName() == "Replicated";
 
         /// Get path and name from engine arguments
@@ -916,7 +916,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 try
                 {
-                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, &metadata.partition_key, context);
+                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, &metadata.partition_key, context, args.mode);
                     metadata.projections.add(std::move(projection));
                 }
                 catch (...)
