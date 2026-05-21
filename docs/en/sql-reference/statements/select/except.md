@@ -7,8 +7,6 @@ keywords: ['EXCEPT', 'clause']
 doc_type: 'reference'
 ---
 
-# EXCEPT clause
-
 > The `EXCEPT` clause returns only those rows that result from the first query without the second. 
 
 - Both queries must have the same number of columns in the same order and data type.

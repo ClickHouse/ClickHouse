@@ -6,8 +6,6 @@ title: 'INTERSECT Clause'
 doc_type: 'reference'
 ---
 
-# INTERSECT Clause
-
 The `INTERSECT` clause returns only those rows that result from both the first and the second queries. The queries must match the number of columns, order, and type. The result of `INTERSECT` can contain duplicate rows.
 
 Multiple `INTERSECT` statements are executed left to right if parentheses are not specified. The `INTERSECT` operator has a higher priority than the `UNION` and `EXCEPT` clauses.

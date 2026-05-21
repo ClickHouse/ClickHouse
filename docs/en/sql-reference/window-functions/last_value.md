@@ -7,8 +7,6 @@ title: 'last_value'
 doc_type: 'reference'
 ---
 
-# last_value
-
 Returns the last value evaluated within its ordered frame. By default, NULL arguments are skipped, however the `RESPECT NULLS` modifier can be used to override this behaviour.
 
 **Syntax**
