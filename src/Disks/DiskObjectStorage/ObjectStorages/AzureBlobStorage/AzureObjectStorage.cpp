@@ -297,6 +297,10 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
     if (blob_storage_log)
         blob_storage_log->local_path = object.local_path;
 
+    ThreadPoolCallbackRunnerUnsafe<void> scheduler;
+    if (write_settings.azure_allow_parallel_part_upload)
+        scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::REMOTE_FS_WRITE_THREAD_POOL);
+
     if (isAdlsGen2Endpoint(connection_params.endpoint.storage_account_url))
     {
         return std::make_unique<WriteBufferFromAzureDataLakeStorage>(
@@ -310,10 +314,6 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
             connection_params.getContainer(),
             std::move(blob_storage_log));
     }
-
-    ThreadPoolCallbackRunnerUnsafe<void> scheduler;
-    if (write_settings.azure_allow_parallel_part_upload)
-        scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::REMOTE_FS_WRITE_THREAD_POOL);
 
     return std::make_unique<WriteBufferFromAzureBlobStorage>(
         client.get(),
