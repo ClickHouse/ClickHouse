@@ -18,7 +18,7 @@
 
 # 2026 Changelog
 
-### <a id="265"></a> ClickHouse release 26.5, 2026-05-21. [Presentation](https://presentations.clickhouse.com/2026-release-26.5/), [Video](https://www.youtube.com/c/ClickHouseDB)
+### <a id="265"></a> ClickHouse release 26.5, 2026-05-21. [Presentation](https://presentations.clickhouse.com/2026-release-26.5/), [Video](https://www.youtube.com/watch?v=P1IDAvsi7p8)
 
 #### Backward Incompatible Change
 * Changed defaults of `date_time_input_format` and `cast_string_to_date_time_mode` from `basic` to `best_effort`. Queries that previously failed to parse non-basic datetime strings (e.g. `2024 April 4`, `Apr 15, 2020 10:30:00`) may now succeed by default. To keep the old strict parsing behavior, set these settings to `basic` (or use `compatibility`). [#89334](https://github.com/ClickHouse/ClickHouse/pull/89334) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
