@@ -361,9 +361,8 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     , index_data_types(index_description.data_types)
     , condition(buildCondition(index_description, filter_dag, context))
 {
-    for (const auto & name : index_description.sample_block.getNames())
-        if (!key_columns.contains(name))
-            key_columns.insert(name);
+    for (const auto & col : index_description.sample_block)
+        key_columns.try_emplace(col.name, col.type);
 
     if (!filter_dag.predicate)
         return;
@@ -617,17 +616,33 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
     RPNBuilderTreeNode tree_node(node_to_check, tree_context);
 
     auto column_name = tree_node.getColumnName();
-    if (key_columns.contains(column_name))
+    if (auto it_key = key_columns.find(column_name); it_key != key_columns.end())
     {
         /// Check if we already created an INPUT for this key column
         auto it = key_column_inputs.find(column_name);
         if (it != key_column_inputs.end())
             return it->second;
 
+        /// Granule data is materialised at the storage column type recorded in `sample_block`.
+        /// The predicate may instead reference the column at a different type — typically because
+        /// a MaterializedView wrapped the storage column with a `_CAST` to its declared (e.g.
+        /// `Nullable`) type, and that conversion has been folded away by filter rebuilding
+        /// (see `ActionsDAG::buildFilterActionsDAG`) — leaving the cloned function nodes resolved
+        /// against the MV-layer type. Add an INPUT of the granule type and a `CAST` back to the
+        /// type the predicate's pre-resolved functions expect, so executing the actions against
+        /// `granule.block` keeps the function `result_type` invariant intact.
+        const auto & storage_type = it_key->second;
         const auto * result_node = node_to_check;
 
-        if (node.type != ActionsDAG::ActionType::INPUT)
+        if (!storage_type->equals(*node.result_type))
+        {
+            const auto * input_node = &result_dag.addInput(column_name, storage_type);
+            result_node = &result_dag.addCast(*input_node, node.result_type, column_name, context);
+        }
+        else if (node.type != ActionsDAG::ActionType::INPUT)
+        {
             result_node = &result_dag.addInput(column_name, node.result_type);
+        }
 
         key_column_inputs[column_name] = result_node;
         return result_node;
