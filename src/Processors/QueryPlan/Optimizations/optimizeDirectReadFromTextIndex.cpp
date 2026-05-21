@@ -600,7 +600,7 @@ private:
                 /// If the postprocessed token contains separator characters it would be ill-formed as a
                 /// hasToken* needle (BAD_ARGUMENTS / NULL on non-indexed parts in Exact mode), so keep
                 /// the original needle in that case.
-                std::vector<String> tokens = postprocessor->processTokens({needles_field.safeGet<String>()});
+                VectorWithMemoryTracking<String> tokens = postprocessor->processTokens(VectorWithMemoryTracking<String>{needles_field.safeGet<String>()});
                 if (tokens.empty())
                     needles_field = String{};
                 else if (std::ranges::any_of(tokens.front(), isTokenSeparator))
@@ -611,7 +611,7 @@ private:
             else if (needles_field.getType() == Field::Types::Array)
             {
                 const auto & src_array = needles_field.safeGet<Array>();
-                std::vector<String> tokens;
+                VectorWithMemoryTracking<String> tokens;
                 for (const Field & element : src_array)
                     if (element.getType() == Field::Types::String)
                         tokens.push_back(element.safeGet<String>());

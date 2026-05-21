@@ -59,7 +59,7 @@ MergeTreeIndexTextPostprocessor::MergeTreeIndexTextPostprocessor(ASTPtr expressi
     actions.emplace(std::move(actions_dag));
 }
 
-std::vector<String> MergeTreeIndexTextPostprocessor::processTokens(std::vector<String> tokens) const
+VectorWithMemoryTracking<String> MergeTreeIndexTextPostprocessor::processTokens(VectorWithMemoryTracking<String> tokens) const
 {
     if (!actions || tokens.empty())
         return tokens;

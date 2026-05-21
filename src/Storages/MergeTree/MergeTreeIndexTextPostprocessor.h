@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <Columns/ColumnArray.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnString.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/IDataType.h>
@@ -26,7 +27,7 @@ public:
     /// Applies the postprocessor to all tokens in one batch execution.
     /// Tokens mapped to an empty string are removed.
     /// If no expression was provided, returns the tokens unchanged.
-    std::vector<String> processTokens(std::vector<String> tokens) const;
+    VectorWithMemoryTracking<String> processTokens(VectorWithMemoryTracking<String> tokens) const;
 
     /// Processes a flat ColumnString in which each row holds a single token
     /// (tokens of all documents are concatenated into one column, in order).
