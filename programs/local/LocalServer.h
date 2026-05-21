@@ -90,6 +90,13 @@ private:
 
     ServerSettings server_settings;
 
+    /// Path of the config file actually loaded in `initialize`. Empty if no config file was loaded.
+    /// Tracks loads from all sources: `--config-file` flag, `./config.xml`, and `getLocalConfigPath`
+    /// (`./clickhouse-local.{xml,yaml,yml}`, `~/.clickhouse-local/config.{xml,yaml,yml}`,
+    /// `/etc/clickhouse-local/config.{xml,yaml,yml}`). Needed by `setupUsers` to resolve relative
+    /// paths in `user_directories.users_xml.path` against the config's own directory.
+    String loaded_config_path;
+
     std::optional<StatusFile> status;
     std::optional<std::filesystem::path> temporary_directory_to_delete;
 
