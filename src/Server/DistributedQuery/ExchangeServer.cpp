@@ -4,14 +4,13 @@
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Common/PODArray.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/NetException.h>
-
-#include <vector>
 
 namespace DB
 {
@@ -146,7 +145,7 @@ void ExchangeServer::handleConnection(Poco::Net::StreamSocket socket, ExchangeCo
             "SourceHello body size {} from {} is too small to contain the protocol version",
             header.bytes_size, socket.peerAddress().toString());
 
-    std::vector<char> body_buffer(header.bytes_size);
+    PODArray<char> body_buffer(header.bytes_size);
     if (!body_buffer.empty())
         receiveAll(socket, body_buffer.data(), body_buffer.size(), "SourceHello body");
 

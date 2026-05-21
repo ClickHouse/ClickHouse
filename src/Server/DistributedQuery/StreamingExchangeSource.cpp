@@ -10,6 +10,7 @@
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Poco/Net/NetException.h>
 #include <Common/logger_useful.h>
+#include <Common/PODArray.h>
 #include <base/types.h>
 
 namespace DB
@@ -95,7 +96,7 @@ void StreamingExchangeSource::receiveHello()
             "SinkHello body size {} is too small to contain the protocol version for exchange stream {}",
             header.bytes_size, stream_name);
 
-    std::vector<char> body_buffer(header.bytes_size);
+    PODArray<char> body_buffer(header.bytes_size);
     size_t body_position = 0;
     readFromSocket(body_buffer.data(), body_buffer.size(), body_position);
     if (body_position != body_buffer.size())
