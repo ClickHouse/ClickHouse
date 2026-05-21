@@ -266,6 +266,27 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
         info.cache_file_reader.reset();
     }
 
+    /// This reads a local filesystem cache file. We build `ReadSettings` from defaults
+    /// and propagate only the fields that apply to cache file reads:
+    ///   - `local_fs_method = pread`: cache file reads always use pread for predictable
+    ///     synchronous behavior, regardless of the caller's preferred remote method
+    ///   - `local_fs_buffer_size`: 0 when the wrapper provides memory via `set()`
+    ///     (external buffer mode), otherwise the size the wrapper requested
+    ///   - `local_throttler`: propagated so bandwidth limits apply to cache file reads too
+    ///
+    /// We deliberately do NOT propagate from the caller's `ReadSettings`:
+    ///   - `direct_io_threshold`, `mmap_threshold`/`mmap_cache`: cache files are hot
+    ///     (the same segments are read many times across queries). The kernel page cache
+    ///     keeps recently-read pages in RAM, so subsequent reads avoid disk I/O.
+    ///     O_DIRECT/mmap would bypass the kernel page cache, forcing disk reads on every
+    ///     access — counterproductive for cache files. Master copied the full settings
+    ///     and so could inherit these flags for cache file reads; our defaults are
+    ///     intentionally narrower.
+    ///   - `priority`, `enable_filesystem_read_prefetches_log`: only used by the async
+    ///     local readers (`io_uring`, `pread_fake_async`, `pread_threadpool`). We force
+    ///     pread, so these are irrelevant.
+    ///   - `remote_fs_*`, `page_cache*`, prefetch-related fields: target the remote read
+    ///     path or pipeline stages above us; do not apply to local cache file I/O.
     ReadSettings local_read_settings;
     local_read_settings.local_fs_method = LocalFSReadMethod::pread;
     local_read_settings.local_fs_buffer_size = info.use_external_buffer ? 0 : info.local_fs_buffer_size;
