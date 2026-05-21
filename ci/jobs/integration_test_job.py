@@ -685,6 +685,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 for file in changed_files:
                     if (
                         file.startswith("tests/integration/test")
+                        # e2e tests require external credentials/backends and are
+                        # excluded from the default pytest run via the `e2e`
+                        # marker. Skip them so a mixed PR (both e2e and regular
+                        # integration tests changed) does not try to run them.
+                        and not file.startswith("tests/integration/test_e2e_")
                         and Path(file).name.startswith("test")
                         and file.endswith(".py")
                         and Path(file).is_file()
