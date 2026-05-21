@@ -3343,15 +3343,16 @@ Possible values:
 - `0` — Unlimited number of rows.
 )", 0) \
     DECLARE(UInt64, max_bytes_in_join, 0, R"(
-The maximum size in number of bytes of the hash table used when joining tables.
+The maximum size in bytes of the hash table used by JOIN execution.
 
 This setting applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
 operations and the [Join table engine](/engines/table-engines/special/join).
 
-If the query contains joins, ClickHouse checks this setting for every intermediate result.
+For `SELECT ... JOIN`, this limit is used by join algorithms that build a hash
+table in memory (for example, `hash` and `parallel_hash`).
 
-ClickHouse can proceed with different actions when the limit is reached. Use
-the [join_overflow_mode](/operations/settings/settings#join_overflow_mode) settings to choose the action.
+If this limit is reached, ClickHouse follows
+[`join_overflow_mode`](/operations/settings/settings#join_overflow_mode).
 
 Possible values:
 
@@ -3359,17 +3360,23 @@ Possible values:
 - 0 — Memory control is disabled.
 )", 0) \
     DECLARE(OverflowMode, join_overflow_mode, OverflowMode::THROW, R"(
-Defines what action ClickHouse performs when any of the following join limits is reached:
+Defines what action ClickHouse performs when a join reaches any of the following limits:
 
 - [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join)
 - [max_rows_in_join](/operations/settings/settings#max_rows_in_join)
 
 Possible values:
 
-- `THROW` — ClickHouse throws an exception and breaks operation.
-- `BREAK` — ClickHouse breaks operation and does not throw an exception.
+- `THROW` — ClickHouse throws an exception and stops the query.
+- `BREAK` — ClickHouse stops the query and does not throw an exception.
 
 Default value: `THROW`.
+
+This behavior is used with settings such as
+[`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join) and
+[`max_rows_in_join`](/operations/settings/settings#max_rows_in_join). The
+limits apply to join algorithms that build an in-memory hash table (for
+example, `hash` and `parallel_hash`).
 
 **See Also**
 
