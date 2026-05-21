@@ -451,7 +451,17 @@ void KeeperRequestDispatcher::finishSession(int64_t session_id)
         close_response->error = Coordination::Error::ZSESSIONEXPIRED;
         size_t size = getResponseBytesCost(*close_response);
         response_bytes_in_all_queues.fetch_add(size);
-        if (!callback(close_response, nullptr))
+        bool deferred_deallocation = false;
+        try
+        {
+            deferred_deallocation = callback(close_response, nullptr);
+        }
+        catch (...)
+        {
+            response_bytes_in_all_queues.fetch_sub(size);
+            throw;
+        }
+        if (!deferred_deallocation)
             response_bytes_in_all_queues.fetch_sub(size);
     }
 }
@@ -1084,23 +1094,27 @@ void KeeperRequestDispatcher::responseThread()
 
             const UInt64 dequeue_time_us = ZooKeeperOpentelemetrySpans::now();
 
-            bool deferred_deallocation = false;
-            bool response_was_sent = false;
+            ZooKeeperResponseCallback callback;
             {
                 std::shared_lock sessions_lock(sessions_mutex);
 
                 auto it = sessions.find(response_for_session.session_id);
                 if (it != sessions.end())
+                    callback = it->second.response_callback;
+            }
+
+            bool deferred_deallocation = false;
+            bool response_was_sent = false;
+            if (callback)
+            {
+                try
                 {
-                    try
-                    {
-                        deferred_deallocation = it->second.response_callback(response_for_session.response, response_for_session.request);
-                        response_was_sent = true;
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
-                    }
+                    deferred_deallocation = callback(response_for_session.response, response_for_session.request);
+                    response_was_sent = true;
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
                 }
             }
 

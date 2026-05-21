@@ -510,6 +510,8 @@ void KeeperTCPHandler::runImpl()
     bool close_received = false;
 
     SCOPE_EXIT({
+        responses->finish();
+
         /// If the session is closed by shutdown, don't report it to keeper_dispatcher.
         /// It has separate logic to send Close requests for remaining sessions on shutdown.
         if (!keeper_dispatcher->isShuttingDown())
@@ -524,7 +526,6 @@ void KeeperTCPHandler::runImpl()
             }
         }
 
-        responses->finish();
         RequestWithResponse request_with_response;
         while (responses->tryPop(request_with_response))
         {
