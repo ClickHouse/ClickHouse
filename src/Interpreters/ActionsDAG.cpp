@@ -332,7 +332,7 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnConstPtr column, DataTypePt
 
     /// ColumnConst stored in ActionsDAG::Node carries the value but not the row count;
     /// the size is recomputed at execution. Normalize to size 0 here.
-    if (column->size() != 0)
+    if (!column->empty())
         column = ColumnConst::create(column->getDataColumnPtr(), 0);
 
     Node node;
@@ -491,7 +491,7 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
         {
             /// Functions may produce a ColumnConst sized to match the input block; in DAG nodes
             /// the size is meaningless and we keep them at zero.
-            if (column_const->size() != 0)
+            if (!column_const->empty())
                 node.column = ColumnConst::create(column_const->getDataColumnPtr(), 0);
             else
                 node.column = column_const->getPtr();

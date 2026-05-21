@@ -409,8 +409,7 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                     const auto comparison_type_index = getTypeIndex(column_node);
 
-                    DB::Field value;
-                    literal_node->column->get(0, value);
+                    DB::Field value = literal_node->column->getField();
 
                     uintptr_t constant = visitLiteralValue(
                         value,

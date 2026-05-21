@@ -1773,7 +1773,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 column->byteSize() < 1_MiB)
             {
                 /// Replace function node with result constant node
-                constant_node = std::make_shared<ConstantNode>(ConstantValue{ std::move(column), std::move(result_type) }, node, is_deterministic);
+                constant_node = std::make_shared<ConstantNode>(ConstantValue{ column, std::move(result_type) }, node, is_deterministic);
             }
         }
 

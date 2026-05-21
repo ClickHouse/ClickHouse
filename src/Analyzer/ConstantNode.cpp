@@ -38,7 +38,7 @@ ConstantNode::ConstantNode(ConstantValue constant_value_)
 {}
 
 ConstantNode::ConstantNode(ColumnPtr constant_column_, DataTypePtr value_data_type_)
-    : ConstantNode(ConstantValue{std::move(constant_column_), value_data_type_})
+    : ConstantNode(ConstantValue{constant_column_, value_data_type_})
 {}
 
 ConstantNode::ConstantNode(ColumnPtr constant_column_)
