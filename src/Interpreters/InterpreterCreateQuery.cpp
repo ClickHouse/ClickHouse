@@ -52,7 +52,6 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DDLTask.h>
@@ -332,7 +331,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
-    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext(), mode);
+    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext());
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -2019,14 +2018,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// so we allow waiting here. If database_atomic_wait_for_drop_and_detach_synchronously is disabled
         /// and old storage instance still exists it will throw exception.
         if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
-        {
-            QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
-            database->waitDetachedTableNotInUse(create.uuid, [&]()
-            {
-                if (query_status)
-                    query_status->throwIfKilled();
-            });
-        }
+            database->waitDetachedTableNotInUse(create.uuid);
         else
             database->checkDetachedTableNotInUse(create.uuid);
     }
@@ -2201,10 +2193,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         if (database->getUUID() == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "{} query is supported only for Atomic databases",
-                            create.create_or_replace
-                ? (create.is_materialized_view ? "CREATE OR REPLACE MATERIALIZED VIEW"
-                    : (create.isView() ? "CREATE OR REPLACE VIEW" : "CREATE OR REPLACE TABLE"))
-                : "REPLACE TABLE");
+                            create.create_or_replace ? "CREATE OR REPLACE TABLE" : "REPLACE TABLE");
 
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(table_to_replace_name);
@@ -2699,14 +2688,7 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     if (create.uuid != UUIDHelpers::Nil)
     {
         if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
-        {
-            QueryStatusPtr query_status = getContext()->getProcessListElementSafe();
-            database->waitDetachedTableNotInUse(create.uuid, [&]()
-            {
-                if (query_status)
-                    query_status->throwIfKilled();
-            });
-        }
+            database->waitDetachedTableNotInUse(create.uuid);
         else
             database->checkDetachedTableNotInUse(create.uuid);
     }

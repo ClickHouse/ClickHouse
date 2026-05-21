@@ -6,7 +6,6 @@ namespace DB
 /// These classes should be present in DB namespace (cannot place them into namelesspace)
 template <typename> struct AbsImpl;
 template <typename> struct BitCountImpl;
-template <typename> struct IntExp2Impl;
 template <typename> struct NegateImpl;
 template <typename> struct SignImpl;
 template <typename, typename> struct PlusImpl;

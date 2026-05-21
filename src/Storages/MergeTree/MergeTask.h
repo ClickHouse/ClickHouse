@@ -231,13 +231,11 @@ private:
         CompressionCodecPtr compression_codec{nullptr};
 
         NamesAndTypesList gathering_columns{};
-        NameSet merge_required_columns{};
+        NameSet merge_required_key_columns{};
         NamesAndTypesList merging_columns{};
         NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
-        NamesAndTypesList virtual_columns{};
         NamesAndTypesList storage_columns_expired_by_ttl{};
-        NamesAndTypesList minmax_idx_columns{};
 
         MergedBlockOutputStream::GatheredData gathered_data{};
         std::unordered_map<String, ColumnsStatistics> statistics_to_build_by_part;
