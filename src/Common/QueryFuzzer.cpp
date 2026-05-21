@@ -1993,7 +1993,7 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
                     new_name, NullsAction::EMPTY, new_arg_types, type_aggr->getParameters(), properties);
                 return std::make_shared<DataTypeAggregateFunction>(new_func, new_arg_types, type_aggr->getParameters());
             }
-            catch (...)
+            catch (...) // Ok: aggregate may reject fuzzed argument types
             {
             }
         }
@@ -2142,7 +2142,7 @@ DataTypePtr QueryFuzzer::getRandomType()
                 auto func = AggregateFunctionFactory::instance().get(name, NullsAction::EMPTY, arg_types, {}, properties);
                 return std::make_shared<DataTypeAggregateFunction>(func, arg_types, Array{});
             }
-            catch (...)
+            catch (...) // Ok: aggregate may reject random argument types
             {
             }
             break;

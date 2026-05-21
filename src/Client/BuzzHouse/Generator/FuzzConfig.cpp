@@ -579,7 +579,7 @@ args_by_function AS
     SELECT
         name,
         min(args_min) AS min_arguments,
-        if(max(args_variadic) = 1, NULL, max(args_max)) AS max_arguments
+        if (max(args_variadic) = 1, NULL, max(args_max)) AS max_arguments
     FROM
     (
         SELECT
@@ -589,16 +589,16 @@ args_by_function AS
             match(args_raw, '(\\.\\.\\.|…)') AS args_variadic,
             replaceRegexpAll(args_raw, '\\[[^\\]]*\\]', '') AS args_required_raw,
             replaceRegexpAll(args_raw, '[\\[\\]]', '') AS args_all_raw,
-            if(
+            if (
                 trim(args_required_raw) = '',
                 0,
                 length(arrayFilter(
                     x -> trim(x) != '' AND NOT match(trim(x), '^(\\.\\.\\.|…)$') AND position(x, '->') = 0,
                     splitByChar(',', args_required_raw)))
             ) AS args_min,
-            if(
+            if (
                 args_variadic, NULL,
-                if(
+                if (
                     trim(args_all_raw) = '',
                     0,
                     length(arrayFilter(
@@ -617,7 +617,7 @@ params_by_function AS
     SELECT
         name,
         min(params_min) AS min_parameters,
-        if(max(params_variadic) = 1, NULL, max(params_max)) AS max_parameters
+        if (max(params_variadic) = 1, NULL, max(params_max)) AS max_parameters
     FROM
     (
         SELECT
@@ -626,16 +626,16 @@ params_by_function AS
             match(parameter_line, '(\\.\\.\\.|…)') AS params_variadic,
             replaceRegexpAll(parameter_line, '\\[[^\\]]*\\]', '') AS params_required_raw,
             replaceRegexpAll(parameter_line, '[\\[\\]]', '') AS params_all_raw,
-            if(
+            if (
                 trim(params_required_raw) = '',
                 0,
                 length(arrayFilter(
                     x -> trim(x) != '' AND NOT match(trim(x), '^(\\.\\.\\.|…)$'),
                     splitByChar(',', params_required_raw)))
             ) AS params_min,
-            if(
+            if (
                 params_variadic, NULL,
-                if(
+                if (
                     trim(params_all_raw) = '',
                     0,
                     length(arrayFilter(
@@ -644,7 +644,7 @@ params_by_function AS
                 )
             ) AS params_max
         FROM system.functions
-        ARRAY JOIN if(parameters = '', [''], splitByRegexp('\\n+', parameters)) AS parameter_line
+        ARRAY JOIN if (parameters = '', [''], splitByRegexp('\\n+', parameters)) AS parameter_line
     )
     GROUP BY name
 )
