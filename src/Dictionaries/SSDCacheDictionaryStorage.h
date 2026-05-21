@@ -876,7 +876,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request, default_mask);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for complex key storage");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for complex key storage");
     }
 
     void insertColumnsForKeys(const PaddedPODArray<UInt64> & keys, Columns columns) override
@@ -892,7 +892,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             insertDefaultKeysImpl(keys);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for complex key storage");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeys is not supported for complex key storage");
     }
 
     PaddedPODArray<UInt64> getCachedSimpleKeys() const override
@@ -929,7 +929,7 @@ public:
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             insertDefaultKeysImpl(keys);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for simple key storage");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeys is not supported for simple key storage");
     }
 
     PaddedPODArray<std::string_view> getCachedComplexKeys() const override

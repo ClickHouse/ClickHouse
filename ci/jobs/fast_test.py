@@ -259,7 +259,6 @@ def main():
                 -DENABLE_LEXER_TEST=1 \
                 -DBUILD_STRIPPED_BINARY=1 \
                 -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 \
-                -DUSE_SYSTEM_COMPILER_RT=1 \
                 -B {build_dir_normalized}",
                 workdir=repo_path_normalized,
             )
@@ -346,17 +345,12 @@ def main():
             test_pattern = "|".join(args.test)
             fast_test_command += f" -- '{test_pattern}'"
 
-        res = CH.run_test(fast_test_command)
+        test_exit_code = CH.run_test(fast_test_command)
 
-        test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR).run()
-        if not res:
-            test_results.results.append(
-                Result.create_from(
-                    name="clickhouse-test",
-                    status=Result.Status.FAIL,
-                    info="clickhouse-test error",
-                )
-            )
+        test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR).run(
+            runner_exit_code=test_exit_code,
+        )
+        if test_exit_code != 0:
             attach_debug = True
 
         results.append(test_results)
