@@ -8,7 +8,7 @@ allowed-tools: Bash(git:*), Bash(cp:*), Bash(ln:*), Bash(ls:*), Bash(rm:*), Bash
 
 # Create ClickHouse Worktree Skill
 
-Create a new git worktree for ClickHouse development with submodules hardlinked from the main repo (independent copies, no network, no extra disk for git objects).
+Create a new git worktree for ClickHouse development. When the worktree will be built or tested, submodules are hardlinked from the main repo (independent copies, no network, no extra disk for git objects). For text-only tasks (docs, comments, typo fixes), submodule setup is skipped — it's the slow part of the workflow and is pure overhead when nothing will be compiled.
 
 ## Arguments
 
@@ -56,9 +56,21 @@ git -C <MAIN_REPO> worktree add <WORKTREE_PATH> -b <branch-name> origin/<branch-
 git -C <MAIN_REPO> worktree add -b <branch-name> <WORKTREE_PATH>
 ```
 
-### 5. Set up submodules via hardlinks
+### 5. Decide whether to set up submodules
 
-This is the key optimization — instead of cloning each submodule from the network, hardlink the git modules directory from the main repo. This gives each worktree an independent copy of the submodule git data (safe to modify independently) without using extra disk space for the object files, and without any network access.
+The submodule hardlink step below is the slow part of this skill — it walks every contrib module, runs `cp -al` over all of them, rewrites configs, and checks out every submodule's working tree.
+
+**Skip step 6 entirely (jump to step 7)** when the planned work is text-only and won't be built or tested locally:
+- docs, comments, changelog entries, `.md` files
+- typo fixes in source files where no compile is needed to verify
+
+**Run step 6** when the task will involve `ninja` or running tests against this worktree.
+
+If genuinely unsure, use `AskUserQuestion`: "Will you build or run tests in this worktree? (No → skip submodule setup, much faster)"
+
+### 6. Set up submodules via hardlinks
+
+Only do this step if step 5 selected the build/test path. Instead of cloning each submodule from the network, hardlink the git modules directory from the main repo. This gives each worktree an independent copy of the submodule git data (safe to modify independently) without using extra disk space for the object files, and without any network access.
 
 Determine `GIT_DIR` — the `.git` directory of the main repo. For a regular repo this is `<MAIN_REPO>/.git`. For a worktree it may differ; use `git -C <MAIN_REPO> rev-parse --git-common-dir` to get the correct path.
 
@@ -107,13 +119,13 @@ git -C <WORKTREE_PATH> submodule init
 git -C <WORKTREE_PATH> submodule update
 ```
 
-### 6. Report results
+### 7. Report results
 
 Report to the user:
 - Source repo: `<MAIN_REPO>`
 - Worktree path: `<WORKTREE_PATH>`
 - Branch: `<branch-name>` (newly created or existing)
-- Submodules: hardlinked from main repo (independent copies, no network cloning)
+- Submodules: either "hardlinked from main repo (independent copies, no network cloning)" or "skipped (text-only task)" depending on the choice in step 5
 - Suggest: `cd <WORKTREE_PATH>`
 
 ## Examples
@@ -123,6 +135,7 @@ Report to the user:
 
 ## Notes
 
+- For text-only tasks (docs, comments, typo fixes, changelog entries), step 6 is skipped — `git worktree add` alone is enough, and the worktree is ready immediately. If you later need to build there, run step 6's commands by hand.
 - Submodules use hardlinks (`cp -al`) — git object files are hardlinked (no extra disk space) but each worktree has its own independent directory structure and config. Modifying submodules in one worktree does not affect others.
 - The main repo must have submodules already cloned (`git submodule update --init` must have been run in the main repo at least once).
 - To remove a worktree later:

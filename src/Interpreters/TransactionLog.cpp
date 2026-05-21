@@ -10,6 +10,7 @@
 #include <base/sort.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
@@ -65,7 +66,7 @@ TransactionLog::TransactionLog()
     auto compoment_guard = Coordination::setCurrentComponent("TransactionLog::TransactionLog");
     loadLogFromZooKeeper();
 
-    updating_thread = ThreadFromGlobalPool(&TransactionLog::runUpdatingThread, this);
+    updating_thread = std::make_unique<ThreadFromGlobalPool>(&TransactionLog::runUpdatingThread, this);
 }
 
 TransactionLog::~TransactionLog()
@@ -79,7 +80,8 @@ void TransactionLog::shutdown()
         return;
     log_updated_event->set();
     latest_snapshot.notify_all();
-    updating_thread.join();
+    if (updating_thread)
+        updating_thread->join();
 
     std::lock_guard lock{mutex};
     /// This is required to... you'll never guess - avoid race condition inside Poco::Logger (Coordination::ZooKeeper::log)

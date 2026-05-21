@@ -10,6 +10,8 @@
 #include <Common/noexcept_scope.h>
 #include <Common/logger_useful.h>
 #include <Common/LockGuardWithStopWatch.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 
 
 namespace CurrentMetrics

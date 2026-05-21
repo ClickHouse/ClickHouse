@@ -8,6 +8,7 @@
 #include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Crypto/OpenSSLInitializer.h>
+#include <Common/ThreadStatus.h>
 
 #include <boost/algorithm/string/split.hpp>
 

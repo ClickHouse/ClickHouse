@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <IO/SwapHelper.h>
 #include <IO/NullWriteBuffer.h>
+#include <base/scope_guard.h>
 
 
 namespace ProfileEvents

@@ -8,6 +8,7 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Core/Settings.h>
 
 namespace DB

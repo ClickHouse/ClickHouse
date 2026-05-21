@@ -25,6 +25,8 @@
 #include <Common/randomDelay.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include <Common/ThreadStatus.h>
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>

@@ -281,6 +281,12 @@ namespace JSONUtils
                 String str;
                 readJSONString(str, in, format_settings.json);
 
+                if (format_settings.json.empty_as_default && str.empty())
+                {
+                    column.insertDefault();
+                    return false;
+                }
+
                 ReadBufferFromString buf(str);
 
                 if (as_nullable)

@@ -1,10 +1,8 @@
-#include <iostream>
-#include <string>
-
 #include <Common/Arena.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/ICompressionCodec.h>
 #include <IO/BufferWithOwnMemory.h>

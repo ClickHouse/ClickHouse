@@ -7,6 +7,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
+#include <Common/MemoryTracker.h>
 #include <Interpreters/sortBlock.h>
 #include <base/range.h>
 

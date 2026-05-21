@@ -8,6 +8,7 @@
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/FileCache/FileCacheSettings.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <filesystem>
 

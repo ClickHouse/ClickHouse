@@ -1,4 +1,5 @@
 #include <numeric>
+#include <thread>
 
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTuple.h>

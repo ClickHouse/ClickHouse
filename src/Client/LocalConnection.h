@@ -6,6 +6,7 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Common/QueryScope.h>
+#include <Common/ThreadStatus.h>
 
 
 namespace DB

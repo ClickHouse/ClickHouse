@@ -4,6 +4,7 @@
 #include <Core/Settings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/Context.h>

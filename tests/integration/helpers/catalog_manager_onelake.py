@@ -1,9 +1,11 @@
+import concurrent.futures
 import logging
 import os
 import shutil
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
 import pyarrow as pa
@@ -20,6 +22,12 @@ ONELAKE_DFS_HOST = "onelake.dfs.fabric.microsoft.com"
 ONELAKE_BLOB_HOST = "onelake.blob.fabric.microsoft.com"
 ONELAKE_STORAGE_ENDPOINT = f"https://{ONELAKE_DFS_HOST}"
 ONELAKE_CATALOG_URL = "https://onelake.table.fabric.microsoft.com/iceberg"
+
+# All tables this manager creates -- including those produced by
+# `test_list_tables_pagination` (`e2e_pg_*`) -- start with this prefix.
+# Stale cleanup must restrict itself to this prefix so other workloads
+# sharing the same Fabric lakehouse are never touched.
+TABLE_NAME_PREFIX = "e2e_"
 
 @dataclass
 class OneLakeConfig:
@@ -78,6 +86,84 @@ class OneLakeCatalogManager(CatalogManager):
             credential=self._credential,
         )
         self._tables_created: List[str] = []
+
+        self._cleanup_stale_tables()
+
+    # Only clean up tables older than this to avoid racing with other
+    # concurrently running test sessions.
+    _STALE_GRACE_SECONDS: int = 43200  # 12 hours
+
+    def _cleanup_stale_tables(self) -> None:
+        """Remove tables under ``Tables/dbo/`` whose DFS directory was
+        last modified more than ``_STALE_GRACE_SECONDS`` ago.
+
+        OneLake / Fabric does not auto-purge leftovers, so every crashed
+        test run leaves behind tables that subsequent runs must paginate
+        through. Trim aggressively at session start while skipping
+        anything younger than the grace window, so we don't race a
+        concurrent session.
+        """
+        try:
+            now = datetime.now(timezone.utc)
+            fs = self._dfs_client.get_file_system_client(
+                self.config.workspace_id
+            )
+            base = f"{self.config.lakehouse_id}/Tables/dbo"
+            stale: List[str] = []
+            for path in fs.get_paths(path=base, recursive=False):
+                if not path.is_directory:
+                    continue
+                # Restrict the sweep to test-owned table names so a
+                # shared lakehouse cannot lose unrelated tables that
+                # happen to be older than the grace window.
+                tail = path.name.rsplit("/", 1)[-1]
+                if not tail.startswith(TABLE_NAME_PREFIX):
+                    continue
+                last_modified = getattr(path, "last_modified", None)
+                if last_modified is None:
+                    continue
+                # `last_modified` can be a datetime or RFC1123 string; normalize.
+                if isinstance(last_modified, str):
+                    try:
+                        last_modified = datetime.strptime(
+                            last_modified, "%a, %d %b %Y %H:%M:%S %Z"
+                        ).replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        continue
+                elif last_modified.tzinfo is None:
+                    last_modified = last_modified.replace(tzinfo=timezone.utc)
+                age = (now - last_modified).total_seconds()
+                if age < self._STALE_GRACE_SECONDS:
+                    continue
+                # `path.name` is the full path; the table name is the trailing segment.
+                stale.append(path.name.rsplit("/", 1)[-1])
+            if not stale:
+                return
+            log.info(
+                "Cleaning up %d stale OneLake tables (older than %ds)",
+                len(stale), self._STALE_GRACE_SECONDS,
+            )
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+                list(pool.map(self._delete_stale_table, stale))
+        except Exception as exc:
+            log.warning("Stale OneLake table cleanup failed: %s", exc)
+
+    def _delete_stale_table(self, table_name: str) -> None:
+        """Issue an Iceberg REST DELETE for the table (Fabric purges the
+        underlying DFS files as part of that), falling back to a direct
+        DFS path delete if the catalog entry is already gone."""
+        try:
+            url = self._table_api_url(table_name, "dbo")
+            resp = requests.delete(url, headers=self._authed_headers(), timeout=60)
+            if resp.status_code not in (200, 204, 404):
+                log.debug(
+                    "Stale table REST DELETE for '%s' returned %d: %s",
+                    table_name, resp.status_code, resp.text[:120],
+                )
+        except Exception as exc:
+            log.debug("Stale table REST DELETE for '%s' failed: %s", table_name, exc)
+        # Best-effort DFS cleanup in case the catalog DELETE didn't purge files.
+        self.cleanup_table(table_name)
 
     @classmethod
     def from_env(cls) -> "OneLakeCatalogManager":
@@ -200,7 +286,7 @@ class OneLakeCatalogManager(CatalogManager):
         table_name: Optional[str] = None,
     ) -> str:
         if table_name is None:
-            table_name = f"e2e_{uuid.uuid4().hex[:10]}"
+            table_name = f"{TABLE_NAME_PREFIX}{uuid.uuid4().hex[:10]}"
 
         table = self._catalog.create_table(
             identifier=f"dbo.{table_name}",

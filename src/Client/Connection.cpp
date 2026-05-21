@@ -43,6 +43,7 @@
 #include <Core/Types.h>
 #include "config.h"
 
+#include <base/scope_guard.h>
 #include <fmt/ranges.h>
 
 #if USE_SSL

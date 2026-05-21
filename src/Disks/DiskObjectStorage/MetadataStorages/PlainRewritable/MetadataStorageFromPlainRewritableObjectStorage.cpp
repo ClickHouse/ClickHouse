@@ -23,6 +23,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 #if USE_AZURE_BLOB_STORAGE
 #    include <azure/storage/common/storage_exception.hpp>

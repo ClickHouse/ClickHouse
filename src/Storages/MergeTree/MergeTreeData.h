@@ -34,7 +34,7 @@
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
-#include <Common/threadPoolCallbackRunner.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 
 #include <boost/multi_index_container.hpp>

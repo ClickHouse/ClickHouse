@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/filesystemHelpers.h>
 #include <Core/Settings.h>

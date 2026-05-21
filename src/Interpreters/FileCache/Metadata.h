@@ -9,7 +9,7 @@
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
 #include <Common/SharedMutex.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 
 #include <memory>
 
@@ -179,6 +179,8 @@ public:
         size_t background_download_queue_size_limit_,
         size_t background_download_threads_,
         bool write_cache_per_user_directory_);
+
+    virtual ~CacheMetadata();
 
     void startup();
 

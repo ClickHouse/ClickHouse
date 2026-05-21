@@ -7,6 +7,7 @@
 
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Core/Settings.h>
 
 #include <Poco/String.h>

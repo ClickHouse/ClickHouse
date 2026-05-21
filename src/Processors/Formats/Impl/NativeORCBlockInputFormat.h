@@ -6,7 +6,6 @@
 
 #include <Core/BlockMissingValues.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>
 #include <IO/ReadBufferFromString.h>
 #include <Processors/Formats/IInputFormat.h>

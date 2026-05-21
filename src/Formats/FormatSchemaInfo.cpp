@@ -18,6 +18,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <boost/algorithm/hex.hpp>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/OpenSSLHelpers.h>

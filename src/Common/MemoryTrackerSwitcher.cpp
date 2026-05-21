@@ -1,5 +1,6 @@
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 
 namespace DB
 {

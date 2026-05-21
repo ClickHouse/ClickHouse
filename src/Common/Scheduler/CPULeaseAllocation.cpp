@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>

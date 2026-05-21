@@ -69,7 +69,7 @@ DIFF_IN_DOCUMENTATION_EXT = [
     ".sh",
     ".json",
 ]
-DOCS_ONLY_FILES = ["docker/docs", "aspell-dict.txt"]
+DOCS_ONLY_FILES = ["docker/docs"]
 
 DOCS_FILES = DOCS_ONLY_FILES + [
     "Settings.cpp",
