@@ -419,15 +419,23 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
         /// Gate on zero nulls for all four bbox columns, matching the min/max path above.
         /// With nullable bbox columns, partial NULL stats can make bounds disjoint from
         /// the query while matching rows still exist.
-        auto check_nulls = [&](const std::string & col_id) -> bool
-        {
-            auto info = entry->parsed_entry->columns_infos.find(col_id);
-            return info != entry->parsed_entry->columns_infos.end()
-                && info->second.nulls_count.has_value()
-                && *info->second.nulls_count == 0;
-        };
-        if (!check_nulls(sp.xmin_col_id) || !check_nulls(sp.ymin_col_id)
-            || !check_nulls(sp.xmax_col_id) || !check_nulls(sp.ymax_col_id))
+        auto info_it = entry->parsed_entry->columns_infos.find(sp.xmin_col_id);
+        bool xmin_ok = info_it != entry->parsed_entry->columns_infos.end()
+            && info_it->second.nulls_count.has_value()
+            && *info_it->second.nulls_count == 0;
+        info_it = entry->parsed_entry->columns_infos.find(sp.ymin_col_id);
+        bool ymin_ok = info_it != entry->parsed_entry->columns_infos.end()
+            && info_it->second.nulls_count.has_value()
+            && *info_it->second.nulls_count == 0;
+        info_it = entry->parsed_entry->columns_infos.find(sp.xmax_col_id);
+        bool xmax_ok = info_it != entry->parsed_entry->columns_infos.end()
+            && info_it->second.nulls_count.has_value()
+            && *info_it->second.nulls_count == 0;
+        info_it = entry->parsed_entry->columns_infos.find(sp.ymax_col_id);
+        bool ymax_ok = info_it != entry->parsed_entry->columns_infos.end()
+            && info_it->second.nulls_count.has_value()
+            && *info_it->second.nulls_count == 0;
+        if (!xmin_ok || !ymin_ok || !xmax_ok || !ymax_ok)
             continue;
 
         const auto & xmin_range = xmin_it->second;
