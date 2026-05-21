@@ -748,12 +748,12 @@ static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::
 
         for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
         {
-            auto * raw_data = buffer->mutable_data() + chunk.value_offset(offset_i);
             if (chunk.IsNull(offset_i))
             {
                 column->insertDefault();
                 continue;
             }
+            auto * raw_data = const_cast<uint8_t *>(buffer->data()) + chunk.value_offset(offset_i);
             ReadBuffer in_buffer(reinterpret_cast<char*>(raw_data), chunk.value_length(offset_i), 0);
             GeometricObject result_object;
             switch (geo_metadata.encoding)
@@ -1851,8 +1851,12 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
 
     ColumnsWithTypeAndName sample_columns;
 
-    const std::string * geo_json_str = extractGeoMetadata(metadata);
-    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json_str);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns;
+    if (settings.allow_geoparquet_parser)
+    {
+        const std::string * geo_json_str = extractGeoMetadata(metadata);
+        geo_columns = parseGeoMetadataEncoding(geo_json_str);
+    }
 
     for (const auto & field : schema.fields())
     {
@@ -1973,8 +1977,12 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
 
     std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
 
-    const std::string * geo_json_str = extractGeoMetadata(metadata);
-    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json_str);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns;
+    if (settings.allow_geoparquet_parser)
+    {
+        const std::string * geo_json_str = extractGeoMetadata(metadata);
+        geo_columns = parseGeoMetadataEncoding(geo_json_str);
+    }
 
     for (size_t column_i = 0, header_columns = header.columns(); column_i < header_columns; ++column_i)
     {
