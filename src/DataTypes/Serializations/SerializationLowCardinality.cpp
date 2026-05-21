@@ -346,7 +346,7 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
         /// body afterwards, for example unused `LowCardinality` alternatives inside
         /// `Variant` or empty nested `LowCardinality` streams. In that case `eof`
         /// is true and we keep `global_dictionary` empty.
-        UInt64 num_keys;
+        UInt64 num_keys = 0;
         readBinaryLittleEndian(num_keys, *stream);
 
         auto keys_type = removeNullable(dictionary_type);
