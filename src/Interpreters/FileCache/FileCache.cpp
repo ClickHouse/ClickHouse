@@ -379,18 +379,19 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     }
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
 
-    /// Wire eviction + promotion emission via callbacks. Priority code
-    /// (e.g. SLRU's promotion-induced downgrade in tryIncreasePriority,
-    /// or its successful promotions) reuses these to emit
-    /// `filesystem_cache_*` metrics.
-    main_priority->setOnEvictCallback([this](const FileSegment & segment, FileCacheQueueEntryType queue_type, const String & user_id)
+    /// Install eviction/promotion metric callbacks only when the feature is
+    /// enabled, so the disabled path stays free of std::function dispatch.
+    if (expose_eviction_metrics)
     {
-        this->onSegmentEvicted(segment, queue_type, user_id);
-    });
-    main_priority->setOnPromoteCallback([this](const String & user_id)
-    {
-        this->onSegmentPromoted(user_id);
-    });
+        main_priority->setOnEvictCallback([this](const FileSegment & segment, FileCacheQueueEntryType queue_type, const String & user_id)
+        {
+            this->onSegmentEvicted(segment, queue_type, user_id);
+        });
+        main_priority->setOnPromoteCallback([this](const String & user_id)
+        {
+            this->onSegmentPromoted(user_id);
+        });
+    }
 
     if (settings[FileCacheSetting::enable_filesystem_query_cache_limit])
         query_limit = std::make_unique<FileCacheQueryLimit>();
@@ -2150,9 +2151,6 @@ FileCache::~FileCache()
 
 void FileCache::onSegmentEvicted(const FileSegment & segment, FileCacheQueueEntryType queue_type, const String & user_id) const
 {
-    if (!expose_eviction_metrics)
-        return;
-
     const size_t bytes = segment.range().size();
     const size_t hits = segment.getHitsCount();
     const char * queue = queueLabel(queue_type);
@@ -2171,8 +2169,6 @@ void FileCache::onSegmentEvicted(const FileSegment & segment, FileCacheQueueEntr
 
 void FileCache::onSegmentPromoted(const String & user_id) const
 {
-    if (!expose_eviction_metrics)
-        return;
     filesystem_cache_slru_promotions_total.getOrCreate({name})->increment();
     if (expose_eviction_metrics_per_client)
         filesystem_cache_slru_promotions_by_client_total.getOrCreate({name, user_id})->increment();
