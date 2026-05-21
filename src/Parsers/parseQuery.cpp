@@ -287,20 +287,19 @@ ASTPtr tryParseQuery(
         return nullptr;
     }
 
-    /// Find the end of the current statement (just past the next `;`, or end of input).
-    /// Used to scope error messages to the offending statement instead of dumping every
-    /// subsequent statement of a multi-statement input. See issue #101509.
-    ///
-    /// Note: we walk a fresh iterator from the start of the token stream, not from the
-    /// parser's `token_iterator`. The parser may have backtracked, leaving its current
-    /// position behind the maximum visited position; walking forward from `token_iterator`
-    /// would yield a boundary smaller than `last_token.end` and underflow `size_t` in
-    /// `writeQueryAroundTheError`. The `min_end` clamp is a second safety net for the
-    /// same class of bug (PR #101708 tripped on it in `Fast test` as "Server died").
+    /// End of the current statement (next `;` or end of input), used to scope error
+    /// messages in multi-statement input (issue #101509). Walks a fresh iterator
+    /// (the parser's may have backtracked). `ErrorMaxQuerySizeExceeded` is terminal:
+    /// once `pos` is past `max_query_size`, `nextToken` forces that type on every
+    /// call (including the natural `EndOfStream`), so we must stop on it or loop
+    /// forever. Other lexer errors are recoverable - `pos` keeps advancing.
+    /// `min_end` clamps against `size_t` underflow in `writeQueryAroundTheError`.
     auto current_statement_end = [&](const char * min_end) -> const char *
     {
         IParser::Pos iter(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
-        while (!iter->isEnd() && iter->type != TokenType::Semicolon)
+        while (!iter->isEnd()
+            && iter->type != TokenType::ErrorMaxQuerySizeExceeded
+            && iter->type != TokenType::Semicolon)
             ++iter;
         return std::max(iter->end, min_end);
     };

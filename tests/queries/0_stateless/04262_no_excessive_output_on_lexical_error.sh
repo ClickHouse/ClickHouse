@@ -55,6 +55,16 @@ echo "post-parse-lexical $(repeat10 'INSERT INTO t SELECT 1 !;' | ${CLICKHOUSE_L
 # defeat a substring grep.
 echo "unmatched-parens $(repeat10 'SELECT (1;' | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -cF 'SELECT')"
 
+# Path 1b: `max_query_size` exceeded. This is the same lookahead lexical path as
+# Path 1, but the lexer reports `ErrorMaxQuerySizeExceeded` rather than a per-
+# character lexical error. Every subsequent `nextToken` call past the boundary
+# is overridden to the same error type, so the scoping loop must stop on
+# `isError()`; otherwise it walks forever and the server appears hung (issue
+# surfaced as "Server died" in `Fast test` on the first scoping attempt).
+# Expect: a single error message, not a hang. We only check that the command
+# completes (under the test runner's per-test timeout) and emits one error.
+echo "max-query-size $(${CLICKHOUSE_LOCAL} --max_query_size=20 --query "SELECT 'ыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыыы'" 2>&1 | grep -cF 'Max query size exceeded')"
+
 # Sanity: 10 valid statements must not produce any error lines. This guards
 # against the fix accidentally rejecting good input (e.g. a regression that
 # misidentifies a non-error token as an error). `^Code:` is the prefix of

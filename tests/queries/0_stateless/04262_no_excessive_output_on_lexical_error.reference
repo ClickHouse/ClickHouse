@@ -1,4 +1,5 @@
 lookahead-lexical 10
 post-parse-lexical 10
 unmatched-parens 10
+max-query-size 1
 no-false-positives 0
