@@ -30,7 +30,7 @@ namespace
 
 /// Implements the function isNotNull which returns true if a value
 /// is not null, false otherwise.
-class FunctionIsNotNull : public IFunction
+class FunctionIsNotNull final : public IFunction
 {
 public:
     static constexpr auto name = "isNotNull";
@@ -140,11 +140,24 @@ public:
 #endif
 
 private:
-    static void vector(const PaddedPODArray<UInt8> & null_map, PaddedPODArray<UInt8> & res)
+    MULTITARGET_FUNCTION_X86_V3(
+    MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const PaddedPODArray<UInt8> & null_map, PaddedPODArray<UInt8> & res) /// NOLINT
     {
         size_t size = null_map.size();
         for (size_t i = 0; i < size; ++i)
             res[i] = !null_map[i];
+    }))
+
+    static void NO_INLINE vector(const PaddedPODArray<UInt8> & null_map, PaddedPODArray<UInt8> & res)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            vectorImpl_x86_64_v3(null_map, res);
+            return;
+        }
+#endif
+        vectorImpl(null_map, res);
     }
 
     bool use_analyzer;
