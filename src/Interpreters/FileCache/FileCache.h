@@ -276,14 +276,6 @@ private:
     const bool use_split_cache;
     const double split_cache_ratio;
 
-    /// Eviction-time Prometheus metrics gating flags. The metric families are
-    /// registered in `FileCache.cpp`; these per-cache flags gate emission via
-    /// `onSegmentEvicted` / `onSegmentPromoted`. Off by default; turn on by
-    /// setting `<filesystem_cache_expose_prometheus_eviction_metrics>true</...>`
-    /// on the cache configuration.
-    /// `filesystem_cache_expose_prometheus_eviction_metrics_per_client`
-    /// additionally enables the per-user-id labelled variants (which have
-    /// unbounded cardinality).
     const bool expose_eviction_metrics;
     const bool expose_eviction_metrics_per_client;
 

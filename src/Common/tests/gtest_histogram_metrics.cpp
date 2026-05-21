@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 #include <Common/HistogramMetrics.h>
-#include <Common/DimensionalMetrics.h>
 
 using namespace HistogramMetrics;
 
