@@ -23,14 +23,14 @@ PrefetchHandle::State PrefetchHandle::state() const
     return shared->state.load();
 }
 
-PrefetchThreadPool::PrefetchThreadPool(size_t pool_size, size_t queue_factor)
+PrefetchThreadPool::PrefetchThreadPool(size_t pool_size, size_t queue_size)
     : pool(
         CurrentMetrics::end(),
         CurrentMetrics::end(),
         CurrentMetrics::end(),
         pool_size,
         pool_size,
-        pool_size * queue_factor)
+        queue_size ? queue_size : pool_size * 10)
 {
 }
 

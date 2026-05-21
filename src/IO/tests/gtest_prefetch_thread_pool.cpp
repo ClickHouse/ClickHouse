@@ -49,7 +49,7 @@ TEST(PrefetchThreadPool, CancelWhenQueued)
     /// queue task #2 behind it, then cancel #2 before the worker can pick
     /// it up. Verify #2's body never ran.
 
-    PrefetchThreadPool pool(/*pool_size=*/1, /*queue_factor=*/4);
+    PrefetchThreadPool pool(/*pool_size=*/1, /*queue_size=*/4);
 
     Latch worker_latch;
     auto blocker = pool.submit([&]() -> Rope
@@ -91,7 +91,7 @@ TEST(PrefetchThreadPool, WaitWhenRunning)
     /// signal, tryCancel must return false (task is Running) and get() must
     /// return the produced value.
 
-    PrefetchThreadPool pool(/*pool_size=*/1, /*queue_factor=*/4);
+    PrefetchThreadPool pool(/*pool_size=*/1, /*queue_size=*/4);
 
     std::atomic<bool> started{false};
     Latch release_latch;
@@ -126,7 +126,7 @@ TEST(PrefetchThreadPool, TryCancelAfterCompletion)
 {
     /// Wait until the task completes, then tryCancel must return false.
 
-    PrefetchThreadPool pool(/*pool_size=*/1, /*queue_factor=*/4);
+    PrefetchThreadPool pool(/*pool_size=*/1, /*queue_size=*/4);
 
     auto handle = pool.submit([]() -> Rope { return {}; });
     ASSERT_NE(handle, nullptr);
@@ -142,11 +142,11 @@ TEST(PrefetchThreadPool, TryCancelAfterCompletion)
 
 TEST(PrefetchThreadPool, QueueOverflowReturnsNullptr)
 {
-    /// pool_size=1, queue_factor=3 → queue capacity 3 (counting the running
-    /// task plus queued tasks per ThreadPool semantics). Submitting more
-    /// than 3 with the worker blocked must return nullptr without blocking.
+    /// pool_size=1, queue_size=3 → at most 3 scheduled jobs (running + queued)
+    /// per ThreadPool semantics. Submitting more than 3 with the worker
+    /// blocked must return nullptr without blocking.
 
-    PrefetchThreadPool pool(/*pool_size=*/1, /*queue_factor=*/3);
+    PrefetchThreadPool pool(/*pool_size=*/1, /*queue_size=*/3);
 
     Latch worker_latch;
     auto blocker = pool.submit([&]() -> Rope { worker_latch.wait(); return {}; });
@@ -174,7 +174,7 @@ TEST(PrefetchThreadPool, CancelledFutureGetRethrowsKnownException)
     /// If a caller incorrectly waits on a cancelled handle's future, they
     /// must get a definite exception (not a broken_promise hang).
 
-    PrefetchThreadPool pool(/*pool_size=*/1, /*queue_factor=*/4);
+    PrefetchThreadPool pool(/*pool_size=*/1, /*queue_size=*/4);
 
     Latch worker_latch;
     auto blocker = pool.submit([&]() -> Rope { worker_latch.wait(); return {}; });

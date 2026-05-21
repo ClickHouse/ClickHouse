@@ -391,6 +391,7 @@ namespace ServerSetting
     extern const ServerSettingsNonZeroUInt64 prefetch_threadpool_pool_size;
     extern const ServerSettingsUInt64 prefetch_threadpool_queue_size;
     extern const ServerSettingsNonZeroUInt64 reader_executor_prefetch_pool_size;
+    extern const ServerSettingsUInt64 reader_executor_prefetch_queue_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_pool_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_queue_size;
     extern const ServerSettingsNonZeroUInt64 threadpool_writer_pool_size;
@@ -7623,7 +7624,8 @@ std::shared_ptr<PrefetchThreadPool> Context::getPrefetchThreadPool() const
     {
         const auto & server_settings = getServerSettings();
         size_t pool_size = server_settings[ServerSetting::reader_executor_prefetch_pool_size];
-        shared->prefetch_thread_pool = std::make_shared<PrefetchThreadPool>(pool_size);
+        size_t queue_size = server_settings[ServerSetting::reader_executor_prefetch_queue_size];
+        shared->prefetch_thread_pool = std::make_shared<PrefetchThreadPool>(pool_size, queue_size);
     });
     return shared->prefetch_thread_pool;
 }

@@ -65,12 +65,11 @@ private:
 class PrefetchThreadPool
 {
 public:
-    /// `queue_factor` controls how many tasks may be queued ahead of the
-    /// worker threads. Queue depth = pool_size * queue_factor. Default 10x
-    /// trades a deeper queue (more prefetch headroom under load) against
-    /// the risk of stale queued tasks — `PrefetchHandle::tryCancel` is the
-    /// release valve for the latter.
-    explicit PrefetchThreadPool(size_t pool_size, size_t queue_factor = 10);
+    /// `queue_size` is the total scheduled-jobs cap (running + queued)
+    /// enforced by the underlying ThreadPool. `submit` returns nullptr
+    /// when the limit is reached; the caller falls back to a synchronous
+    /// read. Defaults to `pool_size * 10`.
+    explicit PrefetchThreadPool(size_t pool_size, size_t queue_size = 0);
 
     /// Submit a task. Returns a handle to the scheduled task on success, or
     /// `nullptr` if the pool's queue is full / scheduling otherwise failed.
