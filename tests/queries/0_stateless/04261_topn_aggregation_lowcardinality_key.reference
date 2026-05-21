@@ -1,0 +1,26 @@
+-- LowCardinality(String) key, UInt64 aggregate (Mode 2)
+group_099	9909
+group_098	9809
+group_097	9709
+group_096	9609
+group_095	9509
+-- same query with an unrelated constant SELECT column
+group_099	100	9909
+group_098	100	9809
+group_097	100	9709
+group_096	100	9609
+group_095	100	9509
+-- LowCardinality on both key and aggregate argument (Mode 2)
+group_099	9909
+group_098	9809
+group_097	9709
+group_096	9609
+group_095	9509
+-- Mode 1 (sorted input) with LowCardinality key
+group_099	9909
+group_098	9809
+group_097	9709
+group_096	9609
+group_095	9509
+-- cross-check: optimized vs unoptimized produce the same top-K
+10

@@ -63,15 +63,17 @@ protected:
     void initColumnIndices(const Block & input_header_);
     SerializedKeyHolder serializeGroupKey(const Columns & columns, size_t row) const;
 
-    /// Unwraps key columns (Const, Sparse, LowCardinality, etc.) so that
-    /// insertFrom receives matching concrete column types.
+    /// Strips Const/Sparse wrappers from key columns but preserves
+    /// LowCardinality so the accumulated key columns match the output
+    /// header type (which keeps LowCardinality).
     ColumnRawPtrs key_column_ptrs;
     Columns key_column_holders;
     void prepareKeyColumnPtrs(const Columns & columns);
 
     /// Populates agg_arg_column_ptrs from the current chunk columns,
     /// unwrapping Const/Sparse/LowCardinality so aggregate functions
-    /// receive the expected concrete column types.
+    /// receive the same column representation as the standard Aggregator
+    /// (which calls recursiveRemoveLowCardinality on aggregate arguments).
     std::vector<ColumnRawPtrs> agg_arg_column_ptrs;
     Columns agg_arg_column_holders;
     void prepareArgColumnPtrs(const Columns & columns);

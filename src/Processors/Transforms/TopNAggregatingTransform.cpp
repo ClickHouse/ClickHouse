@@ -169,7 +169,17 @@ void TopNAggregatingTransformBase::prepareKeyColumnPtrs(const Columns & columns)
     key_column_ptrs.resize(key_column_indices.size());
     for (size_t k = 0; k < key_column_indices.size(); ++k)
     {
-        auto converted = columns[key_column_indices[k]]->convertToFullIfNeeded();
+        /// Strip Const/Sparse wrappers but preserve LowCardinality: the output
+        /// header is built from the input header (see `buildOutputHeader` in
+        /// `TopNAggregatingStep.cpp`) which keeps the LowCardinality type, so
+        /// `accumulated_keys` -- cloned from these runtime columns -- must
+        /// also stay LowCardinality, otherwise downstream serialization
+        /// (e.g. `SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams`)
+        /// sees a concrete `ColumnString`/`ColumnUInt*` where a
+        /// `ColumnLowCardinality` is expected.
+        auto converted = columns[key_column_indices[k]]
+            ->convertToFullColumnIfConst()
+            ->convertToFullColumnIfSparse();
         key_column_ptrs[k] = converted.get();
         if (converted != columns[key_column_indices[k]])
             key_column_holders.push_back(std::move(converted));
@@ -275,8 +285,9 @@ void TopNSortedAggregatingTransform::consume(Chunk chunk)
     {
         result_columns = getOutputPort().getHeader().cloneEmptyColumns();
         /// Replace key columns with `cloneEmpty` of the unwrapped runtime
-        /// columns so `insertFrom` sees matching concrete column types;
-        /// see comment in `TopNDirectAggregatingTransform::consume`.
+        /// columns so `insertFrom` sees matching concrete column types and
+        /// the output column type still matches the header (LowCardinality
+        /// is preserved); see comment in `TopNDirectAggregatingTransform::consume`.
         for (size_t k = 0; k < key_names.size(); ++k)
             result_columns[k] = key_column_ptrs[k]->cloneEmpty();
     }
@@ -386,12 +397,12 @@ void TopNDirectAggregatingTransform::consume(Chunk chunk)
     prepareKeyColumnPtrs(columns);
     prepareArgColumnPtrs(columns);
 
-    /// Clone `accumulated_keys` from the unwrapped runtime columns rather than
-    /// the input header: the header can carry `ColumnConst` / `ColumnSparse`
-    /// wrappers for constant GROUP BY expressions (e.g. `toLowCardinality(0)`),
-    /// while `prepareKeyColumnPtrs` strips them. Using the header's `cloneEmpty`
-    /// would leave `accumulated_keys[k]` Const-wrapped and trigger the
-    /// `assertTypeEquality` check in `insertFrom` below.
+    /// Clone `accumulated_keys` from the unwrapped runtime columns rather
+    /// than the input/output header so the column type matches whatever
+    /// `prepareKeyColumnPtrs` produces: it strips `ColumnConst`/`ColumnSparse`
+    /// (which appear in the header for constant GROUP BY expressions) but
+    /// keeps `ColumnLowCardinality` so the result still matches the
+    /// LowCardinality output header type expected by downstream operators.
     if (accumulated_keys.empty())
     {
         for (size_t k = 0; k < key_names.size(); ++k)
@@ -729,7 +740,12 @@ void TopNAggregatingMergeTransform::consume(Chunk chunk)
     ColumnRawPtrs key_col_ptrs(key_column_indices.size());
     for (size_t k = 0; k < key_column_indices.size(); ++k)
     {
-        auto converted = columns[key_column_indices[k]]->convertToFullIfNeeded();
+        /// Strip Const/Sparse but keep LowCardinality so the output column
+        /// type matches the intermediate header; see comment in
+        /// `TopNAggregatingTransformBase::prepareKeyColumnPtrs`.
+        auto converted = columns[key_column_indices[k]]
+            ->convertToFullColumnIfConst()
+            ->convertToFullColumnIfSparse();
         key_col_ptrs[k] = converted.get();
         if (converted != columns[key_column_indices[k]])
             key_cols_converted.push_back(std::move(converted));
